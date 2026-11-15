@@ -4,20 +4,17 @@ import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
   AlertTriangle,
   ArrowLeft,
-  Bot,
   Brain,
-  Clock,
-  Cpu,
   Database,
   Download,
   FileText,
   HardDrive,
-  Network,
   Package,
   Play,
   RefreshCw,
   RotateCcw,
   Shield,
+  SlidersHorizontal,
   Square,
   Terminal,
   Trash2,
@@ -36,11 +33,26 @@ import { Backups } from "./Backups";
 import { ServerConsolePanel } from "@/components/server/ServerConsolePanel";
 import { ServerRestartPanel } from "@/components/server/ServerRestartPanel";
 import { AuthSetupBanner } from "@/components/server/AuthSetupBanner";
-import { ServerCredentialsPanel } from "@/components/server/ServerCredentialsPanel";
-import { ServerDetailTabs } from "@/components/server/ServerDetailTabs";
-import { PageHeader } from '@maunting/ui'
-import { Dropdown } from '@maunting/ui'
-import { ResourceMetricCard } from '@maunting/ui'
+import { ServerConnectChip } from "@/components/server/ServerConnectChip";
+import { ServerTechnikPanel } from "@/components/server/ServerTechnikPanel";
+import { ServerDetailTabs, type ServerDetailTab } from "@/components/server/ServerDetailTabs";
+import {
+  ActionMenu,
+  Blattmenue,
+  Button,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  Dropdown,
+  Input,
+  Kurzinfo,
+  Spinner,
+  type ActionMenuItem,
+  type DropdownOption,
+} from '@maunting/ui'
 import { DatabaseManager } from "@/components/server/DatabaseManager";
 import { OutgoingWebhooksPanel } from "@/components/server/OutgoingWebhooksPanel";
 import { SwitchBlueprintDialog } from "@/components/server/SwitchBlueprintDialog";
@@ -49,11 +61,9 @@ import { GuardianQuarantineBanner } from "@/features/guardian/GuardianQuarantine
 import { GuardianTab } from "@/features/guardian/GuardianTab";
 import { AiMemoryManager } from "@/components/ai/AiMemoryManager";
 import type { GameInfo, Server } from "@/types";
-import { labelRole, mapBlueprintPorts } from "@/utils/portRoles";
+import { mapBlueprintPorts } from "@/utils/portRoles";
 import { UptimeDisplay } from "@/components/server/UptimeDisplay";
-import { Button, Kurzinfo } from '@maunting/ui'
-
-import { Spinner } from '@maunting/ui'
+import { formatMb, formatPortRoleLabel } from "@/lib/serverConnect";
 import { meldeErrungenschaft } from "@/lib/errungenschaft";
 type TabKey =
   | "files"
@@ -95,13 +105,6 @@ interface ServerStatus {
   server_file_update_available?: boolean;
   server_file_update_reason?: string | null;
   mod_updates_available?: any[];
-}
-
-/** Formatiert MB als kompakte Angabe (MB / GB). */
-function formatMb(mb: number | null | undefined): string {
-  if (mb == null) return "-";
-  if (mb >= 1024) return `${(mb / 1024).toFixed(1)} GB`;
-  return `${Math.round(mb)} MB`;
 }
 
 function statusClasses(s: string | undefined): string {
@@ -191,7 +194,6 @@ export function ServerDetail() {
   // isLoading-Check verhindert Permission-Load-Flash: Button erscheint erst
   // nach Abschluss des Permission-Loads (oder gar nicht bei fehlendem Recht).
   const canManageResources = useHasPermission("server.resources.manage", serverId);
-  const canUseAi = useHasPermission("ai.chat.use");
   const canManageCredentials = useHasPermission("server.credentials.manage", serverId);
   // Der Reiter mit dem Wissen dieser Anlage. Zwei Rechte, zwei Rollen:
   // `ai.memory.use` entscheidet, ob der Reiter ueberhaupt erscheint —
@@ -209,7 +211,9 @@ export function ServerDetail() {
   const showMemoryTab = !permissionsLoading && canUseAiMemory;
 
   const [showEditResource, setShowEditResource] = useState(false);
-  const [mobileOverviewOpen, setMobileOverviewOpen] = useState(false);
+  const [desktopTechnikOpen, setDesktopTechnikOpen] = useState(true);
+  const [mobileTechnikOpen, setMobileTechnikOpen] = useState(false);
+  const [allServers, setAllServers] = useState<Server[]>([]);
 
   const fetchAll = async () => {
     if (!serverId) return;
@@ -255,6 +259,18 @@ export function ServerDetail() {
     api<GameInfo[]>("/system/games")
       .then((gms) => setGames(Array.isArray(gms) ? gms : []))
       .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    api<Server[]>("/servers")
+      .then((list) => {
+        if (active && Array.isArray(list)) setAllServers(list);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
   }, []);
 
   // Der Merker gehört in den Takt, nicht in `fetchAll`: die manuellen Aufrufer
@@ -318,7 +334,7 @@ export function ServerDetail() {
   const isDatabaseServer = server?.server_kind === "database";
 
   const tabs = useMemo(() => {
-    const list: { key: TabKey; label: string; icon: typeof FileText }[] = [
+    const list: ServerDetailTab<TabKey>[] = [
       // Beim Datenbankserver ist die Datenbank der Server: ihr Reiter steht vorn.
       ...(isDatabaseServer ? [{ key: "databases" as TabKey, label: t("tabs.databases"), icon: Database }] : []),
       { key: "files", label: t("tabs.files"), icon: FileText },
@@ -332,6 +348,7 @@ export function ServerDetail() {
         key: "exec",
         label: t("tabs.exec", { defaultValue: "Exec" }),
         icon: Terminal,
+        secondary: true,
       });
     }
     if (showModTab)
@@ -340,6 +357,7 @@ export function ServerDetail() {
       key: "restarts",
       label: t("tabs.restarts", { defaultValue: "Restarts" }),
       icon: RotateCcw,
+      secondary: true,
     });
     list.push({ key: "backups", label: t("tabs.backups"), icon: HardDrive });
     if (!isDatabaseServer) list.push({ key: "databases", label: t("tabs.databases"), icon: Database });
@@ -347,12 +365,14 @@ export function ServerDetail() {
       key: "webhooks",
       label: t("tabs.webhooks", { defaultValue: "Webhooks" }),
       icon: Webhook,
+      secondary: true,
     });
     if (showMemoryTab) {
       list.push({
         key: "memory",
         label: t("tabs.memory", { defaultValue: "Wissen" }),
         icon: Brain,
+        secondary: true,
       });
     }
     if (server?.guardian_enabled) {
@@ -378,7 +398,7 @@ export function ServerDetail() {
       : defaultTab;
 
   const setActiveTab = (next: TabKey) => {
-    if (next === "files") setMobileOverviewOpen(false);
+    if (next === "files") setMobileTechnikOpen(false);
     const params = new URLSearchParams(searchParams);
     params.set("tab", next);
     setSearchParams(params, { replace: true });
@@ -696,24 +716,11 @@ export function ServerDetail() {
     <Button
       onClick={() => doAction("start")}
       disabled={!!actionLoading || !server.public_bind_ip || isNodeUnreachable}
-      className="flex items-center gap-2 disabled:opacity-50"
+      className="inline-flex min-h-[44px] md:min-h-[38px] items-center gap-2 disabled:opacity-50"
       aria-description={startHinweis}
     >
       <Play className="w-4 h-4" />
-      {actionLoading === "start"
-        ? t("common.loading")
-        : t("servers.start")}
-    </Button>
-  );
-  const wechselKnopf = (
-    <Button variant="secondary"
-      onClick={() => setShowSwitchBlueprint(true)}
-      disabled={!!actionLoading || isNodeUnreachable || effectiveStatus !== "stopped"}
-      className="flex items-center gap-2 disabled:opacity-50"
-      aria-description={effectiveStatus !== "stopped" ? t("servers.mustStopToSwitch") : undefined}
-    >
-      <RefreshCw className="w-4 h-4 text-primary" />
-      {t("servers.switchBlueprintAction")}
+      {actionLoading === "start" ? t("common.loading") : t("servers.start")}
     </Button>
   );
   const updateHinweis = (
@@ -725,7 +732,9 @@ export function ServerDetail() {
     </span>
   );
   const netzwerkKnopf = (
-    <Button variant="secondary" size="sm"
+    <Button
+      variant="secondary"
+      size="sm"
       onClick={() => setShowEditNetwork(true)}
       disabled={effectiveStatus === "running" || !!actionLoading}
       aria-description={effectiveStatus === "running" ? t("servers.networkEditRequiresStopped") : undefined}
@@ -737,89 +746,252 @@ export function ServerDetail() {
     </Button>
   );
 
+  const switcherServers = allServers.some((s) => s.id === server.id)
+    ? allServers
+    : [server, ...allServers];
+  const switcherOptions: DropdownOption[] = switcherServers.map((item) => ({
+    value: String(item.id),
+    label: item.name,
+    hint: gameName(item.game_type),
+  }));
+
+  const isTransientLifecycle = [
+    "installing",
+    "starting",
+    "stopping",
+    "restarting",
+    "queued",
+  ].includes(effectiveStatus);
+  const canShowStart = !isTransientLifecycle && effectiveStatus !== "running";
+  const canKill = ["starting", "running", "stopping", "restarting"].includes(effectiveStatus);
+  const canInstallOrSwitch = effectiveStatus !== "installing" && effectiveStatus !== "queued";
+
+  const moreActionItems: ActionMenuItem[] = [
+    ...(canKill
+      ? [
+          {
+            key: "kill",
+            label: actionLoading === "kill" ? t("common.loading") : t("servers.kill"),
+            icon: <Square className="h-4 w-4" />,
+            destructive: true,
+            disabled: !!actionLoading || isNodeUnreachable,
+            onSelect: () => void handleKill(),
+          } satisfies ActionMenuItem,
+        ]
+      : []),
+    ...(canInstallOrSwitch
+      ? [
+          {
+            key: "install",
+            label: actionLoading === "install" ? t("common.loading") : installLabel,
+            icon: <Download className="h-4 w-4" />,
+            disabled: !!actionLoading || isNodeUnreachable,
+            onSelect: () => void handleInstall(),
+          } satisfies ActionMenuItem,
+          {
+            key: "switch-blueprint",
+            label: t("servers.switchBlueprintAction"),
+            icon: <RefreshCw className="h-4 w-4" />,
+            disabled: !!actionLoading || isNodeUnreachable || effectiveStatus !== "stopped",
+            onSelect: () => setShowSwitchBlueprint(true),
+          } satisfies ActionMenuItem,
+        ]
+      : []),
+    ...(hasServerFiles && showServerFileUpdates
+      ? [
+          {
+            key: "check-updates",
+            label: serverUpdateCheckLoading ? t("common.loading") : t("servers.checkServerFileUpdates"),
+            icon: <RefreshCw className={`h-4 w-4 ${serverUpdateCheckLoading ? "animate-spin" : ""}`} />,
+            disabled: !!actionLoading || serverUpdateCheckLoading || isNodeUnreachable,
+            onSelect: () => void checkServerFileUpdates(),
+          } satisfies ActionMenuItem,
+        ]
+      : []),
+    {
+      key: "delete",
+      label: t("common.delete"),
+      icon: <Trash2 className="h-4 w-4" />,
+      destructive: true,
+      separatorBefore: true,
+      disabled: !!actionLoading,
+      onSelect: () => void handleDelete(),
+    },
+  ];
+
+  const activeTabLabel = tabs.find((tab) => tab.key === activeTab)?.label ?? server.name;
+
+  const technikPanelProps = {
+    server,
+    status,
+    effectiveStatus,
+    configuredCpuLimit,
+    configuredRamLimit,
+    configuredDiskLimit,
+    cpuUsageOfLimit: cpuUsageOfLimit ?? undefined,
+    ramUsageOfLimit: ramUsageOfLimit ?? undefined,
+    diskUsageOfLimit: diskUsageOfLimit ?? undefined,
+    showResourceEdit,
+    isLifecycleBusy,
+    actionLoading,
+    canManageCredentials,
+    networkEditButton: netzwerkKnopf,
+    onOpenResourceEditor: openResourceEditor,
+  };
+
   return (
     <div className="msm-page">
-      <div className={activeTab === "files" ? "hidden md:block" : "block"}>
-      <PageHeader
-        eyebrow={t("pageContext.infrastructure")}
-        title={server.name}
-        description={`${gameName(server.game_type)}${server.node_name ? ` · ${t("servers.node")}: ${server.node_name}` : ""}`}
-        status={(
-          <div className="flex items-center gap-2">
-            <span className={`font-mono-sm text-mono-sm px-3 py-1 rounded-full border ${statusClasses(effectiveStatus)}`}>
-              {t(`servers.status.${effectiveStatus}`, { defaultValue: effectiveStatus })}
-            </span>
-            <GuardianBadge server={server} />
-          </div>
-        )}
-        actions={(
-          <div className="flex flex-wrap gap-2">
-          <Button variant="secondary"
-            className="inline-flex min-h-11 items-center gap-2"
-            onClick={() => navigate("/servers")}
-            aria-label={t("servers.backToList")}
-          >
-            <ArrowLeft className="w-4 h-4" />
-            <span>{t("common.back")}</span>
-          </Button>
-          {/* Der KI-Chat lebt seit dem Einzelchat ausschliesslich unter /ai.
-              Der Verweis bleibt hier, damit der Weg dorthin nicht verloren
-              geht — die KI findet den Server dann selbst ueber list_my_servers. */}
-          {canUseAi && (
-            <Button variant="secondary"
+      {/* Kompaktes Server-Deck (Hybrid Variante C + Schnellwechsler aus Variante B) */}
+      <header className="rounded-2xl border border-outline bg-surface-container-low/80 backdrop-blur-xl px-4 py-3.5 sm:px-5 space-y-2.5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          {/* Links: Zurück, Titel/Schnellwechsler, Status, Smart Connect-Adresse */}
+          <div className="flex flex-wrap items-center gap-2 min-w-0">
+            <Button
+              variant="secondary"
+              size="sm"
               type="button"
-              className="inline-flex min-h-11 items-center gap-2"
-              onClick={() => navigate("/ai")}
-              aria-label={t("tabs.ai")}
+              className="inline-flex min-h-[44px] md:min-h-[36px] items-center gap-1.5"
+              onClick={() => navigate("/servers")}
+              aria-label={t("servers.backToList")}
             >
-              <Bot className="w-4 h-4" />
-              <span>{t("tabs.ai")}</span>
+              <ArrowLeft className="w-4 h-4" />
+              <span className="hidden sm:inline">{t("common.back")}</span>
             </Button>
-          )}
-          <Kurzinfo text={t("servers.dockerContainerInstallDirHint")} seite="ende" aussen="max-w-full">
-            <Button variant="secondary"
-              type="button"
-              className="inline-flex min-h-11 max-w-full items-center gap-2 text-left"
-              aria-label={t("servers.copyDockerContainerName")}
-              aria-description={t("servers.dockerContainerInstallDirHint")}
-              onClick={() => {
-                void navigator.clipboard.writeText(`msm-srv-${server.id}`);
-                toast.success(t("servers.dockerContainerNameCopied"));
-              }}
-            >
-              <span className="font-label-md text-label-sm font-semibold uppercase tracking-wider text-on-surface-variant">
-                {t("servers.dockerContainerLabel")}
-              </span>
-              <span className="font-mono text-xs">msm-srv-{server.id}</span>
-            </Button>
-          </Kurzinfo>
-          </div>
-        )}
-      />
-      </div>
 
-      {activeTab === "files" && (
-        <section className="rounded-xl border border-outline-variant/80 bg-surface-container-low/75 p-4 md:hidden">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <p className="font-label-md text-label-sm font-semibold uppercase tracking-[0.12em] text-secondary">{t("pageContext.infrastructure")}</p>
-              <h1 className="mt-1 truncate font-headline text-xl font-semibold text-on-surface">{server.name}</h1>
-              <p className="mt-1 truncate text-xs text-on-surface-variant">{gameName(server.game_type)} · {server.node_name || t("servers.nodeUnknown", { defaultValue: "—" })}</p>
-            </div>
-            <span className={`shrink-0 rounded-full border px-2.5 py-1 font-mono text-label-sm ${statusClasses(effectiveStatus)}`}>
+            <h1 className="font-headline text-lg sm:text-xl font-semibold text-primary truncate max-w-[16rem] sm:max-w-[22rem]">
+              {server.name}
+            </h1>
+
+            {switcherOptions.length > 1 && (
+              <div className="w-44 sm:w-52">
+                <Dropdown
+                  value={String(server.id)}
+                  onChange={(value) => {
+                    const nextId = Number(value);
+                    if (nextId && nextId !== server.id) navigate(`/servers/${nextId}`);
+                  }}
+                  options={switcherOptions}
+                  searchable={switcherOptions.length > 5}
+                  aria-label={t("serverDetail.serverSwitcher")}
+                  buttonClassName="min-h-[44px] md:min-h-[36px] text-xs"
+                />
+              </div>
+            )}
+
+            <span className={`font-mono-sm text-mono-sm px-2.5 py-1 rounded-full border ${statusClasses(effectiveStatus)}`}>
               {t(`servers.status.${effectiveStatus}`, { defaultValue: effectiveStatus })}
             </span>
+
+            <ServerConnectChip server={server} />
+            <GuardianBadge server={server} />
+
+            {serverUpdateBadge?.available &&
+              serverUpdateBadge.reason !== "missing" &&
+              hasServerFiles &&
+              showServerFileUpdates && (
+              <div className="flex items-center">
+                {serverUpdateBadge.reason ? (
+                  <Kurzinfo text={serverUpdateBadge.reason}>{updateHinweis}</Kurzinfo>
+                ) : updateHinweis}
+              </div>
+            )}
           </div>
-          <div className="mt-4 flex flex-wrap gap-2">
-            <Button variant="secondary" size="sm" type="button" onClick={() => navigate("/servers")} className="inline-flex min-h-11 items-center gap-2">
-              <ArrowLeft className="h-4 w-4" />{t("common.back")}
+
+          {/* Rechts: Fokus-Steuerung (Start/Stop, Neustart, Technik & Limits, Weitere Aktionen) */}
+          <div
+            role="toolbar"
+            aria-label={t("serverDetail.serverActions")}
+            className="flex flex-wrap items-center gap-2"
+          >
+            {canShowStart && (
+              startHinweis ? (
+                <Kurzinfo text={startHinweis} seite="ende">{startKnopf}</Kurzinfo>
+              ) : startKnopf
+            )}
+            {effectiveStatus === "running" && (
+              <Button
+                variant="destructive"
+                onClick={() => doAction("stop")}
+                disabled={!!actionLoading || isNodeUnreachable}
+                className="inline-flex min-h-[44px] md:min-h-[38px] items-center gap-2 disabled:opacity-50"
+              >
+                <Square className="w-4 h-4" />
+                {actionLoading === "stop" ? t("common.loading") : t("servers.stop")}
+              </Button>
+            )}
+            <Button
+              variant="secondary"
+              onClick={() => doAction("restart")}
+              disabled={!!actionLoading || isNodeUnreachable || isTransientLifecycle}
+              className="inline-flex min-h-[44px] md:min-h-[38px] items-center gap-2 disabled:opacity-50"
+            >
+              <RefreshCw className="w-4 h-4" />
+              {actionLoading === "restart" ? t("common.loading") : t("servers.restart")}
             </Button>
-            <Button variant="secondary" size="sm" type="button" onClick={() => setMobileOverviewOpen((value) => !value)} aria-expanded={mobileOverviewOpen} className="inline-flex min-h-11 items-center md:hidden">
-              {mobileOverviewOpen ? t("serverDetail.hideServerOverview") : t("serverDetail.showServerOverview")}
+
+            {/* Desktop: gedocktes Rechts-Panel ein/aus; Mobil/Tablet: Slide-Over-Drawer */}
+            <Button
+              variant="secondary"
+              type="button"
+              onClick={() => setDesktopTechnikOpen((v) => !v)}
+              aria-expanded={desktopTechnikOpen}
+              className="hidden xl:inline-flex min-h-[38px] items-center gap-1.5"
+            >
+              <SlidersHorizontal className="w-4 h-4" aria-hidden="true" />
+              <span>{t("serverDetail.technikPanel")}</span>
             </Button>
+            <Button
+              variant="secondary"
+              type="button"
+              onClick={() => setMobileTechnikOpen(true)}
+              aria-expanded={mobileTechnikOpen}
+              className="inline-flex xl:hidden min-h-[44px] md:min-h-[38px] items-center gap-1.5"
+            >
+              <SlidersHorizontal className="w-4 h-4" aria-hidden="true" />
+              <span>{t("serverDetail.technikPanel")}</span>
+            </Button>
+
+            <ActionMenu
+              label={t("serverDetail.moreActions")}
+              ariaLabel={t("serverDetail.moreActions")}
+              items={moreActionItems}
+              variant="secondary"
+              surface="dna"
+              align="end"
+              iconOnly
+            />
           </div>
-        </section>
-      )}
+        </div>
+
+        {/* Kompakte Telemetrie- & Kontexthinweis-Zeile */}
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-outline/50 pt-2 text-xs text-on-surface-variant">
+          <span className="font-medium text-on-surface">{gameName(server.game_type)}</span>
+          {server.node_name ? (
+            <>
+              <span aria-hidden="true">·</span>
+              <span>{t("servers.node")}: {server.node_name}</span>
+            </>
+          ) : null}
+          <span aria-hidden="true">·</span>
+          <span className="font-mono">
+            CPU {status?.cpu_percent != null ? `${status.cpu_percent.toFixed(1)}%` : "—"}
+          </span>
+          <span aria-hidden="true">·</span>
+          <span className="font-mono">
+            RAM {status?.ram_mb != null ? formatMb(status.ram_mb) : "—"}
+          </span>
+          <span aria-hidden="true">·</span>
+          <span className="font-mono">
+            Disk {status?.disk_used_mb != null ? formatMb(status.disk_used_mb) : "—"}
+          </span>
+          {effectiveStatus === "running" ? (
+            <>
+              <span aria-hidden="true">·</span>
+              <UptimeDisplay server={server} label="" compact />
+            </>
+          ) : null}
+        </div>
+      </header>
 
       {/* Auth-Setup-Banner: sichtbar waehrend der Container auf interaktiven Auth-Flow wartet */}
       {server.auth_required && <AuthSetupBanner serverId={server.id} />}
@@ -839,9 +1011,7 @@ export function ServerDetail() {
               {t("servers.bindIp.startBlockedBody")}
             </p>
           </div>
-          <Button size="sm"
-            onClick={() => setShowEditNetwork(true)}
-          >
+          <Button size="sm" onClick={() => setShowEditNetwork(true)}>
             {t("servers.bindIp.assignNow")}
           </Button>
         </div>
@@ -864,333 +1034,89 @@ export function ServerDetail() {
               {t("servers.guardian.syncErrorTitle")}
             </p>
             <p className="font-body-md text-sm text-on-surface-variant">
-              {t(`servers.guardian.errors.${guardianSyncError.code}`, { defaultValue: `${guardianSyncError.code}: ${guardianSyncError.message}` })}
+              {t(`servers.guardian.errors.${guardianSyncError.code}`, {
+                defaultValue: `${guardianSyncError.code}: ${guardianSyncError.message}`,
+              })}
             </p>
           </div>
         </div>
       )}
 
-      {/* Dashboard-Übersicht: Aktionen, Kennzahlen, Netzwerk und Zugangsdaten */}
-      <div className={`space-y-6 ${activeTab === "files" && !mobileOverviewOpen ? "hidden md:block" : "block"}`}>
-      {/* Actions */}
-      <div className="flex gap-3 flex-wrap">
-        {effectiveStatus !== "running" && effectiveStatus !== "installing" && effectiveStatus !== "starting" && effectiveStatus !== "stopping" && effectiveStatus !== "restarting" && effectiveStatus !== "queued" && (
-          startHinweis ? (
-            <Kurzinfo text={startHinweis} seite="anfang">{startKnopf}</Kurzinfo>
-          ) : startKnopf
-        )}
-        {effectiveStatus === "running" && (
-          <Button variant="destructive"
-            onClick={() => doAction("stop")}
-            disabled={!!actionLoading || isNodeUnreachable}
-            className="flex items-center gap-2 disabled:opacity-50"
-          >
-            <Square className="w-4 h-4" />
-            {actionLoading === "stop" ? t("common.loading") : t("servers.stop")}
-          </Button>
-        )}
-        <Button variant="secondary"
-          onClick={() => doAction("restart")}
-          disabled={!!actionLoading || isNodeUnreachable || ["installing", "starting", "stopping", "restarting", "queued"].includes(effectiveStatus)}
-          className="flex items-center gap-2 disabled:opacity-50"
-        >
-          <RefreshCw className="w-4 h-4" />
-          {actionLoading === "restart"
-            ? t("common.loading")
-            : t("servers.restart")}
-        </Button>
-        {/* AUFGABE 5: Kill-Button nur bei running|stopping|restarting (destructive-Variante), mit confirm */}
-        {["starting", "running", "stopping", "restarting"].includes(effectiveStatus) && (
-          <Button variant="destructive"
-            onClick={handleKill}
-            disabled={!!actionLoading || isNodeUnreachable}
-            className="flex items-center gap-2 disabled:opacity-50"
-          >
-            {actionLoading === "kill" ? t("common.loading") : t("servers.kill")}
-          </Button>
-        )}
-        {effectiveStatus !== "installing" && effectiveStatus !== "queued" && (
-          <Button variant="secondary"
-            onClick={handleInstall}
-            disabled={!!actionLoading || isNodeUnreachable}
-            className="flex items-center gap-2 disabled:opacity-50"
-          >
-            <Download className="w-4 h-4" />
-            {actionLoading === "install" ? t("common.loading") : installLabel}
-          </Button>
-        )}
-
-        {effectiveStatus !== "installing" && effectiveStatus !== "queued" && (
-          effectiveStatus !== "stopped" ? (
-            <Kurzinfo text={t("servers.mustStopToSwitch")}>{wechselKnopf}</Kurzinfo>
-          ) : wechselKnopf
-        )}
-
-        {hasServerFiles && showServerFileUpdates && (
-          <Button variant="secondary"
-            type="button"
-            onClick={() => void checkServerFileUpdates()}
-            disabled={!!actionLoading || serverUpdateCheckLoading || isNodeUnreachable}
-            className="flex items-center gap-2 disabled:opacity-50"
-          >
-            <RefreshCw className={`w-4 h-4 ${serverUpdateCheckLoading ? "animate-spin" : ""}`} />
-            {serverUpdateCheckLoading
-              ? t("common.loading")
-              : t("servers.checkServerFileUpdates")}
-          </Button>
-        )}
-
-        {/* Clean Update Badge: nur Server-Datei-/Blueprint-Updates (Blueprint-driven, nie Mods).
-            Stabil via Ref (kein Flicker durch Poll/Cache-Race). */}
-        {serverUpdateBadge?.available &&
-          serverUpdateBadge.reason !== "missing" &&
-          hasServerFiles &&
-          showServerFileUpdates && (
-          <div className="flex items-center gap-2 self-center">
-            {serverUpdateBadge.reason ? (
-              <Kurzinfo text={serverUpdateBadge.reason}>{updateHinweis}</Kurzinfo>
-            ) : updateHinweis}
-          </div>
-        )}
-
-        <Button variant="destructive"
-          onClick={handleDelete}
-          disabled={!!actionLoading}
-          className="flex items-center gap-2 disabled:opacity-50 ml-auto"
-        >
-          <Trash2 className="w-4 h-4" />
-          {t("common.delete")}
-        </Button>
-      </div>
-
-      {/* Stats (CPU / RAM / Disk) — Player-Stat ist absichtlich entfernt (KISS, kein A2S) */}
-      <div>
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="font-headline text-body-md text-on-surface flex items-center gap-2">
-            <Cpu className="w-4 h-4 text-on-surface-variant" />
-            {t("serverDetail.resources")}
-          </h3>
-          {showResourceEdit && (
-            <div className="flex items-center gap-2">
-              {isLifecycleBusy && (
-                <span className="font-body-md text-xs text-on-surface-variant">
-                  {t("serverDetail.resourceEditor.lifecycleBusy")}
-                </span>
-              )}
-              <Button variant="secondary" size="sm"
-                onClick={openResourceEditor}
-                disabled={isLifecycleBusy || !!actionLoading}
-                className="disabled:opacity-50"
-                data-testid="resource-edit-btn"
-              >
-                {t("common.edit")}
-              </Button>
-            </div>
-          )}
-        </div>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <ResourceMetricCard
-            label="CPU"
-            value={status?.cpu_percent != null ? `${status.cpu_percent.toFixed(1)}%` : "—"}
-            hint={`${t("serverDetail.limit")}: ${configuredCpuLimit != null ? `${configuredCpuLimit}%` : t("common.unlimited")}`}
-            icon={<Cpu className="h-4 w-4" />}
-            percent={configuredCpuLimit != null ? cpuUsageOfLimit : undefined}
-            heat
-          />
-          <ResourceMetricCard
-            label="RAM"
-            value={status?.ram_mb != null ? formatMb(status.ram_mb) : "—"}
-            hint={`${t("serverDetail.limit")}: ${configuredRamLimit != null ? formatMb(configuredRamLimit) : t("common.unlimited")}`}
-            icon={<Database className="h-4 w-4" />}
-            percent={configuredRamLimit != null ? ramUsageOfLimit : undefined}
-            heat
-          />
-          <ResourceMetricCard
-            label="Disk"
-            value={status?.disk_used_mb != null ? formatMb(status.disk_used_mb) : "—"}
-            hint={configuredDiskLimit != null ? `${t("serverDetail.limit")}: ${configuredDiskLimit} GB` : t("common.unlimited")}
-            icon={<HardDrive className="h-4 w-4" />}
-            percent={configuredDiskLimit != null ? diskUsageOfLimit : undefined}
-            heat
-          />
-          <ResourceMetricCard
-            label={t("serverDetail.uptime", { defaultValue: "Uptime" })}
-            value={effectiveStatus === "running" ? <UptimeDisplay server={server} label="" compact /> : "—"}
-            hint={effectiveStatus === "running"
-              ? t("serverDetail.sinceLastStart", { defaultValue: "Seit letztem Start" })
-              : t(`servers.status.${effectiveStatus}`, { defaultValue: effectiveStatus })}
-            icon={<Clock className="h-4 w-4" />}
-          />
-      </div>
-      </div>
-
-      {/* Network */}
-      <div className="msm-card p-5">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
-            <Network className="w-4 h-4 text-on-surface-variant" />
-            <h3 className="font-headline text-body-md text-on-surface">
-              {t("servers.network")}
-            </h3>
-          </div>
-          {effectiveStatus === "running" ? (
-            <Kurzinfo text={t("servers.networkEditRequiresStopped")} seite="ende">{netzwerkKnopf}</Kurzinfo>
-          ) : netzwerkKnopf}
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-          <div>
-            <p className="font-label-md text-label-md text-on-surface-variant uppercase tracking-wider mb-1">
-              {t("servers.node")}
-            </p>
-            <p className="font-headline text-body-md text-primary break-all">
-              {server.node_name || t("servers.nodeUnknown", { defaultValue: "—" })}
-            </p>
-          </div>
-          <div>
-            <p className="font-label-md text-label-md text-on-surface-variant uppercase tracking-wider mb-1">
-              {t("servers.publicBindIp")}
-            </p>
-            <p className="font-headline text-body-md text-primary break-all">
-              {server.public_bind_ip || (
-                <span className="text-status-warning">
-                  {t("servers.bindIp.unset")}
-                </span>
-              )}
-            </p>
-          </div>
-          {server.ports && server.ports.length > 0 ? (
-            server.ports.map((p) => {
-              const baseRole = labelRole(p.role);
-              const label = baseRole === 'game'
-                ? t('servers.gamePort')
-                : baseRole === 'peer'
-                ? t('servers.peerPort', { defaultValue: 'Peer-Port' })
-                : baseRole === 'query'
-                ? t('servers.queryPort')
-                : baseRole === 'rcon'
-                ? t('servers.rconPort')
-                : `${p.role.replace('_', ' ').toUpperCase()}`;
-              return (
-                <div key={`${p.role}-${p.protocol}`}>
-                  <p className="font-label-md text-label-md text-on-surface-variant uppercase tracking-wider mb-1">
-                    {label}
-                  </p>
-                  {/* Dieselbe Groesse wie Node und Bind-IP daneben. Hier stand
-                      `text-display-sm` — 36px fett gegen 16px normal in
-                      derselben Rasterzeile. Eine Portnummer ist kein
-                      Kennzahlwert wie auf dem Dashboard, sondern ein Datenfeld
-                      unter anderen. */}
-                  <p className="font-headline text-body-md text-primary">
-                    {p.port ?? "-"}{" "}
-                    <span className="text-sm font-body-md text-on-surface-variant">
-                      {p.protocol.toUpperCase()}
-                    </span>
-                  </p>
-                </div>
-              );
-            })
-          ) : (
-            <>
-              <div>
-                <p className="font-label-md text-label-md text-on-surface-variant uppercase tracking-wider mb-1">
-                  {t("servers.gamePort")}
-                </p>
-                <p className="font-headline text-body-md text-primary">
-                  {server.game_port ?? "-"}{" "}
-                  <span className="text-sm font-body-md text-on-surface-variant">
-                    UDP
-                  </span>
-                </p>
-              </div>
-              <div>
-                <p className="font-label-md text-label-md text-on-surface-variant uppercase tracking-wider mb-1">
-                  {t("servers.queryPort")}
-                </p>
-                <p className="font-headline text-body-md text-primary">
-                  {server.query_port ?? "-"}{" "}
-                  <span className="text-sm font-body-md text-on-surface-variant">
-                    UDP
-                  </span>
-                </p>
-              </div>
-              <div>
-                <p className="font-label-md text-label-md text-on-surface-variant uppercase tracking-wider mb-1">
-                  {t("servers.rconPort")}
-                </p>
-                <p className="font-headline text-body-md text-primary">
-                  {server.rcon_port ?? "-"}{" "}
-                  <span className="text-sm font-body-md text-on-surface-variant">
-                    TCP
-                  </span>
-                </p>
-              </div>
-            </>
-          )}
-        </div>
-      </div>
-      {/* Zugangsdaten: erscheint nur, wenn dieser Server welche braucht
-          oder bereits eine eigene Zuordnung hat (Zielpunkt 17.4). */}
-      <ServerCredentialsPanel serverId={serverId} canManage={canManageCredentials} />
-
-      </div>
-
-      {/* Reiter-Navigation: auf Desktop als Leiste, auf Mobilgeräten als barrierefreies Dropdown */}
+      {/* Reiter-Navigation direkt unter dem Server-Deck */}
       <ServerDetailTabs
         tabs={tabs}
         activeTab={activeTab}
         onSelect={setActiveTab}
         ariaLabel={server.name}
+        moreLabel={t("serverDetail.moreTabs")}
       />
 
-      <div>
-        {activeTab === "files" && <FileManager serverId={serverId} />}
-        {activeTab === "console" && <ServerConsolePanel serverId={serverId} />}
-        {activeTab === "exec" && gameInfo?.enable_exec && (
-          <ServerConsolePanel serverId={serverId} mode="exec" />
-        )}
-        {activeTab === "mods" && showModTab && (
-          <ModManager serverId={serverId} gameInfo={gameInfo} />
-        )}
-        {activeTab === "restarts" && (
-          <ServerRestartPanel
-            server={server}
-            serverId={serverId}
-            onSaved={fetchAll}
-          />
-        )}
-        {activeTab === "backups" && <Backups serverId={serverId} />}
-        {activeTab === "databases" && <DatabaseManager serverId={serverId} dedicated={isDatabaseServer} />}
-        {activeTab === "webhooks" && <OutgoingWebhooksPanel serverId={serverId} />}
-        {activeTab === "memory" && showMemoryTab && (
-          <AiMemoryManager
-            scope={{
-              kind: "server_shared",
-              serverId,
-              canManage: canWriteServerConfig,
-            }}
-          />
-        )}
-        {activeTab === "guardian" && (
-          <GuardianTab server={server} onRefreshServer={fetchAll} />
-        )}
+      {/* Zweispaltiger Arbeitsbereich: Aktiver Reiter links + optionales Technik-&-Limits-Panel rechts */}
+      <div className="flex flex-col xl:flex-row gap-6 items-start">
+        <div role="tabpanel" aria-label={activeTabLabel} className="flex-1 min-w-0 w-full">
+          {activeTab === "files" && <FileManager serverId={serverId} />}
+          {activeTab === "console" && <ServerConsolePanel serverId={serverId} />}
+          {activeTab === "exec" && gameInfo?.enable_exec && (
+            <ServerConsolePanel serverId={serverId} mode="exec" />
+          )}
+          {activeTab === "mods" && showModTab && (
+            <ModManager serverId={serverId} gameInfo={gameInfo} />
+          )}
+          {activeTab === "restarts" && (
+            <ServerRestartPanel
+              server={server}
+              serverId={serverId}
+              onSaved={fetchAll}
+            />
+          )}
+          {activeTab === "backups" && <Backups serverId={serverId} />}
+          {activeTab === "databases" && <DatabaseManager serverId={serverId} dedicated={isDatabaseServer} />}
+          {activeTab === "webhooks" && <OutgoingWebhooksPanel serverId={serverId} />}
+          {activeTab === "memory" && showMemoryTab && (
+            <AiMemoryManager
+              scope={{
+                kind: "server_shared",
+                serverId,
+                canManage: canWriteServerConfig,
+              }}
+            />
+          )}
+          {activeTab === "guardian" && (
+            <GuardianTab server={server} onRefreshServer={fetchAll} />
+          )}
+        </div>
+
+        <aside
+          aria-label={t("serverDetail.technikPanel")}
+          className={desktopTechnikOpen ? "hidden xl:block xl:w-[360px] xl:shrink-0" : "hidden"}
+        >
+          <ServerTechnikPanel {...technikPanelProps} />
+        </aside>
       </div>
 
-      {/* Edit-Network Modal */}
-      {showEditNetwork && (
-        <div className="msm-modal-overlay overflow-y-auto">
-          <div className="msm-card w-full max-w-lg p-6 my-8">
-            <h2 className="font-headline text-headline-md text-primary mb-1">
-              {t("servers.editNetworkTitle")}
-            </h2>
-            <p className="font-body-md text-sm text-on-surface-variant mb-6">
-              {t("servers.editNetworkDescription")}
-            </p>
-            {effectiveStatus === "running" && (
-              <div className="mb-4 p-3 rounded-lg bg-status-warning/10 border border-status-warning/30 text-status-warning text-sm">
-                {t("servers.networkEditRequiresStopped")}
-              </div>
-            )}
-            <form onSubmit={handleSaveNetwork} className="space-y-4">
+      {/* Mobil & Tablet (< xl): Technik & Limits als Design-DNA Bottom-Sheet/Drawer */}
+      <Blattmenue
+        offen={mobileTechnikOpen}
+        onSchliessen={() => setMobileTechnikOpen(false)}
+        titel={t("serverDetail.technikPanel")}
+      >
+        {mobileTechnikOpen ? <ServerTechnikPanel {...technikPanelProps} /> : null}
+      </Blattmenue>
+
+      {/* Netzwerk-Dialog mit Design-DNA Dialog & Input */}
+      <Dialog open={showEditNetwork} onOpenChange={setShowEditNetwork}>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{t("servers.editNetworkTitle")}</DialogTitle>
+            <DialogDescription>{t("servers.editNetworkDescription")}</DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleSaveNetwork}>
+            <div className="p-6 space-y-4">
+              {effectiveStatus === "running" && (
+                <div className="p-3 rounded-lg bg-status-warning/10 border border-status-warning/30 text-status-warning text-sm">
+                  {t("servers.networkEditRequiresStopped")}
+                </div>
+              )}
               <div>
                 <label className="block font-label-md text-label-md text-on-surface-variant mb-1.5 uppercase tracking-wider">
                   {t("servers.publicBindIp")}
@@ -1232,39 +1158,29 @@ export function ServerDetail() {
               </div>
               {(() => {
                 const portDefs = gameInfo?.ports ?? [
-                  { name: 'game', protocol: 'udp' },
-                  { name: 'query', protocol: 'udp' },
-                  { name: 'rcon', protocol: 'tcp' },
-                ]
+                  { name: "game", protocol: "udp" },
+                  { name: "query", protocol: "udp" },
+                  { name: "rcon", protocol: "tcp" },
+                ];
                 const mappedPorts = portDefs.length > 0
                   ? mapBlueprintPorts(portDefs)
                   : (server.ports ?? []).map((p) => ({
-                      name: 'custom' as const,
-                      protocol: p.protocol as 'tcp' | 'udp',
+                      name: "custom" as const,
+                      protocol: p.protocol as "tcp" | "udp",
                       mappedRole: p.role,
                     }));
-                if (mappedPorts.length === 0) return null
+                if (mappedPorts.length === 0) return null;
 
                 return (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     {mappedPorts.map((p) => {
                       const role = p.mappedRole;
-                      const isLegacy = role === 'game' || role === 'query' || role === 'rcon';
+                      const isLegacy = role === "game" || role === "query" || role === "rcon";
                       const val = isLegacy
-                        ? (role === 'game' ? networkForm.game_port : role === 'query' ? networkForm.query_port : networkForm.rcon_port)
-                        : (networkForm.ports[role] || '');
+                        ? (role === "game" ? networkForm.game_port : role === "query" ? networkForm.query_port : networkForm.rcon_port)
+                        : (networkForm.ports[role] || "");
                       const protocol = networkForm.protocols[role] || p.protocol;
-                      
-                      const baseRole = labelRole(role);
-                      const label = baseRole === 'game'
-                        ? t('servers.gamePort')
-                        : baseRole === 'peer'
-                        ? t('servers.peerPort', { defaultValue: 'Peer-Port' })
-                        : baseRole === 'query'
-                        ? t('servers.queryPort')
-                        : baseRole === 'rcon'
-                        ? t('servers.rconPort')
-                        : `${role.replace('_', ' ').toUpperCase()} (${p.protocol.toUpperCase()})`;
+                      const label = formatPortRoleLabel(role, t);
 
                       return (
                         <div key={role}>
@@ -1272,14 +1188,14 @@ export function ServerDetail() {
                             {label}
                           </label>
                           <div className="grid grid-cols-[minmax(0,1fr)_5.5rem] gap-2">
-                            <input
+                            <Input
                               type="number"
                               min={1024}
                               max={65535}
                               value={val}
                               onChange={(e) => {
                                 if (isLegacy) {
-                                  const fieldKey = role === 'game' ? 'game_port' : role === 'query' ? 'query_port' : 'rcon_port';
+                                  const fieldKey = role === "game" ? "game_port" : role === "query" ? "query_port" : "rcon_port";
                                   setNetworkForm({ ...networkForm, [fieldKey]: e.target.value });
                                 } else {
                                   setNetworkForm({
@@ -1291,8 +1207,8 @@ export function ServerDetail() {
                                   });
                                 }
                               }}
-                              className="msm-input"
-                              placeholder={t('servers.portAuto')}
+                              placeholder={t("servers.portAuto")}
+                              aria-label={label}
                             />
                             <Dropdown
                               value={protocol}
@@ -1318,26 +1234,25 @@ export function ServerDetail() {
                   </div>
                 );
               })()}
-              <div className="flex gap-3 pt-2">
-                <Button variant="secondary"
-                  type="button"
-                  className="flex-1"
-                  onClick={() => setShowEditNetwork(false)}
-                >
-                  {t("common.cancel")}
-                </Button>
-                <Button
-                  type="submit"
-                  className="flex-1 disabled:opacity-50"
-                  disabled={savingNetwork || effectiveStatus === "running"}
-                >
-                  {savingNetwork ? t("common.loading") : t("common.save")}
-                </Button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+            </div>
+            <DialogFooter>
+              <Button
+                variant="secondary"
+                type="button"
+                onClick={() => setShowEditNetwork(false)}
+              >
+                {t("common.cancel")}
+              </Button>
+              <Button
+                type="submit"
+                disabled={savingNetwork || effectiveStatus === "running"}
+              >
+                {savingNetwork ? t("common.loading") : t("common.save")}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       {/* Edit-Resource Modal — permission-gated, accessible, polling-stable */}
       {showEditResource && (

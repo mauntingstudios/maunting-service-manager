@@ -8,17 +8,14 @@ import { useHasPermission } from '@/hooks/useHasPermission'
 import { useAuthStore } from '@/stores/authStore'
 import {
   Server as ServerIcon,
-  Activity,
-  MemoryStick,
   CheckCircle2,
   AlertTriangle,
   XCircle,
   Loader2,
-  Clock,
   Network,
   ArrowRight,
 } from 'lucide-react'
-import { UptimeDisplay } from '@/components/server/UptimeDisplay'
+import { ServerCard } from '@/components/server/ServerCard'
 import { TageszeitHintergrund } from '@/components/layout/TageszeitHintergrund'
 import { begruessungSchluessel, tagesSeed, useTageszeitMotiv } from '@/lib/tageszeit'
 import { ProgressBar, StackedProgressBar, Segment } from '@maunting/ui'
@@ -456,50 +453,12 @@ export function Dashboard({ ohneHintergrund = false }: { ohneHintergrund?: boole
       {servers.length > 0 && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           {servers.map((server) => (
-            <Link
+            <ServerCard
               key={server.id}
-              to={`/servers/${server.id}`}
-              className="msm-card p-5 block hover:border-primary/40 hover:bg-surface-container-high/40 transition-all duration-200 group cursor-pointer"
-            >
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <ServerIcon className="w-4 h-4 text-on-surface-variant group-hover:text-primary transition-colors" />
-                  <h3 className="font-headline text-body-md text-on-surface group-hover:text-primary transition-colors">{server.name}</h3>
-                </div>
-                <span className={`font-mono-sm text-mono-sm px-2 py-0.5 rounded-full border ${
-                  server.status === 'running'
-                    ? 'bg-status-success/10 border-status-success/30 text-status-success'
-                    : server.status === 'stopped'
-                    ? 'bg-surface-container-highest border-outline text-on-surface-variant'
-                    : 'bg-status-warning/10 border-status-warning/30 text-status-warning'
-                }`}>
-                  {t(`servers.status.${server.status}`, { defaultValue: server.status })}
-                </span>
-              </div>
-              <p className="font-body-md text-sm text-on-surface-variant mb-4">
-                {games.find((g) => g.id === server.game_type)?.name || server.game_type}
-              </p>
-              <div className="grid grid-cols-2 gap-4 text-sm">
-                <div className="flex items-center gap-2 text-on-surface-variant">
-                  <Activity className="w-3.5 h-3.5" />
-                  <span className="font-body-md">
-                    CPU: {server.cpu_limit_percent ? `${server.cpu_limit_percent}%` : t('common.unlimited')}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2 text-on-surface-variant">
-                  <MemoryStick className="w-3.5 h-3.5" />
-                  <span className="font-body-md">
-                    RAM: {server.ram_limit_mb ? `${server.ram_limit_mb} MB` : t('common.unlimited')}
-                  </span>
-                </div>
-                {server.status === 'running' && (
-                  <div className="flex items-center gap-2 text-on-surface-variant col-span-2">
-                    <Clock className="w-3.5 h-3.5" />
-                    <UptimeDisplay server={server} label={t('serverDetail.uptime', { defaultValue: 'Uptime' })} />
-                  </div>
-                )}
-              </div>
-            </Link>
+              server={server}
+              gameLabel={games.find((g) => g.id === server.game_type)?.name || server.game_type}
+              variant="dashboard"
+            />
           ))}
         </div>
       )}

@@ -17,6 +17,7 @@ import type { Server, GameInfo } from '@/types'
 
 vi.mock('@/api/client', () => ({
   api: vi.fn(),
+  getRateLimitRemainingMs: vi.fn(() => 0),
   SanitizedApiError: class SanitizedApiError extends Error {
     constructor(msg: string) {
       super(msg)
@@ -247,10 +248,13 @@ describe('ServerDetail permission topology — VAL-UI-002 / VAL-UI-018', () => {
     await waitForServerToLoad()
 
     const hostIp = screen.getByText('127.0.0.1')
-    const gamePort = screen.getByText(/27015/)
+    const gamePorts = screen.getAllByText(/27015/)
 
-    expect(gamePort.className).toContain('text-body-md')
-    expect(gamePort.className).not.toContain('text-display')
+    expect(gamePorts.length).toBeGreaterThanOrEqual(1)
+    for (const gamePort of gamePorts) {
+      expect(gamePort.className).toContain('text-body-md')
+      expect(gamePort.className).not.toContain('text-display')
+    }
     expect(hostIp.className).toContain('text-body-md')
   })
 

@@ -68,4 +68,28 @@ describe('ServerDetailTabs', () => {
     expect(screen.getByRole('tab', { name: 'Konsole' })).toBe(konsole)
     expect(document.activeElement).toBe(konsole)
   })
+
+  it('bündelt sekundäre Reiter im Weitere-Menü und blendet den aktiven sekundären Reiter in der Leiste ein', () => {
+    const onSelect = vi.fn()
+    const mixedTabs = [
+      { key: 'files', label: 'Dateimanager', icon: FileText },
+      { key: 'console', label: 'Konsole', icon: Terminal },
+      { key: 'webhooks', label: 'Webhooks', icon: FileText, secondary: true },
+    ]
+
+    const { rerender } = render(
+      <ServerDetailTabs tabs={mixedTabs} activeTab="files" onSelect={onSelect} moreLabel="Weitere" />,
+    )
+
+    expect(screen.queryByRole('tab', { name: 'Webhooks' })).not.toBeInTheDocument()
+    const moreBtn = screen.getByRole('button', { name: 'Weitere' })
+    fireEvent.click(moreBtn)
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Webhooks' }))
+    expect(onSelect).toHaveBeenCalledWith('webhooks')
+
+    rerender(
+      <ServerDetailTabs tabs={mixedTabs} activeTab="webhooks" onSelect={onSelect} moreLabel="Weitere" />,
+    )
+    expect(screen.getByRole('tab', { name: 'Webhooks' })).toHaveAttribute('aria-selected', 'true')
+  })
 })

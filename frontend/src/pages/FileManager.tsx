@@ -3,6 +3,7 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   ArchiveRestore,
+  ArrowLeft,
   Download,
   FilePlus2,
   FolderInput,
@@ -29,6 +30,7 @@ import { formatBytes, formatZeitpunkt } from '@/lib/format'
 import { still } from '@/lib/still'
 import { FileTree } from '@/components/server/FileTree'
 import { FileEditorWorkspace } from '@/components/server/FileEditorWorkspace'
+import { FileExplorerView } from '@/components/server/FileExplorerView'
 import {
   detectLineEnding,
   fileName,
@@ -136,6 +138,7 @@ export function FileManager({ serverId }: FileManagerProps) {
   const [autosave, setAutosave] = useState(true)
   const [treeOpen, setTreeOpen] = useState(false)
   const [inspectorOpen, setInspectorOpen] = useState(false)
+  const [showExplorer, setShowExplorer] = useState(true)
   const [dragOver, setDragOver] = useState(false)
   const [uploads, setUploads] = useState<UploadJob[]>([])
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null)
@@ -276,6 +279,17 @@ export function FileManager({ serverId }: FileManagerProps) {
     }
   }, [serverId])
 
+  const enterDirectory = useCallback((path: string) => {
+    setCurrentPath(path)
+    setSearchQuery('')
+    setExpanded((current) => {
+      const next = new Set(current)
+      next.add(path)
+      return next
+    })
+    if (!nodes[path]) void loadDirectory(path)
+  }, [loadDirectory, nodes])
+
   const toggleDirectory = useCallback((path: string) => {
     setCurrentPath(path)
     setSearchQuery('')
@@ -291,6 +305,7 @@ export function FileManager({ serverId }: FileManagerProps) {
   const openFile = useCallback(async (path: string) => {
     const existing = tabsRef.current.find((tab) => tab.path === path)
     setActivePath(path)
+    setShowExplorer(false)
     setTreeOpen(false)
     setSelectedEntry(() => {
       const parent = parentPath(path)
@@ -696,31 +711,55 @@ export function FileManager({ serverId }: FileManagerProps) {
   const activeTab = tabs.find((tab) => tab.path === activePath) ?? null
   const selectedActions = actionItems(selectedEntry)
 
+  const isEditorView = !showExplorer && activeTab !== null
+
   const newItems: ActionMenuItem[] = [
     { key: 'file', label: t('files.newFile'), icon: <FilePlus2 className="h-4 w-4" />, onSelect: createFile },
     { key: 'folder', label: t('files.newFolder'), icon: <FolderPlus className="h-4 w-4" />, onSelect: createFolder },
     { key: 'upload', label: t('files.upload'), icon: <Upload className="h-4 w-4" />, separatorBefore: true, onSelect: () => fileInputRef.current?.click() },
   ]
 
+  const openContextMenuForEntry = (event: React.MouseEvent, entry: FileEntry, parent: string) => {
+    event.preventDefault()
+    contextTriggerRef.current = event.currentTarget as HTMLElement
+    const selection = { entry, parent }
+    setSelectedEntry(selection)
+    setContextMenu({ ...selection, x: event.clientX, y: event.clientY })
+  }
+
   return (
     <div className="relative overflow-visible rounded-xl border border-outline-variant/80 bg-surface-container-lowest/65 shadow-panel">
       <header className="flex min-h-14 flex-wrap items-center gap-2 border-b border-outline-variant bg-surface-container-low/80 px-3 py-2">
+        {isEditorView && (
+          <Button
+            variant="secondary"
+            size="sm"
+            type="button"
+            onClick={() => setShowExplorer(true)}
+            className="inline-flex items-center gap-1.5 min-h-[44px] sm:min-h-[36px]"
+          >
+            <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+            <span>{t('files.backToFiles')}</span>
+          </Button>
+        )}
         {showWriteActions && <div><ActionMenu label={t('files.new')} icon={<FilePlus2 className="h-4 w-4" />} items={newItems} compact /></div>}
         <Button variant="ghost" size="sm" type="button" onClick={() => void refreshWorkspace()} className="inline-flex items-center gap-2 h-11 sm:h-auto" aria-label={t('common.refresh')}><RefreshCw className="h-3.5 w-3.5" /> <span>{t('common.refresh')}</span></Button>
-        {selectedActions.length > 0 && <div><ActionMenu label={t('files.more')} icon={<MoreHorizontal className="h-4 w-4" />} items={selectedActions} compact /></div>}
-        <div className="flex w-full flex-wrap items-center gap-2 border-t border-outline-variant/70 pt-2 sm:ml-auto sm:w-auto sm:border-0 sm:pt-0">
-          <div className="flex min-h-11 items-center gap-2 rounded-md px-1 sm:min-h-8">
-            <div className="flex flex-col leading-tight">
-              <span className="text-label-sm text-on-surface">{autosave ? t('files.autosaveOn') : t('files.autosaveOff')}</span>
-              <span className={`text-label-sm ${activeTab?.saveState === 'clean' ? 'text-status-success' : 'text-on-surface-variant'}`}>
-                {activeTab?.saveState === 'clean' ? t('files.allSaved') : activeTab?.saveState === 'conflict' ? t('files.conflict') : t('files.autosave')}
-              </span>
+        {isEditorView && selectedActions.length > 0 && <div><ActionMenu label={t('files.more')} icon={<MoreHorizontal className="h-4 w-4" />} items={selectedActions} compact /></div>}
+        {isEditorView && (
+          <div className="flex w-full flex-wrap items-center gap-2 border-t border-outline-variant/70 pt-2 sm:ml-auto sm:w-auto sm:border-0 sm:pt-0">
+            <div className="flex min-h-11 items-center gap-2 rounded-md px-1 sm:min-h-8">
+              <div className="flex flex-col leading-tight">
+                <span className="text-label-sm text-on-surface">{autosave ? t('files.autosaveOn') : t('files.autosaveOff')}</span>
+                <span className={`text-label-sm ${activeTab?.saveState === 'clean' ? 'text-status-success' : 'text-on-surface-variant'}`}>
+                  {activeTab?.saveState === 'clean' ? t('files.allSaved') : activeTab?.saveState === 'conflict' ? t('files.conflict') : t('files.autosave')}
+                </span>
+              </div>
+              <Switch checked={autosave} onCheckedChange={setAutosave} disabled={!canWrite} aria-label={t('files.autosave')} className="before:absolute before:-inset-x-2 before:-inset-y-3" />
             </div>
-            <Switch checked={autosave} onCheckedChange={setAutosave} disabled={!canWrite} aria-label={t('files.autosave')} className="before:absolute before:-inset-x-2 before:-inset-y-3" />
+            <Button variant="ghost" size="sm" ref={treeTriggerRef} type="button" onClick={() => { setInspectorOpen(false); setTreeOpen((value) => !value) }} className="inline-flex items-center justify-center gap-2" aria-label={t('files.showTree')} aria-expanded={treeOpen}><Menu className="h-4 w-4" /><span>{t('files.filesDrawer')}</span></Button>
+            <Button variant="ghost" size="sm" ref={inspectorTriggerRef} type="button" onClick={() => { setTreeOpen(false); setInspectorOpen((value) => !value) }} className="inline-flex items-center justify-center gap-2 xl:hidden" aria-label={t('files.showInspector')} aria-expanded={inspectorOpen}><Info className="h-4 w-4" /><span>{t('files.detailsDrawer')}</span></Button>
           </div>
-          <Button variant="ghost" size="sm" ref={treeTriggerRef} type="button" onClick={() => { setInspectorOpen(false); setTreeOpen((value) => !value) }} className="inline-flex items-center justify-center gap-2 lg:hidden" aria-label={t('files.showTree')} aria-expanded={treeOpen}><Menu className="h-4 w-4" /><span>{t('files.filesDrawer')}</span></Button>
-          <Button variant="ghost" size="sm" ref={inspectorTriggerRef} type="button" onClick={() => { setTreeOpen(false); setInspectorOpen((value) => !value) }} className="inline-flex items-center justify-center gap-2 xl:hidden" aria-label={t('files.showInspector')} aria-expanded={inspectorOpen}><Info className="h-4 w-4" /><span>{t('files.detailsDrawer')}</span></Button>
-        </div>
+        )}
         <input ref={fileInputRef} type="file" multiple className="hidden" onChange={(event) => { enqueueUpload(event.target.files); event.target.value = '' }} />
       </header>
 
@@ -731,7 +770,10 @@ export function FileManager({ serverId }: FileManagerProps) {
           stamm={{ key: '', label: t('files.serverFiles') }}
           hochLabel={t('files.parentFolder')}
           teile={breadcrumbs.map((segment, index) => ({ key: breadcrumbs.slice(0, index + 1).join('/'), label: segment }))}
-          onWaehlen={toggleDirectory}
+          onWaehlen={(path) => {
+            enterDirectory(path)
+            setShowExplorer(true)
+          }}
           kannAblegen={() => canWrite}
           onAblegen={(destination, data) => void dropIntoDirectory(destination, data)}
         />
@@ -739,15 +781,11 @@ export function FileManager({ serverId }: FileManagerProps) {
       </div>
 
       <div
-        className={`relative grid min-h-[560px] grid-cols-1 lg:h-[clamp(560px,calc(100vh-300px),760px)] lg:min-h-0 lg:overflow-hidden ${
-          activeTab?.isSqlite
-            ? 'lg:grid-cols-[280px_minmax(0,1fr)] xl:grid-cols-[260px_minmax(0,1fr)]'
-            : 'lg:grid-cols-[280px_minmax(0,1fr)] xl:grid-cols-[260px_minmax(0,1fr)_230px]'
-        }`}
+        className="relative"
         onDragOver={(event) => {
           if (!canWrite) return
           event.preventDefault()
-          // Verschieben im Baum ist kein Hochladen.
+          // Verschieben im Explorer/Baum ist kein Hochladen.
           if (!event.dataTransfer.types.includes('application/x-msm-path')) setDragOver(true)
         }}
         // Beim Wechsel auf ein Kind kommt `dragleave` auch; erst das Verlassen der Fläche zählt.
@@ -758,83 +796,135 @@ export function FileManager({ serverId }: FileManagerProps) {
           if (!event.dataTransfer.types.includes('application/x-msm-path')) enqueueUpload(event.dataTransfer.files)
         }}
       >
-        {(treeOpen || inspectorOpen) && <button type="button" aria-label={t('common.close')} onClick={() => { if (treeOpen) { setTreeOpen(false); window.requestAnimationFrame(() => treeTriggerRef.current?.focus()) } else { setInspectorOpen(false); window.requestAnimationFrame(() => inspectorTriggerRef.current?.focus()) } }} className="fixed inset-0 z-30 cursor-default bg-black/55 backdrop-blur-sm xl:hidden" />}
-        <aside ref={treePanelRef} tabIndex={treeOpen ? -1 : undefined} aria-label={t('files.filesDrawer')} className={`${treeOpen ? 'fixed inset-x-3 bottom-3 top-24 z-40 flex shadow-panel-strong' : 'hidden'} min-h-0 flex-col border-r border-outline-variant bg-surface-container-low/95 outline-none lg:static lg:flex lg:shadow-none`}>
-          <div className="flex min-h-11 items-center gap-2 border-b border-outline-variant p-2.5">
-            <div className="relative min-w-0 flex-1"><Search className="pointer-events-none absolute left-2.5 top-1/2 z-10 h-3.5 w-3.5 -translate-y-1/2 text-on-surface-variant" /><Input type="search" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder={searchMode === 'content' ? t('files.searchContentPlaceholder') : t('files.searchPlaceholder')} aria-label={searchMode === 'content' ? t('files.searchContentPlaceholder') : t('files.searchPlaceholder')} className="pl-8 text-xs max-md:h-11" /></div>
-            <div role="group" aria-label={t('files.searchMode')} className="flex shrink-0 overflow-hidden rounded-lg border border-outline-variant">
-              {(['name', 'content'] as const).map((mode) => (
-                <button
-                  key={mode}
-                  type="button"
-                  aria-pressed={searchMode === mode}
-                  onClick={() => setSearchMode(mode)}
-                  className={`px-2 py-1 text-label-sm ${searchMode === mode ? 'bg-secondary text-on-secondary' : 'text-on-surface-variant hover:bg-surface-container-highest'}`}
-                >
-                  {mode === 'name' ? t('common.name') : t('files.searchByContent')}
-                </button>
-              ))}
-            </div>
-            {treeOpen && <Button variant="ghost" size="sm" type="button" onClick={() => { setTreeOpen(false); window.requestAnimationFrame(() => treeTriggerRef.current?.focus()) }} className="inline-flex items-center justify-center gap-2 lg:hidden" aria-label={t('common.close')}><X className="h-4 w-4" /><span>{t('common.close')}</span></Button>}
-          </div>
-          <div className="min-h-0 flex-1 overflow-y-auto">
-            <FileTree
-              nodes={nodes}
-              expanded={expanded}
-              loadingPaths={loadingPaths}
-              activePath={activePath}
-              searchResults={searchResults}
-              contentMatches={contentMatches}
-              searchTruncated={searchTruncated}
-              emptyLabel={t('files.empty')}
-              searchEmptyLabel={t('files.searchEmpty')}
-              searchTruncatedLabel={t('files.searchTruncated')}
-              onToggle={toggleDirectory}
-              onOpenFile={(path) => void openFile(path)}
-              onContextMenu={(event, entry, parent) => { event.preventDefault(); contextTriggerRef.current = event.currentTarget as HTMLElement; const selection = { entry, parent }; setSelectedEntry(selection); setContextMenu({ ...selection, x: event.clientX, y: event.clientY }) }}
-              onDragStart={handleDragStart}
-              onDropFolder={(event, entry, parent) => void handleDropFolder(event, entry, parent)}
-            />
-          </div>
-          {uploads.length > 0 && <div className="border-t border-outline-variant p-2">{uploads.map((job) => <div key={job.id} className="py-1.5"><div className="flex justify-between gap-2 text-label-sm"><span className="truncate">{job.name}</span><span className={job.status === 'error' ? 'text-status-destructive' : 'text-on-surface-variant'}>{job.status === 'error' ? t('common.error') : `${Math.round(job.fraction * 100)}%`}</span></div><div className="mt-1 h-1 overflow-hidden rounded-full bg-surface-container-highest"><div className={`h-full ${job.status === 'error' ? 'bg-status-destructive' : 'bg-secondary'}`} style={{ width: `${job.fraction * 100}%` }} /></div></div>)}</div>}
-          <footer className="border-t border-outline-variant px-3 py-2 text-label-sm text-on-surface-variant">{t('files.summary', { files: directorySummary.files, folders: directorySummary.folders, size: formatBytes(directorySummary.bytes) })}</footer>
-        </aside>
+        {!isEditorView ? (
+          <FileExplorerView
+            currentPath={currentPath}
+            entries={entries}
+            loading={loadingPaths.has(currentPath)}
+            searchQuery={searchQuery}
+            searchMode={searchMode}
+            searchResults={searchResults}
+            contentMatches={contentMatches}
+            searchTruncated={searchTruncated}
+            canWrite={canWrite}
+            openTabs={tabs}
+            uploads={uploads}
+            isArchive={isArchive}
+            onSearchQueryChange={setSearchQuery}
+            onSearchModeChange={setSearchMode}
+            onEnterDirectory={enterDirectory}
+            onOpenFile={(path) => void openFile(path)}
+            onResumeTab={(path) => {
+              setActivePath(path)
+              setShowExplorer(false)
+            }}
+            onContextMenu={openContextMenuForEntry}
+            onDragStart={handleDragStart}
+            onDropFolder={(event, entry, parent) => void handleDropFolder(event, entry, parent)}
+            actionItemsForEntry={(entry, parent) => actionItems({ entry, parent })}
+            onDownloadEntry={(entry, parent) => downloadEntry({ entry, parent })}
+            onExtractEntry={(entry, parent) => void extractEntry({ entry, parent })}
+            onUploadClick={() => fileInputRef.current?.click()}
+          />
+        ) : (
+          <div
+            className={`relative grid min-h-[560px] grid-cols-1 lg:h-[clamp(560px,calc(100vh-300px),760px)] lg:min-h-0 lg:overflow-hidden ${
+              activeTab?.isSqlite
+                ? 'lg:grid-cols-[minmax(0,1fr)]'
+                : 'lg:grid-cols-[minmax(0,1fr)] xl:grid-cols-[minmax(0,1fr)_250px]'
+            }`}
+          >
+            {(treeOpen || inspectorOpen) && <button type="button" aria-label={t('common.close')} onClick={() => { if (treeOpen) { setTreeOpen(false); window.requestAnimationFrame(() => treeTriggerRef.current?.focus()) } else { setInspectorOpen(false); window.requestAnimationFrame(() => inspectorTriggerRef.current?.focus()) } }} className="fixed inset-0 z-30 cursor-default bg-black/55 backdrop-blur-sm" />}
+            <aside ref={treePanelRef} tabIndex={treeOpen ? -1 : undefined} aria-label={t('files.filesDrawer')} className={`${treeOpen ? 'fixed inset-x-3 bottom-3 top-24 z-40 flex max-w-md shadow-panel-strong' : 'hidden'} min-h-0 flex-col rounded-xl border border-outline-variant bg-surface-container-low/95 outline-none`}>
+              <div className="flex min-h-11 items-center gap-2 border-b border-outline-variant p-2.5">
+                <div className="relative min-w-0 flex-1"><Search className="pointer-events-none absolute left-2.5 top-1/2 z-10 h-3.5 w-3.5 -translate-y-1/2 text-on-surface-variant" /><Input type="search" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder={searchMode === 'content' ? t('files.searchContentPlaceholder') : t('files.searchPlaceholder')} aria-label={searchMode === 'content' ? t('files.searchContentPlaceholder') : t('files.searchPlaceholder')} className="pl-8 text-xs max-md:h-11" /></div>
+                <div role="group" aria-label={t('files.searchMode')} className="flex shrink-0 overflow-hidden rounded-lg border border-outline-variant">
+                  {(['name', 'content'] as const).map((mode) => (
+                    <button
+                      key={mode}
+                      type="button"
+                      aria-pressed={searchMode === mode}
+                      onClick={() => setSearchMode(mode)}
+                      className={`px-2 py-1 text-label-sm ${searchMode === mode ? 'bg-secondary text-on-secondary' : 'text-on-surface-variant hover:bg-surface-container-highest'}`}
+                    >
+                      {mode === 'name' ? t('common.name') : t('files.searchByContent')}
+                    </button>
+                  ))}
+                </div>
+                <Button variant="ghost" size="sm" type="button" onClick={() => { setTreeOpen(false); window.requestAnimationFrame(() => treeTriggerRef.current?.focus()) }} className="inline-flex items-center justify-center gap-2" aria-label={t('common.close')}><X className="h-4 w-4" /><span>{t('common.close')}</span></Button>
+              </div>
+              <div className="min-h-0 flex-1 overflow-y-auto">
+                <FileTree
+                  nodes={nodes}
+                  expanded={expanded}
+                  loadingPaths={loadingPaths}
+                  activePath={activePath}
+                  searchResults={searchResults}
+                  contentMatches={contentMatches}
+                  searchTruncated={searchTruncated}
+                  emptyLabel={t('files.empty')}
+                  searchEmptyLabel={t('files.searchEmpty')}
+                  searchTruncatedLabel={t('files.searchTruncated')}
+                  onToggle={toggleDirectory}
+                  onOpenFile={(path) => void openFile(path)}
+                  onContextMenu={openContextMenuForEntry}
+                  onDragStart={handleDragStart}
+                  onDropFolder={(event, entry, parent) => void handleDropFolder(event, entry, parent)}
+                />
+              </div>
+              <footer className="border-t border-outline-variant px-3 py-2 text-label-sm text-on-surface-variant">{t('files.summary', { files: directorySummary.files, folders: directorySummary.folders, size: formatBytes(directorySummary.bytes) })}</footer>
+            </aside>
 
-        <div className="min-h-0 min-w-0 lg:flex">
-          <FileEditorWorkspace tabs={tabs} activePath={activePath} canWrite={canWrite} serverId={serverId} tabListLabel={t('files.openFiles')} horizontalScrollHint={t('files.horizontalScrollHint')} onActivate={setActivePath} onChange={updateTabContent} onSave={(path) => void saveTab(path)} onClose={(path) => void closeTab(path)} onReload={(path) => void reloadTab(path)} />
-        </div>
+            <div className="min-h-0 min-w-0 lg:flex">
+              <FileEditorWorkspace tabs={tabs} activePath={activePath} canWrite={canWrite} serverId={serverId} tabListLabel={t('files.openFiles')} horizontalScrollHint={t('files.horizontalScrollHint')} onActivate={setActivePath} onChange={updateTabContent} onSave={(path) => void saveTab(path)} onClose={(path) => void closeTab(path)} onReload={(path) => void reloadTab(path)} />
+            </div>
 
-        <aside
-          ref={inspectorPanelRef}
-          tabIndex={inspectorOpen ? -1 : undefined}
-          aria-label={t('files.detailsDrawer')}
-          className={`${
-            inspectorOpen
-              ? 'fixed inset-x-3 bottom-3 top-24 z-40 block overflow-y-auto shadow-panel-strong'
-              : 'hidden'
-          } border-l border-outline-variant bg-surface-container-low/95 outline-none lg:col-span-2 lg:max-h-full lg:overflow-y-auto lg:border-l-0 lg:border-t lg:border-outline-variant ${
-            activeTab?.isSqlite
-              ? 'xl:hidden'
-              : 'xl:static xl:col-span-1 xl:block xl:border-l xl:border-t-0 xl:shadow-none'
-          }`}
-        >
-          <div className="flex min-h-11 items-center justify-between border-b border-outline-variant px-3"><h3 className="text-xs font-semibold text-on-surface">{t('files.details')}</h3>{inspectorOpen && <Button variant="ghost" size="sm" type="button" onClick={() => { setInspectorOpen(false); window.requestAnimationFrame(() => inspectorTriggerRef.current?.focus()) }} className="inline-flex items-center justify-center gap-2 xl:hidden" aria-label={t('common.close')}><X className="h-4 w-4" /><span>{t('common.close')}</span></Button>}</div>
-          {activeTab ? <>
-            <div className="border-b border-outline-variant p-3"><div className="flex items-start gap-2"><ArchiveRestore className="mt-0.5 h-4 w-4 text-secondary" /><div className="min-w-0"><p className="truncate text-xs font-semibold text-on-surface">{fileName(activeTab.path)}</p><p className="mt-0.5 truncate font-mono text-label-sm text-on-surface-variant">{activeTab.path}</p></div></div></div>
-            <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-2 border-b border-outline-variant p-3 text-label-sm"><dt className="text-on-surface-variant">{t('files.modified')}</dt><dd className="text-right text-on-surface">{activeTab.modified ? formatZeitpunkt(activeTab.modified * 1000, i18n.language) : t('files.notAvailable')}</dd><dt className="text-on-surface-variant">{t('files.size')}</dt><dd className="text-right font-mono text-on-surface">{formatBytes(activeTab.size)}</dd><dt className="text-on-surface-variant">{t('files.permissions')}</dt><dd className="text-right font-mono text-on-surface">{activeTab.mode ?? t('files.notAvailable')}</dd><dt className="text-on-surface-variant">{t('files.owner')}</dt><dd className="truncate text-right text-on-surface">{activeTab.owner ?? t('files.notAvailable')}</dd><dt className="text-on-surface-variant">{t('files.group')}</dt><dd className="truncate text-right text-on-surface">{activeTab.group ?? t('files.notAvailable')}</dd></dl>
-            <div className="border-b border-outline-variant p-3">
-              <h4 className="mb-2 text-label-sm font-semibold uppercase tracking-wider text-on-surface-variant">{t('files.versionHistory')}</h4>
-              <Versionsliste
-                versionen={(versions[activeTab.path] ?? []).map((version) => ({ id: version.id, zeit: version.created_at * 1000, groesse: version.size }))}
-                onWiederherstellen={canWrite ? (id) => void restoreVersion(activeTab.path, id) : undefined}
-              />
-            </div>
-            <div className="p-3">
-              <h4 className="mb-2 text-label-sm font-semibold uppercase tracking-wider text-on-surface-variant">{t('files.quickActions')}</h4>
-              <button type="button" onClick={() => { const parent = parentPath(activeTab.path); const parentNodes = Array.isArray(nodes[parent]) ? nodes[parent] : []; const entry = parentNodes.find((item) => item.name === fileName(activeTab.path)); if (entry) downloadEntry({ entry, parent }) }} className="flex min-h-8 w-full items-center gap-2 rounded-md px-2 text-left text-xs text-on-surface-variant hover:bg-surface-container-highest hover:text-on-surface"><Download className="h-3.5 w-3.5" />{t('files.download')}</button>
-            </div>
-          </> : <p className="p-6 text-center text-xs text-on-surface-variant">{t('files.noDetails')}</p>}
-        </aside>
+            <aside
+              ref={inspectorPanelRef}
+              tabIndex={inspectorOpen ? -1 : undefined}
+              aria-label={t('files.detailsDrawer')}
+              className={`${
+                inspectorOpen
+                  ? 'fixed inset-x-3 bottom-3 top-24 z-40 block overflow-y-auto shadow-panel-strong'
+                  : 'hidden'
+              } border-l border-outline-variant bg-surface-container-low/95 outline-none lg:max-h-full lg:overflow-y-auto ${
+                activeTab?.isSqlite
+                  ? 'xl:hidden'
+                  : 'xl:static xl:block xl:border-l xl:border-t-0 xl:shadow-none'
+              }`}
+            >
+              <div className="flex min-h-11 items-center justify-between border-b border-outline-variant px-3"><h3 className="text-xs font-semibold text-on-surface">{t('files.details')}</h3>{inspectorOpen && <Button variant="ghost" size="sm" type="button" onClick={() => { setInspectorOpen(false); window.requestAnimationFrame(() => inspectorTriggerRef.current?.focus()) }} className="inline-flex items-center justify-center gap-2 xl:hidden" aria-label={t('common.close')}><X className="h-4 w-4" /><span>{t('common.close')}</span></Button>}</div>
+              {activeTab ? <>
+                <div className="border-b border-outline-variant p-3"><div className="flex items-start gap-2"><ArchiveRestore className="mt-0.5 h-4 w-4 text-secondary" /><div className="min-w-0"><p className="truncate text-xs font-semibold text-on-surface">{fileName(activeTab.path)}</p><p className="mt-0.5 truncate font-mono text-label-sm text-on-surface-variant">{activeTab.path}</p></div></div></div>
+                <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-2 border-b border-outline-variant p-3 text-label-sm"><dt className="text-on-surface-variant">{t('files.modified')}</dt><dd className="text-right text-on-surface">{activeTab.modified ? formatZeitpunkt(activeTab.modified * 1000, i18n.language) : t('files.notAvailable')}</dd><dt className="text-on-surface-variant">{t('files.size')}</dt><dd className="text-right font-mono text-on-surface">{formatBytes(activeTab.size)}</dd></dl>
+                <details className="border-b border-outline-variant px-3 py-2 text-label-sm">
+                  <summary className="cursor-pointer select-none font-medium text-on-surface-variant hover:text-on-surface">
+                    {t('files.systemDetails')}
+                  </summary>
+                  <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5">
+                    <dt className="text-on-surface-variant">{t('files.permissions')}</dt>
+                    <dd className="text-right font-mono text-on-surface">{activeTab.mode ?? t('files.notAvailable')}</dd>
+                    <dt className="text-on-surface-variant">{t('files.owner')}</dt>
+                    <dd className="truncate text-right text-on-surface">{activeTab.owner ?? t('files.notAvailable')}</dd>
+                    <dt className="text-on-surface-variant">{t('files.group')}</dt>
+                    <dd className="truncate text-right text-on-surface">{activeTab.group ?? t('files.notAvailable')}</dd>
+                  </dl>
+                </details>
+                <div className="border-b border-outline-variant p-3">
+                  <h4 className="mb-2 text-label-sm font-semibold uppercase tracking-wider text-on-surface-variant">{t('files.versionHistory')}</h4>
+                  <Versionsliste
+                    versionen={(versions[activeTab.path] ?? []).map((version) => ({ id: version.id, zeit: version.created_at * 1000, groesse: version.size }))}
+                    onWiederherstellen={canWrite ? (id) => void restoreVersion(activeTab.path, id) : undefined}
+                  />
+                </div>
+                <div className="p-3">
+                  <h4 className="mb-2 text-label-sm font-semibold uppercase tracking-wider text-on-surface-variant">{t('files.quickActions')}</h4>
+                  <button type="button" onClick={() => { const parent = parentPath(activeTab.path); const parentNodes = Array.isArray(nodes[parent]) ? nodes[parent] : []; const entry = parentNodes.find((item) => item.name === fileName(activeTab.path)); if (entry) downloadEntry({ entry, parent }) }} className="flex min-h-8 w-full items-center gap-2 rounded-md px-2 text-left text-xs text-on-surface-variant hover:bg-surface-container-highest hover:text-on-surface"><Download className="h-3.5 w-3.5" />{t('files.download')}</button>
+                </div>
+              </> : <p className="p-6 text-center text-xs text-on-surface-variant">{t('files.noDetails')}</p>}
+            </aside>
+          </div>
+        )}
         {dragOver && <Ablageflaeche text={t('files.dropToUpload')} />}
       </div>
 

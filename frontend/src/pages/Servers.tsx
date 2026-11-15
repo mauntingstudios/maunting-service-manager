@@ -8,16 +8,27 @@ import { useHostInterfaces } from '@/hooks/useHostInterfaces'
 import { useHasPermission } from '@/hooks/useHasPermission'
 import type { Server, GameInfo, PostgresCredential, ServerCreateResult, Node } from '@/types'
 import { labelRole, mapBlueprintPorts } from '@/utils/portRoles'
-import { Server as ServerIcon, Plus, Activity, AlertTriangle, Cpu, HardDrive, Database, Network, Store } from 'lucide-react'
+import { Server as ServerIcon, Plus, AlertTriangle, Database, Store } from 'lucide-react'
 import { PostgresCredentialsDialog } from '@/components/server/PostgresCredentialsDialog'
-import { Badge } from '@maunting/ui'
-import { Dropdown } from '@maunting/ui'
-import { TabBar } from '@maunting/ui'
+import { ServerCard } from '@/components/server/ServerCard'
+import {
+  Button,
+  Checkbox,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  Dropdown,
+  Input,
+  PasswordInput,
+  Spinner,
+  TabBar,
+  Switch,
+} from '@maunting/ui'
 import { TageszeitHintergrund } from '@/components/layout/TageszeitHintergrund'
 import { useTageszeitMotiv } from '@/lib/tageszeit'
-import { Button, Checkbox, Input, Kurzinfo, Switch } from '@maunting/ui'
-import { PasswordInput } from '@maunting/ui'
-import { Spinner } from '@maunting/ui'
 type ServerKind = 'application' | 'database'
 
 const POSTGRES_BLUEPRINT = 'postgres'
@@ -332,28 +343,6 @@ export function Servers({ ohneHintergrund = false }: { ohneHintergrund?: boolean
     }
   }
 
-  const statusClasses = (status: string) => {
-    switch (status) {
-      case 'running':
-        return 'bg-status-success/10 border-status-success/30 text-status-success'
-      case 'stopped':
-        return 'bg-surface-container-highest border-outline text-on-surface-variant'
-      case 'starting':
-      case 'stopping':
-      case 'restarting':
-      case 'queued':
-        return 'bg-status-warning/10 border-status-warning/30 text-status-warning'
-      case 'installing':
-      case 'updating':
-      case 'awaiting_files':
-        return 'bg-status-warning/10 border-status-warning/30 text-status-warning'
-      case 'failed':
-        return 'bg-status-destructive/10 border-status-destructive/30 text-status-destructive'
-      default:
-        return 'bg-status-destructive/10 border-status-destructive/30 text-status-destructive'
-    }
-  }
-
   // PostgreSQL entsteht über „Datenbankserver", nicht als Spiel in der Liste.
   const applicationGames = (Array.isArray(games) ? games : []).filter((g) => g.category !== 'database')
   const gameName = (id: string) => (Array.isArray(games) ? games : []).find((g) => g.id === id)?.name || id
@@ -489,78 +478,24 @@ export function Servers({ ohneHintergrund = false }: { ohneHintergrund?: boolean
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {shownServers.map((server) => (
-          <div
+          <ServerCard
             key={server.id}
-            className="msm-card p-5 cursor-pointer hover:border-mint-accent/40 transition-all"
-            onClick={() => navigate(`/servers/${server.id}`)}
-          >
-            <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center gap-2 min-w-0">
-                <ServerIcon className="w-4 h-4 text-on-surface-variant shrink-0" />
-                <h3 className="font-headline text-body-md text-on-surface truncate">{server.name}</h3>
-                {server.node_name && (
-                  <Kurzinfo text={t('servers.node')} aussen="shrink-0">
-                    <Badge variant="info" aria-description={t('servers.node')}>
-                      <Network className="w-3 h-3 mr-1 inline" />
-                      {server.node_name}
-                    </Badge>
-                  </Kurzinfo>
-                )}
-                {server.server_kind === 'database' && (
-                  <Badge variant="info" className="shrink-0">
-                    <Database className="w-3 h-3 mr-1 inline" />
-                    {t('servers.kind.database')}
-                  </Badge>
-                )}
-                {server.is_hoster_managed && (
-                  <Badge variant="info" className="shrink-0">
-                    <Store className="w-3 h-3 mr-1 inline" />
-                    {t('servers.customerBadge')}
-                  </Badge>
-                )}
-              </div>
-              <span className={`font-mono-sm text-mono-sm px-2 py-0.5 rounded-full border shrink-0 ${statusClasses(server.status)}`}>
-                {t(`servers.status.${server.status}`, { defaultValue: server.status })}
-              </span>
-            </div>
-            <p className="font-body-md text-sm text-on-surface-variant mb-4">
-              {gameName(server.game_type)}
-            </p>
-            <div className="grid grid-cols-3 gap-3 text-xs text-on-surface-variant">
-              <div className="flex items-center gap-1.5">
-                <Cpu className="w-3.5 h-3.5" />
-                <span className="font-body-md">
-                  {server.cpu_limit_percent ? `${server.cpu_limit_percent}%` : t('common.unlimited')}
-                </span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <Activity className="w-3.5 h-3.5" />
-                <span className="font-body-md">
-                  {server.ram_limit_mb ? `${server.ram_limit_mb} MB` : t('common.unlimited')}
-                </span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <HardDrive className="w-3.5 h-3.5" />
-                <span className="font-body-md">
-                  {server.disk_limit_gb ? `${server.disk_limit_gb} GB` : t('common.unlimited')}
-                </span>
-              </div>
-            </div>
-          </div>
+            server={server}
+            gameLabel={gameName(server.game_type)}
+            variant="list"
+          />
         ))}
       </div>
 
-      {/* Create Modal */}
-      {showCreate && (
-        <div className="msm-modal-overlay overflow-y-auto">
-          <div className="msm-card w-full max-w-lg p-6 my-8">
-            <h2 className="font-headline text-headline-md text-primary mb-1">
-              {t('servers.create')}
-            </h2>
-            <p className="font-body-md text-sm text-on-surface-variant mb-6">
-              {t('servers.createDescription')}
-            </p>
-            <form onSubmit={handleCreate} className="space-y-4">
+      {/* Create Modal (Design-DNA Dialog + Input) */}
+      <Dialog open={showCreate} onOpenChange={setShowCreate}>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{t('servers.create')}</DialogTitle>
+            <DialogDescription>{t('servers.createDescription')}</DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleCreate}>
+            <div className="p-6 space-y-4">
               {canCreateDatabaseServer && (
               <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label={t('servers.kind.label')}>
                 {(['application', 'database'] as const).map((kind) => (
@@ -579,18 +514,13 @@ export function Servers({ ohneHintergrund = false }: { ohneHintergrund?: boolean
                 ))}
               </div>
               )}
-              <div>
-                <label className="block font-label-md text-label-md text-on-surface-variant mb-1.5 uppercase tracking-wider">
-                  {t('common.name')}
-                </label>
-                <input
-                  type="text"
-                  value={form.name}
-                  onChange={(e) => setForm({ ...form, name: e.target.value })}
-                  className="msm-input"
-                  required
-                />
-              </div>
+              <Input
+                label={t('common.name')}
+                type="text"
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+                required
+              />
               {!isDatabaseServer && (
               <div>
                 <label className="block font-label-md text-label-md text-on-surface-variant mb-1.5 uppercase tracking-wider">
@@ -686,47 +616,32 @@ export function Servers({ ohneHintergrund = false }: { ohneHintergrund?: boolean
                   </p>
                 </div>
               )}
-              <div className="grid grid-cols-3 gap-3">
-                <div>
-                  <label className="block font-label-md text-label-md text-on-surface-variant mb-1.5 uppercase tracking-wider">
-                    {t('servers.cpuLimit')}
-                  </label>
-                  <input
-                    type="number"
-                    min={10}
-                    max={3200}
-                    value={form.cpu_limit_percent}
-                    onChange={(e) => setForm({ ...form, cpu_limit_percent: e.target.value })}
-                    className="msm-input"
-                    placeholder="%"
-                  />
-                </div>
-                <div>
-                  <label className="block font-label-md text-label-md text-on-surface-variant mb-1.5 uppercase tracking-wider">
-                    {t('servers.ramLimit')}
-                  </label>
-                  <input
-                    type="number"
-                    min={512}
-                    value={form.ram_limit_mb}
-                    onChange={(e) => setForm({ ...form, ram_limit_mb: e.target.value })}
-                    className="msm-input"
-                    placeholder="MB"
-                  />
-                </div>
-                <div>
-                  <label className="block font-label-md text-label-md text-on-surface-variant mb-1.5 uppercase tracking-wider">
-                    {t('servers.diskLimit')}
-                  </label>
-                  <input
-                    type="number"
-                    min={1}
-                    value={form.disk_limit_gb}
-                    onChange={(e) => setForm({ ...form, disk_limit_gb: e.target.value })}
-                    className="msm-input"
-                    placeholder="GB"
-                  />
-                </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <Input
+                  label={t('servers.cpuLimit')}
+                  type="number"
+                  min={10}
+                  max={3200}
+                  value={form.cpu_limit_percent}
+                  onChange={(e) => setForm({ ...form, cpu_limit_percent: e.target.value })}
+                  placeholder="%"
+                />
+                <Input
+                  label={t('servers.ramLimit')}
+                  type="number"
+                  min={512}
+                  value={form.ram_limit_mb}
+                  onChange={(e) => setForm({ ...form, ram_limit_mb: e.target.value })}
+                  placeholder="MB"
+                />
+                <Input
+                  label={t('servers.diskLimit')}
+                  type="number"
+                  min={1}
+                  value={form.disk_limit_gb}
+                  onChange={(e) => setForm({ ...form, disk_limit_gb: e.target.value })}
+                  placeholder="GB"
+                />
               </div>
 
               {/* Phase 2: Bind-IP + Ports */}
@@ -777,14 +692,14 @@ export function Servers({ ohneHintergrund = false }: { ohneHintergrund?: boolean
                 const mappedPorts = mapBlueprintPorts(portDefs)
 
                 return (
-                  <div className="grid grid-cols-3 gap-3" data-testid="port-fields">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3" data-testid="port-fields">
                     {mappedPorts.map((p) => {
                       const role = p.mappedRole
                       const isLegacy = role === 'game' || role === 'query' || role === 'rcon'
                       const val = isLegacy
                         ? (role === 'game' ? form.game_port : role === 'query' ? form.query_port : form.rcon_port)
                         : (form.ports[role] || '')
-                      
+
                       const baseRole = labelRole(role)
                       const label = baseRole === 'game'
                         ? t('servers.gamePort')
@@ -797,34 +712,30 @@ export function Servers({ ohneHintergrund = false }: { ohneHintergrund?: boolean
                         : `${role.replace('_', ' ').toUpperCase()} (${p.protocol.toUpperCase()})`
 
                       return (
-                        <div key={role}>
-                          <label className="block font-label-md text-label-md text-on-surface-variant mb-1.5 uppercase tracking-wider">
-                            {label}
-                          </label>
-                          <input
-                            type="number"
-                            min={1024}
-                            max={65535}
-                            value={val}
-                            onChange={(e) => {
-                              if (isLegacy) {
-                                const fieldKey = role === 'game' ? 'game_port' : role === 'query' ? 'query_port' : 'rcon_port'
-                                setForm({ ...form, [fieldKey]: e.target.value })
-                              } else {
-                                setForm({
-                                  ...form,
-                                  ports: {
-                                    ...form.ports,
-                                    [role]: e.target.value,
-                                  },
-                                })
-                              }
-                            }}
-                            className="msm-input"
-                            placeholder={t('servers.portAuto')}
-                            data-testid={`port-input-${role}`}
-                          />
-                        </div>
+                        <Input
+                          key={role}
+                          label={label}
+                          type="number"
+                          min={1024}
+                          max={65535}
+                          value={val}
+                          onChange={(e) => {
+                            if (isLegacy) {
+                              const fieldKey = role === 'game' ? 'game_port' : role === 'query' ? 'query_port' : 'rcon_port'
+                              setForm({ ...form, [fieldKey]: e.target.value })
+                            } else {
+                              setForm({
+                                ...form,
+                                ports: {
+                                  ...form.ports,
+                                  [role]: e.target.value,
+                                },
+                              })
+                            }
+                          }}
+                          placeholder={t('servers.portAuto')}
+                          data-testid={`port-input-${role}`}
+                        />
                       )
                     })}
                   </div>
@@ -857,41 +768,37 @@ export function Servers({ ohneHintergrund = false }: { ohneHintergrund?: boolean
                 </label>
                 {form.postgres_enabled && (
                   <div className="mt-4 max-w-36">
-                    <label className="block font-label-md text-label-md text-on-surface-variant mb-1.5 uppercase tracking-wider">
-                      {t('servers.postgres.count')}
-                    </label>
-                    <input
+                    <Input
+                      label={t('servers.postgres.count')}
                       type="number"
                       min={1}
                       max={20}
                       value={form.postgres_database_count}
                       onChange={(e) => setForm({ ...form, postgres_database_count: e.target.value || '1' })}
-                      className="msm-input"
                     />
                   </div>
                 )}
               </div>
               )}
-              <div className="flex gap-3 pt-2">
-                <Button variant="secondary"
-                  type="button"
-                  className="flex-1"
-                  onClick={() => setShowCreate(false)}
-                >
-                  {t('common.cancel')}
-                </Button>
-                <Button
-                  type="submit"
-                  className="flex-1 disabled:opacity-50"
-                  disabled={creating || nodesLoading || interfacesLoading || interfaces.length === 0 || !(form.public_bind_ip || defaultBindIp)}
-                >
-                  {creating ? t('common.loading') : t('servers.create')}
-                </Button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+            </div>
+            <DialogFooter>
+              <Button
+                variant="secondary"
+                type="button"
+                onClick={() => setShowCreate(false)}
+              >
+                {t('common.cancel')}
+              </Button>
+              <Button
+                type="submit"
+                disabled={creating || nodesLoading || interfacesLoading || interfaces.length === 0 || !(form.public_bind_ip || defaultBindIp)}
+              >
+                {creating ? t('common.loading') : t('servers.create')}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
       </main>
       <PostgresCredentialsDialog credentials={oneTimeCredentials} onClose={() => setOneTimeCredentials([])} />
     </div>

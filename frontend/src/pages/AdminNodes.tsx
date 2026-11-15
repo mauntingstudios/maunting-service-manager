@@ -1,6 +1,6 @@
 /**
  * AdminNodes — owner-only node registry UI (Phase 3 multi-node).
- * Uses existing msm-card / msm-btn / msm-input patterns + Singra ProgressBar.
+ * Uses @maunting/ui Dialog, Input, ActionMenu and ProgressBar primitives.
  * Never displays agent tokens (API does not return them).
  */
 import { useEffect, useState, useCallback } from 'react'
@@ -8,9 +8,11 @@ import { useTranslation } from 'react-i18next'
 import {
   Activity,
   HardDrive,
+  MoreHorizontal,
   Network,
   Plus,
   RefreshCw,
+  Search,
   Server,
   Trash2,
   Pencil,
@@ -18,17 +20,30 @@ import {
 import { useNodeStore } from '@/stores/nodeStore'
 import { toast } from '@/stores/toastStore'
 import { confirm } from '@/stores/confirmStore'
-import { Badge } from '@maunting/ui'
-import { PasswordInput } from '@maunting/ui'
-import { ProgressBar, StackedProgressBar, Segment } from '@maunting/ui'
+import {
+  ActionMenu,
+  Badge,
+  Button,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  Input,
+  Kurzinfo,
+  PageHeader,
+  PasswordInput,
+  ProgressBar,
+  Segment,
+  Spinner,
+  StackedProgressBar,
+  type ActionMenuItem,
+} from '@maunting/ui'
 import { NodeEnrollmentDialog } from '@/components/nodes/NodeEnrollmentDialog'
 import type { Node } from '@/types'
 import { api } from '@/api/client'
 import { useHasPermission } from '@/hooks/useHasPermission'
-import { PageHeader } from '@maunting/ui'
-import { Button, Kurzinfo } from '@maunting/ui'
-
-import { Spinner } from '@maunting/ui'
 function statusVariant(status: string): 'success' | 'destructive' | 'default' | 'warning' {
   switch (status) {
     case 'online':
@@ -338,29 +353,20 @@ export function AdminNodes() {
             </Button>
           )}
         </div>} />
-      <div className="flex items-center gap-4 bg-surface-variant/20 p-4 rounded-xl" role="search">
+      <div className="flex items-center gap-4 rounded-xl bg-surface-variant/20 p-3 sm:p-4" role="search">
         <div className="relative flex-1 max-w-sm">
-          <input
-            type="text"
+          <Search
+            className="pointer-events-none absolute left-3 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-on-surface-variant"
+            aria-hidden="true"
+          />
+          <Input
+            type="search"
             aria-label={t('nodes.searchPlaceholder')}
             value={searchVal}
             onChange={(e) => setSearchVal(e.target.value)}
             placeholder={t('nodes.searchPlaceholder')}
-            className="msm-input pl-9"
+            className="min-h-11 pl-9 sm:min-h-10"
           />
-          <svg
-            className="absolute left-3 top-2.5 h-4 w-4 text-on-surface-variant"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth="2"
-              d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-            />
-          </svg>
         </div>
       </div>
 
@@ -372,31 +378,32 @@ export function AdminNodes() {
         />
       )}
 
-      {showForm && (
-        <div className="msm-card p-6">
-          <h3 className="mb-4 font-headline text-body-lg text-primary">
-            {editing ? t('nodes.edit') : t('nodes.add')}
-          </h3>
-          <form onSubmit={handleSave} className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <div>
-              <label className="mb-1.5 block font-label-md text-label-md uppercase tracking-wider text-on-surface-variant">
-                {t('common.name')}
-              </label>
-              <input
-                className="msm-input"
+      <Dialog
+        open={showForm}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) {
+            setShowForm(false)
+            setEditing(null)
+          }
+        }}
+      >
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{editing ? t('nodes.edit') : t('nodes.add')}</DialogTitle>
+            <DialogDescription>{t('nodes.subtitle')}</DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleSave} className="space-y-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <Input
+                label={t('common.name')}
                 value={form.name}
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
                 required
                 maxLength={100}
                 autoComplete="off"
               />
-            </div>
-            <div>
-              <label className="mb-1.5 block font-label-md text-label-md uppercase tracking-wider text-on-surface-variant">
-                {t('nodes.host')}
-              </label>
-              <input
-                className="msm-input"
+              <Input
+                label={t('nodes.host')}
                 value={form.host}
                 onChange={(e) => setForm({ ...form, host: e.target.value })}
                 required
@@ -405,12 +412,10 @@ export function AdminNodes() {
                 autoComplete="off"
               />
             </div>
-            <div className="md:col-span-2">
-              <label className="mb-1.5 block font-label-md text-label-md uppercase tracking-wider text-on-surface-variant">
-                {t('nodes.tlsFingerprint')}
-              </label>
-              <input
-                className="msm-input font-mono text-sm"
+            <div>
+              <Input
+                label={t('nodes.tlsFingerprint')}
+                className="font-mono text-sm"
                 value={form.tls_fingerprint}
                 onChange={(e) => setForm({ ...form, tls_fingerprint: e.target.value })}
                 required={!editing}
@@ -421,11 +426,9 @@ export function AdminNodes() {
               />
               <p className="mt-1 text-xs text-on-surface-variant">{t('nodes.fingerprintHint')}</p>
             </div>
-            <div className="md:col-span-2">
-              <label className="mb-1.5 block font-label-md text-label-md uppercase tracking-wider text-on-surface-variant">
-                {t('nodes.agentToken')}
-              </label>
+            <div>
               <PasswordInput
+                label={t('nodes.agentToken')}
                 value={form.auth_token}
                 onChange={(e) => setForm({ ...form, auth_token: e.target.value })}
                 required={!editing}
@@ -437,11 +440,9 @@ export function AdminNodes() {
                 {t('nodes.tokenHint')}
               </p>
             </div>
-            <div className="flex gap-2 md:col-span-2">
-              <Button type="submit" disabled={saving}>
-                {saving ? t('common.loading') : t('common.save')}
-              </Button>
-              <Button variant="secondary"
+            <DialogFooter>
+              <Button
+                variant="secondary"
                 type="button"
                 onClick={() => {
                   setShowForm(false)
@@ -450,10 +451,13 @@ export function AdminNodes() {
               >
                 {t('common.cancel')}
               </Button>
-            </div>
+              <Button type="submit" disabled={saving}>
+                {saving ? t('common.loading') : t('common.save')}
+              </Button>
+            </DialogFooter>
           </form>
-        </div>
-      )}
+        </DialogContent>
+      </Dialog>
 
       {nodes.length === 0 ? (
         <div className="msm-card border-2 border-dashed border-outline-variant p-12 text-center">
@@ -500,9 +504,12 @@ export function AdminNodes() {
                       )
                     })()}
                   </div>
-                  <div className="flex shrink-0 gap-1">
+                  <div className="flex shrink-0 items-center gap-1.5">
                     <Kurzinfo text={t('nodes.healthCheck')} seite={canManageNodes ? 'mitte' : 'ende'}>
-                      <Button variant="secondary" size="icon"
+                      <Button
+                        variant="secondary"
+                        size="icon"
+                        fingerziel
                         type="button"
                         aria-label={t('nodes.healthCheckLabel', { name: node.name })}
                         onClick={() => void handleHealth(node)}
@@ -513,30 +520,37 @@ export function AdminNodes() {
                         />
                       </Button>
                     </Kurzinfo>
-                    {canManageNodes && (
-                      <>
-                        <Kurzinfo text={t('nodes.edit')}>
-                          <Button variant="secondary" size="icon"
-                            type="button"
-                            aria-label={t('nodes.editLabel', { name: node.name })}
-                            onClick={() => openEdit(node)}
-                          >
-                            <Pencil className="h-4 w-4" />
-                          </Button>
-                        </Kurzinfo>
-                        <Kurzinfo text={t('common.delete')} seite="ende">
-                          <Button variant="secondary" size="icon"
-                            type="button"
-                            className="text-status-destructive disabled:opacity-40"
-                            aria-label={t('nodes.deleteLabel', { name: node.name })}
-                            disabled={node.is_local || node.server_count > 0}
-                            onClick={() => void handleDelete(node)}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </Kurzinfo>
-                      </>
-                    )}
+                    {canManageNodes && (() => {
+                      const nodeMenuItems: ActionMenuItem[] = [
+                        {
+                          key: 'edit',
+                          label: t('nodes.edit'),
+                          icon: <Pencil className="h-4 w-4" aria-hidden="true" />,
+                          onSelect: () => openEdit(node),
+                        },
+                        {
+                          key: 'delete',
+                          label: t('common.delete'),
+                          icon: <Trash2 className="h-4 w-4" aria-hidden="true" />,
+                          destructive: true,
+                          separatorBefore: true,
+                          disabled: node.is_local || node.server_count > 0,
+                          onSelect: () => void handleDelete(node),
+                        },
+                      ]
+                      return (
+                        <ActionMenu
+                          label={t('nodes.actionsMenu', { name: node.name })}
+                          ariaLabel={t('nodes.actionsMenu', { name: node.name })}
+                          items={nodeMenuItems}
+                          icon={<MoreHorizontal className="h-4 w-4" aria-hidden="true" />}
+                          variant="secondary"
+                          surface="dna"
+                          align="end"
+                          iconOnly
+                        />
+                      )
+                    })()}
                   </div>
                 </div>
 
@@ -563,18 +577,6 @@ export function AdminNodes() {
                     heat
                     data-testid={`node-ram-${node.id}`}
                   />
-                  {node.ram_total != null && (
-                    <p className="text-xs text-on-surface-variant" data-testid={`node-ram-booked-${node.id}`}>
-                      {t('nodes.ramBooked', {
-                        used: formatRamMb(node.ram_allocated_mb ?? 0),
-                        total: formatRamMb(node.ram_total),
-                      })}
-                      {' · '}
-                      {t('nodes.ramAllocatable', {
-                        value: formatRamMb(allocatableRamMb(node)),
-                      })}
-                    </p>
-                  )}
                   {(() => {
                     const diskP = diskPercent(node)
                     const fDisk = freeDiskMb(node)
@@ -616,30 +618,51 @@ export function AdminNodes() {
                           }
                           data-testid={`node-disk-${node.id}`}
                         />
-                        {node.disk_total != null && (
-                          <div className="space-y-1 text-xs text-on-surface-variant" data-testid={`node-disk-breakdown-${node.id}`}>
-                            <div className="flex flex-wrap items-center gap-3 font-mono text-label-sm">
-                              <span className="text-primary">
-                                ■ {t('nodes.diskPanelUsed', { value: formatRamMb(panelUsedMb) })}
-                              </span>
-                              <span className="text-on-surface-variant">
-                                ■ {t('nodes.diskSystemUsed', { value: formatRamMb(systemUsedMb) })}
-                              </span>
-                              <span className="text-status-success">
-                                ■ {t('nodes.diskFree', { value: formatRamMb(fDisk) })}
-                              </span>
+                        {(node.ram_total != null || node.disk_total != null) && (
+                          <details className="rounded-xl border border-outline-variant/40 bg-surface-variant/15 px-3 py-2 text-xs text-on-surface-variant">
+                            <summary className="cursor-pointer select-none font-label-md text-label-md text-on-surface-variant hover:text-on-surface">
+                              {t('nodes.capacityDetails')}
+                            </summary>
+                            <div className="mt-2 space-y-2">
+                              {node.ram_total != null && (
+                                <p data-testid={`node-ram-booked-${node.id}`}>
+                                  {t('nodes.ramBooked', {
+                                    used: formatRamMb(node.ram_allocated_mb ?? 0),
+                                    total: formatRamMb(node.ram_total),
+                                  })}
+                                  {' · '}
+                                  {t('nodes.ramAllocatable', {
+                                    value: formatRamMb(allocatableRamMb(node)),
+                                  })}
+                                </p>
+                              )}
+                              {node.disk_total != null && (
+                                <div className="space-y-1" data-testid={`node-disk-breakdown-${node.id}`}>
+                                  <div className="flex flex-wrap items-center gap-3 font-mono text-label-sm">
+                                    <span className="text-primary">
+                                      ■ {t('nodes.diskPanelUsed', { value: formatRamMb(panelUsedMb) })}
+                                    </span>
+                                    <span className="text-on-surface-variant">
+                                      ■ {t('nodes.diskSystemUsed', { value: formatRamMb(systemUsedMb) })}
+                                    </span>
+                                    <span className="text-status-success">
+                                      ■ {t('nodes.diskFree', { value: formatRamMb(fDisk) })}
+                                    </span>
+                                  </div>
+                                  <p>
+                                    {t('nodes.diskBooked', {
+                                      used: `${node.disk_allocated_gb ?? 0} GB`,
+                                      total: `${Math.floor((node.disk_total ?? 0) / 1024)} GB`,
+                                    })}
+                                    {' · '}
+                                    {t('nodes.diskAllocatable', {
+                                      value: `${allocatableDiskGb(node) ?? 0} GB`,
+                                    })}
+                                  </p>
+                                </div>
+                              )}
                             </div>
-                            <p>
-                              {t('nodes.diskBooked', {
-                                used: `${node.disk_allocated_gb ?? 0} GB`,
-                                total: `${Math.floor((node.disk_total ?? 0) / 1024)} GB`,
-                              })}
-                              {' · '}
-                              {t('nodes.diskAllocatable', {
-                                value: `${allocatableDiskGb(node) ?? 0} GB`,
-                              })}
-                            </p>
-                          </div>
+                          </details>
                         )}
                       </>
                     )
@@ -676,7 +699,10 @@ export function AdminNodes() {
             {t('nodes.pagination.range', { from: (currentPage - 1) * pageSize + 1, to: Math.min(currentPage * pageSize, total), total })}
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="secondary" size="sm"
+            <Button
+              variant="secondary"
+              size="sm"
+              fingerziel
               disabled={currentPage <= 1}
               onClick={() => setCurrentPage((p) => p - 1)}
               className="disabled:opacity-50"
@@ -686,7 +712,10 @@ export function AdminNodes() {
             <span className="font-medium px-2">
               {t('nodes.pagination.page', { current: currentPage, total: Math.ceil(total / pageSize) })}
             </span>
-            <Button variant="secondary" size="sm"
+            <Button
+              variant="secondary"
+              size="sm"
+              fingerziel
               disabled={currentPage >= Math.ceil(total / pageSize)}
               onClick={() => setCurrentPage((p) => p + 1)}
               className="disabled:opacity-50"
