@@ -8,24 +8,24 @@ Autonomous monitoring with the Guardian Engine, rootless container security, enc
 [![Status](https://img.shields.io/badge/Status-Active%20Development-orange)](https://github.com/mauntingstudios/maunting-service-manager)
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
 
-[Quick Start](#installation) • [Key Features](#what-msm-can-do) • [Feature Reference](docs/features.md) • [Comparison](#msm-compared) • [Architecture](#how-everything-connects) • [Documentation](docs/self-hosting.md)
+[Quick Start](#installation) • [Showcase](#showcase) • [Key Features](#what-msm-can-do) • [Feature Reference](docs/features.md) • [Comparison](#msm-compared) • [Architecture](#how-everything-connects) • [Documentation](docs/self-hosting.md)
 
 <br />
 
-![MSM dashboard showing running game servers, node capacity, and system health](docs/images/dashboard.png)
-*Unified Dashboard: Monitor game servers, node capacities, and system health in real-time.*
+![MSM dashboard showing running game servers, node capacity, and favorite highlights](docs/images/dashboard.png)
+*Unified Dashboard: Track favorite servers and worker nodes, cluster capacity, and system health at a glance.*
 
-![AI assistant answering server management questions with tool calls and data tables](docs/images/ki-assistent.png)
-*AI Assistant: Inspects service states, logs, and disk utilization autonomously to provide actionable insights.*
+![Singra AI assistant answering server management questions with tool calls and telemetry tables](docs/images/ki-assistent.png)
+*Singra AI Assistant (Beta): Queries live cluster telemetry, inspects logs, and returns structured diagnostics with confirmation cards for write actions.*
 
-<sub>Images display sample demonstration data.</sub>
+<sub>Images display sample demonstration data from v6.1.0.</sub>
 
 </div>
 
 ---
 
 > [!IMPORTANT]
-> MSM is actively under development. Please avoid running it in mission-critical environments without performing regular, verified backups. Development started in May 2026; the current release is v5.9.1.
+> MSM is actively under development. Please avoid running it in mission-critical environments without performing regular, verified backups. Development started in May 2026; the current release is v6.1.0.
 
 > [!NOTE]
 > 🧪 **Experimental Feature: Kubernetes**  
@@ -101,6 +101,90 @@ The list below is an overview. Every capability with its backend routes, securit
 - Rootless Docker with `cap_drop=ALL` and `no-new-privileges`; the panel never joins the host `docker` group.
 - User content in the database is encrypted through DIS. Backups are encrypted on S3 upload, and locally when a backup password is set.
 - Single-command installation with checksum verification, automated HTTPS, PostgreSQL included, and a transactional migration wizard for components.
+
+---
+
+## Showcase
+
+### Server Management & Cluster Operations
+
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="docs/images/servers.png" alt="Server list with gold favorite borders, live status rings, and resource allocations" /><br />
+      <strong>Server Fleet</strong><br />
+      <sub>Filter instances by status or node, mark critical game servers as favorites, and copy public connection addresses in one click.</sub>
+    </td>
+    <td width="50%" valign="top">
+      <img src="docs/images/server-detail.png" alt="Server detail console view with live PaperMC logs and CPU, RAM, and disk gauges" /><br />
+      <strong>Live Console & Telemetry</strong><br />
+      <sub>Monitor per-server CPU, memory, and storage alongside real-time WebSocket console logs, integrated file browsing, and databases.</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="docs/images/mod-manager.png" alt="Integrated CurseForge and Steam Workshop mod manager" /><br />
+      <strong>Mod & Workshop Manager</strong><br />
+      <sub>Browse CurseForge and Steam Workshop directly, toggle mods on or off, inspect update availability, and bulk-manage load orders.</sub>
+    </td>
+    <td width="50%" valign="top">
+      <img src="docs/images/nodes.png" alt="Multi-node infrastructure overview with capacity bars and favorite nodes" /><br />
+      <strong>Multi-Node Infrastructure</strong><br />
+      <sub>Connect bare-metal servers or VPS hosts via mutual TLS, pin preferred nodes, and track CPU, memory, and disk headroom across regions.</sub>
+    </td>
+  </tr>
+</table>
+
+### Communication, Docs & Access Control
+
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="docs/images/messenger.png" alt="End-to-end encrypted Double Ratchet Messenger inside MSM" /><br />
+      <strong>E2EE Messenger (Beta)</strong><br />
+      <sub>Direct messages and team groups encrypted per device using a Double Ratchet state machine, with live device presence across Panel, Pontis, and MSS.</sub>
+    </td>
+    <td width="50%" valign="top">
+      <img src="docs/images/docs.png" alt="Maunting Docs collaborative Markdown and rich-text editor with runbooks" /><br />
+      <strong>Maunting Docs (Beta)</strong><br />
+      <sub>Collaborative runbooks, release notes, and checklists with offline IndexedDB sync, slash commands, revision history, and team folders.</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="docs/images/teams.png" alt="Teams workspace with shared servers, AI skills, memory, and vaults" /><br />
+      <strong>Teams & Shared Vaults</strong><br />
+      <sub>Group administrators, assign scoped team roles, and share encrypted team credentials, knowledge, and server access cleanly.</sub>
+    </td>
+    <td width="50%" valign="top">
+      <img src="docs/images/roles.png" alt="Discord-style RBAC role and 91-key permission editor" /><br />
+      <strong>Role-Based Access Control</strong><br />
+      <sub>91 granular global and per-server permissions organized into customizable roles with color badges and least-privilege defaults.</sub>
+    </td>
+  </tr>
+</table>
+
+### Blueprints, Backups & Companion Apps
+
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="docs/images/blueprints.png" alt="Workload blueprints library for game servers and Linux applications" /><br />
+      <strong>32 Native Blueprints</strong><br />
+      <sub>Provision Steam games, Java/Minecraft stacks, databases, and Linux services from reproducible data-only templates.</sub>
+    </td>
+    <td width="50%" valign="top">
+      <img src="docs/images/panel-backups.png" alt="Encrypted panel backup management with S3 storage and schedules" /><br />
+      <strong>Encrypted Panel Backups</strong><br />
+      <sub>Automate scheduled PostgreSQL and configuration snapshots encrypted via DIS (AES-256-GCM + Argon2id) with S3 off-site replication.</sub>
+    </td>
+  </tr>
+</table>
+
+### MSS Desktop Client
+
+![MSS Desktop client running on Windows showing synced server status and quick actions](docs/images/mss-desktop.png)
+*MSS Desktop App (Windows & Android): Hardware-paired companion client with system tray controls, sandboxed local file workflows, wake-word / hotkey support, and direct panel integration.*
 
 ---
 
