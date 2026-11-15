@@ -16,6 +16,7 @@ import logging
 import os
 import select
 import subprocess
+import threading
 from functools import wraps
 from pathlib import Path
 from typing import Any
@@ -201,6 +202,22 @@ def _validated_volumes(volumes: dict[str, dict[str, str]] | None) -> dict[str, d
     return validated
 
 
+DEFAULT_CONTAINER_PIDS_LIMIT = 512
+DEFAULT_EPHEMERAL_PIDS_LIMIT = 256
+DEFAULT_EPHEMERAL_NANO_CPUS = 2_000_000_000
+DEFAULT_EPHEMERAL_MEM_LIMIT = "4096m"
+_EPHEMERAL_CONCURRENCY_LIMIT = threading.BoundedSemaphore(2)
+
+
+def _default_nofile_ulimits() -> list[Any] | None:
+    try:
+        from docker.types import Ulimit
+
+        return [Ulimit(name="nofile", soft=65536, hard=65536)]
+    except Exception:
+        return None
+
+
 @_coordinated_container_mutation
 def create_container(
     *,
@@ -225,6 +242,7 @@ def create_container(
     privileged: bool | None = None,
     cap_add: list[str] | None = None,
     network_mode: str | None = None,
+    pids_limit: int | None = DEFAULT_CONTAINER_PIDS_LIMIT,
 ) -> dict[str, Any]:
     """Create (and start) a hardened container.
 
@@ -315,6 +333,11 @@ def create_container(
     if ram_limit_mb is not None and ram_limit_mb > 0:
         kwargs["mem_limit"] = f"{int(ram_limit_mb)}m"
         kwargs["memswap_limit"] = f"{int(ram_limit_mb)}m"
+    if pids_limit is not None and pids_limit > 0:
+        kwargs["pids_limit"] = int(pids_limit)
+    ulimits = _default_nofile_ulimits()
+    if ulimits is not None:
+        kwargs["ulimits"] = ulimits
 
     kwargs = {k: v for k, v in kwargs.items() if v is not None}
     try:
@@ -380,51 +403,66 @@ def run_ephemeral(
     entrypoint: str | None = None,
     cap_add: list[str] | None = None,
     timeout: int = 1800,
+    nano_cpus: int | None = DEFAULT_EPHEMERAL_NANO_CPUS,
+    mem_limit: str | None = DEFAULT_EPHEMERAL_MEM_LIMIT,
+    pids_limit: int | None = DEFAULT_EPHEMERAL_PIDS_LIMIT,
 ) -> dict[str, Any]:
-    """Run one hardened tool container and remove it on every exit path."""
+    """Run one hardened, resource-bounded tool container and remove it on every exit path."""
     allowed_caps = {"DAC_OVERRIDE", "DAC_READ_SEARCH", "CHOWN", "FOWNER", "SETUID", "SETGID"}
     requested_caps = {str(cap).upper() for cap in (cap_add or [])}
     if not requested_caps.issubset(allowed_caps):
         raise HardeningError("requested capability is not allowed")
     client = _get_client()
     container = None
-    try:
-        container = client.containers.run(
-            image=image,
-            command=command,
-            detach=True,
-            environment=env or None,
-            volumes=_validated_volumes(volumes),
-            user=user,
-            working_dir=workdir,
-            entrypoint=entrypoint,
-            privileged=False,
-            cap_drop=list(_HARDENING_CAP_DROP),
-            cap_add=sorted(requested_caps) or None,
-            security_opt=list(_HARDENING_SECURITY_OPT),
-        )
-        wait_result = container.wait(timeout=timeout)
-        stdout = _decode(container.logs(stdout=True, stderr=False))
-        stderr = _decode(container.logs(stdout=False, stderr=True))
-        exit_code = int(wait_result.get("StatusCode", 1))
-        if exit_code != 0:
-            return {
-                "ok": False,
-                "error": (stderr.strip() or stdout.strip() or f"exit {exit_code}")[:500],
-                "stdout": stdout,
-                "stderr": stderr,
+    with _EPHEMERAL_CONCURRENCY_LIMIT:
+        try:
+            run_kwargs: dict[str, Any] = {
+                "image": image,
+                "command": command,
+                "detach": True,
+                "environment": env or None,
+                "volumes": _validated_volumes(volumes),
+                "user": user,
+                "working_dir": workdir,
+                "entrypoint": entrypoint,
+                "privileged": False,
+                "cap_drop": list(_HARDENING_CAP_DROP),
+                "cap_add": sorted(requested_caps) or None,
+                "security_opt": list(_HARDENING_SECURITY_OPT),
             }
-        return {"ok": True, "stdout": stdout, "stderr": stderr}
-    except ImageNotFound as exc:
-        raise ValueError("Tool image not found") from exc
-    except (DockerException, OSError) as exc:
-        raise DockerUnavailableError(_safe_error(exc)) from exc
-    finally:
-        if container is not None:
-            try:
-                container.remove(force=True)
-            except (DockerException, OSError):
-                logger.warning("ephemeral container cleanup failed")
+            if nano_cpus is not None and nano_cpus > 0:
+                run_kwargs["nano_cpus"] = int(nano_cpus)
+            if mem_limit:
+                run_kwargs["mem_limit"] = str(mem_limit)
+                run_kwargs["memswap_limit"] = str(mem_limit)
+            if pids_limit is not None and pids_limit > 0:
+                run_kwargs["pids_limit"] = int(pids_limit)
+            ulimits = _default_nofile_ulimits()
+            if ulimits is not None:
+                run_kwargs["ulimits"] = ulimits
+            container = client.containers.run(**run_kwargs)
+            wait_result = container.wait(timeout=timeout)
+            stdout = _decode(container.logs(stdout=True, stderr=False))
+            stderr = _decode(container.logs(stdout=False, stderr=True))
+            exit_code = int(wait_result.get("StatusCode", 1))
+            if exit_code != 0:
+                return {
+                    "ok": False,
+                    "error": (stderr.strip() or stdout.strip() or f"exit {exit_code}")[:500],
+                    "stdout": stdout,
+                    "stderr": stderr,
+                }
+            return {"ok": True, "stdout": stdout, "stderr": stderr}
+        except ImageNotFound as exc:
+            raise ValueError("Tool image not found") from exc
+        except (DockerException, OSError) as exc:
+            raise DockerUnavailableError(_safe_error(exc)) from exc
+        finally:
+            if container is not None:
+                try:
+                    container.remove(force=True)
+                except (DockerException, OSError):
+                    logger.warning("ephemeral container cleanup failed")
 
 
 @_coordinated_container_mutation

@@ -553,6 +553,34 @@ def evaluate_disk_soft_limit(db, server) -> dict:
         return {"ok": True, "action": "none"}
 
 
+def _list_server_ids_sync() -> list[int]:
+    from models import Server
+
+    db = SessionLocal()
+    try:
+        return [row[0] for row in db.query(Server.id).all()]
+    finally:
+        db.close()
+
+
+def _run_disk_soft_limit_for_server_sync(server_id: int) -> None:
+    from models import Server
+
+    db = SessionLocal()
+    try:
+        server = db.query(Server).filter(Server.id == server_id).first()
+        if not server:
+            return
+        result = evaluate_disk_soft_limit(db, server)
+        if result.get("ok"):
+            db.commit()
+    except Exception as exc:
+        db.rollback()
+        logger.warning("disk soft-limit check failed for server_id=%s: %s", server_id, exc)
+    finally:
+        db.close()
+
+
 async def _disk_soft_limit_task() -> None:
     """Globaler periodischer Job: aktualisiert `disk_usage_mb` für ALLE Server,
     und prüft zusätzlich das Soft-Limit (falls gesetzt).
@@ -562,23 +590,12 @@ async def _disk_soft_limit_task() -> None:
     - Warnung bei >= 80 % belegt: `status_message` enthält Warntext.
     - Auto-Stop bei >= 100 % belegt: Container gestoppt, `status='error'`.
     """
-    from models import Server
-
-    db = SessionLocal()
     try:
-        servers = db.query(Server).all()
-        for server in servers:
-            result = await asyncio.to_thread(evaluate_disk_soft_limit, db, server)
-            if not result.get("ok"):
-                continue
-            # Je Messung ein Commit: bricht der Lauf später ab, sind die bis
-            # dahin gemessenen Werte gespeichert, und die Transaktion bleibt
-            # nicht über die gesamte Laufzeit offen.
-            db.commit()
+        server_ids = await asyncio.to_thread(_list_server_ids_sync)
+        for server_id in server_ids:
+            await asyncio.to_thread(_run_disk_soft_limit_for_server_sync, server_id)
     except Exception as e:
         logger.warning("disk soft-limit task crashed: %s", e)
-    finally:
-        db.close()
 
 
 async def _docs_purge_task() -> None:
@@ -823,6 +840,43 @@ def _ensure_background_update_check_job() -> None:
     )
 
 
+def _load_nodes_for_heartbeat_sync():
+    from models import Node
+
+    db = SessionLocal()
+    try:
+        nodes = db.query(Node).order_by(Node.id.asc()).all()
+        db.expunge_all()
+        return nodes
+    finally:
+        db.close()
+
+
+def _apply_node_heartbeat_outcomes_sync(outcomes: list[tuple]) -> None:
+    from models import Node
+    from services.node_service import apply_agent_metrics, handle_node_probe_failure
+
+    db = SessionLocal()
+    try:
+        nodes_by_id = {n.id: n for n in db.query(Node).all()}
+        for node_id, now_utc, ok, payload in outcomes:
+            node = nodes_by_id.get(node_id)
+            if node is None:
+                continue
+            if ok and isinstance(payload, dict):
+                node.status = "online"
+                node.last_heartbeat = now_utc
+                apply_agent_metrics(node, payload)
+            else:
+                handle_node_probe_failure(db, node, now_utc)
+        db.commit()
+    except Exception as exc:
+        logger.warning("node heartbeat task failed: %s", exc)
+        db.rollback()
+    finally:
+        db.close()
+
+
 async def _node_heartbeat_task() -> None:
     """Probe every registered node /metrics in parallel; set online/offline + capacity.
 
@@ -830,58 +884,47 @@ async def _node_heartbeat_task() -> None:
     Never logs tokens. Fingerprint pinning enforced inside NodeClient.
     """
     import httpx
-    import asyncio
-    from models import Node, Server
     from services.node_client import NodeClient, NodeClientError
-    from services.node_service import apply_agent_metrics
 
-    db = SessionLocal()
     try:
-        nodes = db.query(Node).order_by(Node.id.asc()).all()
-        if not nodes:
-            return
-
-        semaphore = asyncio.Semaphore(50)  # max 50 concurrent requests
-        limits = httpx.Limits(max_connections=100, max_keepalive_connections=20)
-
-        from services.node_service import handle_node_probe_failure
-
-        async def check_node(client: httpx.AsyncClient, node: Node):
-            async with semaphore:
-                now_utc = datetime.now(timezone.utc)
-                try:
-                    # ``from_node`` entschlüsselt das Node-Token synchron gegen
-                    # den DIS-Sidecar. Direkt in der Koroutine ausgeführt hält
-                    # das die Ereignisschleife an, und die fünfzig angeblich
-                    # parallelen Sonden laufen in Wahrheit nacheinander.
-                    node_client = await asyncio.to_thread(
-                        NodeClient.from_node, node, timeout=10.0
-                    )
-                    metrics = await node_client.metrics_async(client=client)
-                    if isinstance(metrics, dict):
-                        node.status = "online"
-                        node.last_heartbeat = now_utc
-                        apply_agent_metrics(node, metrics)
-                    else:
-                        handle_node_probe_failure(db, node, now_utc)
-                except NodeClientError:
-                    handle_node_probe_failure(db, node, now_utc)
-                except Exception:
-                    handle_node_probe_failure(db, node, now_utc)
-                    logger.exception(
-                        "unexpected node heartbeat failure (node_id=%s)", node.id
-                    )
-
-        async with httpx.AsyncClient(limits=limits, timeout=10.0) as client:
-            tasks = [check_node(client, node) for node in nodes]
-            await asyncio.gather(*tasks)
-
-        db.commit()
+        nodes = await asyncio.to_thread(_load_nodes_for_heartbeat_sync)
     except Exception as exc:
         logger.warning("node heartbeat task failed: %s", exc)
-        db.rollback()
-    finally:
-        db.close()
+        return
+    if not nodes:
+        return
+
+    semaphore = asyncio.Semaphore(50)  # max 50 concurrent requests
+    limits = httpx.Limits(max_connections=100, max_keepalive_connections=20)
+
+    async def check_node(client: httpx.AsyncClient, node):
+        async with semaphore:
+            now_utc = datetime.now(timezone.utc)
+            try:
+                # ``from_node`` entschlüsselt das Node-Token synchron gegen
+                # den DIS-Sidecar. Direkt in der Koroutine ausgeführt hält
+                # das die Ereignisschleife an, und die fünfzig angeblich
+                # parallelen Sonden laufen in Wahrheit nacheinander.
+                node_client = await asyncio.to_thread(
+                    NodeClient.from_node, node, timeout=10.0
+                )
+                metrics = await node_client.metrics_async(client=client)
+                if isinstance(metrics, dict):
+                    return (node.id, now_utc, True, metrics)
+                return (node.id, now_utc, False, None)
+            except NodeClientError:
+                return (node.id, now_utc, False, None)
+            except Exception:
+                logger.exception(
+                    "unexpected node heartbeat failure (node_id=%s)", node.id
+                )
+                return (node.id, now_utc, False, None)
+
+    async with httpx.AsyncClient(limits=limits, timeout=10.0) as client:
+        tasks = [check_node(client, node) for node in nodes]
+        outcomes = list(await asyncio.gather(*tasks))
+
+    await asyncio.to_thread(_apply_node_heartbeat_outcomes_sync, outcomes)
 
 
 def _ensure_node_heartbeat_job() -> None:
@@ -948,24 +991,29 @@ def _ensure_git_update_check_job() -> None:
     )
 
 
-async def _guardian_reconciliation_task() -> None:
-    """Reconcile durable intent, observed state and incidents for every server."""
-    from services.guardian_reconciliation_service import reconcile_guardian_servers
-    from services.firewall_service import reconcile_firewall_rules
+def _reconcile_firewall_rules_sync() -> None:
     from database import SessionLocal
-
-    await reconcile_guardian_servers()
+    from services.firewall_service import reconcile_firewall_rules
 
     db = SessionLocal()
     try:
-        # Der Abgleich startet je Server ``ufw``-Unterprozesse beziehungsweise
-        # HTTPS-Aufrufe zur Node. Beides gehört nicht in die Ereignisschleife,
-        # sonst steht das Panel alle 30 Sekunden.
-        await asyncio.to_thread(reconcile_firewall_rules, db)
-    except Exception as exc:
-        logger.warning("Error in firewall reconciliation task: %s", exc)
+        reconcile_firewall_rules(db)
     finally:
         db.close()
+
+
+async def _guardian_reconciliation_task() -> None:
+    """Reconcile durable intent, observed state and incidents for every server."""
+    from services.guardian_reconciliation_service import reconcile_guardian_servers
+
+    await reconcile_guardian_servers()
+
+    try:
+        # Der Abgleich startet je Server ``ufw``-Unterprozesse beziehungsweise
+        # HTTPS-Aufrufe zur Node und öffnet eigene DB-Sessions im Worker-Thread.
+        await asyncio.to_thread(_reconcile_firewall_rules_sync)
+    except Exception as exc:
+        logger.warning("Error in firewall reconciliation task: %s", exc)
 
 
 def _ensure_guardian_reconciliation_job() -> None:
@@ -1060,6 +1108,66 @@ def _ensure_ai_guardian_job() -> None:
     )
 
 
+def _run_sync_ai_tasks_maintenance() -> None:
+    from database import SessionLocal
+    from services import (
+        ai_gedaechtnis_altbestand,
+        ai_gedaechtnis_pflege,
+        ai_gedaechtnis_schreiber,
+        ai_run_service,
+        desktop_job_service,
+    )
+
+    db = SessionLocal()
+    try:
+        try:
+            geweckt = ai_run_service.faellige_wecken(db)
+            if geweckt:
+                logger.info("KI-Worker: %s Lauf/Laeufe geweckt", geweckt)
+        except Exception as exc:
+            db.rollback()
+            logger.warning("Error in AI wake task: %s", exc)
+        try:
+            nachgeholt = ai_run_service.verpuffte_bestaetigungen_wecken(db)
+            if nachgeholt:
+                logger.info(
+                    "KI-Laeufe: %s verpuffte Bestaetigung(en) nachgeholt", nachgeholt
+                )
+        except Exception as exc:
+            db.rollback()
+            logger.warning("Error in AI confirmation catch-up: %s", exc)
+        try:
+            verfallen = desktop_job_service.verfallene_wecken(db)
+            if verfallen:
+                logger.info("Desktop-Auftraege: %s verfallen", verfallen)
+        except Exception as exc:
+            db.rollback()
+            logger.warning("Error in desktop job expiry: %s", exc)
+        try:
+            begonnen = ai_gedaechtnis_schreiber.faellige_starten(db)
+            if begonnen:
+                logger.info("KI-Gedaechtnis: %s Durchgang/Durchgaenge begonnen", begonnen)
+        except Exception as exc:
+            db.rollback()
+            logger.warning("Error in AI memory writer: %s", exc)
+        try:
+            bereiche = ai_gedaechtnis_altbestand.faellige_starten(db)
+            if bereiche:
+                logger.info("KI-Gedaechtnis: Altbestand in %s Bereich(en) begonnen", len(bereiche))
+        except Exception as exc:
+            db.rollback()
+            logger.warning("Error in AI memory rewrite: %s", exc)
+        try:
+            gepflegt = ai_gedaechtnis_pflege.faellige_starten(db)
+            if gepflegt:
+                logger.info("KI-Gedaechtnis: Pflege in %s Bereich(en) begonnen", len(gepflegt))
+        except Exception as exc:
+            db.rollback()
+            logger.warning("Error in AI memory care: %s", exc)
+    finally:
+        db.close()
+
+
 async def _ai_tasks_task() -> None:
     """Sieht nach, ob ein stehender Auftrag der KI faellig geworden ist.
 
@@ -1071,18 +1179,12 @@ async def _ai_tasks_task() -> None:
     Der Takt betraegt 60 Sekunden und ist damit zugleich die Genauigkeit, mit
     der ein Termin eingehalten wird. Feiner waere unehrlich: der Lauf selbst
     dauert laenger als eine Minute.
-
-    **Sieben Handgriffe, einzeln gekapselt** (die Zwei-Block-Form aus
-    `_ai_guardian_task`): faellige Auftraege starten, geparkte Worker wecken
-    (``waiting_wake`` mit verstrichener Frist), Laeufe nachholen, deren
-    Bestaetigung im falschen Moment kam, verfallene Desktop-Auftraege
-    schliessen, offene Meldungen zustellen, wenn das Gespraech Ruhe hat,
-    ruhende Gespraeche fuer das Gedaechtnis nachlesen und alte Erinnerungen
-    in Saetze umschreiben.
-    Scheitert einer, laufen die anderen trotzdem.
     """
     from database import SessionLocal
+    from services import ai_gedaechtnis_abruf, ai_gedaechtnis_pflege, ai_meldestelle
     from services.ai_task_service import faellige_aufgaben_bearbeiten
+
+    await asyncio.to_thread(_run_sync_ai_tasks_maintenance)
 
     db = SessionLocal()
     try:
@@ -1094,105 +1196,28 @@ async def _ai_tasks_task() -> None:
             db.rollback()
             logger.warning("Error in AI tasks scheduler: %s", exc)
         try:
-            from services import ai_run_service
-
-            geweckt = ai_run_service.faellige_wecken(db)
-            if geweckt:
-                logger.info("KI-Worker: %s Lauf/Laeufe geweckt", geweckt)
-        except Exception as exc:
-            db.rollback()
-            logger.warning("Error in AI wake task: %s", exc)
-        try:
-            from services import ai_run_service
-
-            # Bestätigungen, die im falschen Moment kamen. Zwischen der Karte
-            # im Chat und dem Parken des Laufs liegt eine Schlussrunde; wer
-            # dort klickt, dessen Weckruf verpufft (`darf_fortsetzen` sieht
-            # 'running'). Ohne diesen Handgriff parkte der Lauf danach für
-            # immer — dieselbe Nachhut wie `_verpuffte_wecken` bei den
-            # Desktop-Aufträgen.
-            nachgeholt = ai_run_service.verpuffte_bestaetigungen_wecken(db)
-            if nachgeholt:
-                logger.info(
-                    "KI-Laeufe: %s verpuffte Bestaetigung(en) nachgeholt", nachgeholt
-                )
-        except Exception as exc:
-            db.rollback()
-            logger.warning("Error in AI confirmation catch-up: %s", exc)
-        try:
-            from services import desktop_job_service
-
-            # Auftraege an einen Rechner, der nicht geantwortet hat. Ohne
-            # diesen Takt bemerkte den Verfall nur, wer die App **laufen**
-            # hat — ausgerechnet der Fall, in dem der Rechner aus ist, bliebe
-            # unbemerkt, und der Lauf haenge statt zu enden.
-            verfallen = desktop_job_service.verfallene_wecken(db)
-            if verfallen:
-                logger.info("Desktop-Auftraege: %s verfallen", verfallen)
-        except Exception as exc:
-            db.rollback()
-            logger.warning("Error in desktop job expiry: %s", exc)
-        try:
-            from services import ai_meldestelle
-
             geliefert = await ai_meldestelle.faellige_zustellungen(db)
             if geliefert:
                 logger.info("KI-Meldungen: %s Zustellung(en) begonnen", geliefert)
         except Exception as exc:
             db.rollback()
             logger.warning("Error in AI delivery task: %s", exc)
-        try:
-            from services import ai_gedaechtnis_schreiber
-
-            # Gespräche, die seit fünf Minuten ruhen, liest das Gedächtnis
-            # nach. Die Durchgänge laufen nebenher und halten diesen Takt
-            # nicht auf: einer dauert so lange wie ein Modellaufruf.
-            begonnen = ai_gedaechtnis_schreiber.faellige_starten(db)
-            if begonnen:
-                logger.info("KI-Gedaechtnis: %s Durchgang/Durchgaenge begonnen", begonnen)
-        except Exception as exc:
-            db.rollback()
-            logger.warning("Error in AI memory writer: %s", exc)
-        try:
-            from services import ai_gedaechtnis_altbestand
-
-            # Erinnerungen aus der Zeit vor Gedächtnis v2 werden Sätze,
-            # je Takt höchstens zwei Bereiche, ebenfalls nebenher.
-            bereiche = ai_gedaechtnis_altbestand.faellige_starten(db)
-            if bereiche:
-                logger.info("KI-Gedaechtnis: Altbestand in %s Bereich(en) begonnen", len(bereiche))
-        except Exception as exc:
-            db.rollback()
-            logger.warning("Error in AI memory rewrite: %s", exc)
-        try:
-            from services import ai_gedaechtnis_pflege
-
-            # Einmal am Tag: was „im Kopf“ steht, nach Wichtigkeit × Präsenz.
-            # Eine Abfrage über alle Erinnerungen, darum im Thread.
-            gerechnet = await asyncio.to_thread(ai_gedaechtnis_pflege.rang_takt)
-            if gerechnet is not None:
-                logger.info("KI-Gedaechtnis: Kopfrang fuer %s Erinnerung(en) gerechnet", gerechnet)
-            # Nachts je Bereich: Doppel zusammenführen, Abgelaufenes in die
-            # Vergangenheit setzen. Nebenher wie der Schreiber.
-            gepflegt = ai_gedaechtnis_pflege.faellige_starten(db)
-            if gepflegt:
-                logger.info("KI-Gedaechtnis: Pflege in %s Bereich(en) begonnen", len(gepflegt))
-        except Exception as exc:
-            db.rollback()
-            logger.warning("Error in AI memory care: %s", exc)
-        try:
-            from services import ai_gedaechtnis_abruf
-
-            # Vektor und Wortindex für Erinnerungen, die noch keine haben
-            # (Bestand vor Stufe 4, ein Modell, das beim Schreiben fehlte).
-            # Eigene Sitzung in einem Thread: Sidecar und Modell blockieren.
-            nachgezogen = await asyncio.to_thread(ai_gedaechtnis_abruf.nachziehen)
-            if nachgezogen:
-                logger.info("KI-Gedaechtnis: %s Erinnerung(en) fuer den Abruf nachgezogen", nachgezogen)
-        except Exception as exc:
-            logger.warning("Error in AI memory indexing: %s", exc)
     finally:
         db.close()
+
+    try:
+        gerechnet = await asyncio.to_thread(ai_gedaechtnis_pflege.rang_takt)
+        if gerechnet is not None:
+            logger.info("KI-Gedaechtnis: Kopfrang fuer %s Erinnerung(en) gerechnet", gerechnet)
+    except Exception as exc:
+        logger.warning("Error in AI memory rank: %s", exc)
+
+    try:
+        nachgezogen = await asyncio.to_thread(ai_gedaechtnis_abruf.nachziehen)
+        if nachgezogen:
+            logger.info("KI-Gedaechtnis: %s Erinnerung(en) fuer den Abruf nachgezogen", nachgezogen)
+    except Exception as exc:
+        logger.warning("Error in AI memory indexing: %s", exc)
 
 
 def _ensure_ai_tasks_job() -> None:
@@ -1218,14 +1243,7 @@ def _ensure_ai_tasks_job() -> None:
     )
 
 
-async def _hoster_maintenance_task() -> None:
-    """Stellt faellige Hoster-Webhooks zu und beendet abgelaufene Kuendigungen.
-
-    Beides bewusst in einem Lauf und mit eigener Session: der Lauf darf weder
-    eine Request-Session belegen noch den Panelbetrieb blockieren. Fehler werden
-    protokolliert, aber nie weitergereicht — ein defekter Shop darf den
-    Scheduler nicht anhalten.
-    """
+def _run_hoster_maintenance_sync() -> None:
     import logging
 
     from database import SessionLocal
@@ -1235,12 +1253,8 @@ async def _hoster_maintenance_task() -> None:
         from services.hoster_service_lifecycle import purge_terminated_services
         from services.hoster_webhook_service import deliver_pending
 
-        # Beide Schritte sind blockierendes IO: ``deliver_pending`` verschickt
-        # bis zu 25 Webhooks mit synchronem httpx (je 10 s Frist), und
-        # ``purge_terminated_services`` löscht ganze Server samt Verzeichnis.
-        # In der Ereignisschleife würde das jede Anfrage des Panels anhalten.
-        await asyncio.to_thread(deliver_pending, db)
-        await asyncio.to_thread(purge_terminated_services, db)
+        deliver_pending(db)
+        purge_terminated_services(db)
     except Exception as exc:
         db.rollback()
         logging.getLogger(__name__).warning(
@@ -1248,6 +1262,17 @@ async def _hoster_maintenance_task() -> None:
         )
     finally:
         db.close()
+
+
+async def _hoster_maintenance_task() -> None:
+    """Stellt faellige Hoster-Webhooks zu und beendet abgelaufene Kuendigungen.
+
+    Beides bewusst in einem Lauf und mit eigener Session im Worker-Thread: der
+    Lauf darf weder eine Request-Session belegen noch den Event-Loop blockieren.
+    Fehler werden protokolliert, aber nie weitergereicht — ein defekter Shop
+    darf den Scheduler nicht anhalten.
+    """
+    await asyncio.to_thread(_run_hoster_maintenance_sync)
 
 
 def _ensure_hoster_maintenance_job() -> None:

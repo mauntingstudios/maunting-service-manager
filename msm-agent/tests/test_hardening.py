@@ -305,3 +305,61 @@ def test_managed_postgres_avoids_default_bridge_and_attaches_internal_network(
     assert result["ok"] is True
     assert run.call_args.kwargs["network"] == "msm-internal-host"
     network.connect.assert_called_once_with(container)
+
+
+def test_create_container_and_run_ephemeral_enforce_isolation_limits(
+    monkeypatch, servers_dir: Path
+) -> None:
+    from services.docker_service import (
+        DEFAULT_CONTAINER_PIDS_LIMIT,
+        DEFAULT_EPHEMERAL_MEM_LIMIT,
+        DEFAULT_EPHEMERAL_NANO_CPUS,
+        DEFAULT_EPHEMERAL_PIDS_LIMIT,
+        create_container,
+        run_ephemeral,
+    )
+
+    target = servers_dir / "42"
+    target.mkdir()
+
+    fake_container = MagicMock(id="cont123456", status="running")
+    run_mock = MagicMock(return_value=fake_container)
+    fake_container.wait.return_value = {"StatusCode": 0}
+    fake_container.logs.return_value = b"done"
+    docker_client = SimpleNamespace(
+        containers=SimpleNamespace(
+            get=MagicMock(side_effect=NotFound("missing")),
+            run=run_mock,
+        ),
+        images=SimpleNamespace(get=MagicMock(return_value=MagicMock())),
+    )
+    monkeypatch.setattr("services.docker_service._get_client", lambda: docker_client)
+    monkeypatch.setattr(
+        "services.docker_service.repair_bind_mount_permissions",
+        lambda *_args, **_kwargs: {"ok": True},
+    )
+
+    create_container(
+        name="msm-srv-42",
+        image="alpine:3.20",
+        volumes={str(target): {"bind": "/data", "mode": "rw"}},
+    )
+    create_kwargs = run_mock.call_args.kwargs
+    assert create_kwargs["pids_limit"] == DEFAULT_CONTAINER_PIDS_LIMIT
+    assert any(
+        (u.get("Name") if isinstance(u, dict) else getattr(u, "name", None)) == "nofile"
+        for u in create_kwargs["ulimits"]
+    )
+
+    run_mock.reset_mock()
+    res = run_ephemeral(
+        image="alpine:3.20",
+        command=["sh", "-c", "echo ok"],
+        volumes={},
+    )
+    assert res["ok"] is True
+    eph_kwargs = run_mock.call_args.kwargs
+    assert eph_kwargs["pids_limit"] == DEFAULT_EPHEMERAL_PIDS_LIMIT
+    assert eph_kwargs["nano_cpus"] == DEFAULT_EPHEMERAL_NANO_CPUS
+    assert eph_kwargs["mem_limit"] == DEFAULT_EPHEMERAL_MEM_LIMIT
+    assert eph_kwargs["memswap_limit"] == DEFAULT_EPHEMERAL_MEM_LIMIT

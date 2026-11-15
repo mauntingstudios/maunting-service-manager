@@ -261,6 +261,7 @@ async def get_curseforge_classes(
 ) -> List[dict]:
     """Liefert die dynamisch unterstützten Inhaltsklassen für das Spiel dieses Servers."""
     _server, _plugin, _mod_support, game_id = _resolve_curseforge_server(server_id, user, db)
+    db.close()
     try:
         cf_service = await get_curseforge_service()
         if hasattr(cf_service, "get_game_classes"):
@@ -291,6 +292,7 @@ async def get_curseforge_categories(
 ) -> List[dict]:
     """Liefert die CurseForge-Kategorien und -Klassen für das Spiel dieses Servers."""
     _server, _plugin, _mod_support, game_id = _resolve_curseforge_server(server_id, user, db)
+    db.close()
     try:
         cf_service = await get_curseforge_service()
         return await cf_service.get_categories(game_id)
@@ -323,6 +325,8 @@ async def search_curseforge_mods(
 ) -> List[dict]:
     """Sucht CurseForge-Mods oder Modpacks für das Spiel dieses Servers."""
     server, plugin, mod_support, game_id = _resolve_curseforge_server(server_id, user, db)
+    db.expunge(server)
+    db.close()
 
     try:
         cf_service = await get_curseforge_service()
@@ -415,6 +419,8 @@ async def get_popular_mods(
 ) -> List[dict]:
     """Liefert CurseForge-Mods oder Modpacks nach Sortierkriterium."""
     server, plugin, mod_support, game_id = _resolve_curseforge_server(server_id, user, db)
+    db.expunge(server)
+    db.close()
     if sort not in ("trending", "popular", "newest", "updated"):
         sort = "trending"
 
@@ -476,6 +482,7 @@ async def get_mod_details(
     plugin = get_plugin(server.game_type)
     if not plugin or not plugin.supports_mods:
         raise HTTPException(status_code=400, detail="Spiel unterstützt keine Mods")
+    db.close()
 
     try:
         cf_service = await get_curseforge_service()
@@ -630,6 +637,8 @@ async def get_curseforge_bundle_details(
 ) -> dict:
     """Liefert Modpack-/Bundle-Dateien, Server-Pack-Status und erforderliche Abhängigkeiten."""
     server, plugin, _mod_support, game_id = _resolve_curseforge_server(server_id, user, db)
+    db.expunge(server)
+    db.close()
     clean_id = str(mod_id).strip()
     if not clean_id.isdigit() or len(clean_id) > 20:
         raise HTTPException(status_code=400, detail={"code": "invalid_workshop_id", "message": "errors.invalid_workshop_id"})
@@ -670,6 +679,8 @@ async def get_curseforge_mod_dependencies(
 ) -> dict:
     """Löst erforderliche CurseForge-Abhängigkeiten (inkl. transitiver Bibliotheken) in Installationsreihenfolge auf."""
     server, plugin, _mod_support, game_id = _resolve_curseforge_server(server_id, user, db)
+    db.expunge(server)
+    db.close()
     clean_id = str(mod_id).strip()
     if not clean_id.isdigit() or len(clean_id) > 20:
         raise HTTPException(status_code=400, detail={"code": "invalid_workshop_id", "message": "errors.invalid_workshop_id"})
@@ -791,6 +802,7 @@ async def parse_curseforge_manifest(
     _server, _plugin, _mod_support, game_id = _resolve_curseforge_server(
         server_id, user, db, permission="server.mods.write"
     )
+    db.close()
     raw_bytes = await file.read(_MAX_MANIFEST_UPLOAD_BYTES + 1)
     parsed = _parse_curseforge_manifest_payload(raw_bytes)
     entries: list[tuple[int, int | None]] = parsed["entries"]

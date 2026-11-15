@@ -22,7 +22,11 @@ from services.guardian_action_registry import (
     RecoveryContext,
     execute_action,
 )
-from services.agent_operation_coordinator import operation, operation_async
+from services.agent_operation_coordinator import (
+    is_operation_active,
+    operation,
+    operation_async,
+)
 from services.guardian_contract import (
     DIAGNOSTIC_PARSERS,
     GUARDIAN_SCHEMA_VERSION,
@@ -1091,13 +1095,30 @@ async def _reconcile_server_locked(server_id: int) -> None:
 
 async def reconcile_all_servers() -> None:
     root = get_state_store().ensure_root()
+    server_ids: list[int] = []
     for path in sorted(root.iterdir(), key=lambda item: item.name):
         if path.is_symlink() or not path.is_dir() or not path.name.isdigit() or path.name.startswith("0"):
             continue
-        try:
-            await reconcile_server(int(path.name))
-        except Exception:
-            logger.exception("Guardian reconciliation failed for server_id=%s", path.name)
+        server_id = int(path.name)
+        if is_operation_active(server_id):
+            continue
+        server_ids.append(server_id)
+
+    if not server_ids:
+        return
+
+    semaphore = asyncio.Semaphore(4)
+
+    async def _reconcile_one(sid: int) -> None:
+        async with semaphore:
+            if is_operation_active(sid):
+                return
+            try:
+                await reconcile_server(sid)
+            except Exception:
+                logger.exception("Guardian reconciliation failed for server_id=%s", sid)
+
+    await asyncio.gather(*(_reconcile_one(sid) for sid in server_ids))
 
 
 async def start_guardian_loop() -> None:

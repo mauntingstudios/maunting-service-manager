@@ -109,3 +109,145 @@ class _FakeSession:
 
     def close(self):
         self._closed = True
+
+
+def test_server_scope_lock_isolates_servers_and_respects_per_node_cap():
+    import threading
+    import time
+    from services import install_update_lock_service as lock_svc
+
+    lock_svc.reset_install_update_lock_for_tests()
+    try:
+        # Zwei verschiedene Server auf demselben Node (Cap=2) koennen parallel laufen.
+        assert lock_svc.try_acquire_install_update_lock(
+            9101, "mod_install", node_id=701, scope="server", max_per_node=2
+        )
+        assert lock_svc.try_acquire_install_update_lock(
+            9102, "mod_install", node_id=701, scope="server", max_per_node=2
+        )
+        # Dritter Server auf demselben Node wird vom Per-Node-Cap blockiert,
+        # waehrend ein Server auf einem anderen Node sofort starten darf.
+        assert not lock_svc.try_acquire_install_update_lock(
+            9103, "mod_install", node_id=701, scope="server", max_per_node=2
+        )
+        assert lock_svc.try_acquire_install_update_lock(
+            9201, "mod_install", node_id=702, scope="server", max_per_node=2
+        )
+        # Derselbe Server darf nicht zweimal gleichzeitig gesperrt werden.
+        assert not lock_svc.try_acquire_install_update_lock(
+            9101, "mod_install", node_id=701, scope="server", max_per_node=2
+        )
+
+        # Ein blockierter Waiter wird nach release sofort geweckt.
+        acquired_event = threading.Event()
+
+        def waiter():
+            if lock_svc.acquire_install_update_lock_blocking(
+                9103,
+                "mod_install",
+                node_id=701,
+                scope="server",
+                max_per_node=2,
+                timeout_seconds=2.0,
+            ):
+                acquired_event.set()
+                lock_svc.release_install_update_lock(9103)
+
+        t = threading.Thread(target=waiter, daemon=True)
+        t.start()
+        time.sleep(0.05)
+        assert not acquired_event.is_set()
+        lock_svc.release_install_update_lock(9101)
+        assert acquired_event.wait(timeout=1.5)
+        t.join(timeout=1.0)
+    finally:
+        lock_svc.reset_install_update_lock_for_tests()
+
+
+def test_reinstall_all_mods_bg_closes_db_before_plugin_install():
+    from types import SimpleNamespace
+    from routers.mods import reinstall_all_mods_bg
+    from services import install_update_lock_service as lock_svc
+
+    sessions: list[_FakeSession] = []
+    seen_closed_during_ops: list[tuple[str, bool]] = []
+    seen_lock_args: list[tuple[str, int | None]] = []
+
+    class _QuerySession(_FakeSession):
+        def query(self, *_args):
+            return self
+
+        def filter(self, *_args):
+            return self
+
+        def options(self, *_args):
+            return self
+
+        def first(self):
+            return SimpleNamespace(
+                id=444,
+                game_type="minecraft",
+                node_id=77,
+                node=None,
+                install_dir="/srv/444",
+                mods=[SimpleNamespace(workshop_id="10", enabled=True)],
+            )
+
+        def expunge(self, _obj):
+            return None
+
+        def commit(self):
+            return None
+
+        def rollback(self):
+            return None
+
+    def make_session():
+        s = _QuerySession()
+        sessions.append(s)
+        return s
+
+    class _FakePlugin:
+        supports_mods = True
+
+        def cleanup_mod(self, _server, _wid):
+            seen_closed_during_ops.append(("cleanup", sessions[0]._closed))
+
+        def install_mod(self, _server, _wid):
+            seen_closed_during_ops.append(("install", sessions[0]._closed))
+            return {"ok": True}
+
+        def update_modlist(self, _server):
+            seen_closed_during_ops.append(("modlist", sessions[-1]._closed))
+
+    orig_acquire = lock_svc.acquire_install_update_lock_blocking
+
+    def spy_acquire(server_id, operation, **kwargs):
+        seen_lock_args.append((kwargs.get("scope", "node"), kwargs.get("node_id")))
+        return orig_acquire(server_id, operation, **kwargs)
+
+    lock_svc.reset_install_update_lock_for_tests()
+    try:
+        with patch("routers.mods.SessionLocal", side_effect=make_session), \
+             patch("routers.mods.get_plugin", return_value=_FakePlugin()), \
+             patch("routers.mods.acquire_install_update_lock_blocking", side_effect=spy_acquire), \
+             patch("routers.mods._append_console_log"), \
+             patch("routers.mods.mark_mod_installing"), \
+             patch("routers.mods.mark_mod_installed"), \
+             patch("routers.mods.updater.update_mod_metadata_after_success"):
+            reinstall_all_mods_bg(444, ["10"])
+            assert lock_svc.get_server_node_hint(444) == 77
+            reinstall_all_mods_bg(444, ["10"])
+
+        assert seen_closed_during_ops == [
+            ("cleanup", True),
+            ("install", True),
+            ("modlist", True),
+            ("cleanup", True),
+            ("install", True),
+            ("modlist", True),
+        ]
+        assert seen_lock_args == [("server", None), ("server", 77)]
+        assert all(s._closed for s in sessions)
+    finally:
+        lock_svc.reset_install_update_lock_for_tests()

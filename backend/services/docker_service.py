@@ -951,6 +951,13 @@ def run_container(
     if ram_limit_mb is not None and ram_limit_mb > 0:
         kwargs["mem_limit"] = f"{ram_limit_mb}m"
         kwargs["memswap_limit"] = f"{ram_limit_mb}m"
+    kwargs["pids_limit"] = 512
+    try:
+        from docker.types import Ulimit
+
+        kwargs["ulimits"] = [Ulimit(name="nofile", soft=65536, hard=65536)]
+    except Exception:
+        pass
 
     kwargs = {key: value for key, value in kwargs.items() if value is not None}
     try:
@@ -1054,6 +1061,10 @@ def run_ephemeral(
         "cap_drop": _HARDENING_CAP_DROP,
         "cap_add": cap_adds or None,
         "security_opt": _HARDENING_SECURITY_OPT,
+        "pids_limit": 256,
+        "nano_cpus": 2_000_000_000,
+        "mem_limit": "4096m",
+        "memswap_limit": "4096m",
     }
     kwargs = {key: value for key, value in kwargs.items() if value is not None}
     container = None

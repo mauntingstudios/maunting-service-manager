@@ -1,9 +1,10 @@
 """CurseForge-Mod- und Modpack-Installer für Blueprint-Plugins."""
 
 import asyncio
-import io
 import json
 import logging
+import shutil
+import tempfile
 import zipfile
 from pathlib import Path
 
@@ -17,6 +18,8 @@ from services.curseforge_service import get_curseforge_service
 from services.mod_install_status_service import set_mod_install_progress
 
 logger = logging.getLogger(__name__)
+MAX_CURSEFORGE_DOWNLOAD_BYTES = 512 * 1024 * 1024  # 512 MiB Sicherheitsgrenze pro Mod/Modpack
+_SPOOL_MEMORY_THRESHOLD_BYTES = 16 * 1024 * 1024  # Ab 16 MiB automatisch auf Platte auslagern
 
 
 def _log_console(server_id: int, message: str) -> None:
@@ -146,7 +149,7 @@ async def _extract_curseforge_zip(
     server,
     svc,
     cf_key: str,
-    file_bytes: bytes,
+    zip_source,
     mod_info,
     safe_name: str,
     base: Path,
@@ -154,7 +157,14 @@ async def _extract_curseforge_zip(
     target_dir_rel: str,
 ) -> None:
     """Entpackt ein CurseForge-ZIP (inkl. `overrides/`- und `manifest.json`-Modpack-Support)."""
-    with zipfile.ZipFile(io.BytesIO(file_bytes)) as zf:
+    if isinstance(zip_source, (bytes, bytearray)):
+        import io
+        zf_input = io.BytesIO(zip_source)
+    else:
+        zip_source.seek(0)
+        zf_input = zip_source
+
+    with zipfile.ZipFile(zf_input) as zf:
         namelist = zf.namelist()
         has_overrides = any(m.filename.startswith("overrides/") for m in zf.infolist())
         manifest_bytes = zf.read("manifest.json") if "manifest.json" in namelist else None
@@ -178,7 +188,8 @@ async def _extract_curseforge_zip(
                     extracted_path.mkdir(parents=True, exist_ok=True)
                 else:
                     extracted_path.parent.mkdir(parents=True, exist_ok=True)
-                    extracted_path.write_bytes(zf.read(member))
+                    with zf.open(member, "r") as src_fp, extracted_path.open("wb") as dst_fp:
+                        shutil.copyfileobj(src_fp, dst_fp, length=65536)
                     plugin._try_chown_install_path(server, extracted_path)
             except (ValueError, Exception):
                 pass
@@ -276,57 +287,67 @@ async def _download_single_curseforge_mod(
         dest_file = (target_dir / dest_file_name).resolve()
         dest_file.relative_to(base)
 
-        async with httpx.AsyncClient(timeout=120.0, follow_redirects=True) as dl_client:
-            if type(dl_client).__module__.startswith("httpx"):
-                buf = bytearray()
-                async with dl_client.stream("GET", dl_url, headers={"x-api-key": cf_key}) as resp:
+        with tempfile.SpooledTemporaryFile(max_size=_SPOOL_MEMORY_THRESHOLD_BYTES) as dl_tmp:
+            downloaded_bytes = 0
+            async with httpx.AsyncClient(timeout=120.0, follow_redirects=True) as dl_client:
+                if type(dl_client).__module__.startswith("httpx"):
+                    async with dl_client.stream("GET", dl_url, headers={"x-api-key": cf_key}) as resp:
+                        resp.raise_for_status()
+                        total_bytes = int(resp.headers.get("content-length") or 0) or (
+                            int(getattr(mod_info, "file_size", 0) or 0)
+                        )
+                        if total_bytes > MAX_CURSEFORGE_DOWNLOAD_BYTES:
+                            raise ValueError("CurseForge-Datei überschreitet das Download-Limit")
+                        last_pct = 20
+                        async for chunk in resp.aiter_bytes(chunk_size=65536):
+                            downloaded_bytes += len(chunk)
+                            if downloaded_bytes > MAX_CURSEFORGE_DOWNLOAD_BYTES:
+                                raise ValueError("CurseForge-Datei überschreitet das Download-Limit")
+                            dl_tmp.write(chunk)
+                            if total_bytes > 0:
+                                pct = min(85, 20 + int((downloaded_bytes / total_bytes) * 65))
+                            else:
+                                pct = min(85, last_pct + 5)
+                            if pct >= last_pct + 5:
+                                last_pct = pct
+                                set_mod_install_progress(
+                                    server.id,
+                                    wid,
+                                    pct,
+                                    current_bytes=downloaded_bytes,
+                                    total_bytes=total_bytes or None,
+                                )
+                else:
+                    resp = await dl_client.get(dl_url, headers={"x-api-key": cf_key})
                     resp.raise_for_status()
-                    total_bytes = int(resp.headers.get("content-length") or 0) or (
-                        int(getattr(mod_info, "file_size", 0) or 0)
-                    )
-                    last_pct = 20
-                    async for chunk in resp.aiter_bytes(chunk_size=65536):
-                        buf.extend(chunk)
-                        if total_bytes > 0:
-                            pct = min(85, 20 + int((len(buf) / total_bytes) * 65))
-                        else:
-                            pct = min(85, last_pct + 5)
-                        if pct >= last_pct + 5:
-                            last_pct = pct
-                            set_mod_install_progress(
-                                server.id,
-                                wid,
-                                pct,
-                                current_bytes=len(buf),
-                                total_bytes=total_bytes or None,
-                            )
-                file_bytes = bytes(buf)
-            else:
-                resp = await dl_client.get(dl_url, headers={"x-api-key": cf_key})
-                resp.raise_for_status()
-                file_bytes = resp.content
+                    if len(resp.content) > MAX_CURSEFORGE_DOWNLOAD_BYTES:
+                        raise ValueError("CurseForge-Datei überschreitet das Download-Limit")
+                    dl_tmp.write(resp.content)
 
-        set_mod_install_progress(server.id, wid, 90)
-        if safe_name.lower().endswith(".zip"):
-            await _extract_curseforge_zip(
-                plugin,
-                server,
-                svc,
-                cf_key,
-                file_bytes,
-                mod_info,
-                safe_name,
-                base,
-                target_dir,
-                target_dir_rel,
-            )
-        else:
-            dest_file.write_bytes(file_bytes)
-            plugin._try_chown_install_path(server, dest_file)
-            _log_console(
-                server.id,
-                f"[MSM] CurseForge Mod {mod_info.title} ({dest_file_name}) heruntergeladen nach {target_dir_rel}/\n",
-            )
+            set_mod_install_progress(server.id, wid, 90)
+            if safe_name.lower().endswith(".zip"):
+                dl_tmp.seek(0)
+                await _extract_curseforge_zip(
+                    plugin,
+                    server,
+                    svc,
+                    cf_key,
+                    dl_tmp,
+                    mod_info,
+                    safe_name,
+                    base,
+                    target_dir,
+                    target_dir_rel,
+                )
+            else:
+                dl_tmp.seek(0)
+                with dest_file.open("wb") as dst_fp:
+                    shutil.copyfileobj(dl_tmp, dst_fp, length=65536)
+                plugin._try_chown_install_path(server, dest_file)
+                _log_console(
+                    server.id,
+                    f"[MSM] CurseForge Mod {mod_info.title} ({dest_file_name}) heruntergeladen nach {target_dir_rel}/\n",
+                )
 
         set_mod_install_progress(server.id, wid, 98)
         _update_curseforge_mod_title_in_db(server.id, wid, mod_info.title)

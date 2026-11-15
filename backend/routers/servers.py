@@ -249,7 +249,7 @@ def delete_server(
 
 
 @router.post("/{server_id}/start")
-async def start_server(
+def start_server(
     server_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -271,7 +271,7 @@ async def start_server(
 
 
 @router.post("/{server_id}/stop")
-async def stop_server(
+def stop_server(
     server_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -293,7 +293,7 @@ async def stop_server(
 
 
 @router.post("/{server_id}/restart")
-async def restart_server(
+def restart_server(
     server_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),

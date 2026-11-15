@@ -24,8 +24,32 @@ class InstallUpdateLockInfo:
     expires_at: float
 
 
-_LOCK = threading.Lock()
+_LOCK = threading.RLock()
+_CONDITION = threading.Condition(_LOCK)
 _ACTIVE: dict[int | None, InstallUpdateLockInfo] = {}
+_ACTIVE_SERVER: dict[int, InstallUpdateLockInfo] = {}
+_SERVER_NODE_HINTS: dict[int, int | None] = {}
+DEFAULT_MAX_CONCURRENT_MOD_JOBS_PER_NODE = 2
+
+
+def register_server_node_hint(server_id: int, node_id: int | None) -> None:
+    """Merkt sich ``server_id -> node_id`` im Speicher ohne laufende DB-Session."""
+    with _CONDITION:
+        _SERVER_NODE_HINTS[server_id] = node_id
+
+
+def get_server_node_hint(server_id: int) -> int | None:
+    with _CONDITION:
+        return _SERVER_NODE_HINTS.get(server_id)
+
+
+def _prune_stale_locked(now: float) -> None:
+    for k, v in list(_ACTIVE.items()):
+        if v.expires_at <= now:
+            _ACTIVE.pop(k, None)
+    for sid, v in list(_ACTIVE_SERVER.items()):
+        if v.expires_at <= now:
+            _ACTIVE_SERVER.pop(sid, None)
 
 
 def try_acquire_install_update_lock(
@@ -34,27 +58,61 @@ def try_acquire_install_update_lock(
     *,
     node_id: int | None = None,
     ttl_seconds: int = DEFAULT_INSTALL_UPDATE_LOCK_TTL_SECONDS,
+    scope: str = "node",
+    max_per_node: int = DEFAULT_MAX_CONCURRENT_MOD_JOBS_PER_NODE,
 ) -> bool:
-    """Reserve the install/update slot for a specific node and server.
+    """Reserve the install/update slot for a specific node or server.
 
-    Stale process-local locks are replaced after ``ttl_seconds``. This does not
-    claim cross-process serialization; production should run one panel worker or
-    back this with DB/Redis if multiple API workers are introduced.
+    - ``scope="node"`` (Default): exklusiver Lock auf dem Ziel-Node (``node_id``),
+      abwaertskompatibel fuer Server-Install/Update.
+    - ``scope="server"``: sperrt exklusiv pro ``server_id`` (und respektiert aktive
+      Node-Locks fuer denselben Server), begrenzt gleichzeitige Mod-Jobs je
+      ``node_id`` ueber ``max_per_node`` statt den gesamten Node oder alle Nodes
+      (``node_id=None``) global einzufrieren.
+
+    Stale process-local locks are replaced after ``ttl_seconds``.
     """
-    global _ACTIVE
     now = time.monotonic()
-    with _LOCK:
-        # Prevent concurrent operations on the exact same server
-        for k, v in list(_ACTIVE.items()):
-            if v.expires_at > now and v.server_id == server_id:
+    resolved_node_id = node_id if node_id is not None else _SERVER_NODE_HINTS.get(server_id)
+    with _CONDITION:
+        _prune_stale_locked(now)
+
+        # Niemals zwei konkurrierende Operationen auf demselben Server zulassen.
+        if server_id in _ACTIVE_SERVER:
+            return False
+        for v in _ACTIVE.values():
+            if v.server_id == server_id:
                 return False
-        
-        # Prevent concurrent SteamCMD operations on the exact same node (to avoid SteamCMD locks)
-        current = _ACTIVE.get(node_id)
-        if current is not None and current.expires_at > now:
+
+        if scope == "server":
+            # Ein laufender node-weiter Server-Install/Update auf demselben Node
+            # blockiert nur, wenn er auf demselben Node liegt; ansonsten begrenzen
+            # wir lediglich die parallelen Mod-Jobs pro Node.
+            if resolved_node_id in _ACTIVE:
+                return False
+            if max_per_node > 0:
+                active_on_node = sum(
+                    1
+                    for sid in _ACTIVE_SERVER
+                    if _SERVER_NODE_HINTS.get(sid) == resolved_node_id
+                )
+                if active_on_node >= max_per_node:
+                    return False
+            _SERVER_NODE_HINTS[server_id] = resolved_node_id
+            _ACTIVE_SERVER[server_id] = InstallUpdateLockInfo(
+                server_id=server_id,
+                operation=operation,
+                acquired_at=now,
+                expires_at=now + ttl_seconds,
+            )
+            return True
+
+        # Node-weiter Lock (Server-Installation / Spiel-Update).
+        if resolved_node_id in _ACTIVE:
             return False
 
-        _ACTIVE[node_id] = InstallUpdateLockInfo(
+        _SERVER_NODE_HINTS[server_id] = resolved_node_id
+        _ACTIVE[resolved_node_id] = InstallUpdateLockInfo(
             server_id=server_id,
             operation=operation,
             acquired_at=now,
@@ -64,46 +122,48 @@ def try_acquire_install_update_lock(
 
 
 def release_install_update_lock(server_id: int) -> None:
-    """Release the lock held by ``server_id``.
-
-    A mismatched release is ignored so a late cleanup from an old job cannot
-    clear a newer job that replaced a stale lock.
-    """
-    global _ACTIVE
-    with _LOCK:
+    """Release the lock held by ``server_id`` and wake queued waiters."""
+    with _CONDITION:
+        removed = _ACTIVE_SERVER.pop(server_id, None) is not None
         for k, v in list(_ACTIVE.items()):
             if v.server_id == server_id:
                 _ACTIVE.pop(k, None)
+                removed = True
+        if removed:
+            _CONDITION.notify_all()
 
 
 def active_install_update_lock() -> InstallUpdateLockInfo | None:
     """Return the first active non-stale lock (for backward-compatible diagnostic/test checks)."""
-    global _ACTIVE
     now = time.monotonic()
-    with _LOCK:
-        for k, v in list(_ACTIVE.items()):
-            if v.expires_at <= now:
-                _ACTIVE.pop(k, None)
+    with _CONDITION:
+        _prune_stale_locked(now)
         if _ACTIVE:
-            return list(_ACTIVE.values())[0]
+            return next(iter(_ACTIVE.values()))
+        if _ACTIVE_SERVER:
+            return next(iter(_ACTIVE_SERVER.values()))
         return None
 
 
 def reset_install_update_lock_for_tests() -> None:
-    global _ACTIVE
-    with _LOCK:
+    with _CONDITION:
         _ACTIVE.clear()
+        _ACTIVE_SERVER.clear()
+        _SERVER_NODE_HINTS.clear()
+        _CONDITION.notify_all()
 
 
 def force_release_install_update_lock(server_id: int) -> bool:
     """Admin/cancel: lock freigeben wenn es zu diesem Server gehoert."""
-    global _ACTIVE
-    with _LOCK:
+    with _CONDITION:
+        removed = _ACTIVE_SERVER.pop(server_id, None) is not None
         for k, v in list(_ACTIVE.items()):
             if v.server_id == server_id:
                 _ACTIVE.pop(k, None)
-                return True
-        return False
+                removed = True
+        if removed:
+            _CONDITION.notify_all()
+        return removed
 
 
 def acquire_install_update_lock_blocking(
@@ -112,11 +172,26 @@ def acquire_install_update_lock_blocking(
     *,
     node_id: int | None = None,
     ttl_seconds: int = DEFAULT_INSTALL_UPDATE_LOCK_TTL_SECONDS,
+    scope: str = "node",
+    max_per_node: int = DEFAULT_MAX_CONCURRENT_MOD_JOBS_PER_NODE,
+    timeout_seconds: float | None = None,
 ) -> bool:
-    """Reserve the install/update slot, blocking until it is free.
-
-    Stale process-local locks are replaced after ``ttl_seconds``.
-    """
-    while not try_acquire_install_update_lock(server_id, operation, node_id=node_id, ttl_seconds=ttl_seconds):
-        time.sleep(1)
-    return True
+    """Reserve the install/update slot, waiting via Condition without spin-polling."""
+    deadline = (time.monotonic() + timeout_seconds) if timeout_seconds is not None else None
+    with _CONDITION:
+        while not try_acquire_install_update_lock(
+            server_id,
+            operation,
+            node_id=node_id,
+            ttl_seconds=ttl_seconds,
+            scope=scope,
+            max_per_node=max_per_node,
+        ):
+            if deadline is not None:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    return False
+                _CONDITION.wait(timeout=min(remaining, 1.0))
+            else:
+                _CONDITION.wait(timeout=1.0)
+        return True

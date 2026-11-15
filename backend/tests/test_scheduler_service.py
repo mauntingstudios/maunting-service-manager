@@ -159,3 +159,74 @@ class TestSchedulerTimezoneIsUTC:
         normalized = normalized.astimezone(timezone.utc)
         assert normalized == datetime(2026, 6, 6, 4, 30, tzinfo=timezone.utc)
         assert normalized.utcoffset() == timedelta(0)
+
+
+def test_node_heartbeat_closes_db_before_probing(monkeypatch):
+    from types import SimpleNamespace
+    from services.scheduler_service import _node_heartbeat_task
+
+    active_sessions = {"count": 0}
+    active_during_probe: list[int] = []
+
+    class _HeartbeatSession:
+        def __init__(self, rows):
+            self._rows = rows
+            active_sessions["count"] += 1
+
+        def query(self, *_args):
+            return self
+
+        def order_by(self, *_args):
+            return self
+
+        def all(self):
+            return self._rows
+
+        def expunge(self, _obj):
+            return None
+
+        def expunge_all(self):
+            return None
+
+        def commit(self):
+            return None
+
+        def rollback(self):
+            return None
+
+        def close(self):
+            active_sessions["count"] -= 1
+
+    fake_node = SimpleNamespace(id=501, hostname="10.0.0.5", agent_port=9000)
+
+    def make_session():
+        return _HeartbeatSession([fake_node])
+
+    class _FakeNodeClient:
+        @classmethod
+        def from_node(cls, _node, timeout=10.0):
+            return cls()
+
+        async def metrics_async(self, client=None):
+            active_during_probe.append(active_sessions["count"])
+            return {"cpu_percent": 12.5}
+
+    applied_outcomes = []
+
+    def fake_apply(outcomes):
+        applied_outcomes.extend(outcomes)
+
+    monkeypatch.setattr("services.scheduler_service.SessionLocal", make_session)
+    monkeypatch.setattr("services.node_client.NodeClient", _FakeNodeClient)
+    monkeypatch.setattr(
+        "services.scheduler_service._apply_node_heartbeat_outcomes_sync",
+        fake_apply,
+    )
+
+    asyncio.run(_node_heartbeat_task())
+
+    assert active_during_probe == [0]
+    assert active_sessions["count"] == 0
+    assert len(applied_outcomes) == 1
+    assert applied_outcomes[0][0] == 501
+    assert applied_outcomes[0][2] is True
