@@ -577,9 +577,9 @@ EOF
         chmod 0644 "${MSM_DOCKER_HOME}/.config/docker/daemon.json"
 
         log "Konfiguriere slirp4netns ohne Host-Loopback-Zugriff..."
-        su -s /bin/bash "$MSM_DOCKER_USER" -c "mkdir -p ~/.config/systemd/user/docker.service.d && printf '[Service]\nEnvironment=\"DOCKERD_ROOTLESS_ROOTLESSKIT_PORT_DRIVER=slirp4netns\"\nEnvironment=\"DOCKERD_ROOTLESS_ROOTLESSKIT_DISABLE_HOST_LOOPBACK=true\"\n' > ~/.config/systemd/user/docker.service.d/override.conf" 2>&1 | tee -a "$LOG_FILE" || true
-        su -s /bin/bash "$MSM_DOCKER_USER" -c "export XDG_RUNTIME_DIR=/run/user/${MSM_DOCKER_UID}; systemctl --user daemon-reload" 2>&1 | tee -a "$LOG_FILE" || true
-        su -s /bin/bash "$MSM_DOCKER_USER" -c "export XDG_RUNTIME_DIR=/run/user/${MSM_DOCKER_UID}; systemctl --user enable docker.service && systemctl --user restart docker.service" 2>&1 | tee -a "$LOG_FILE" || \
+        su -s /bin/bash "$MSM_DOCKER_USER" -c "mkdir -p ~/.config/systemd/user/docker.service.d && printf '[Service]\nEnvironment=\"DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/${MSM_DOCKER_UID}/bus\"\nEnvironment=\"DOCKERD_ROOTLESS_ROOTLESSKIT_PORT_DRIVER=slirp4netns\"\nEnvironment=\"DOCKERD_ROOTLESS_ROOTLESSKIT_DISABLE_HOST_LOOPBACK=true\"\n' > ~/.config/systemd/user/docker.service.d/override.conf" 2>&1 | tee -a "$LOG_FILE" || true
+        su -s /bin/bash "$MSM_DOCKER_USER" -c "export XDG_RUNTIME_DIR=/run/user/${MSM_DOCKER_UID} DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/${MSM_DOCKER_UID}/bus; systemctl --user daemon-reload" 2>&1 | tee -a "$LOG_FILE" || true
+        su -s /bin/bash "$MSM_DOCKER_USER" -c "export XDG_RUNTIME_DIR=/run/user/${MSM_DOCKER_UID} DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/${MSM_DOCKER_UID}/bus; systemctl --user enable docker.service && systemctl --user restart docker.service" 2>&1 | tee -a "$LOG_FILE" || \
             err "Rootless-Docker-User-Service konnte nicht gestartet werden"
 
         # Socket-ACL-Helper: erlaubt ausschließlich msm-agent den Zugriff auf msm-docker docker.sock (niemals msm panel!)

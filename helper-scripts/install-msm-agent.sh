@@ -180,9 +180,9 @@ install_rootless_docker() {
 }
 EOF
   chown "$MSM_DOCKER_USER:$MSM_DOCKER_USER" "${docker_home}/.config/docker/daemon.json"
-  su -s /bin/bash "$MSM_DOCKER_USER" -c "mkdir -p ~/.config/systemd/user/docker.service.d && printf '[Service]\nEnvironment=\"DOCKERD_ROOTLESS_ROOTLESSKIT_PORT_DRIVER=slirp4netns\"\nEnvironment=\"DOCKERD_ROOTLESS_ROOTLESSKIT_DISABLE_HOST_LOOPBACK=true\"\n' > ~/.config/systemd/user/docker.service.d/override.conf" >>"$LOG_FILE" 2>&1 || true
+  su -s /bin/bash "$MSM_DOCKER_USER" -c "mkdir -p ~/.config/systemd/user/docker.service.d && printf '[Service]\nEnvironment=\"DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/${docker_uid}/bus\"\nEnvironment=\"DOCKERD_ROOTLESS_ROOTLESSKIT_PORT_DRIVER=slirp4netns\"\nEnvironment=\"DOCKERD_ROOTLESS_ROOTLESSKIT_DISABLE_HOST_LOOPBACK=true\"\n' > ~/.config/systemd/user/docker.service.d/override.conf" >>"$LOG_FILE" 2>&1 || true
   if [[ -d /run/systemd/system ]]; then
-    su -s /bin/bash "$MSM_DOCKER_USER" -c "export XDG_RUNTIME_DIR=/run/user/${docker_uid}; systemctl --user daemon-reload && systemctl --user enable docker.service && systemctl --user restart docker.service" >>"$LOG_FILE" 2>&1 || true
+    su -s /bin/bash "$MSM_DOCKER_USER" -c "export XDG_RUNTIME_DIR=/run/user/${docker_uid} DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/${docker_uid}/bus; systemctl --user daemon-reload && systemctl --user enable docker.service && systemctl --user restart docker.service" >>"$LOG_FILE" 2>&1 || true
   fi
 
   cat > /usr/local/sbin/msm-docker-socket-acl <<ACLEOF
