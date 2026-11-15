@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 import time
 
 import httpx
@@ -34,7 +35,18 @@ MAX_SEARCH_RESULTS = 10
 MAX_TITLE_CHARS = 120
 
 _UPDATE_CHECK_CACHE: dict[int, float] = {}
+_IN_FLIGHT_SERVERS: set[int] = set()
+_CHECK_LOCK = threading.Lock()
 UPDATE_CHECK_TTL_SECONDS = 300
+
+
+def is_update_check_due(server_id: int) -> bool:
+    """True, wenn fuer diesen Server aktuell ein Updatecheck faellig ist."""
+    now = time.time()
+    with _CHECK_LOCK:
+        if server_id in _IN_FLIGHT_SERVERS:
+            return False
+        return now - _UPDATE_CHECK_CACHE.get(server_id, 0) >= UPDATE_CHECK_TTL_SECONDS
 
 
 class ModSearchUnavailable(RuntimeError):
@@ -83,14 +95,22 @@ def refresh_update_availability(
     if not plugin or not getattr(plugin, "supports_mods", False):
         return []
     now = time.time()
-    if not force and now - _UPDATE_CHECK_CACHE.get(server.id, 0) < UPDATE_CHECK_TTL_SECONDS:
-        return []
-    _UPDATE_CHECK_CACHE[server.id] = now
+    with _CHECK_LOCK:
+        if not force and (
+            server.id in _IN_FLIGHT_SERVERS
+            or now - _UPDATE_CHECK_CACHE.get(server.id, 0) < UPDATE_CHECK_TTL_SECONDS
+        ):
+            return []
+        _IN_FLIGHT_SERVERS.add(server.id)
+        _UPDATE_CHECK_CACHE[server.id] = now
     try:
         updates = plugin.check_for_mod_updates(server)
     except Exception as exc:
         logger.warning("Mod-Update-Check fehlgeschlagen fuer Server %s: %s", server.id, exc)
         return []
+    finally:
+        with _CHECK_LOCK:
+            _IN_FLIGHT_SERVERS.discard(server.id)
     if updates:
         mark_update_candidates(db, server.id, updates)
     return updates

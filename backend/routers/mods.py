@@ -509,15 +509,35 @@ def bulk_mod_action_bg(
         release_install_update_lock(server_id)
 
 
+def _refresh_mod_update_availability_bg(server_id: int) -> None:
+    """Prueft Mod-Updates asynchron mit eigener DB-Session nach der GET-Antwort."""
+    bg_db = SessionLocal()
+    try:
+        server = bg_db.query(Server).filter(Server.id == server_id).first()
+        if not server or _server_has_active_mod_jobs(bg_db, server_id):
+            return
+        plugin = get_plugin(server.game_type)
+        _refresh_mod_update_availability(bg_db, server, plugin)
+    except Exception as exc:
+        logger.debug("Hintergrund-Mod-Updatecheck fehlgeschlagen fuer Server %s: %s", server_id, exc)
+    finally:
+        bg_db.close()
+
+
 @router.get("/{server_id}", response_model=list[ModResponse])
-def list_mods(server_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def list_mods(
+    server_id: int,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
     require_server_permission(user, server_id, db, "server.mods.read")
     server = db.query(Server).filter(Server.id == server_id).first()
     if server:
-        plugin = get_plugin(server.game_type)
-        # Kein schwerer Workshop-Check während laufender/pending Installs (Polling + SteamCMD = Pool-Timeout).
-        if not _server_has_active_mod_jobs(db, server_id):
-            _refresh_mod_update_availability(db, server, plugin)
+        # Kein schwerer Workshop-Check waehrend laufender/pending Installs;
+        # im Leerlauf asynchron anstoessen, damit GET /mods/{id} nicht auf Steam/Node blockiert.
+        if not _server_has_active_mod_jobs(db, server_id) and mod_update_service.is_update_check_due(server_id):
+            background_tasks.add_task(_refresh_mod_update_availability_bg, server_id)
     return db.query(Mod).filter(Mod.server_id == server_id).order_by(Mod.load_order.asc()).all()
 
 

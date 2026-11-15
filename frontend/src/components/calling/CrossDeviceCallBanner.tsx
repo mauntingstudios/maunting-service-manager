@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { PhoneOff, PhoneForwarded, Smartphone, Monitor, Globe, Radio, Users } from 'lucide-react'
 import { useCallStore, setzeAnrufIdentitaet } from '@/stores/useCallStore'
+import { getRateLimitRemainingMs } from '@/api/client'
+import { getIsLiveConnected } from '@/lib/offlineSync'
 import { deviceLabelKey, getDeviceId } from '@/lib/deviceIdentity'
 import { useAuthStore } from '@/stores/authStore'
 import { eigenesGeraet, geraetVeroeffentlichen } from '@/services/e2eeGeraet'
@@ -97,16 +99,46 @@ export const CrossDeviceCallBanner: React.FC<CrossDeviceCallBannerProps> = ({ cl
     return () => { active = false }
   }, [user?.id, messengerOffen])
 
-  // Beim Mounten und zyklisch (alle 4s) nachsehen, ob ein eingehender oder aktiver Anruf vorliegt
+  // Beim Mounten und adaptiv nachsehen (SSE uebernimmt live; im Hintergrundtab pausieren).
   useEffect(() => {
-    void checkActiveCall()
-    const timer = window.setInterval(() => {
-      const currentState = useCallStore.getState().state
-      if (currentState === 'idle' || currentState === 'incoming') {
-        void useCallStore.getState().checkActiveCall()
+    let aktiv = true
+    let timer: number | undefined
+
+    const schedule = () => {
+      if (!aktiv) return
+      if (timer) clearTimeout(timer)
+      const basisMs = getIsLiveConnected() ? 45_000 : 10_000
+      const waitMs = Math.max(basisMs, getRateLimitRemainingMs())
+      timer = window.setTimeout(() => {
+        if (!aktiv) return
+        if (typeof document === 'undefined' || document.visibilityState === 'visible') {
+          const currentState = useCallStore.getState().state
+          if (currentState === 'idle' || currentState === 'incoming') {
+            void useCallStore.getState().checkActiveCall()
+          }
+        }
+        schedule()
+      }, waitMs)
+    }
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        const currentState = useCallStore.getState().state
+        if ((currentState === 'idle' || currentState === 'incoming') && getRateLimitRemainingMs() === 0) {
+          void useCallStore.getState().checkActiveCall()
+        }
+        schedule()
       }
-    }, 4000)
-    return () => window.clearInterval(timer)
+    }
+
+    void checkActiveCall()
+    schedule()
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    return () => {
+      aktiv = false
+      if (timer) window.clearTimeout(timer)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+    }
   }, [checkActiveCall])
 
   // Echtzeit-Ereignisse über den globalen SSE-Event-Bus empfangen

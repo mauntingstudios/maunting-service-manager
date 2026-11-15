@@ -26,7 +26,7 @@ import {
   Users,
   X,
 } from 'lucide-react'
-import { api } from '@/api/client'
+import { api, getRateLimitRemainingMs } from '@/api/client'
 import { oeffneBrowser } from '@/desktop/tauri'
 import { toast } from '@/stores/toastStore'
 import { confirm } from '@/stores/confirmStore'
@@ -356,13 +356,17 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
     })
   }, [mods])
 
+  const hasActiveInstalls = mods.some(hasActiveModInstall)
+
   useEffect(() => {
-    if (!mods.some(hasActiveModInstall)) return
+    if (!hasActiveInstalls) return
     const intervalId = window.setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
+      if (getRateLimitRemainingMs() > 0) return
       void loadMods({ silent: true })
-    }, 2500)
+    }, 4000)
     return () => window.clearInterval(intervalId)
-  }, [loadMods, mods])
+  }, [hasActiveInstalls, loadMods])
 
   const modIdsSignature = mods.map((m) => m.workshop_id).sort().join(',')
 

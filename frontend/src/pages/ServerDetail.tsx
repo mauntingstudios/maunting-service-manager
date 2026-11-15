@@ -23,7 +23,7 @@ import {
   Trash2,
   Webhook,
 } from "lucide-react";
-import { api } from "@/api/client";
+import { api, getRateLimitRemainingMs } from "@/api/client";
 import { toast } from "@/stores/toastStore";
 import { confirm } from "@/stores/confirmStore";
 import { usePermissionsStore } from "@/stores/permissionsStore";
@@ -227,6 +227,28 @@ export function ServerDetail() {
     }
   };
 
+  const serverStatusRef = useRef<string | undefined>(undefined);
+  serverStatusRef.current = server?.status;
+  const fullRefreshTickRef = useRef(0);
+
+  const pollStatus = async () => {
+    if (!serverId) return;
+    try {
+      const st = await api<ServerStatus>(`/servers/${serverId}/status`).catch(() => null);
+      setStatus(st);
+      fullRefreshTickRef.current += 1;
+      const statusChanged = Boolean(st?.status && st.status !== serverStatusRef.current);
+      // Volles Server-Objekt nur bei Statuswechsel oder alle ~64s nachladen.
+      if (statusChanged || fullRefreshTickRef.current >= 8) {
+        fullRefreshTickRef.current = 0;
+        const srv = await api<Server>(`/servers/${serverId}`);
+        setServer(srv);
+      }
+    } catch {
+      // silent
+    }
+  };
+
   // Der Spielekatalog hängt nicht am Server und ändert sich nur, wenn ein
   // Blueprint dazukommt. Einmal holen statt alle fünf Sekunden.
   useEffect(() => {
@@ -241,18 +263,20 @@ export function ServerDetail() {
   const pollLaeuft = useRef(false);
 
   useEffect(() => {
+    fullRefreshTickRef.current = 0;
     void fetchAll();
     const handle = setInterval(() => {
       // Im Hintergrundtab schaut niemand hin: kein Takt, keine Anfragen.
       if (document.visibilityState !== "visible") return;
+      if (getRateLimitRemainingMs() > 0) return;
       // Ist der vorherige Durchlauf noch unterwegs, wird dieser Takt
       // ausgelassen, statt die Anfragen zu stapeln.
       if (pollLaeuft.current) return;
       pollLaeuft.current = true;
-      void fetchAll().finally(() => {
+      void pollStatus().finally(() => {
         pollLaeuft.current = false;
       });
-    }, 5000);
+    }, 8000);
     return () => clearInterval(handle);
   }, [serverId]);
 

@@ -9,6 +9,7 @@ import {
   type AiConversationKind,
   type AiRunStatus,
 } from '@/api/ai'
+import { getRateLimitRemainingMs } from '@/api/client'
 import { zustellungMelden } from '@/lib/aiZustellung'
 import { useAuthStore } from '@/stores/authStore'
 import { useHasPermission } from '@/hooks/useHasPermission'
@@ -148,14 +149,23 @@ export function AiRunNotice() {
   const nachsehen = useCallback(async () => {
     const fenster: AiConversationKind[] = ['primary', 'guardian']
     let laeuftNoch = false
-    for (const art of fenster) {
-      let lauf: Awaited<ReturnType<typeof aiApi.getActiveRun>> = null
-      try {
-        lauf = await aiApi.getActiveRun(art)
-      } catch {
-        // Eine gescheiterte Nachfrage ist kein Grund, etwas anzuzeigen.
-        continue
-      }
+    const [runErgebnisse, workerErgebnis] = await Promise.all([
+      Promise.all(
+        fenster.map(async (art) => {
+          try {
+            return await aiApi.getActiveRun(art)
+          } catch {
+            // Eine gescheiterte Nachfrage ist kein Grund, etwas anzuzeigen.
+            return undefined
+          }
+        }),
+      ),
+      aiApi.listWorkers().catch(() => null),
+    ])
+
+    fenster.forEach((art, idx) => {
+      const lauf = runErgebnisse[idx]
+      if (lauf === undefined) return
       const vorher = letzterRef.current[art]
       const stumm = offenesFenster === art
       if (!lauf) {
@@ -169,7 +179,7 @@ export function AiRunNotice() {
         // das Signal auch (gerade!) dann, wenn die Meldung selbst stumm bleibt.
         if (art === 'primary' && vorher) zustellungMelden()
         delete letzterRef.current[art]
-        continue
+        return
       }
       const gewechselt = !vorher || vorher.id !== lauf.id || vorher.status !== lauf.status
       // **Jeder** beobachtete Wechsel des Dauerchat-Laufs ist eine Zustellung:
@@ -188,14 +198,14 @@ export function AiRunNotice() {
       }
       letzterRef.current[art] = { id: lauf.id, status: lauf.status }
       if (lauf.status === 'running') laeuftNoch = true
-    }
+    })
 
     // Die Hintergrund-Auftraege: Uebergaenge je Fenster-Kennung. Die Liste
     // traegt nur Lebende — Verschwinden heisst beendet, und der Bericht ist
     // als Meldung unterwegs (docs/agentic-framework.md, §4).
     let workerLebt = false
-    try {
-      const workers = await aiApi.listWorkers()
+    if (Array.isArray(workerErgebnis)) {
+      const workers = workerErgebnis
       workerLebt = workers.length > 0
       const jetzt = new Set(workers.map((w) => w.conversation_id))
       let zustellung = false
@@ -232,8 +242,6 @@ export function AiRunNotice() {
         workerRef.current[worker.conversation_id] = worker.status
       }
       if (zustellung) zustellungMelden()
-    } catch {
-      // Auch hier: eine gescheiterte Nachfrage ist keine Meldung wert.
     }
     // Schnell weiter, solange etwas arbeitet und man nicht im Chat steht
     // (dort meldet der Ereignisstrom selbst) — **oder** ein Auftrag lebt:
@@ -249,17 +257,36 @@ export function AiRunNotice() {
 
     const takt = async () => {
       if (!aktiv) return
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+        timer = setTimeout(takt, RUHETAKT_MS)
+        return
+      }
+      const rlWait = getRateLimitRemainingMs()
+      if (rlWait > 0) {
+        timer = setTimeout(takt, rlWait + 250)
+        return
+      }
       const schnell = await nachsehen()
       if (!aktiv) return
       // Schnell nachsehen, solange `nachsehen` das verlangt; sonst langsam
       // weiter, statt aufzuhören. Der langsame Takt ist die einzige Art, wie
       // eine offene Seite von einem Lauf erfährt, den niemand ausgelöst hat.
-      timer = setTimeout(takt, schnell ? TAKT_MS : RUHETAKT_MS)
+      const waitMs = Math.max(schnell ? TAKT_MS : RUHETAKT_MS, getRateLimitRemainingMs())
+      timer = setTimeout(takt, waitMs)
     }
+
+    const onVisibilityChange = () => {
+      if (!aktiv || document.visibilityState !== 'visible') return
+      if (timer) clearTimeout(timer)
+      void takt()
+    }
+
     void takt()
+    document.addEventListener('visibilitychange', onVisibilityChange)
     return () => {
       aktiv = false
       if (timer) clearTimeout(timer)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
     }
   }, [darfChatten, meldungenAn, nachsehen])
 

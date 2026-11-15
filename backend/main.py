@@ -270,6 +270,7 @@ app.add_middleware(
         "X-MSM-Export-Truncated",
         "X-Request-ID",
     ],
+    max_age=86400,
 )
 
 

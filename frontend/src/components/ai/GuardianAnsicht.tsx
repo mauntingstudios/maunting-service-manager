@@ -4,7 +4,7 @@ import { Hand, Server, ShieldAlert, Sparkles } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { aiApi, type AiActionProposal, type AiRunInfo } from '@/api/ai'
-import { api, SanitizedApiError } from '@/api/client'
+import { api, getRateLimitRemainingMs, SanitizedApiError } from '@/api/client'
 import { Button, Kurzinfo } from '@maunting/ui'
 import { toast } from '@/stores/toastStore'
 import { AiVerlauf, mergeEntries } from './AiVerlauf'
@@ -129,6 +129,8 @@ export function GuardianAnsicht() {
       return
     }
     const timer = window.setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
+      if (getRateLimitRemainingMs() > 0) return
       void laden().catch(() => undefined)
     }, NACHSEHEN_MS)
     return () => window.clearInterval(timer)

@@ -754,24 +754,28 @@ export const useCallStore = create<UseCallState>((set, get) => {
     setMode: (mode) => set({ mode }),
 
     checkActiveCall: async () => {
-      try {
-        const res = await holeAktivenAnruf()
+      const [activeRes, pendingRes] = await Promise.allSettled([
+        holeAktivenAnruf(),
+        holeAusstehendeAnrufe(),
+      ])
+
+      if (activeRes.status === 'fulfilled') {
+        const res = activeRes.value
         if (res.has_active_call && res.call && get().state === 'idle') {
           set({ crossDeviceCall: res.call })
         } else {
           set({ crossDeviceCall: null })
         }
-      } catch {
-        // Nicht fatal bei Netzwerkfehlern
       }
 
-      try {
-        const pending = await holeAusstehendeAnrufe()
+      if (pendingRes.status === 'fulfilled') {
+        const pending = pendingRes.value
         if (pending.group_calls) {
           set({ activeGroupCalls: pending.group_calls })
         }
         if (get().state === 'incoming') {
-          const isStillPending = pending.has_pending_call && pending.call && pending.call.signaling_token === get().raum
+          const isStillPending =
+            pending.has_pending_call && pending.call && pending.call.signaling_token === get().raum
           if (!isStillPending) {
             brecheCallTimersAb()
             set({
@@ -792,8 +796,6 @@ export const useCallStore = create<UseCallState>((set, get) => {
             c.signaling_token,
           )
         }
-      } catch {
-        // Nicht fatal bei Netzwerkfehlern
       }
     },
 

@@ -397,6 +397,30 @@ def check_workshop_mod_updates(
     else:
         remote_updates = _fetch_steam_mods_updated(workshop_app_id, mod_ids) if (has_api_key and mod_ids) else {}
 
+    # Remote-Workshop-Verzeichnisse einmalig als Batch listen statt N Einzelabfragen an den Node-Agenten
+    remote_workshop_dirs: set[str] | None = None
+    batch_remote_checked = False
+    if client is not None and not is_curseforge and len(mod_ids) > 1:
+        batch_remote_checked = True
+        try:
+            parent_entries = client.files_list(
+                server.id, f"steamapps/workshop/content/{workshop_app_id}"
+            )
+            remote_workshop_dirs = {
+                str(entry.get("name"))
+                for entry in parent_entries
+                if isinstance(entry, dict) and entry.get("name")
+            }
+        except NodeClientError as exc:
+            if exc.status_code == 404:
+                remote_workshop_dirs = set()
+            else:
+                remote_workshop_dirs = None
+                batch_remote_checked = False
+        except Exception:
+            remote_workshop_dirs = None
+            batch_remote_checked = False
+
     results: list[dict[str, Any]] = []
 
     for mod in active_mods:
@@ -423,17 +447,20 @@ def check_workshop_mod_updates(
             )
             is_installed = False
             if client is not None:
-                try:
-                    remote_path = f"steamapps/workshop/content/{workshop_app_id}/{workshop_id}"
-                    files = client.files_list(server.id, remote_path)
-                    is_installed = len(files) > 0
-                except NodeClientError as exc:
-                    if exc.status_code == 404:
-                        is_installed = False
-                    else:
+                if batch_remote_checked and remote_workshop_dirs is not None:
+                    is_installed = workshop_id in remote_workshop_dirs
+                else:
+                    try:
+                        remote_path = f"steamapps/workshop/content/{workshop_app_id}/{workshop_id}"
+                        files = client.files_list(server.id, remote_path)
+                        is_installed = len(files) > 0
+                    except NodeClientError as exc:
+                        if exc.status_code == 404:
+                            is_installed = False
+                        else:
+                            is_installed = True
+                    except Exception:
                         is_installed = True
-                except Exception:
-                    is_installed = True
             else:
                 if local_path.exists():
                     try:

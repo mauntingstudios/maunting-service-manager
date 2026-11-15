@@ -13,10 +13,13 @@
  */
 import { useEffect, useRef, useState } from 'react'
 
+import { getRateLimitRemainingMs } from '@/api/client'
+import { getIsLiveConnected } from '@/lib/offlineSync'
 import { auftragAusfuehren } from './tauri'
 import { ergebnisMelden, naechsterAuftrag, type Auftrag } from './desktopJobs'
 
-const TAKT_MS = 1000
+const FALLBACK_TAKT_MS = 4_000
+const SSE_TAKT_MS = 15_000
 /** Nach so vielen Fehlschlägen am Stück wird der Takt langsamer. */
 const RUHE_NACH = 3
 const RUHE_MS = 15_000
@@ -122,6 +125,30 @@ export function useAuftragsschleife(aktiv: boolean): string | null {
       }
     }
 
+    let wakeWaiter: (() => void) | null = null
+    const warten = (ms: number) =>
+      new Promise<void>((resolve) => {
+        const t = setTimeout(() => {
+          wakeWaiter = null
+          resolve()
+        }, ms)
+        wakeWaiter = () => {
+          clearTimeout(t)
+          wakeWaiter = null
+          resolve()
+        }
+      })
+
+    const onSyncEvent = (event: Event) => {
+      const detail = (event as CustomEvent<{ type?: string }>).detail
+      if (detail?.type === 'desktop_job') {
+        setTimeout(() => wakeWaiter?.(), 50)
+      }
+    }
+    if (typeof window !== 'undefined') {
+      window.addEventListener('msm:sync-event', onSyncEvent)
+    }
+
     async function schleife() {
       if (laeuft.current) {
         return
@@ -129,6 +156,11 @@ export function useAuftragsschleife(aktiv: boolean): string | null {
       laeuft.current = true
       try {
         while (!gestoppt) {
+          const rlWait = getRateLimitRemainingMs()
+          if (rlWait > 0) {
+            await warten(rlWait + 250)
+            continue
+          }
           try {
             const auftrag = await naechsterAuftrag()
             fehlschlaege = 0
@@ -143,8 +175,13 @@ export function useAuftragsschleife(aktiv: boolean): string | null {
             // Grund aufzugeben — nur ein Grund, seltener zu fragen.
             fehlschlaege += 1
           }
-          const pause = fehlschlaege >= RUHE_NACH ? RUHE_MS : TAKT_MS
-          await new Promise((weiter) => setTimeout(weiter, pause))
+          const basisPause = fehlschlaege >= RUHE_NACH
+            ? RUHE_MS
+            : getIsLiveConnected()
+              ? SSE_TAKT_MS
+              : FALLBACK_TAKT_MS
+          const pause = Math.max(basisPause, getRateLimitRemainingMs())
+          await warten(pause)
         }
       } finally {
         laeuft.current = false
@@ -154,6 +191,10 @@ export function useAuftragsschleife(aktiv: boolean): string | null {
     void schleife()
     return () => {
       gestoppt = true
+      wakeWaiter?.()
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('msm:sync-event', onSyncEvent)
+      }
     }
   }, [aktiv])
 

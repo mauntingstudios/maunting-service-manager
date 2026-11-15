@@ -1,18 +1,19 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Bot } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { aiApi, type AiWorkerInfo } from '@/api/ai'
+import { getRateLimitRemainingMs } from '@/api/client'
 import { AI_ZUSTELLUNG_EVENT } from '@/lib/aiZustellung'
 import { Kurzinfo } from '@maunting/ui'
 
 /**
- * Dynamischer Takt: Schnell (2s), solange Aufträge aktiv sind; gemächlich (15s) in Ruhe.
+ * Dynamischer Takt: Schnell (5s), solange Aufträge aktiv sind; gemächlich (30s) in Ruhe.
  * Das Zustell-Ereignis weckt die Leiste bei Änderungen sofort in Millisekunden.
  */
-const AKTIV_TAKT_MS = 2_000
-const RUHE_TAKT_MS = 15_000
+const AKTIV_TAKT_MS = 5_000
+const RUHE_TAKT_MS = 30_000
 
 const STATUS_TEXT: Record<string, string> = {
   running: 'ai.worker.running',
@@ -38,10 +39,15 @@ export function WorkerLeiste() {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const [workers, setWorkers] = useState<AiWorkerInfo[]>([])
+  const workersCountRef = useRef(0)
+  workersCountRef.current = workers.length
 
   const laden = useCallback(async () => {
+    if (getRateLimitRemainingMs() > 0) return
     try {
-      setWorkers(await aiApi.listWorkers())
+      const list = await aiApi.listWorkers()
+      workersCountRef.current = list.length
+      setWorkers(list)
     } catch (fehler) {
       // Die Leiste ist eine Zusatzauskunft. Scheitert der Abruf, bleibt der
       // letzte Stand stehen — ein Fehlertoast wäre lästiger als eine kurz
@@ -53,15 +59,38 @@ export function WorkerLeiste() {
   }, [])
 
   useEffect(() => {
-    void laden()
-    const intervall = workers.length > 0 ? AKTIV_TAKT_MS : RUHE_TAKT_MS
-    const timer = window.setInterval(() => void laden(), intervall)
-    window.addEventListener(AI_ZUSTELLUNG_EVENT, laden)
-    return () => {
-      window.clearInterval(timer)
-      window.removeEventListener(AI_ZUSTELLUNG_EVENT, laden)
+    let aktiv = true
+    let timer: number | undefined
+
+    const schedule = () => {
+      if (!aktiv) return
+      if (timer) window.clearTimeout(timer)
+      const basisMs = workersCountRef.current > 0 ? AKTIV_TAKT_MS : RUHE_TAKT_MS
+      const waitMs = Math.max(basisMs, getRateLimitRemainingMs())
+      timer = window.setTimeout(async () => {
+        if (!aktiv) return
+        if (typeof document === 'undefined' || document.visibilityState === 'visible') {
+          await laden()
+        }
+        schedule()
+      }, waitMs)
     }
-  }, [laden, workers.length])
+
+    const onSyncEventOrVisible = () => {
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return
+      void laden().finally(() => schedule())
+    }
+
+    void laden().finally(() => schedule())
+    window.addEventListener(AI_ZUSTELLUNG_EVENT, onSyncEventOrVisible)
+    document.addEventListener('visibilitychange', onSyncEventOrVisible)
+    return () => {
+      aktiv = false
+      if (timer) window.clearTimeout(timer)
+      window.removeEventListener(AI_ZUSTELLUNG_EVENT, onSyncEventOrVisible)
+      document.removeEventListener('visibilitychange', onSyncEventOrVisible)
+    }
+  }, [laden])
 
   if (workers.length === 0) return null
 

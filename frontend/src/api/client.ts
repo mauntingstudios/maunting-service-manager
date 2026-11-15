@@ -406,23 +406,62 @@ function combineSignals(signals: (AbortSignal | null | undefined)[]): { signal: 
   }
 }
 
+const inFlightGetRequests = new Map<string, Promise<unknown>>()
+let rateLimitUntilMs = 0
+
+/** Verbleibende Wartezeit in ms nach einem HTTP 429 (fuer Polling-Backoff). */
+export function getRateLimitRemainingMs(): number {
+  return Math.max(0, rateLimitUntilMs - Date.now())
+}
+
+function parseRetryAfterMs(res: Response): number {
+  const raw = res.headers?.get?.('retry-after')?.trim()
+  if (!raw) return 5_000
+  const sec = Number(raw)
+  if (Number.isFinite(sec) && sec > 0) {
+    return Math.min(60_000, Math.round(sec * 1000))
+  }
+  const ts = Date.parse(raw)
+  if (!Number.isNaN(ts)) {
+    return Math.min(60_000, Math.max(1_000, ts - Date.now()))
+  }
+  return 5_000
+}
+
 export async function api<T>(path: string, options?: ApiOptions): Promise<T> {
   const method = (options?.method || 'GET').toUpperCase()
   const isStateChanging = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)
 
   const isFormData = typeof FormData !== 'undefined' && options?.body instanceof FormData
+  const hasBody = options?.body !== undefined && options?.body !== null
   const headers: Record<string, string> = {
     ...((options?.headers as Record<string, string>) || {}),
   }
   // Bei FormData darf KEIN Content-Type gesetzt werden — der Browser muss
   // ihn selbst inkl. `multipart/...; boundary=...` setzen.
-  if (!isFormData && !headers['Content-Type']) {
+  // Bodylose GET/HEAD-Anfragen brauchen keinen Content-Type (spart unnötige CORS-Preflights).
+  if (!isFormData && !headers['Content-Type'] && (hasBody || isStateChanging)) {
     headers['Content-Type'] = 'application/json'
   }
 
   const url = apiUrl(path)
   const isInternal = isInternalApiUrl(url)
 
+  // Gleichzeitige identische GET-Anfragen buendeln (nicht fuer zustandsveraendernde Endpunkte wie /desktop/jobs/next).
+  const canDedupeGet =
+    method === 'GET' &&
+    isInternal &&
+    !options?.signal &&
+    !path.startsWith('/desktop/jobs/next') &&
+    Object.keys(headers).length === 0
+  if (canDedupeGet) {
+    const existing = inFlightGetRequests.get(url)
+    if (existing) {
+      return existing as Promise<T>
+    }
+  }
+
+  const execute = async (): Promise<T> => {
   if (isInternal) {
     const bearer = bekommtAnmeldung(url) ? nativesToken() : null
     if (bearer) {
@@ -586,6 +625,7 @@ export async function api<T>(path: string, options?: ApiOptions): Promise<T> {
 
   if (!res.ok) {
     if (res.status === 429) {
+      rateLimitUntilMs = Math.max(rateLimitUntilMs, Date.now() + parseRetryAfterMs(res))
       let code: string | null = null
       let message: string | null = null
       try {
@@ -654,6 +694,19 @@ export async function api<T>(path: string, options?: ApiOptions): Promise<T> {
   }
 
   return res.json()
+  }
+
+  if (!canDedupeGet) {
+    return execute()
+  }
+
+  const pending = execute().finally(() => {
+    if (inFlightGetRequests.get(url) === pending) {
+      inFlightGetRequests.delete(url)
+    }
+  })
+  inFlightGetRequests.set(url, pending)
+  return pending
 }
 
 export interface StreamOptions extends RequestInit {

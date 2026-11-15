@@ -85,14 +85,43 @@ export function Uebernahmekarte({
     setAnfrage((offen) => (offen?.auftragId === auftragId ? null : offen))
   })
 
-  // Eine laufende Übernahme muss man sehen. Eine, die man nicht sieht, wäre
-  // die schlechteste Fassung dieser Funktion.
+  // Eine laufende Übernahme muss man sehen — aber nur abfragen, solange
+  // tatsächlich eine läuft (statt im Leerlauf jede Sekunde IPC zu feuern).
   useEffect(() => {
-    const takt = setInterval(() => {
-      void uebernahmeRest().then(setRest).catch(() => setRest(0))
-    }, 1000)
-    return () => clearInterval(takt)
-  }, [])
+    if (kompakt) {
+      return
+    }
+    let aktiv = true
+    let timer: ReturnType<typeof setTimeout> | undefined
+
+    const pruefen = () => {
+      void uebernahmeRest()
+        .then((sekunden) => {
+          if (!aktiv) return
+          const wert = sekunden > 0 ? sekunden : 0
+          setRest(wert)
+          if (wert > 0) {
+            timer = setTimeout(pruefen, 1000)
+          }
+        })
+        .catch(() => {
+          if (aktiv) setRest(0)
+        })
+    }
+
+    const aufStart = () => {
+      if (timer) clearTimeout(timer)
+      timer = setTimeout(pruefen, 150)
+    }
+
+    pruefen()
+    window.addEventListener('mss:uebernahme-gestartet', aufStart)
+    return () => {
+      aktiv = false
+      if (timer) clearTimeout(timer)
+      window.removeEventListener('mss:uebernahme-gestartet', aufStart)
+    }
+  }, [kompakt])
 
   const entscheiden = useCallback(
     async (erteilt: boolean) => {
@@ -103,6 +132,10 @@ export function Uebernahmekarte({
       karteErledigtMelden(anfrage.auftragId)
       if (erteilt) {
         await uebernahmeFreigeben(anfrage.minuten)
+        if (anfrage.minuten > 0) {
+          setRest(anfrage.minuten * 60)
+          window.dispatchEvent(new CustomEvent('mss:uebernahme-gestartet'))
+        }
       }
       // Die Hinweise gehen als Werkzeugergebnis an das Modell — deshalb
       // bewusst nicht übersetzt: das Modell liest sie, nicht der Mensch.
@@ -156,7 +189,14 @@ export function Uebernahmekarte({
             zeit: formatDauer(rest),
           })}
         </span>
-        <Button variant="secondary" size="sm" onClick={() => void uebernahmeWiderrufen()}>
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={() => {
+            setRest(0)
+            void uebernahmeWiderrufen()
+          }}
+        >
           {t('mss.uebernahme.beenden')}
         </Button>
       </div>

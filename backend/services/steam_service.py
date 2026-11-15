@@ -5,12 +5,13 @@ Uses Steam Web API with optional key. Falls back to community search if no key.
 Caches responses to respect rate limits.
 """
 
+import asyncio
 import html
 import json
 import logging
 import re
 import httpx
-from typing import Dict, List, Optional, Any
+from typing import Any, Awaitable, Callable, Dict, List, Optional
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 import os
@@ -81,27 +82,51 @@ class SteamService:
         )
         self._cache: Dict[str, Dict[str, Any]] = {}
         self._cache_ttl = timedelta(minutes=15)
+        self._filters_ttl = timedelta(hours=6)
+        self._inflight: Dict[str, asyncio.Task[Any]] = {}
     
     async def close(self):
         """Close HTTP client."""
+        for task in list(self._inflight.values()):
+            task.cancel()
+        self._inflight.clear()
         await self.client.aclose()
     
     def _is_cache_valid(self, key: str) -> bool:
         if key not in self._cache:
             return False
-        cached_time = self._cache[key]['timestamp']
-        return datetime.now(timezone.utc) - cached_time < self._cache_ttl
+        entry = self._cache[key]
+        cached_time = entry['timestamp']
+        ttl = entry.get('ttl') or self._cache_ttl
+        return datetime.now(timezone.utc) - cached_time < ttl
 
     def _get_cache(self, key: str) -> Optional[Any]:
         if self._is_cache_valid(key):
             return self._cache[key]['data']
         return None
 
-    def _set_cache(self, key: str, data: Any):
+    def _set_cache(self, key: str, data: Any, ttl: Optional[timedelta] = None):
         self._cache[key] = {
             'data': data,
-            'timestamp': datetime.now(timezone.utc)
+            'timestamp': datetime.now(timezone.utc),
+            'ttl': ttl,
         }
+
+    async def _singleflight(
+        self, key: str, factory: Callable[[], Awaitable[Any]]
+    ) -> Any:
+        """Buendelt gleichzeitige Abfragen mit demselben Cache-Schluessel."""
+        task = self._inflight.get(key)
+        if task is None:
+            async def _run() -> Any:
+                try:
+                    return await factory()
+                finally:
+                    self._inflight.pop(key, None)
+
+            task = asyncio.create_task(_run())
+            self._inflight[key] = task
+        return await asyncio.shield(task)
     
     async def search_workshop_mods(
         self,
@@ -709,49 +734,58 @@ class SteamService:
         if cached is not None:
             return cached
 
-        try:
-            query_data: dict = {
-                'query_type': query_type,
-                'page': page,
-                'numperpage': limit,
-                'appid': int(appid),
-                'return_short_description': True,
-                'return_tags': True,
-                'return_previews': True,
-                'return_children': True,
-            }
-            if sort == "trending":
-                query_data['days'] = 7
-            if filetype_int == 1:
-                query_data['filetype'] = 1
-            elif required_tags:
-                query_data['requiredtags'] = ','.join(required_tags)
+        async def _fetch_popular() -> List[SteamModInfo]:
+            cached_inner = self._get_cache(cache_key)
+            if cached_inner is not None:
+                return cached_inner
+            try:
+                query_data: dict = {
+                    'query_type': query_type,
+                    'page': page,
+                    'numperpage': limit,
+                    'appid': int(appid),
+                    'return_short_description': True,
+                    'return_tags': True,
+                    'return_previews': True,
+                    'return_children': True,
+                }
+                if sort == "trending":
+                    query_data['days'] = 7
+                if filetype_int == 1:
+                    query_data['filetype'] = 1
+                elif required_tags:
+                    query_data['requiredtags'] = ','.join(required_tags)
 
-            params = {
-                'key': self.api_key,
-                'input_json': json.dumps(query_data, separators=(',', ':')),
-            }
+                params = {
+                    'key': self.api_key,
+                    'input_json': json.dumps(query_data, separators=(',', ':')),
+                }
 
-            response = await self.client.get(
-                f"{self.API_BASE}/IPublishedFileService/QueryFiles/v1/",
-                params=params
-            )
-            response.raise_for_status()
-            
-            data = response.json()
-            mods = []
-            
-            if 'response' in data and 'publishedfiledetails' in data['response']:
-                for mod_data in data['response']['publishedfiledetails']:
-                    if mod_data.get('result') == 1:
-                        mods.append(self._parse_mod_data(mod_data))
-            
-            self._set_cache(cache_key, mods)
-            return mods
-            
-        except Exception as e:
-            logger.warning("Steam API popular mods failed: %s", type(e).__name__)
-            raise SteamApiUnavailable("steam_api_unavailable") from e
+                response = await self.client.get(
+                    f"{self.API_BASE}/IPublishedFileService/QueryFiles/v1/",
+                    params=params
+                )
+                response.raise_for_status()
+
+                data = response.json()
+                mods: List[SteamModInfo] = []
+
+                if 'response' in data and 'publishedfiledetails' in data['response']:
+                    for mod_data in data['response']['publishedfiledetails']:
+                        if mod_data.get('result') == 1:
+                            parsed = self._parse_mod_data(mod_data)
+                            mods.append(parsed)
+                            if parsed.publishedfileid:
+                                self._set_cache(f"details_{appid}_{parsed.publishedfileid}", parsed)
+
+                self._set_cache(cache_key, mods)
+                return mods
+
+            except Exception as e:
+                logger.warning("Steam API popular mods failed: %s", type(e).__name__)
+                raise SteamApiUnavailable("steam_api_unavailable") from e
+
+        return await self._singleflight(cache_key, _fetch_popular)
 
     async def get_workshop_filters(self, appid: str) -> Dict[str, Any]:
         """Fetch game-specific Steam Workshop filter tags (Community browse HTML + API tag fallback)."""
@@ -764,73 +798,80 @@ class SteamService:
         if cached is not None:
             return cached
 
-        tags_map: Dict[str, str] = {}
-        source = "none"
+        async def _fetch_filters() -> Dict[str, Any]:
+            cached_inner = self._get_cache(cache_key)
+            if cached_inner is not None:
+                return cached_inner
 
-        # 1. Primär: Offizielle Steam Community Workshop-Filterseite parsen (liefert exakte Spiel-Tags)
-        try:
-            resp = await self.client.get(
-                f"{self.COMMUNITY_BASE}/workshop/browse/",
-                params={"appid": clean_appid, "browsesort": "trend"},
-                headers={"Accept": "text/html,application/xhtml+xml"},
-                timeout=8.0,
-            )
-            if resp.status_code == 200 and resp.text:
-                body = resp.text
-                label_matches = re.findall(
-                    r'<label[^>]*>\s*<input[^>]*name=["\']requiredtags\[\]["\'][^>]*value=["\']([^"\']+)["\'][^>]*>\s*([^<]+)',
-                    body,
-                    flags=re.IGNORECASE,
+            tags_map: Dict[str, str] = {}
+            source = "none"
+
+            # 1. Primär: Offizielle Steam Community Workshop-Filterseite parsen (liefert exakte Spiel-Tags)
+            try:
+                resp = await self.client.get(
+                    f"{self.COMMUNITY_BASE}/workshop/browse/",
+                    params={"appid": clean_appid, "browsesort": "trend"},
+                    headers={"Accept": "text/html,application/xhtml+xml"},
+                    timeout=4.0,
                 )
-                for raw_val, raw_label in label_matches:
-                    val = html.unescape(raw_val).strip()
-                    label = re.sub(r"\s*\(\d[\d.,]*\)\s*$", "", html.unescape(raw_label)).strip()
-                    if val and len(val) <= 64 and val not in tags_map:
-                        tags_map[val] = label or val
-
-                if not tags_map:
-                    attr_matches = re.findall(
-                        r'''name=["']requiredtags\[\]["'][^>]*value=["']([^"']+)["']|value=["']([^"']+)["'][^>]*name=["']requiredtags\[\]["']''',
+                if resp.status_code == 200 and resp.text:
+                    body = resp.text
+                    label_matches = re.findall(
+                        r'<label[^>]*>\s*<input[^>]*name=["\']requiredtags\[\]["\'][^>]*value=["\']([^"\']+)["\'][^>]*>\s*([^<]+)',
                         body,
                         flags=re.IGNORECASE,
                     )
-                    for g1, g2 in attr_matches:
-                        val = html.unescape(g1 or g2).strip()
+                    for raw_val, raw_label in label_matches:
+                        val = html.unescape(raw_val).strip()
+                        label = re.sub(r"\s*\(\d[\d.,]*\)\s*$", "", html.unescape(raw_label)).strip()
                         if val and len(val) <= 64 and val not in tags_map:
-                            tags_map[val] = val
+                            tags_map[val] = label or val
 
-                if tags_map:
-                    source = "steam_community"
-        except Exception as exc:
-            logger.debug("Steam Community tag HTML fetch skipped for %s: %s", clean_appid, type(exc).__name__)
+                    if not tags_map:
+                        attr_matches = re.findall(
+                            r'''name=["']requiredtags\[\]["'][^>]*value=["']([^"']+)["']|value=["']([^"']+)["'][^>]*name=["']requiredtags\[\]["']''',
+                            body,
+                            flags=re.IGNORECASE,
+                        )
+                        for g1, g2 in attr_matches:
+                            val = html.unescape(g1 or g2).strip()
+                            if val and len(val) <= 64 and val not in tags_map:
+                                tags_map[val] = val
 
-        # 2. Fallback: Tags aus den beliebtesten QueryFiles-Antworten sammeln
-        if not tags_map and self.api_key:
-            try:
-                sample_mods = await self.get_popular_mods(
-                    appid=clean_appid,
-                    limit=30,
-                    sort="popular",
-                    page=1,
-                    filetype=0,
-                )
-                for item in sample_mods:
-                    for raw_tag in item.tags or []:
-                        t = str(raw_tag).strip()
-                        if t and len(t) <= 64 and t not in tags_map:
-                            tags_map[t] = t
-                if tags_map:
-                    source = "query_files"
+                    if tags_map:
+                        source = "steam_community"
             except Exception as exc:
-                logger.debug("Steam QueryFiles tag fallback skipped for %s: %s", clean_appid, type(exc).__name__)
+                logger.debug("Steam Community tag HTML fetch skipped for %s: %s", clean_appid, type(exc).__name__)
 
-        tag_items = [
-            {"id": tag_id, "name": label}
-            for tag_id, label in list(tags_map.items())[:40]
-        ]
-        result = {"appid": clean_appid, "tags": tag_items, "source": source}
-        self._set_cache(cache_key, result)
-        return result
+            # 2. Fallback: Tags aus den beliebtesten QueryFiles-Antworten sammeln
+            if not tags_map and self.api_key:
+                try:
+                    sample_mods = await self.get_popular_mods(
+                        appid=clean_appid,
+                        limit=30,
+                        sort="popular",
+                        page=1,
+                        filetype=0,
+                    )
+                    for item in sample_mods:
+                        for raw_tag in item.tags or []:
+                            t = str(raw_tag).strip()
+                            if t and len(t) <= 64 and t not in tags_map:
+                                tags_map[t] = t
+                    if tags_map:
+                        source = "query_files"
+                except Exception as exc:
+                    logger.debug("Steam QueryFiles tag fallback skipped for %s: %s", clean_appid, type(exc).__name__)
+
+            tag_items = [
+                {"id": tag_id, "name": label}
+                for tag_id, label in list(tags_map.items())[:40]
+            ]
+            result = {"appid": clean_appid, "tags": tag_items, "source": source}
+            self._set_cache(cache_key, result, ttl=self._filters_ttl)
+            return result
+
+        return await self._singleflight(cache_key, _fetch_filters)
 
 
 # Global instance

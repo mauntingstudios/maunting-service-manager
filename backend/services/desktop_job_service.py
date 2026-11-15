@@ -192,6 +192,19 @@ def anlegen(
     )
     db.add(job)
     db.flush()
+    try:
+        from services.sync_event_service import SyncEventService
+
+        SyncEventService.publish(
+            {
+                "type": "desktop_job",
+                "job_id": job_id,
+                "device_family": familie,
+            },
+            user_id=user_id,
+        )
+    except Exception as exc:
+        logger.debug("Desktop-Auftrag SSE-Weckruf uebersprungen: %s", exc)
     return job
 
 

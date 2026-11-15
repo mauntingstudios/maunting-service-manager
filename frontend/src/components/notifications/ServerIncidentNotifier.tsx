@@ -11,7 +11,7 @@
  */
 import { useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import { api } from '@/api/client'
+import { api, getRateLimitRemainingMs } from '@/api/client'
 import { useAuthStore } from '@/stores/authStore'
 import { toast } from '@/stores/toastStore'
 import { sendeGeraeteBenachrichtigung, pruefeUndFrageGeraeteBerechtigung } from '@/lib/benachrichtigung'
@@ -292,8 +292,17 @@ export function ServerIncidentNotifier() {
       isPollingRef.current = true
 
       try {
-        // 1. Server-Vorfälle abrufen
-        const incidents = await api<IncidentAlert[]>('/system/incident-alerts').catch(() => [])
+        const incidentsPromise = api<IncidentAlert[]>('/system/incident-alerts').catch(() => [])
+        const remindersPromise = aufAndroid()
+          ? null
+          : api<CalendarDueReminder[]>('/calendar/due-reminders').catch(() => [])
+
+        // 1. Server-Vorfälle und ggf. Server-Termine parallel abrufen
+        const [incidents, vomServer] = await Promise.all([
+          incidentsPromise,
+          remindersPromise ?? Promise.resolve([] as CalendarDueReminder[]),
+        ])
+
         if (Array.isArray(incidents)) {
           let updatedIncidents = false
           for (const inc of incidents) {
@@ -322,8 +331,7 @@ export function ServerIncidentNotifier() {
           return
         }
 
-        // 2. Fällige Termine (24h / 48h) abrufen
-        const vomServer = await api<CalendarDueReminder[]>('/calendar/due-reminders').catch(() => [])
+        // 2. Fällige Termine (24h / 48h)
         // Serien, deren Regel Ende-zu-Ende verschlüsselt ist, fehlen in der
         // Serverliste — er kann sie nicht ausbreiten. Dieses Gerät hat den
         // Schlüssel und trägt sie nach; ohne das meldete sich ausgerechnet der
@@ -378,6 +386,8 @@ export function ServerIncidentNotifier() {
     }
 
     const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
+      if (getRateLimitRemainingMs() > 0) return
       if (user.device_notifications !== false) {
         void checkAlerts()
       }
