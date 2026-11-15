@@ -1360,6 +1360,58 @@ Maunting Service Manager — Guardian Engine
         return await EmailService.send_email(to, subject, body, html_body)
 
     @staticmethod
+    async def send_backup_completed_notification(
+        to: str,
+        username: str,
+        server_name: str,
+        *,
+        success: bool,
+        backup_name: str | None = None,
+        size_mb: int | None = None,
+        cloud: bool = False,
+    ) -> bool:
+        if success:
+            title = f"Backup abgeschlossen: {server_name}"
+            subject = f"Maunting Service Manager — Backup erstellt: {server_name}"
+            message = f'Das Backup für <strong>{EmailService.html_text(server_name)}</strong> wurde im Hintergrund abgeschlossen.'
+            detail = "Die Sicherung steht ab sofort zur Wiederherstellung bereit."
+            fakten: list[tuple[str, object]] = [("Server", server_name)]
+            if backup_name:
+                fakten.append(("Name", backup_name))
+            if size_mb is not None:
+                fakten.append(("Größe", f"{size_mb} MB"))
+            fakten.append(("Speicherort", "Lokal + S3-Cloud (verschlüsselt)" if cloud else "Lokal"))
+            body = (
+                f"Hallo {username},\n\n"
+                f"das Backup für \"{server_name}\" wurde im Hintergrund abgeschlossen.\n\n"
+                f"{EmailService._fakten_als_text(fakten)}\n\n"
+                f"Maunting Service Manager\n"
+            )
+        else:
+            title = f"Backup fehlgeschlagen: {server_name}"
+            subject = f"Maunting Service Manager — Backup fehlgeschlagen: {server_name}"
+            message = f'Das Hintergrund-Backup für <strong>{EmailService.html_text(server_name)}</strong> konnte nicht erstellt werden.'
+            detail = "Bitte prüfe im Panel die Server-Logs und den verfügbaren Speicherplatz."
+            fakten = [("Server", server_name)]
+            if backup_name:
+                fakten.append(("Name", backup_name))
+            body = (
+                f"Hallo {username},\n\n"
+                f"das Hintergrund-Backup für \"{server_name}\" konnte nicht erstellt werden.\n"
+                f"Bitte prüfe im Panel die Server-Logs und den verfügbaren Speicherplatz.\n\n"
+                f"Maunting Service Manager\n"
+            )
+        html_body = EmailService._notification_email_html(
+            username,
+            title,
+            message,
+            detail,
+            kategorie="Backups",
+            fakten=fakten,
+        )
+        return await EmailService.send_email(to, subject, body, html_body)
+
+    @staticmethod
     async def send_server_installed_notification(to: str, username: str, server_name: str) -> bool:
         subject = f"Maunting Service Manager — Server installiert: {server_name}"
         body = f"""Hallo {username},

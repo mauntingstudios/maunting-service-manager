@@ -15,7 +15,15 @@ import os
 import re
 import shutil
 import stat as stat_module
+import subprocess
 import tarfile
+
+try:
+    import grp
+    import pwd
+except ImportError:  # pragma: no cover - Windows dev hosts
+    grp = None  # type: ignore[assignment]
+    pwd = None  # type: ignore[assignment]
 import tempfile
 import threading
 import uuid
@@ -646,9 +654,104 @@ def create_dir(server_id: str | int, rel_path: str) -> None:
     target.mkdir(parents=True, exist_ok=True)
 
 
+def apply_shared_server_acl(root: Path) -> None:
+    """Restore shared msm-agent / msm-docker ownership and default POSIX ACLs.
+
+    When a backup restore replaces ``root`` with a fresh directory, the new inode
+    loses inherited ``msm-docker`` ACLs. Containers running under rootless Docker
+    would otherwise fail with EACCES. Best-effort when ``msm-docker`` or
+    ``setfacl`` is absent (e.g. unit tests or Windows dev).
+    """
+    if not root.exists() or not root.is_dir():
+        return
+    docker_user = None
+    agent_user = None
+    servers_gr = None
+    if pwd is not None:
+        try:
+            docker_user = pwd.getpwnam("msm-docker").pw_name
+        except (KeyError, OSError):
+            docker_user = None
+        try:
+            uid = os.getuid() if hasattr(os, "getuid") else 0
+            agent_user = pwd.getpwuid(uid).pw_name
+        except (KeyError, OSError):
+            agent_user = None
+    if grp is not None:
+        try:
+            servers_gr = grp.getgrnam("msm-servers")
+        except (KeyError, OSError):
+            servers_gr = None
+
+    if servers_gr is not None:
+        try:
+            os.chown(root, -1, servers_gr.gr_gid)
+        except OSError:
+            pass
+    if docker_user is not None or servers_gr is not None:
+        try:
+            root.chmod(0o2770)
+        except OSError:
+            pass
+
+    if not docker_user or not agent_user or not shutil.which("setfacl"):
+        return
+
+    acl_spec = (
+        f"u:{agent_user}:rwX,u:{docker_user}:rwX,"
+        f"d:u:{agent_user}:rwX,d:u:{docker_user}:rwX,m::rwx"
+    )
+    pg_data_dir = root / ".msm" / "postgres-data"
+    if pg_data_dir.exists():
+        # PostgreSQL container data must keep its 0700 subUID/subGID permissions.
+        subprocess.run(
+            ["setfacl", "-m", acl_spec, str(root)],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        for child in root.iterdir():
+            if child.name == ".msm":
+                subprocess.run(
+                    ["setfacl", "-m", acl_spec, str(child)],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+                for sub in child.iterdir():
+                    if sub.name != "postgres-data":
+                        subprocess.run(
+                            ["setfacl", "-R", "-m", acl_spec, str(sub)],
+                            check=False,
+                            capture_output=True,
+                            text=True,
+                            timeout=60,
+                        )
+            else:
+                subprocess.run(
+                    ["setfacl", "-R", "-m", acl_spec, str(child)],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                )
+    else:
+        subprocess.run(
+            ["setfacl", "-R", "-m", acl_spec, str(root)],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+
+
 def ensure_server_root(server_id: str | int) -> None:
     """Create the server root itself; only the authenticated panel calls this."""
-    server_root(server_id).mkdir(parents=True, exist_ok=False)
+    root = server_root(server_id)
+    root.mkdir(parents=True, exist_ok=False)
+    apply_shared_server_acl(root)
 
 
 def delete_server_root(server_id: str | int) -> None:
@@ -944,7 +1047,7 @@ def restore_backup_archive(server_id: str | int, source) -> None:
     staging = parent / f".{root.name}-restore-{uuid.uuid4().hex}"
     previous = parent / f".{root.name}-pre-restore"
     archive_path = parent / f".{root.name}-restore-{uuid.uuid4().hex}.tar.gz"
-    staging.mkdir(mode=0o700)
+    staging.mkdir(mode=0o750)
     try:
         written = 0
         with archive_path.open("wb") as output:
@@ -962,6 +1065,7 @@ def restore_backup_archive(server_id: str | int, source) -> None:
         if root.exists():
             root.rename(previous)
         staging.rename(root)
+        apply_shared_server_acl(root)
     except Exception:
         if previous.exists() and not root.exists():
             previous.rename(root)

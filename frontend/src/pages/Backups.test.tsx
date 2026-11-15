@@ -452,4 +452,55 @@ describe('Backups — S3 Cloud Features', () => {
       vi.useRealTimers()
     }
   })
+
+  it('sendet background:true beim Erstellen, schließt das Modal sofort und zeigt Hintergrund-Toast', async () => {
+    const calls: any[] = []
+    mockApi((p, opts) => {
+      calls.push({ p, opts })
+      if (p.startsWith('/backups/1/settings')) return DEFAULT_SETTINGS
+      if (p.startsWith('/backups/1/status')) return INACTIVE_STATUS
+      if (p === '/backup-config/status') return STATUS_RESPONSE
+      if (p === '/backups/1' && opts?.method === 'POST') {
+        return { message: 'Backup gestartet', status: 'started', operation: 'creating', server_id: 1 }
+      }
+      if (p === '/backups/1') return []
+      return undefined
+    })
+    renderBackups()
+
+    const openBtn = await screen.findByRole('button', { name: /Backup erstellen/ })
+    fireEvent.click(openBtn)
+    const input = await screen.findByPlaceholderText(/z\. B\./i)
+    fireEvent.change(input, { target: { value: 'Nacht-Sicherung' } })
+
+    const confirmButtons = screen.getAllByRole('button', { name: /Backup erstellen/ })
+    fireEvent.click(confirmButtons[confirmButtons.length - 1])
+
+    await waitFor(() => {
+      const postCall = calls.find((c) => c.p === '/backups/1' && c.opts?.method === 'POST')
+      expect(postCall).toBeTruthy()
+      expect(JSON.parse(postCall.opts.body)).toEqual({ name: 'Nacht-Sicherung', background: true })
+    })
+    await waitFor(() => {
+      expect(useToastStore.getState().toasts.some((t) => t.type === 'success' && t.message.includes('Hintergrund'))).toBe(true)
+    })
+    expect(screen.queryByPlaceholderText(/z\. B\./i)).not.toBeInTheDocument()
+  })
+
+  it('zeigt last_error vom Status-Poll als Fehler-Toast', async () => {
+    mockApi((p) => {
+      if (p.startsWith('/backups/1/settings')) return DEFAULT_SETTINGS
+      if (p.startsWith('/backups/1/status')) {
+        return { ...INACTIVE_STATUS, last_error: 'Backup fehlgeschlagen' }
+      }
+      if (p === '/backup-config/status') return STATUS_RESPONSE
+      if (p === '/backups/1') return []
+      return undefined
+    })
+    renderBackups()
+
+    await waitFor(() => {
+      expect(useToastStore.getState().toasts.some((t) => t.type === 'error' && t.message === 'Backup fehlgeschlagen')).toBe(true)
+    })
+  })
 })

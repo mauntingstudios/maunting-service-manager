@@ -1,12 +1,15 @@
+import asyncio
 import logging
 import os
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from database import get_db
+from database import SessionLocal, get_db
+from middleware.rate_limit import limiter
 from models import Backup, Server, User
 from schemas import BackupResponse
 from dependencies import get_current_user, verify_csrf, require_server_permission
@@ -28,6 +31,7 @@ def _is_loopback_request(request: Request) -> bool:
 
 class CreateBackupRequest(BaseModel):
     name: str | None = None
+    background: bool = False
 
 
 class BackupSettingsRequest(BaseModel):
@@ -77,18 +81,131 @@ def list_backups(server_id: int, db: Session = Depends(get_db), user: User = Dep
     ]
 
 
+def _notify_backup_result(
+    db: Session,
+    *,
+    user_id: int | None,
+    server_name: str,
+    success: bool,
+    backup_name: str | None = None,
+    size_mb: int | None = None,
+    cloud: bool = False,
+) -> None:
+    if not user_id:
+        return
+    try:
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user or not getattr(user, "email", None) or not getattr(user, "email_notifications", True):
+            return
+        from services.email_service import EmailService
+
+        asyncio.run(
+            EmailService.send_backup_completed_notification(
+                user.email,
+                user.username,
+                server_name,
+                success=success,
+                backup_name=backup_name,
+                size_mb=size_mb,
+                cloud=cloud,
+            )
+        )
+    except Exception:
+        logger.debug("Backup-Benachrichtigungs-Mail konnte nicht gesendet werden", exc_info=True)
+
+
+def _run_background_backup_job(server_id: int, name: str | None, user_id: int) -> None:
+    from services.backup_orchestrator import create_server_backup
+    from services.backup_service import clear_active_backup_status, set_last_backup_error
+    from services import redis_backplane
+
+    lock_token = redis_backplane.acquire_distributed_lock(f"backup-op:{server_id}", ttl_seconds=900)
+    job_db = SessionLocal()
+    server_name = f"Server #{server_id}"
+    try:
+        server = job_db.query(Server).filter(Server.id == server_id).first()
+        if server:
+            server_name = server.name
+        backup = create_server_backup(server_id, job_db, name=name, timeout_seconds=600)
+        audit_service.record_privileged_action(
+            job_db,
+            user_id=user_id,
+            action="server.backups.create",
+            target_type="server",
+            target_id=server_id,
+            details={"backup_id": backup.id, "name": backup.name, "size_mb": backup.size_mb, "background": True},
+            commit=True,
+        )
+        _notify_backup_result(
+            job_db,
+            user_id=user_id,
+            server_name=server_name,
+            success=True,
+            backup_name=backup.name,
+            size_mb=backup.size_mb,
+            cloud=bool(backup.s3_key),
+        )
+    except FileNotFoundError:
+        set_last_backup_error(server_id, "Server-Verzeichnis existiert nicht. Ist der Server installiert?")
+        _notify_backup_result(job_db, user_id=user_id, server_name=server_name, success=False, backup_name=name)
+    except Exception:
+        logger.exception("Hintergrund-Backup fuer Server %s fehlgeschlagen", server_id)
+        set_last_backup_error(server_id, "Backup fehlgeschlagen")
+        _notify_backup_result(job_db, user_id=user_id, server_name=server_name, success=False, backup_name=name)
+    finally:
+        clear_active_backup_status(server_id)
+        redis_backplane.release_distributed_lock(f"backup-op:{server_id}", lock_token)
+        job_db.close()
+
+
 @router.post("/{server_id}")
-def create_backup(server_id: int, body: CreateBackupRequest | None = None, db: Session = Depends(get_db), user: User = Depends(get_current_user), _: None = Depends(verify_csrf)) -> dict:
+def create_backup(
+    server_id: int,
+    background_tasks: BackgroundTasks,
+    body: CreateBackupRequest | None = None,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    _: None = Depends(verify_csrf),
+):
     require_server_permission(user, server_id, db, "server.backups.create")
     server = db.query(Server).filter(Server.id == server_id).first()
     if not server:
         raise HTTPException(status_code=404, detail="Server nicht gefunden")
 
-    # Kein Duplikat-Check mehr (Single Source of Truth im Service); generische Fehlermeldung
-    # (verhindert Leak von install_dir / Pfaden in HTTP-Details und Logs).
+    from services.backup_service import get_active_backup_status, set_active_backup_status
+    from services.node_capacity import should_delegate_node_fs_to_agent
+
+    if get_active_backup_status(server_id):
+        raise HTTPException(
+            status_code=409,
+            detail="Für diesen Server läuft bereits eine Sicherung oder Wiederherstellung.",
+        )
+
+    backup_name = body.name if body else None
+    if body and body.background:
+        node = getattr(server, "node", None)
+        if not should_delegate_node_fs_to_agent(node):
+            if not server.install_dir or not os.path.isdir(server.install_dir):
+                raise HTTPException(
+                    status_code=400,
+                    detail="Server-Verzeichnis existiert nicht. Ist der Server installiert?",
+                )
+        set_active_backup_status(server_id, "creating", None)
+        background_tasks.add_task(_run_background_backup_job, server_id, backup_name, user.id)
+        return JSONResponse(
+            status_code=202,
+            content={
+                "message": "Backup wurde im Hintergrund gestartet",
+                "status": "started",
+                "operation": "creating",
+                "server_id": server_id,
+            },
+        )
+
+    # Synchrone Ausfuehrung (Standard fuer direkte API-Aufrufe ohne background=true).
     from services.backup_orchestrator import create_server_backup
     try:
-        backup = create_server_backup(server_id, db, name=body.name if body else None, timeout_seconds=600)
+        backup = create_server_backup(server_id, db, name=backup_name, timeout_seconds=600)
     except FileNotFoundError:
         raise HTTPException(status_code=400, detail="Server-Verzeichnis existiert nicht. Ist der Server installiert?")
     except Exception:
@@ -129,12 +246,11 @@ def get_backup_settings(server_id: int, db: Session = Depends(get_db), user: Use
 
 
 @router.get("/{server_id}/status")
-def get_backup_status(server_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    """Live-Status für laufende Backup/Restore Operationen (Polling-UX).
-    Note (Issue 18): status is ephemeral (module dict); lost on backend restart (acceptable per original task).
-    """
+@limiter.exempt
+def get_backup_status(request: Request, server_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Live-Status für laufende Backup/Restore Operationen (Polling-UX)."""
     require_server_permission(user, server_id, db, "server.backups.read")
-    from services.backup_service import get_active_backup_status
+    from services.backup_service import get_active_backup_status, pop_last_backup_error
     active = get_active_backup_status(server_id)
     if active:
         return {
@@ -143,12 +259,16 @@ def get_backup_status(server_id: int, db: Session = Depends(get_db), user: User 
             "started_at": active.get("started_at"),
             "estimated_size_mb": active.get("estimated_size_mb"),
         }
-    return {
+    last_error = pop_last_backup_error(server_id)
+    payload: dict[str, object] = {
         "active": False,
         "operation": None,
         "started_at": None,
         "estimated_size_mb": None,
     }
+    if last_error:
+        payload["last_error"] = last_error
+    return payload
 
 
 @router.patch("/{server_id}/settings")

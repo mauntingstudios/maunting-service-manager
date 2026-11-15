@@ -4154,6 +4154,7 @@
     "subtitle": "Create, restore, and manage server backups.",
     "create": "Create backup",
     "created": "Backup created",
+    "started": "Backup started in background",
     "restore": "Restore",
     "restored": "Backup restored",
     "confirmRestore": "Really restore this backup? Current game files will be overwritten.",

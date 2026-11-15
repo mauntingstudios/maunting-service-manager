@@ -16,6 +16,7 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { decryptBackup, decryptFrames, deriveKey, KDF_PARAMS, DecryptError } from './decrypt';
 import {
   createTestEnc,
+  createTestEncV1,
   deriveTestKey,
   gzipBytes,
   utf8,
@@ -103,11 +104,10 @@ describe('VAL-DECRYPT-002: frame-by-frame round-trip', () => {
     enc = await createTestEnc(originalTarGz, testKey);
   });
 
-  it('spans at least two frames', () => {
-    // First 4 bytes are the first frame length; the stream must be larger than
-    // a single frame to confirm multi-frame handling.
-    const firstFrameLen = new DataView(enc.buffer).getUint32(0);
-    expect(enc.length).toBeGreaterThan(FRAME_LEN_FIELD + firstFrameLen);
+  it('spans at least two frames (v2 header MSMBKP2\\n)', () => {
+    expect(new TextDecoder().decode(enc.subarray(0, 8))).toBe('MSMBKP2\n');
+    const firstFrameLen = new DataView(enc.buffer).getUint32(8);
+    expect(enc.length).toBeGreaterThan(8 + FRAME_LEN_FIELD + firstFrameLen);
   });
 
   it('decrypts to the original tar.gz (byte-for-byte)', async () => {
@@ -240,7 +240,7 @@ describe('VAL-DECRYPT-006: large .enc file (10 MB+) decrypts successfully', () =
   });
 
   it('spans many frames', () => {
-    const firstFrameLen = new DataView(enc.buffer).getUint32(0);
+    const firstFrameLen = new DataView(enc.buffer).getUint32(8);
     expect(firstFrameLen).toBeGreaterThan(0);
     // 10 MB / 64 KiB ~ 160 frames.
     expect(enc.length / (FRAME_LEN_FIELD + 12 + 32)).toBeGreaterThan(100);
@@ -261,3 +261,72 @@ describe('VAL-DECRYPT-006: large .enc file (10 MB+) decrypts successfully', () =
 
 // Frame length field size, kept in sync with decrypt.ts.
 const FRAME_LEN_FIELD = 4;
+
+describe('v1 legacy compatibility & v2 stream integrity negative tests', () => {
+  it('decrypts legacy v1 .enc streams without MSMBKP2\\n header', async () => {
+    const original = gzipBytes(utf8('legacy-v1-backup-content-'.repeat(4000)));
+    const encV1 = await createTestEncV1(original, testKey);
+    const decrypted = await decryptBackup(encV1, PASSWORD, SALT_BASE64);
+    expect(await sha256(decrypted)).toBe(await sha256(original));
+  });
+
+  it('rejects reordered frames in v2 streams', async () => {
+    const payload = new Uint8Array(STREAM_CHUNK * 2 + 128);
+    payload.fill(0x41);
+    const enc = await createTestEnc(payload, testKey);
+    const dv = new DataView(enc.buffer, enc.byteOffset, enc.byteLength);
+    const f0Start = 8;
+    const f0Len = FRAME_LEN_FIELD + dv.getUint32(f0Start);
+    const f1Start = f0Start + f0Len;
+    const f1Len = FRAME_LEN_FIELD + dv.getUint32(f1Start);
+    const swapped = enc.slice();
+    swapped.set(enc.subarray(f1Start, f1Start + f1Len), f0Start);
+    swapped.set(enc.subarray(f0Start, f0Start + f0Len), f0Start + f1Len);
+    await expect(decryptBackup(swapped, PASSWORD, SALT_BASE64)).rejects.toThrow();
+  });
+
+  it('rejects duplicated frames in v2 streams', async () => {
+    const payload = new Uint8Array(STREAM_CHUNK + 64);
+    payload.fill(0x42);
+    const enc = await createTestEnc(payload, testKey);
+    const dv = new DataView(enc.buffer, enc.byteOffset, enc.byteLength);
+    const f0Start = 8;
+    const f0Len = FRAME_LEN_FIELD + dv.getUint32(f0Start);
+    const dup = new Uint8Array(enc.length + f0Len);
+    dup.set(enc.subarray(0, f0Start + f0Len), 0);
+    dup.set(enc.subarray(f0Start, f0Start + f0Len), f0Start + f0Len);
+    dup.set(enc.subarray(f0Start + f0Len), f0Start + f0Len * 2);
+    await expect(decryptBackup(dup, PASSWORD, SALT_BASE64)).rejects.toThrow();
+  });
+
+  it('rejects v2 stream truncated at a frame boundary before the final frame', async () => {
+    const payload = new Uint8Array(STREAM_CHUNK + 64);
+    payload.fill(0x43);
+    const enc = await createTestEnc(payload, testKey);
+    const dv = new DataView(enc.buffer, enc.byteOffset, enc.byteLength);
+    const f0Len = FRAME_LEN_FIELD + dv.getUint32(8);
+    const withoutFinal = enc.subarray(0, 8 + f0Len);
+    await expect(decryptBackup(withoutFinal, PASSWORD, SALT_BASE64)).rejects.toThrow(
+      /missing final frame/,
+    );
+  });
+
+  it('rejects v2 stream with trailing data appended after the final frame', async () => {
+    const payload = new Uint8Array(1024).fill(0x44);
+    const enc = await createTestEnc(payload, testKey);
+    const withTrailing = new Uint8Array(enc.length + 12);
+    withTrailing.set(enc, 0);
+    await expect(decryptBackup(withTrailing, PASSWORD, SALT_BASE64)).rejects.toThrow(
+      /unexpected data after final frame/,
+    );
+  });
+
+  it('rejects frames claiming length above MAX_FRAME_LEN', async () => {
+    const bad = new Uint8Array(16);
+    bad.set([0x4d, 0x53, 0x4d, 0x42, 0x4b, 0x50, 0x32, 0x0a], 0);
+    new DataView(bad.buffer).setUint32(8, 0x01000000); // 16 MiB > MAX_FRAME_LEN
+    await expect(decryptBackup(bad, PASSWORD, SALT_BASE64)).rejects.toThrow(
+      /exceeds maximum/,
+    );
+  });
+});

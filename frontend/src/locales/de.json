@@ -4142,6 +4142,7 @@
     "subtitle": "Backups erstellen, wiederherstellen und verwalten.",
     "create": "Backup erstellen",
     "created": "Backup erstellt",
+    "started": "Backup wird im Hintergrund erstellt",
     "restore": "Wiederherstellen",
     "restored": "Backup wiederhergestellt",
     "confirmRestore": "Backup wirklich wiederherstellen? Der aktuelle Stand der Spieldateien wird überschrieben.",

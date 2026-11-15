@@ -37,6 +37,29 @@ export const KDF_PARAMS = {
 const FRAME_LEN_FIELD = 4; // big-endian uint32
 const NONCE_LEN = 12; // AES-GCM 96-bit nonce
 const TAG_LEN = 16; // AES-GCM auth tag (appended to ciphertext)
+const STREAM_CHUNK = 64 * 1024;
+const MAX_FRAME_LEN = NONCE_LEN + STREAM_CHUNK + TAG_LEN + 64;
+const STREAM_MAGIC_V2 = new Uint8Array([0x4d, 0x53, 0x4d, 0x42, 0x4b, 0x50, 0x32, 0x0a]); // "MSMBKP2\n"
+
+function buildFrameAad(index: number, isFinal: boolean): Uint8Array {
+  const aad = new Uint8Array(9);
+  const view = new DataView(aad.buffer);
+  view.setBigUint64(0, BigInt(index), false);
+  aad[8] = isFinal ? 1 : 0;
+  return aad;
+}
+
+function hasMagicV2(data: Uint8Array): boolean {
+  if (data.length < STREAM_MAGIC_V2.length) {
+    return false;
+  }
+  for (let i = 0; i < STREAM_MAGIC_V2.length; i++) {
+    if (data[i] !== STREAM_MAGIC_V2[i]) {
+      return false;
+    }
+  }
+  return true;
+}
 
 /** Base64 -> Uint8Array decoder (browser-safe, no Buffer). */
 function base64ToBytes(base64: string): Uint8Array {
@@ -86,10 +109,16 @@ export async function* decryptFrames(
   key: CryptoKey,
   onProgress?: (progress: number) => void,
 ): AsyncGenerator<Uint8Array> {
-  let offset = 0;
+  const version: 1 | 2 = hasMagicV2(data) ? 2 : 1;
+  let offset = version === 2 ? STREAM_MAGIC_V2.length : 0;
+  let frameIndex = 0;
+  let sawFinalFrame = false;
   const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
 
   while (offset < data.length) {
+    if (sawFinalFrame) {
+      throw new Error('Invalid frame format: unexpected data after final frame');
+    }
     if (offset + FRAME_LEN_FIELD > data.length) {
       throw new Error('Invalid frame format: truncated frame length');
     }
@@ -98,6 +127,9 @@ export async function* decryptFrames(
 
     if (frameLength < NONCE_LEN) {
       throw new Error('Invalid frame format: frame length too small for nonce');
+    }
+    if (frameLength > MAX_FRAME_LEN) {
+      throw new Error('Invalid frame format: frame length exceeds maximum');
     }
     if (offset + frameLength > data.length) {
       throw new Error('Invalid frame format: frame extends past end of data');
@@ -111,9 +143,25 @@ export async function* decryptFrames(
       throw new Error('Invalid frame format: ciphertext shorter than auth tag');
     }
 
-    yield await aesGcmDecrypt(key, nonce, ciphertext);
+    if (version === 1) {
+      yield await aesGcmDecrypt(key, nonce, ciphertext);
+    } else {
+      let plain: Uint8Array | null = null;
+      try {
+        plain = await aesGcmDecrypt(key, nonce, ciphertext, buildFrameAad(frameIndex, false));
+      } catch {
+        plain = await aesGcmDecrypt(key, nonce, ciphertext, buildFrameAad(frameIndex, true));
+        sawFinalFrame = true;
+      }
+      frameIndex += 1;
+      yield plain;
+    }
 
     onProgress?.(offset / data.length);
+  }
+
+  if (version === 2 && !sawFinalFrame) {
+    throw new Error('Invalid frame format: missing final frame');
   }
 }
 

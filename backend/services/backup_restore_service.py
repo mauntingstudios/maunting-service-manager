@@ -107,6 +107,7 @@ def restore_server_backup(
     from services.node_capacity import agent_server_key, should_delegate_node_fs_to_agent
 
     is_remote = should_delegate_node_fs_to_agent(node)
+    resolved_server_key = agent_server_key(server.id, getattr(server, "install_dir", None))
     use_agent_s3_restore = is_remote and bool(backup.s3_key)
 
     from services.server_lifecycle_service import get_server_lifecycle_lock, guardian_recovery_suspension_lease
@@ -156,7 +157,20 @@ def restore_server_backup(
                         status_code=400,
                         detail="Entschlüsselung fehlgeschlagen: falsches Passwort oder manipuliertes Backup",
                     )
-                except (S3NotConfiguredError, S3OperationError, NodeClientError, BackupCryptoError):
+                except NodeClientError as exc:
+                    if exc.status_code == 400:
+                        msg = (exc.message or "").lower()
+                        if "decryption" in msg:
+                            raise HTTPException(
+                                status_code=400,
+                                detail="Entschlüsselung fehlgeschlagen: falsches Passwort oder manipuliertes Backup",
+                            )
+                        raise HTTPException(
+                            status_code=400,
+                            detail="Wiederherstellung fehlgeschlagen: ungültiges Backup-Archiv",
+                        )
+                    raise HTTPException(status_code=502, detail="Cloud-Backup nicht verfügbar")
+                except (S3NotConfiguredError, S3OperationError, BackupCryptoError):
                     raise HTTPException(status_code=502, detail="Cloud-Backup nicht verfügbar")
                 except Exception:
                     logger.warning(
@@ -256,7 +270,7 @@ def restore_server_backup(
                     from services.node_client import NodeClient
 
                     NodeClient.from_node(node).files_restore_archive(
-                        agent_server_key(server.id, server.install_dir), tar_path
+                        resolved_server_key, tar_path
                     )
                     remote_restore_pending = True
                 elif scope == "selective":
@@ -311,7 +325,7 @@ def restore_server_backup(
                             try:
                                 from services.node_client import NodeClient
 
-                                NodeClient.from_node(node).files_delete(server.id, ".msm/postgres")
+                                NodeClient.from_node(node).files_delete(resolved_server_key, ".msm/postgres")
                             except Exception:
                                 logger.warning("Remote Postgres-Dump-Cleanup fuer Server %s fehlgeschlagen", server.id)
                     elif result.get("skipped"):
@@ -332,7 +346,7 @@ def restore_server_backup(
                     try:
                         from services.node_client import NodeClient
 
-                        NodeClient.from_node(node).files_rollback_restore(server.id)
+                        NodeClient.from_node(node).files_rollback_restore(resolved_server_key)
                     except Exception:
                         logger.error("Remote Datei-Rollback fuer Server %s fehlgeschlagen", server.id)
                 elif old_backup and os.path.exists(old_backup):
@@ -354,7 +368,7 @@ def restore_server_backup(
             if remote_restore_pending:
                 from services.node_client import NodeClient
 
-                NodeClient.from_node(node).files_finalize_restore(server.id)
+                NodeClient.from_node(node).files_finalize_restore(resolved_server_key)
             elif old_backup and os.path.exists(old_backup):
                 shutil.rmtree(old_backup, ignore_errors=True)
 

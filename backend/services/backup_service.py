@@ -39,6 +39,7 @@ logger = logging.getLogger(__name__)
 # Note on concurrency (Issue 2 defense): unsynchronized; races possible on same server_id across threads (uvicorn + APScheduler).
 # Acceptable for ephemeral UX banner only (last-writer wins, resets on process restart). Adding Lock would violate KISS/no-new-complexity (see AGENTS, architecture.md "no global state without compelling reason").
 _active_backups: dict[int, dict] = {}
+_last_backup_errors: dict[int, str] = {}
 
 
 def run_backup(
@@ -345,22 +346,75 @@ def cleanup_old_backups(
 
 
 def set_active_backup_status(server_id: int, operation: str, estimated_size_mb: int | None = None) -> None:
-    """Setzt Live-Status (aufgerufen von run_backup und restore)."""
-    _active_backups[server_id] = {
+    """Setzt Live-Status im Worker-Cache (Redis wenn aktiv) und lokalem Dict."""
+    entry = {
         "operation": operation,
         "started_at": datetime.now(timezone.utc).isoformat(),
         "estimated_size_mb": estimated_size_mb,
     }
+    _active_backups[server_id] = entry
+    _last_backup_errors.pop(server_id, None)
+    try:
+        from services import redis_backplane
+
+        redis_backplane.cache_set_json("backup_active", str(server_id), entry, ttl_seconds=3600)
+        redis_backplane.cache_delete("backup_error", str(server_id))
+    except Exception:
+        pass
 
 
 def clear_active_backup_status(server_id: int) -> None:
     """Entfernt Live-Status (auch bei Fehlern)."""
     _active_backups.pop(server_id, None)
+    try:
+        from services import redis_backplane
+
+        redis_backplane.cache_delete("backup_active", str(server_id))
+    except Exception:
+        pass
 
 
 def get_active_backup_status(server_id: int) -> dict | None:
-    """Liefert Snapshot oder None."""
+    """Liefert Snapshot über Redis (multi-worker) oder lokalen Fallback."""
+    try:
+        from services import redis_backplane
+
+        if redis_backplane.is_redis_enabled():
+            cached = redis_backplane.cache_get_json("backup_active", str(server_id))
+            if isinstance(cached, dict):
+                return cached
+            if redis_backplane.get_sync_redis() is not None:
+                return None
+    except Exception:
+        pass
     return _active_backups.get(server_id)
+
+
+def set_last_backup_error(server_id: int, message: str) -> None:
+    """Speichert eine kurze generische Fehlermeldung nach einem Hintergrund-Backup."""
+    _last_backup_errors[server_id] = message
+    try:
+        from services import redis_backplane
+
+        redis_backplane.cache_set_json("backup_error", str(server_id), {"message": message}, ttl_seconds=300)
+    except Exception:
+        pass
+
+
+def pop_last_backup_error(server_id: int) -> str | None:
+    """Liest und entfernt eine anstehende Hintergrund-Fehlermeldung (einmalig)."""
+    local = _last_backup_errors.pop(server_id, None)
+    try:
+        from services import redis_backplane
+
+        if redis_backplane.is_redis_enabled():
+            cached = redis_backplane.cache_get_json("backup_error", str(server_id))
+            if isinstance(cached, dict) and cached.get("message"):
+                redis_backplane.cache_delete("backup_error", str(server_id))
+                return str(cached["message"])
+    except Exception:
+        pass
+    return local
 
 
 def _sha256_of(filepath: str) -> str | None:

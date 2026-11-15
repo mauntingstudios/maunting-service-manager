@@ -60,14 +60,55 @@ export async function deriveTestKey(
   return key;
 }
 
+const STREAM_MAGIC_V2 = new Uint8Array([0x4d, 0x53, 0x4d, 0x42, 0x4b, 0x50, 0x32, 0x0a]);
+
+function frameAad(index: number, isFinal: boolean): Uint8Array {
+  const aad = new Uint8Array(9);
+  const view = new DataView(aad.buffer);
+  view.setBigUint64(0, BigInt(index), false);
+  aad[8] = isFinal ? 1 : 0;
+  return aad;
+}
+
 /**
- * Encrypts `plaintext` into an MSM-format `.enc` byte stream.
- *
- * Splits the plaintext into 64 KiB chunks (the final chunk may be smaller),
- * encrypts each with a fresh random 12-byte nonce via `aesGcmEncrypt`, and
- * prefixes each frame with a 4-byte big-endian `frame_length`.
+ * Encrypts `plaintext` into a current v2 MSM `.enc` byte stream (`MSMBKP2\n` + position-bound AAD).
  */
 export async function createTestEnc(
+  plaintext: Uint8Array,
+  key: CryptoKey,
+): Promise<Uint8Array> {
+  const frames: Uint8Array[] = [STREAM_MAGIC_V2];
+  const chunkCount = Math.max(1, Math.ceil(plaintext.length / STREAM_CHUNK));
+
+  for (let idx = 0; idx < chunkCount; idx++) {
+    const start = idx * STREAM_CHUNK;
+    const end = Math.min(start + STREAM_CHUNK, plaintext.length);
+    const chunk = plaintext.subarray(start, end);
+    const isFinal = idx === chunkCount - 1;
+    const nonce = randomBytes(NONCE_LEN);
+    const ciphertext = await aesGcmEncrypt(key, nonce, chunk, frameAad(idx, isFinal));
+
+    const frame = new Uint8Array(FRAME_LEN_FIELD + NONCE_LEN + ciphertext.length);
+    new DataView(frame.buffer).setUint32(0, NONCE_LEN + ciphertext.length);
+    frame.set(nonce, FRAME_LEN_FIELD);
+    frame.set(ciphertext, FRAME_LEN_FIELD + NONCE_LEN);
+    frames.push(frame);
+  }
+
+  const total = frames.reduce((sum, f) => sum + f.length, 0);
+  const result = new Uint8Array(total);
+  let offset = 0;
+  for (const f of frames) {
+    result.set(f, offset);
+    offset += f.length;
+  }
+  return result;
+}
+
+/**
+ * Encrypts `plaintext` into a legacy v1 MSM `.enc` byte stream (without `MSMBKP2\n` or AAD).
+ */
+export async function createTestEncV1(
   plaintext: Uint8Array,
   key: CryptoKey,
 ): Promise<Uint8Array> {
@@ -85,7 +126,7 @@ export async function createTestEnc(
     frames.push(frame);
   }
 
-  // Empty plaintext -> empty stream (matches DIS Sidecar: no frames written).
+  // Empty plaintext -> empty stream (matches legacy DIS Sidecar: no frames written).
   if (frames.length === 0) {
     return new Uint8Array(0);
   }

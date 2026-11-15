@@ -323,6 +323,9 @@ def restore_encrypted_s3_backup(
         if backup_old.exists():
             shutil.rmtree(backup_old, ignore_errors=True)
 
+        from services.file_service import apply_shared_server_acl
+
+        apply_shared_server_acl(root)
         return {"ok": True}
     except StreamCryptoError as exc:
         raise AgentBackupError("decryption failed", 400) from exc

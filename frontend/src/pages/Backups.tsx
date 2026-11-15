@@ -43,6 +43,7 @@ interface BackupStatus {
   operation: "creating" | "restoring" | null;
   started_at: string | null;
   estimated_size_mb: number | null;
+  last_error?: string | null;
 }
 
 interface S3Status {
@@ -53,8 +54,9 @@ interface S3Status {
 
 interface CreateBackupResponse {
   message: string;
-  backup_id: number;
-  size_mb: number | null;
+  backup_id?: number;
+  size_mb?: number | null;
+  status?: string;
 }
 
 // Bis 30 Tage (720 h) — dieselbe Obergrenze wie im Backend
@@ -134,6 +136,9 @@ export function Backups({ serverId }: BackupsProps) {
     try {
       const s = await api<BackupStatus>(`/backups/${serverId}/status?_t=${Date.now()}`);
       setBackupStatus(s);
+      if (s?.last_error) {
+        toast.error(s.last_error);
+      }
     } catch {
       setBackupStatus(null);
     }
@@ -169,6 +174,9 @@ export function Backups({ serverId }: BackupsProps) {
       try {
         const s = await api<BackupStatus>(`/backups/${serverId}/status?_t=${Date.now()}`);
         setBackupStatus(s);
+        if (s?.last_error) {
+          toast.error(s.last_error);
+        }
       } catch {
         setBackupStatus(null);
       }
@@ -236,16 +244,21 @@ export function Backups({ serverId }: BackupsProps) {
   const createBackup = async () => {
     setActionLoading("create");
     try {
-      await api<CreateBackupResponse>(`/backups/${serverId}`, {
+      const res = await api<CreateBackupResponse>(`/backups/${serverId}`, {
         method: "POST",
-        body: JSON.stringify({ name: backupName.trim() || null }),
+        body: JSON.stringify({ name: backupName.trim() || null, background: true }),
       });
-      toast.success(t("backups.created"));
       setShowCreateModal(false);
       setBackupName("");
-      await fetchBackups();
-      await fetchStatus();
       setActionLoading(null);
+      if (res?.status === "started") {
+        toast.success(t("backups.started"));
+        await fetchStatus();
+      } else {
+        toast.success(t("backups.created"));
+        await fetchBackups();
+        await fetchStatus();
+      }
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : t("common.error"));
       setActionLoading(null);
