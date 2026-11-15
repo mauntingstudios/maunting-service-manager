@@ -76,7 +76,9 @@ def create_server_backup(
         encrypt_local = password_set  # VAL-FIX-001: local .enc when password set
 
         node = getattr(server, "node", None) if server else None
-        is_remote = bool(node is not None and not getattr(node, "is_local", False))
+        from services.node_capacity import should_delegate_node_fs_to_agent
+
+        is_remote = should_delegate_node_fs_to_agent(node)
 
         # Phase 6: remote + S3 + password → agent-direct (no panel data plane)
         if is_remote and s3_eligible:

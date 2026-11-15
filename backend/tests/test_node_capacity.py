@@ -369,3 +369,33 @@ def test_quota_delegation_respects_local_agent_required(monkeypatch):
     node_capacity.remove_node_disk_quota(remote_node, 42)
     assert calls == [("apply", 42, 30), ("remove", 42), ("remove", 42)]
 
+
+def test_agent_server_key_and_disk_usage_slug_delegation(monkeypatch):
+    from config import settings
+    from services import docker_service
+    from services.node_client import NodeClient
+
+    assert node_capacity.agent_server_key(80, "/opt/msm/servers/singra_backend_80") == "singra_backend_80"
+    assert node_capacity.agent_server_key(80, "/opt/msm/servers/singra_backend_80/") == "singra_backend_80"
+    assert node_capacity.agent_server_key(80, None) == "80"
+    assert node_capacity.agent_server_key(80, "..") == "80"
+
+    disk_calls = []
+
+    class FakeClient:
+        def files_disk_info(self, server_key):
+            disk_calls.append(server_key)
+            return {"used_bytes": 248_348_396, "free_bytes": 50_000_000_000}
+
+    monkeypatch.setattr(settings, "local_agent_required", True)
+    monkeypatch.setattr(NodeClient, "from_node", staticmethod(lambda _n: FakeClient()))
+    local_node = SimpleNamespace(is_local=True, host="http://127.0.0.1:9000", auth_token_enc="enc")
+
+    used = docker_service.disk_usage_mb(
+        "/opt/msm/servers/singra_backend_80",
+        node=local_node,
+        server_id=80,
+    )
+    assert used == 236
+    assert disk_calls == ["singra_backend_80"]
+

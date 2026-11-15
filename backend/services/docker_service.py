@@ -1551,16 +1551,17 @@ async def stream_logs(name: str, tail: int = 200, *, node: Any | None = None) ->
 
 
 def disk_usage_mb(path: str, *, node=None, server_id: int | str | None = None) -> int | None:
-    if node is not None and (
-        not getattr(node, "is_local", True)
-        or bool(getattr(settings, "local_agent_required", False))
-    ):
+    from services.node_capacity import agent_server_key, should_delegate_node_fs_to_agent
+
+    if should_delegate_node_fs_to_agent(node):
         if server_id is None:
             return None
         try:
             from services.node_client import NodeClient
 
-            data = NodeClient.from_node(node).files_disk_info(server_id)
+            data = NodeClient.from_node(node).files_disk_info(
+                agent_server_key(server_id, path)
+            )
             return int(data["used_bytes"]) // (1024 * 1024)
         except Exception:
             return None

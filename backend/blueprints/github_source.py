@@ -702,10 +702,11 @@ def install_github_source_for_node(
         or (bool(getattr(node, "host", "")) and bool(getattr(node, "auth_token_enc", "")))
     )
     if use_agent:
+        from services.node_capacity import agent_server_key
         from services.node_client import NodeClient
 
         return NodeClient.from_node(node, timeout=600).install_github_source({
-            "server_id": str(server_id),
+            "server_id": agent_server_key(server_id, install_dir),
             "repo": cfg.repo,
             "branch": cfg.branch,
             "token": token,

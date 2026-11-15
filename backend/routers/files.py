@@ -145,25 +145,10 @@ def _map_agent_error(exc: NodeClientError) -> HTTPException:
 
 
 def _agent_files_key(server: Server) -> str:
-    """Directory name under the agent MSM_SERVERS_DIR for this server.
+    """Directory name under the agent MSM_SERVERS_DIR for this server."""
+    from services.node_capacity import agent_server_key
 
-    Production install dirs are slug-based (e.g. ``conan_exiles_ue5_63``), not
-    numeric ids. The agent scopes files to ``MSM_SERVERS_DIR / <key>``; using
-    only ``server.id`` would open an empty ``servers/63/`` next to the real data.
-    Prefer the basename of ``install_dir`` when it is a single safe path segment.
-    """
-    install = (getattr(server, "install_dir", None) or "").strip()
-    if install:
-        base = os.path.basename(os.path.normpath(install))
-        if (
-            base
-            and base not in {".", ".."}
-            and "/" not in base
-            and "\\" not in base
-            and ".." not in base
-        ):
-            return base
-    return str(server.id)
+    return agent_server_key(server.id, getattr(server, "install_dir", None))
 
 
 def _ensure_allowed_extension(filename: str) -> None:

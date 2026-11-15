@@ -108,6 +108,22 @@ def test_create_and_ephemeral_never_emit_seccomp_unconfined_and_include_apparmor
             assert dangerous in EXPLICITLY_DENIED_SYSCALLS
             assert dangerous in denied
 
+    strict_profile = json.loads(
+        next(o for o in opts_strict if o.startswith("seccomp=")).removeprefix("seccomp=")
+    )
+    assert any(
+        "clone3" in rule.get("names", [])
+        and rule.get("action") == "SCMP_ACT_ERRNO"
+        and rule.get("errnoRet") == 38
+        for rule in strict_profile["syscalls"]
+    )
+    assert any(
+        "clone" in rule.get("names", [])
+        and rule.get("action") == "SCMP_ACT_ALLOW"
+        and rule.get("args")
+        for rule in strict_profile["syscalls"]
+    )
+
     client, container = _mock_docker_client()
     container.wait.return_value = {"StatusCode": 0}
     container.logs.return_value = b"done"

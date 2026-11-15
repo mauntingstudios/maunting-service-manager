@@ -434,19 +434,27 @@ def seccomp_profile_dict(*, allow_userns: bool = False) -> dict[str, Any]:
         )
     else:
         # Standard thread/process cloning is permitted, namespace creation is blocked.
-        syscalls.append(
-            {
-                "names": ["clone"],
-                "action": "SCMP_ACT_ALLOW",
-                "args": [
-                    {
-                        "index": 0,
-                        "value": _CLONE_NAMESPACE_MASK,
-                        "valueTwo": 0,
-                        "op": "SCMP_CMP_MASKED_EQ",
-                    }
-                ],
-            }
+        # glibc pthread_create calls clone3 first and only falls back to clone on ENOSYS (38).
+        syscalls.extend(
+            [
+                {
+                    "names": ["clone3"],
+                    "action": "SCMP_ACT_ERRNO",
+                    "errnoRet": 38,
+                },
+                {
+                    "names": ["clone"],
+                    "action": "SCMP_ACT_ALLOW",
+                    "args": [
+                        {
+                            "index": 0,
+                            "value": _CLONE_NAMESPACE_MASK,
+                            "valueTwo": 0,
+                            "op": "SCMP_CMP_MASKED_EQ",
+                        }
+                    ],
+                },
+            ]
         )
 
     return {

@@ -364,12 +364,14 @@ def check_workshop_mod_updates(
         logger.debug("Mod-Update-Check übersprungen: kein Steam-Workshop- oder CurseForge-Support im Blueprint.")
         return []
 
+    from services.node_capacity import agent_server_key, should_delegate_node_fs_to_agent
     from services.node_service import client_for_server, resolve_server_node
     from services.node_client import NodeClientError
 
     node = resolve_server_node(server)
+    server_key = agent_server_key(server.id, getattr(server, "install_dir", None))
     client = None
-    if node is not None and not getattr(node, "is_local", False):
+    if should_delegate_node_fs_to_agent(node):
         try:
             client = client_for_server(server)
         except NodeClientError as exc:
@@ -404,7 +406,7 @@ def check_workshop_mod_updates(
         batch_remote_checked = True
         try:
             parent_entries = client.files_list(
-                server.id, f"steamapps/workshop/content/{workshop_app_id}"
+                server_key, f"steamapps/workshop/content/{workshop_app_id}"
             )
             remote_workshop_dirs = {
                 str(entry.get("name"))
@@ -452,7 +454,7 @@ def check_workshop_mod_updates(
                 else:
                     try:
                         remote_path = f"steamapps/workshop/content/{workshop_app_id}/{workshop_id}"
-                        files = client.files_list(server.id, remote_path)
+                        files = client.files_list(server_key, remote_path)
                         is_installed = len(files) > 0
                     except NodeClientError as exc:
                         if exc.status_code == 404:
@@ -643,12 +645,14 @@ def check_server_file_update(server: Any, blueprint: Blueprint) -> dict[str, Any
         "details": "",
     }
 
+    from services.node_capacity import agent_server_key, should_delegate_node_fs_to_agent
     from services.node_service import client_for_server, resolve_server_node
     from services.node_client import NodeClientError
 
     node = resolve_server_node(server)
+    server_key = agent_server_key(server.id, getattr(server, "install_dir", None))
     client = None
-    if node is not None and not getattr(node, "is_local", False):
+    if should_delegate_node_fs_to_agent(node):
         try:
             client = client_for_server(server)
         except NodeClientError as exc:
@@ -661,7 +665,7 @@ def check_server_file_update(server: Any, blueprint: Blueprint) -> dict[str, Any
 
     if client is not None:
         try:
-            files = client.files_list(server.id, "")
+            files = client.files_list(server_key, "")
             files_cache = files
             has_any_files = any(f.get("is_dir") or f.get("size", 0) > 0 for f in files)
         except NodeClientError as exc:
@@ -717,7 +721,7 @@ def check_server_file_update(server: Any, blueprint: Blueprint) -> dict[str, Any
         if client is not None:
             try:
                 manifest_rel = f"steamapps/appmanifest_{steam_app_id}.acf"
-                content = client.files_read(server.id, manifest_rel)
+                content = client.files_read(server_key, manifest_rel)
                 local_build = _parse_appmanifest_content(content)
             except NodeClientError as exc:
                 if exc.status_code != 404:
@@ -798,7 +802,7 @@ def check_server_file_update(server: Any, blueprint: Blueprint) -> dict[str, Any
         max_mtime = 0.0
         if client is not None:
             try:
-                files = files_cache if files_cache is not None else client.files_list(server.id, "")
+                files = files_cache if files_cache is not None else client.files_list(server_key, "")
                 for f in files:
                     name = f.get("name", "")
                     if name not in ("steamapps", "workshop"):
@@ -1150,20 +1154,23 @@ def _protect_manual_configs_and_run(
             return {"ok": False, "error": str(exc)}
 
     node = getattr(server, "node", None)
-    if node is not None and not getattr(node, "is_local", False):
+    from services.node_capacity import agent_server_key, should_delegate_node_fs_to_agent
+
+    if should_delegate_node_fs_to_agent(node):
         from services.node_client import NodeClient
 
+        server_key = agent_server_key(server_id, getattr(server, "install_dir", None))
         client = NodeClient.from_node(node)
         try:
-            client.files_cache_configs(server_id, get_protected_config_patterns())
+            client.files_cache_configs(server_key, get_protected_config_patterns())
             op_result = operation()
         except Exception as exc:
             op_result = {"ok": False, "error": str(exc)}
         finally:
             try:
-                client.files_restore_configs(server_id)
+                client.files_restore_configs(server_key)
             finally:
-                client.files_clear_config_cache(server_id)
+                client.files_clear_config_cache(server_key)
         return op_result
 
     # 1. Cache VOR Operation (Pflicht)

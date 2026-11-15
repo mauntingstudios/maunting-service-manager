@@ -472,12 +472,18 @@ def server_status(server_id: int, db: Session = Depends(get_db), user: User = De
         raise HTTPException(status_code=404, detail="Server nicht gefunden")
     plugin = get_plugin(server.game_type)
     disk_used = server.disk_usage_mb
-    if server.node is not None and not server.node.is_local:
+    from services.node_capacity import agent_server_key, should_delegate_node_fs_to_agent
+
+    if should_delegate_node_fs_to_agent(server.node):
         try:
             from services.node_client import NodeClient
 
-            disk_data = NodeClient.from_node(server.node).files_disk_info(server.id)
+            disk_data = NodeClient.from_node(server.node).files_disk_info(
+                agent_server_key(server.id, server.install_dir)
+            )
             disk_free = int(disk_data["free_bytes"]) // (1024 * 1024)
+            if not disk_used and disk_data.get("used_bytes") is not None:
+                disk_used = int(disk_data["used_bytes"]) // (1024 * 1024)
         except Exception:
             disk_free = None
     else:

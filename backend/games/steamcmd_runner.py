@@ -166,17 +166,21 @@ def _preflight_clean_bad_manifest(
     from games import base as _base
 
     try:
+        from services.node_capacity import agent_server_key, should_delegate_node_fs_to_agent
         from services.node_client import NodeClient, NodeClientError
 
-        if node is not None:
+        if should_delegate_node_fs_to_agent(node) or (
+            node is not None and not getattr(node, "is_local", False)
+        ):
+            server_key = agent_server_key(server_id, install_dir)
             client = NodeClient.from_node(node)
             manifest_rel = f"steamapps/appmanifest_{app_id}.acf"
             try:
-                mt = client.files_read(server_id, manifest_rel)
+                mt = client.files_read(server_key, manifest_rel)
                 if _is_corrupt_steam_manifest(mt):
                     bak_rel = f"{manifest_rel}.bad-state.{int(time.time())}"
-                    client.files_write(server_id, bak_rel, mt)
-                    client.files_delete(server_id, manifest_rel)
+                    client.files_write(server_key, bak_rel, mt)
+                    client.files_delete(server_key, manifest_rel)
                     _base._append_console_log(
                         server_id,
                         f"[MSM] Bad Steam manifest detected (0x2xx / timeout state) on agent - backed up to {bak_rel} and removed\n",
@@ -314,18 +318,23 @@ def _force_clean_manifest_after_0x2xx(
             + app_id
             + '"\n\t"StateFlags"\t\t"4"\n\t"UpdateResult"\t\t"0"\n\t"BytesToDownload"\t\t"0"\n\t"BytesToStage"\t\t"0"\n}\n'
         )
-        if node is not None:
+        from services.node_capacity import agent_server_key, should_delegate_node_fs_to_agent
+
+        if should_delegate_node_fs_to_agent(node) or (
+            node is not None and not getattr(node, "is_local", False)
+        ):
             from services.node_client import NodeClient
 
+            server_key = agent_server_key(server_id, install_dir)
             client = NodeClient.from_node(node)
             manifest_rel = f"steamapps/appmanifest_{app_id}.acf"
             try:
-                mt = client.files_read(server_id, manifest_rel)
+                mt = client.files_read(server_key, manifest_rel)
                 bak_rel = f"{manifest_rel}.post-fail.{int(time.time())}"
-                client.files_write(server_id, bak_rel, mt)
+                client.files_write(server_key, bak_rel, mt)
             except Exception:
                 pass
-            client.files_write(server_id, manifest_rel, clean)
+            client.files_write(server_key, manifest_rel, clean)
             _base._append_console_log(
                 server_id,
                 "[MSM] Forced clean manifest (State 4) after 0x2xx failure on agent — best effort start can proceed\n",
@@ -469,7 +478,9 @@ def run_steamcmd_install(
         _force_clean_manifest_after_0x2xx(server_id, install_dir, app_id, result, live_output, node)
 
     # Rootless-friendly aggressive repair after EVERY SteamCMD run (success or failure).
-    if node is None:
+    from services.node_capacity import should_delegate_node_fs_to_agent
+
+    if not should_delegate_node_fs_to_agent(node):
         try:
             _base.docker_service.repair_bind_mount_permissions(install_dir)
         except Exception:

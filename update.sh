@@ -1120,9 +1120,80 @@ ACLEOF
     if [[ -d /opt/msm/servers ]]; then
         chown "$MSM_AGENT_USER:$MSM_SERVERS_GROUP" /opt/msm/servers
         chmod 0710 /opt/msm/servers
+        python3 - "$MSM_USER" "$MSM_DOCKER_USER" "$MSM_AGENT_USER" "$MSM_SERVERS_GROUP" <<'UIDMAPEOF' || true
+import grp
+import os
+import pwd
+import sys
+
+old_user, new_user, agent_user, servers_group = sys.argv[1:5]
+
+def read_subid(path: str, username: str):
+    if not os.path.isfile(path):
+        return None
+    with open(path, "r", encoding="utf-8", errors="ignore") as f:
+        for line in f:
+            parts = line.strip().split(":")
+            if len(parts) == 3 and parts[0] == username:
+                try:
+                    return int(parts[1]), int(parts[2])
+                except ValueError:
+                    return None
+    return None
+
+old_subuid = read_subid("/etc/subuid", old_user)
+new_subuid = read_subid("/etc/subuid", new_user)
+old_subgid = read_subid("/etc/subgid", old_user)
+new_subgid = read_subid("/etc/subgid", new_user)
+try:
+    old_host_uid = pwd.getpwnam(old_user).pw_uid
+    old_host_gid = pwd.getpwnam(old_user).pw_gid
+    agent_uid = pwd.getpwnam(agent_user).pw_uid
+    servers_gid = grp.getgrnam(servers_group).gr_gid
+except KeyError:
+    sys.exit(0)
+
+if not old_subuid or not new_subuid or old_subuid[0] == new_subuid[0]:
+    sys.exit(0)
+
+old_u0, old_uc = old_subuid
+new_u0, _ = new_subuid
+old_g0, old_gc = old_subgid or old_subuid
+new_g0, _ = new_subgid or new_subuid
+
+def map_uid(uid: int) -> int:
+    if old_u0 <= uid < old_u0 + old_uc:
+        return new_u0 + (uid - old_u0)
+    if uid == old_host_uid:
+        return agent_uid
+    return uid
+
+def map_gid(gid: int) -> int:
+    if old_g0 <= gid < old_g0 + old_gc:
+        return new_g0 + (gid - old_g0)
+    if gid == old_host_gid:
+        return servers_gid
+    return gid
+
+base = "/opt/msm/servers"
+for root, dirs, files in os.walk(base, followlinks=False):
+    for name in dirs + files:
+        p = os.path.join(root, name)
+        try:
+            st = os.lstat(p)
+        except OSError:
+            continue
+        nu = map_uid(st.st_uid)
+        ng = map_gid(st.st_gid)
+        if nu != st.st_uid or ng != st.st_gid:
+            try:
+                os.lchown(p, nu, ng)
+            except OSError:
+                pass
+UIDMAPEOF
         if command -v setfacl &>/dev/null; then
             for _sd in /opt/msm/servers/*/; do
-                [[ -d "$_sd" ]] && setfacl -m "u:${MSM_AGENT_USER}:rwX,u:${MSM_DOCKER_USER}:rwX,d:u:${MSM_AGENT_USER}:rwX,d:u:${MSM_DOCKER_USER}:rwX" "$_sd" 2>/dev/null || true
+                [[ -d "$_sd" && ! -L "${_sd%/}" ]] && setfacl -R -m "u:${MSM_AGENT_USER}:rwX,u:${MSM_DOCKER_USER}:rwX,d:u:${MSM_AGENT_USER}:rwX,d:u:${MSM_DOCKER_USER}:rwX,m::rwx" "$_sd" 2>/dev/null || true
             done
         fi
     fi

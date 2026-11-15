@@ -41,11 +41,9 @@ def _server(db: Session, server_id: int) -> Server:
 
 
 def _agent_key(server: Server) -> str:
-    install = (server.install_dir or "").strip()
-    base = os.path.basename(os.path.normpath(install)) if install else ""
-    if base and base not in {".", ".."} and "/" not in base and "\\" not in base and ".." not in base:
-        return base
-    return str(server.id)
+    from services.node_capacity import agent_server_key
+
+    return agent_server_key(server.id, getattr(server, "install_dir", None))
 
 
 def _agent(server: Server, db: Session) -> NodeClient | None:

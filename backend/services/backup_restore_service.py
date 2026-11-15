@@ -102,9 +102,11 @@ def restore_server_backup(
         # Weder lokale Datei noch S3-Backup → 404 (kein State-Change).
         raise HTTPException(status_code=404, detail="Backup-Datei nicht gefunden")
 
-    # Phase 6: remote node + S3 → agent-direct restore (no panel data plane)
+    # Phase 6: agent-managed node + S3 → agent-direct restore (no panel data plane)
     node = getattr(server, "node", None)
-    is_remote = bool(node is not None and not getattr(node, "is_local", False))
+    from services.node_capacity import agent_server_key, should_delegate_node_fs_to_agent
+
+    is_remote = should_delegate_node_fs_to_agent(node)
     use_agent_s3_restore = is_remote and bool(backup.s3_key)
 
     from services.server_lifecycle_service import get_server_lifecycle_lock, guardian_recovery_suspension_lease
@@ -253,7 +255,9 @@ def restore_server_backup(
                 if is_remote:
                     from services.node_client import NodeClient
 
-                    NodeClient.from_node(node).files_restore_archive(server.id, tar_path)
+                    NodeClient.from_node(node).files_restore_archive(
+                        agent_server_key(server.id, server.install_dir), tar_path
+                    )
                     remote_restore_pending = True
                 elif scope == "selective":
                     os.makedirs(server.install_dir, exist_ok=True)

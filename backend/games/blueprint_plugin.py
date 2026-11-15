@@ -258,7 +258,9 @@ def _resolve_mod_ids(
 ) -> tuple[list[str], str | None]:
     """Löst interne Mod-IDs deklarativ aus Workshop-Dateien auf."""
     node = getattr(server, "node", None)
-    if node is not None and not getattr(node, "is_local", False):
+    from services.node_capacity import agent_server_key, should_delegate_node_fs_to_agent
+
+    if should_delegate_node_fs_to_agent(node):
         try:
             from services.node_client import NodeClient
 
@@ -279,7 +281,10 @@ def _resolve_mod_ids(
                     }
                 ],
             }
-            res = client.files_workshop(server.id, payload)
+            res = client.files_workshop(
+                agent_server_key(server.id, getattr(server, "install_dir", None)),
+                payload,
+            )
             resolved = res.get("resolved", {}).get(resolver.name, [])
             error = res.get("resolve_errors", {}).get(resolver.name)
             return list(resolved), error
@@ -435,12 +440,14 @@ class BlueprintPlugin(GamePlugin):
             from games.updater import perform_install_with_protection
 
             _append_console_log(server_id, "[MSM] HTTP-Source-Download startet\n")
+            from services.node_capacity import agent_server_key, should_delegate_node_fs_to_agent
+
             node = getattr(srv, "node", None)
             reinstall = (
-                Path(install_dir).is_dir() and any(Path(install_dir).iterdir())
-                if node is None or getattr(node, "is_local", False)
-                else False
-            ) if Path(install_dir).exists() else False
+                not should_delegate_node_fs_to_agent(node)
+                and Path(install_dir).is_dir()
+                and any(Path(install_dir).iterdir())
+            )
             if reinstall:
                 _append_console_log(
                     server_id,
@@ -451,7 +458,9 @@ class BlueprintPlugin(GamePlugin):
             def _install_source():
                 from blueprints.http_source import install_http_source_for_node
 
-                return install_http_source_for_node(server_id, bp, install_dir, node)
+                return install_http_source_for_node(
+                    agent_server_key(server_id, install_dir), bp, install_dir, node
+                )
 
             result = perform_install_with_protection(srv, _install_source, blueprint=bp)
             if result.get("ok"):
@@ -485,12 +494,15 @@ class BlueprintPlugin(GamePlugin):
 
             def _install_source():
                 from blueprints.github_source import install_github_source_for_node
+                from services.node_capacity import agent_server_key
 
                 node = getattr(srv, "node", None)
                 # Serverbezogener GitHub-Zugang vor dem panelweiten. Damit
                 # laeuft ein Kundenserver nicht mit dem Token des Betreibers.
                 token = _resolve_github_token_for_server(server_id)
-                return install_github_source_for_node(server_id, bp, install_dir, token, node)
+                return install_github_source_for_node(
+                    agent_server_key(server_id, install_dir), bp, install_dir, token, node
+                )
 
             result = perform_install_with_protection(srv, _install_source, blueprint=bp)
             if result.get("ok"):
@@ -511,9 +523,11 @@ class BlueprintPlugin(GamePlugin):
 
     def _install_manual_upload_source(self, server, bp) -> dict:
         assert bp.source.manual is not None
+        from services.node_capacity import agent_server_key, should_delegate_node_fs_to_agent
+
         install_dir = Path(server.install_dir)
         node = getattr(server, "node", None)
-        is_remote = node is not None and not getattr(node, "is_local", False)
+        is_remote = should_delegate_node_fs_to_agent(node)
         if not is_remote:
             install_dir.mkdir(parents=True, exist_ok=True)
 
@@ -528,7 +542,11 @@ class BlueprintPlugin(GamePlugin):
         if is_remote:
             from services.node_client import NodeClient
 
-            NodeClient.from_node(node).files_write(server.id, "MANUAL_INSTALL.md", readme_content)
+            NodeClient.from_node(node).files_write(
+                agent_server_key(server.id, getattr(server, "install_dir", None)),
+                "MANUAL_INSTALL.md",
+                readme_content,
+            )
         elif not readme.exists():
             readme.write_text(readme_content, encoding="utf-8")
 
@@ -778,7 +796,9 @@ class BlueprintPlugin(GamePlugin):
 
         executable_files = self._declared_required_executable_files()
         node = getattr(server, "node", None)
-        if node is not None and not getattr(node, "is_local", False):
+        from services.node_capacity import agent_server_key, should_delegate_node_fs_to_agent
+
+        if should_delegate_node_fs_to_agent(node):
             from services.node_client import NodeClient
             from services import server_config_wishes
 
@@ -792,7 +812,7 @@ class BlueprintPlugin(GamePlugin):
             )
 
             NodeClient.from_node(node).files_prepare_runtime(
-                server.id,
+                agent_server_key(server.id, getattr(server, "install_dir", None)),
                 {
                     "ensure_dirs": self._blueprint.runtime.ensureDirs,
                     "required_files": self._blueprint.runtime.requiredFiles,
@@ -1034,13 +1054,16 @@ class BlueprintPlugin(GamePlugin):
 
         lines: list[str] = []
         node = getattr(server, "node", None)
-        if node is not None and not getattr(node, "is_local", False):
+        from services.node_capacity import agent_server_key, should_delegate_node_fs_to_agent
+
+        if should_delegate_node_fs_to_agent(node):
             from services.node_client import NodeClient
 
             client = NodeClient.from_node(node)
+            server_key = agent_server_key(server.id, getattr(server, "install_dir", None))
             for mod in mods:
                 result = client.files_workshop(
-                    server.id,
+                    server_key,
                     self._workshop_agent_payload(str(mod.workshop_id), mode="inspect"),
                 )
                 lines.extend(str(name) for name in result.get("target_basenames", []) if name)
@@ -1083,11 +1106,13 @@ class BlueprintPlugin(GamePlugin):
             return {}
 
         node = getattr(server, "node", None)
-        if node is not None and not getattr(node, "is_local", False):
+        from services.node_capacity import agent_server_key, should_delegate_node_fs_to_agent
+
+        if should_delegate_node_fs_to_agent(node):
             from services.node_client import NodeClient
 
             return NodeClient.from_node(node).files_workshop(
-                server.id,
+                agent_server_key(server.id, getattr(server, "install_dir", None)),
                 self._workshop_agent_payload(workshop_id, mode="apply"),
             )
 
@@ -1164,11 +1189,13 @@ class BlueprintPlugin(GamePlugin):
         if not bp_mods.postInstall:
             return True
         node = getattr(server, "node", None)
-        if node is not None and not getattr(node, "is_local", False):
+        from services.node_capacity import agent_server_key, should_delegate_node_fs_to_agent
+
+        if should_delegate_node_fs_to_agent(node):
             from services.node_client import NodeClient
 
             result = NodeClient.from_node(node).files_workshop(
-                server.id,
+                agent_server_key(server.id, getattr(server, "install_dir", None)),
                 self._workshop_agent_payload(workshop_id, mode="inspect"),
             )
             return bool(result.get("ready"))
@@ -1279,11 +1306,13 @@ class BlueprintPlugin(GamePlugin):
             return {"ok": True, "removed": []}
 
         node = getattr(server, "node", None)
-        if node is not None and not getattr(node, "is_local", False):
+        from services.node_capacity import agent_server_key, should_delegate_node_fs_to_agent
+
+        if should_delegate_node_fs_to_agent(node):
             from services.node_client import NodeClient
 
             return NodeClient.from_node(node).files_workshop(
-                server.id,
+                agent_server_key(server.id, getattr(server, "install_dir", None)),
                 self._workshop_agent_payload(workshop_id, mode="cleanup"),
             )
 

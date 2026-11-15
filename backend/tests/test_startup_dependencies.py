@@ -172,6 +172,9 @@ def test_every_requirement_is_decided_one_way_or_the_other() -> None:
 
 def test_seccomp_module_handles_unreadable_agent_directory() -> None:
     """In 3-User-Isolation darf PermissionError auf msm-agent/ den Panel-Import nie stoppen."""
+    import json
+    import security.seccomp as agent_backed_seccomp
+
     probe = """
 from pathlib import Path
 orig_is_file = Path.is_file
@@ -180,13 +183,21 @@ def guarded_is_file(self):
         raise PermissionError(13, "Permission denied", str(self))
     return orig_is_file(self)
 Path.is_file = guarded_is_file
+import json
 import security.seccomp as seccomp
 assert seccomp._AGENT_SECCOMP is None
 opts = seccomp.container_security_options()
 assert "no-new-privileges" in opts
 assert any(o.startswith("seccomp={") for o in opts)
 assert not any("unconfined" in o for o in opts)
-print("OK")
+profile = seccomp.seccomp_profile_dict(allow_userns=False)
+assert any(
+    "clone3" in rule.get("names", [])
+    and rule.get("action") == "SCMP_ACT_ERRNO"
+    and rule.get("errnoRet") == 38
+    for rule in profile["syscalls"]
+)
+print(json.dumps(profile, sort_keys=True))
 """
     res = subprocess.run(
         [sys.executable, "-c", probe],
@@ -197,4 +208,5 @@ print("OK")
         errors="replace",
     )
     assert res.returncode == 0, f"stderr={res.stderr}\nstdout={res.stdout}"
-    assert "OK" in res.stdout
+    fallback_profile = json.loads(res.stdout.strip().splitlines()[-1])
+    assert fallback_profile == agent_backed_seccomp.seccomp_profile_dict(allow_userns=False)

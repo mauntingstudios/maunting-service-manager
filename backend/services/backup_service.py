@@ -75,12 +75,11 @@ def run_backup(
     if not server:
         raise ValueError(f"Server {server_id} nicht gefunden")
 
-    # Phase 2: remote node → stream archive from agent (S3 credentials stay on panel)
+    # Phase 2: delegated node (remote or local_agent_required) → stream archive from agent (S3 credentials stay on panel)
     node = getattr(server, "node", None)
-    use_agent_archive = (
-        node is not None
-        and not getattr(node, "is_local", False)
-    )
+    from services.node_capacity import agent_server_key, should_delegate_node_fs_to_agent
+
+    use_agent_archive = should_delegate_node_fs_to_agent(node)
     if not use_agent_archive and not os.path.isdir(server.install_dir):
         # Generische Nachricht (kein Leak von install_dir in Exception-String / HTTP-Details)
         raise FileNotFoundError("Server-Verzeichnis existiert nicht. Ist der Server installiert?")
@@ -159,7 +158,7 @@ def run_backup(
                     from services.postgres_service import backup_context
 
                     for chunk in client.files_archive(
-                        server_id,
+                        agent_server_key(server.id, server.install_dir),
                         postgres=backup_context(db, server_id),
                     ):
                         out.write(chunk)

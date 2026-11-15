@@ -344,7 +344,10 @@ def write_workshop_modlist_targets(
         file_targets.setdefault(rel_path, []).append(target)
 
     node = getattr(server, "node", None)
-    is_remote = node is not None and not getattr(node, "is_local", False)
+    from services.node_capacity import agent_server_key, should_delegate_node_fs_to_agent
+
+    is_remote = should_delegate_node_fs_to_agent(node)
+    server_key = agent_server_key(server.id, install_dir)
 
     client = None
     if is_remote:
@@ -361,7 +364,7 @@ def write_workshop_modlist_targets(
         install_real = ""
         if is_remote:
             try:
-                current_content = client.files_read(server.id, rel_path)
+                current_content = client.files_read(server_key, rel_path)
             except Exception:
                 current_content = ""
         else:
@@ -397,7 +400,7 @@ def write_workshop_modlist_targets(
 
         if is_remote:
             try:
-                client.files_write(server.id, rel_path, content)
+                client.files_write(server_key, rel_path, content)
             except Exception:
                 _append_console_log(server.id, f"[MSM] Modliste: Schreiben auf Node fehlgeschlagen ({rel_path})\n")
         else:
@@ -827,7 +830,9 @@ class GamePlugin(ABC):
         volume_binds = self.build_volume_binds(server)
 
         def _do_permission_repair():
-            if node is None or getattr(node, "is_local", False):
+            from services.node_capacity import should_delegate_node_fs_to_agent
+
+            if not should_delegate_node_fs_to_agent(node):
                 for volume in volume_binds:
                     if volume.read_only:
                         continue

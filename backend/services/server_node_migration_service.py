@@ -46,12 +46,13 @@ def _write_source_archive(
     db: Session,
 ) -> None:
     from services.backup_paths import create_full_backup_tar
+    from services.node_capacity import agent_server_key, should_delegate_node_fs_to_agent
     from services.postgres_service import backup_context, backup_pg_dump_for_archive
 
-    if server.node is not None and not server.node.is_local:
+    if should_delegate_node_fs_to_agent(server.node):
         with open(archive_path, "wb") as archive:
             for chunk in source_client.files_archive(
-                server.id,
+                agent_server_key(server.id, getattr(server, "install_dir", None)),
                 postgres=backup_context(db, server.id),
             ):
                 archive.write(chunk)

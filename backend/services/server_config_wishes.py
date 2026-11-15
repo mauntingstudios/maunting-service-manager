@@ -453,12 +453,14 @@ def wuensche_durchsetzen(server) -> None:
     roh = getattr(server, "config_wishes_json", None)
     if not roh:
         return
-    # Auf einer entfernten Node liegen die Dateien nicht hier. Dort reisen die
-    # Wuensche als Patches im `prepare_runtime`-Kanal (siehe `als_patches`);
-    # lokal zu schreiben wuerde nur ein leeres Verzeichnis auf dem Panel-Host
-    # anlegen und den echten Fehlschlag verdecken.
+    # Auf einer agentenverwalteten Node (remote oder local_agent_required) liegen
+    # die Dateien nicht im Panel-Zugriff. Dort reisen die Wuensche als Patches im
+    # `prepare_runtime`-Kanal (siehe `als_patches`); lokal zu schreiben wuerde
+    # nur fehlschlagen oder ein leeres Verzeichnis auf dem Panel-Host anlegen.
     node = getattr(server, "node", None)
-    if node is not None and not getattr(node, "is_local", False):
+    from services.node_capacity import should_delegate_node_fs_to_agent
+
+    if should_delegate_node_fs_to_agent(node):
         return
     alle = lese(roh)
     if not alle:

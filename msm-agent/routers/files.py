@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import contextlib
 import os
+import re
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -498,10 +500,20 @@ def archive_server_with_context(body: ArchiveBody, server_id: str = Query(...)):
         raise _map_path_errors(exc) from exc
 
 
+def _restore_operation_guard(server_key: str, reason: str, *, lease_seconds: int):
+    raw = str(server_key or "").strip()
+    if raw.isdigit():
+        return planned_operation(int(raw), reason, lease_seconds=lease_seconds)
+    match = re.search(r"_(\d+)$", raw)
+    if match:
+        return planned_operation(int(match.group(1)), reason, lease_seconds=lease_seconds)
+    return contextlib.nullcontext()
+
+
 @router.post("/restore-archive")
 def restore_archive(server_id: str = Query(...), archive: UploadFile = File(...)) -> dict[str, bool]:
     try:
-        with planned_operation(int(server_id), "server_restore", lease_seconds=4 * 60 * 60):
+        with _restore_operation_guard(server_id, "server_restore", lease_seconds=4 * 60 * 60):
             file_service.restore_backup_archive(server_id, archive.file)
         return {"ok": True}
     except Exception as exc:
@@ -511,7 +523,7 @@ def restore_archive(server_id: str = Query(...), archive: UploadFile = File(...)
 @router.post("/restore-archive/finalize")
 def finalize_restore(server_id: str = Query(...)) -> dict[str, bool]:
     try:
-        with planned_operation(int(server_id), "server_restore", lease_seconds=3600):
+        with _restore_operation_guard(server_id, "server_restore", lease_seconds=3600):
             file_service.finalize_backup_restore(server_id)
         return {"ok": True}
     except Exception as exc:
@@ -521,7 +533,7 @@ def finalize_restore(server_id: str = Query(...)) -> dict[str, bool]:
 @router.post("/restore-archive/rollback")
 def rollback_restore(server_id: str = Query(...)) -> dict[str, bool]:
     try:
-        with planned_operation(int(server_id), "server_restore_rollback", lease_seconds=3600):
+        with _restore_operation_guard(server_id, "server_restore_rollback", lease_seconds=3600):
             file_service.rollback_backup_restore(server_id)
         return {"ok": True}
     except Exception as exc:

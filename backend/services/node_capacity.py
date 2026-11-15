@@ -6,6 +6,8 @@ CPU overcommit is intentional and not guarded here.
 
 from __future__ import annotations
 
+import os
+
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -288,6 +290,22 @@ def should_delegate_node_fs_to_agent(node: Node | None) -> bool:
     if not getattr(node, "is_local", False):
         return True
     return bool(getattr(settings, "local_agent_required", False))
+
+
+def agent_server_key(server_id: int | str, install_dir: str | None = None) -> str:
+    """Resolve the directory key under the agent's servers root for a server."""
+    install = (install_dir or "").strip()
+    if install:
+        base = os.path.basename(os.path.normpath(install))
+        if (
+            base
+            and base not in {".", ".."}
+            and "/" not in base
+            and "\\" not in base
+            and ".." not in base
+        ):
+            return base
+    return str(server_id)
 
 
 def sync_node_disk_quota(
