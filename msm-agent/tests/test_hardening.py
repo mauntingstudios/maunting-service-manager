@@ -72,7 +72,28 @@ def test_user_namespace_opt_in_only_relaxes_seccomp(monkeypatch) -> None:
 
     assert result["ok"] is True
     kwargs = docker_client.containers.run.call_args.kwargs
-    assert kwargs["security_opt"] == ["no-new-privileges", "seccomp=unconfined"]
+    sec_opts = kwargs["security_opt"]
+    assert "no-new-privileges" in sec_opts
+    assert "seccomp=unconfined" not in sec_opts
+    seccomp_opt = next((o for o in sec_opts if o.startswith("seccomp=")), None)
+    assert seccomp_opt is not None
+    import json as _json
+    profile = _json.loads(seccomp_opt.removeprefix("seccomp="))
+    allowed_syscalls = {
+        name
+        for rule in profile["syscalls"]
+        if rule.get("action") == "SCMP_ACT_ALLOW"
+        for name in rule.get("names", [])
+    }
+    denied_syscalls = {
+        name
+        for rule in profile["syscalls"]
+        if rule.get("action") == "SCMP_ACT_ERRNO"
+        for name in rule.get("names", [])
+    }
+    assert {"clone", "clone3", "unshare", "setns"}.issubset(allowed_syscalls)
+    assert {"bpf", "kexec_load", "io_uring_setup"}.isdisjoint(allowed_syscalls)
+    assert {"bpf", "kexec_load", "io_uring_setup"}.issubset(denied_syscalls)
     assert kwargs["cap_drop"] == ["ALL"]
     assert kwargs.get("cap_add") is None
     assert kwargs.get("privileged", False) is False
@@ -166,7 +187,7 @@ def test_create_preserves_runtime_hardening_and_attaches_extra_network(monkeypat
     assert result["ok"] is True
     kwargs = run.call_args.kwargs
     assert kwargs["read_only"] is True
-    assert kwargs["tmpfs"] == {"/tmp": "rw,exec,nosuid,nodev,size=128m,mode=1777"}
+    assert kwargs["tmpfs"] == {"/tmp": "rw,noexec,nosuid,nodev,size=128m,mode=1777"}
     assert kwargs["restart_policy"] == {"Name": "on-failure"}
     network.connect.assert_called_once_with(container)
 

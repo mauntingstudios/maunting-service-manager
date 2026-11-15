@@ -85,8 +85,19 @@ class Settings(BaseSettings):
     # Falls back to panel_url + /logo.png when empty.
     logo_url: str = ""
 
-    # Redis (fuer verteiltes Rate-Limiting via slowapi)
+    # Redis (fuer verteiltes Rate-Limiting via slowapi + Backplane)
     redis_url: str = ""
+
+    # Worker- & Connection-Pool-Steuerung (Multi-Worker HA)
+    # "all": Einzelprozess (Dev/Test/Default ohne separaten Worker)
+    # "api": Nur HTTP/WebSocket/SSE (ohne APScheduler / Hintergrund-Pumpen)
+    # "worker": Dedizierter Hintergrund-Worker (APScheduler + Task-/AI-Pump + Heartbeats)
+    worker_mode: str = "all"
+    db_pool_size: int = 5
+    db_max_overflow: int = 10
+    db_pool_timeout: int = 30
+    db_pool_recycle: int = 1800
+    db_statement_timeout_ms: int = 15000
 
     # LiveKit — Medienserver fuer Sprach-, Video- und Gruppenanrufe.
     # install.sh erzeugt Schluessel und Geheimnis einmalig und schreibt sie
@@ -182,7 +193,8 @@ class Settings(BaseSettings):
     # erreichen PostgreSQL ueber das interne Docker-Netz und msm-postgres:5432.
     managed_postgres_image: str = "postgres:17-alpine"
     managed_postgres_container_name: str = "msm-postgres"
-    managed_postgres_network: str = "msm-internal"
+    managed_postgres_network: str = "msm-pg-hub"
+    require_network_isolation: bool = False
     managed_postgres_host: str = "127.0.0.1"
     managed_postgres_port: int = 15432
     managed_postgres_data_dir: str = "/opt/msm/postgres"
@@ -221,6 +233,18 @@ class Settings(BaseSettings):
     # RAM left free for OS/agent/docker when booking server.ram_limit_mb on a node.
     # Guard skips entirely when node.ram_total is still unknown (no heartbeat).
     node_ram_headroom_mb: int = 1024
+
+    # Workload container defaults & multi-tenant safety ceilings (never uncapped)
+    default_container_cpu_percent: float = 200.0
+    default_container_ram_mb: int = 2048
+    default_container_pids_limit: int = 512
+    host_reserved_ram_mb: int = 1536
+    allowed_container_runtimes: str = "runc,runsc,kata,kata-qemu,kata-fc"
+    default_untrusted_runtime: str = "runc"
+
+    # Never execute blueprint setupCommands bare-metal inside msm-panel unless
+    # explicitly opted-in for legacy single-binary dev environments.
+    allow_legacy_bare_metal_setup: bool = False
 
     model_config = SettingsConfigDict(
         env_prefix="MSM_",

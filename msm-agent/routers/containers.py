@@ -35,10 +35,12 @@ class CreateContainerRequest(BaseModel):
     extra_networks: list[str] = Field(default_factory=list, max_length=16)
     read_only_rootfs: bool = True
     tmpfs_paths: list[str] = Field(default_factory=list, max_length=16)
+    allow_tmpfs_exec: bool = False
     tty: bool = False
     restart_policy_name: str = Field(default="no", pattern="^(no|on-failure|unless-stopped)$")
     startup_check_seconds: float = Field(default=0.0, ge=0, le=300)
     allow_unprivileged_user_namespaces: bool = False
+    runtime: str | None = Field(default=None, max_length=32)
     # Hardening traps — if clients send these, we reject explicitly
     privileged: bool | None = None
     cap_add: list[str] | None = None
@@ -114,10 +116,12 @@ def create_container(body: CreateContainerRequest) -> dict[str, Any]:
             extra_networks=body.extra_networks,
             read_only_rootfs=body.read_only_rootfs,
             tmpfs_paths=body.tmpfs_paths,
+            allow_tmpfs_exec=body.allow_tmpfs_exec,
             tty=body.tty,
             restart_policy_name=body.restart_policy_name,
             startup_check_seconds=body.startup_check_seconds,
             allow_unprivileged_user_namespaces=body.allow_unprivileged_user_namespaces,
+            runtime=body.runtime,
             privileged=body.privileged,
             cap_add=body.cap_add,
             network_mode=body.network_mode,

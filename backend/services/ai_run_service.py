@@ -551,6 +551,17 @@ def _aufgabe_planen(run_id: str) -> bool:
     unterwegs", und der Kommentar unten beschrieb ein Ziel, das die Pruefung
     gar nicht erreichen konnte.
     """
+    from config import settings
+    from services import redis_backplane
+
+    if (getattr(settings, "worker_mode", "all") or "all").strip().lower() == "api":
+        if redis_backplane.is_redis_enabled() and redis_backplane.is_worker_alive():
+            redis_backplane.publish_sync(
+                redis_backplane.CHANNEL_WORKER_AI_RUN,
+                {"action": "start", "run_id": run_id},
+            )
+            return True
+
     schleife = _SCHLEIFE
     if schleife is None or schleife.is_closed():
         return False
@@ -607,9 +618,22 @@ def aufgabe_abbrechen(run_id: str) -> bool:
     bleibt endgueltig (``_lauf_abschliessen``), und vor einer Schreibrunde wird
     nachgesehen, wem der Lauf noch gehoert (``segment_ausfuehren``).
     """
+    from config import settings
+    from services import redis_backplane
+
+    if redis_backplane.is_redis_enabled():
+        redis_backplane.publish_sync(
+            redis_backplane.CHANNEL_WORKER_AI_RUN,
+            {"action": "cancel", "run_id": run_id},
+        )
+
     aufgabe = _AUFGABEN.get(run_id)
     if aufgabe is None or aufgabe.done():
+        if (getattr(settings, "worker_mode", "all") or "all").strip().lower() == "api":
+            if redis_backplane.is_redis_enabled() and redis_backplane.is_worker_alive():
+                return True
         return False
+
     schleife = _SCHLEIFE
     try:
         laufende_schleife = asyncio.get_running_loop()

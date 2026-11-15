@@ -22,6 +22,8 @@ from pathlib import Path
 from typing import Any
 
 from config import settings
+from security.seccomp import container_security_options
+from services import network_isolation_service
 from services.agent_operation_coordinator import (
     operation,
     server_id_from_container_name,
@@ -41,8 +43,11 @@ except ImportError:  # pragma: no cover
 _HARDENING_CAP_DROP = ["ALL"]
 _HARDENING_SECURITY_OPT = ["no-new-privileges"]
 _LOG_CONFIG = {"max-size": "10m", "max-file": "3"}
+_ALLOWED_RUNTIMES = {"runc", "runsc", "kata", "kata-qemu", "kata-fc"}
 
 _CLIENT: Any | None = None
+_BLOCK_DEVICE_CACHE: str | None = None
+_BLOCK_DEVICE_RESOLVED = False
 
 
 class DockerUnavailableError(Exception):
@@ -206,6 +211,8 @@ DEFAULT_CONTAINER_PIDS_LIMIT = 512
 DEFAULT_EPHEMERAL_PIDS_LIMIT = 256
 DEFAULT_EPHEMERAL_NANO_CPUS = 2_000_000_000
 DEFAULT_EPHEMERAL_MEM_LIMIT = "4096m"
+DEFAULT_CONTAINER_CPU_PERCENT = 200.0
+DEFAULT_CONTAINER_RAM_MB = 2048
 _EPHEMERAL_CONCURRENCY_LIMIT = threading.BoundedSemaphore(2)
 
 
@@ -213,9 +220,160 @@ def _default_nofile_ulimits() -> list[Any] | None:
     try:
         from docker.types import Ulimit
 
-        return [Ulimit(name="nofile", soft=65536, hard=65536)]
+        return [
+            Ulimit(name="nofile", soft=65536, hard=65536),
+            Ulimit(name="core", soft=0, hard=0),
+        ]
     except Exception:
         return None
+
+
+def _host_total_ram_mb() -> int | None:
+    if os.name != "posix":
+        return None
+    try:
+        with open("/proc/meminfo", encoding="utf-8") as handle:
+            for line in handle:
+                if line.startswith("MemTotal:"):
+                    parts = line.split()
+                    kb = int(parts[1])
+                    return max(0, kb // 1024)
+    except (OSError, ValueError, IndexError):
+        return None
+    return None
+
+
+def _host_cpu_count() -> int | None:
+    try:
+        count = os.cpu_count()
+        return count if count and count > 0 else None
+    except Exception:
+        return None
+
+
+def _clamp_cpu_percent(requested: float | None) -> float:
+    default_cpu = float(getattr(settings, "default_container_cpu_percent", DEFAULT_CONTAINER_CPU_PERCENT))
+    value = float(requested) if requested is not None and float(requested) > 0 else default_cpu
+    value = max(10.0, value)
+    cpus = _host_cpu_count()
+    if cpus is not None and os.name == "posix":
+        max_cpu = max(100.0, float(cpus) * 100.0)
+        value = min(value, max_cpu)
+    return value
+
+
+def _clamp_ram_mb(requested: int | None) -> int:
+    default_ram = int(getattr(settings, "default_container_ram_mb", DEFAULT_CONTAINER_RAM_MB))
+    value = int(requested) if requested is not None and int(requested) > 0 else default_ram
+    value = max(128, value)
+    total_mb = _host_total_ram_mb()
+    if total_mb is not None and total_mb >= 2048:
+        reserved = int(getattr(settings, "host_reserved_ram_mb", 1536))
+        max_allowed = max(512, total_mb - reserved)
+        value = min(value, max_allowed)
+    return value
+
+
+def _resolve_servers_block_device() -> str | None:
+    """Resolve backing parent block device (e.g. /dev/nvme0n1) for blkio throttling."""
+    global _BLOCK_DEVICE_CACHE, _BLOCK_DEVICE_RESOLVED
+    if _BLOCK_DEVICE_RESOLVED:
+        return _BLOCK_DEVICE_CACHE
+    _BLOCK_DEVICE_RESOLVED = True
+    if os.name != "posix":
+        return None
+    try:
+        base = settings.servers_path()
+        probe = base if base.exists() else base.parent
+        dev_num = os.stat(probe).st_dev
+        major, minor = os.major(dev_num), os.minor(dev_num)
+        if major == 0:
+            # Virtual/overlay/tmpfs filesystems have major 0 and no blkio device node.
+            return None
+        uevent_path = Path(f"/sys/dev/block/{major}:{minor}")
+        if not uevent_path.exists():
+            return None
+        real_sys = uevent_path.resolve()
+        # Partitions live under parent block device directory containing ./dev
+        if (real_sys / "partition").exists():
+            parent_sys = real_sys.parent
+            if (parent_sys / "uevent").is_file():
+                real_sys = parent_sys
+        devname = None
+        for line in (real_sys / "uevent").read_text(encoding="utf-8", errors="ignore").splitlines():
+            if line.startswith("DEVNAME="):
+                devname = line.split("=", 1)[1].strip()
+                break
+        if devname:
+            candidate = f"/dev/{devname}"
+            if Path(candidate).exists():
+                _BLOCK_DEVICE_CACHE = candidate
+                return candidate
+    except OSError:
+        return None
+    return None
+
+
+def _default_blkio_kwargs() -> dict[str, Any]:
+    device = _resolve_servers_block_device()
+    if not device:
+        return {}
+    read_bps = int(getattr(settings, "container_blkio_read_bps", 0) or 0)
+    write_bps = int(getattr(settings, "container_blkio_write_bps", 0) or 0)
+    read_iops = int(getattr(settings, "container_blkio_read_iops", 0) or 0)
+    write_iops = int(getattr(settings, "container_blkio_write_iops", 0) or 0)
+    out: dict[str, Any] = {}
+    if read_bps > 0:
+        out["device_read_bps"] = [{"Path": device, "Rate": read_bps}]
+    if write_bps > 0:
+        out["device_write_bps"] = [{"Path": device, "Rate": write_bps}]
+    if read_iops > 0:
+        out["device_read_iops"] = [{"Path": device, "Rate": read_iops}]
+    if write_iops > 0:
+        out["device_write_iops"] = [{"Path": device, "Rate": write_iops}]
+    return out
+
+
+def _validated_runtime(runtime: str | None) -> str | None:
+    if runtime is None:
+        return None
+    cleaned = str(runtime).strip().lower()
+    if not cleaned:
+        return None
+    configured = {
+        part.strip().lower()
+        for part in str(getattr(settings, "allowed_container_runtimes", "runc,runsc,kata,kata-qemu,kata-fc")).split(",")
+        if part.strip()
+    }
+    allowed = _ALLOWED_RUNTIMES & (configured or _ALLOWED_RUNTIMES)
+    if cleaned not in allowed:
+        raise HardeningError(f"container runtime '{cleaned}' is not allowed")
+    return cleaned
+
+
+def _ensure_extra_db_network(client: Any, network_name: str) -> None:
+    """Ensure extra DB link networks are always internal bridges with ICC disabled."""
+    if network_name.startswith("msm-db-net-"):
+        suffix = network_name.removeprefix("msm-db-net-")
+        if suffix.isdigit():
+            network_isolation_service.ensure_isolated_db_network(client, int(suffix))
+            return
+    network_isolation_service.ensure_bridge_network(
+        client,
+        name=network_name,
+        internal=True,
+        enable_icc=False,
+    )
+
+
+def _apply_network_isolation_safe(client: Any) -> None:
+    """Apply netfilter isolation; re-raise only when strict enforcement is requested."""
+    try:
+        network_isolation_service.reconcile_network_isolation(client)
+    except Exception as exc:
+        if network_isolation_service.is_isolation_required():
+            raise DockerUnavailableError("Network isolation enforcement failed") from exc
+        logger.debug("Network isolation reconcile deferred: %s", exc)
 
 
 @_coordinated_container_mutation
@@ -235,6 +393,7 @@ def create_container(
     extra_networks: list[str] | None = None,
     read_only_rootfs: bool = True,
     tmpfs_paths: list[str] | None = None,
+    allow_tmpfs_exec: bool = False,
     tty: bool = False,
     restart_policy_name: str = "no",
     startup_check_seconds: float = 0.0,
@@ -243,11 +402,12 @@ def create_container(
     cap_add: list[str] | None = None,
     network_mode: str | None = None,
     pids_limit: int | None = DEFAULT_CONTAINER_PIDS_LIMIT,
+    runtime: str | None = None,
 ) -> dict[str, Any]:
     """Create (and start) a hardened container.
 
-    Rejects privileged=True, network_mode=host, and arbitrary capability adds
-    that would defeat cap_drop=ALL hardening.
+    Enforces mandatory CPU, memory (swap disabled), PID, ulimit, blkio,
+    custom seccomp, and capability containment on every workload container.
     """
     assert_msm_container_name(name)
     if not image or not str(image).strip():
@@ -264,6 +424,7 @@ def create_container(
         raise HardeningError("requested capability is not allowed")
     if restart_policy_name not in {"no", "on-failure", "unless-stopped"}:
         raise HardeningError("restart policy is not allowed")
+    validated_runtime = _validated_runtime(runtime)
 
     client = _get_client()
 
@@ -300,6 +461,20 @@ def create_container(
     except (DockerException, OSError) as exc:
         raise DockerUnavailableError(_safe_error(exc)) from exc
 
+    tmpfs_exec_flag = "exec" if allow_tmpfs_exec else "noexec"
+    effective_cpu = _clamp_cpu_percent(cpu_limit_percent)
+    effective_ram = _clamp_ram_mb(ram_limit_mb)
+    max_pids = int(getattr(settings, "max_container_pids_limit", 2048))
+    default_pids = int(getattr(settings, "default_container_pids_limit", DEFAULT_CONTAINER_PIDS_LIMIT))
+    effective_pids = min(
+        max(16, int(pids_limit) if (pids_limit is not None and int(pids_limit) > 0) else default_pids),
+        max_pids,
+    )
+    server_id = server_id_from_container_name(name, settings.container_name_prefix)
+    effective_network = network
+    if effective_network is None and server_id is not None and hasattr(client, "networks"):
+        effective_network = network_isolation_service.ensure_isolated_server_network(client, server_id)
+
     kwargs: dict[str, Any] = {
         "image": image,
         "command": command,
@@ -314,8 +489,8 @@ def create_container(
         ),
         "cap_drop": list(_HARDENING_CAP_DROP),
         "cap_add": sorted(requested_caps) or None,
-        "security_opt": list(_HARDENING_SECURITY_OPT) + (
-            ["seccomp=unconfined"] if allow_unprivileged_user_namespaces else []
+        "security_opt": container_security_options(
+            allow_unprivileged_user_namespaces=allow_unprivileged_user_namespaces
         ),
         "read_only": bool(read_only_rootfs),
         "environment": env or None,
@@ -323,18 +498,21 @@ def create_container(
         "volumes": _validated_volumes(volumes),
         "user": user,
         "working_dir": workdir,
-        "network": network,
+        "network": effective_network,
         "tmpfs": {
-            path: "rw,exec,nosuid,nodev,size=128m,mode=1777" for path in (tmpfs_paths or [])
-        } or None,
+            path: f"rw,{tmpfs_exec_flag},nosuid,nodev,size=128m,mode=1777"
+            for path in (tmpfs_paths or [])
+        }
+        or None,
+        "nano_cpus": int(round(effective_cpu / 100.0, 2) * 1_000_000_000),
+        "mem_limit": f"{effective_ram}m",
+        "memswap_limit": f"{effective_ram}m",
+        "oom_score_adj": int(getattr(settings, "container_oom_score_adj", 500)),
+        "pids_limit": effective_pids,
     }
-    if cpu_limit_percent is not None and cpu_limit_percent > 0:
-        kwargs["nano_cpus"] = int(round(cpu_limit_percent / 100.0, 2) * 1_000_000_000)
-    if ram_limit_mb is not None and ram_limit_mb > 0:
-        kwargs["mem_limit"] = f"{int(ram_limit_mb)}m"
-        kwargs["memswap_limit"] = f"{int(ram_limit_mb)}m"
-    if pids_limit is not None and pids_limit > 0:
-        kwargs["pids_limit"] = int(pids_limit)
+    if validated_runtime is not None:
+        kwargs["runtime"] = validated_runtime
+    kwargs.update(_default_blkio_kwargs())
     ulimits = _default_nofile_ulimits()
     if ulimits is not None:
         kwargs["ulimits"] = ulimits
@@ -344,13 +522,9 @@ def create_container(
         container = client.containers.run(**kwargs)
         try:
             for network_name in dict.fromkeys(extra_networks or []):
-                if network_name and network_name != network:
-                    try:
-                        extra = client.networks.get(network_name)
-                    except NotFound:
-                        # Ein Datenbankserver kann der erste im internen Netz
-                        # sein, bevor msm-postgres es je angelegt hat.
-                        extra = client.networks.create(network_name, driver="bridge", internal=True)
+                if network_name and network_name != effective_network:
+                    _ensure_extra_db_network(client, network_name)
+                    extra = client.networks.get(network_name)
                     extra.connect(container)
         except (DockerException, OSError) as exc:
             try:
@@ -358,6 +532,8 @@ def create_container(
             except (DockerException, OSError):
                 logger.warning("docker cleanup after network attach failure failed")
             raise DockerUnavailableError("Container network attachment failed") from exc
+
+        _apply_network_isolation_safe(client)
 
         if startup_check_seconds > 0:
             import time
@@ -406,16 +582,29 @@ def run_ephemeral(
     nano_cpus: int | None = DEFAULT_EPHEMERAL_NANO_CPUS,
     mem_limit: str | None = DEFAULT_EPHEMERAL_MEM_LIMIT,
     pids_limit: int | None = DEFAULT_EPHEMERAL_PIDS_LIMIT,
+    network: str | None = None,
+    runtime: str | None = None,
+    read_only_rootfs: bool = False,
 ) -> dict[str, Any]:
     """Run one hardened, resource-bounded tool container and remove it on every exit path."""
     allowed_caps = {"DAC_OVERRIDE", "DAC_READ_SEARCH", "CHOWN", "FOWNER", "SETUID", "SETGID"}
     requested_caps = {str(cap).upper() for cap in (cap_add or [])}
     if not requested_caps.issubset(allowed_caps):
         raise HardeningError("requested capability is not allowed")
+    validated_runtime = _validated_runtime(runtime)
     client = _get_client()
     container = None
     with _EPHEMERAL_CONCURRENCY_LIMIT:
         try:
+            effective_nano = (
+                int(nano_cpus) if (nano_cpus is not None and int(nano_cpus) > 0) else DEFAULT_EPHEMERAL_NANO_CPUS
+            )
+            effective_mem = str(mem_limit) if mem_limit else DEFAULT_EPHEMERAL_MEM_LIMIT
+            effective_pids = (
+                min(int(pids_limit), int(getattr(settings, "max_container_pids_limit", 2048)))
+                if (pids_limit is not None and int(pids_limit) > 0)
+                else DEFAULT_EPHEMERAL_PIDS_LIMIT
+            )
             run_kwargs: dict[str, Any] = {
                 "image": image,
                 "command": command,
@@ -426,21 +615,32 @@ def run_ephemeral(
                 "working_dir": workdir,
                 "entrypoint": entrypoint,
                 "privileged": False,
+                "read_only": bool(read_only_rootfs),
                 "cap_drop": list(_HARDENING_CAP_DROP),
                 "cap_add": sorted(requested_caps) or None,
-                "security_opt": list(_HARDENING_SECURITY_OPT),
+                "security_opt": container_security_options(allow_unprivileged_user_namespaces=False),
+                "nano_cpus": effective_nano,
+                "mem_limit": effective_mem,
+                "memswap_limit": effective_mem,
+                "pids_limit": effective_pids,
+                "oom_score_adj": int(getattr(settings, "container_oom_score_adj", 500)),
             }
-            if nano_cpus is not None and nano_cpus > 0:
-                run_kwargs["nano_cpus"] = int(nano_cpus)
-            if mem_limit:
-                run_kwargs["mem_limit"] = str(mem_limit)
-                run_kwargs["memswap_limit"] = str(mem_limit)
-            if pids_limit is not None and pids_limit > 0:
-                run_kwargs["pids_limit"] = int(pids_limit)
+            effective_eph_net = network or network_isolation_service.ensure_ephemeral_network(client)
+            if effective_eph_net:
+                run_kwargs["network"] = effective_eph_net
+            if validated_runtime is not None:
+                run_kwargs["runtime"] = validated_runtime
+            run_kwargs.update(_default_blkio_kwargs())
             ulimits = _default_nofile_ulimits()
             if ulimits is not None:
                 run_kwargs["ulimits"] = ulimits
+            if hasattr(client, "images") and hasattr(client.images, "get") and hasattr(client.images, "pull"):
+                try:
+                    client.images.get(image)
+                except ImageNotFound:
+                    client.images.pull(image)
             container = client.containers.run(**run_kwargs)
+            _apply_network_isolation_safe(client)
             wait_result = container.wait(timeout=timeout)
             stdout = _decode(container.logs(stdout=True, stderr=False))
             stderr = _decode(container.logs(stdout=False, stderr=True))
@@ -500,8 +700,11 @@ def restart_container(name: str, timeout: int | None = None) -> dict[str, Any]:
 @_coordinated_container_mutation
 def remove_container(name: str) -> dict[str, Any]:
     container = _get_container(name)
+    client = _get_client()
+    server_id = server_id_from_container_name(name, settings.container_name_prefix)
     try:
         container.remove(force=True)
+        network_isolation_service.remove_isolated_server_network(client, server_id)
         return {"ok": True, "name": name}
     except (DockerException, OSError) as exc:
         raise DockerUnavailableError(_safe_error(exc)) from exc
@@ -600,12 +803,14 @@ def update_container_resources(name: str, updates: dict[str, int | None]) -> dic
     restore_kwargs: dict[str, Any] = {}
     if "cpu_limit_percent" in updates:
         cpu = updates["cpu_limit_percent"]
-        update_kwargs["nano_cpus"] = int(round(cpu / 100.0, 2) * 1_000_000_000) if cpu else 0
+        effective_cpu = _clamp_cpu_percent(cpu)
+        update_kwargs["nano_cpus"] = int(round(effective_cpu / 100.0, 2) * 1_000_000_000)
         restore_kwargs["nano_cpus"] = host_config.get("NanoCpus", 0)
     if "ram_limit_mb" in updates:
         ram = updates["ram_limit_mb"]
-        update_kwargs["mem_limit"] = f"{int(ram)}m" if ram else 0
-        update_kwargs["memswap_limit"] = f"{int(ram)}m" if ram else -1
+        effective_ram = _clamp_ram_mb(ram)
+        update_kwargs["mem_limit"] = f"{effective_ram}m"
+        update_kwargs["memswap_limit"] = f"{effective_ram}m"
         restore_kwargs["mem_limit"] = host_config.get("Memory", 0)
         restore_kwargs["memswap_limit"] = host_config.get("MemorySwap", 0)
     if not update_kwargs:
@@ -706,7 +911,7 @@ def assert_postgres_exec_target(name: str) -> str:
     return assert_msm_container_name(name)
 
 
-def ensure_network(name: str, *, internal: bool = False) -> dict[str, Any]:
+def ensure_network(name: str, *, internal: bool = False, enable_icc: bool = False) -> dict[str, Any]:
     client = _get_client()
     try:
         client.networks.get(name)
@@ -717,7 +922,12 @@ def ensure_network(name: str, *, internal: bool = False) -> dict[str, Any]:
         logger.warning("docker network lookup failed")
         return {"ok": False, "error": _safe_error(exc)}
     try:
-        client.networks.create(name, driver="bridge", internal=internal)
+        client.networks.create(
+            name,
+            driver="bridge",
+            internal=internal,
+            options={"com.docker.network.bridge.enable_icc": "true" if enable_icc else "false"},
+        )
         return {"ok": True}
     except (DockerException, OSError) as exc:
         logger.warning("docker network create failed")
@@ -821,7 +1031,12 @@ def run_managed_postgres(
             client.networks.get(required_name)
         except NotFound:
             try:
-                client.networks.create(required_name, driver="bridge", internal=internal)
+                client.networks.create(
+                    required_name,
+                    driver="bridge",
+                    internal=internal,
+                    options={"com.docker.network.bridge.enable_icc": "false"},
+                )
             except (DockerException, OSError) as exc:
                 return {"ok": False, "error": _safe_error(exc)}
         except (DockerException, OSError) as exc:
@@ -840,7 +1055,8 @@ def run_managed_postgres(
             privileged=False,
             cap_drop=list(_HARDENING_CAP_DROP),
             cap_add=list(cap_adds),
-            security_opt=list(_HARDENING_SECURITY_OPT),
+            security_opt=container_security_options(allow_unprivileged_user_namespaces=False),
+            pids_limit=int(getattr(settings, "default_container_pids_limit", DEFAULT_CONTAINER_PIDS_LIMIT)),
             network=host_network_name,
             restart_policy={"Name": "unless-stopped"},
             log_config=(
@@ -1121,7 +1337,14 @@ def repair_bind_mount_permissions(
     (der Fall "Game-Container laeuft als user=X:Y").
     """
     import shlex
-    base = os.path.realpath(host_path)
+
+    root = settings.servers_path()
+    base_path = Path(host_path).resolve(strict=False)
+    try:
+        base_path.relative_to(root)
+    except ValueError as exc:
+        raise HardeningError("permission repair target is outside managed servers directory") from exc
+    base = str(base_path)
     if not os.path.isdir(base):
         return {"ok": False, "error": "Server-Verzeichnis existiert nicht", "stdout": "", "stderr": ""}
     try:
@@ -1137,7 +1360,7 @@ def repair_bind_mount_permissions(
         script_parts.append(f"chgrp -R {int(geteilte_gid)} {target} 2>/dev/null || true")
     script_parts.extend([
         f"find {target} -xdev -type d -exec chmod u+rwx,g+rwxs,o-rwx {{}} + 2>/dev/null || true",
-        f"find {target} -xdev -type f -exec chmod u+rw,g+rw,o-rwx {{}} + 2>/dev/null || true",
+        f"find {target} -xdev -type f -exec chmod u-s,g-s,u+rw,g+rw,o-rwx {{}} + 2>/dev/null || true",
         f"find {target} -xdev -type f -perm -u+x -exec chmod g+x {{}} + 2>/dev/null || true",
     ])
     if owner_uid_gid is not None:

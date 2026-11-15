@@ -110,31 +110,53 @@ def cleanup_inactive_states(max_age_seconds: float = 300.0) -> int:
     return removed
 
 
-async def ingest_line(server_id: int, text: str, source: str, timestamp: str | None = None) -> None:
+async def ingest_line(
+    server_id: int,
+    text: str,
+    source: str,
+    timestamp: str | None = None,
+    *,
+    _from_redis: bool = False,
+    _remote_id: int | None = None,
+) -> None:
     """Einheitliche Log-Ingestion-Methode, die eingehende Zeilen an alle Clients broadcastet."""
     ts = timestamp or _utc_iso()
+    clean_text = text.rstrip("\r\n")
+    redis_seq: int | None = _remote_id
+    if not _from_redis:
+        from services import redis_backplane
+
+        redis_seq = await redis_backplane.console_append_and_publish_async(
+            server_id,
+            text=clean_text,
+            source=source,
+            timestamp=ts,
+            max_len=RING_BUFFER_SIZE,
+        )
+
     payload = None
-    
     async with _STATES_LOCK:
         state = _STATES.get(server_id)
         if not state:
             return
-            
+
         with state.lock:
+            line_id = int(redis_seq) if redis_seq is not None else state.next_id
+            if _from_redis and any(l.id == line_id for l in state.lines):
+                return
             line = _Line(
-                id=state.next_id,
-                text=text.rstrip("\r\n"),
+                id=line_id,
+                text=clean_text,
                 source=source,
                 timestamp=ts,
             )
-            state.next_id += 1
+            state.next_id = max(state.next_id + 1, line_id + 1)
             _NEXT_IDS[server_id] = state.next_id
             state.lines.append(line)
             payload = _serialize(line)
-            
-        # Copy websockets set to iterate safely
+
         targets = list(state.websockets)
-        
+
     for ws in targets:
         try:
             await ws.send_text(payload)
@@ -142,19 +164,50 @@ async def ingest_line(server_id: int, text: str, source: str, timestamp: str | N
             logger.debug("Broadcast to ws failed: %s", exc)
 
 
+async def handle_remote_console_message(channel: str, payload: dict[str, Any]) -> None:
+    """Delivers console lines published by another worker / ``msm-worker``."""
+    if payload.get("origin_pid") == os.getpid():
+        return
+    from services import redis_backplane
+
+    suffix = channel.removeprefix(redis_backplane.CHANNEL_CONSOLE_PREFIX)
+    if not suffix.isdigit():
+        return
+    server_id = int(suffix)
+    await ingest_line(
+        server_id,
+        str(payload.get("text") or ""),
+        str(payload.get("source") or "msm"),
+        str(payload.get("timestamp") or "") or None,
+        _from_redis=True,
+        _remote_id=int(payload["id"]) if payload.get("id") is not None else None,
+    )
+
+
 def append_msm_log_to_memory(server_id: int, text: str, timestamp: str | None = None) -> None:
     """Synchroner Eintrag in den Konsolen-Ringpuffer für System- und Deployment-Meldungen."""
+    from services import redis_backplane
+
     ts = timestamp or _utc_iso()
+    clean_text = text.rstrip("\r\n")
+    redis_seq = redis_backplane.console_append_and_publish_sync(
+        server_id,
+        text=clean_text,
+        source="msm",
+        timestamp=ts,
+        max_len=RING_BUFFER_SIZE,
+    )
     with _SYNC_STATES_LOCK:
         state = _get_state(server_id)
         with state.lock:
+            line_id = int(redis_seq) if redis_seq is not None else state.next_id
             line = _Line(
-                id=state.next_id,
-                text=text.rstrip("\r\n"),
+                id=line_id,
+                text=clean_text,
                 source="msm",
                 timestamp=ts,
             )
-            state.next_id += 1
+            state.next_id = max(state.next_id + 1, line_id + 1)
             _NEXT_IDS[server_id] = state.next_id
             state.lines.append(line)
 
@@ -495,6 +548,17 @@ async def _agent_proxy_loop(server_id: int, container: str, node: Any) -> None:
             backoff = min(backoff * 1.5, 5.0)
 
 
+async def _accept_websocket(ws: WebSocket) -> None:
+    """Akzeptiert den WebSocket und spiegelt das Bearer-Subprotokoll nur bei Bedarf."""
+    from dependencies import ws_subprotokoll
+
+    subproto = ws_subprotokoll(ws)
+    if subproto is not None:
+        await ws.accept(subprotocol=subproto)
+    else:
+        await ws.accept()
+
+
 async def connect(
     ws: WebSocket,
     server_id: int,
@@ -523,16 +587,12 @@ async def connect(
     # Abweisen ausserhalb des Schlosses: es gilt fuer alle Server, und ein
     # langsamer Client hielte sonst jede andere Konsole beim Verbinden auf.
     if voll:
-        from dependencies import ws_subprotokoll
-
-        await ws.accept(subprotocol=ws_subprotokoll(ws))
+        await _accept_websocket(ws)
         await _close_safely(ws, code=1013)
         return
 
     try:
-        from dependencies import ws_subprotokoll
-
-        await ws.accept(subprotocol=ws_subprotokoll(ws))
+        await _accept_websocket(ws)
         
         use_agent = False
         if node is not None and not getattr(node, "is_local", False):
@@ -588,13 +648,52 @@ async def connect(
             if not state.lines and server_status == "stopped":
                 await ingest_line(server_id, "[MSM] Server ist gestoppt.", "msm")
                 
-        # Send replay to THIS client only
+        # Send replay to THIS client only (merging Redis cross-worker ring buffer if available)
+        from services import redis_backplane
+
+        redis_raw = await redis_backplane.console_read_buffer_async(server_id)
         async with _STATES_LOCK:
             with state.lock:
-                if last_id is None:
-                    replay = list(state.lines)
+                local_lines = list(state.lines)
+                redis_lines: list[_Line] = []
+                for item in redis_raw:
+                    try:
+                        redis_lines.append(
+                            _Line(
+                                id=int(item["id"]),
+                                text=str(item.get("text", "")),
+                                source=str(item.get("source", "docker")),
+                                timestamp=str(item.get("timestamp", "")),
+                            )
+                        )
+                    except (KeyError, TypeError, ValueError):
+                        continue
+
+                if redis_lines:
+                    max_redis_id = max(line.id for line in redis_lines)
+                    state.next_id = max(state.next_id, max_redis_id + 1)
+                    _NEXT_IDS[server_id] = state.next_id
+                    redis_sigs = {(line.timestamp, line.text) for line in redis_lines}
+                    # Keep historical file backlog entries not yet superseded by Redis ring-buffer entries
+                    merged: list[_Line] = [
+                        line
+                        for line in local_lines
+                        if (line.timestamp, line.text) not in redis_sigs
+                        and line.id < min(r.id for r in redis_lines)
+                    ]
+                    seen_ids = {line.id for line in merged}
+                    for r_line in redis_lines:
+                        if r_line.id not in seen_ids:
+                            merged.append(r_line)
+                            seen_ids.add(r_line.id)
+                    combined = merged
                 else:
-                    replay = [l for l in state.lines if l.id > last_id]
+                    combined = local_lines
+
+                if last_id is None:
+                    replay = combined
+                else:
+                    replay = [l for l in combined if l.id > last_id]
         
         for line in replay:
             await ws.send_text(_serialize(line))

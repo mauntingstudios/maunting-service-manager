@@ -161,7 +161,11 @@ async def acquire_lock_async(lock: threading.Lock) -> AsyncIterator[None]:
 
 def is_lifecycle_job_active(server_id: int) -> bool:
     with _ACTIVE_JOBS_LOCK:
-        return server_id in _ACTIVE_JOBS
+        if server_id in _ACTIVE_JOBS:
+            return True
+    from services import redis_backplane
+
+    return redis_backplane.is_lifecycle_active_remote(server_id)
 
 
 def should_preserve_lifecycle_status(server_id: int, status: str) -> bool:
@@ -279,16 +283,24 @@ def reset_lifecycle_jobs_for_tests() -> None:
 
 
 def _mark_job_active(server_id: int) -> bool:
+    from services import redis_backplane
+
     with _ACTIVE_JOBS_LOCK:
         if server_id in _ACTIVE_JOBS:
             return False
+        if redis_backplane.is_lifecycle_active_remote(server_id):
+            return False
         _ACTIVE_JOBS.add(server_id)
-        return True
+    redis_backplane.mark_lifecycle_active(server_id, True)
+    return True
 
 
 def _mark_job_done(server_id: int) -> None:
+    from services import redis_backplane
+
     with _ACTIVE_JOBS_LOCK:
         _ACTIVE_JOBS.discard(server_id)
+    redis_backplane.mark_lifecycle_active(server_id, False)
 
 
 def _advance_operation_epoch(server_id: int) -> int:

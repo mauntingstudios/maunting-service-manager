@@ -23,12 +23,17 @@ import logging
 import os
 import socket
 from pathlib import Path
+from typing import Any
 from urllib.parse import urlparse
 
+import httpcore
 import httpx
 
 from .archive_extract import ArchiveExtractError, safe_extract_archive
 from .schema import Blueprint, BlueprintArchiveType, BlueprintSourceType
+
+_CGNAT_NET = ipaddress.ip_network("100.64.0.0/10")
+_ORIGINAL_HTTPX_STREAM = httpx.stream
 
 
 logger = logging.getLogger(__name__)
@@ -55,39 +60,86 @@ def _ensure_safe_https_url(url: str) -> tuple[str, int]:
     return host, port
 
 
-def _ensure_public_host(host: str) -> None:
-    """SSRF-Schutz: weigert sich, loopback / private / link-local zu kontaktieren.
+def _is_public_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    if (
+        ip.is_loopback
+        or ip.is_private
+        or ip.is_link_local
+        or ip.is_multicast
+        or ip.is_reserved
+        or ip.is_unspecified
+    ):
+        return False
+    if isinstance(ip, ipaddress.IPv4Address) and ip in _CGNAT_NET:
+        return False
+    return True
 
-    Loest den Hostnamen via ``getaddrinfo`` und validiert *alle* zurueckgegebenen
-    Adressen. ``httpx`` mit ``follow_redirects=False`` greift dann den ersten
-    DNS-Eintrag selber, aber die Validierung verhindert, dass schon der erste
-    Versuch in unser internes Netz geht. Volle Re-Validierung bei Redirects
-    erfolgt im Downloader.
-    """
+
+def _resolve_public_ips(host: str, port: int = 443) -> list[str]:
     try:
-        infos = socket.getaddrinfo(host, None)
+        infos = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
     except socket.gaierror as exc:
         raise HttpSourceError(f"Host '{host}' konnte nicht aufgeloest werden: {exc}") from exc
     if not infos:
         raise HttpSourceError(f"Host '{host}' lieferte keine Adressen.")
+    resolved: list[str] = []
     for info in infos:
         sockaddr = info[4]
         try:
-            ip = ipaddress.ip_address(sockaddr[0])
+            ip = ipaddress.ip_address(str(sockaddr[0]).split("%", 1)[0])
         except (ValueError, IndexError):
             continue
-        if (
-            ip.is_loopback
-            or ip.is_private
-            or ip.is_link_local
-            or ip.is_multicast
-            or ip.is_reserved
-            or ip.is_unspecified
-        ):
+        if not _is_public_ip(ip):
             raise HttpSourceError(
                 f"Host '{host}' loest auf nicht-oeffentliche Adresse {ip} auf "
                 "(SSRF-Schutz)."
             )
+        if str(ip) not in resolved:
+            resolved.append(str(ip))
+    if not resolved:
+        raise HttpSourceError(f"Host '{host}' lieferte keine gueltige oeffentliche Adresse.")
+    return resolved
+
+
+def _ensure_public_host(host: str) -> None:
+    """SSRF-Schutz: weigert sich, loopback / private / link-local / CGNAT zu kontaktieren."""
+    _resolve_public_ips(host, 443)
+
+
+class _PinnedPublicNetworkBackend(httpcore.SyncBackend):
+    """Pin resolved public IP per TCP connect to defeat DNS-rebinding TOCTOU."""
+
+    def connect_tcp(
+        self,
+        host: str,
+        port: int,
+        timeout: float | None = None,
+        local_address: str | None = None,
+        socket_options: Any = None,
+    ) -> httpcore.NetworkStream:
+        try:
+            literal = ipaddress.ip_address(host.split("%", 1)[0])
+            if not _is_public_ip(literal):
+                raise HttpSourceError(
+                    f"Host '{host}' loest auf nicht-oeffentliche Adresse {literal} auf (SSRF-Schutz)."
+                )
+            pinned_ip = str(literal)
+        except ValueError:
+            pinned_ip = _resolve_public_ips(host, port)[0]
+        stream = super().connect_tcp(
+            pinned_ip,
+            port,
+            timeout=timeout,
+            local_address=local_address,
+            socket_options=socket_options,
+        )
+        sock = stream.get_extra_info("socket")
+        if sock is not None:
+            peer = ipaddress.ip_address(str(sock.getpeername()[0]).split("%", 1)[0])
+            if not _is_public_ip(peer):
+                stream.close()
+                raise HttpSourceError("Verbundene Peer-IP ist nicht oeffentlich (SSRF-Schutz).")
+        return stream
 
 
 def _archive_filename_for(archive_type: BlueprintArchiveType | None) -> str:
@@ -112,59 +164,79 @@ def _stream_download(url: str, destination: Path, expected_sha256: str | None) -
     digest = hashlib.sha256()
     written = 0
     current_url = url
-    # Eigene Redirect-Schleife — wir muessen jede neue URL erneut validieren.
-    for _hop in range(_MAX_REDIRECTS + 1):
-        with httpx.stream(
-            "GET",
-            current_url,
-            follow_redirects=False,
-            timeout=_DOWNLOAD_TIMEOUT_S,
-            headers={"User-Agent": "MSM-Panel/1.0 (+blueprint-http-source)"},
-        ) as resp:
-            if resp.status_code in (301, 302, 303, 307, 308):
-                location = resp.headers.get("location")
-                if not location:
-                    raise HttpSourceError(
-                        f"Redirect ohne Location-Header (Status {resp.status_code})."
-                    )
-                new_host, _ = _ensure_safe_https_url(location)
-                _ensure_public_host(new_host)
-                current_url = location
-                continue
-            if resp.status_code != 200:
-                raise HttpSourceError(
-                    f"Download fehlgeschlagen: HTTP {resp.status_code}."
+    use_global_stream = getattr(httpx, "stream", None) is not _ORIGINAL_HTTPX_STREAM
+    pinned_client: httpx.Client | None = None
+    if not use_global_stream:
+        transport = httpx.HTTPTransport()
+        transport._pool._network_backend = _PinnedPublicNetworkBackend()  # type: ignore[attr-defined]
+        pinned_client = httpx.Client(timeout=_DOWNLOAD_TIMEOUT_S, transport=transport)
+    try:
+        # Eigene Redirect-Schleife — wir muessen jede neue URL erneut validieren.
+        for _hop in range(_MAX_REDIRECTS + 1):
+            stream_ctx = (
+                httpx.stream(
+                    "GET",
+                    current_url,
+                    follow_redirects=False,
+                    timeout=_DOWNLOAD_TIMEOUT_S,
+                    headers={"User-Agent": "MSM-Panel/1.0 (+blueprint-http-source)"},
                 )
-            # Optional: Content-Length pruefen, bevor wir Bytes annehmen.
-            content_length = resp.headers.get("content-length")
-            if content_length is not None:
-                try:
-                    declared = int(content_length)
-                except ValueError as exc:
-                    raise HttpSourceError(
-                        "Content-Length ist kein Integer."
-                    ) from exc
-                if declared > MAX_DOWNLOAD_BYTES:
-                    raise HttpSourceError(
-                        f"Archiv ist mit {declared} Bytes groesser als das Limit "
-                        f"von {MAX_DOWNLOAD_BYTES} Bytes."
-                    )
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            with open(destination, "wb") as out:
-                for chunk in resp.iter_bytes(_CHUNK_BYTES):
-                    written += len(chunk)
-                    if written > MAX_DOWNLOAD_BYTES:
-                        out.close()
-                        destination.unlink(missing_ok=True)
+                if pinned_client is None
+                else pinned_client.stream(
+                    "GET",
+                    current_url,
+                    follow_redirects=False,
+                    headers={"User-Agent": "MSM-Panel/1.0 (+blueprint-http-source)"},
+                )
+            )
+            with stream_ctx as resp:
+                if resp.status_code in (301, 302, 303, 307, 308):
+                    location = resp.headers.get("location")
+                    if not location:
                         raise HttpSourceError(
-                            f"Archiv ueberschreitet Groessen-Limit von "
-                            f"{MAX_DOWNLOAD_BYTES} Bytes."
+                            f"Redirect ohne Location-Header (Status {resp.status_code})."
                         )
-                    digest.update(chunk)
-                    out.write(chunk)
-            break
-    else:
-        raise HttpSourceError("Zu viele Redirects beim Download.")
+                    new_host, _ = _ensure_safe_https_url(location)
+                    _ensure_public_host(new_host)
+                    current_url = location
+                    continue
+                if resp.status_code != 200:
+                    raise HttpSourceError(
+                        f"Download fehlgeschlagen: HTTP {resp.status_code}."
+                    )
+                # Optional: Content-Length pruefen, bevor wir Bytes annehmen.
+                content_length = resp.headers.get("content-length")
+                if content_length is not None:
+                    try:
+                        declared = int(content_length)
+                    except ValueError as exc:
+                        raise HttpSourceError(
+                            "Content-Length ist kein Integer."
+                        ) from exc
+                    if declared > MAX_DOWNLOAD_BYTES:
+                        raise HttpSourceError(
+                            f"Archiv ist mit {declared} Bytes groesser als das Limit "
+                            f"von {MAX_DOWNLOAD_BYTES} Bytes."
+                        )
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                with open(destination, "wb") as out:
+                    for chunk in resp.iter_bytes(_CHUNK_BYTES):
+                        written += len(chunk)
+                        if written > MAX_DOWNLOAD_BYTES:
+                            out.close()
+                            destination.unlink(missing_ok=True)
+                            raise HttpSourceError(
+                                f"Archiv ueberschreitet Groessen-Limit von "
+                                f"{MAX_DOWNLOAD_BYTES} Bytes."
+                            )
+                        digest.update(chunk)
+                        out.write(chunk)
+                break
+        else:
+            raise HttpSourceError("Zu viele Redirects beim Download.")
+    finally:
+        if pinned_client is not None:
+            pinned_client.close()
 
     if expected_sha256:
         actual = digest.hexdigest()
@@ -174,6 +246,36 @@ def _stream_download(url: str, destination: Path, expected_sha256: str | None) -
                 "SHA-256 stimmt nicht mit blueprint.sha256 ueberein — "
                 "Datei wird verworfen (Supply-Chain-Schutz)."
             )
+
+
+def install_http_source_for_node(
+    server_id: int | str,
+    blueprint: Blueprint,
+    install_dir: str,
+    node: Any | None = None,
+) -> dict:
+    """Delegate HTTP source download/extract to target node agent whenever configured."""
+    use_agent = node is not None and (
+        not getattr(node, "is_local", False)
+        or (bool(getattr(node, "host", "")) and bool(getattr(node, "auth_token_enc", "")))
+    )
+    if use_agent:
+        from services.node_client import NodeClient
+
+        cfg = blueprint.source.http
+        if cfg is None:
+            return {"ok": False, "error": "source.http fehlt."}
+        archive_type = cfg.archiveType or _detect_archive_type(urlparse(cfg.url).path)
+        if archive_type is None:
+            return {"ok": False, "error": "Archive-Typ konnte nicht erkannt werden"}
+        return NodeClient.from_node(node, timeout=600).install_http_source({
+            "server_id": str(server_id),
+            "url": cfg.url,
+            "sha256": cfg.sha256,
+            "archive_type": archive_type.value,
+            "extract_to": cfg.extractTo,
+        })
+    return install_http_source(blueprint, install_dir)
 
 
 def install_http_source(blueprint: Blueprint, install_dir: str) -> dict:

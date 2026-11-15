@@ -41,10 +41,29 @@ RESERVED_NAMES = {
     "postgres", "msm_admin", "msm_control", "template0", "template1", "public",
 }
 MAX_CIDRS = 50
-# Docker legt seine Bridge-Netze standardmaessig in 172.16.0.0/12. Von dort
-# kommen der Agent (ueber den docker-proxy des veroeffentlichten Ports) und die
-# Container im internen Netz.
-DOCKER_NETZE = "172.16.0.0/12"
+# Isolierter DB-Subnetz-Pool (10.208.0.0/13) und dedizierte Server-Bridge-Gateways
+# (10.200.0.0/13) — niemals das breite 172.16.0.0/12-Docker-Defaultnetz.
+DOCKER_NETZE = "10.208.0.0/13"
+_SERVER_NET_POOL = ipaddress.IPv4Network("10.200.0.0/13")
+_DB_NET_POOL = ipaddress.IPv4Network("10.208.0.0/13")
+
+
+def _slash29_for(pool: ipaddress.IPv4Network, server_id: int) -> ipaddress.IPv4Network:
+    max_subnets = 1 << (29 - pool.prefixlen)
+    index = (int(server_id) - 1) % max_subnets
+    base_int = int(pool.network_address) + (index * 8)
+    return ipaddress.IPv4Network((base_int, 29))
+
+
+def _instance_docker_cidrs(instance: PostgresInstance) -> list[str]:
+    """Liefert exakt die schmalen DB-Link- und Gateway-CIDRs dieser Instanz."""
+    sid = getattr(instance, "server_id", None)
+    if isinstance(sid, int) and sid > 0:
+        db_net = _slash29_for(_DB_NET_POOL, sid)
+        srv_net = _slash29_for(_SERVER_NET_POOL, sid)
+        gateway = str(ipaddress.IPv4Address(int(srv_net.network_address) + 1))
+        return [str(db_net), f"{gateway}/32"]
+    return [DOCKER_NETZE]
 
 
 def normalize_cidrs(values: list[str]) -> list[str]:
@@ -77,8 +96,9 @@ def hba_config(instance: PostgresInstance) -> str:
         "local   all  all                  scram-sha-256",
         "host    all  all  127.0.0.1/32    scram-sha-256",
         "host    all  all  ::1/128         scram-sha-256",
-        f"host    all  all  {DOCKER_NETZE}   scram-sha-256",
     ]
+    for cidr in _instance_docker_cidrs(instance):
+        lines.append(f"host    all  all  {cidr}   scram-sha-256")
     for cidr in cidrs_of(instance):
         lines.append(f"{extern:<7} all  all  {cidr:<15} scram-sha-256")
     return "\n".join(lines) + "\n"

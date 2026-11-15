@@ -119,7 +119,8 @@ def test_hba_ohne_allowlist_hat_keinen_externen_eintrag(db_server):
     instance = db_server.postgres_instance
     instance.allowed_cidrs = ""
     lines = [line for line in postgres_instance_service.hba_config(instance).splitlines() if line.startswith("host")]
-    assert all(("127.0.0.1" in line or "::1" in line or "172.16.0.0/12" in line) for line in lines)
+    assert not any("172.16.0.0/12" in line for line in lines)
+    assert all(("127.0.0.1" in line or "::1" in line or "10.208." in line or "10.200." in line) for line in lines)
 
 
 # ── Routing ────────────────────────────────────────────────────────────────

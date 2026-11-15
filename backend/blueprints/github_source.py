@@ -15,6 +15,7 @@ import shutil
 import subprocess
 import time
 from pathlib import Path
+from typing import Any
 
 from .schema import Blueprint, BlueprintSourceType
 
@@ -50,7 +51,12 @@ class GithubSourceError(RuntimeError):
 
 def _repo_slug(github_cfg) -> str:
     repo = (github_cfg.repo or "").strip()
-    if not _GITHUB_REPO_RE.match(repo):
+    if (
+        not _GITHUB_REPO_RE.match(repo)
+        or repo.startswith("-")
+        or "/-" in repo
+        or ".." in repo
+    ):
         raise GithubSourceError(
             "source.github.repo muss 'owner/repo' sein (nur GitHub.com, keine URLs)."
         )
@@ -80,8 +86,13 @@ def _git_env() -> dict[str, str]:
     return env
 
 
-def _build_git_env(cwd: Path | None = None, token: str | None = None) -> dict[str, str]:
-    """Bereitet die Env-Variablen vor (safe.directory + Extra-Header für Auth).
+def _build_git_env(
+    cwd: Path | None = None,
+    token: str | None = None,
+    *,
+    allow_file_protocol: bool = False,
+) -> dict[str, str]:
+    """Bereitet die Env-Variablen vor (Hardening + optional Extra-Header für Auth).
 
     Authentifizierung wird per ``GIT_CONFIG_KEY_*`` / ``GIT_CONFIG_VALUE_*``
     als ``http.https://github.com/.extraheader`` übergeben. Damit bleibt
@@ -93,11 +104,17 @@ def _build_git_env(cwd: Path | None = None, token: str | None = None) -> dict[st
     effective_token = (token.strip() if token else None) or None
 
     entries: list[tuple[str, str]] = []
-    if cwd is not None:
-        entries.append(("safe.directory", "*"))
     if effective_token:
         basic = base64.b64encode(f"x-access-token:{effective_token}".encode("utf-8")).decode("ascii")
         entries.append(("http.https://github.com/.extraheader", f"AUTHORIZATION: basic {basic}"))
+    if cwd is not None:
+        entries.append(("safe.directory", "*"))
+    entries.extend([
+        ("core.fsmonitor", "false"),
+        ("core.hooksPath", "/dev/null"),
+    ])
+    if not allow_file_protocol:
+        entries.append(("protocol.file.allow", "never"))
 
     if entries:
         base["GIT_CONFIG_COUNT"] = str(len(entries))
@@ -182,9 +199,10 @@ def _run_git(
     cwd: Path | None = None,
     timeout: int = 600,
     token: str | None = None,
+    allow_file_protocol: bool = False,
 ) -> None:
     cmd = ["git", *args]
-    env = _build_git_env(cwd, token)
+    env = _build_git_env(cwd, token, allow_file_protocol=allow_file_protocol)
     try:
         proc = subprocess.run(
             cmd,
@@ -376,21 +394,61 @@ def _run_argv_with_retry(argv: list[str], *, cwd: Path, timeout: int = 900) -> N
 
 
 def _run_setup_commands(install_dir: Path, blueprint: Blueprint) -> None:
+    from config import settings
+
     gh = blueprint.source.github
     if gh is None:
         return
     commands = gh.setupCommands or []
-    root = install_dir
+    if not commands:
+        return
+    base_resolved = install_dir.resolve()
+    root = base_resolved
+    workdir = "/data"
     if gh.subPath:
-        root = install_dir / gh.subPath
+        candidate = (base_resolved / gh.subPath).resolve()
+        try:
+            rel_sub = candidate.relative_to(base_resolved).as_posix()
+        except ValueError as exc:
+            raise GithubSourceError("setupCommands: subPath verlässt Serververzeichnis.") from exc
+        root = candidate
+        if rel_sub and rel_sub != ".":
+            workdir = f"/data/{rel_sub}"
     if not root.is_dir():
         raise GithubSourceError(f"setupCommands: Verzeichnis fehlt: {root}")
     for argv in commands:
         if not argv or len(argv) > _MAX_SETUP_ARGS:
             raise GithubSourceError("setupCommands: ungültige argv-Liste")
-        if any(";" in a or "|" in a or "&" in a for a in argv):
+        if any(";" in a or "|" in a or "&" in a or "\x00" in a or "\n" in a for a in argv):
             raise GithubSourceError("setupCommands: Shell-Metazeichen verboten")
-        _run_argv_with_retry(argv, cwd=root)
+
+    if bool(getattr(settings, "allow_legacy_bare_metal_setup", False)):
+        for argv in commands:
+            _run_argv_with_retry(argv, cwd=root)
+        return
+
+    from services import docker_service
+
+    if not docker_service.is_available():
+        raise GithubSourceError(
+            "setupCommands benötigen eine isolierte Agent- oder Container-Sandbox "
+            "und werden nicht bare-metal im Control-Plane-Prozess ausgeführt."
+        )
+
+    setup_env = {"HOME": "/tmp", "LC_ALL": "C.UTF-8"}
+    for argv in commands:
+        res = docker_service.run_ephemeral(
+            image=blueprint.runtime.image,
+            command=list(argv),
+            volumes=[docker_service.VolumeBind(str(base_resolved), "/data", read_only=False)],
+            env=setup_env,
+            workdir=workdir,
+            entrypoint="",
+            timeout=1800,
+        )
+        if not res.get("ok"):
+            detail = (res.get("error") or res.get("stderr") or res.get("stdout") or "Exit != 0")[:300]
+            raise GithubSourceError(f"setupCommands im Container fehlgeschlagen: {detail}")
 
 
 # ── Self-healing fuer Dubious-Ownership / verlorene Execute-Bits ─────────────
@@ -523,55 +581,46 @@ def install_github_source(
 
     repo = _repo_slug(gh)
     branch = (gh.branch or "main").strip() or "main"
-    if not re.fullmatch(r"[a-zA-Z0-9._/-]{1,128}", branch):
+    if (
+        not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._/-]{0,127}", branch)
+        or ".." in branch
+    ):
         return {"ok": False, "error": "Ungültiger Branch-Name"}
 
     target = Path(install_dir)
     target.mkdir(parents=True, exist_ok=True)
     clone_url = _clone_url(repo, token)
+    allow_file_proto = clone_url.startswith("file://")
 
     has_git = (target / ".git").is_dir()
     try:
         if has_git:
             # 1. Remote-URL immer mit aktueller clone_url abgleichen (Token-Rotation / Bereinigung von Klartext-Tokens in .git/config)
-            _run_git(["remote", "set-url", "origin", clone_url], cwd=target, token=token)
+            _run_git(["remote", "set-url", "origin", clone_url], cwd=target, token=token, allow_file_protocol=allow_file_proto)
 
             # 2. Fetch mit explizitem Refspec: Zwingt Git, origin/<branch> atomar zu aktualisieren.
             # Ohne expliziten Refspec schreibt `git fetch origin <branch>` nur nach FETCH_HEAD
             # und laesst origin/<branch> unveraendert auf dem alten Commit stehen.
             refspec = f"+refs/heads/{branch}:refs/remotes/origin/{branch}"
-            _run_git(["fetch", "origin", refspec, "--depth", "1", "--prune"], cwd=target, token=token)
+            _run_git(["fetch", "--no-recurse-submodules", "origin", refspec, "--depth", "1", "--prune"], cwd=target, token=token, allow_file_protocol=allow_file_proto)
 
             # 3. Lokale Modifikationen getrackter Dateien verwerfen, bevor der Branch gewechselt/aktualisiert wird
             try:
-                _run_git(["reset", "--hard", "HEAD"], cwd=target, token=token)
+                _run_git(["reset", "--hard", "HEAD"], cwd=target, token=token, allow_file_protocol=allow_file_proto)
             except GithubSourceError:
                 pass
 
             # 4. Branch anlegen oder forciert auf origin/<branch> binden und auschecken.
             # `-B` mit `--force` switcht auch bei Branch-Wechseln sauber und verhindert
             # Konflikte mit ungetrackten Dateien im Arbeitsverzeichnis.
-            _run_git(["checkout", "-B", branch, f"origin/{branch}", "--force"], cwd=target, token=token)
+            _run_git(["checkout", "-B", branch, f"origin/{branch}", "--force"], cwd=target, token=token, allow_file_protocol=allow_file_proto)
 
             # 5. Working Tree atomar auf origin/<branch> zwingen
-            _run_git(["reset", "--hard", f"origin/{branch}"], cwd=target, token=token)
-            # Falls das Repo Submodule hat: ebenfalls auf Origin-SHA syncen.
-            # Wir nutzen ``--init --recursive --force``, damit sowohl fehlende
-            # Submodule initialisiert als auch lokale Aenderungen ueberschrieben
-            # werden. Bei Repos ohne .gitmodules ein no-op.
-            try:
-                if (target / ".gitmodules").is_file():
-                    _run_git(
-                        ["submodule", "update", "--init", "--recursive", "--force"],
-                        cwd=target,
-                        token=token,
-                    )
-            except GithubSourceError:
-                # Submodule-Sync darf den gesamten Pull nicht blockieren --
-                # Repos ohne .gitmodules oder mit Lock-Problemen ueberspringen.
-                logger.warning(
-                    "GitHub-Source %s@%s: Submodule-Update fehlgeschlagen, "
-                    "weitere Schritte laufen trotzdem.", repo, branch,
+            _run_git(["reset", "--hard", f"origin/{branch}"], cwd=target, token=token, allow_file_protocol=allow_file_proto)
+            if (target / ".gitmodules").is_file():
+                logger.info(
+                    "GitHub-Source %s@%s: .gitmodules werden aus Sicherheitsgründen nicht automatisch rekursiv nachgeladen.",
+                    repo, branch,
                 )
             # Head-Verifikation: Working Tree muss remote-HEAD entsprechen.
             # Falls ein externer Prozess (z. B. paralleler Probe-Aufruf, ein
@@ -612,9 +661,10 @@ def install_github_source(
                     "Reinstall nur in leeres Verzeichnis oder bestehendes Clone."
                 )
             _run_git(
-                ["clone", "--branch", branch, "--depth", "1", clone_url, str(target)],
+                ["clone", "--no-recurse-submodules", "--branch", branch, "--depth", "1", clone_url, str(target)],
                 timeout=900,
                 token=token,
+                allow_file_protocol=allow_file_proto,
             )
         # Self-healing: Dubious-Ownership + verlorene Execute-Bits normalisieren
         # BEVOR SetupCommands (npm ci / build) laufen. Siehe _ensure_install_dir_writable.
@@ -634,6 +684,36 @@ def install_github_source(
 
     sha = local_repo_sha(target)
     return {"ok": True, "commit": sha, "branch": branch, "repo": repo}
+
+
+def install_github_source_for_node(
+    server_id: int | str,
+    blueprint: Blueprint,
+    install_dir: str,
+    token: str | None = None,
+    node: Any | None = None,
+) -> dict:
+    """Delegate GitHub clone + setupCommands to the target node agent whenever configured."""
+    cfg = blueprint.source.github
+    if cfg is None:
+        return {"ok": False, "error": "source.github fehlt"}
+    use_agent = node is not None and (
+        not getattr(node, "is_local", False)
+        or (bool(getattr(node, "host", "")) and bool(getattr(node, "auth_token_enc", "")))
+    )
+    if use_agent:
+        from services.node_client import NodeClient
+
+        return NodeClient.from_node(node, timeout=600).install_github_source({
+            "server_id": str(server_id),
+            "repo": cfg.repo,
+            "branch": cfg.branch,
+            "token": token,
+            "setup_commands": cfg.setupCommands,
+            "sub_path": cfg.subPath,
+            "runtime_image": blueprint.runtime.image,
+        })
+    return install_github_source(blueprint, install_dir, token)
 
 
 def resolve_startup_template(blueprint: Blueprint, host_install_dir: str | None) -> str:

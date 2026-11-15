@@ -1,0 +1,506 @@
+"""Strict OCI seccomp profiles for MSM workload containers.
+
+Replaces unsafe ``seccomp=unconfined`` opt-ins (previously used for Wine/Proton
+and UMU sandboxes) with an explicit allowlist profile that enables only the
+minimal namespace syscalls when requested, while permanently blocking high-risk
+kernel attack-surface syscalls (io_uring, bpf, userfaultfd, perf_event_open,
+module loading, mount, kexec, keyrings, ptrace).
+"""
+
+from __future__ import annotations
+
+from functools import lru_cache
+import json
+import os
+from pathlib import Path
+from typing import Any
+
+# High-risk kernel surface permanently denied across all server containers.
+EXPLICITLY_DENIED_SYSCALLS: tuple[str, ...] = (
+    "acct",
+    "add_key",
+    "adjtimex",
+    "bpf",
+    "clock_adjtime",
+    "clock_settime",
+    "delete_module",
+    "finit_module",
+    "init_module",
+    "io_uring_enter",
+    "io_uring_register",
+    "io_uring_setup",
+    "kexec_file_load",
+    "kexec_load",
+    "keyctl",
+    "lookup_dcookie",
+    "mount",
+    "move_mount",
+    "name_to_handle_at",
+    "nfsservctl",
+    "open_by_handle_at",
+    "open_tree",
+    "perf_event_open",
+    "pivot_root",
+    "process_vm_readv",
+    "process_vm_writev",
+    "ptrace",
+    "quotactl",
+    "quotactl_fd",
+    "reboot",
+    "request_key",
+    "settimeofday",
+    "stime",
+    "swapoff",
+    "swapon",
+    "syslog",
+    "umount",
+    "umount2",
+    "userfaultfd",
+)
+
+# Syscalls required by standard Linux runtimes, JVM, Python, Node, Postgres, Wine.
+_BASE_ALLOWED_SYSCALLS: tuple[str, ...] = (
+    "accept",
+    "accept4",
+    "access",
+    "alarm",
+    "arch_prctl",
+    "bind",
+    "brk",
+    "capget",
+    "capset",
+    "chdir",
+    "chmod",
+    "chown",
+    "chown32",
+    "clock_getres",
+    "clock_getres_time64",
+    "clock_gettime",
+    "clock_gettime64",
+    "clock_nanosleep",
+    "clock_nanosleep_time64",
+    "close",
+    "close_range",
+    "connect",
+    "copy_file_range",
+    "creat",
+    "dup",
+    "dup2",
+    "dup3",
+    "epoll_create",
+    "epoll_create1",
+    "epoll_ctl",
+    "epoll_ctl_old",
+    "epoll_pwait",
+    "epoll_pwait2",
+    "epoll_wait",
+    "epoll_wait_old",
+    "eventfd",
+    "eventfd2",
+    "execve",
+    "execveat",
+    "exit",
+    "exit_group",
+    "faccessat",
+    "faccessat2",
+    "fadvise64",
+    "fadvise64_64",
+    "fallocate",
+    "fanotify_mark",
+    "fchdir",
+    "fchmod",
+    "fchmodat",
+    "fchmodat2",
+    "fchown",
+    "fchown32",
+    "fchownat",
+    "fcntl",
+    "fcntl64",
+    "fdatasync",
+    "fgetxattr",
+    "flistxattr",
+    "flock",
+    "fork",
+    "fremovexattr",
+    "fsetxattr",
+    "fstat",
+    "fstat64",
+    "fstatat64",
+    "fstatfs",
+    "fstatfs64",
+    "fsync",
+    "ftruncate",
+    "ftruncate64",
+    "futex",
+    "futex_time64",
+    "futex_waitv",
+    "futimesat",
+    "get_robust_list",
+    "get_thread_area",
+    "getcpu",
+    "getcwd",
+    "getdents",
+    "getdents64",
+    "getegid",
+    "getegid32",
+    "geteuid",
+    "geteuid32",
+    "getgid",
+    "getgid32",
+    "getgroups",
+    "getgroups32",
+    "getitimer",
+    "getpeername",
+    "getpgid",
+    "getpgrp",
+    "getpid",
+    "getppid",
+    "getpriority",
+    "getrandom",
+    "getresgid",
+    "getresgid32",
+    "getresuid",
+    "getresuid32",
+    "getrlimit",
+    "getrusage",
+    "getsid",
+    "getsockname",
+    "getsockopt",
+    "gettid",
+    "gettimeofday",
+    "getuid",
+    "getuid32",
+    "getxattr",
+    "inotify_add_watch",
+    "inotify_init",
+    "inotify_init1",
+    "inotify_rm_watch",
+    "ioctl",
+    "ioprio_get",
+    "ioprio_set",
+    "ipc",
+    "kill",
+    "lchown",
+    "lchown32",
+    "lgetxattr",
+    "link",
+    "linkat",
+    "listen",
+    "listxattr",
+    "llistxattr",
+    "lremovexattr",
+    "lseek",
+    "lsetxattr",
+    "lstat",
+    "lstat64",
+    "madvise",
+    "membarrier",
+    "memfd_create",
+    "mincore",
+    "mkdir",
+    "mkdirat",
+    "mknod",
+    "mknodat",
+    "mlock",
+    "mlock2",
+    "mlockall",
+    "mmap",
+    "mmap2",
+    "mprotect",
+    "mq_getsetattr",
+    "mq_notify",
+    "mq_open",
+    "mq_timedreceive",
+    "mq_timedsend",
+    "mq_unlink",
+    "mremap",
+    "msgctl",
+    "msgget",
+    "msgrcv",
+    "msgsnd",
+    "msync",
+    "munlock",
+    "munlockall",
+    "munmap",
+    "nanosleep",
+    "newfstatat",
+    "open",
+    "openat",
+    "openat2",
+    "pause",
+    "pidfd_open",
+    "pidfd_send_signal",
+    "pipe",
+    "pipe2",
+    "poll",
+    "ppoll",
+    "ppoll_time64",
+    "prctl",
+    "pread64",
+    "preadv",
+    "preadv2",
+    "prlimit64",
+    "pselect6",
+    "pselect6_time64",
+    "pwrite64",
+    "pwritev",
+    "pwritev2",
+    "read",
+    "readahead",
+    "readlink",
+    "readlinkat",
+    "readv",
+    "recv",
+    "recvfrom",
+    "recvmmsg",
+    "recvmmsg_time64",
+    "recvmsg",
+    "remap_file_pages",
+    "removexattr",
+    "rename",
+    "renameat",
+    "renameat2",
+    "restart_syscall",
+    "rmdir",
+    "rseq",
+    "rt_sigaction",
+    "rt_sigpending",
+    "rt_sigprocmask",
+    "rt_sigqueueinfo",
+    "rt_sigreturn",
+    "rt_sigsuspend",
+    "rt_sigtimedwait",
+    "rt_sigtimedwait_time64",
+    "rt_tgsigqueueinfo",
+    "sched_get_priority_max",
+    "sched_get_priority_min",
+    "sched_getaffinity",
+    "sched_getattr",
+    "sched_getparam",
+    "sched_getscheduler",
+    "sched_rr_get_interval",
+    "sched_setaffinity",
+    "sched_setattr",
+    "sched_setparam",
+    "sched_setscheduler",
+    "sched_yield",
+    "seccomp",
+    "select",
+    "semctl",
+    "semget",
+    "semop",
+    "semtimedop",
+    "semtimedop_time64",
+    "send",
+    "sendfile",
+    "sendfile64",
+    "sendmmsg",
+    "sendmsg",
+    "sendto",
+    "set_robust_list",
+    "set_thread_area",
+    "set_tid_address",
+    "setdomainname",
+    "setfsgid",
+    "setfsgid32",
+    "setfsuid",
+    "setfsuid32",
+    "setgid",
+    "setgid32",
+    "setgroups",
+    "setgroups32",
+    "sethostname",
+    "setitimer",
+    "setpgid",
+    "setpriority",
+    "setregid",
+    "setregid32",
+    "setresgid",
+    "setresgid32",
+    "setresuid",
+    "setresuid32",
+    "setreuid",
+    "setreuid32",
+    "setrlimit",
+    "setsid",
+    "setsockopt",
+    "setuid",
+    "setuid32",
+    "setxattr",
+    "shmat",
+    "shmctl",
+    "shmdt",
+    "shmget",
+    "shutdown",
+    "sigaltstack",
+    "signalfd",
+    "signalfd4",
+    "sigprocmask",
+    "sigreturn",
+    "socket",
+    "socketcall",
+    "socketpair",
+    "splice",
+    "stat",
+    "stat64",
+    "statfs",
+    "statfs64",
+    "statx",
+    "symlink",
+    "symlinkat",
+    "sync",
+    "sync_file_range",
+    "syncfs",
+    "sysinfo",
+    "tee",
+    "tgkill",
+    "time",
+    "timer_create",
+    "timer_delete",
+    "timer_getoverrun",
+    "timer_gettime",
+    "timer_gettime64",
+    "timer_settime",
+    "timer_settime64",
+    "timerfd_create",
+    "timerfd_gettime",
+    "timerfd_gettime64",
+    "timerfd_settime",
+    "timerfd_settime64",
+    "times",
+    "tkill",
+    "truncate",
+    "truncate64",
+    "ugetrlimit",
+    "umask",
+    "uname",
+    "unlink",
+    "unlinkat",
+    "utime",
+    "utimensat",
+    "utimensat_time64",
+    "utimes",
+    "vfork",
+    "vmsplice",
+    "wait4",
+    "waitid",
+    "waitpid",
+    "write",
+    "writev",
+)
+
+# Narrow namespace additions ONLY for Wine/Proton/Pressure-Vessel compatibility.
+_USERNS_ALLOWED_SYSCALLS: tuple[str, ...] = (
+    "clone",
+    "clone3",
+    "setns",
+    "unshare",
+)
+
+# Clone flags mask blocking namespace creation in non-userns containers.
+_CLONE_NAMESPACE_MASK = (
+    0x00020000  # CLONE_NEWNS
+    | 0x04000000  # CLONE_NEWUTS
+    | 0x08000000  # CLONE_NEWIPC
+    | 0x10000000  # CLONE_NEWUSER
+    | 0x20000000  # CLONE_NEWPID
+    | 0x40000000  # CLONE_NEWNET
+    | 0x02000000  # CLONE_NEWCGROUP
+)
+
+
+@lru_cache(maxsize=2)
+def seccomp_profile_dict(*, allow_userns: bool = False) -> dict[str, Any]:
+    """Build a strict OCI seccomp policy dictionary."""
+    syscalls: list[dict[str, Any]] = [
+        # Explicit deny rules come first for audit clarity even though defaultAction is ERRNO.
+        {
+            "names": list(EXPLICITLY_DENIED_SYSCALLS),
+            "action": "SCMP_ACT_ERRNO",
+            "errnoRet": 1,
+        },
+        {
+            "names": list(_BASE_ALLOWED_SYSCALLS),
+            "action": "SCMP_ACT_ALLOW",
+        },
+    ]
+
+    if allow_userns:
+        syscalls.append(
+            {
+                "names": list(_USERNS_ALLOWED_SYSCALLS),
+                "action": "SCMP_ACT_ALLOW",
+            }
+        )
+    else:
+        # Standard thread/process cloning is permitted, namespace creation is blocked.
+        syscalls.append(
+            {
+                "names": ["clone"],
+                "action": "SCMP_ACT_ALLOW",
+                "args": [
+                    {
+                        "index": 0,
+                        "value": _CLONE_NAMESPACE_MASK,
+                        "valueTwo": 0,
+                        "op": "SCMP_CMP_MASKED_EQ",
+                    }
+                ],
+            }
+        )
+
+    return {
+        "defaultAction": "SCMP_ACT_ERRNO",
+        "defaultErrnoRet": 1,
+        "architectures": [
+            "SCMP_ARCH_X86_64",
+            "SCMP_ARCH_X86",
+            "SCMP_ARCH_X32",
+            "SCMP_ARCH_AARCH64",
+            "SCMP_ARCH_ARM",
+        ],
+        "syscalls": syscalls,
+    }
+
+
+@lru_cache(maxsize=2)
+def seccomp_profile_json(*, allow_userns: bool = False) -> str:
+    """Return minified OCI seccomp JSON suitable for Docker ``seccomp=<json>``."""
+    return json.dumps(
+        seccomp_profile_dict(allow_userns=allow_userns),
+        separators=(",", ":"),
+        ensure_ascii=True,
+    )
+
+
+def apparmor_profile_active(profile_name: str = "msm-container-default") -> bool:
+    """Return True when the Linux host has loaded the requested AppArmor profile."""
+    if os.name != "posix":
+        return False
+    profiles_path = Path("/sys/kernel/security/apparmor/profiles")
+    if not profiles_path.is_file():
+        return False
+    try:
+        content = profiles_path.read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        return False
+    for line in content.splitlines():
+        name = line.split(" (", 1)[0].strip()
+        if name == profile_name:
+            return True
+    return False
+
+
+def container_security_options(
+    *,
+    allow_unprivileged_user_namespaces: bool = False,
+    apparmor_profile: str = "msm-container-default",
+) -> list[str]:
+    """Return hardened ``security_opt`` flags without ever emitting ``seccomp=unconfined``."""
+    options = [
+        "no-new-privileges",
+        f"seccomp={seccomp_profile_json(allow_userns=bool(allow_unprivileged_user_namespaces))}",
+    ]
+    if apparmor_profile and apparmor_profile_active(apparmor_profile):
+        options.append(f"apparmor={apparmor_profile}")
+    return options

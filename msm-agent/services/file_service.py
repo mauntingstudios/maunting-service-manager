@@ -6,19 +6,20 @@ All paths are resolved with realpath/resolve and must stay inside
 
 from __future__ import annotations
 
-import logging
+import errno
+import glob
 import hashlib
 import json
-import glob
+import logging
 import os
-import stat as stat_module
 import re
 import shutil
+import stat as stat_module
 import tarfile
 import tempfile
 import threading
-import zipfile
 import uuid
+import zipfile
 from pathlib import Path
 from typing import Any
 
@@ -62,6 +63,64 @@ def _write_lock(target: Path) -> threading.Lock:
     key = str(target)
     with _write_locks_guard:
         return _write_locks.setdefault(key, threading.Lock())
+
+
+def assert_no_symlink_path(target: Path, root: Path) -> None:
+    """Reject symlinks anywhere between ``root`` and ``target`` (inclusive)."""
+    if root.is_symlink():
+        raise PathEscapeError("Server root cannot be a symlink")
+    try:
+        rel_parts = target.relative_to(root).parts
+    except ValueError as exc:
+        raise PathEscapeError() from exc
+    current = root
+    for part in rel_parts:
+        current = current / part
+        if current.is_symlink():
+            raise PathEscapeError("Symlinks are not allowed")
+
+
+def open_regular_file_nofollow(server_id: str | int, rel_path: str) -> tuple[Any, os.stat_result, Path]:
+    """Open a regular file inside ``server_root`` using ``O_NOFOLLOW`` against symlink TOCTOU."""
+    root = server_root(server_id)
+    rel = (rel_path or "").strip().replace("\\", "/")
+    if rel.startswith("/"):
+        raise PathValidationError("Absolute paths are not allowed")
+    parts = Path(rel).parts if rel else ()
+    if not parts or any(p == ".." for p in parts):
+        raise PathValidationError("Invalid file path")
+    raw_target = root / rel
+    assert_no_symlink_path(raw_target, root)
+    target = safe_path(server_id, rel_path)
+    assert_no_symlink_path(target, root)
+
+    flags = (
+        os.O_RDONLY
+        | getattr(os, "O_NOFOLLOW", 0)
+        | getattr(os, "O_NONBLOCK", 0)
+        | getattr(os, "O_BINARY", 0)
+    )
+    try:
+        fd = os.open(str(target), flags)
+    except OSError as exc:
+        if exc.errno == errno.ELOOP:
+            raise PathEscapeError("Symlinks are not allowed") from exc
+        if exc.errno == errno.ENOENT:
+            raise FileNotFoundError("File not found") from exc
+        if exc.errno == errno.EISDIR:
+            raise IsADirectoryError("Path is a directory") from exc
+        raise
+    try:
+        st = os.fstat(fd)
+        if not stat_module.S_ISREG(st.st_mode):
+            raise FileNotFoundError("Not a regular file")
+        return os.fdopen(fd, "rb"), st, target
+    except Exception:
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+        raise
 
 
 def _content_revision(data: bytes) -> str:
@@ -199,12 +258,18 @@ def read_text(server_id: str | int, rel_path: str) -> str:
 
 
 def read_text_with_metadata(server_id: str | int, rel_path: str) -> dict[str, Any]:
-    target = safe_path(server_id, rel_path)
-    if not target.exists() or not target.is_file():
-        raise FileNotFoundError("File not found")
-    if target.stat().st_size > settings.max_read_size:
-        raise ValueError(f"File exceeds max read size ({settings.max_read_size} bytes)")
-    data = target.read_bytes()
+    handle, st, target = open_regular_file_nofollow(server_id, rel_path)
+    with handle:
+        if st.st_size > settings.max_read_size:
+            raise ValueError(f"File exceeds max read size ({settings.max_read_size} bytes)")
+        chunks: list[bytes] = []
+        total = 0
+        while chunk := handle.read(65536):
+            total += len(chunk)
+            if total > settings.max_read_size:
+                raise ValueError(f"File exceeds max read size ({settings.max_read_size} bytes)")
+            chunks.append(chunk)
+    data = b"".join(chunks)
     return {
         "content": data.decode("utf-8", errors="replace"),
         "revision": _content_revision(data),
@@ -223,20 +288,32 @@ def write_text_if_revision(
     expected_revision: str | None = None,
     create_only: bool = False,
 ) -> dict[str, Any]:
+    root = server_root(server_id)
+    rel = (rel_path or "").strip().replace("\\", "/")
+    if not rel:
+        raise PathValidationError("Invalid file path")
+    assert_no_symlink_path(root / rel, root)
     target = safe_path(server_id, rel_path)
+    assert_no_symlink_path(target, root)
     parent = target.parent
     # Parent must stay inside server root (mkdir does not re-validate)
-    root = server_root(server_id)
     try:
         parent.resolve(strict=False).relative_to(root)
     except ValueError as exc:
         raise PathEscapeError() from exc
     parent.mkdir(parents=True, exist_ok=True)
+    assert_no_symlink_path(parent, root)
     encoded = content.encode("utf-8")
     with _write_lock(target):
+        if target.is_symlink():
+            raise PathEscapeError("Symlinks are not allowed")
         if create_only and target.exists():
             raise FileExistsError("Target file already exists")
-        current_revision = _content_revision(target.read_bytes()) if target.is_file() else None
+        current_revision: str | None = None
+        if target.exists():
+            read_handle, _, _ = open_regular_file_nofollow(server_id, rel_path)
+            with read_handle:
+                current_revision = _content_revision(read_handle.read())
         if expected_revision is not None and current_revision != expected_revision:
             raise RevisionConflictError(current_revision)
 
@@ -247,7 +324,11 @@ def write_text_if_revision(
         # durfte nicht schreiben (der Spielprozess konnte eine vom Panel
         # angelegte Konfiguration nicht aendern), dafuer durfte jeder
         # Host-Prozess mitlesen.
-        previous_mode = stat_module.S_IMODE(target.stat().st_mode) if target.exists() else 0o660
+        previous_mode = (
+            stat_module.S_IMODE(target.stat(follow_symlinks=False).st_mode)
+            if target.exists()
+            else 0o660
+        ) & 0o777
         temp_path: Path | None = None
         try:
             with tempfile.NamedTemporaryFile(
@@ -256,11 +337,13 @@ def write_text_if_revision(
                 dir=parent,
                 prefix=".msm-edit-",
             ) as temp_file:
-                os.fchmod(temp_file.fileno(), 0o600)
+                if hasattr(os, "fchmod"):
+                    os.fchmod(temp_file.fileno(), 0o600)
                 temp_file.write(encoded)
                 temp_file.flush()
                 os.fsync(temp_file.fileno())
                 temp_path = Path(temp_file.name)
+            assert_no_symlink_path(target, root)
             os.replace(temp_path, target)
             temp_path = None
             os.chmod(target, previous_mode)
@@ -570,6 +653,14 @@ def ensure_server_root(server_id: str | int) -> None:
 
 def delete_server_root(server_id: str | int) -> None:
     """Remove one complete server root after the panel authorized server deletion."""
+    sid = str(server_id).strip()
+    if sid.isdigit() and int(sid) > 0:
+        from services import quota_service
+
+        try:
+            quota_service.remove_quota(sid)
+        except Exception as exc:
+            logger.warning("Failed to remove disk quota for server %s: %s", sid, exc)
     root = server_root(server_id)
     if not root.exists():
         return
@@ -689,11 +780,15 @@ def search_paths(server_id: str | int, query: str, *, limit: int = 200) -> dict[
         return {"q": query, "results": [], "truncated": False}
     needle = query.lower()
     results: list[dict[str, Any]] = []
-    for current_root, dirs, files in os.walk(root):
+    for current_root, dirs, files in os.walk(root, followlinks=False):
+        current = Path(current_root)
+        dirs[:] = [d for d in dirs if not (current / d).is_symlink()]
         for name in dirs + files:
             if needle not in name.lower():
                 continue
-            full = Path(current_root) / name
+            full = current / name
+            if full.is_symlink():
+                continue
             try:
                 resolved = full.resolve(strict=False)
                 resolved.relative_to(root)
@@ -740,31 +835,104 @@ def _validated_archive_destination(root: Path, raw_name: str) -> Path:
     return target
 
 
+def _archive_limits() -> tuple[int, int]:
+    max_members = max(1, int(getattr(settings, "max_archive_members", 50000)))
+    max_bytes = max(1, int(getattr(settings, "max_archive_extract_bytes", 10 * 1024 * 1024 * 1024)))
+    return max_members, max_bytes
+
+
+def _validate_tar_members(
+    destination: Path,
+    members: list[tarfile.TarInfo],
+    *,
+    require_regular: bool = False,
+) -> None:
+    max_members, max_bytes = _archive_limits()
+    if len(members) > max_members:
+        raise ValueError("Archive exceeds maximum entry count")
+    total_size = 0
+    for member in members:
+        _validated_archive_destination(destination, member.name)
+        if member.issym() or member.islnk() or member.isdev() or member.isfifo():
+            raise PathValidationError("Archive links and devices are not allowed")
+        if require_regular and not member.isfile():
+            raise PathValidationError("Config cache contains invalid entry")
+        if member.size < 0:
+            raise PathValidationError("Archive member has invalid negative size")
+        total_size += int(member.size)
+        if total_size > max_bytes:
+            raise ValueError("Archive exceeds maximum extracted size")
+        # Never materialize setuid/setgid/sticky bits from untrusted archives.
+        member.mode = member.mode & 0o777
+
+
+def _extract_tar_members_safe(handle: tarfile.TarFile, destination: Path, members: list[tarfile.TarInfo]) -> None:
+    if hasattr(tarfile, "data_filter"):
+        handle.extractall(destination, members=members, filter=tarfile.data_filter)
+    else:
+        handle.extractall(destination, members=members)
+
+
+def _extract_zip_safe(archive: Path, destination: Path) -> None:
+    max_members, max_bytes = _archive_limits()
+    with zipfile.ZipFile(archive) as handle:
+        members = handle.infolist()
+        if len(members) > max_members:
+            raise ValueError("Archive exceeds maximum entry count")
+        declared_total = 0
+        for member in members:
+            _validated_archive_destination(destination, member.filename)
+            mode = (member.external_attr >> 16) & 0o170000
+            if mode == 0o120000:
+                raise PathValidationError("Archive symlinks are not allowed")
+            if mode in {0o010000, 0o020000, 0o060000, 0o140000}:
+                raise PathValidationError("Archive links and devices are not allowed")
+            declared_total += max(0, int(member.file_size))
+            if declared_total > max_bytes:
+                raise ValueError("Archive exceeds maximum extracted size")
+
+        written_total = 0
+        write_flags = (
+            os.O_WRONLY
+            | os.O_CREAT
+            | os.O_TRUNC
+            | getattr(os, "O_NOFOLLOW", 0)
+            | getattr(os, "O_BINARY", 0)
+        )
+        for member in members:
+            target = _validated_archive_destination(destination, member.filename)
+            assert_no_symlink_path(target, destination)
+            if member.is_dir():
+                target.mkdir(parents=True, exist_ok=True)
+                continue
+            target.parent.mkdir(parents=True, exist_ok=True)
+            assert_no_symlink_path(target.parent, destination)
+            with handle.open(member, "r") as src:
+                fd = os.open(str(target), write_flags, 0o660)
+                with os.fdopen(fd, "wb") as dst:
+                    while chunk := src.read(65536):
+                        written_total += len(chunk)
+                        if written_total > max_bytes:
+                            raise ValueError("Archive exceeds maximum extracted size")
+                        dst.write(chunk)
+
+
 def extract_archive(server_id: str | int, rel_path: str) -> None:
+    root = server_root(server_id)
     archive = safe_path(server_id, rel_path)
+    assert_no_symlink_path(archive, root)
     if not archive.is_file():
         raise FileNotFoundError("Archive not found")
     destination = archive.parent.resolve()
     lower = archive.name.lower()
     if lower.endswith(".zip"):
-        with zipfile.ZipFile(archive) as handle:
-            for member in handle.infolist():
-                _validated_archive_destination(destination, member.filename)
-                if member.is_dir():
-                    continue
-                mode = (member.external_attr >> 16) & 0o170000
-                if mode == 0o120000:
-                    raise PathValidationError("Archive symlinks are not allowed")
-            handle.extractall(destination)
+        _extract_zip_safe(archive, destination)
         return
     if any(lower.endswith(ext) for ext in (".tar.gz", ".tgz", ".tar.xz", ".txz", ".tar.bz2", ".tbz2")):
         with tarfile.open(archive, mode="r:*") as handle:
             members = handle.getmembers()
-            for member in members:
-                _validated_archive_destination(destination, member.name)
-                if member.issym() or member.islnk() or member.isdev():
-                    raise PathValidationError("Archive links and devices are not allowed")
-            handle.extractall(destination, members=members)
+            _validate_tar_members(destination, members)
+            _extract_tar_members_safe(handle, destination, members)
         return
     raise PathValidationError("Unsupported archive type")
 
@@ -787,15 +955,8 @@ def restore_backup_archive(server_id: str | int, source) -> None:
                 output.write(chunk)
         with tarfile.open(archive_path, "r:gz") as handle:
             members = handle.getmembers()
-            for member in members:
-                _validated_archive_destination(staging, member.name)
-                if member.issym() or member.islnk() or member.isdev():
-                    raise PathValidationError("Archive links and devices are not allowed")
-            handle.extractall(
-                staging,
-                members=members,
-                filter=tarfile.data_filter if hasattr(tarfile, "data_filter") else None,
-            )
+            _validate_tar_members(staging, members)
+            _extract_tar_members_safe(handle, staging, members)
         if previous.exists():
             shutil.rmtree(previous)
         if root.exists():
@@ -907,14 +1068,23 @@ def abort_chunked_upload(server_id: str | int, upload_id: str) -> None:
 def cache_config_files(server_id: str | int, patterns: list[str]) -> int:
     root = server_root(server_id)
     cache_dir = safe_path(server_id, ".msm-config-cache")
+    assert_no_symlink_path(cache_dir, root)
     cache_dir.mkdir(parents=True, exist_ok=True)
     archive = cache_dir / "manual-configs.tar"
+    if archive.is_symlink():
+        raise PathEscapeError("Config cache archive cannot be a symlink")
     selected: dict[str, Path] = {}
     for pattern in patterns:
         for path in root.rglob(pattern):
-            if not path.is_file() or path.is_symlink():
+            try:
+                assert_no_symlink_path(path, root)
+                resolved = path.resolve(strict=False)
+                relative = resolved.relative_to(root)
+                st = path.lstat()
+            except (PathEscapeError, ValueError, OSError):
                 continue
-            relative = path.relative_to(root)
+            if not stat_module.S_ISREG(st.st_mode):
+                continue
             if relative.parts and relative.parts[0] in {"steamapps", ".msm-config-cache", ".msm-uploads"}:
                 continue
             if "workshop" in relative.parts:
@@ -932,15 +1102,13 @@ def cache_config_files(server_id: str | int, patterns: list[str]) -> int:
 def restore_config_files(server_id: str | int) -> int:
     root = server_root(server_id)
     archive = safe_path(server_id, ".msm-config-cache/manual-configs.tar")
+    assert_no_symlink_path(archive, root)
     if not archive.is_file():
         return 0
     with tarfile.open(archive, "r") as handle:
         members = handle.getmembers()
-        for member in members:
-            _validated_archive_destination(root, member.name)
-            if not member.isfile():
-                raise PathValidationError("Config cache contains invalid entry")
-        handle.extractall(root, members=members)
+        _validate_tar_members(root, members, require_regular=True)
+        _extract_tar_members_safe(handle, root, members)
     return len(members)
 
 
@@ -997,9 +1165,26 @@ def iter_archive_tar_gz(
                         continue
                     if full.is_symlink():
                         continue
+                    try:
+                        st = full.lstat()
+                    except OSError:
+                        continue
+                    if not stat_module.S_ISREG(st.st_mode):
+                        continue
                     arcname = resolved.relative_to(root).as_posix()
                     try:
-                        tar.add(str(full), arcname=arcname, recursive=False)
+                        info = tar.gettarinfo(str(full), arcname=arcname)
+                        if info.issym() or info.islnk() or info.isdev() or info.isfifo():
+                            continue
+                        fd = os.open(
+                            str(full),
+                            os.O_RDONLY
+                            | getattr(os, "O_NOFOLLOW", 0)
+                            | getattr(os, "O_NONBLOCK", 0)
+                            | getattr(os, "O_BINARY", 0),
+                        )
+                        with os.fdopen(fd, "rb") as member_handle:
+                            tar.addfile(info, member_handle)
                     except OSError:
                         continue
             for database_name, sql_text in postgres_dumps.items():

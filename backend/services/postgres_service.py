@@ -395,29 +395,19 @@ def server_extra_networks(db: Session, server_id: int) -> list[str]:
     koennte ein Spielserver die Instanz nebenan nur ueber das Internet
     erreichen. Das Netz ist ``internal``: nach draussen fuehrt es nicht.
     """
-    network = [settings.managed_postgres_network]
+    server = db.query(Server).filter(Server.id == server_id).first()
+    if server is None:
+        return []
+    if is_database_server(server):
+        return [f"msm-db-net-{server.id}"]
     exists = (
         db.query(PostgresDatabase.id)
         .filter(PostgresDatabase.server_id == server_id)
         .first()
     )
     if exists:
-        return network
-    server = db.query(Server).filter(Server.id == server_id).first()
-    if server is None:
-        return []
-    if server.game_type == "postgres":
-        return network
-    nachbar = (
-        db.query(Server.id)
-        .filter(
-            Server.node_id == server.node_id,
-            Server.game_type == "postgres",
-            Server.id != server.id,
-        )
-        .first()
-    )
-    return network if nachbar else []
+        return [settings.managed_postgres_network]
+    return []
 
 
 def _database_row(db: Session, server_id: int, database_id: int) -> PostgresDatabase:

@@ -100,6 +100,7 @@ async def lifespan(app: FastAPI):
         recover_scheduler_and_cleanup_expired,
         seed_system_roles_and_migrate_legacy_permissions,
         shutdown_panel_services,
+        subscribe_remote_backplane,
         sync_node_and_run_legacy_schema_bridges,
         verify_dis_and_upgrade_schema,
     )
@@ -112,6 +113,7 @@ async def lifespan(app: FastAPI):
     _protokoll_einrichten()
     sync_node_and_run_legacy_schema_bridges(engine, is_testing)
     seed_system_roles_and_migrate_legacy_permissions(engine)
+    subscribe_remote_backplane(app, is_testing)
     init_local_agent_and_background_jobs(is_testing)
     recover_scheduler_and_cleanup_expired()
     await reconcile_ai_runs_on_startup()

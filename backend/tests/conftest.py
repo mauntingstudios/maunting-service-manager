@@ -70,6 +70,7 @@ os.environ["MSM_DATABASE_URL"] = _TESTDB_URL
 os.environ["MSM_SECRET_KEY"] = "test-secret-key-32-chars-long!!!"
 os.environ["MSM_DEBUG"] = "true"
 os.environ["MSM_TESTING"] = "true"
+os.environ["MSM_REDIS_URL"] = ""
 # AWS-Test-Credentials fuer moto (S3-Mocking)
 os.environ["AWS_ACCESS_KEY_ID"] = "AKIAIOSFODNN7EXAMPLE"
 os.environ["AWS_SECRET_ACCESS_KEY"] = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
@@ -93,6 +94,7 @@ from config import settings as _settings_fuer_db
 # Eine `backend/.env` darf die Test-Datenbank nicht ueberstimmen: wer die URL
 # aus den Einstellungen liest (Backup, Alembic), muss hier landen.
 _settings_fuer_db.database_url = _TESTDB_URL
+_settings_fuer_db.redis_url = ""
 db_module.engine = create_engine(
     _TESTDB_URL,
     poolclass=StaticPool,

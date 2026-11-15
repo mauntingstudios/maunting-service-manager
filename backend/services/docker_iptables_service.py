@@ -234,3 +234,32 @@ def _safe(name: str) -> str:
     """Reduziert den Namen auf iptables-kompatible Comment-Zeichen."""
     import re
     return re.sub(r"[^A-Za-z0-9_.-]+", "_", name)[:24]
+
+
+def apply_lateral_isolation(
+    *,
+    blocked_v4: list[str] | None = None,
+    blocked_v6: list[str] | None = None,
+    db_allows: list[dict[str, object]] | None = None,
+    icc_drop_bridges: list[str] | None = None,
+) -> bool:
+    """Wendest Host-/Rootless-Netfilter-Isolation ueber ``msm-iptables`` an."""
+    import json
+
+    payload = {
+        "blocked_v4": blocked_v4
+        or [
+            "127.0.0.0/8",
+            "10.0.2.2/32",
+            "169.254.0.0/16",
+            "100.64.0.0/10",
+            "10.0.0.0/8",
+            "172.16.0.0/12",
+            "192.168.0.0/16",
+        ],
+        "blocked_v6": blocked_v6 or ["::1/128", "fe80::/10", "fc00::/7", "fd00:ec2::254/128"],
+        "db_allows": db_allows or [],
+        "icc_drop_bridges": icc_drop_bridges or [],
+    }
+    res = _run_iptables("apply-isolation", json.dumps(payload, separators=(",", ":")))
+    return res is not None and res.returncode == 0

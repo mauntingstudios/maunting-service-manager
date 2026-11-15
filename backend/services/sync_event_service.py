@@ -10,6 +10,7 @@ import asyncio
 from datetime import datetime, timezone
 import json
 import logging
+import os
 import time
 from typing import Any
 import uuid
@@ -116,14 +117,93 @@ class SyncEventService:
             familie=familie,
         )
         cls._subscribers[conn_id] = sub
+        cls._mirror_presence_add(sub)
         _log.debug("SSE-Client verbunden: %s (User %d, Teams %s)", conn_id, user_id, sub.team_ids)
         return conn_id, queue
 
     @classmethod
+    def _mirror_presence_add(cls, sub: _Subscriber) -> None:
+        from services import redis_backplane
+
+        client = redis_backplane.get_sync_redis()
+        if client is None:
+            return
+        try:
+            key = f"msm:sync:conn:{sub.conn_id}"
+            data = json.dumps(
+                {
+                    "conn_id": sub.conn_id,
+                    "user_id": sub.user_id,
+                    "mailboxes": sorted(sub.mailboxes),
+                    "zustand": sub.zustand,
+                    "zuletzt_gesehen": sub.zuletzt_gesehen,
+                },
+                separators=(",", ":"),
+            )
+            pipe = client.pipeline(transaction=False)
+            pipe.setex(key, 300, data)
+            pipe.sadd(f"msm:sync:uconns:{sub.user_id}", sub.conn_id)
+            pipe.expire(f"msm:sync:uconns:{sub.user_id}", 300)
+            for mb in sub.mailboxes:
+                pipe.sadd(f"msm:sync:mbconns:{mb}", sub.conn_id)
+                pipe.expire(f"msm:sync:mbconns:{mb}", 300)
+            pipe.execute()
+        except Exception:
+            pass
+
+    @classmethod
+    def _mirror_presence_remove(cls, conn_id: str, sub: _Subscriber | None = None) -> None:
+        from services import redis_backplane
+
+        client = redis_backplane.get_sync_redis()
+        if client is None:
+            return
+        try:
+            pipe = client.pipeline(transaction=False)
+            pipe.delete(f"msm:sync:conn:{conn_id}")
+            if sub is not None:
+                pipe.srem(f"msm:sync:uconns:{sub.user_id}", conn_id)
+                for mb in sub.mailboxes:
+                    pipe.srem(f"msm:sync:mbconns:{mb}", conn_id)
+            pipe.execute()
+        except Exception:
+            pass
+
+    @classmethod
+    def _remote_presence_for(
+        cls, *, user_id: int | None = None, mailbox_id: str | None = None
+    ) -> list[dict[str, Any]]:
+        from services import redis_backplane
+
+        client = redis_backplane.get_sync_redis()
+        if client is None:
+            return []
+        try:
+            conn_ids: set[str] = set()
+            if user_id is not None:
+                conn_ids.update(client.smembers(f"msm:sync:uconns:{int(user_id)}") or ())
+            if mailbox_id:
+                conn_ids.update(client.smembers(f"msm:sync:mbconns:{mailbox_id.strip().lower()}") or ())
+            if not conn_ids:
+                return []
+            raw_list = client.mget(*(f"msm:sync:conn:{cid}" for cid in conn_ids))
+            out: list[dict[str, Any]] = []
+            for raw in raw_list:
+                if raw:
+                    try:
+                        out.append(json.loads(raw))
+                    except Exception:
+                        continue
+            return out
+        except Exception:
+            return []
+
+    @classmethod
     def unsubscribe(cls, conn_id: str) -> None:
         """Entfernt einen SSE-Client nach Verbindungsabbruch."""
-        if conn_id in cls._subscribers:
-            cls._subscribers.pop(conn_id, None)
+        sub = cls._subscribers.pop(conn_id, None)
+        if sub is not None:
+            cls._mirror_presence_remove(conn_id, sub)
             _log.debug("SSE-Client getrennt: %s", conn_id)
 
     @classmethod
@@ -159,6 +239,7 @@ class SyncEventService:
         if len(sauber) > MAX_MAILBOXES:
             sauber = set(sorted(sauber)[:MAX_MAILBOXES])
         sub.mailboxes = sauber
+        cls._mirror_presence_add(sub)
         return len(sauber)
 
     @classmethod
@@ -183,6 +264,7 @@ class SyncEventService:
         # und bei Gleichstand entschiede sonst die Reihenfolge im Dictionary
         # statt „wer zuletzt wach war".
         sub.zuletzt_gesehen = time.monotonic_ns()
+        cls._mirror_presence_add(sub)
         return True
 
     @staticmethod
@@ -208,6 +290,44 @@ class SyncEventService:
         return ziele
 
     @classmethod
+    def _merge_remote_presence(
+        cls,
+        local_subs: list[_Subscriber],
+        *,
+        user_id: int | None = None,
+        mailbox_id: str | None = None,
+    ) -> list[Any]:
+        from types import SimpleNamespace
+
+        merged: list[Any] = list(local_subs)
+        seen = {sub.conn_id for sub in local_subs}
+        for raw in cls._remote_presence_for(user_id=user_id, mailbox_id=mailbox_id):
+            cid = raw.get("conn_id")
+            if not cid or cid in seen:
+                continue
+            try:
+                uid = int(raw["user_id"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            mbs = {str(m).strip().lower() for m in (raw.get("mailboxes") or ())}
+            if user_id is not None and uid != int(user_id):
+                if mailbox_id is None or mailbox_id not in mbs:
+                    continue
+            elif mailbox_id is not None and mailbox_id not in mbs:
+                continue
+            seen.add(cid)
+            merged.append(
+                SimpleNamespace(
+                    conn_id=str(cid),
+                    user_id=uid,
+                    mailboxes=mbs,
+                    zustand=str(raw.get("zustand") or "unbekannt"),
+                    zuletzt_gesehen=int(raw.get("zuletzt_gesehen") or 0),
+                )
+            )
+        return merged
+
+    @classmethod
     def zusteller_je_mailbox(cls, mailbox_id: str) -> tuple[set[str], bool]:
         """Dasselbe fuer eine Mailbox — je Konto Vordergrund plus Dienst.
 
@@ -221,10 +341,11 @@ class SyncEventService:
         kennung = (mailbox_id or "").strip().lower()
         if not kennung:
             return set(), False
-        nach_konto: dict[int, list[_Subscriber]] = {}
-        for sub in cls._subscribers.values():
-            if kennung in sub.mailboxes:
-                nach_konto.setdefault(sub.user_id, []).append(sub)
+        lokal = [sub for sub in cls._subscribers.values() if kennung in sub.mailboxes]
+        kandidaten = cls._merge_remote_presence(lokal, mailbox_id=kennung)
+        nach_konto: dict[int, list[Any]] = {}
+        for sub in kandidaten:
+            nach_konto.setdefault(sub.user_id, []).append(sub)
         if not nach_konto:
             return set(), False
 
@@ -260,16 +381,21 @@ class SyncEventService:
         Update jeder, der eine alte App offen hat.
         """
         kennung = (mailbox_id or "").strip().lower() or None
-        kandidaten = [
+        lokal = [
             sub for sub in cls._subscribers.values()
             if (user_id is not None and sub.user_id == int(user_id))
             or (kennung is not None and kennung in sub.mailboxes)
         ]
+        kandidaten = cls._merge_remote_presence(
+            lokal,
+            user_id=int(user_id) if user_id is not None else None,
+            mailbox_id=kennung,
+        )
         if not kandidaten:
             return set(), False
 
         bekannt = any(sub.zustand != "unbekannt" for sub in kandidaten)
-        nach_konto: dict[int, list[_Subscriber]] = {}
+        nach_konto: dict[int, list[Any]] = {}
         for sub in kandidaten:
             nach_konto.setdefault(sub.user_id, []).append(sub)
         ziele: set[str] = set()
@@ -278,7 +404,9 @@ class SyncEventService:
         return ziele, bekannt
 
     @classmethod
-    def trenne(cls, user_id: int, familie: str | None = None) -> int:
+    def trenne(
+        cls, user_id: int, familie: str | None = None, *, _from_redis: bool = False
+    ) -> int:
         """Beendet die offenen Verbindungen einer gesperrten Sitzung.
 
         Bis 09/2026 sperrte das Entfernen eines Geraets nur neue Anfragen. Ein
@@ -304,7 +432,22 @@ class SyncEventService:
         ]
         for sub in getroffen:
             cls._subscribers.pop(sub.conn_id, None)
+            cls._mirror_presence_remove(sub.conn_id, sub)
             cls._signal(sub, payload)
+        if not _from_redis:
+            import os
+            from services import redis_backplane
+
+            if redis_backplane.is_redis_enabled():
+                redis_backplane.publish_sync(
+                    redis_backplane.CHANNEL_SYNC_EVENTS,
+                    {
+                        "_ctrl": "trenne",
+                        "user_id": int(user_id),
+                        "familie": familie,
+                        "origin_pid": os.getpid(),
+                    },
+                )
         if getroffen:
             _log.info("SyncEventService: %d Verbindung(en) nach Sperre getrennt.", len(getroffen))
         return len(getroffen)
@@ -381,6 +524,7 @@ class SyncEventService:
         exclude_conn_id: str | None = None,
         zusteller: str | set[str] | None = None,
         melden_markieren: bool = False,
+        _from_redis: bool = False,
     ) -> int:
         """Verteilt ein Ereignis an alle berechtigten aktiven Abonnenten.
 
@@ -460,7 +604,64 @@ class SyncEventService:
                 except Exception as e:
                     _log.warning("Fehler beim Senden des SSE-Signals an %s: %s", conn_id, e)
 
+        if not _from_redis:
+            import os
+            from services import redis_backplane
+
+            if redis_backplane.is_redis_enabled():
+                redis_backplane.publish_sync(
+                    redis_backplane.CHANNEL_SYNC_EVENTS,
+                    {
+                        "event_data": payload,
+                        "user_id": user_id,
+                        "user_ids": sorted(user_ids) if user_ids is not None else None,
+                        "team_id": team_id,
+                        "mailbox_id": ziel_mailbox,
+                        "exclude_conn_id": exclude_conn_id,
+                        "zusteller": (
+                            sorted(zusteller) if isinstance(zusteller, set) else zusteller
+                        ),
+                        "melden_markieren": melden_markieren,
+                        "origin_pid": os.getpid(),
+                    },
+                )
+
         return delivered
+
+    @classmethod
+    def handle_remote_event(cls, message: dict[str, Any]) -> None:
+        """Verarbeitet ein per Redis Pub/Sub empfangenes Sync-Signal eines anderen Workers."""
+        import os
+
+        if not isinstance(message, dict) or message.get("origin_pid") == os.getpid():
+            return
+        if message.get("_ctrl") == "trenne":
+            raw_uid = message.get("user_id")
+            if raw_uid is not None:
+                try:
+                    cls.trenne(int(raw_uid), familie=message.get("familie"), _from_redis=True)
+                except (TypeError, ValueError):
+                    pass
+            return
+
+        event_data = message.get("event_data")
+        if not isinstance(event_data, dict):
+            return
+        raw_zusteller = message.get("zusteller")
+        zusteller = set(raw_zusteller) if isinstance(raw_zusteller, list) else raw_zusteller
+        raw_uids = message.get("user_ids")
+        user_ids = {int(u) for u in raw_uids} if isinstance(raw_uids, list) else None
+        cls.publish(
+            event_data,
+            user_id=message.get("user_id"),
+            user_ids=user_ids,
+            team_id=message.get("team_id"),
+            mailbox_id=message.get("mailbox_id"),
+            exclude_conn_id=message.get("exclude_conn_id"),
+            zusteller=zusteller,
+            melden_markieren=bool(message.get("melden_markieren", False)),
+            _from_redis=True,
+        )
 
     @classmethod
     def format_sse(cls, event: str, data: dict[str, Any] | str) -> str:
@@ -490,10 +691,14 @@ class SyncEventService:
             uid = int(user_id)
         except (ValueError, TypeError):
             return False
-        return any(sub.user_id == uid for sub in cls._subscribers.values())
+        if any(sub.user_id == uid for sub in cls._subscribers.values()):
+            return True
+        return bool(cls._remote_presence_for(user_id=uid))
 
     @classmethod
     def clear_all_for_testing(cls) -> None:
         """Setzt den Abonnenten-Speicher zurück (für automatisierte Tests)."""
+        for cid, sub in list(cls._subscribers.items()):
+            cls._mirror_presence_remove(cid, sub)
         cls._subscribers.clear()
 

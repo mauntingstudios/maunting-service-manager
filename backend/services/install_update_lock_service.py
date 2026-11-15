@@ -98,6 +98,20 @@ def try_acquire_install_update_lock(
                 )
                 if active_on_node >= max_per_node:
                     return False
+            from services import redis_backplane
+
+            if (
+                redis_backplane.try_acquire_remote_install_lock(
+                    server_id=server_id,
+                    node_id=resolved_node_id,
+                    operation=operation,
+                    ttl_seconds=ttl_seconds,
+                    scope="server",
+                    max_per_node=max_per_node,
+                )
+                is False
+            ):
+                return False
             _SERVER_NODE_HINTS[server_id] = resolved_node_id
             _ACTIVE_SERVER[server_id] = InstallUpdateLockInfo(
                 server_id=server_id,
@@ -109,6 +123,21 @@ def try_acquire_install_update_lock(
 
         # Node-weiter Lock (Server-Installation / Spiel-Update).
         if resolved_node_id in _ACTIVE:
+            return False
+
+        from services import redis_backplane
+
+        if (
+            redis_backplane.try_acquire_remote_install_lock(
+                server_id=server_id,
+                node_id=resolved_node_id,
+                operation=operation,
+                ttl_seconds=ttl_seconds,
+                scope="node",
+                max_per_node=max_per_node,
+            )
+            is False
+        ):
             return False
 
         _SERVER_NODE_HINTS[server_id] = resolved_node_id
@@ -123,6 +152,9 @@ def try_acquire_install_update_lock(
 
 def release_install_update_lock(server_id: int) -> None:
     """Release the lock held by ``server_id`` and wake queued waiters."""
+    from services import redis_backplane
+
+    redis_backplane.release_remote_install_lock(server_id)
     with _CONDITION:
         removed = _ACTIVE_SERVER.pop(server_id, None) is not None
         for k, v in list(_ACTIVE.items()):
@@ -155,6 +187,9 @@ def reset_install_update_lock_for_tests() -> None:
 
 def force_release_install_update_lock(server_id: int) -> bool:
     """Admin/cancel: lock freigeben wenn es zu diesem Server gehoert."""
+    from services import redis_backplane
+
+    redis_backplane.release_remote_install_lock(server_id)
     with _CONDITION:
         removed = _ACTIVE_SERVER.pop(server_id, None) is not None
         for k, v in list(_ACTIVE.items()):

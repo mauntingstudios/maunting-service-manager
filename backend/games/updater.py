@@ -1336,31 +1336,16 @@ def apply_server_file_update(server: Any, blueprint: Blueprint) -> dict[str, Any
                 node=getattr(server, "node", None),
             )
         elif source_type == BlueprintSourceType.HTTP:
+            from blueprints.http_source import install_http_source_for_node
+
             _append_console_log(
                 server_id,
                 "[MSM] Server-Datei-Update: HTTP-Source-Download/Entpacken (synchron vor Start)\n"
             )
             node = getattr(server, "node", None)
-            if node is not None and not getattr(node, "is_local", False):
-                from blueprints.http_source import _detect_archive_type
-                from services.node_client import NodeClient
-                from urllib.parse import urlparse
-
-                cfg = blueprint.source.http
-                assert cfg is not None
-                archive_type = cfg.archiveType or _detect_archive_type(urlparse(cfg.url).path)
-                if archive_type is None:
-                    return {"ok": False, "error": "Archive-Typ konnte nicht erkannt werden"}
-                return NodeClient.from_node(node, timeout=600).install_http_source({
-                    "server_id": str(server_id),
-                    "url": cfg.url,
-                    "sha256": cfg.sha256,
-                    "archive_type": archive_type.value,
-                    "extract_to": cfg.extractTo,
-                })
-            return install_http_source(blueprint, install_dir)
+            return install_http_source_for_node(server_id, blueprint, install_dir, node)
         elif source_type == BlueprintSourceType.GITHUB:
-            from blueprints.github_source import install_github_source
+            from blueprints.github_source import install_github_source_for_node
 
             gh = bp_source.github
             branch = (gh.branch if gh else "main") or "main"
@@ -1373,21 +1358,7 @@ def apply_server_file_update(server: Any, blueprint: Blueprint) -> dict[str, Any
             from games.blueprint_plugin import _resolve_github_token_for_server
 
             token = _resolve_github_token_for_server(server_id)
-            if node is not None and not getattr(node, "is_local", False):
-                from services.node_client import NodeClient
-
-                cfg = blueprint.source.github
-                assert cfg is not None
-                return NodeClient.from_node(node, timeout=600).install_github_source({
-                    "server_id": str(server_id),
-                    "repo": cfg.repo,
-                    "branch": cfg.branch,
-                    "token": token,
-                    "setup_commands": cfg.setupCommands,
-                    "sub_path": cfg.subPath,
-                    "runtime_image": blueprint.runtime.image,
-                })
-            return install_github_source(blueprint, install_dir, token)
+            return install_github_source_for_node(server_id, blueprint, install_dir, token, node)
         else:
             # manualUpload / dockerOnly / custom → Check sollte nie "update" liefern.
             return {

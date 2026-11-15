@@ -44,6 +44,7 @@ except ImportError:  # pragma: no cover - exercised on systems before deps insta
     LogConfig = None  # type: ignore[assignment]
 
 from config import settings
+from security.seccomp import container_security_options
 
 logger = logging.getLogger(__name__)
 
@@ -61,10 +62,48 @@ _HARDENING_SECURITY_OPT = ["no-new-privileges"]
 
 
 def _container_security_options(allow_unprivileged_user_namespaces: bool) -> list[str]:
-    options = list(_HARDENING_SECURITY_OPT)
-    if allow_unprivileged_user_namespaces:
-        options.append("seccomp=unconfined")
-    return options
+    return container_security_options(
+        allow_unprivileged_user_namespaces=bool(allow_unprivileged_user_namespaces)
+    )
+
+
+def _clamp_cpu_percent(requested: float | None) -> float:
+    default_cpu = float(getattr(settings, "default_container_cpu_percent", 200.0))
+    val = float(requested) if (requested is not None and float(requested) > 0) else default_cpu
+    val = max(10.0, val)
+    cpus = os.cpu_count()
+    if cpus and cpus > 0 and os.name == "posix":
+        val = min(val, max(100.0, float(cpus) * 100.0))
+    return val
+
+
+def _clamp_ram_mb(requested: int | None) -> int:
+    default_ram = int(getattr(settings, "default_container_ram_mb", 2048))
+    val = int(requested) if (requested is not None and int(requested) > 0) else default_ram
+    return max(128, val)
+
+
+def _validated_runtime(runtime: str | None) -> str | None:
+    if not runtime or not str(runtime).strip():
+        return None
+    cleaned = str(runtime).strip()
+    allowed_raw = getattr(settings, "allowed_container_runtimes", "runc,runsc,kata,kata-qemu,kata-fc")
+    allowed = {item.strip() for item in allowed_raw.split(",") if item.strip()}
+    if cleaned not in allowed:
+        raise ValueError(f"Runtime '{cleaned}' ist nicht erlaubt")
+    return cleaned
+
+
+def _default_ulimits() -> list[Any] | None:
+    try:
+        from docker.types import Ulimit
+
+        return [
+            Ulimit(name="nofile", soft=65536, hard=65536),
+            Ulimit(name="core", soft=0, hard=0),
+        ]
+    except Exception:
+        return None
 # Dedicated image for permission repair (runs as root to chown bind mounts).
 #
 # Purpose of repair_bind_mount_permissions():
@@ -386,10 +425,11 @@ def ensure_network(name: str, *, internal: bool = False) -> dict:
         return {"ok": False, "error": _safe_error(exc), "stdout": "", "stderr": ""}
 
 
-def _tmpfs_dict(tmpfs_paths: list[str] | None) -> dict[str, str] | None:
+def _tmpfs_dict(tmpfs_paths: list[str] | None, *, allow_exec: bool = False) -> dict[str, str] | None:
     if not tmpfs_paths:
         return None
-    return {path: "rw,exec,nosuid,nodev,size=128m,mode=1777" for path in tmpfs_paths}
+    exec_flag = "exec" if allow_exec else "noexec"
+    return {path: f"rw,{exec_flag},nosuid,nodev,size=128m,mode=1777" for path in tmpfs_paths}
 
 
 def _split_image_ref(image: str) -> tuple[str, str | None]:
@@ -686,22 +726,13 @@ def update_container_resources(
     update_kwargs: dict[str, Any] = {}
 
     if "cpu_limit_percent" in updates:
-        cpu = updates["cpu_limit_percent"]
-        if cpu is not None and cpu > 0:
-            update_kwargs["nano_cpus"] = int(round(cpu / 100.0, 2) * 1_000_000_000)
-        else:
-            # None = unlimitiert -> NanoCpus 0
-            update_kwargs["nano_cpus"] = 0
+        effective_cpu = _clamp_cpu_percent(updates["cpu_limit_percent"])
+        update_kwargs["nano_cpus"] = int(round(effective_cpu / 100.0, 2) * 1_000_000_000)
 
     if "ram_limit_mb" in updates:
-        ram = updates["ram_limit_mb"]
-        if ram is not None and ram > 0:
-            update_kwargs["mem_limit"] = f"{int(ram)}m"
-            update_kwargs["memswap_limit"] = f"{int(ram)}m"
-        else:
-            # None = unlimitiert -> Memory 0, Swap -1 (beide Limiters geloescht)
-            update_kwargs["mem_limit"] = 0
-            update_kwargs["memswap_limit"] = -1
+        effective_ram = _clamp_ram_mb(updates["ram_limit_mb"])
+        update_kwargs["mem_limit"] = f"{effective_ram}m"
+        update_kwargs["memswap_limit"] = f"{effective_ram}m"
 
     if not update_kwargs:
         return {"ok": True}
@@ -856,6 +887,9 @@ def run_container(
     tty: bool = False,  # opt-in for interactive auth/setup flows; default off (existing callers unchanged)
     restart_policy_name: str = "no",
     allow_unprivileged_user_namespaces: bool = False,
+    allow_tmpfs_exec: bool = False,
+    pids_limit: int | None = None,
+    runtime: str | None = None,
     node: Any | None = None,
 ) -> dict:
     """Startet einen langlebigen Game-Server-Container.
@@ -897,6 +931,9 @@ def run_container(
             restart_policy_name=restart_policy_name,
             startup_check_seconds=startup_check_seconds,
             allow_unprivileged_user_namespaces=allow_unprivileged_user_namespaces,
+            allow_tmpfs_exec=allow_tmpfs_exec,
+            pids_limit=pids_limit,
+            runtime=runtime,
         )
 
     client, error = _client_or_error()
@@ -939,25 +976,28 @@ def run_container(
         "environment": env or None,
         "ports": _ports_dict(ports),
         "volumes": _volumes_dict(volumes),
-        "tmpfs": _tmpfs_dict(tmpfs_paths),
+        "tmpfs": _tmpfs_dict(tmpfs_paths, allow_exec=allow_tmpfs_exec),
         "user": user,
         "working_dir": workdir,
     }
     if network:
         kwargs["network"] = network
+    validated_rt = _validated_runtime(runtime)
+    if validated_rt is not None:
+        kwargs["runtime"] = validated_rt
     networks = [network_name for network_name in (extra_networks or []) if network_name]
-    if cpu_limit_percent is not None and cpu_limit_percent > 0:
-        kwargs["nano_cpus"] = int(round(cpu_limit_percent / 100.0, 2) * 1_000_000_000)
-    if ram_limit_mb is not None and ram_limit_mb > 0:
-        kwargs["mem_limit"] = f"{ram_limit_mb}m"
-        kwargs["memswap_limit"] = f"{ram_limit_mb}m"
-    kwargs["pids_limit"] = 512
-    try:
-        from docker.types import Ulimit
-
-        kwargs["ulimits"] = [Ulimit(name="nofile", soft=65536, hard=65536)]
-    except Exception:
-        pass
+    effective_cpu = _clamp_cpu_percent(cpu_limit_percent)
+    effective_ram = _clamp_ram_mb(ram_limit_mb)
+    default_pids = int(getattr(settings, "default_container_pids_limit", 512))
+    effective_pids = min(max(16, int(pids_limit) if (pids_limit is not None and int(pids_limit) > 0) else default_pids), 2048)
+    kwargs["nano_cpus"] = int(round(effective_cpu / 100.0, 2) * 1_000_000_000)
+    kwargs["mem_limit"] = f"{effective_ram}m"
+    kwargs["memswap_limit"] = f"{effective_ram}m"
+    kwargs["oom_score_adj"] = 500
+    kwargs["pids_limit"] = effective_pids
+    ulimits = _default_ulimits()
+    if ulimits is not None:
+        kwargs["ulimits"] = ulimits
 
     kwargs = {key: value for key, value in kwargs.items() if value is not None}
     try:
@@ -1010,6 +1050,8 @@ def run_ephemeral(
     cap_adds: list[str] | None = None,
     timeout: int = 1800,
     log_callback: Any | None = None,
+    read_only_rootfs: bool = False,
+    runtime: str | None = None,
     node: Any | None = None,
 ) -> dict:
     """Fuehrt einen einmaligen Containerlauf aus und entfernt den Container danach.
@@ -1058,14 +1100,23 @@ def run_ephemeral(
         "user": user,
         "working_dir": workdir,
         "entrypoint": entrypoint,
+        "privileged": False,
+        "read_only": bool(read_only_rootfs),
         "cap_drop": _HARDENING_CAP_DROP,
         "cap_add": cap_adds or None,
-        "security_opt": _HARDENING_SECURITY_OPT,
+        "security_opt": _container_security_options(False),
         "pids_limit": 256,
         "nano_cpus": 2_000_000_000,
         "mem_limit": "4096m",
         "memswap_limit": "4096m",
+        "oom_score_adj": 500,
     }
+    validated_rt = _validated_runtime(runtime)
+    if validated_rt is not None:
+        kwargs["runtime"] = validated_rt
+    ulimits = _default_ulimits()
+    if ulimits is not None:
+        kwargs["ulimits"] = ulimits
     kwargs = {key: value for key, value in kwargs.items() if value is not None}
     container = None
     try:
@@ -1150,6 +1201,9 @@ def _run_container_via_node(
     restart_policy_name: str,
     startup_check_seconds: float,
     allow_unprivileged_user_namespaces: bool,
+    allow_tmpfs_exec: bool = False,
+    pids_limit: int | None = None,
+    runtime: str | None = None,
 ) -> dict:
     """Map local PortPublish/VolumeBind to agent create payload."""
     from services.node_client import NodeClient, NodeClientError
@@ -1189,6 +1243,9 @@ def _run_container_via_node(
         "restart_policy_name": restart_policy_name,
         "startup_check_seconds": startup_check_seconds,
         "allow_unprivileged_user_namespaces": allow_unprivileged_user_namespaces,
+        "allow_tmpfs_exec": allow_tmpfs_exec,
+        "pids_limit": pids_limit,
+        "runtime": runtime,
     }
     body = {k: v for k, v in body.items() if v is not None}
     try:
@@ -1609,7 +1666,7 @@ def repair_bind_mount_permissions(
         # ohne ihn traegt jede neu angelegte Datei wieder die Gruppe ihres
         # Erzeugers, und in ein paar Tagen passt nichts mehr zusammen.
         f"find {target} -xdev -type d -exec chmod u+rwx,g+rwxs,o-rwx {{}} + 2>/dev/null || true",
-        f"find {target} -xdev -type f -exec chmod u+rw,g+rw,o-rwx {{}} + 2>/dev/null || true",
+        f"find {target} -xdev -type f -exec chmod u-s,g-s,u+rw,g+rw,o-rwx {{}} + 2>/dev/null || true",
         # Ausfuehrbare Dateien behalten ihr x fuer die Gruppe — Spielserver
         # starten sonst nicht, weil ihre Startskripte nicht mehr laufen.
         f"find {target} -xdev -type f -perm -u+x -exec chmod g+x {{}} + 2>/dev/null || true",

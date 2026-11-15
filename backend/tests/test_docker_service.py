@@ -164,7 +164,9 @@ class TestRunContainer:
         assert kwargs["stdin_open"] is True
         assert kwargs["restart_policy"] == {"Name": "no"}
         assert kwargs["cap_drop"] == ["ALL"]
-        assert kwargs["security_opt"] == ["no-new-privileges"]
+        assert "no-new-privileges" in kwargs["security_opt"]
+        assert "seccomp=unconfined" not in kwargs["security_opt"]
+        assert any(opt.startswith("seccomp=") for opt in kwargs["security_opt"])
         assert kwargs["read_only"] is True
         assert kwargs["environment"] == {"FOO": "bar"}
         assert kwargs["ports"] == {"27015/udp": 27015}
@@ -237,7 +239,20 @@ class TestRunContainer:
 
         assert result["ok"] is True
         kwargs = client.containers.run.call_args.kwargs
-        assert kwargs["security_opt"] == ["no-new-privileges", "seccomp=unconfined"]
+        sec_opts = kwargs["security_opt"]
+        assert "no-new-privileges" in sec_opts
+        assert "seccomp=unconfined" not in sec_opts
+        seccomp_opt = next((o for o in sec_opts if o.startswith("seccomp=")), None)
+        assert seccomp_opt is not None
+        import json as _json
+        profile = _json.loads(seccomp_opt.removeprefix("seccomp="))
+        allowed = {
+            name
+            for rule in profile["syscalls"]
+            if rule.get("action") == "SCMP_ACT_ALLOW"
+            for name in rule.get("names", [])
+        }
+        assert {"clone", "clone3", "unshare", "setns"}.issubset(allowed)
         assert kwargs["cap_drop"] == ["ALL"]
         assert kwargs.get("cap_add") is None
         assert kwargs.get("privileged", False) is False
@@ -658,7 +673,9 @@ class TestEphemeralRun:
         kwargs = client.containers.run.call_args.kwargs
         assert kwargs["detach"] is True
         assert kwargs["cap_drop"] == ["ALL"]
-        assert kwargs["security_opt"] == ["no-new-privileges"]
+        assert "no-new-privileges" in kwargs["security_opt"]
+        assert "seccomp=unconfined" not in kwargs["security_opt"]
+        assert any(opt.startswith("seccomp=") for opt in kwargs["security_opt"])
         assert kwargs["volumes"] == {"/opt/msm/servers/1": {"bind": "/data", "mode": "rw"}}
         container.remove.assert_called_once_with(force=True)
         client.images.get.assert_called_once_with("ghcr.io/parkervcp/steamcmd:debian")
@@ -1101,8 +1118,8 @@ class TestUpdateContainerResources:
         assert "nano_cpus" not in kwargs
         container.stop.assert_not_called()
 
-    def test_clearing_cpu_applies_unlimited_quota(self):
-        """VAL-DOCKER-003: CPU None -> nano_cpus=0 (unlimitiert), ohne Restart."""
+    def test_clearing_cpu_applies_default_quota(self):
+        """CPU None clamps to safe non-zero default instead of uncapped quota=0."""
         container = MagicMock()
         container.attrs = {"HostConfig": {}}
         container.update.return_value = {"Warnings": []}
@@ -1114,11 +1131,11 @@ class TestUpdateContainerResources:
 
         assert result == {"ok": True}
         kwargs = container.update.call_args.kwargs
-        assert kwargs["nano_cpus"] == 0
+        assert kwargs["nano_cpus"] > 0
         container.stop.assert_not_called()
 
-    def test_clearing_ram_clears_memory_and_memswap(self):
-        """VAL-DOCKER-008: RAM None -> mem_limit=0, memswap_limit=-1 (beide Limiters geloescht)."""
+    def test_clearing_ram_clamps_to_safe_default_with_swap_disabled(self):
+        """RAM None clamps to safe non-zero default with memswap_limit == mem_limit."""
         container = MagicMock()
         container.attrs = {"HostConfig": {}}
         container.update.return_value = {"Warnings": []}
@@ -1130,8 +1147,8 @@ class TestUpdateContainerResources:
 
         assert result == {"ok": True}
         kwargs = container.update.call_args.kwargs
-        assert kwargs["mem_limit"] == 0
-        assert kwargs["memswap_limit"] == -1
+        assert kwargs["mem_limit"] == kwargs["memswap_limit"]
+        assert str(kwargs["mem_limit"]).endswith("m") and int(str(kwargs["mem_limit"])[:-1]) >= 128
         container.stop.assert_not_called()
 
     def test_combined_cpu_ram_update_sends_both(self):

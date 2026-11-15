@@ -7,8 +7,13 @@ from sqlalchemy.orm import Session
 
 from database import SessionLocal
 from models import Server, Node
-from services.guardian_sync_service import reconcile_guardian_server
+from services.guardian_sync_service import (
+    reconcile_guardian_server,
+    reconcile_guardian_server_detached,
+)
 from services.node_client import NodeClient
+
+_ORIG_RECONCILE_FN = reconcile_guardian_server
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +54,23 @@ def _reconcile_node_servers(node_id: int, server_ids: list[int]) -> None:
     finally:
         node_db.close()
 
+    use_detached = reconcile_guardian_server is _ORIG_RECONCILE_FN
     for server_id in server_ids:
+        if use_detached:
+            try:
+                reconcile_guardian_server_detached(
+                    server_id,
+                    node_client=client,
+                    session_factory=SessionLocal,
+                )
+            except Exception as srv_err:
+                logger.warning(
+                    "Guardian reconciliation failed for server_id=%s code=%s",
+                    server_id,
+                    getattr(srv_err, "code", type(srv_err).__name__),
+                )
+            continue
+
         db = SessionLocal()
         try:
             server = db.query(Server).filter(Server.id == server_id).first()

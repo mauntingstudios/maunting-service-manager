@@ -8,13 +8,14 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, File, HTTPException, Query, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from config import settings
-from services import file_service
+from services import file_service, quota_service
 from services.file_service import PathEscapeError, PathValidationError, RevisionConflictError
 from services.guardian_service import planned_operation
+from services.quota_service import DiskQuotaError
 
 router = APIRouter(prefix="/files", tags=["files"])
 MAX_SINGLE_UPLOAD_SIZE = 100 * 1024 * 1024
@@ -90,6 +91,10 @@ class ArchiveBody(BaseModel):
     postgres: dict[str, Any] | None = None
 
 
+class QuotaBody(BaseModel):
+    limit_gb: float = Field(..., ge=1, le=100_000)
+
+
 def _map_path_errors(exc: Exception) -> HTTPException:
     if isinstance(exc, RevisionConflictError):
         return HTTPException(
@@ -103,6 +108,10 @@ def _map_path_errors(exc: Exception) -> HTTPException:
         return HTTPException(status_code=400, detail=exc.message)
     if isinstance(exc, PathEscapeError):
         return HTTPException(status_code=403, detail=exc.message)
+    if isinstance(exc, DiskQuotaError):
+        msg = str(exc)
+        status = 400 if "Invalid" in msg or "between" in msg else 503
+        return HTTPException(status_code=status, detail=msg)
     if isinstance(exc, FileNotFoundError):
         return HTTPException(status_code=404, detail=str(exc) or "Not found")
     if isinstance(exc, NotADirectoryError):
@@ -200,10 +209,16 @@ def upload_file(
 ) -> dict[str, bool]:
     tmp_path: Path | None = None
     try:
+        root = file_service.server_root(server_id)
+        rel = (path or "").strip().replace("\\", "/")
+        if rel:
+            file_service.assert_no_symlink_path(root / rel, root)
         target = file_service.safe_path(server_id, path)
-        if target == file_service.server_root(server_id):
+        file_service.assert_no_symlink_path(target, root)
+        if target == root:
             raise PathValidationError("Upload path must name a file")
         target.parent.mkdir(parents=True, exist_ok=True)
+        file_service.assert_no_symlink_path(target.parent, root)
         # Bestandsdateien behalten ihren Modus. Neue Dateien bekommen 0660 —
         # das Gruppenmodell des Panels: Panel und Spielprozess teilen sich die
         # Dateien über die Gruppe des Serververzeichnisses (setgid vererbt
@@ -212,13 +227,16 @@ def upload_file(
         # Konfiguration nicht ändern), dafür durfte jeder Host-Prozess
         # mitlesen — genau die Weltrechte, die `docker_service` beim Start mit
         # `o-rwx` wieder wegnimmt.
-        destination_mode = target.stat().st_mode & 0o777 if target.is_file() else 0o660
+        if target.is_symlink():
+            raise PathEscapeError("Symlinks are not allowed")
+        destination_mode = target.stat(follow_symlinks=False).st_mode & 0o777 if target.is_file() else 0o660
         limit = min(settings.max_upload_size, MAX_SINGLE_UPLOAD_SIZE)
         total = 0
         with tempfile.NamedTemporaryFile(
             mode="wb", delete=False, dir=target.parent, prefix=".msm-upload-"
         ) as tmp:
-            os.fchmod(tmp.fileno(), 0o600)
+            if hasattr(os, "fchmod"):
+                os.fchmod(tmp.fileno(), 0o600)
             tmp_path = Path(tmp.name)
             while chunk := file.file.read(UPLOAD_CHUNK_SIZE):
                 total += len(chunk)
@@ -227,7 +245,9 @@ def upload_file(
                 tmp.write(chunk)
             tmp.flush()
             os.fsync(tmp.fileno())
-            os.fchmod(tmp.fileno(), destination_mode)
+            if hasattr(os, "fchmod"):
+                os.fchmod(tmp.fileno(), destination_mode)
+        file_service.assert_no_symlink_path(target, root)
         os.replace(tmp_path, target)
         tmp_path = None
         return {"ok": True}
@@ -244,15 +264,27 @@ def upload_file(
 def download_file(
     server_id: str = Query(...),
     path: str = Query(...),
-) -> FileResponse:
+) -> StreamingResponse:
     try:
-        target = file_service.safe_path(server_id, path)
-        if not target.exists() or not target.is_file():
-            raise FileNotFoundError("File not found")
-        return FileResponse(
-            path=str(target),
-            filename=target.name,
+        handle, st, target = file_service.open_regular_file_nofollow(server_id, path)
+        safe_name = target.name.replace('"', "").replace("\r", "").replace("\n", "")
+
+        def _stream():
+            try:
+                with handle:
+                    while chunk := handle.read(65536):
+                        yield chunk
+            except Exception:
+                handle.close()
+                raise
+
+        return StreamingResponse(
+            _stream(),
             media_type="application/octet-stream",
+            headers={
+                "Content-Disposition": f'attachment; filename="{safe_name}"',
+                "Content-Length": str(st.st_size),
+            },
         )
     except Exception as exc:
         raise _map_path_errors(exc) from exc
@@ -492,5 +524,29 @@ def rollback_restore(server_id: str = Query(...)) -> dict[str, bool]:
         with planned_operation(int(server_id), "server_restore_rollback", lease_seconds=3600):
             file_service.rollback_backup_restore(server_id)
         return {"ok": True}
+    except Exception as exc:
+        raise _map_path_errors(exc) from exc
+
+
+@router.put("/quota")
+def apply_server_quota(body: QuotaBody, server_id: str = Query(...)) -> dict[str, Any]:
+    try:
+        return quota_service.apply_quota(server_id, body.limit_gb)
+    except Exception as exc:
+        raise _map_path_errors(exc) from exc
+
+
+@router.get("/quota")
+def inspect_server_quota(server_id: str = Query(...)) -> dict[str, Any]:
+    try:
+        return quota_service.inspect_quota(server_id)
+    except Exception as exc:
+        raise _map_path_errors(exc) from exc
+
+
+@router.delete("/quota")
+def remove_server_quota(server_id: str = Query(...)) -> dict[str, Any]:
+    try:
+        return quota_service.remove_quota(server_id)
     except Exception as exc:
         raise _map_path_errors(exc) from exc

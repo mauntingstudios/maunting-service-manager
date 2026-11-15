@@ -68,24 +68,34 @@ def test_clone_url_never_contains_token(monkeypatch):
     assert _clone_url("octocat/Hello-World", token="secret_ghp_12345") == "https://github.com/octocat/Hello-World.git"
 
 
+def _git_config_map(env: dict[str, str]) -> dict[str, str]:
+    count = int(env.get("GIT_CONFIG_COUNT", "0"))
+    return {
+        env[f"GIT_CONFIG_KEY_{i}"]: env[f"GIT_CONFIG_VALUE_{i}"]
+        for i in range(count)
+    }
+
+
 def test_build_git_env_with_token_sets_extraheader(monkeypatch, tmp_path):
-    """Authentifizierung wird als GIT_CONFIG_KEY_* extraheader im Environment uebergeben."""
+    """Authentifizierung + Git-Hardening werden als GIT_CONFIG_KEY_* im Environment uebergeben."""
     import base64
     from blueprints.github_source import _build_git_env
 
     token = "ghp_securetoken999"
     env = _build_git_env(cwd=tmp_path, token=token)
+    cfg = _git_config_map(env)
 
-    assert env.get("GIT_CONFIG_COUNT") == "2"
-    assert env.get("GIT_CONFIG_KEY_0") == "safe.directory"
-    assert env.get("GIT_CONFIG_VALUE_0") == "*"
-    assert env.get("GIT_CONFIG_KEY_1") == "http.https://github.com/.extraheader"
+    assert env.get("GIT_CONFIG_COUNT") == "5"
+    assert cfg["safe.directory"] == "*"
     expected_basic = base64.b64encode(f"x-access-token:{token}".encode("utf-8")).decode("ascii")
-    assert env.get("GIT_CONFIG_VALUE_1") == f"AUTHORIZATION: basic {expected_basic}"
+    assert cfg["http.https://github.com/.extraheader"] == f"AUTHORIZATION: basic {expected_basic}"
+    assert cfg["core.fsmonitor"] == "false"
+    assert cfg["core.hooksPath"] == "/dev/null"
+    assert cfg["protocol.file.allow"] == "never"
 
 
 def test_build_git_env_without_token_only_sets_safe_directory(tmp_path, monkeypatch):
-    """Ohne Token wird nur safe.directory gesetzt."""
+    """Ohne Token wird kein Extraheader gesetzt, nur safe.directory und Git-Haertung."""
     monkeypatch.delenv("MSM_GITHUB_CLONE_TOKEN", raising=False)
     from services.panel_settings_service import PanelSettingsService
     PanelSettingsService.invalidate_cache()
@@ -94,10 +104,13 @@ def test_build_git_env_without_token_only_sets_safe_directory(tmp_path, monkeypa
     from blueprints.github_source import _build_git_env
 
     env = _build_git_env(cwd=tmp_path, token=None)
-    assert env.get("GIT_CONFIG_COUNT") == "1"
-    assert env.get("GIT_CONFIG_KEY_0") == "safe.directory"
-    assert env.get("GIT_CONFIG_VALUE_0") == "*"
-    assert "GIT_CONFIG_KEY_1" not in env
+    cfg = _git_config_map(env)
+    assert env.get("GIT_CONFIG_COUNT") == "4"
+    assert cfg["safe.directory"] == "*"
+    assert cfg["core.fsmonitor"] == "false"
+    assert cfg["core.hooksPath"] == "/dev/null"
+    assert cfg["protocol.file.allow"] == "never"
+    assert "http.https://github.com/.extraheader" not in cfg
 
 
 # ── TAR_ENTRY_ERROR Retry-Logik ────────────────────────────────────────────────

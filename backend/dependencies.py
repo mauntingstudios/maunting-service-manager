@@ -171,7 +171,8 @@ def _ws_bearer_token(ws: WebSocket) -> str | None:
     als beim Cookie, das der Browser ungefragt mitschickt (dafuer gibt es den
     Origin-Check in `get_current_user_for_ws`).
     """
-    roh = ws.headers.get("sec-websocket-protocol", "")
+    headers = getattr(ws, "headers", None)
+    roh = headers.get("sec-websocket-protocol", "") if headers is not None else ""
     eintraege = [teil.strip() for teil in roh.split(",") if teil.strip()]
     for stelle, eintrag in enumerate(eintraege):
         if eintrag == WS_BEARER_PROTOKOLL and stelle + 1 < len(eintraege):

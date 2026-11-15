@@ -33,6 +33,7 @@ from collections import OrderedDict
 from dataclasses import dataclass, field
 import json
 import logging
+import os
 from typing import AsyncIterator
 
 from database import SessionLocal
@@ -290,7 +291,9 @@ def eroeffnen(run_id: str) -> None:
     _kanal(run_id)
 
 
-def veroeffentlichen(run_id: str, ereignis: str, daten: dict) -> None:
+def veroeffentlichen(
+    run_id: str, ereignis: str, daten: dict, *, _from_redis: bool = False
+) -> None:
     """Schreibt ein Ereignis in den Abzug und an alle Zuhoerer.
 
     Wird ausschliesslich aus dem Lauf heraus gerufen, also auf der Ereignis-
@@ -339,6 +342,33 @@ def veroeffentlichen(run_id: str, ereignis: str, daten: dict) -> None:
             continue
         warteschlange.put_nowait((ereignis, daten))
 
+    if not _from_redis:
+        from services import redis_backplane
+
+        redis_backplane.ai_run_snapshot_set(run_id, abzug.als_ereignis())
+        redis_backplane.publish_sync(
+            f"{redis_backplane.CHANNEL_AI_RUN_PREFIX}{run_id}",
+            {
+                "kind": "event",
+                "run_id": run_id,
+                "event": ereignis,
+                "data": daten,
+                "origin_pid": os.getpid(),
+            },
+        )
+
+
+def _abzug_aus_snapshot(run_id: str, snap: dict) -> Abzug:
+    return Abzug(
+        run_id=run_id,
+        status=str(snap.get("status") or "running"),
+        message_id=snap.get("message_id"),
+        abschnitte=[dict(s) for s in (snap.get("sections") or []) if isinstance(s, dict)],
+        frage=snap.get("question"),
+        vorschlaege=list(snap.get("proposals") or []),
+        stop_reason=snap.get("stop_reason"),
+    )
+
 
 def abonnieren(run_id: str) -> tuple[Abzug, asyncio.Queue] | None:
     """Haengt einen Zuschauer an. Gibt Abzug **und** Abonnement zusammen zurueck.
@@ -352,7 +382,15 @@ def abonnieren(run_id: str) -> tuple[Abzug, asyncio.Queue] | None:
     """
     kanal = _KANAELE.get(run_id)
     if kanal is None:
-        return None
+        from services import redis_backplane
+
+        snap = redis_backplane.ai_run_snapshot_get(run_id)
+        if snap and snap.get("status") == "running":
+            kanal = _Kanal(abzug=_abzug_aus_snapshot(run_id, snap))
+            _KANAELE[run_id] = kanal
+            _aufraeumen()
+        else:
+            return None
     warteschlange: asyncio.Queue = asyncio.Queue()
     kanal.zuhoerer.add(warteschlange)
     _KANAELE.move_to_end(run_id)
@@ -365,7 +403,7 @@ def abmelden(run_id: str, warteschlange: asyncio.Queue) -> None:
         kanal.zuhoerer.discard(warteschlange)
 
 
-def beenden(run_id: str) -> None:
+def beenden(run_id: str, *, _from_redis: bool = False) -> None:
     """Meldet: hier kommt nichts mehr. Weckt alle Zuhoerer ein letztes Mal."""
     # Die Unvollstaendigkeits-Marke endet mit dem Lauf, sonst wuechse die Menge
     # mit jeder Opferung um eine Kennung, die nie wieder gebraucht wird. Beim
@@ -373,11 +411,39 @@ def beenden(run_id: str) -> None:
     # dieses `beenden`, dann die Marke — sie ueberlebt diesen Aufruf also.
     _ABZUG_UNVOLLSTAENDIG.discard(run_id)
     kanal = _KANAELE.get(run_id)
+    if not _from_redis:
+        from services import redis_backplane
+
+        if kanal is not None:
+            redis_backplane.ai_run_snapshot_set(run_id, kanal.abzug.als_ereignis())
+        redis_backplane.publish_sync(
+            f"{redis_backplane.CHANNEL_AI_RUN_PREFIX}{run_id}",
+            {"kind": "end", "run_id": run_id, "origin_pid": os.getpid()},
+        )
     if kanal is None:
         return
     kanal.beendet = True
     for warteschlange in list(kanal.zuhoerer):
         warteschlange.put_nowait((None, None))
+
+
+async def handle_remote_event(_channel: str, payload: dict) -> None:
+    """Replays AI run events emitted on another worker or ``msm-worker``."""
+    if payload.get("origin_pid") == os.getpid():
+        return
+    run_id = payload.get("run_id")
+    if not isinstance(run_id, str) or not run_id:
+        return
+    kind = payload.get("kind")
+    if kind == "event":
+        veroeffentlichen(
+            run_id,
+            str(payload.get("event") or ""),
+            dict(payload.get("data") or {}),
+            _from_redis=True,
+        )
+    elif kind == "end":
+        beenden(run_id, _from_redis=True)
 
 
 def laeuft(run_id: str) -> bool:

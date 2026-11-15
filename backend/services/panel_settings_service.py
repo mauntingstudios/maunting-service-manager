@@ -21,21 +21,58 @@ class PanelSettingsService:
 
     _cache: dict[str, str] = {}
     _cache_loaded: bool = False
+    _cache_version: str | None = None
+
+    @classmethod
+    def _remote_version(cls) -> str | None:
+        from services import redis_backplane
+
+        client = redis_backplane.get_sync_redis()
+        if client is None:
+            return None
+        try:
+            val = client.get("msm:panel_settings:version")
+            return str(val) if val is not None else "0"
+        except Exception:
+            return None
+
+    @classmethod
+    def _bump_remote_version(cls) -> None:
+        from services import redis_backplane
+
+        client = redis_backplane.get_sync_redis()
+        if client is None:
+            return
+        try:
+            ver = client.incr("msm:panel_settings:version")
+            cls._cache_version = str(ver)
+            redis_backplane.publish_sync(
+                redis_backplane.CHANNEL_SETTINGS_INVALIDATE,
+                {"version": str(ver)},
+            )
+        except Exception:
+            pass
 
     @classmethod
     def _load_cache(cls, db: Session | None = None) -> None:
+        remote_ver = cls._remote_version()
         if cls._cache_loaded:
-            return
+            if remote_ver is None or remote_ver == cls._cache_version:
+                return
+            cls._cache.clear()
+            cls._cache_loaded = False
         if db is not None:
             for row in db.query(PanelSetting).all():
                 cls._cache[row.key] = row.value
             cls._cache_loaded = True
+            cls._cache_version = remote_ver
             return
         db_session = SessionLocal()
         try:
             for row in db_session.query(PanelSetting).all():
                 cls._cache[row.key] = row.value
             cls._cache_loaded = True
+            cls._cache_version = remote_ver
         finally:
             db_session.close()
 
@@ -53,6 +90,7 @@ class PanelSettingsService:
                 row.value = value
             else:
                 db.add(PanelSetting(key=key, value=value))
+            cls._bump_remote_version()
             return
         db_session = SessionLocal()
         try:
@@ -62,6 +100,7 @@ class PanelSettingsService:
             else:
                 db_session.add(PanelSetting(key=key, value=value))
             db_session.commit()
+            cls._bump_remote_version()
         finally:
             db_session.close()
 
@@ -77,6 +116,7 @@ class PanelSettingsService:
             row = db.query(PanelSetting).filter_by(key=key).first()
             if row:
                 db.delete(row)
+            cls._bump_remote_version()
             return
         db_session = SessionLocal()
         try:
@@ -84,12 +124,14 @@ class PanelSettingsService:
             if row:
                 db_session.delete(row)
                 db_session.commit()
+            cls._bump_remote_version()
         finally:
             db_session.close()
 
     @classmethod
     def invalidate_cache(cls) -> None:
         cls._cache_loaded = False
+        cls._cache_version = None
         cls._cache.clear()
 
     # ── Localhost-Freigabe per Einmal-Link (Befund 46) ─────────────────────

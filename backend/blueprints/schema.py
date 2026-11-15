@@ -655,7 +655,7 @@ class BlueprintGithubSource(BaseModel):
         v = v.strip()
         if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", v):
             raise ValueError("source.github.repo muss owner/repo sein (nur github.com).")
-        if ".." in v or v.startswith("/"):
+        if ".." in v or v.startswith("/") or v.startswith("-") or "/-" in v:
             raise ValueError("source.github.repo: ungültiges Format.")
         return v
 
@@ -663,7 +663,7 @@ class BlueprintGithubSource(BaseModel):
     @classmethod
     def _check_branch(cls, v: str) -> str:
         v = v.strip()
-        if not v or "\x00" in v or "/" in v or "\\" in v:
+        if not v or "\x00" in v or "/" in v or "\\" in v or v.startswith("-") or ".." in v:
             raise ValueError("source.github.branch: ungültiger Branch-Name.")
         return v
 

@@ -449,24 +449,9 @@ class BlueprintPlugin(GamePlugin):
                 )
 
             def _install_source():
-                if node is not None and not getattr(node, "is_local", False):
-                    from urllib.parse import urlparse
-                    from blueprints.http_source import _detect_archive_type
-                    from services.node_client import NodeClient
+                from blueprints.http_source import install_http_source_for_node
 
-                    cfg = bp.source.http
-                    assert cfg is not None
-                    archive_type = cfg.archiveType or _detect_archive_type(urlparse(cfg.url).path)
-                    if archive_type is None:
-                        return {"ok": False, "error": "Archive-Typ konnte nicht erkannt werden"}
-                    return NodeClient.from_node(node, timeout=600).install_http_source({
-                        "server_id": str(server_id),
-                        "url": cfg.url,
-                        "sha256": cfg.sha256,
-                        "archive_type": archive_type.value,
-                        "extract_to": cfg.extractTo,
-                    })
-                return install_http_source(bp, install_dir)
+                return install_http_source_for_node(server_id, bp, install_dir, node)
 
             result = perform_install_with_protection(srv, _install_source, blueprint=bp)
             if result.get("ok"):
@@ -499,25 +484,13 @@ class BlueprintPlugin(GamePlugin):
                 )
 
             def _install_source():
+                from blueprints.github_source import install_github_source_for_node
+
                 node = getattr(srv, "node", None)
                 # Serverbezogener GitHub-Zugang vor dem panelweiten. Damit
                 # laeuft ein Kundenserver nicht mit dem Token des Betreibers.
                 token = _resolve_github_token_for_server(server_id)
-                if node is not None and not getattr(node, "is_local", False):
-                    from services.node_client import NodeClient
-
-                    cfg = bp.source.github
-                    assert cfg is not None
-                    return NodeClient.from_node(node, timeout=600).install_github_source({
-                        "server_id": str(server_id),
-                        "repo": cfg.repo,
-                        "branch": cfg.branch,
-                        "token": token,
-                        "setup_commands": cfg.setupCommands,
-                        "sub_path": cfg.subPath,
-                        "runtime_image": bp.runtime.image,
-                    })
-                return install_github_source(bp, install_dir, token)
+                return install_github_source_for_node(server_id, bp, install_dir, token, node)
 
             result = perform_install_with_protection(srv, _install_source, blueprint=bp)
             if result.get("ok"):

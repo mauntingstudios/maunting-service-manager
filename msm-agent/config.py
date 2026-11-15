@@ -59,12 +59,38 @@ class Settings(BaseSettings):
     # Managed Postgres (Phase 7) — per-node container; panel passes passwords in RAM only
     managed_postgres_image: str = "postgres:17-alpine"
     managed_postgres_container_name: str = "msm-postgres"
-    managed_postgres_network: str = "msm-internal"
+    managed_postgres_network: str = "msm-pg-hub"
+    require_network_isolation: bool = False
     managed_postgres_host: str = "127.0.0.1"
     managed_postgres_port: int = 15432
     managed_postgres_data_dir: str = "/opt/msm/postgres"
     managed_postgres_statement_timeout_ms: int = 5000
     managed_postgres_row_limit: int = 500
+
+    # Container resource ceilings & mandatory fallback defaults (never uncapped)
+    default_container_cpu_percent: float = 200.0
+    default_container_ram_mb: int = 2048
+    default_container_pids_limit: int = 512
+    max_container_pids_limit: int = 2048
+    host_reserved_ram_mb: int = 1536
+    container_oom_score_adj: int = 500
+    container_blkio_read_bps: int = 250 * 1024 * 1024
+    container_blkio_write_bps: int = 200 * 1024 * 1024
+    container_blkio_read_iops: int = 5000
+    container_blkio_write_iops: int = 4000
+
+    # Container runtime & sandbox policies
+    allowed_container_runtimes: str = "runc,runsc,kata,kata-qemu,kata-fc"
+    default_untrusted_runtime: str = "runc"
+    git_helper_image: str = "alpine/git:latest"
+
+    # OS disk quota enforcement ("auto" | "prjquota" | "loopback" | "none")
+    quota_driver: str = "auto"
+    require_disk_quota: bool = False
+
+    # Archive decompression safety caps
+    max_archive_members: int = 100_000
+    max_archive_extract_bytes: int = 20 * 1024 * 1024 * 1024
 
     def servers_path(self) -> Path:
         return Path(self.servers_dir).resolve(strict=False)

@@ -368,9 +368,21 @@ def seed_system_roles_and_migrate_legacy_permissions(engine) -> None:
         logger.info("Phase-3 RBAC-Migration: %d Permission-Eintraege migriert.", migrated)
 
 
+def _is_worker_role() -> bool:
+    """True if this process runs background schedulers and startup recovery."""
+    from config import settings
+
+    mode = (getattr(settings, "worker_mode", "all") or "all").strip().lower()
+    return mode in {"all", "worker"}
+
+
 def init_local_agent_and_background_jobs(is_testing: bool) -> None:
     """Initialisiert Firewall/Port-Manager, Managed-PostgreSQL und DIS-Altbestand."""
     from config import settings
+
+    if not _is_worker_role():
+        logger.info("Worker-Modus '%s': Hintergrund-Init im HTTP-Worker übersprungen.", settings.worker_mode)
+        return
 
     if settings.local_agent_enabled:
         try:
@@ -432,8 +444,50 @@ def init_local_agent_and_background_jobs(is_testing: bool) -> None:
         asyncio.create_task(_bg_dis_altbestand())
 
 
+def subscribe_remote_backplane(app: FastAPI, is_testing: bool) -> None:
+    """Starts the Redis Pub/Sub subscriber for cross-worker state & streams."""
+    import asyncio
+    from services import redis_backplane
+
+    if not redis_backplane.is_redis_enabled():
+        return
+
+    async def _on_settings_invalidate(_channel: str, _payload: dict) -> None:
+        from services.panel_settings_service import PanelSettingsService
+
+        PanelSettingsService.invalidate_cache()
+
+    async def _on_sync_event(_channel: str, payload: dict) -> None:
+        from services.sync_event_service import SyncEventService
+
+        SyncEventService.handle_remote_event(payload)
+
+    async def _on_console_event(channel: str, payload: dict) -> None:
+        from services import console_stream_service
+
+        await console_stream_service.handle_remote_console_message(channel, payload)
+
+    async def _on_ai_run_event(channel: str, payload: dict) -> None:
+        from services import ai_run_broker
+
+        await ai_run_broker.handle_remote_event(channel, payload)
+
+    handlers = [
+        (redis_backplane.CHANNEL_SETTINGS_INVALIDATE, _on_settings_invalidate),
+        (redis_backplane.CHANNEL_SYNC_EVENTS, _on_sync_event),
+        (f"{redis_backplane.CHANNEL_CONSOLE_PREFIX}*", _on_console_event),
+        (f"{redis_backplane.CHANNEL_AI_RUN_PREFIX}*", _on_ai_run_event),
+    ]
+    app.state._redis_pubsub_task = asyncio.create_task(
+        redis_backplane.run_pubsub_subscriber(handlers),
+        name="msm-redis-pubsub",
+    )
+
+
 def recover_scheduler_and_cleanup_expired() -> None:
     """Startet den Scheduler, gleicht Server-Status ab und räumt abgelaufene Token auf."""
+    if not _is_worker_role():
+        return
     from database import SessionLocal
     from services.operation_task_service import recover_interrupted_tasks
     from services.scheduler_service import init_server_schedules, start_scheduler
@@ -479,6 +533,8 @@ def _run_startup_cleanup(label: str, module_path: str, fn_name: str) -> None:
 
 async def reconcile_ai_runs_on_startup() -> None:
     """Gleicht unterbrochene KI-Streams, Aktionen, Reservierungen und Worker ab."""
+    if not _is_worker_role():
+        return
     from database import SessionLocal
     from services.ai_chat_service import reconcile_interrupted_ai_streams
     from services.ai_proposal_service import reconcile_interrupted_actions
@@ -543,3 +599,17 @@ async def shutdown_panel_services(app: FastAPI, is_testing: bool) -> None:
     shutdown_oauth_http_client()
     stop_scheduler()
     await close_steam_service()
+
+    pubsub_task = getattr(app.state, "_redis_pubsub_task", None)
+    if pubsub_task is not None:
+        pubsub_task.cancel()
+        try:
+            await pubsub_task
+        except Exception:
+            pass
+    try:
+        from services import redis_backplane
+
+        await redis_backplane.aclose_async_clients()
+    except Exception:
+        pass

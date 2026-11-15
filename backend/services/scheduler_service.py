@@ -682,143 +682,181 @@ async def _background_update_check_task() -> None:
     send_mod_update_available_notification aus email_service.py (Aufrufbedingung
     exakt wie in deren Docstring beschrieben).
     """
+    from sqlalchemy.orm import joinedload
     from models import Server, User
     from services.email_service import EmailService
     from services.permission_service import has_server_permission
 
-    db = SessionLocal()
+    # Phase 1: kurzes DB-Snapshot ohne externe I/O (kein Pool-Blocking bei hängenden Nodes)
+    snap_db = SessionLocal()
     try:
-        # Email-Kandidaten einmalig am Task-Start snapshotten (KISS).
-        # Nur wenn konfiguriert: sonst kein Query, keine Mail-Logik.
         email_configured = False
-        candidate_users: list[User] = []
+        candidate_user_ids: list[int] = []
         try:
             email_configured = EmailService.is_configured()
             if email_configured:
-                candidate_users = (
-                    db.query(User)
+                candidate_user_ids = [
+                    row[0]
+                    for row in snap_db.query(User.id)
                     .filter(
                         User.is_active == True,
                         User.email_notifications == True,
                         User.email_encrypted.isnot(None),
                     )
                     .all()
-                )
+                ]
         except Exception:  # pragma: no cover - defensiv
             email_configured = False
-            candidate_users = []
+            candidate_user_ids = []
 
-        servers = db.query(Server).all()
-        for server in servers:
-            try:
-                plugin = get_plugin(server.game_type)
-                if not plugin:
-                    continue
+        server_ids = [row[0] for row in snap_db.query(Server.id).all()]
+    finally:
+        snap_db.close()
 
-                # 1. Workshop-Mod-Updates werden autonom vorbereitet.
-                mod_updates = await asyncio.to_thread(plugin.check_for_mod_updates, server)
-                if mod_updates:
-                    from services.mod_install_status_service import mark_mod_pending
+    for server_id in server_ids:
+        read_db = SessionLocal()
+        try:
+            server = (
+                read_db.query(Server)
+                .options(joinedload(Server.node))
+                .filter(Server.id == server_id)
+                .first()
+            )
+            if not server:
+                continue
+            game_type = server.game_type
+            server_name = server.name
+            node_id = server.node_id
+            # Node vor dem Trennen der Session materialisieren, dann Session schließen
+            _ = server.node
+            read_db.expunge_all()
+        finally:
+            read_db.close()
 
-                    for mod_update in mod_updates:
-                        mark_mod_pending(
-                            server.id,
-                            mod_update.get("workshop_id", ""),
-                            mod_update.get("action", "update"),
+        try:
+            plugin = get_plugin(game_type)
+            if not plugin:
+                continue
+
+            # 1. Workshop-Mod-Updates werden autonom vorbereitet (ohne offene DB-Session).
+            mod_updates = await asyncio.to_thread(plugin.check_for_mod_updates, server)
+            if mod_updates:
+                from services.mod_install_status_service import mark_mod_pending
+
+                for mod_update in mod_updates:
+                    mark_mod_pending(
+                        server_id,
+                        mod_update.get("workshop_id", ""),
+                        mod_update.get("action", "update"),
+                    )
+                count = len(mod_updates)
+                _append_console_log(
+                    server_id,
+                    f"[MSM] Background-Check: {count} Workshop-Mod(s) benötigen Update/Installation "
+                    f"für Server '{server_name}'. Pending-Status wurde gesetzt; "
+                    "auto_update-Mods werden bei gestopptem Server oder beim nächsten Start/Restart geladen.\n"
+                )
+                logger.info(
+                    "Background-Check: %d Mod-Update(s) für Server %s ('%s') gefunden.",
+                    count, server_id, server_name
+                )
+                async with acquire_lock_async(get_server_lifecycle_lock(server_id)):
+                    st_db = SessionLocal()
+                    try:
+                        fresh = st_db.query(Server).filter(Server.id == server_id).first()
+                        current_status = fresh.status if fresh else None
+                    finally:
+                        st_db.close()
+
+                    if fresh and current_status not in ("running", "starting", "stopping"):
+                        from services.install_update_lock_service import (
+                            try_acquire_install_update_lock,
+                            release_install_update_lock,
                         )
-                    count = len(mod_updates)
-                    _append_console_log(
-                        server.id,
-                        f"[MSM] Background-Check: {count} Workshop-Mod(s) benötigen Update/Installation "
-                        f"für Server '{server.name}'. Pending-Status wurde gesetzt; "
-                        "auto_update-Mods werden bei gestopptem Server oder beim nächsten Start/Restart geladen.\n"
-                    )
-                    logger.info(
-                        "Background-Check: %d Mod-Update(s) für Server %s ('%s') gefunden.",
-                        count, server.id, server.name
-                    )
-                    async with acquire_lock_async(get_server_lifecycle_lock(server.id)):
-                        db.refresh(server)
-                        if server.status not in ("running", "starting", "stopping"):
-                            from services.install_update_lock_service import (
-                                try_acquire_install_update_lock,
-                                release_install_update_lock,
+                        lock_acquired = try_acquire_install_update_lock(
+                            server_id, "scheduler_mod_update", node_id=node_id
+                        )
+                        if not lock_acquired:
+                            _append_console_log(
+                                server_id,
+                                "[MSM] Autonomes Workshop-Mod-Update übersprungen: "
+                                "laufende Lifecycle-Operation.\n",
                             )
-                            lock_acquired = try_acquire_install_update_lock(
-                                server.id, "scheduler_mod_update", node_id=server.node_id
-                            )
-                            if not lock_acquired:
-                                _append_console_log(
-                                    server.id,
-                                    "[MSM] Autonomes Workshop-Mod-Update übersprungen: "
-                                    "laufende Lifecycle-Operation.\n",
+                        else:
+                            try:
+                                mod_res = await asyncio.to_thread(
+                                    plugin.perform_workshop_mod_updates,
+                                    server,
+                                    only_auto_update=True,
                                 )
-                            else:
-                                try:
-                                    mod_res = await asyncio.to_thread(
-                                        plugin.perform_workshop_mod_updates,
-                                        server,
-                                        only_auto_update=True,
+                                if not mod_res.get("ok", False):
+                                    _append_console_log(
+                                        server_id,
+                                        f"[MSM] Autonomes Workshop-Mod-Update fehlgeschlagen: "
+                                        f"{mod_res.get('error') or mod_res}\n",
                                     )
-                                    if not mod_res.get("ok", False):
-                                        _append_console_log(
-                                            server.id,
-                                            f"[MSM] Autonomes Workshop-Mod-Update fehlgeschlagen: "
-                                            f"{mod_res.get('error') or mod_res}\n",
-                                        )
-                                finally:
-                                    release_install_update_lock(server.id)
+                            finally:
+                                release_install_update_lock(server_id)
 
-                # 2. Server-Datei-Update (Game-Binaries, passiv)
-                server_update = await asyncio.to_thread(plugin.check_for_server_file_update, server)
-                if server_update.get("action") == "update":
-                    reason = server_update.get("reason", "unbekannt")
-                    _append_console_log(
-                        server.id,
-                        f"[MSM] Background-Check: Server-Datei-Update erkannt für '{server.name}' "
-                        f"({reason}) — passiv, kein Auto-Update (auch nicht bei laufendem Server).\n"
-                    )
-                    server.status_message = (
-                        f"Hintergrund-Check: Server-Datei-Update verfügbar ({reason}). "
-                        "Update wird vor manuellem Neustart empfohlen."
-                    )
-                    logger.info(
-                        "Background-Check: Server-Datei-Update für Server %s ('%s') gefunden (%s, passiv).",
-                        server.id, server.name, reason
-                    )
+            # 2. Server-Datei-Update (Game-Binaries, passiv — ohne offene DB-Session)
+            server_update = await asyncio.to_thread(plugin.check_for_server_file_update, server)
+            if server_update.get("action") == "update":
+                reason = server_update.get("reason", "unbekannt")
+                _append_console_log(
+                    server_id,
+                    f"[MSM] Background-Check: Server-Datei-Update erkannt für '{server_name}' "
+                    f"({reason}) — passiv, kein Auto-Update (auch nicht bei laufendem Server).\n"
+                )
+                logger.info(
+                    "Background-Check: Server-Datei-Update für Server %s ('%s') gefunden (%s, passiv).",
+                    server_id, server_name, reason
+                )
 
-                    # E-Mail-Benachrichtigung (nur 1x pro neuem Fund via Metadaten-Dedup)
-                    if email_configured and candidate_users:
+                email_recipients: list[tuple[int, str, str]] = []
+                w_db = SessionLocal()
+                try:
+                    w_srv = w_db.query(Server).filter(Server.id == server_id).first()
+                    if w_srv:
+                        w_srv.status_message = (
+                            f"Hintergrund-Check: Server-Datei-Update verfügbar ({reason}). "
+                            "Update wird vor manuellem Neustart empfohlen."
+                        )
+                        w_db.commit()
+
+                    if email_configured and candidate_user_ids:
                         remote = server_update.get("remote_updated") or ""
                         local = server_update.get("local_mtime") or ""
-                        dedup_key = f"server:{server.id}:{reason}:{remote}:{local}"
+                        dedup_key = f"server:{server_id}:{reason}:{remote}:{local}"
                         if dedup_key not in _notified_server_update_keys:
                             _notified_server_update_keys.add(dedup_key)
-                            for u in candidate_users:
+                            users = w_db.query(User).filter(User.id.in_(candidate_user_ids)).all()
+                            for u in users:
                                 try:
-                                    if not has_server_permission(db, u, server.id, "server.view"):
-                                        continue
-                                    if EmailService.is_configured() and getattr(u, "email_notifications", False):
-                                        await EmailService.send_server_update_available_notification(
-                                            u.email, u.username, server.name
-                                        )
-                                except Exception as notify_err:  # pragma: no cover - defensiv
-                                    logger.warning(
-                                        "Server-Update-Email fehlgeschlagen für User %s, Server %s: %s",
-                                        getattr(u, "id", "?"), server.id, notify_err
-                                    )
+                                    if has_server_permission(w_db, u, server_id, "server.view") and getattr(u, "email_notifications", False):
+                                        email_recipients.append((u.id, u.email, u.username))
+                                except Exception:  # pragma: no cover
+                                    continue
+                except Exception:
+                    w_db.rollback()
+                    raise
+                finally:
+                    w_db.close()
 
-                db.commit()
-            except Exception as e:  # pragma: no cover - defensiv pro Server
-                db.rollback()
-                logger.warning(
-                    "Background-Update-Check fehlgeschlagen für Server %s: %s", server.id, e
-                )
-    except Exception as e:
-        db.rollback()
-        logger.warning("background update check task crashed: %s", e)
-    finally:
-        db.close()
+                for uid, email_addr, uname in email_recipients:
+                    try:
+                        if EmailService.is_configured():
+                            await EmailService.send_server_update_available_notification(
+                                email_addr, uname, server_name
+                            )
+                    except Exception as notify_err:  # pragma: no cover - defensiv
+                        logger.warning(
+                            "Server-Update-Email fehlgeschlagen für User %s, Server %s: %s",
+                            uid, server_id, notify_err
+                        )
+        except Exception as e:  # pragma: no cover - defensiv pro Server
+            logger.warning(
+                "Background-Update-Check fehlgeschlagen für Server %s: %s", server_id, e
+            )
 
 
 def _ensure_background_update_check_job() -> None:
@@ -1066,24 +1104,29 @@ async def _ai_guardian_task() -> None:
     from services.ai_guardian_repair_service import faellige_bearbeiten
     from services.ai_guardian_service import vorfaelle_bearbeiten
 
-    db = SessionLocal()
+    v_db = SessionLocal()
     try:
         try:
-            anzahl = await vorfaelle_bearbeiten(db)
+            anzahl = await vorfaelle_bearbeiten(v_db)
             if anzahl:
                 logger.info("Guardian-KI: %s Vorfall/Vorfaelle uebernommen", anzahl)
         except Exception as exc:
-            db.rollback()
+            v_db.rollback()
             logger.warning("Error in AI guardian task: %s", exc)
+    finally:
+        v_db.close()
+
+    f_db = SessionLocal()
+    try:
         try:
-            begonnen = await faellige_bearbeiten(db)
+            begonnen = await faellige_bearbeiten(f_db)
             if begonnen:
                 logger.info("Guardian-KI: %s Reparaturlauf/-laeufe begonnen", begonnen)
         except Exception as exc:
-            db.rollback()
+            f_db.rollback()
             logger.warning("Error in AI guardian repair task: %s", exc)
     finally:
-        db.close()
+        f_db.close()
 
 
 def _ensure_ai_guardian_job() -> None:

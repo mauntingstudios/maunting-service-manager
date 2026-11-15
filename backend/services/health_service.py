@@ -58,22 +58,52 @@ def _pruefe_festplatte() -> Tuple[bool, Dict[str, Any]]:
         return True, {"status": "unbekannt", "error": str(e)}
 
 
+async def _pruefe_redis() -> Tuple[bool, str]:
+    from services import redis_backplane
+
+    if not redis_backplane.is_redis_enabled():
+        return True, "disabled"
+    ok = await asyncio.to_thread(redis_backplane.ping_redis)
+    return (True, "ok") if ok else (False, "nicht erreichbar")
+
+
+async def _pruefe_worker() -> Tuple[bool, str]:
+    from config import settings
+    from services import redis_backplane
+
+    mode = (getattr(settings, "worker_mode", "all") or "all").strip().lower()
+    if mode != "api" or not redis_backplane.is_redis_enabled():
+        return True, "local"
+    alive = await asyncio.to_thread(redis_backplane.is_worker_alive)
+    return (True, "ok") if alive else (False, "stale")
+
+
 async def pruefe_gesundheit(deep: bool = False) -> Tuple[int, Dict[str, Any]]:
     """Ermittelt den Gesundheitszustand des Backends."""
     if not deep:
         return 200, {"status": "ok"}
 
+    from services import redis_backplane
+
     db_ok, db_msg = await _pruefe_datenbank(timeout=2.0)
     dis_ok, dis_msg = await _pruefe_dis_sidecar(timeout=2.0)
     disk_ok, disk_info = _pruefe_festplatte()
 
-    checks = {
+    checks: Dict[str, Any] = {
         "database": db_msg,
         "dis_sidecar": dis_msg,
         "disk": disk_info,
     }
 
-    if db_ok and dis_ok and disk_ok:
+    redis_ok = True
+    worker_ok = True
+    if redis_backplane.is_redis_enabled():
+        redis_ok, redis_msg = await _pruefe_redis()
+        worker_ok, worker_msg = await _pruefe_worker()
+        checks["redis"] = redis_msg
+        checks["worker"] = worker_msg
+
+    if db_ok and dis_ok and disk_ok and redis_ok and worker_ok:
         return 200, {"status": "ok", "checks": checks}
     else:
         return 503, {"status": "degraded", "checks": checks}

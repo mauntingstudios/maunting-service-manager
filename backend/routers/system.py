@@ -310,6 +310,20 @@ async def system_health(user: User = Depends(get_current_user)) -> dict:
         "database": db_res,
     }
 
+    from services import redis_backplane
+
+    if redis_backplane.is_redis_enabled():
+        redis_ok = await asyncio.to_thread(redis_backplane.ping_redis)
+        worker_alive = await asyncio.to_thread(redis_backplane.is_worker_alive)
+        services["redis"] = {
+            "status": "ok" if redis_ok else "error",
+            "detail": "connected" if redis_ok else "unreachable",
+        }
+        services["worker"] = {
+            "status": "ok" if worker_alive else "degraded",
+            "detail": "heartbeat active" if worker_alive else "no worker heartbeat",
+        }
+
     # Aggregation: error > degraded > ok
     # Docker + DB sind Pflicht; Caddy ist optional.
     if docker_res["status"] == "error" or db_res["status"] == "error":

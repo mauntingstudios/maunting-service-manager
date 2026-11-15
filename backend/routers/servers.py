@@ -420,6 +420,15 @@ def _get_cached_update_availability(server, plugin, *, force: bool = False) -> d
             cached = _UPDATE_CACHE.get(sid)
         if cached and (now - cached.get("ts", 0) < _UPDATE_CACHE_TTL_SECONDS):
             return cached["data"]
+        from services import redis_backplane
+
+        remote_cached = redis_backplane.cache_get_json("update_check", str(sid))
+        if isinstance(remote_cached, dict):
+            with _UPDATE_CACHE_LOCK:
+                _UPDATE_CACHE[sid] = {"ts": now, "data": remote_cached}
+            return remote_cached
+
+    from services import redis_backplane
 
     try:
         check_server = getattr(plugin, "check_for_server_file_update", None)
@@ -436,6 +445,7 @@ def _get_cached_update_availability(server, plugin, *, force: bool = False) -> d
         }
         with _UPDATE_CACHE_LOCK:
             _UPDATE_CACHE[sid] = {"ts": now, "data": data}
+        redis_backplane.cache_set_json("update_check", str(sid), data, _UPDATE_CACHE_TTL_SECONDS)
         return data
     except Exception as exc:
         logger.warning(
@@ -445,6 +455,7 @@ def _get_cached_update_availability(server, plugin, *, force: bool = False) -> d
         fallback = dict(empty)
         with _UPDATE_CACHE_LOCK:
             _UPDATE_CACHE[sid] = {"ts": now, "data": fallback}
+        redis_backplane.cache_set_json("update_check", str(sid), fallback, _UPDATE_CACHE_TTL_SECONDS)
         return fallback
 
 
