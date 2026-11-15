@@ -17,14 +17,19 @@ from typing import Any
 
 def _load_agent_seccomp():
     candidate = Path(__file__).resolve().parents[2] / "msm-agent" / "security" / "seccomp.py"
-    if not candidate.is_file():
+    try:
+        if not candidate.is_file():
+            return None
+        spec = importlib.util.spec_from_file_location("_msm_agent_seccomp", candidate)
+        if spec is None or spec.loader is None:
+            return None
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+    except OSError:
+        # In 3-user isolation, msm-panel intentionally has no read/traverse
+        # permission on /opt/msm/msm-agent; fall back cleanly to the built-in profile.
         return None
-    spec = importlib.util.spec_from_file_location("_msm_agent_seccomp", candidate)
-    if spec is None or spec.loader is None:
-        return None
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
 
 
 _AGENT_SECCOMP = _load_agent_seccomp()
