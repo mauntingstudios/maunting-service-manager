@@ -432,8 +432,25 @@ def check_workshop_mod_updates(
 
         if is_curseforge:
             if bp_mods.curseforgeInstallPath:
-                cf_target_dir = Path(server.install_dir) / bp_mods.curseforgeInstallPath
-                is_installed = cf_target_dir.exists() and any(cf_target_dir.glob(f"*{workshop_id}*"))
+                from services.node_capacity import agent_server_key, should_delegate_node_fs_to_agent
+                from services.node_client import NodeClient
+
+                node = getattr(server, "node", None)
+                if should_delegate_node_fs_to_agent(node):
+                    try:
+                        entries = NodeClient.from_node(node).files_list(
+                            agent_server_key(server.id, getattr(server, "install_dir", None)),
+                            bp_mods.curseforgeInstallPath,
+                        )
+                        is_installed = any(str(workshop_id) in str(entry.get("name", "")) for entry in entries)
+                    except Exception:
+                        is_installed = False
+                else:
+                    try:
+                        cf_target_dir = Path(server.install_dir) / bp_mods.curseforgeInstallPath
+                        is_installed = cf_target_dir.exists() and any(cf_target_dir.glob(f"*{workshop_id}*"))
+                    except OSError:
+                        is_installed = False
             else:
                 # Startup argument injected (e.g. ASA)
                 is_installed = True

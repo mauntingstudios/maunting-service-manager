@@ -241,3 +241,99 @@ class TestAgentArchiveRestoreSecurityAndAcl:
         assert str(root / "conf") in flat_targets
         assert str(root / ".msm" / "postgres") in flat_targets
         assert all("postgres-data" not in t for t in flat_targets)
+
+
+def test_map_container_uid_gid_to_host_reads_subuid_and_subgid(tmp_path: Path, monkeypatch) -> None:
+    subuid = tmp_path / "subuid"
+    subgid = tmp_path / "subgid"
+    subuid.write_text("msm-docker:427680:65536\n", encoding="utf-8")
+    subgid.write_text("msm-docker:427680:65536\n", encoding="utf-8")
+
+    fake_pwd = SimpleNamespace(
+        getpwnam=lambda name: SimpleNamespace(pw_name=name, pw_uid=989, pw_gid=983)
+    )
+    monkeypatch.setattr(file_service, "pwd", fake_pwd)
+
+    assert file_service.map_container_uid_gid_to_host(
+        1000,
+        1000,
+        subuid_path=subuid,
+        subgid_path=subgid,
+    ) == (428679, 428679)
+    assert file_service.map_container_uid_gid_to_host(
+        0,
+        0,
+        subuid_path=subuid,
+        subgid_path=subgid,
+    ) == (989, 983)
+
+
+def test_apply_shared_server_acl_clears_setgid_and_adds_mapped_uid_gid(
+    tmp_path: Path, monkeypatch
+) -> None:
+    root = tmp_path / "138"
+    sub = root / "java"
+    sub.mkdir(parents=True)
+    pg_dir = root / ".msm" / "postgres-data"
+    pg_dir.mkdir(parents=True)
+
+    chmod_calls: list[tuple[Path, int]] = []
+    monkeypatch.setattr(
+        file_service.os,
+        "chmod",
+        lambda p, mode, **kw: chmod_calls.append((Path(p), mode)),
+        raising=False,
+    )
+    orig_lstat = file_service.os.lstat
+
+    def _fake_lstat(p):
+        st = orig_lstat(p)
+        if Path(p) == sub:
+            return SimpleNamespace(st_mode=st.st_mode | 0o2000, st_uid=1000)
+        return st
+
+    monkeypatch.setattr(file_service.os, "lstat", _fake_lstat)
+    monkeypatch.setattr(file_service.os, "getuid", lambda: 1000, raising=False)
+    monkeypatch.setattr(file_service.stat_module, "S_ISGID", 0o2000, raising=False)
+    monkeypatch.setattr(
+        file_service,
+        "pwd",
+        SimpleNamespace(
+            getpwnam=lambda name: SimpleNamespace(pw_name="msm-docker", pw_uid=989, pw_gid=983),
+            getpwuid=lambda uid: SimpleNamespace(pw_name="msm-agent"),
+        ),
+    )
+    monkeypatch.setattr(file_service, "grp", None)
+    monkeypatch.setattr(file_service.shutil, "which", lambda cmd: "/usr/bin/setfacl")
+    monkeypatch.setattr(
+        file_service,
+        "map_container_uid_gid_to_host",
+        lambda cuid, cgid, **kw: (428679, 428679) if (cuid, cgid) == (1000, 1000) else None,
+    )
+
+    setfacl_cmds: list[list[str]] = []
+    monkeypatch.setattr(
+        file_service.subprocess,
+        "run",
+        lambda cmd, **kw: setfacl_cmds.append(cmd) or SimpleNamespace(returncode=0),
+    )
+
+    file_service.apply_shared_server_acl(root)
+
+    # Setgid must NOT be set on root and S_ISGID must be stripped on owned subdirs
+    assert (root, 0o0770) in chmod_calls
+    assert all(mode & 0o2000 == 0 for _, mode in chmod_calls)
+    sub_chmod = [mode for p, mode in chmod_calls if p == sub]
+    assert sub_chmod and (sub_chmod[0] & 0o2000 == 0)
+    assert all(p != pg_dir for p, _ in chmod_calls)
+    assert setfacl_cmds
+    acl_specs = [cmd[cmd.index("-m") + 1] for cmd in setfacl_cmds if "-m" in cmd]
+    assert acl_specs
+    assert all("u:428679:rwX" in spec for spec in acl_specs)
+    assert all("g:428679:rwX" in spec for spec in acl_specs)
+    assert all("d:u:428679:rwX" in spec for spec in acl_specs)
+    assert all("d:g:428679:rwX" in spec for spec in acl_specs)
+    assert all("m::rwx" in spec for spec in acl_specs)
+    # postgres-data still skipped
+    assert all("postgres-data" not in arg for cmd in setfacl_cmds for arg in cmd)
+

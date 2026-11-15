@@ -545,6 +545,12 @@ class GamePlugin(ABC):
     def container_tmpfs_paths(self, server) -> list[str]:
         return ["/tmp"] if self.container_needs_tmpfs else []
 
+    def container_allow_tmpfs_exec(self, server) -> bool:
+        bp_fn = getattr(self, "get_blueprint", None)
+        bp = bp_fn() if callable(bp_fn) else None
+        runtime = getattr(bp, "runtime", None)
+        return bool(getattr(runtime, "allowTmpfsExec", True))
+
     def prepare_runtime(self, server) -> None:
         """Hook: vor jedem Container-Start aufgerufen.
 
@@ -904,6 +910,7 @@ class GamePlugin(ABC):
             workdir=self.container_workdir(server),
             read_only_rootfs=self.container_read_only_rootfs,
             tmpfs_paths=self.container_tmpfs_paths(server),
+            allow_tmpfs_exec=self.container_allow_tmpfs_exec(server),
             extra_networks=self.container_extra_networks(server),
             startup_check_seconds=getattr(getattr(self.get_blueprint(), "runtime", None), "startupCheckSeconds", None) or 2.0,
             allow_unprivileged_user_namespaces=bool(

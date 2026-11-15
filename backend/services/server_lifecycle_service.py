@@ -865,6 +865,7 @@ def _try_start_auth_setup_recovery(
                 on_status=on_status,
                 restart_callback=restart_callback,
                 node=server.node,
+                allow_tmpfs_exec=plugin.container_allow_tmpfs_exec(server),
             )
         except Exception as exc:
             logger.warning("Auth-Setup-Recovery fuer Server %s fehlgeschlagen: %s", server.id, exc)
@@ -910,6 +911,11 @@ def _run_start(
         mod_updates = []
 
     update_lock_acquired = False
+    install_status_active = False
+    transient_messages = {
+        "Server-Dateien werden installiert...",
+        "Aktualisiere Server-Dateien / Mods vor dem Start...",
+    }
     try:
         if _server_file_update_needed(server_update_check) or mod_updates:
             update_lock_acquired = try_acquire_install_update_lock(server.id, "start_update", node_id=server.node_id)
@@ -921,6 +927,16 @@ def _run_start(
                         "message": f"errors.{INSTALL_UPDATE_ALREADY_RUNNING}",
                     },
                 )
+            if isinstance(server_update_check, dict) and server_update_check.get("reason") == "missing":
+                server.status = "installing"
+                server.status_message = "Server-Dateien werden installiert..."
+                install_status_active = True
+            else:
+                server.status_message = "Aktualisiere Server-Dateien / Mods vor dem Start..."
+            try:
+                db.commit()
+            except Exception:
+                db.rollback()
 
         _run_server_file_update_if_needed(server, plugin, "start", update_check=server_update_check)
 
@@ -938,6 +954,15 @@ def _run_start(
                     f"{mod_res.get('error') or mod_res}\n",
                 )
     finally:
+        if install_status_active and server.status == "installing":
+            server.status = "starting"
+        if getattr(server, "status_message", None) in transient_messages:
+            server.status_message = None
+        if install_status_active or update_lock_acquired:
+            try:
+                db.commit()
+            except Exception:
+                db.rollback()
         if update_lock_acquired:
             release_install_update_lock(server.id)
 

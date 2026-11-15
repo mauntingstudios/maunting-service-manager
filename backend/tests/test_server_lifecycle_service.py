@@ -1084,3 +1084,44 @@ def test_start_eines_anwendungsservers_richtet_keine_datenbank_ein():
         _run_start(db, server, plugin)
 
     einrichtung.assert_not_called()
+
+
+def test_run_start_sets_installing_status_when_server_files_missing():
+    server = Server(
+        id=28,
+        name="MissingFiles",
+        game_type="custom",
+        install_dir="/tmp/test",
+        status="starting",
+        public_bind_ip="127.0.0.1",
+    )
+    server.ports = []
+    db = MagicMock(spec=Session)
+    plugin = _http_plugin(update_available=True)
+
+    observed_during_update: list[tuple[str | None, str | None]] = []
+    observed_during_start: list[tuple[str | None, str | None]] = []
+
+    plugin.check_for_server_file_update = lambda s: {"action": "update", "reason": "missing"}
+
+    def _perform_update(s):
+        observed_during_update.append((s.status, s.status_message))
+        return {"ok": True}
+
+    def _start(s):
+        observed_during_start.append((s.status, s.status_message))
+        return {"ok": True}
+
+    plugin.perform_server_file_update = _perform_update
+    plugin.start = _start
+
+    with patch("services.server_lifecycle_service.open_ports"), \
+         patch("services.server_lifecycle_service.iptables_accept_server"), \
+         patch("services.server_lifecycle_service.try_acquire_install_update_lock", return_value=True), \
+         patch("services.server_lifecycle_service.release_install_update_lock"):
+        _run_start(db, server, plugin)
+
+    assert observed_during_update == [("installing", "Server-Dateien werden installiert...")]
+    assert observed_during_start == [("starting", None)]
+    assert server.status == "running"
+

@@ -156,6 +156,7 @@ def run_auth_setup_recovery(
     restart_callback,
     wait_timeout: float = 300.0,
     node=None,
+    allow_tmpfs_exec: bool = True,
 ) -> str:
     """Orchestriert den Auth-Setup-Recovery-Flow.
 
@@ -215,6 +216,7 @@ def run_auth_setup_recovery(
         workdir=container_workdir,
         read_only_rootfs=container_read_only_rootfs,
         tmpfs_paths=container_tmpfs_paths,
+        allow_tmpfs_exec=allow_tmpfs_exec,
         extra_networks=container_extra_networks,
         detach=True,
         startup_check_seconds=0.0,  # NICHT nach 2s abbrechen - wir wollen auf Input warten

@@ -969,13 +969,126 @@ def create_dir(server_id: str | int, rel_path: str) -> None:
     target.mkdir(parents=True, exist_ok=True)
 
 
-def apply_shared_server_acl(root: Path) -> None:
-    """Restore shared msm-agent / msm-docker ownership and default POSIX ACLs.
+def _read_first_subid(
+    path: Path | str,
+    identities: tuple[str, ...],
+) -> tuple[int, int] | None:
+    try:
+        content = Path(path).read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        return None
+    for raw_line in content.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        parts = line.split(":")
+        if len(parts) < 3:
+            continue
+        if parts[0].strip() not in identities:
+            continue
+        try:
+            start = int(parts[1].strip())
+            count = int(parts[2].strip())
+        except ValueError:
+            continue
+        if start > 0 and count > 0:
+            return start, count
+    return None
 
-    When a backup restore replaces ``root`` with a fresh directory, the new inode
-    loses inherited ``msm-docker`` ACLs. Containers running under rootless Docker
-    would otherwise fail with EACCES. Best-effort when ``msm-docker`` or
-    ``setfacl`` is absent (e.g. unit tests or Windows dev).
+
+def map_container_uid_gid_to_host(
+    container_uid: int,
+    container_gid: int,
+    *,
+    docker_user: str = "msm-docker",
+    subuid_path: Path | str = "/etc/subuid",
+    subgid_path: Path | str = "/etc/subgid",
+) -> tuple[int, int] | None:
+    """Ordnet Container-UID/GID ueber rootless /etc/subuid+/etc/subgid Host-IDs zu."""
+    pw_entry = None
+    if pwd is not None:
+        try:
+            pw_entry = pwd.getpwnam(docker_user)
+        except (KeyError, OSError):
+            pw_entry = None
+
+    docker_uid = getattr(pw_entry, "pw_uid", None)
+    docker_gid = getattr(pw_entry, "pw_gid", None)
+
+    uid_ids: list[str] = [docker_user]
+    if isinstance(docker_uid, int) and not isinstance(docker_uid, bool):
+        uid_ids.append(str(docker_uid))
+    gid_ids: list[str] = [docker_user]
+    if isinstance(docker_gid, int) and not isinstance(docker_gid, bool):
+        gid_ids.append(str(docker_gid))
+
+    def _map_id(cid: int, root_host_id: Any, subid_file: Path | str, ids: tuple[str, ...]) -> int | None:
+        if cid < 0:
+            return None
+        if cid == 0:
+            if isinstance(root_host_id, int) and not isinstance(root_host_id, bool):
+                return root_host_id
+            return None
+        sub = _read_first_subid(subid_file, ids)
+        if sub is None:
+            return None
+        start, count = sub
+        offset = cid - 1
+        if offset >= count:
+            return None
+        return start + offset
+
+    host_uid = _map_id(int(container_uid), docker_uid, subuid_path, tuple(uid_ids))
+    host_gid = _map_id(int(container_gid), docker_gid, subgid_path, tuple(gid_ids))
+    if host_uid is None or host_gid is None:
+        return None
+    return host_uid, host_gid
+
+
+def _clear_setgid_on_owned_dirs(root: Path, *, skip_subpath: Path | None = None) -> None:
+    """Entfernt g+s auf eigenen Verzeichnissen, damit keine unmapped Host-GIDs vererbt werden."""
+    isgid = getattr(stat_module, "S_ISGID", 0)
+    if not isgid:
+        return
+    my_uid = os.getuid() if hasattr(os, "getuid") else None
+
+    def _strip(dir_path: Path) -> None:
+        try:
+            st = os.lstat(dir_path)
+            if not stat_module.S_ISDIR(st.st_mode):
+                return
+            if my_uid is not None and st.st_uid != my_uid:
+                return
+            if st.st_mode & isgid:
+                os.chmod(dir_path, stat_module.S_IMODE(st.st_mode) & ~isgid)
+        except OSError:
+            pass
+
+    _strip(root)
+    for current_root, dirs, _ in os.walk(root, followlinks=False):
+        current = Path(current_root)
+        kept: list[str] = []
+        for d in dirs:
+            candidate = current / d
+            if candidate.is_symlink():
+                continue
+            if skip_subpath is not None and candidate == skip_subpath:
+                continue
+            kept.append(d)
+            _strip(candidate)
+        dirs[:] = kept
+
+
+def apply_shared_server_acl(
+    root: Path,
+    *,
+    container_uid_gids: list[tuple[int, int]] | None = None,
+) -> None:
+    """Restore shared msm-agent / msm-docker and container userns POSIX ACLs.
+
+    Uses ``0o0770`` instead of ``0o2770`` (no setgid) so container-created subdirectories
+    do not inherit the unmapped ``msm-servers`` host GID inside rootless user namespaces.
+    Preserves container user-namespace data directories under ``.msm/postgres-data``.
     """
     if not root.exists() or not root.is_dir():
         return
@@ -1005,18 +1118,41 @@ def apply_shared_server_acl(root: Path) -> None:
             pass
     if docker_user is not None or servers_gr is not None:
         try:
-            root.chmod(0o2770)
+            root.chmod(0o0770)
         except OSError:
             pass
+    pg_data_dir = root / ".msm" / "postgres-data"
+    _clear_setgid_on_owned_dirs(root, skip_subpath=pg_data_dir)
 
     if not docker_user or not agent_user or not shutil.which("setfacl"):
         return
 
-    acl_spec = (
-        f"u:{agent_user}:rwX,u:{docker_user}:rwX,"
-        f"d:u:{agent_user}:rwX,d:u:{docker_user}:rwX,m::rwx"
-    )
-    pg_data_dir = root / ".msm" / "postgres-data"
+    acl_entries: list[str] = [
+        f"u:{agent_user}:rwX",
+        f"u:{docker_user}:rwX",
+        f"d:u:{agent_user}:rwX",
+        f"d:u:{docker_user}:rwX",
+    ]
+    uid_gid_candidates: list[tuple[int, int]] = [(1000, 1000), (999, 999)]
+    if container_uid_gids:
+        for pair in container_uid_gids:
+            if pair not in uid_gid_candidates:
+                uid_gid_candidates.append(pair)
+    for cuid, cgid in uid_gid_candidates:
+        mapped = map_container_uid_gid_to_host(cuid, cgid, docker_user=docker_user)
+        if mapped is None:
+            continue
+        huid, hgid = mapped
+        for entry in (
+            f"u:{huid}:rwX",
+            f"g:{hgid}:rwX",
+            f"d:u:{huid}:rwX",
+            f"d:g:{hgid}:rwX",
+        ):
+            if entry not in acl_entries:
+                acl_entries.append(entry)
+    acl_entries.append("m::rwx")
+    acl_spec = ",".join(acl_entries)
     if pg_data_dir.exists():
         # PostgreSQL container data must keep its 0700 subUID/subGID permissions.
         subprocess.run(
@@ -1190,6 +1326,7 @@ def prepare_runtime(
         ):
             continue
         raise PermissionError("Executable runtime file could not be prepared")
+    apply_shared_server_acl(server_root(server_id))
 
 
 def search_paths(server_id: str | int, query: str, *, limit: int = 200) -> dict[str, Any]:

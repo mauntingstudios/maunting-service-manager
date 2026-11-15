@@ -372,6 +372,9 @@ class BlueprintRuntime(BaseModel):
     # das schmalere Wine/Proton-Seccomp-Profil (niemals seccomp=unconfined);
     # cap_drop=ALL, no-new-privileges und Host-/Privileged-Verbote bleiben.
     allowUnprivilegedUserNamespaces: bool = Field(default=False)
+    # Erlaubt exec auf gemounteten tmpfs-Pfaden (z. B. /tmp fuer Java/SQLite JNI).
+    # Standardmaessig an; fuer strikt gehaertete Container gezielt abschaltbar.
+    allowTmpfsExec: bool = Field(default=True)
     # Opt-in fuer den Exec-Tab (POST /servers/{id}/exec). Default aus,
     # weil Exec sicherheitsrelevant ist (User fuehrt Befehle im Container
     # aus). 1.4.7+

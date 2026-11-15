@@ -1371,6 +1371,18 @@ def repair_bind_mount_permissions(
     base = str(base_path)
     if not os.path.isdir(base):
         return {"ok": False, "error": "Server-Verzeichnis existiert nicht", "stdout": "", "stderr": ""}
+    def _sync_host_acl() -> None:
+        try:
+            from services.file_service import apply_shared_server_acl
+
+            apply_shared_server_acl(
+                base_path,
+                container_uid_gids=[owner_uid_gid] if owner_uid_gid else None,
+            )
+        except Exception:
+            pass
+
+    _sync_host_acl()
     try:
         geteilte_gid: int | None = os.stat(base).st_gid
     except OSError:
@@ -1396,7 +1408,7 @@ def repair_bind_mount_permissions(
             f"find {target} -xdev -type l -exec chown -h {owner} {{}} + 2>/dev/null || true",
         ])
     script = "; ".join(script_parts) + "; exit 0"
-    return run_ephemeral(
+    res = run_ephemeral(
         image="alpine:3.21",
         command=["-c", script],
         volumes={base: {"bind": container_path, "mode": "rw"}},
@@ -1405,3 +1417,5 @@ def repair_bind_mount_permissions(
         cap_add=["CHOWN", "FOWNER", "DAC_OVERRIDE"],
         timeout=timeout,
     )
+    _sync_host_acl()
+    return res

@@ -77,3 +77,76 @@ class TestAssetAndScriptPreservationFilter:
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text("ServerName=MyServer")
         assert should_preserve_file(p) is True, f"Legitime Config {rel_path} muss gesichert werden!"
+
+
+def test_blueprint_runtime_allow_tmpfs_exec_default_and_override(monkeypatch, tmp_path) -> None:
+    from types import SimpleNamespace
+
+    from blueprints.schema import Blueprint, BlueprintMeta, BlueprintRuntime, BlueprintSource
+    from games import base as games_base
+    from games.blueprint_plugin import BlueprintPlugin
+    from services import docker_service
+
+    rt_default = BlueprintRuntime(image="debian:bookworm-slim", startup="./start.sh")
+    assert rt_default.allowTmpfsExec is True
+
+    rt_hardened = BlueprintRuntime(
+        image="debian:bookworm-slim",
+        startup="./start.sh",
+        allowTmpfsExec=False,
+    )
+    assert rt_hardened.allowTmpfsExec is False
+
+    captured: list[dict] = []
+
+    def _fake_run_container(**kwargs):
+        captured.append(kwargs)
+        return {"ok": True, "container_id": "cid-1"}
+
+    monkeypatch.setattr(docker_service, "is_available", lambda *a, **kw: True)
+    monkeypatch.setattr(docker_service, "run_container", _fake_run_container)
+    monkeypatch.setattr(docker_service, "repair_bind_mount_permissions", lambda *a, **kw: {"ok": True})
+    monkeypatch.setattr(games_base, "_append_console_log", lambda *a, **kw: None)
+    monkeypatch.setattr(games_base.server_config_wishes, "wuensche_durchsetzen", lambda *a, **kw: None)
+
+    for expected_flag, runtime_cfg in ((True, rt_default), (False, rt_hardened)):
+        bp = Blueprint(
+            version=1,
+            meta=BlueprintMeta(
+                id=f"tmpfs_test_{str(expected_flag).lower()}",
+                name="Tmpfs Test",
+                category="non_steam_game",
+            ),
+            runtime=runtime_cfg,
+            ports=[],
+            source=BlueprintSource(type="dockerOnly"),
+        )
+        plugin = BlueprintPlugin(bp)
+        monkeypatch.setattr(plugin, "prepare_runtime", lambda s: None)
+        monkeypatch.setattr(plugin, "build_port_publishes", lambda s: [])
+        monkeypatch.setattr(plugin, "build_volume_binds", lambda s: [])
+        monkeypatch.setattr(plugin, "build_container_command", lambda s: ["./start.sh"])
+        monkeypatch.setattr(plugin, "build_container_env", lambda s: {})
+        monkeypatch.setattr(plugin, "container_uid_gid", lambda s: (1000, 1000))
+
+        srv = SimpleNamespace(
+            id=999,
+            name="Test",
+            install_dir=str(tmp_path),
+            game_port=None,
+            query_port=None,
+            rcon_port=None,
+            ports=[],
+            host_port=None,
+            extra_ports={},
+            custom_env={},
+            config_json={},
+            cpu_limit_percent=100,
+            ram_limit_mb=1024,
+            node=None,
+            docker_container_name="msm_srv_999",
+        )
+        res = plugin.start(srv)
+        assert "container" in res
+        assert captured[-1]["allow_tmpfs_exec"] is expected_flag
+

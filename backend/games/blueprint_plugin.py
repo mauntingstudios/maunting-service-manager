@@ -25,6 +25,7 @@ import shutil
 import stat
 import threading
 from pathlib import Path
+from typing import Any
 
 from blueprints import Blueprint, render_argv
 from blueprints.http_source import install_http_source
@@ -175,15 +176,48 @@ Mod. Provider-neutraler Wert, gilt fuer jeden SteamCMD-gestuetzten Blueprint.
 """
 
 
-def _steam_install_is_reinstall(install_dir: str, app_id: str) -> bool:
+def _steam_install_is_reinstall(
+    install_dir: str,
+    app_id: str,
+    *,
+    server: Any | None = None,
+    node: Any | None = None,
+) -> bool:
     """True wenn Server-Dateien bereits vorhanden (expliziter Reinstall-Pfad)."""
+    effective_node = node if node is not None else getattr(server, "node", None)
+    if effective_node is not None:
+        from services.node_capacity import agent_server_key, should_delegate_node_fs_to_agent
+
+        if should_delegate_node_fs_to_agent(effective_node):
+            from services.node_client import NodeClient
+
+            server_key = agent_server_key(
+                getattr(server, "id", None) or os.path.basename(os.path.normpath(install_dir)) or "",
+                install_dir,
+            )
+            client = NodeClient.from_node(effective_node)
+            try:
+                entries = client.files_list(server_key, "")
+            except Exception:
+                return False
+            if not entries:
+                return False
+            if any(str(e.get("name", "")) == "steamapps" for e in entries):
+                try:
+                    steamapps_entries = client.files_list(server_key, "steamapps")
+                    if any(str(e.get("name", "")) == f"appmanifest_{app_id}.acf" for e in steamapps_entries):
+                        return True
+                except Exception:
+                    pass
+            return len(entries) > 0
+
     root = Path(install_dir)
-    if not root.is_dir():
-        return False
-    manifest = root / "steamapps" / f"appmanifest_{app_id}.acf"
-    if manifest.is_file():
-        return True
     try:
+        if not root.is_dir():
+            return False
+        manifest = root / "steamapps" / f"appmanifest_{app_id}.acf"
+        if manifest.is_file():
+            return True
         return any(root.iterdir())
     except OSError:
         return False
@@ -400,7 +434,7 @@ class BlueprintPlugin(GamePlugin):
             from games.updater import _steam_effective_branch, perform_install_with_protection
 
             platform_str = bp.source.steam.platform.value if bp.source.steam.platform else None
-            reinstall = _steam_install_is_reinstall(install_dir, app_id)
+            reinstall = _steam_install_is_reinstall(install_dir, app_id, server=srv)
             validate_flag = (
                 True
                 if reinstall
@@ -444,11 +478,19 @@ class BlueprintPlugin(GamePlugin):
             from services.node_capacity import agent_server_key, should_delegate_node_fs_to_agent
 
             node = getattr(srv, "node", None)
-            reinstall = (
-                not should_delegate_node_fs_to_agent(node)
-                and Path(install_dir).is_dir()
-                and any(Path(install_dir).iterdir())
-            )
+            if should_delegate_node_fs_to_agent(node):
+                from services.node_client import NodeClient
+
+                try:
+                    entries = NodeClient.from_node(node).files_list(agent_server_key(server_id, install_dir), "")
+                    reinstall = len(entries) > 0
+                except Exception:
+                    reinstall = False
+            else:
+                try:
+                    reinstall = Path(install_dir).is_dir() and any(Path(install_dir).iterdir())
+                except OSError:
+                    reinstall = False
             if reinstall:
                 _append_console_log(
                     server_id,
@@ -485,7 +527,22 @@ class BlueprintPlugin(GamePlugin):
             from games.updater import perform_install_with_protection
 
             _append_console_log(server_id, "[MSM] GitHub-Source: Clone/Pull startet\n")
-            reinstall = Path(install_dir).is_dir() and (Path(install_dir) / ".git").is_dir()
+            from services.node_capacity import agent_server_key, should_delegate_node_fs_to_agent
+
+            node = getattr(srv, "node", None)
+            if should_delegate_node_fs_to_agent(node):
+                from services.node_client import NodeClient
+
+                try:
+                    entries = NodeClient.from_node(node).files_list(agent_server_key(server_id, install_dir), "")
+                    reinstall = any(str(e.get("name", "")) == ".git" for e in entries)
+                except Exception:
+                    reinstall = False
+            else:
+                try:
+                    reinstall = Path(install_dir).is_dir() and (Path(install_dir) / ".git").is_dir()
+                except OSError:
+                    reinstall = False
             if reinstall:
                 _append_console_log(
                     server_id,
@@ -822,6 +879,10 @@ class BlueprintPlugin(GamePlugin):
                     "patches": resolved_patches + server_config_wishes.als_patches(wuensche),
                 },
             )
+            try:
+                self.update_modlist(server)
+            except Exception as exc:
+                logger.warning("update_modlist nach prepare_runtime fehlgeschlagen (server=%s): %s", server.id, exc)
             return
 
         base = Path(server.install_dir).resolve()
@@ -1255,6 +1316,10 @@ class BlueprintPlugin(GamePlugin):
         """Aktualisiert Mod-Status (z. B. .disabled für dateibasierte CurseForge-Mods oder Modlist-Dateien)."""
         bp_mods = self._blueprint.effective_mods()
         if bp_mods.supportsCurseForge and bp_mods.modInjection != "startupArg":
+            from services.node_capacity import should_delegate_node_fs_to_agent
+
+            if should_delegate_node_fs_to_agent(getattr(server, "node", None)):
+                return
             target_dir_rel = bp_mods.curseforgeInstallPath or "mods"
             from database import SessionLocal
             from models import Mod
