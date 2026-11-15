@@ -1148,7 +1148,7 @@ new_subgid = read_subid("/etc/subgid", new_user)
 try:
     old_host_uid = pwd.getpwnam(old_user).pw_uid
     old_host_gid = pwd.getpwnam(old_user).pw_gid
-    agent_uid = pwd.getpwnam(agent_user).pw_uid
+    new_host_uid = pwd.getpwnam(new_user).pw_uid
     servers_gid = grp.getgrnam(servers_group).gr_gid
 except KeyError:
     sys.exit(0)
@@ -1165,7 +1165,7 @@ def map_uid(uid: int) -> int:
     if old_u0 <= uid < old_u0 + old_uc:
         return new_u0 + (uid - old_u0)
     if uid == old_host_uid:
-        return agent_uid
+        return new_host_uid
     return uid
 
 def map_gid(gid: int) -> int:
