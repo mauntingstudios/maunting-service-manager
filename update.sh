@@ -1049,6 +1049,8 @@ if [[ -d "$MSM_DIR/msm-agent" ]]; then
         chown -R "$MSM_DOCKER_USER:$MSM_DOCKER_USER" "$MSM_DOCKER_HOME"
     fi
     if $SYSTEMD_AVAILABLE && command -v dockerd-rootless-setuptool.sh &>/dev/null; then
+        modprobe br_netfilter 2>/dev/null || true
+        printf 'br_netfilter\n' > /etc/modules-load.d/msm-docker.conf
         mkdir -p /etc/systemd/system/user@.service.d "/etc/systemd/system/user@${MSM_DOCKER_UID}.service.d"
         printf '[Service]\nDelegate=cpu cpuset io memory pids\n' > /etc/systemd/system/user@.service.d/delegate.conf
         printf '[Service]\nSlice=msm-workloads.slice\nOOMScoreAdjust=500\n' > "/etc/systemd/system/user@${MSM_DOCKER_UID}.service.d/msm-workloads.conf"

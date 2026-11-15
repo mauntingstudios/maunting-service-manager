@@ -514,6 +514,8 @@ setup_rootless_docker() {
     fi
 
     if $SYSTEMD_AVAILABLE; then
+        modprobe br_netfilter 2>/dev/null || true
+        printf 'br_netfilter\n' > /etc/modules-load.d/msm-docker.conf
         mkdir -p /etc/systemd/system/user@.service.d
         cat > /etc/systemd/system/user@.service.d/delegate.conf <<'EOF'
 [Service]
