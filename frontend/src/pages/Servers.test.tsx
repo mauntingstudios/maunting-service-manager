@@ -560,14 +560,36 @@ describe('Servers — Sortierung, Favoriten, Zuletzt geöffnet & feste IP-Zeile'
     expect(screen.getByTestId('server-card-icon-2').querySelector('svg')).toBeTruthy()
     expect(screen.getByTestId('server-card-icon-1')).toHaveAttribute('data-status-tone', 'stopped')
 
-    // Gestoppten Server favorisieren -> wandert sofort ganz nach oben.
+    // Gestoppten Server favorisieren -> wandert sofort ganz nach oben und erhält goldene Hervorhebung.
     fireEvent.click(screen.getByTestId('server-favorite-3'))
     expect(headingsOrder()).toEqual(['Stopped-Gamma', 'Running-Beta', 'Stopped-Alpha'])
+
+    const favoriteButton = screen.getByTestId('server-favorite-3')
+    const favoriteCard = screen.getByTestId('server-card-3')
+    const favoriteCardIcon = screen.getByTestId('server-card-icon-3')
+    const favoriteBlock = screen.getByTestId('servers-page-block-3')
+    const regularCard = screen.getByTestId('server-card-1')
+    expect(favoriteButton).toHaveAttribute('aria-pressed', 'true')
+    expect(favoriteButton.className).toContain('text-status-warning')
+    expect(favoriteButton.querySelector('svg')?.getAttribute('class') ?? '').toContain('fill-status-warning')
+    expect(favoriteCard).toHaveAttribute('data-favorite', 'true')
+    expect(favoriteCard.className).toContain('border-status-warning/80')
+    expect(favoriteCardIcon).toHaveAttribute('data-favorite', 'true')
+    expect(favoriteCardIcon.className).toContain('border-status-warning/90')
+    expect(favoriteBlock).toHaveAttribute('data-favorite', 'true')
+    expect((favoriteBlock.firstElementChild as HTMLElement).className).toContain('border-status-warning/90')
+    expect(regularCard).toHaveAttribute('data-favorite', 'false')
+    expect(regularCard.className).not.toContain('border-status-warning/80')
 
     // Gestoppten Server als zuletzt besucht markieren -> direkt sichtbar ganz oben neben Favoriten + Badge.
     fireEvent.click(screen.getByRole('link', { name: 'Stopped-Alpha' }))
     expect(headingsOrder()).toEqual(['Stopped-Gamma', 'Stopped-Alpha', 'Running-Beta'])
     expect(screen.getByTestId('server-last-visited-1')).toHaveTextContent('Zuletzt geöffnet')
+
+    // Entfavorisieren entfernt die goldene Hervorhebung wieder.
+    fireEvent.click(screen.getByTestId('server-favorite-3'))
+    expect(screen.getByTestId('server-card-3')).toHaveAttribute('data-favorite', 'false')
+    expect(screen.getByTestId('server-card-3').className).not.toContain('border-status-warning/80')
 
     expect(document.body.querySelectorAll('[title]')).toHaveLength(0)
   })

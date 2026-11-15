@@ -2429,6 +2429,10 @@
     "overbooked": "Überbucht",
     "onlineCount": "{{count}} online",
     "actionsMenu": "Aktionen für {{name}}",
+    "favoriteAction": "Als Favorit markieren",
+    "favoriteNode": "{{name}} als Favorit markieren",
+    "unfavoriteAction": "Aus Favoriten entfernen",
+    "unfavoriteNode": "{{name}} aus Favoriten entfernen",
     "viewAllNodes": "Alle Nodes",
     "capacityEmpty": "Noch keine Nodes mit Kapazitätsdaten",
     "enrollment": {

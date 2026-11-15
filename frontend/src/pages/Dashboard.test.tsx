@@ -4,6 +4,8 @@ import { MemoryRouter } from 'react-router-dom'
 import * as client from '@/api/client'
 import i18n from '@/i18n'
 import { useServerPreferencesStore } from '@/stores/serverPreferencesStore'
+import { useNodePreferencesStore } from '@/stores/nodePreferencesStore'
+import * as permissions from '@/hooks/useHasPermission'
 import { Dashboard } from './Dashboard'
 
 vi.mock('@/api/client', () => ({
@@ -11,7 +13,7 @@ vi.mock('@/api/client', () => ({
 }))
 
 vi.mock('@/hooks/useHasPermission', () => ({
-  useHasPermission: () => false,
+  useHasPermission: vi.fn(() => false),
 }))
 
 // Das Dashboard holt neben `/servers` noch Systemzustand und Node-Kapazität.
@@ -39,7 +41,9 @@ function renderDashboard() {
 describe('Dashboard — Ladefehler statt Leerzustand', () => {
   beforeEach(async () => {
     vi.mocked(client.api).mockReset()
+    vi.mocked(permissions.useHasPermission).mockReturnValue(false)
     useServerPreferencesStore.getState().resetForTests()
+    useNodePreferencesStore.getState().resetForTests()
     await i18n.changeLanguage('de')
   })
 
@@ -157,5 +161,84 @@ describe('Dashboard — Ladefehler statt Leerzustand', () => {
     // Portal-Tooltip verlässt den Kartenrahmen bei Hover
     fireEvent.pointerEnter(runningBlock.parentElement!)
     expect(document.body.querySelector('[data-kurzinfo="Aktiv-Jetzt · Läuft"]')).toBeInTheDocument()
+  })
+
+  it('hebt favorisierte Server- und Node-Symbole sowie Node-Einträge auf dem Dashboard golden hervor und zieht favorisierte Nodes nach oben', async () => {
+    vi.mocked(permissions.useHasPermission).mockImplementation((perm) => perm === 'nodes.read')
+    useServerPreferencesStore.getState().toggleFavorite(12)
+
+    vi.mocked(client.api).mockImplementation(async (path: string) => {
+      if (path === '/servers') {
+        return [
+          {
+            id: 12,
+            name: 'Aktiv-Favorit',
+            game_type: 'dayz',
+            status: 'running',
+            cpu_limit_percent: null,
+            ram_limit_mb: null,
+            disk_limit_gb: null,
+            disk_usage_mb: null,
+            game_port: 2304,
+            public_bind_ip: '203.0.113.5',
+          },
+        ]
+      }
+      if (path.startsWith('/nodes/capacity-summary')) {
+        return {
+          total: 2,
+          online: 1,
+          items: [
+            {
+              id: 1,
+              name: 'Node-One',
+              status: 'online',
+              server_count: 2,
+              cpu_percent: 20,
+              cpu_total: 8,
+            },
+            {
+              id: 2,
+              name: 'Node-Two',
+              status: 'offline',
+              server_count: 1,
+              cpu_percent: null,
+              cpu_total: 16,
+            },
+          ],
+        }
+      }
+      return antwort(path)
+    })
+
+    renderDashboard()
+
+    const srvBlock = await screen.findByTestId('dashboard-server-block-12')
+    expect(srvBlock).toHaveAttribute('data-favorite', 'true')
+    expect((srvBlock.firstElementChild as HTMLElement).className).toContain('border-status-warning/90')
+    expect(screen.getByTestId('server-card-icon-12')).toHaveAttribute('data-favorite', 'true')
+
+    const nodeItem2 = await screen.findByTestId('dashboard-node-item-2')
+    expect(nodeItem2).toHaveAttribute('data-favorite', 'false')
+
+    fireEvent.click(screen.getByTestId('dashboard-node-favorite-2'))
+
+    const favNodeItem = screen.getByTestId('dashboard-node-item-2')
+    const favNodeIcon = screen.getByTestId('dashboard-node-icon-2')
+    const favNodeBlock = screen.getByTestId('dashboard-node-block-2')
+    expect(favNodeItem).toHaveAttribute('data-favorite', 'true')
+    expect(favNodeItem.className).toContain('border-status-warning/80')
+    expect(favNodeIcon).toHaveAttribute('data-favorite', 'true')
+    expect(favNodeIcon.className).toContain('border-status-warning/90')
+    expect(favNodeBlock).toHaveAttribute('data-favorite', 'true')
+    expect((favNodeBlock.firstElementChild as HTMLElement).className).toContain(
+      'border-status-warning/90',
+    )
+
+    // Favorisierte Node steht an Position 1 in der Liste
+    const nodeItemsOrder = screen
+      .getAllByTestId(/^dashboard-node-item-/)
+      .map((el) => el.getAttribute('data-testid'))
+    expect(nodeItemsOrder).toEqual(['dashboard-node-item-2', 'dashboard-node-item-1'])
   })
 })

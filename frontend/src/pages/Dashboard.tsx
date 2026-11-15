@@ -7,6 +7,8 @@ import { UpdateBanner } from '@/components/UpdateBanner'
 import { useHasPermission } from '@/hooks/useHasPermission'
 import { useAuthStore } from '@/stores/authStore'
 import { sortServersByPriority, useServerPreferencesStore } from '@/stores/serverPreferencesStore'
+import { sortNodesByPriority, useNodePreferencesStore } from '@/stores/nodePreferencesStore'
+import { FavoriteButton, FAVORITE_CARD_HIGHLIGHT_CLASS } from '@/components/FavoriteButton'
 import {
   Server as ServerIcon,
   CheckCircle2,
@@ -22,6 +24,7 @@ import { ServerCard } from '@/components/server/ServerCard'
 import {
   NodeStatusBlocks,
   ServerStatusBlocks,
+  ServerStatusIcon,
   useLazySlice,
 } from '@/components/server/ServerStatusBlocks'
 import {
@@ -57,21 +60,32 @@ function ServiceDot({ status }: { status: 'ok' | 'degraded' | 'error' }) {
 function NodeCapacityCard() {
   const { t } = useTranslation()
   const canViewNodes = useHasPermission('nodes.read')
+  const { favoriteIds: nodeFavoriteIds, toggleFavorite: toggleNodeFavorite } =
+    useNodePreferencesStore()
   const [summary, setSummary] = useState<NodeCapacitySummary | null>(null)
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
     if (!canViewNodes) return
     setLoading(true)
-    api<NodeCapacitySummary>('/nodes/capacity-summary?limit=5')
+    api<NodeCapacitySummary>('/nodes/capacity-summary?limit=25')
       .then(setSummary)
       .catch(() => setSummary(null))
       .finally(() => setLoading(false))
   }, [canViewNodes])
 
-  if (!canViewNodes) return null
-
   const items = summary?.items ?? []
+  const sortedItems = useMemo(
+    () => sortNodesByPriority(items, nodeFavoriteIds),
+    [items, nodeFavoriteIds],
+  )
+  const visibleItems = useMemo(() => {
+    const favoriteSet = new Set(nodeFavoriteIds)
+    const favoriteCount = sortedItems.filter((item) => favoriteSet.has(item.id)).length
+    return sortedItems.slice(0, Math.max(5, favoriteCount))
+  }, [sortedItems, nodeFavoriteIds])
+
+  if (!canViewNodes) return null
 
   return (
     <section
@@ -93,8 +107,8 @@ function NodeCapacityCard() {
                 })}
               </span>
             )}
-            {items.length > 0 && (
-              <NodeStatusBlocks nodes={items} testIdPrefix="dashboard-node-block" />
+            {sortedItems.length > 0 && (
+              <NodeStatusBlocks nodes={sortedItems} testIdPrefix="dashboard-node-block" />
             )}
           </div>
           {!summary && (
@@ -127,9 +141,9 @@ function NodeCapacityCard() {
         </div>
       )}
 
-      {!loading && items.length > 0 && (
-        <ul className="divide-y divide-outline/40">
-          {items.map((item) => {
+      {!loading && visibleItems.length > 0 && (
+        <ul className="space-y-2.5">
+          {visibleItems.map((item) => {
             const metrics: NodeResourceMetrics = {
               nodeId: item.id,
               nodeName: item.name,
@@ -148,20 +162,27 @@ function NodeCapacityCard() {
             }
             const isOnline = item.status === 'online'
             const isOffline = item.status === 'offline'
+            const isFavorite = nodeFavoriteIds.includes(item.id)
 
             return (
-              <li key={item.id} className="min-w-0 py-3.5 first:pt-0 last:pb-0 space-y-3">
+              <li
+                key={item.id}
+                data-testid={`dashboard-node-item-${item.id}`}
+                data-favorite={isFavorite ? 'true' : 'false'}
+                className={`min-w-0 rounded-xl border px-3 py-3 space-y-3 transition-all duration-200 ${
+                  isFavorite
+                    ? `${FAVORITE_CARD_HIGHLIGHT_CLASS} bg-surface-container/60`
+                    : 'border-outline/40'
+                }`}
+              >
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex flex-wrap min-w-0 items-center gap-2">
-                    <span
-                      className={`h-2 w-2 rounded-full shrink-0 ${
-                        isOnline
-                          ? 'bg-status-success animate-pulse'
-                          : isOffline
-                            ? 'bg-status-destructive'
-                            : 'bg-outline'
-                      }`}
-                      aria-hidden="true"
+                    <ServerStatusIcon
+                      status={item.status}
+                      kind="node"
+                      size="sm"
+                      favorite={isFavorite}
+                      data-testid={`dashboard-node-icon-${item.id}`}
                     />
                     <span className="truncate font-headline text-sm font-semibold text-on-surface">
                       {item.name}
@@ -178,7 +199,21 @@ function NodeCapacityCard() {
                     </span>
                   </div>
 
-                  <div className="shrink-0">
+                  <div className="flex items-center gap-1 shrink-0">
+                    <FavoriteButton
+                      isFavorite={isFavorite}
+                      onToggle={() => toggleNodeFavorite(item.id)}
+                      tooltipText={
+                        isFavorite ? t('nodes.unfavoriteAction') : t('nodes.favoriteAction')
+                      }
+                      ariaLabel={
+                        isFavorite
+                          ? t('nodes.unfavoriteNode', { name: item.name })
+                          : t('nodes.favoriteNode', { name: item.name })
+                      }
+                      tooltipSide="mitte"
+                      testId={`dashboard-node-favorite-${item.id}`}
+                    />
                     <NodeCapacityDetailsButton metrics={metrics} testIdPrefix="dashboard-node" />
                   </div>
                 </div>

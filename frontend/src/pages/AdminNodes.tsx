@@ -15,6 +15,7 @@ import {
   Trash2,
 } from 'lucide-react'
 import { useNodeStore } from '@/stores/nodeStore'
+import { sortNodesByPriority, useNodePreferencesStore } from '@/stores/nodePreferencesStore'
 import { toast } from '@/stores/toastStore'
 import { confirm } from '@/stores/confirmStore'
 import {
@@ -33,8 +34,9 @@ import {
   Spinner,
   type ActionMenuItem,
 } from '@maunting/ui'
+import { FavoriteButton, FAVORITE_CARD_HIGHLIGHT_CLASS } from '@/components/FavoriteButton'
 import { NodeEnrollmentDialog } from '@/components/nodes/NodeEnrollmentDialog'
-import { NodeStatusBlocks } from '@/components/server/ServerStatusBlocks'
+import { NodeStatusBlocks, ServerStatusIcon } from '@/components/server/ServerStatusBlocks'
 import {
   NodeCapacityDetailsButton,
   NodeResourceRings,
@@ -103,6 +105,7 @@ export function AdminNodes({ ohneHintergrund = false }: { ohneHintergrund?: bool
   const { t } = useTranslation()
   const { nodes, total, loading, fetchNodes, createNode, updateNode, deleteNode, healthCheck } =
     useNodeStore()
+  const { favoriteIds, toggleFavorite } = useNodePreferencesStore()
   const canManageNodes = useHasPermission('nodes.manage')
   const headerMotiv = useTageszeitMotiv('dashboard')
   const [showForm, setShowForm] = useState(false)
@@ -288,6 +291,11 @@ export function AdminNodes({ ohneHintergrund = false }: { ohneHintergrund?: bool
     }
   }
 
+  const sortedNodes = useMemo(
+    () => sortNodesByPriority(nodes, favoriteIds),
+    [nodes, favoriteIds],
+  )
+
   const stats = useMemo(() => {
     const online = nodes.filter((n) => n.status === 'online').length
     const servers = nodes.reduce((sum, n) => sum + (n.server_count || 0), 0)
@@ -398,9 +406,9 @@ export function AdminNodes({ ohneHintergrund = false }: { ohneHintergrund?: bool
               className="min-h-11 pl-9 sm:min-h-10"
             />
           </div>
-          {nodes.length > 0 && (
+          {sortedNodes.length > 0 && (
             <div className="flex flex-wrap items-center gap-2 text-xs text-on-surface-variant">
-              <NodeStatusBlocks nodes={nodes} testIdPrefix="admin-node-block" />
+              <NodeStatusBlocks nodes={sortedNodes} testIdPrefix="admin-node-block" />
               <span className="rounded-full border border-outline-variant/40 bg-surface-container-high/55 px-2.5 py-1 font-medium tabular-nums">
                 {t('nodes.serverCount', { count: stats.servers })}
               </span>
@@ -506,26 +514,31 @@ export function AdminNodes({ ohneHintergrund = false }: { ohneHintergrund?: bool
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-            {nodes.map((node) => {
+            {sortedNodes.map((node) => {
               const metrics = toNodeMetrics(node)
-              const isOnline = node.status === 'online'
-              const isOffline = node.status === 'offline'
-              const dotColor = isOnline
-                ? 'bg-status-success animate-pulse'
-                : isOffline
-                  ? 'bg-status-destructive'
-                  : 'bg-outline'
+              const isFavorite = favoriteIds.includes(node.id)
 
               return (
                 <article
                   key={node.id}
                   data-testid={`node-card-${node.id}`}
-                  className="msm-card rounded-2xl border border-outline bg-surface-container-low/80 backdrop-blur-xl px-4 py-3.5 sm:px-5 sm:py-4 space-y-3"
+                  data-favorite={isFavorite ? 'true' : 'false'}
+                  className={`msm-card rounded-2xl border bg-surface-container-low/80 backdrop-blur-xl px-4 py-3.5 sm:px-5 sm:py-4 space-y-3 transition-all duration-200 ${
+                    isFavorite
+                      ? FAVORITE_CARD_HIGHLIGHT_CLASS
+                      : 'border-outline hover:border-primary/40'
+                  }`}
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2 min-w-0">
-                        <span className={`h-2.5 w-2.5 rounded-full shrink-0 ${dotColor}`} aria-hidden="true" />
+                        <ServerStatusIcon
+                          status={node.status}
+                          kind="node"
+                          size="sm"
+                          favorite={isFavorite}
+                          data-testid={`node-card-icon-${node.id}`}
+                        />
                         <h3 className="font-headline text-body-lg font-semibold text-on-surface truncate">
                           {node.name}
                         </h3>
@@ -555,6 +568,21 @@ export function AdminNodes({ ohneHintergrund = false }: { ohneHintergrund?: bool
                     </div>
 
                     <div className="flex items-center gap-1 shrink-0">
+                      <FavoriteButton
+                        isFavorite={isFavorite}
+                        onToggle={() => toggleFavorite(node.id)}
+                        tooltipText={
+                          isFavorite ? t('nodes.unfavoriteAction') : t('nodes.favoriteAction')
+                        }
+                        ariaLabel={
+                          isFavorite
+                            ? t('nodes.unfavoriteNode', { name: node.name })
+                            : t('nodes.favoriteNode', { name: node.name })
+                        }
+                        tooltipSide="mitte"
+                        testId={`node-favorite-${node.id}`}
+                      />
+
                       <NodeCapacityDetailsButton metrics={metrics} testIdPrefix="node" />
 
                       <Kurzinfo text={t('nodes.healthCheck')} seite={canManageNodes ? 'mitte' : 'ende'}>

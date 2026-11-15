@@ -1,7 +1,8 @@
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
-import { Activity, Clock, Cpu, Database, HardDrive, History, Network, Star, Store } from 'lucide-react'
+import { Activity, Clock, Cpu, Database, HardDrive, History, Network, Store } from 'lucide-react'
 import { Badge, Kurzinfo } from '@maunting/ui'
+import { FavoriteButton, FAVORITE_CARD_HIGHLIGHT_CLASS } from '@/components/FavoriteButton'
 import { ServerConnectChip } from '@/components/server/ServerConnectChip'
 import { ServerStatusIcon } from '@/components/server/ServerStatusBlocks'
 import { UptimeDisplay } from '@/components/server/UptimeDisplay'
@@ -29,13 +30,20 @@ export function ServerCard({ server, gameLabel, variant = 'list' }: ServerCardPr
   const hasConnectEndpoint = Boolean(resolveServerConnect(server).primary)
 
   return (
-    <article className="relative msm-card h-full flex flex-col rounded-2xl border border-outline bg-surface-container-low/80 backdrop-blur-xl px-4 py-3.5 sm:px-5 sm:py-4 hover:border-primary/40 hover:bg-surface-container-high/40 transition-all duration-200 group">
+    <article
+      data-testid={`server-card-${server.id}`}
+      data-favorite={isFavorite ? 'true' : 'false'}
+      className={`relative msm-card h-full flex flex-col rounded-2xl border bg-surface-container-low/80 backdrop-blur-xl px-4 py-3.5 sm:px-5 sm:py-4 hover:bg-surface-container-high/40 transition-all duration-200 group ${
+        isFavorite ? FAVORITE_CARD_HIGHLIGHT_CLASS : 'border-outline hover:border-primary/40'
+      }`}
+    >
       <div className="flex items-start justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2 min-w-0">
           <ServerStatusIcon
             status={server.status}
             kind={server.server_kind === 'database' ? 'database' : 'application'}
             size="sm"
+            favorite={isFavorite}
             data-testid={`server-card-icon-${server.id}`}
           />
           <h3 className="font-headline text-body-md font-semibold text-on-surface group-hover:text-primary transition-colors min-w-0 truncate">
@@ -84,30 +92,17 @@ export function ServerCard({ server, gameLabel, variant = 'list' }: ServerCardPr
         </div>
 
         <div className="flex items-center gap-1.5 shrink-0">
-          <Kurzinfo
-            text={isFavorite ? t('servers.unfavoriteAction') : t('servers.favoriteAction')}
-            seite="ende"
-            aussen="relative z-10 shrink-0"
-          >
-            <button
-              type="button"
-              onClick={() => toggleFavorite(server.id)}
-              aria-pressed={isFavorite}
-              aria-label={
-                isFavorite
-                  ? t('servers.unfavoriteServer', { name: server.name })
-                  : t('servers.favoriteServer', { name: server.name })
-              }
-              data-testid={`server-favorite-${server.id}`}
-              className={`inline-flex h-8 w-8 max-md:h-11 max-md:w-11 items-center justify-center rounded-full border transition-colors ${
-                isFavorite
-                  ? 'border-primary/40 bg-primary/15 text-primary'
-                  : 'border-transparent text-on-surface-variant hover:bg-surface-container-highest/70 hover:text-on-surface'
-              }`}
-            >
-              <Star className={`h-3.5 w-3.5 ${isFavorite ? 'fill-current' : ''}`} aria-hidden="true" />
-            </button>
-          </Kurzinfo>
+          <FavoriteButton
+            isFavorite={isFavorite}
+            onToggle={() => toggleFavorite(server.id)}
+            tooltipText={isFavorite ? t('servers.unfavoriteAction') : t('servers.favoriteAction')}
+            ariaLabel={
+              isFavorite
+                ? t('servers.unfavoriteServer', { name: server.name })
+                : t('servers.favoriteServer', { name: server.name })
+            }
+            testId={`server-favorite-${server.id}`}
+          />
 
           <span
             className={`font-mono-sm text-mono-sm px-2.5 py-0.5 rounded-full border shrink-0 ${serverStatusClasses(server.status)}`}

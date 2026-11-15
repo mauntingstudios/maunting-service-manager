@@ -4,6 +4,7 @@ import { MemoryRouter } from 'react-router-dom'
 import i18n from '@/i18n'
 import { AdminNodes } from './AdminNodes'
 import { useNodeStore } from '@/stores/nodeStore'
+import { useNodePreferencesStore } from '@/stores/nodePreferencesStore'
 import type { Node } from '@/types'
 
 const mockApi = vi.fn()
@@ -54,6 +55,7 @@ describe('AdminNodes', () => {
   beforeEach(async () => {
     await i18n.changeLanguage('de')
     mockApi.mockReset()
+    useNodePreferencesStore.getState().resetForTests()
     useNodeStore.setState({
       nodes: [],
       total: 0,
@@ -111,6 +113,71 @@ describe('AdminNodes', () => {
     expect(screen.getByTestId('node-disk-breakdown-1')).toBeInTheDocument()
 
     // Keine nativen Browser-Tooltips ([title]) im gerenderten DOM
+    expect(document.body.querySelectorAll('[title]')).toHaveLength(0)
+  })
+
+  it('favorisiert Nodes einheitlich mit goldener Box-, Stern- und Symbol-Umrandung und sortiert sie nach oben', async () => {
+    const secondNode: Node = {
+      ...sampleNode,
+      id: 2,
+      name: 'Node-Frankfurt-02',
+      is_local: false,
+      status: 'offline',
+    }
+
+    mockApi.mockImplementation((path: string) => {
+      if (path.startsWith('/system/update/status')) {
+        return Promise.resolve({ update_available: false })
+      }
+      if (path.startsWith('/nodes')) {
+        return Promise.resolve({
+          items: [sampleNode, secondNode],
+          total: 2,
+          page: 1,
+          limit: 25,
+        })
+      }
+      return Promise.resolve({})
+    })
+
+    render(
+      <MemoryRouter>
+        <AdminNodes />
+      </MemoryRouter>,
+    )
+
+    expect(await screen.findByTestId('node-card-2')).toBeInTheDocument()
+    const nodeNamesOrder = () =>
+      screen.getAllByRole('heading', { level: 3 }).map((el) => el.textContent)
+    expect(nodeNamesOrder()).toEqual(['Node-Berlin-01', 'Node-Frankfurt-02'])
+
+    fireEvent.click(screen.getByTestId('node-favorite-2'))
+    expect(nodeNamesOrder()).toEqual(['Node-Frankfurt-02', 'Node-Berlin-01'])
+
+    const favButton = screen.getByTestId('node-favorite-2')
+    const favCard = screen.getByTestId('node-card-2')
+    const favCardIcon = screen.getByTestId('node-card-icon-2')
+    const favStripBlock = screen.getByTestId('admin-node-block-2')
+    const favStripIcon = favStripBlock.firstElementChild as HTMLElement
+
+    expect(favButton).toHaveAttribute('aria-pressed', 'true')
+    expect(favButton.className).toContain('text-status-warning')
+    expect(favButton.querySelector('svg')?.getAttribute('class') ?? '').toContain('fill-status-warning')
+    expect(favCard).toHaveAttribute('data-favorite', 'true')
+    expect(favCard.className).toContain('border-status-warning/80')
+    expect(favCardIcon).toHaveAttribute('data-favorite', 'true')
+    expect(favCardIcon.className).toContain('border-status-warning/90')
+    expect(favStripBlock).toHaveAttribute('data-favorite', 'true')
+    expect(favStripIcon.className).toContain('border-status-warning/90')
+
+    const regularCard = screen.getByTestId('node-card-1')
+    expect(regularCard).toHaveAttribute('data-favorite', 'false')
+    expect(regularCard.className).not.toContain('border-status-warning/80')
+
+    fireEvent.click(favButton)
+    expect(nodeNamesOrder()).toEqual(['Node-Berlin-01', 'Node-Frankfurt-02'])
+    expect(screen.getByTestId('node-card-2')).toHaveAttribute('data-favorite', 'false')
+    expect(screen.getByTestId('admin-node-block-2')).toHaveAttribute('data-favorite', 'false')
     expect(document.body.querySelectorAll('[title]')).toHaveLength(0)
   })
 })

@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import { Database, Network, Search, Server as ServerIcon } from 'lucide-react'
 import { Ankerfenster, Button, Input, Kurzinfo } from '@maunting/ui'
+import { sortNodesByPriority, useNodePreferencesStore } from '@/stores/nodePreferencesStore'
 import { useServerPreferencesStore } from '@/stores/serverPreferencesStore'
 import type { Server } from '@/types'
 
@@ -30,47 +31,63 @@ export function getStatusBlockTone(
   return kind === 'node' ? 'transient' : 'stopped'
 }
 
-const ICON_TONE_CLASSES: Record<StatusTone, { base: string; hover: string }> = {
+const ICON_TONE_CLASSES: Record<
+  StatusTone,
+  { fill: string; hoverFill: string; border: string; hoverBorder: string }
+> = {
   running: {
-    base: 'bg-status-success/15 border-status-success/55 text-status-success ring-1 ring-status-success/25 shadow-sm',
-    hover:
-      'hover:bg-status-success/25 hover:border-status-success group-hover/sblock:bg-status-success/25 group-hover/sblock:border-status-success',
+    fill: 'bg-status-success/15 text-status-success',
+    hoverFill: 'hover:bg-status-success/25 group-hover/sblock:bg-status-success/25',
+    border: 'border-status-success/55 ring-1 ring-status-success/25 shadow-sm',
+    hoverBorder: 'hover:border-status-success group-hover/sblock:border-status-success',
   },
   transient: {
-    base: 'bg-status-warning/15 border-status-warning/55 text-status-warning ring-1 ring-status-warning/20 animate-pulse',
-    hover:
-      'hover:bg-status-warning/25 hover:border-status-warning group-hover/sblock:bg-status-warning/25 group-hover/sblock:border-status-warning',
+    fill: 'bg-status-warning/15 text-status-warning animate-pulse',
+    hoverFill: 'hover:bg-status-warning/25 group-hover/sblock:bg-status-warning/25',
+    border: 'border-status-warning/55 ring-1 ring-status-warning/20',
+    hoverBorder: 'hover:border-status-warning group-hover/sblock:border-status-warning',
   },
   failed: {
-    base: 'bg-status-destructive/15 border-status-destructive/55 text-status-destructive ring-1 ring-status-destructive/20',
-    hover:
-      'hover:bg-status-destructive/25 hover:border-status-destructive group-hover/sblock:bg-status-destructive/25 group-hover/sblock:border-status-destructive',
+    fill: 'bg-status-destructive/15 text-status-destructive',
+    hoverFill: 'hover:bg-status-destructive/25 group-hover/sblock:bg-status-destructive/25',
+    border: 'border-status-destructive/55 ring-1 ring-status-destructive/20',
+    hoverBorder: 'hover:border-status-destructive group-hover/sblock:border-status-destructive',
   },
   stopped: {
-    base: 'bg-surface-container-highest/65 border-outline/60 text-on-surface-variant/70',
-    hover:
-      'hover:bg-surface-container-high hover:border-outline-variant hover:text-on-surface group-hover/sblock:bg-surface-container-high group-hover/sblock:border-outline-variant group-hover/sblock:text-on-surface',
+    fill: 'bg-surface-container-highest/65 text-on-surface-variant/70',
+    hoverFill:
+      'hover:bg-surface-container-high hover:text-on-surface group-hover/sblock:bg-surface-container-high group-hover/sblock:text-on-surface',
+    border: 'border-outline/60',
+    hoverBorder: 'hover:border-outline-variant group-hover/sblock:border-outline-variant',
   },
 }
+
+const FAVORITE_ICON_BORDER =
+  'border-status-warning/90 ring-2 ring-status-warning/45 shadow-[0_0_12px_-3px_hsl(var(--mui-warning)/0.45)]'
+const FAVORITE_ICON_HOVER_BORDER =
+  'hover:border-status-warning group-hover/sblock:border-status-warning'
 
 export interface ServerStatusIconProps {
   status: string
   kind?: StatusEntityKind
   size?: 'sm' | 'md'
   interactive?: boolean
+  favorite?: boolean
   className?: string
   'data-testid'?: string
 }
 
 /**
  * Einheitliches Status-Icon im Block-Rahmen (Grün = läuft, Gelb = arbeitet,
- * Rot = Fehler, Grau = aus), wiederverwendet in ServerStatusBlocks und ServerCard.
+ * Rot = Fehler, Grau = aus; goldene Umrandung bei Favoriten), wiederverwendet
+ * in ServerStatusBlocks, NodeStatusBlocks, ServerCard und Node-Karten.
  */
 export function ServerStatusIcon({
   status,
   kind = 'application',
   size = 'sm',
   interactive = false,
+  favorite = false,
   className = '',
   'data-testid': dataTestId,
 }: ServerStatusIconProps) {
@@ -78,14 +95,17 @@ export function ServerStatusIcon({
   const palette = ICON_TONE_CLASSES[tone]
   const boxSize = size === 'md' ? 'h-8 w-8' : 'h-7 w-7'
   const iconSize = size === 'md' ? 'h-4 w-4' : 'h-3.5 w-3.5'
+  const borderClass = favorite ? FAVORITE_ICON_BORDER : palette.border
+  const hoverBorderClass = favorite ? FAVORITE_ICON_HOVER_BORDER : palette.hoverBorder
 
   return (
     <span
       data-testid={dataTestId}
       data-status={status}
       data-status-tone={tone}
-      className={`inline-flex ${boxSize} items-center justify-center rounded-lg border transition-all duration-150 shrink-0 ${palette.base} ${
-        interactive ? palette.hover : ''
+      data-favorite={favorite ? 'true' : 'false'}
+      className={`inline-flex ${boxSize} items-center justify-center rounded-lg border transition-all duration-150 shrink-0 ${palette.fill} ${borderClass} ${
+        interactive ? `${palette.hoverFill} ${hoverBorderClass}` : ''
       } ${className}`}
     >
       {kind === 'database' ? (
@@ -148,6 +168,7 @@ interface StatusBlockEntry {
   statusLabel: string
   tone: StatusTone
   kind: StatusEntityKind
+  favorite: boolean
   to?: string
 }
 
@@ -213,9 +234,15 @@ function StatusBlockStrip({
                 data-testid={`${testIdPrefix}-${entry.id}`}
                 data-status={entry.status}
                 data-status-tone={entry.tone}
+                data-favorite={entry.favorite ? 'true' : 'false'}
                 className="group/sblock inline-flex rounded-lg transition-transform duration-150 hover:-translate-y-0.5 hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
               >
-                <ServerStatusIcon status={entry.status} kind={entry.kind} interactive />
+                <ServerStatusIcon
+                  status={entry.status}
+                  kind={entry.kind}
+                  favorite={entry.favorite}
+                  interactive
+                />
               </Link>
             ) : (
               <span
@@ -224,9 +251,14 @@ function StatusBlockStrip({
                 data-testid={`${testIdPrefix}-${entry.id}`}
                 data-status={entry.status}
                 data-status-tone={entry.tone}
+                data-favorite={entry.favorite ? 'true' : 'false'}
                 className="inline-flex"
               >
-                <ServerStatusIcon status={entry.status} kind={entry.kind} />
+                <ServerStatusIcon
+                  status={entry.status}
+                  kind={entry.kind}
+                  favorite={entry.favorite}
+                />
               </span>
             )}
           </Kurzinfo>
@@ -293,7 +325,13 @@ function StatusBlockStrip({
                     data-testid={`${testIdPrefix}-quick-item-${entry.id}`}
                     className="group/sblock flex items-center gap-2.5 rounded-xl border border-transparent px-2 py-1.5 hover:border-outline-variant/40 hover:bg-surface-container/70 transition-colors"
                   >
-                    <ServerStatusIcon status={entry.status} kind={entry.kind} size="sm" interactive />
+                    <ServerStatusIcon
+                      status={entry.status}
+                      kind={entry.kind}
+                      size="sm"
+                      favorite={entry.favorite}
+                      interactive
+                    />
                     <span className="min-w-0 flex-1 truncate text-sm font-medium text-on-surface group-hover/sblock:text-primary">
                       {entry.label}
                     </span>
@@ -352,24 +390,25 @@ export function ServerStatusBlocks({
 }: ServerStatusBlocksProps) {
   const { t } = useTranslation()
   const setLastVisited = useServerPreferencesStore((s) => s.setLastVisited)
+  const favoriteIds = useServerPreferencesStore((s) => s.favoriteIds)
 
-  const entries: StatusBlockEntry[] = useMemo(
-    () =>
-      servers.map((server) => {
-        const kind: StatusEntityKind =
-          server.server_kind === 'database' ? 'database' : 'application'
-        return {
-          id: server.id,
-          label: server.name,
-          status: server.status,
-          statusLabel: t(`servers.status.${server.status}`, { defaultValue: server.status }),
-          tone: getStatusBlockTone(server.status, kind),
-          kind,
-          to: `/servers/${server.id}`,
-        }
-      }),
-    [servers, t],
-  )
+  const entries: StatusBlockEntry[] = useMemo(() => {
+    const favoriteSet = new Set(favoriteIds)
+    return servers.map((server) => {
+      const kind: StatusEntityKind =
+        server.server_kind === 'database' ? 'database' : 'application'
+      return {
+        id: server.id,
+        label: server.name,
+        status: server.status,
+        statusLabel: t(`servers.status.${server.status}`, { defaultValue: server.status }),
+        tone: getStatusBlockTone(server.status, kind),
+        kind,
+        favorite: favoriteSet.has(server.id),
+        to: `/servers/${server.id}`,
+      }
+    })
+  }, [servers, favoriteIds, t])
 
   return (
     <StatusBlockStrip
@@ -396,19 +435,20 @@ export function NodeStatusBlocks({
   testIdPrefix = 'node-block',
 }: NodeStatusBlocksProps) {
   const { t } = useTranslation()
+  const favoriteIds = useNodePreferencesStore((s) => s.favoriteIds)
 
-  const entries: StatusBlockEntry[] = useMemo(
-    () =>
-      nodes.map((node) => ({
-        id: node.id,
-        label: node.name,
-        status: node.status,
-        statusLabel: t(`nodes.status.${node.status}`, { defaultValue: node.status }),
-        tone: getStatusBlockTone(node.status, 'node'),
-        kind: 'node' as const,
-      })),
-    [nodes, t],
-  )
+  const entries: StatusBlockEntry[] = useMemo(() => {
+    const favoriteSet = new Set(favoriteIds)
+    return sortNodesByPriority(nodes, favoriteIds).map((node) => ({
+      id: node.id,
+      label: node.name,
+      status: node.status,
+      statusLabel: t(`nodes.status.${node.status}`, { defaultValue: node.status }),
+      tone: getStatusBlockTone(node.status, 'node'),
+      kind: 'node' as const,
+      favorite: favoriteSet.has(node.id),
+    }))
+  }, [nodes, favoriteIds, t])
 
   return (
     <StatusBlockStrip
