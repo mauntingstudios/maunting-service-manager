@@ -214,6 +214,7 @@ def capacity_summary(
                 "status": n.status or "unknown",
                 "cpu_model": getattr(n, "cpu_model", None),
                 "cpu_total": n.cpu_total,
+                "cpu_percent": getattr(n, "cpu_percent", None),
                 "ram_total_mb": n.ram_total,
                 "ram_used_mb": n.ram_used,
                 "ram_allocated_mb": ram_booked,

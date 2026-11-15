@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import * as client from '@/api/client'
 import i18n from '@/i18n'
+import { useServerPreferencesStore } from '@/stores/serverPreferencesStore'
 import { Dashboard } from './Dashboard'
 
 vi.mock('@/api/client', () => ({
@@ -38,6 +39,7 @@ function renderDashboard() {
 describe('Dashboard — Ladefehler statt Leerzustand', () => {
   beforeEach(async () => {
     vi.mocked(client.api).mockReset()
+    useServerPreferencesStore.getState().resetForTests()
     await i18n.changeLanguage('de')
   })
 
@@ -77,5 +79,83 @@ describe('Dashboard — Ladefehler statt Leerzustand', () => {
     expect(detail.closest('[class*="group/kurzinfo"]')?.querySelector('[data-kurzinfo]'))
       .toHaveAttribute('data-kurzinfo', 'PostgreSQL 16, 12 Verbindungen offen')
     expect(document.body.querySelectorAll('[title]')).toHaveLength(0)
+  })
+
+  it('sortiert laufende Server und zuletzt geöffnete Server auf dem Dashboard nach oben und zeigt konsistente Ressourcen', async () => {
+    useServerPreferencesStore.getState().setLastVisited(11)
+
+    vi.mocked(client.api).mockImplementation(async (path: string) => {
+      if (path === '/servers') {
+        return [
+          {
+            id: 10,
+            name: 'Gestoppt-Alt',
+            game_type: 'dayz',
+            status: 'stopped',
+            cpu_limit_percent: 200,
+            ram_limit_mb: 4096,
+            disk_limit_gb: 20,
+            disk_usage_mb: null,
+            game_port: 2302,
+            public_bind_ip: '203.0.113.5',
+          },
+          {
+            id: 11,
+            name: 'Zuletzt-Gestoppt',
+            game_type: 'dayz',
+            status: 'stopped',
+            cpu_limit_percent: 400,
+            ram_limit_mb: 15360,
+            disk_limit_gb: 35,
+            disk_usage_mb: 17101,
+            game_port: 2303,
+            public_bind_ip: '203.0.113.5',
+          },
+          {
+            id: 12,
+            name: 'Aktiv-Jetzt',
+            game_type: 'dayz',
+            status: 'running',
+            cpu_limit_percent: null,
+            ram_limit_mb: null,
+            disk_limit_gb: null,
+            disk_usage_mb: null,
+            game_port: 2304,
+            public_bind_ip: '203.0.113.5',
+          },
+        ]
+      }
+      return antwort(path)
+    })
+
+    renderDashboard()
+
+    expect(await screen.findByText('Zuletzt-Gestoppt')).toBeInTheDocument()
+    const order = screen.getAllByRole('heading', { level: 3 }).map((el) => el.textContent)
+    expect(order).toEqual(['Zuletzt-Gestoppt', 'Aktiv-Jetzt', 'Gestoppt-Alt'])
+
+    const res = screen.getByTestId('server-resources-row-11')
+    expect(res).toHaveTextContent('400%')
+    expect(res).toHaveTextContent('15.0 GB')
+    expect(res).toHaveTextContent('16.7 GB / 35 GB')
+    expect(screen.getByTestId('server-connect-row-11')).toBeInTheDocument()
+    expect(screen.getByTestId('server-last-visited-11')).toHaveTextContent('Zuletzt geöffnet')
+
+    const runningBlock = screen.getByTestId('dashboard-server-block-12')
+    const stoppedBlock = screen.getByTestId('dashboard-server-block-11')
+    expect(runningBlock).toHaveAttribute('data-status', 'running')
+    expect(runningBlock).toHaveAttribute('data-status-tone', 'running')
+    expect(runningBlock.querySelector('svg')).toBeTruthy()
+    expect(stoppedBlock).toHaveAttribute('data-status', 'stopped')
+    expect(stoppedBlock).toHaveAttribute('data-status-tone', 'stopped')
+    expect(stoppedBlock.querySelector('svg')).toBeTruthy()
+
+    expect(screen.getByTestId('server-card-icon-12')).toHaveAttribute('data-status-tone', 'running')
+    expect(screen.getByTestId('server-card-icon-12').querySelector('svg')).toBeTruthy()
+    expect(screen.getByTestId('server-card-icon-11')).toHaveAttribute('data-status-tone', 'stopped')
+
+    // Portal-Tooltip verlässt den Kartenrahmen bei Hover
+    fireEvent.pointerEnter(runningBlock.parentElement!)
+    expect(document.body.querySelector('[data-kurzinfo="Aktiv-Jetzt · Läuft"]')).toBeInTheDocument()
   })
 })

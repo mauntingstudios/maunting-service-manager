@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import { api } from '@/api/client'
@@ -6,11 +6,13 @@ import { toast } from '@/stores/toastStore'
 import { confirm } from '@/stores/confirmStore'
 import { useHostInterfaces } from '@/hooks/useHostInterfaces'
 import { useHasPermission } from '@/hooks/useHasPermission'
+import { sortServersByPriority, useServerPreferencesStore } from '@/stores/serverPreferencesStore'
 import type { Server, GameInfo, PostgresCredential, ServerCreateResult, Node } from '@/types'
 import { labelRole, mapBlueprintPorts } from '@/utils/portRoles'
 import { Server as ServerIcon, Plus, AlertTriangle, Database, Store } from 'lucide-react'
 import { PostgresCredentialsDialog } from '@/components/server/PostgresCredentialsDialog'
 import { ServerCard } from '@/components/server/ServerCard'
+import { ServerStatusBlocks, useLazySlice } from '@/components/server/ServerStatusBlocks'
 import {
   Button,
   Checkbox,
@@ -353,11 +355,25 @@ export function Servers({ ohneHintergrund = false }: { ohneHintergrund?: boolean
   const ownServers = servers.filter((s) => !s.is_hoster_managed)
   const customerServers = servers.filter((s) => s.is_hoster_managed)
   const hasCustomerServers = customerServers.length > 0
-  const shownServers = hasCustomerServers
+  const baseShownServers = hasCustomerServers
     ? activeTab === 'customers'
       ? customerServers
       : ownServers
     : servers
+  const { favoriteIds, lastVisitedId } = useServerPreferencesStore()
+  const shownServers = useMemo(
+    () => sortServersByPriority(baseShownServers, favoriteIds, lastVisitedId),
+    [baseShownServers, favoriteIds, lastVisitedId],
+  )
+  const shownRunningCount = shownServers.filter((s) => s.status === 'running').length
+  const shownStoppedCount = Math.max(0, shownServers.length - shownRunningCount)
+  const {
+    visibleItems: visibleShownServers,
+    hasMore: hasMoreShownServers,
+    remaining: remainingShownServers,
+    loadMore: loadMoreShownServers,
+    sentinelRef: shownServersSentinelRef,
+  } = useLazySlice(shownServers, 24)
 
   // Der Shop-Kunde besitzt oft nur seinen Vertragsserver — auch fuer ihn traegt
   // der eigene Server das Flag. Er soll nach dem Login nicht vor einem leeren
@@ -416,11 +432,12 @@ export function Servers({ ohneHintergrund = false }: { ohneHintergrund?: boolean
             </span>
             {canCreateServer && (
               <Button
+                fingerziel
                 onClick={() => {
                   setShowCreate(true)
                   void loadNodes()
                 }}
-                className="flex min-h-9 sm:min-h-10 items-center gap-2 rounded-xl shadow-sm"
+                className="flex items-center gap-2 rounded-xl shadow-sm"
               >
                 <Plus className="w-4 h-4" />
                 {t('servers.create')}
@@ -430,7 +447,7 @@ export function Servers({ ohneHintergrund = false }: { ohneHintergrund?: boolean
         </div>
 
       {loadError && (
-        <div className="msm-card p-12 text-center border-dashed border-2 border-outline-variant">
+        <div className="msm-card rounded-2xl border border-dashed border-outline bg-surface-container-low/80 backdrop-blur-xl p-12 text-center">
           <AlertTriangle className="w-10 h-10 text-status-destructive mx-auto mb-4" />
           <h3 className="font-headline text-body-lg text-on-surface mb-1">
             {t('servers.loadFailed')}
@@ -439,7 +456,7 @@ export function Servers({ ohneHintergrund = false }: { ohneHintergrund?: boolean
       )}
 
       {!loadError && servers.length === 0 && (
-        <div className="msm-card p-12 text-center border-dashed border-2 border-outline-variant">
+        <div className="msm-card rounded-2xl border border-dashed border-outline bg-surface-container-low/80 backdrop-blur-xl p-12 text-center">
           <ServerIcon className="w-10 h-10 text-on-surface-variant mx-auto mb-4" />
           <h3 className="font-headline text-body-lg text-on-surface mb-1">
             {t('servers.noServers')}
@@ -461,14 +478,14 @@ export function Servers({ ohneHintergrund = false }: { ohneHintergrund?: boolean
           ariaLabel={t('nav.servers')}
           embedded
           einzeilig
-          className="backdrop-blur-md border border-outline-variant/30 shadow-sm bg-surface-container-low/60"
+          className="backdrop-blur-xl border border-outline shadow-sm bg-surface-container-low/80"
         />
       )}
 
       {/* Ein leergefilterter Tab braucht seinen eigenen Leerzustand — eine
           Tab-Leiste ueber leerer Flaeche liest sich als "Server weg". */}
       {!loadError && servers.length > 0 && shownServers.length === 0 && (
-        <div className="msm-card p-12 text-center border-dashed border-2 border-outline-variant">
+        <div className="msm-card rounded-2xl border border-dashed border-outline bg-surface-container-low/80 backdrop-blur-xl p-12 text-center">
           <ServerIcon className="w-10 h-10 text-on-surface-variant mx-auto mb-4" />
           <h3 className="font-headline text-body-lg text-on-surface mb-1">
             {t('servers.noServers')}
@@ -476,8 +493,43 @@ export function Servers({ ohneHintergrund = false }: { ohneHintergrund?: boolean
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {shownServers.map((server) => (
+      {!loadError && shownServers.length > 0 && (
+        <div
+          className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-outline bg-surface-container-low/80 backdrop-blur-xl px-3.5 py-2.5 sm:px-4 sm:py-3"
+          data-testid="servers-status-deck"
+        >
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <span
+              className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full border font-body-md ${
+                shownRunningCount > 0
+                  ? 'bg-status-success/10 border-status-success/30 text-status-success'
+                  : 'bg-surface-container-highest border-outline text-on-surface-variant'
+              }`}
+            >
+              <span
+                className={`h-1.5 w-1.5 rounded-full ${
+                  shownRunningCount > 0 ? 'bg-status-success animate-pulse' : 'bg-on-surface-variant/50'
+                }`}
+              />
+              {shownRunningCount} {t('dashboard.running')}
+            </span>
+            {shownStoppedCount > 0 && (
+              <span className="font-body-md px-2.5 py-0.5 rounded-full border border-outline/70 bg-surface-container-highest/60 text-on-surface-variant">
+                {t('dashboard.stoppedCount', { count: shownStoppedCount })}
+              </span>
+            )}
+          </div>
+
+          <ServerStatusBlocks
+            servers={shownServers}
+            maxVisible={24}
+            testIdPrefix="servers-page-block"
+          />
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-4">
+        {visibleShownServers.map((server) => (
           <ServerCard
             key={server.id}
             server={server}
@@ -486,6 +538,20 @@ export function Servers({ ohneHintergrund = false }: { ohneHintergrund?: boolean
           />
         ))}
       </div>
+      {hasMoreShownServers && (
+        <div ref={shownServersSentinelRef} className="flex justify-center pt-2">
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            fingerziel
+            onClick={loadMoreShownServers}
+            data-testid="servers-load-more"
+          >
+            {t('servers.loadMoreServers', { remaining: remainingShownServers })}
+          </Button>
+        </div>
+      )}
 
       {/* Create Modal (Design-DNA Dialog + Input) */}
       <Dialog open={showCreate} onOpenChange={setShowCreate}>

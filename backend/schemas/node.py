@@ -116,6 +116,7 @@ class NodeCapacityItem(BaseModel):
     status: str
     cpu_model: str | None = None
     cpu_total: float | None = None
+    cpu_percent: float | None = None
     ram_total_mb: int | None = None
     ram_used_mb: int | None = None
     ram_allocated_mb: int = 0

@@ -25,6 +25,7 @@ import { api, getRateLimitRemainingMs } from "@/api/client";
 import { toast } from "@/stores/toastStore";
 import { confirm } from "@/stores/confirmStore";
 import { usePermissionsStore } from "@/stores/permissionsStore";
+import { useServerPreferencesStore } from "@/stores/serverPreferencesStore";
 import { useHostInterfaces } from "@/hooks/useHostInterfaces";
 import { useHasPermission } from "@/hooks/useHasPermission";
 import { ResourceEditorDialog } from "@/components/server/ResourceEditorDialog";
@@ -187,6 +188,12 @@ export function ServerDetail() {
   );
 
   const serverId = parseInt(id || "0");
+
+  useEffect(() => {
+    if (serverId > 0) {
+      useServerPreferencesStore.getState().setLastVisited(serverId);
+    }
+  }, [serverId]);
 
   // Permission-Gating fuer Ressourcen-Editor (VAL-UI-002, VAL-UI-018):
   // Backend bleibt alleinige Wahrheitsquelle — Frontend versteckt nur die UI.

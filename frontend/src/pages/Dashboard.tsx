@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import { api } from '@/api/client'
@@ -6,6 +6,7 @@ import { Server, GameInfo, NodeCapacitySummary } from '@/types'
 import { UpdateBanner } from '@/components/UpdateBanner'
 import { useHasPermission } from '@/hooks/useHasPermission'
 import { useAuthStore } from '@/stores/authStore'
+import { sortServersByPriority, useServerPreferencesStore } from '@/stores/serverPreferencesStore'
 import {
   Server as ServerIcon,
   CheckCircle2,
@@ -14,15 +15,24 @@ import {
   Loader2,
   Network,
   ArrowRight,
+  ChevronDown,
+  Gamepad2,
 } from 'lucide-react'
 import { ServerCard } from '@/components/server/ServerCard'
+import {
+  NodeStatusBlocks,
+  ServerStatusBlocks,
+  useLazySlice,
+} from '@/components/server/ServerStatusBlocks'
+import {
+  NodeCapacityDetailsButton,
+  NodeResourceRings,
+  type NodeResourceMetrics,
+} from '@/components/nodes/NodeResourceRings'
 import { TageszeitHintergrund } from '@/components/layout/TageszeitHintergrund'
 import { begruessungSchluessel, tagesSeed, useTageszeitMotiv } from '@/lib/tageszeit'
-import { ProgressBar, StackedProgressBar, Segment } from '@maunting/ui'
-import { Badge } from '@maunting/ui'
+import { Ankerfenster, Badge, Button, buttonClasses, Kurzinfo, Spinner } from '@maunting/ui'
 
-import { buttonClasses, Kurzinfo } from '@maunting/ui'
-import { Spinner } from '@maunting/ui'
 interface ServiceStatus {
   status: 'ok' | 'degraded' | 'error'
   detail: string
@@ -39,15 +49,9 @@ interface HealthResponse {
 }
 
 function ServiceDot({ status }: { status: 'ok' | 'degraded' | 'error' }) {
-  if (status === 'ok') return <span className="inline-block w-2 h-2 rounded-full bg-status-success" />
-  if (status === 'degraded') return <span className="inline-block w-2 h-2 rounded-full bg-status-warning" />
-  return <span className="inline-block w-2 h-2 rounded-full bg-status-destructive" />
-}
-
-function formatRamMb(mb: number | null | undefined): string {
-  if (mb == null) return '—'
-  if (mb >= 1024) return `${(mb / 1024).toFixed(1)} GB`
-  return `${Math.round(mb)} MB`
+  if (status === 'ok') return <span className="inline-block w-2 h-2 rounded-full bg-status-success shrink-0" />
+  if (status === 'degraded') return <span className="inline-block w-2 h-2 rounded-full bg-status-warning shrink-0" />
+  return <span className="inline-block w-2 h-2 rounded-full bg-status-destructive shrink-0" />
 }
 
 function NodeCapacityCard() {
@@ -67,137 +71,129 @@ function NodeCapacityCard() {
 
   if (!canViewNodes) return null
 
+  const items = summary?.items ?? []
+
   return (
-    <div className="msm-card p-5" data-testid="dashboard-node-capacity">
-      <div className="mb-3 flex items-start justify-between gap-3">
+    <section
+      className="msm-card rounded-2xl border border-outline bg-surface-container-low/80 backdrop-blur-xl px-4 py-3.5 sm:px-5 sm:py-4 space-y-4"
+      data-testid="dashboard-node-capacity"
+      aria-label={t('dashboard.nodeCapacity')}
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="min-w-0">
-          <p className="font-label-md text-label-md text-on-surface-variant uppercase tracking-wider">
-            {t('dashboard.nodeCapacity')}
-          </p>
-          <p className="mt-0.5 font-body-md text-xs text-on-surface-variant/80">
-            {summary
-              ? t('nodes.capacitySubtitle', {
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="font-headline text-sm font-semibold text-on-surface uppercase tracking-wider">
+              {t('dashboard.nodeCapacity')}
+            </h2>
+            {summary && (
+              <span className="rounded-full border border-outline-variant/40 bg-surface-container-high/60 px-2 py-0.5 text-xs font-medium text-on-surface-variant tabular-nums">
+                {t('nodes.capacitySubtitle', {
                   online: summary.online,
                   total: summary.total,
-                })
-              : t('dashboard.nodeCapacityHint')}
-          </p>
+                })}
+              </span>
+            )}
+            {items.length > 0 && (
+              <NodeStatusBlocks nodes={items} testIdPrefix="dashboard-node-block" />
+            )}
+          </div>
+          {!summary && (
+            <p className="mt-0.5 font-body-md text-xs text-on-surface-variant">
+              {t('dashboard.nodeCapacityHint')}
+            </p>
+          )}
         </div>
+
         <Link
           to="/admin/nodes"
-          className="inline-flex shrink-0 items-center gap-1 font-label-md text-xs text-secondary hover:text-primary"
+          className="inline-flex min-h-[44px] md:min-h-[32px] shrink-0 items-center gap-1 rounded-lg px-2 text-xs font-medium text-primary hover:bg-surface-container-high/60 transition-colors"
         >
-          {t('nodes.viewAllNodes')}
-          <ArrowRight className="h-3.5 w-3.5" />
+          <span>{t('dashboard.manageNodes')}</span>
+          <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
         </Link>
       </div>
 
       {loading && (
-        <div className="flex items-center gap-2 py-4 text-on-surface-variant">
-          <Loader2 className="h-4 w-4 animate-spin" />
+        <div className="flex items-center gap-2 py-3 text-on-surface-variant">
+          <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
           <span className="text-sm">{t('common.loading')}</span>
         </div>
       )}
 
-      {!loading && (!summary || summary.items.length === 0) && (
-        <div className="flex items-center gap-2 py-3 text-sm text-on-surface-variant">
-          <Network className="h-4 w-4 shrink-0" />
-          {t('nodes.capacityEmpty')}
+      {!loading && items.length === 0 && (
+        <div className="flex items-center gap-2 py-2 text-sm text-on-surface-variant">
+          <Network className="h-4 w-4 shrink-0" aria-hidden="true" />
+          <span>{t('nodes.capacityEmpty')}</span>
         </div>
       )}
 
-      {!loading && summary && summary.items.length > 0 && (
-        <ul className="space-y-3">
-          {summary.items.map((item) => {
-            const total = item.ram_total_mb
-            const used = item.ram_used_mb
-            const booked = item.ram_allocated_mb ?? 0
-            const usedPct =
-              total != null && total > 0 && used != null
-                ? Math.min(100, (used / total) * 100)
-                : null
-            const allocatable =
-              item.ram_allocatable_mb != null
-                ? Math.max(0, item.ram_allocatable_mb)
-                : total != null
-                  ? Math.max(0, total - booked)
-                  : null
-            const model = item.cpu_model?.trim() || t('nodes.cpuModelUnknown')
+      {!loading && items.length > 0 && (
+        <ul className="divide-y divide-outline/40">
+          {items.map((item) => {
+            const metrics: NodeResourceMetrics = {
+              nodeId: item.id,
+              nodeName: item.name,
+              cpuPercent: item.cpu_percent ?? null,
+              cpuCores: item.cpu_total ?? null,
+              cpuModel: item.cpu_model ?? null,
+              ramTotalMb: item.ram_total_mb ?? null,
+              ramUsedMb: item.ram_used_mb ?? null,
+              ramAllocatedMb: item.ram_allocated_mb ?? null,
+              ramAllocatableMb: item.ram_allocatable_mb ?? null,
+              diskTotalMb: item.disk_total_mb ?? null,
+              diskUsedMb: item.disk_used_mb ?? null,
+              diskPanelUsedMb: item.disk_panel_used_mb ?? null,
+              diskAllocatedGb: item.disk_allocated_gb ?? null,
+              diskAllocatableGb: item.disk_allocatable_gb ?? null,
+            }
+            const isOnline = item.status === 'online'
+            const isOffline = item.status === 'offline'
+
             return (
-              <li key={item.id} className="min-w-0">
-                <div className="mb-1 flex items-center justify-between gap-2">
-                  <div className="flex min-w-0 items-center gap-2">
-                    <span className="truncate font-headline text-sm text-on-surface">
+              <li key={item.id} className="min-w-0 py-3.5 first:pt-0 last:pb-0 space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex flex-wrap min-w-0 items-center gap-2">
+                    <span
+                      className={`h-2 w-2 rounded-full shrink-0 ${
+                        isOnline
+                          ? 'bg-status-success animate-pulse'
+                          : isOffline
+                            ? 'bg-status-destructive'
+                            : 'bg-outline'
+                      }`}
+                      aria-hidden="true"
+                    />
+                    <span className="truncate font-headline text-sm font-semibold text-on-surface">
                       {item.name}
                     </span>
                     <Badge
                       variant={
-                        item.status === 'online'
-                          ? 'success'
-                          : item.status === 'offline'
-                            ? 'destructive'
-                            : 'default'
+                        isOnline ? 'success' : isOffline ? 'destructive' : 'default'
                       }
                     >
                       {t(`nodes.status.${item.status}`, { defaultValue: item.status })}
                     </Badge>
-                  </div>
-                  {item.cpu_total != null && (
-                    <span className="shrink-0 font-mono-sm text-xs text-on-surface-variant">
-                      {t('nodes.cpuCores', { count: item.cpu_total })}
+                    <span className="text-xs text-on-surface-variant">
+                      {t('nodes.serverCount', { count: item.server_count })}
                     </span>
-                  )}
+                  </div>
+
+                  <div className="shrink-0">
+                    <NodeCapacityDetailsButton metrics={metrics} testIdPrefix="dashboard-node" />
+                  </div>
                 </div>
-                <p className="mb-1.5 flex min-w-0 font-mono-sm text-label-sm text-on-surface-variant/80">
-                  <Kurzinfo text={model} seite="anfang" aussen="min-w-0 max-w-full">
-                    <span className="truncate">{model}</span>
-                  </Kurzinfo>
-                </p>
-                <ProgressBar
-                  value={usedPct}
-                  label="RAM"
-                  heat
-                  hint={
-                    total != null
-                      ? `${formatRamMb(used)} / ${formatRamMb(total)} · ${t('nodes.ramAllocatableShort', {
-                          value: formatRamMb(allocatable),
-                        })}`
-                      : '—'
-                  }
-                />
-                {item.disk_total_mb != null && (() => {
-                  const totalMb = item.disk_total_mb ?? 0
-                  const usedMb = item.disk_used_mb ?? 0
-                  const panelUsedMb = item.disk_panel_used_mb ?? 0
-                  const systemUsedMb = Math.max(0, usedMb - panelUsedMb)
-                  const freeMb = Math.max(0, totalMb - usedMb)
 
-                  const segments: Segment[] = [
-                    { value: panelUsedMb, colorClass: 'bg-primary' },
-                    { value: systemUsedMb, colorClass: 'bg-outline' },
-                    { value: freeMb, colorClass: 'bg-status-success' },
-                  ]
-
-                  return (
-                    <StackedProgressBar
-                      segments={segments}
-                      label="Disk"
-                      hint={`${formatRamMb(usedMb)} / ${formatRamMb(totalMb)} · ${t('nodes.diskAllocatable', {
-                        value: `${item.disk_allocatable_gb ?? 0} GB`,
-                      })}`}
-                    />
-                  )
-                })()}
+                <NodeResourceRings metrics={metrics} testIdPrefix="dashboard-node" />
               </li>
             )
           })}
         </ul>
       )}
-    </div>
+    </section>
   )
 }
 
-function SystemStatusCard() {
+function SystemStatusSection() {
   const { t } = useTranslation()
   const [health, setHealth] = useState<HealthResponse | null>(null)
   const [loading, setLoading] = useState(true)
@@ -235,46 +231,56 @@ function SystemStatusCard() {
 
   const OverallIcon = loading
     ? Loader2
-    : health === null || (health.overall === 'error')
+    : health === null || health.overall === 'error'
       ? XCircle
       : health.overall === 'degraded'
         ? AlertTriangle
         : CheckCircle2
 
+  const services = health?.services
+    ? Object.entries(health.services).filter(
+        ([key, svc]) => !(key === 'caddy' && svc.status === 'degraded'),
+      )
+    : []
+
   return (
-    <div className="msm-card p-5">
-      <p className="font-label-md text-label-md text-on-surface-variant uppercase tracking-wider mb-3">
-        {t('dashboard.system')}
-      </p>
-      <div className="flex items-center gap-2 mb-4">
-        <OverallIcon className={`w-5 h-5 ${overallColor} ${loading ? 'animate-spin' : ''}`} />
-        <span className={`font-headline text-body-lg font-bold ${overallColor}`}>{overallLabel}</span>
+    <div className="p-4 sm:p-5 flex flex-col justify-between gap-3 min-w-0">
+      <div>
+        <p className="font-label-md text-label-md text-on-surface-variant uppercase tracking-wider">
+          {t('dashboard.system')}
+        </p>
+        <div className="mt-2 flex items-center gap-2 min-w-0">
+          <OverallIcon className={`w-4 h-4 shrink-0 ${overallColor} ${loading ? 'animate-spin' : ''}`} />
+          <span className={`font-headline text-sm font-semibold truncate ${overallColor}`}>
+            {overallLabel}
+          </span>
+        </div>
       </div>
-      {health && (
-        <div className="space-y-2">
-          {Object.entries(health.services)
-            .filter(([key, svc]) => !(key === 'caddy' && svc.status === 'degraded'))
-            .map(([key, svc]) => (
-              <div key={key} className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <ServiceDot status={svc.status} />
-                  <span className="font-body-md text-sm text-on-surface-variant">
-                    {serviceNames[key] ?? key}
-                  </span>
-                </div>
-                {svc.detail && (
-                  <Kurzinfo text={svc.detail} seite="ende" aussen="min-w-0 max-w-[120px]">
-                    <span className="font-mono-sm text-xs text-on-surface-variant/60 truncate max-w-[120px]">
-                      {svc.detail}
-                    </span>
-                  </Kurzinfo>
-                )}
+
+      {services.length > 0 && (
+        <div className="space-y-1.5">
+          {services.map(([key, svc]) => (
+            <div key={key} className="flex items-center justify-between gap-2 min-w-0">
+              <div className="flex items-center gap-2 min-w-0">
+                <ServiceDot status={svc.status} />
+                <span className="font-body-md text-xs text-on-surface-variant truncate">
+                  {serviceNames[key] ?? key}
+                </span>
               </div>
-            ))}
+              {svc.detail && (
+                <Kurzinfo text={svc.detail} seite="ende" aussen="min-w-0 max-w-[140px]">
+                  <span className="font-mono-sm text-xs text-on-surface-variant/70 truncate max-w-[140px]">
+                    {svc.detail}
+                  </span>
+                </Kurzinfo>
+              )}
+            </div>
+          ))}
         </div>
       )}
+
       {!loading && !health && (
-        <p className="font-body-md text-sm text-status-destructive/80">
+        <p className="font-body-md text-xs text-status-destructive/80">
           {t('dashboard.systemError')}
         </p>
       )}
@@ -291,6 +297,9 @@ export function Dashboard({ ohneHintergrund = false }: { ohneHintergrund?: boole
   // Ohne dieses Flag wird aus einem fehlgeschlagenen Laden die Aussage
   // "Noch keine Server" — auf der ersten Seite nach dem Login.
   const [loadError, setLoadError] = useState(false)
+  const [gamesOpen, setGamesOpen] = useState(false)
+  const gamesTriggerRef = useRef<HTMLButtonElement>(null)
+  const gamesPopoverId = useId()
 
   useEffect(() => {
     Promise.all([
@@ -315,6 +324,19 @@ export function Dashboard({ ohneHintergrund = false }: { ohneHintergrund?: boole
     : t('common.begruessung.ohneName')
 
   const runningCount = servers.filter((s) => s.status === 'running').length
+  const stoppedCount = Math.max(0, servers.length - runningCount)
+  const { favoriteIds, lastVisitedId } = useServerPreferencesStore()
+  const sortedServers = useMemo(
+    () => sortServersByPriority(servers, favoriteIds, lastVisitedId),
+    [servers, favoriteIds, lastVisitedId],
+  )
+  const {
+    visibleItems: visibleSortedServers,
+    hasMore: hasMoreDashboardServers,
+    remaining: remainingDashboardServers,
+    loadMore: loadMoreDashboardServers,
+    sentinelRef: dashboardServersSentinelRef,
+  } = useLazySlice(sortedServers, 24)
 
   if (loading) {
     return (
@@ -335,12 +357,16 @@ export function Dashboard({ ohneHintergrund = false }: { ohneHintergrund?: boole
         />
       )}
 
-      <main className={`relative z-10 mx-auto w-full max-w-7xl 2xl:max-w-[1600px] px-3.5 ${ohneHintergrund ? 'pt-2 sm:pt-3' : 'pt-4 sm:pt-6'} pb-12 sm:px-6 lg:px-8 space-y-6`}>
+      <main
+        className={`relative z-10 mx-auto w-full max-w-7xl 2xl:max-w-[1600px] px-3.5 ${
+          ohneHintergrund ? 'pt-2 sm:pt-3' : 'pt-4 sm:pt-6'
+        } pb-12 sm:px-6 lg:px-8 space-y-6`}
+      >
         <UpdateBanner />
 
-        {/* Freischwebender Dashboard-Header mit Begrüßung und Server-Status */}
+        {/* Freischwebender Dashboard-Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
-          <div>
+          <div className="min-w-0">
             <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-primary">
               <ServerIcon className="h-4 w-4" aria-hidden="true" />
               <span>{t('dashboard.title')}</span>
@@ -361,107 +387,239 @@ export function Dashboard({ ohneHintergrund = false }: { ohneHintergrund?: boole
                   : 'bg-surface-container-high/80 border-outline-variant/30 text-on-surface-variant'
               }`}
             >
-              <span className={`h-2 w-2 rounded-full ${runningCount > 0 ? 'bg-status-success animate-pulse' : 'bg-on-surface-variant/50'}`} />
+              <span
+                className={`h-2 w-2 rounded-full ${
+                  runningCount > 0 ? 'bg-status-success animate-pulse' : 'bg-on-surface-variant/50'
+                }`}
+              />
               {runningCount} {t('dashboard.running')}
             </span>
           </div>
         </div>
 
-        {/* Stat Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {/* Server-Zähler */}
-        <div className="msm-card p-5">
-          <p className="font-label-md text-label-md text-on-surface-variant uppercase tracking-wider mb-2">
-            {t('dashboard.servers')}
-          </p>
-          <div className="flex items-baseline gap-3">
-            <span className="font-headline text-display-sm text-primary">{servers.length}</span>
-            <span className={`font-body-md text-sm px-2 py-0.5 rounded-full border ${
-              runningCount > 0
-                ? 'bg-status-success/10 border-status-success/30 text-status-success'
-                : 'bg-surface-container-highest border-outline text-on-surface-variant'
-            }`}>
-              {runningCount} {t('dashboard.running')}
-            </span>
-          </div>
-        </div>
-
-        {/* Unterstützte Spiele — kompakt */}
-        <div className="msm-card p-5">
-          <p className="font-label-md text-label-md text-on-surface-variant uppercase tracking-wider mb-2">
-            {t('dashboard.supportedGames')}
-          </p>
-          <span className="font-headline text-display-sm text-primary">{games.length}</span>
-          {games.length > 0 && (
-            <div className="flex flex-wrap gap-1.5 mt-3 max-h-20 overflow-hidden">
-              {games.slice(0, 6).map((g) => (
-                <span
-                  key={g.id}
-                  className="font-mono-sm text-mono-sm px-2 py-0.5 rounded-full border border-outline text-on-surface-variant text-xs"
+        {/* Einheitliches Übersichts-Deck (Server, Unterstützte Spiele, Systemstatus) */}
+        <section
+          aria-label={t('dashboard.title')}
+          className="msm-card rounded-2xl border border-outline bg-surface-container-low/80 backdrop-blur-xl"
+        >
+          <div className="grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-outline/40">
+            {/* Tile 1: Server-Bestand */}
+            <div className="p-4 sm:p-5 flex flex-col justify-between gap-3 min-w-0">
+              <div className="flex items-center justify-between gap-2">
+                <p className="font-label-md text-label-md text-on-surface-variant uppercase tracking-wider">
+                  {t('dashboard.servers')}
+                </p>
+                <Link
+                  to="/servers"
+                  className="inline-flex min-h-[44px] md:min-h-[28px] items-center gap-1 rounded-lg px-2 text-xs font-medium text-primary hover:bg-surface-container-high/60 transition-colors"
                 >
-                  {g.name}
+                  <span>{t('dashboard.viewAllServers')}</span>
+                  <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+                </Link>
+              </div>
+
+              <div className="flex flex-wrap items-baseline gap-2.5">
+                <span className="font-headline text-display-sm font-bold text-primary tabular-nums">
+                  {servers.length}
                 </span>
-              ))}
-              {games.length > 6 && (
-                <span className="font-mono-sm text-mono-sm px-2 py-0.5 rounded-full bg-surface-container-highest text-on-surface-variant text-xs">
-                  +{games.length - 6}
-                </span>
-              )}
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span
+                    className={`inline-flex items-center gap-1.5 font-body-md text-xs px-2.5 py-0.5 rounded-full border ${
+                      runningCount > 0
+                        ? 'bg-status-success/10 border-status-success/30 text-status-success'
+                        : 'bg-surface-container-highest border-outline text-on-surface-variant'
+                    }`}
+                  >
+                    <span
+                      className={`h-1.5 w-1.5 rounded-full ${
+                        runningCount > 0 ? 'bg-status-success animate-pulse' : 'bg-on-surface-variant/50'
+                      }`}
+                    />
+                    {runningCount} {t('dashboard.running')}
+                  </span>
+                  {servers.length > 0 && stoppedCount > 0 && (
+                    <span className="font-body-md text-xs px-2.5 py-0.5 rounded-full border border-outline/70 bg-surface-container-highest/60 text-on-surface-variant">
+                      {t('dashboard.stoppedCount', { count: stoppedCount })}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              <ServerStatusBlocks
+                servers={sortedServers}
+                maxVisible={16}
+                testIdPrefix="dashboard-server-block"
+              />
             </div>
-          )}
-        </div>
 
-        {/* Echter Systemstatus */}
-        <SystemStatusCard />
-      </div>
+            {/* Tile 2: Unterstützte Spiele ohne unschönes Abschneiden */}
+            <div className="p-4 sm:p-5 flex flex-col justify-between gap-3 min-w-0">
+              <div className="flex items-center justify-between gap-2">
+                <p className="font-label-md text-label-md text-on-surface-variant uppercase tracking-wider">
+                  {t('dashboard.supportedGames')}
+                </p>
+                {games.length > 4 && (
+                  <Button
+                    ref={gamesTriggerRef}
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    fingerziel
+                    onClick={() => setGamesOpen((open) => !open)}
+                    aria-expanded={gamesOpen}
+                    aria-controls={gamesPopoverId}
+                    className="h-7 px-2 text-xs text-primary"
+                  >
+                    <span>{t('dashboard.allGames')}</span>
+                    <ChevronDown
+                      className={`h-3.5 w-3.5 transition-transform ${gamesOpen ? 'rotate-180' : ''}`}
+                      aria-hidden="true"
+                    />
+                  </Button>
+                )}
+              </div>
 
-      {/* Node capacity Top-N (nodes.read only) — never the full inventory */}
-      <NodeCapacityCard />
+              <div className="flex flex-wrap items-center gap-2 min-w-0">
+                <span className="font-headline text-display-sm font-bold text-primary tabular-nums mr-1">
+                  {games.length}
+                </span>
+                {games.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-1.5 min-w-0">
+                    {games.slice(0, 4).map((g) => (
+                      <span
+                        key={g.id}
+                        className="font-mono-sm text-xs px-2 py-0.5 rounded-full border border-outline bg-surface-container-high/55 text-on-surface-variant truncate max-w-[10rem]"
+                      >
+                        {g.name}
+                      </span>
+                    ))}
+                    {games.length > 4 && (
+                      <button
+                        type="button"
+                        onClick={() => setGamesOpen(true)}
+                        className="font-mono-sm text-xs px-2.5 py-0.5 rounded-full bg-surface-container-highest hover:bg-primary/15 hover:text-primary text-on-surface-variant transition-colors"
+                      >
+                        {t('dashboard.moreGames', { count: games.length - 4 })}
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
 
-      {/* Ladefehler — nicht als Leerzustand ausgeben */}
-      {loadError && (
-        <div className="msm-card p-12 text-center border-dashed border-2 border-outline-variant">
-          <AlertTriangle className="w-10 h-10 text-status-destructive mx-auto mb-4" />
-          <h3 className="font-headline text-body-lg text-on-surface mb-1">
-            {t('dashboard.loadFailed')}
-          </h3>
-        </div>
-      )}
+              <Ankerfenster
+                offen={gamesOpen}
+                onSchliessen={() => setGamesOpen(false)}
+                anker={gamesTriggerRef}
+                label={t('dashboard.supportedGames')}
+                ausrichtung="ende"
+                maxHoehe="65dvh"
+                durchsichtig
+                className="w-[min(24rem,calc(100vw-2rem))] rounded-2xl border-outline-variant/40 overscroll-contain space-y-3"
+              >
+                <section id={gamesPopoverId} aria-label={t('dashboard.supportedGames')} className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <Gamepad2 className="h-4 w-4 text-primary shrink-0" aria-hidden="true" />
+                    <h3 className="text-sm font-semibold text-on-surface">
+                      {t('dashboard.supportedGames')} ({games.length})
+                    </h3>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {games.map((g) => (
+                      <span
+                        key={g.id}
+                        className="font-mono-sm text-xs px-2.5 py-1 rounded-full border border-outline-variant/45 bg-surface-container/60 text-on-surface"
+                      >
+                        {g.name}
+                      </span>
+                    ))}
+                  </div>
+                </section>
+              </Ankerfenster>
+            </div>
 
-      {/* Empty State */}
-      {!loadError && servers.length === 0 && (
-        <div className="msm-card p-12 text-center border-dashed border-2 border-outline-variant">
-          <ServerIcon className="w-10 h-10 text-on-surface-variant mx-auto mb-4" />
-          <h3 className="font-headline text-body-lg text-on-surface mb-1">
-            {t('dashboard.noServers')}
-          </h3>
-          <p className="font-body-md text-sm text-on-surface-variant mb-4">
-            {t('dashboard.createFirstServer')}
-          </p>
-          {canCreateServer && (
-            <a
-              href="/servers"
-              className={buttonClasses('primary')}
-            >
-              {t('dashboard.createServer')}
-            </a>
-          )}
-        </div>
-      )}
+            {/* Tile 3: Systemstatus */}
+            <SystemStatusSection />
+          </div>
+        </section>
 
-      {/* Server Cards */}
-      {servers.length > 0 && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {servers.map((server) => (
-            <ServerCard
-              key={server.id}
-              server={server}
-              gameLabel={games.find((g) => g.id === server.game_type)?.name || server.game_type}
-              variant="dashboard"
-            />
-          ))}
-        </div>
-      )}
+        {/* Node capacity Top-N (nodes.read only) */}
+        <NodeCapacityCard />
+
+        {/* Ladefehler — nicht als Leerzustand ausgeben */}
+        {loadError && (
+          <div className="msm-card rounded-2xl border-dashed border-2 border-outline-variant bg-surface-container-low/80 backdrop-blur-xl p-12 text-center">
+            <AlertTriangle className="w-10 h-10 text-status-destructive mx-auto mb-4" aria-hidden="true" />
+            <h3 className="font-headline text-body-lg text-on-surface mb-1">
+              {t('dashboard.loadFailed')}
+            </h3>
+          </div>
+        )}
+
+        {/* Empty State */}
+        {!loadError && servers.length === 0 && (
+          <div className="msm-card rounded-2xl border-dashed border-2 border-outline-variant bg-surface-container-low/80 backdrop-blur-xl p-12 text-center">
+            <ServerIcon className="w-10 h-10 text-on-surface-variant mx-auto mb-4" aria-hidden="true" />
+            <h3 className="font-headline text-body-lg text-on-surface mb-1">
+              {t('dashboard.noServers')}
+            </h3>
+            <p className="font-body-md text-sm text-on-surface-variant mb-4">
+              {t('dashboard.createFirstServer')}
+            </p>
+            {canCreateServer && (
+              <Link to="/servers" className={buttonClasses('primary')}>
+                {t('dashboard.createServer')}
+              </Link>
+            )}
+          </div>
+        )}
+
+        {/* Server Cards */}
+        {servers.length > 0 && (
+          <section aria-label={t('dashboard.activeServersOverview')} className="space-y-3">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2 min-w-0">
+                <h2 className="font-headline text-sm font-semibold text-on-surface uppercase tracking-wider">
+                  {t('dashboard.activeServersOverview')}
+                </h2>
+                <span className="rounded-full border border-outline-variant/40 bg-surface-container-high/60 px-2 py-0.5 text-xs font-medium text-on-surface-variant tabular-nums">
+                  {servers.length}
+                </span>
+              </div>
+              <Link
+                to="/servers"
+                className="inline-flex min-h-[44px] md:min-h-[32px] items-center gap-1 rounded-lg px-2 text-xs font-medium text-primary hover:bg-surface-container-high/60 transition-colors"
+              >
+                <span>{t('dashboard.viewAllServers')}</span>
+                <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+              </Link>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-4">
+              {visibleSortedServers.map((server) => (
+                <ServerCard
+                  key={server.id}
+                  server={server}
+                  gameLabel={games.find((g) => g.id === server.game_type)?.name || server.game_type}
+                  variant="dashboard"
+                />
+              ))}
+            </div>
+            {hasMoreDashboardServers && (
+              <div ref={dashboardServersSentinelRef} className="flex justify-center pt-2">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  fingerziel
+                  onClick={loadMoreDashboardServers}
+                  data-testid="dashboard-servers-load-more"
+                >
+                  {t('servers.loadMoreServers', { remaining: remainingDashboardServers })}
+                </Button>
+              </div>
+            )}
+          </section>
+        )}
       </main>
     </div>
   )

@@ -1,21 +1,18 @@
 /**
- * AdminNodes — owner-only node registry UI (Phase 3 multi-node).
- * Uses @maunting/ui Dialog, Input, ActionMenu and ProgressBar primitives.
- * Never displays agent tokens (API does not return them).
+ * AdminNodes — Node-Verwaltung im einheitlichen Server-Deck-Stil.
+ * Zeigt Auslastung und verbleibende Kapazität (CPU, RAM, Disk) sofort über ProgressRings
+ * und bündelt Host-URL sowie Buchungsaufschlüsselung sauber auf einen Klick im Ankerfenster.
  */
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
-  Activity,
-  HardDrive,
   MoreHorizontal,
   Network,
+  Pencil,
   Plus,
   RefreshCw,
   Search,
-  Server,
   Trash2,
-  Pencil,
 } from 'lucide-react'
 import { useNodeStore } from '@/stores/nodeStore'
 import { toast } from '@/stores/toastStore'
@@ -32,18 +29,23 @@ import {
   DialogTitle,
   Input,
   Kurzinfo,
-  PageHeader,
   PasswordInput,
-  ProgressBar,
-  Segment,
   Spinner,
-  StackedProgressBar,
   type ActionMenuItem,
 } from '@maunting/ui'
 import { NodeEnrollmentDialog } from '@/components/nodes/NodeEnrollmentDialog'
+import { NodeStatusBlocks } from '@/components/server/ServerStatusBlocks'
+import {
+  NodeCapacityDetailsButton,
+  NodeResourceRings,
+  type NodeResourceMetrics,
+} from '@/components/nodes/NodeResourceRings'
+import { TageszeitHintergrund } from '@/components/layout/TageszeitHintergrund'
+import { useTageszeitMotiv } from '@/lib/tageszeit'
 import type { Node } from '@/types'
 import { api } from '@/api/client'
 import { useHasPermission } from '@/hooks/useHasPermission'
+
 function statusVariant(status: string): 'success' | 'destructive' | 'default' | 'warning' {
   switch (status) {
     case 'online':
@@ -57,86 +59,52 @@ function statusVariant(status: string): 'success' | 'destructive' | 'default' | 
   }
 }
 
-function formatRamMb(mb: number | null | undefined): string {
-  if (mb == null) return '—'
-  if (mb >= 1024) return `${(mb / 1024).toFixed(1)} GB`
-  return `${Math.round(mb)} MB`
-}
-
-function cpuPercent(node: Node): number | null {
+function toNodeMetrics(node: Node): NodeResourceMetrics {
   const m = node.metrics
-  if (m?.cpu_percent != null) return m.cpu_percent
-  return null
-}
+  const ramTotalMb =
+    node.ram_total ??
+    (m?.ram_total_bytes != null ? Math.round(m.ram_total_bytes / (1024 * 1024)) : null)
 
-function ramPercent(node: Node): number | null {
-  const m = node.metrics
-  if (m?.ram_percent != null) return m.ram_percent
-  if (m?.ram_used_bytes != null && m?.ram_total_bytes) {
-    return (m.ram_used_bytes / m.ram_total_bytes) * 100
+  let ramUsedMb: number | null = null
+  if (m?.ram_used_bytes != null) {
+    ramUsedMb = Math.round(m.ram_used_bytes / (1024 * 1024))
+  } else if (m?.ram_percent != null && ramTotalMb != null) {
+    ramUsedMb = Math.round((m.ram_percent / 100) * ramTotalMb)
   }
-  return null
-}
 
-function freeRamMb(node: Node): number | null {
-  const m = node.metrics
-  if (m?.ram_total_bytes != null && m?.ram_used_bytes != null) {
-    return Math.max(0, Math.round((m.ram_total_bytes - m.ram_used_bytes) / (1024 * 1024)))
+  const diskTotalMb =
+    node.disk_total ??
+    (m?.disk_total_bytes != null ? Math.round(m.disk_total_bytes / (1024 * 1024)) : null)
+  const diskUsedMb =
+    m?.disk_used_bytes != null
+      ? Math.round(m.disk_used_bytes / (1024 * 1024))
+      : node.disk_used ?? null
+
+  return {
+    nodeId: node.id,
+    nodeName: node.name,
+    host: node.host,
+    cpuPercent: m?.cpu_percent ?? null,
+    cpuCores: node.cpu_total ?? m?.cpu_count ?? null,
+    cpuModel: node.cpu_model || m?.cpu_model || null,
+    ramTotalMb,
+    ramUsedMb,
+    ramAllocatedMb: node.ram_allocated_mb ?? null,
+    ramAllocatableMb: node.ram_allocatable_mb ?? null,
+    diskTotalMb,
+    diskUsedMb,
+    diskPanelUsedMb: node.disk_panel_used_mb ?? null,
+    diskAllocatedGb: node.disk_allocated_gb ?? null,
+    diskAllocatableGb: node.disk_allocatable_gb ?? null,
   }
-  // Capacity alone is not free RAM — do not mislabel totals as free.
-  return null
 }
 
-function cpuModelLabel(node: Node): string | null {
-  const model = node.cpu_model || node.metrics?.cpu_model
-  if (typeof model === 'string' && model.trim()) return model.trim()
-  return null
-}
-
-/** Prefer API allocatable (includes headroom); fallback to total − booked. */
-function allocatableRamMb(node: Node): number | null {
-  if (node.ram_allocatable_mb != null) return Math.max(0, node.ram_allocatable_mb)
-  if (node.ram_total == null) return null
-  const booked = node.ram_allocated_mb ?? 0
-  return Math.max(0, Math.round(node.ram_total - booked))
-}
-
-function diskPercent(node: Node): number | null {
-  const m = node.metrics
-  if (m?.disk_percent != null) return m.disk_percent
-  if (m?.disk_used_bytes != null && m?.disk_total_bytes) {
-    return (m.disk_used_bytes / m.disk_total_bytes) * 100
-  }
-  if (node.disk_used != null && node.disk_total) {
-    return (node.disk_used / node.disk_total) * 100
-  }
-  return null
-}
-
-function freeDiskMb(node: Node): number | null {
-  const m = node.metrics
-  if (m?.disk_total_bytes != null && m?.disk_used_bytes != null) {
-    return Math.max(0, Math.round((m.disk_total_bytes - m.disk_used_bytes) / (1024 * 1024)))
-  }
-  if (node.disk_total != null && node.disk_used != null) {
-    return Math.max(0, node.disk_total - node.disk_used)
-  }
-  return null
-}
-
-function allocatableDiskGb(node: Node): number | null {
-  if (node.disk_allocatable_gb != null) return Math.max(0, node.disk_allocatable_gb)
-  if (node.disk_total == null) return null
-  const bookedGb = node.disk_allocated_gb ?? 0
-  const totalGb = Math.floor(node.disk_total / 1024)
-  return Math.max(0, totalGb - bookedGb)
-}
-
-export function AdminNodes() {
+export function AdminNodes({ ohneHintergrund = false }: { ohneHintergrund?: boolean } = {}) {
   const { t } = useTranslation()
   const { nodes, total, loading, fetchNodes, createNode, updateNode, deleteNode, healthCheck } =
     useNodeStore()
   const canManageNodes = useHasPermission('nodes.manage')
+  const headerMotiv = useTageszeitMotiv('dashboard')
   const [showForm, setShowForm] = useState(false)
   const [showEnrollment, setShowEnrollment] = useState(false)
   const [editing, setEditing] = useState<Node | null>(null)
@@ -320,6 +288,12 @@ export function AdminNodes() {
     }
   }
 
+  const stats = useMemo(() => {
+    const online = nodes.filter((n) => n.status === 'online').length
+    const servers = nodes.reduce((sum, n) => sum + (n.server_count || 0), 0)
+    return { online, servers }
+  }, [nodes])
+
   if (loading && nodes.length === 0) {
     return (
       <div className="flex h-64 items-center justify-center">
@@ -329,402 +303,360 @@ export function AdminNodes() {
   }
 
   return (
-    <div className="msm-page">
-      <PageHeader eyebrow={t('pageContext.infrastructure')} title={t('nav.nodes')} description={t('nodes.subtitle')} status={<span className="msm-badge-info">{total} {t('nav.nodes')}</span>} actions={<div className="flex flex-wrap items-center gap-2">
-          {canManageNodes && updateAvailable && (
-            <Button variant="secondary"
-              type="button"
-              disabled={updatingNodes}
-              onClick={handleUpdateNodes}
-              className="inline-flex min-h-11 items-center gap-2 disabled:opacity-60"
-            >
-              <RefreshCw className={`h-4 w-4 ${updatingNodes ? 'animate-spin' : ''}`} />
-              {updatingNodes ? t('nodes.updating') : t('nodes.updateAll')}
-            </Button>
-          )}
-          {canManageNodes && (
-            <Button
-              type="button"
-              onClick={openEnrollment}
-              className="inline-flex min-h-11 items-center gap-2"
-            >
-              <Plus className="h-4 w-4" />
-              {t('nodes.add')}
-            </Button>
-          )}
-        </div>} />
-      <div className="flex items-center gap-4 rounded-xl bg-surface-variant/20 p-3 sm:p-4" role="search">
-        <div className="relative flex-1 max-w-sm">
-          <Search
-            className="pointer-events-none absolute left-3 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-on-surface-variant"
-            aria-hidden="true"
-          />
-          <Input
-            type="search"
-            aria-label={t('nodes.searchPlaceholder')}
-            value={searchVal}
-            onChange={(e) => setSearchVal(e.target.value)}
-            placeholder={t('nodes.searchPlaceholder')}
-            className="min-h-11 pl-9 sm:min-h-10"
-          />
-        </div>
-      </div>
-
-      {showEnrollment && (
-        <NodeEnrollmentDialog
-          onClose={() => setShowEnrollment(false)}
-          onManualSetup={openManualCreate}
-          onApproved={() => fetchNodes(currentPage, pageSize, debouncedSearch)}
+    <div className="relative isolate flex flex-col h-full w-full min-h-0 overflow-y-auto text-on-surface scrollbar-thin">
+      {!ohneHintergrund && (
+        <TageszeitHintergrund
+          motiv={headerMotiv}
+          hoehe="h-[520px] sm:h-[580px] lg:h-[640px]"
+          deckkraft="opacity-55"
+          ebene="-z-10"
         />
       )}
 
-      <Dialog
-        open={showForm}
-        onOpenChange={(nextOpen) => {
-          if (!nextOpen) {
-            setShowForm(false)
-            setEditing(null)
-          }
-        }}
+      <main
+        className={`relative z-10 mx-auto w-full max-w-7xl 2xl:max-w-[1600px] px-3.5 ${
+          ohneHintergrund ? 'pt-2 sm:pt-3' : 'pt-4 sm:pt-6'
+        } pb-12 sm:px-6 lg:px-8 space-y-6`}
       >
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>{editing ? t('nodes.edit') : t('nodes.add')}</DialogTitle>
-            <DialogDescription>{t('nodes.subtitle')}</DialogDescription>
-          </DialogHeader>
-          <form onSubmit={handleSave} className="space-y-4">
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <Input
-                label={t('common.name')}
-                value={form.name}
-                onChange={(e) => setForm({ ...form, name: e.target.value })}
-                required
-                maxLength={100}
-                autoComplete="off"
-              />
-              <Input
-                label={t('nodes.host')}
-                value={form.host}
-                onChange={(e) => setForm({ ...form, host: e.target.value })}
-                required
-                placeholder="https://10.0.0.5:9000"
-                maxLength={255}
-                autoComplete="off"
-              />
+        {/* Freischwebender Infrastruktur-Header im einheitlichen Stil */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-primary">
+              <Network className="h-4 w-4" aria-hidden="true" />
+              <span>{t('pageContext.infrastructure')}</span>
             </div>
-            <div>
-              <Input
-                label={t('nodes.tlsFingerprint')}
-                className="font-mono text-sm"
-                value={form.tls_fingerprint}
-                onChange={(e) => setForm({ ...form, tls_fingerprint: e.target.value })}
-                required={!editing}
-                placeholder={t('nodes.fingerprintPlaceholder')}
-                maxLength={128}
-                autoComplete="off"
-                spellCheck={false}
+            {!ohneHintergrund && (
+              <h1 className="mt-1 font-headline text-2xl sm:text-3xl font-extrabold tracking-tight text-on-surface">
+                {t('nav.nodes')}
+              </h1>
+            )}
+            <p className="mt-1 text-xs sm:text-sm text-on-surface-variant max-w-xl leading-relaxed">
+              {t('nodes.subtitle')}
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            <span
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border backdrop-blur-md shadow-sm ${
+                stats.online > 0
+                  ? 'bg-status-success/15 border-status-success/30 text-status-success'
+                  : 'bg-surface-container-high/80 border-outline-variant/30 text-on-surface-variant'
+              }`}
+            >
+              <span
+                className={`h-2 w-2 rounded-full ${
+                  stats.online > 0 ? 'bg-status-success animate-pulse' : 'bg-on-surface-variant/50'
+                }`}
               />
-              <p className="mt-1 text-xs text-on-surface-variant">{t('nodes.fingerprintHint')}</p>
-            </div>
-            <div>
-              <PasswordInput
-                label={t('nodes.agentToken')}
-                value={form.auth_token}
-                onChange={(e) => setForm({ ...form, auth_token: e.target.value })}
-                required={!editing}
-                minLength={editing ? undefined : 16}
-                placeholder={editing ? t('nodes.tokenLeaveBlank') : undefined}
-                autoComplete="new-password"
-              />
-              <p className="mt-1 font-body-md text-xs text-on-surface-variant">
-                {t('nodes.tokenHint')}
-              </p>
-            </div>
-            <DialogFooter>
+              {t('nodes.capacitySubtitle', { online: stats.online, total })}
+            </span>
+
+            {canManageNodes && updateAvailable && (
               <Button
                 variant="secondary"
                 type="button"
-                onClick={() => {
-                  setShowForm(false)
-                  setEditing(null)
-                }}
+                fingerziel
+                disabled={updatingNodes}
+                onClick={handleUpdateNodes}
+                className="inline-flex items-center gap-2 rounded-xl disabled:opacity-60"
               >
-                {t('common.cancel')}
+                <RefreshCw className={`h-4 w-4 ${updatingNodes ? 'animate-spin' : ''}`} />
+                {updatingNodes ? t('nodes.updating') : t('nodes.updateAll')}
               </Button>
-              <Button type="submit" disabled={saving}>
-                {saving ? t('common.loading') : t('common.save')}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+            )}
 
-      {nodes.length === 0 ? (
-        <div className="msm-card border-2 border-dashed border-outline-variant p-12 text-center">
-          <Network className="mx-auto mb-4 h-10 w-10 text-on-surface-variant" />
-          <h3 className="mb-1 font-headline text-body-lg text-on-surface">{t('nodes.empty')}</h3>
-          <p className="font-body-md text-sm text-on-surface-variant">{t('nodes.emptyHint')}</p>
+            {canManageNodes && (
+              <Button
+                type="button"
+                fingerziel
+                onClick={openEnrollment}
+                className="inline-flex items-center gap-2 rounded-xl shadow-sm"
+              >
+                <Plus className="h-4 w-4" />
+                {t('nodes.add')}
+              </Button>
+            )}
+          </div>
         </div>
-      ) : (
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          {nodes.map((node) => {
-            const cpu = cpuPercent(node)
-            const ram = ramPercent(node)
-            return (
-              <div key={node.id} className="msm-card p-5" data-testid={`node-card-${node.id}`}>
-                <div className="mb-3 flex items-start justify-between gap-2">
-                  <div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <h3 className="font-headline text-body-md text-on-surface">{node.name}</h3>
-                      <Badge variant={statusVariant(node.status)}>
-                        {t(`nodes.status.${node.status}`, { defaultValue: node.status })}
-                      </Badge>
-                      {node.is_local && (
-                        <Badge variant="info">{t('nodes.local')}</Badge>
-                      )}
-                    </div>
-                    <p className="mt-1 break-all font-mono-sm text-mono-sm text-on-surface-variant">
-                      {node.host}
-                    </p>
-                    {(() => {
-                      const model = cpuModelLabel(node)
-                      if (!model) {
-                        return (
-                          <p className="mt-1 truncate font-body-md text-xs text-on-surface-variant/90">
-                            {t('nodes.cpuModelUnknown')}
-                          </p>
-                        )
-                      }
-                      return (
-                        <Kurzinfo text={model} seite="anfang" aussen="mt-1 min-w-0 max-w-full">
-                          <p className="min-w-0 truncate font-body-md text-xs text-on-surface-variant/90">
-                            {model}
-                          </p>
-                        </Kurzinfo>
-                      )
-                    })()}
-                  </div>
-                  <div className="flex shrink-0 items-center gap-1.5">
-                    <Kurzinfo text={t('nodes.healthCheck')} seite={canManageNodes ? 'mitte' : 'ende'}>
-                      <Button
-                        variant="secondary"
-                        size="icon"
-                        fingerziel
-                        type="button"
-                        aria-label={t('nodes.healthCheckLabel', { name: node.name })}
-                        onClick={() => void handleHealth(node)}
-                        disabled={busyId === node.id}
-                      >
-                        <RefreshCw
-                          className={`h-4 w-4 ${busyId === node.id ? 'animate-spin' : ''}`}
-                        />
-                      </Button>
-                    </Kurzinfo>
-                    {canManageNodes && (() => {
-                      const nodeMenuItems: ActionMenuItem[] = [
-                        {
-                          key: 'edit',
-                          label: t('nodes.edit'),
-                          icon: <Pencil className="h-4 w-4" aria-hidden="true" />,
-                          onSelect: () => openEdit(node),
-                        },
-                        {
-                          key: 'delete',
-                          label: t('common.delete'),
-                          icon: <Trash2 className="h-4 w-4" aria-hidden="true" />,
-                          destructive: true,
-                          separatorBefore: true,
-                          disabled: node.is_local || node.server_count > 0,
-                          onSelect: () => void handleDelete(node),
-                        },
-                      ]
-                      return (
-                        <ActionMenu
-                          label={t('nodes.actionsMenu', { name: node.name })}
-                          ariaLabel={t('nodes.actionsMenu', { name: node.name })}
-                          items={nodeMenuItems}
-                          icon={<MoreHorizontal className="h-4 w-4" aria-hidden="true" />}
-                          variant="secondary"
-                          surface="dna"
-                          align="end"
-                          iconOnly
-                        />
-                      )
-                    })()}
-                  </div>
-                </div>
 
-                <div className="mb-4 space-y-3">
-                  <ProgressBar
-                    value={cpu}
-                    label="CPU"
-                    hint={cpu != null ? `${cpu.toFixed(0)}%` : '—'}
-                    heat
-                    data-testid={`node-cpu-${node.id}`}
-                  />
-                  <ProgressBar
-                    value={ram}
-                    label="RAM"
-                    hint={
-                      ram != null
-                        ? `${ram.toFixed(0)}% · ${t('nodes.freeRam', { value: formatRamMb(freeRamMb(node)) })}`
-                        : node.ram_total != null
-                          ? t('nodes.ramCapacity', {
-                              value: formatRamMb(node.ram_total),
-                            })
-                          : '—'
-                    }
-                    heat
-                    data-testid={`node-ram-${node.id}`}
-                  />
-                  {(() => {
-                    const diskP = diskPercent(node)
-                    const fDisk = freeDiskMb(node)
-                    const panelUsedMb = node.disk_panel_used_mb ?? 0
-                    const totalMb = node.disk_total ?? 0
-                    const hostUsedMb = node.disk_used ?? (totalMb && fDisk != null ? Math.max(0, totalMb - fDisk) : 0)
-                    const systemUsedMb = Math.max(0, hostUsedMb - panelUsedMb)
-                    const freeMb = fDisk ?? (totalMb ? Math.max(0, totalMb - hostUsedMb) : 0)
+        {/* Kompakte Filterleiste */}
+        <div
+          className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-outline bg-surface-container-low/80 backdrop-blur-xl px-3.5 py-2.5 sm:px-4 sm:py-3"
+          role="search"
+        >
+          <div className="relative flex-1 min-w-[200px] max-w-sm">
+            <Search
+              className="pointer-events-none absolute left-3 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-on-surface-variant"
+              aria-hidden="true"
+            />
+            <Input
+              type="search"
+              aria-label={t('nodes.searchPlaceholder')}
+              value={searchVal}
+              onChange={(e) => setSearchVal(e.target.value)}
+              placeholder={t('nodes.searchPlaceholder')}
+              className="min-h-11 pl-9 sm:min-h-10"
+            />
+          </div>
+          {nodes.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2 text-xs text-on-surface-variant">
+              <NodeStatusBlocks nodes={nodes} testIdPrefix="admin-node-block" />
+              <span className="rounded-full border border-outline-variant/40 bg-surface-container-high/55 px-2.5 py-1 font-medium tabular-nums">
+                {t('nodes.serverCount', { count: stats.servers })}
+              </span>
+            </div>
+          )}
+        </div>
 
-                    const segments: Segment[] = [
-                      {
-                        value: panelUsedMb,
-                        colorClass: 'bg-primary',
-                        label: t('nodes.diskPanelUsed', { value: formatRamMb(panelUsedMb) }),
-                      },
-                      {
-                        value: systemUsedMb,
-                        colorClass: 'bg-outline',
-                        label: t('nodes.diskSystemUsed', { value: formatRamMb(systemUsedMb) }),
-                      },
-                      {
-                        value: freeMb,
-                        colorClass: 'bg-status-success',
-                        label: t('nodes.diskFree', { value: formatRamMb(freeMb) }),
-                      },
-                    ]
+        {showEnrollment && (
+          <NodeEnrollmentDialog
+            onClose={() => setShowEnrollment(false)}
+            onManualSetup={openManualCreate}
+            onApproved={() => fetchNodes(currentPage, pageSize, debouncedSearch)}
+          />
+        )}
 
-                    return (
-                      <>
-                        <StackedProgressBar
-                          segments={segments}
-                          label="Disk"
-                          hint={
-                            diskP != null
-                              ? `${diskP.toFixed(0)}% · ${t('nodes.diskFree', { value: formatRamMb(fDisk) })}`
-                              : node.disk_total != null
-                                ? t('nodes.diskTotal', { value: formatRamMb(node.disk_total) })
-                                : '—'
-                          }
-                          data-testid={`node-disk-${node.id}`}
-                        />
-                        {(node.ram_total != null || node.disk_total != null) && (
-                          <details className="rounded-xl border border-outline-variant/40 bg-surface-variant/15 px-3 py-2 text-xs text-on-surface-variant">
-                            <summary className="cursor-pointer select-none font-label-md text-label-md text-on-surface-variant hover:text-on-surface">
-                              {t('nodes.capacityDetails')}
-                            </summary>
-                            <div className="mt-2 space-y-2">
-                              {node.ram_total != null && (
-                                <p data-testid={`node-ram-booked-${node.id}`}>
-                                  {t('nodes.ramBooked', {
-                                    used: formatRamMb(node.ram_allocated_mb ?? 0),
-                                    total: formatRamMb(node.ram_total),
-                                  })}
-                                  {' · '}
-                                  {t('nodes.ramAllocatable', {
-                                    value: formatRamMb(allocatableRamMb(node)),
-                                  })}
-                                </p>
-                              )}
-                              {node.disk_total != null && (
-                                <div className="space-y-1" data-testid={`node-disk-breakdown-${node.id}`}>
-                                  <div className="flex flex-wrap items-center gap-3 font-mono text-label-sm">
-                                    <span className="text-primary">
-                                      ■ {t('nodes.diskPanelUsed', { value: formatRamMb(panelUsedMb) })}
-                                    </span>
-                                    <span className="text-on-surface-variant">
-                                      ■ {t('nodes.diskSystemUsed', { value: formatRamMb(systemUsedMb) })}
-                                    </span>
-                                    <span className="text-status-success">
-                                      ■ {t('nodes.diskFree', { value: formatRamMb(fDisk) })}
-                                    </span>
-                                  </div>
-                                  <p>
-                                    {t('nodes.diskBooked', {
-                                      used: `${node.disk_allocated_gb ?? 0} GB`,
-                                      total: `${Math.floor((node.disk_total ?? 0) / 1024)} GB`,
-                                    })}
-                                    {' · '}
-                                    {t('nodes.diskAllocatable', {
-                                      value: `${allocatableDiskGb(node) ?? 0} GB`,
-                                    })}
-                                  </p>
-                                </div>
-                              )}
-                            </div>
-                          </details>
-                        )}
-                      </>
-                    )
-                  })()}
-                </div>
-
-                <div className="flex flex-wrap gap-4 text-xs text-on-surface-variant">
-                  <span className="inline-flex items-center gap-1.5">
-                    <Server className="h-3.5 w-3.5" />
-                    {t('nodes.serverCount', { count: node.server_count })}
-                  </span>
-                  <span className="inline-flex items-center gap-1.5">
-                    <Activity className="h-3.5 w-3.5" />
-                    {node.cpu_total != null
-                      ? t('nodes.cpuCores', { count: node.cpu_total })
-                      : 'CPU —'}
-                  </span>
-                  <span className="inline-flex items-center gap-1.5">
-                    <HardDrive className="h-3.5 w-3.5" />
-                    {node.disk_total != null
-                      ? t('nodes.diskTotal', { value: formatRamMb(node.disk_total) })
-                      : 'Disk —'}
-                  </span>
-                </div>
+        <Dialog
+          open={showForm}
+          onOpenChange={(nextOpen) => {
+            if (!nextOpen) {
+              setShowForm(false)
+              setEditing(null)
+            }
+          }}
+        >
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle>{editing ? t('nodes.edit') : t('nodes.add')}</DialogTitle>
+              <DialogDescription>{t('nodes.subtitle')}</DialogDescription>
+            </DialogHeader>
+            <form onSubmit={handleSave} className="space-y-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <Input
+                  label={t('common.name')}
+                  value={form.name}
+                  onChange={(e) => setForm({ ...form, name: e.target.value })}
+                  required
+                  maxLength={100}
+                  autoComplete="off"
+                />
+                <Input
+                  label={t('nodes.host')}
+                  value={form.host}
+                  onChange={(e) => setForm({ ...form, host: e.target.value })}
+                  required
+                  placeholder="https://10.0.0.5:9000"
+                  maxLength={255}
+                  autoComplete="off"
+                />
               </div>
-            )
-          })}
-        </div>
-      )}
+              <div>
+                <Input
+                  label={t('nodes.tlsFingerprint')}
+                  className="font-mono text-sm"
+                  value={form.tls_fingerprint}
+                  onChange={(e) => setForm({ ...form, tls_fingerprint: e.target.value })}
+                  required={!editing}
+                  placeholder={t('nodes.fingerprintPlaceholder')}
+                  maxLength={128}
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+                <p className="mt-1 text-xs text-on-surface-variant">{t('nodes.fingerprintHint')}</p>
+              </div>
+              <div>
+                <PasswordInput
+                  label={t('nodes.agentToken')}
+                  value={form.auth_token}
+                  onChange={(e) => setForm({ ...form, auth_token: e.target.value })}
+                  required={!editing}
+                  minLength={editing ? undefined : 16}
+                  placeholder={editing ? t('nodes.tokenLeaveBlank') : undefined}
+                  autoComplete="new-password"
+                />
+                <p className="mt-1 font-body-md text-xs text-on-surface-variant">
+                  {t('nodes.tokenHint')}
+                </p>
+              </div>
+              <DialogFooter>
+                <Button
+                  variant="secondary"
+                  type="button"
+                  fingerziel
+                  onClick={() => {
+                    setShowForm(false)
+                    setEditing(null)
+                  }}
+                >
+                  {t('common.cancel')}
+                </Button>
+                <Button type="submit" fingerziel disabled={saving}>
+                  {saving ? t('common.loading') : t('common.save')}
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
 
-      {Math.ceil(total / pageSize) > 1 && (
-        <div className="mt-8 flex items-center justify-between border-t border-surface-variant pt-4 text-sm text-on-surface-variant">
-          <div>
-            {t('nodes.pagination.range', { from: (currentPage - 1) * pageSize + 1, to: Math.min(currentPage * pageSize, total), total })}
+        {nodes.length === 0 ? (
+          <div className="msm-card rounded-2xl border-2 border-dashed border-outline-variant bg-surface-container-low/80 backdrop-blur-xl p-12 text-center">
+            <Network className="mx-auto mb-4 h-10 w-10 text-on-surface-variant" aria-hidden="true" />
+            <h3 className="mb-1 font-headline text-body-lg text-on-surface">{t('nodes.empty')}</h3>
+            <p className="font-body-md text-sm text-on-surface-variant">{t('nodes.emptyHint')}</p>
           </div>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="secondary"
-              size="sm"
-              fingerziel
-              disabled={currentPage <= 1}
-              onClick={() => setCurrentPage((p) => p - 1)}
-              className="disabled:opacity-50"
-            >
-              {t('common.back')}
-            </Button>
-            <span className="font-medium px-2">
-              {t('nodes.pagination.page', { current: currentPage, total: Math.ceil(total / pageSize) })}
-            </span>
-            <Button
-              variant="secondary"
-              size="sm"
-              fingerziel
-              disabled={currentPage >= Math.ceil(total / pageSize)}
-              onClick={() => setCurrentPage((p) => p + 1)}
-              className="disabled:opacity-50"
-            >
-              {t('common.next')}
-            </Button>
+        ) : (
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            {nodes.map((node) => {
+              const metrics = toNodeMetrics(node)
+              const isOnline = node.status === 'online'
+              const isOffline = node.status === 'offline'
+              const dotColor = isOnline
+                ? 'bg-status-success animate-pulse'
+                : isOffline
+                  ? 'bg-status-destructive'
+                  : 'bg-outline'
+
+              return (
+                <article
+                  key={node.id}
+                  data-testid={`node-card-${node.id}`}
+                  className="msm-card rounded-2xl border border-outline bg-surface-container-low/80 backdrop-blur-xl px-4 py-3.5 sm:px-5 sm:py-4 space-y-3"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2 min-w-0">
+                        <span className={`h-2.5 w-2.5 rounded-full shrink-0 ${dotColor}`} aria-hidden="true" />
+                        <h3 className="font-headline text-body-lg font-semibold text-on-surface truncate">
+                          {node.name}
+                        </h3>
+                        <Badge variant={statusVariant(node.status)}>
+                          {t(`nodes.status.${node.status}`, { defaultValue: node.status })}
+                        </Badge>
+                        {node.is_local && <Badge variant="info">{t('nodes.local')}</Badge>}
+                      </div>
+
+                      <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-on-surface-variant">
+                        <span>{t('nodes.serverCount', { count: node.server_count })}</span>
+                        {metrics.cpuCores != null && (
+                          <>
+                            <span aria-hidden="true" className="text-outline">·</span>
+                            <span>{t('nodes.cpuCores', { count: metrics.cpuCores })}</span>
+                          </>
+                        )}
+                        {node.last_heartbeat && (
+                          <>
+                            <span aria-hidden="true" className="text-outline">·</span>
+                            <span className="tabular-nums">
+                              {new Date(node.last_heartbeat).toLocaleTimeString()}
+                            </span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1 shrink-0">
+                      <NodeCapacityDetailsButton metrics={metrics} testIdPrefix="node" />
+
+                      <Kurzinfo text={t('nodes.healthCheck')} seite={canManageNodes ? 'mitte' : 'ende'}>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          fingerziel
+                          type="button"
+                          aria-label={t('nodes.healthCheckLabel', { name: node.name })}
+                          onClick={() => void handleHealth(node)}
+                          disabled={busyId === node.id}
+                          className="text-on-surface-variant hover:text-primary"
+                        >
+                          <RefreshCw
+                            className={`h-4 w-4 ${busyId === node.id ? 'animate-spin' : ''}`}
+                          />
+                        </Button>
+                      </Kurzinfo>
+
+                      {canManageNodes && (() => {
+                        const nodeMenuItems: ActionMenuItem[] = [
+                          {
+                            key: 'edit',
+                            label: t('nodes.edit'),
+                            icon: <Pencil className="h-4 w-4" aria-hidden="true" />,
+                            onSelect: () => openEdit(node),
+                          },
+                          {
+                            key: 'delete',
+                            label: t('common.delete'),
+                            icon: <Trash2 className="h-4 w-4" aria-hidden="true" />,
+                            destructive: true,
+                            separatorBefore: true,
+                            disabled: node.is_local || node.server_count > 0,
+                            onSelect: () => void handleDelete(node),
+                          },
+                        ]
+                        return (
+                          <ActionMenu
+                            label={t('nodes.actionsMenu', { name: node.name })}
+                            ariaLabel={t('nodes.actionsMenu', { name: node.name })}
+                            items={nodeMenuItems}
+                            icon={<MoreHorizontal className="h-4 w-4" aria-hidden="true" />}
+                            variant="ghost"
+                            surface="dna"
+                            align="end"
+                            iconOnly
+                          />
+                        )
+                      })()}
+                    </div>
+                  </div>
+
+                  <div className="border-t border-outline/40 pt-3">
+                    <NodeResourceRings metrics={metrics} testIdPrefix="node" />
+                  </div>
+                </article>
+              )
+            })}
           </div>
-        </div>
-      )}
+        )}
+
+        {Math.ceil(total / pageSize) > 1 && (
+          <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-outline/40 pt-4 text-sm text-on-surface-variant">
+            <div>
+              {t('nodes.pagination.range', {
+                from: (currentPage - 1) * pageSize + 1,
+                to: Math.min(currentPage * pageSize, total),
+                total,
+              })}
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="secondary"
+                size="sm"
+                fingerziel
+                disabled={currentPage <= 1}
+                onClick={() => setCurrentPage((p) => p - 1)}
+                className="disabled:opacity-50"
+              >
+                {t('common.back')}
+              </Button>
+              <span className="font-medium px-2 tabular-nums">
+                {t('nodes.pagination.page', {
+                  current: currentPage,
+                  total: Math.ceil(total / pageSize),
+                })}
+              </span>
+              <Button
+                variant="secondary"
+                size="sm"
+                fingerziel
+                disabled={currentPage >= Math.ceil(total / pageSize)}
+                onClick={() => setCurrentPage((p) => p + 1)}
+                className="disabled:opacity-50"
+              >
+                {t('common.next')}
+              </Button>
+            </div>
+          </div>
+        )}
+      </main>
     </div>
   )
 }

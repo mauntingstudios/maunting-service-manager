@@ -181,6 +181,7 @@ export interface NodeCapacitySummary {
     status: string
     cpu_model: string | null
     cpu_total: number | null
+    cpu_percent?: number | null
     ram_total_mb: number | null
     ram_used_mb: number | null
     ram_allocated_mb: number

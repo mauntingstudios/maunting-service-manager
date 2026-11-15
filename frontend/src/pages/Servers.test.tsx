@@ -7,6 +7,7 @@ import i18n from '@/i18n'
 import type { GameInfo } from '@/types'
 import { Backups } from './Backups'
 import { useConfirmStore } from '@/stores/confirmStore'
+import { useServerPreferencesStore } from '@/stores/serverPreferencesStore'
 
 import { confirm } from '@/stores/confirmStore'
 
@@ -138,6 +139,7 @@ describe('Servers create form — dynamic port fields', () => {
 describe('Servers — Takt und Katalog', () => {
   beforeEach(async () => {
     vi.mocked(client.api).mockReset()
+    useServerPreferencesStore.getState().resetForTests()
     await i18n.changeLanguage('de')
   })
   afterEach(() => {
@@ -203,6 +205,7 @@ describe('Servers — Takt und Katalog', () => {
 describe('Servers — Ladefehler statt Leerzustand', () => {
   beforeEach(async () => {
     vi.mocked(client.api).mockReset()
+    useServerPreferencesStore.getState().resetForTests()
     await i18n.changeLanguage('de')
   })
 
@@ -276,6 +279,7 @@ describe('Servers — Kunden-Server-Tabs und Badge', () => {
 
   beforeEach(async () => {
     vi.mocked(client.api).mockReset()
+    useServerPreferencesStore.getState().resetForTests()
     await i18n.changeLanguage('de')
   })
 
@@ -458,5 +462,164 @@ describe('Servers — Datenbankserver anlegen', () => {
         },
       })
     })
+  })
+})
+
+describe('Servers — Sortierung, Favoriten, Zuletzt geöffnet & feste IP-Zeile', () => {
+  const buildServer = (id: number, overrides: Record<string, unknown> = {}) => ({
+    id,
+    name: `Server-${id}`,
+    game_type: 'dayz',
+    status: 'stopped',
+    status_message: null,
+    auth_required: false,
+    auto_restart: false,
+    restart_interval_hours: null,
+    restart_time_utc: null,
+    restart_times_utc: null,
+    last_auto_restart_attempt_at: null,
+    last_auto_restart_completed_at: null,
+    last_auto_restart_status: null,
+    next_auto_restart_at: null,
+    restart_ai_managed: false,
+    started_at: null,
+    uptime_seconds: null,
+    cpu_limit_percent: null,
+    ram_limit_mb: null,
+    disk_limit_gb: null,
+    disk_usage_mb: null,
+    game_port: 2302 + id,
+    query_port: null,
+    rcon_port: null,
+    public_bind_ip: '203.0.113.10',
+    created_at: '2026-08-21T00:00:00Z',
+    is_hoster_managed: false,
+    ...overrides,
+  })
+
+  beforeEach(async () => {
+    vi.mocked(client.api).mockReset()
+    useServerPreferencesStore.getState().resetForTests()
+    await i18n.changeLanguage('de')
+  })
+
+  it('sortiert laufende Server vor gestoppte, zieht Favoriten & zuletzt geöffnete nach oben und hält IP-Zeile stets unten', async () => {
+    const servers = [
+      buildServer(1, {
+        name: 'Stopped-Alpha',
+        status: 'stopped',
+        cpu_limit_percent: 400,
+        ram_limit_mb: 15360,
+        disk_usage_mb: 17101,
+        disk_limit_gb: 35,
+      }),
+      buildServer(2, {
+        name: 'Running-Beta',
+        status: 'running',
+      }),
+      buildServer(3, {
+        name: 'Stopped-Gamma',
+        status: 'stopped',
+      }),
+    ]
+
+    vi.mocked(client.api).mockImplementation(async (path: string) => {
+      if (path === '/servers') return servers as any
+      if (path === '/system/games') return GAMES as any
+      if (path === '/nodes') return [] as any
+      return undefined as any
+    })
+
+    renderServers()
+
+    expect(await screen.findByText('Running-Beta')).toBeInTheDocument()
+
+    const headingsOrder = () => screen.getAllByRole('heading', { level: 3 }).map((el) => el.textContent)
+    expect(headingsOrder()).toEqual(['Running-Beta', 'Stopped-Alpha', 'Stopped-Gamma'])
+
+    // Sowohl mit voller Disk-Angabe als auch mit "Unbegrenzt" liegen Ressourcen und IP-Zeile in getrennten Zeilen.
+    const alphaResources = screen.getByTestId('server-resources-row-1')
+    expect(alphaResources).toHaveTextContent('400%')
+    expect(alphaResources).toHaveTextContent('15.0 GB')
+    expect(alphaResources).toHaveTextContent('16.7 GB / 35 GB')
+    expect(screen.getByTestId('server-connect-row-1')).toBeInTheDocument()
+    expect(screen.getByTestId('server-connect-row-2')).toBeInTheDocument()
+
+    // Status-Deck mit einheitlichen Serverblöcken oberhalb der Kartenliste
+    expect(screen.getByTestId('servers-status-deck')).toBeInTheDocument()
+    const runningBlock = screen.getByTestId('servers-page-block-2')
+    const stoppedBlock = screen.getByTestId('servers-page-block-1')
+    expect(runningBlock).toHaveAttribute('data-status', 'running')
+    expect(runningBlock).toHaveAttribute('data-status-tone', 'running')
+    expect(runningBlock.querySelector('svg')).toBeTruthy()
+    expect(stoppedBlock).toHaveAttribute('data-status', 'stopped')
+    expect(stoppedBlock).toHaveAttribute('data-status-tone', 'stopped')
+    expect(stoppedBlock.querySelector('svg')).toBeTruthy()
+
+    expect(screen.getByTestId('server-card-icon-2')).toHaveAttribute('data-status-tone', 'running')
+    expect(screen.getByTestId('server-card-icon-2').querySelector('svg')).toBeTruthy()
+    expect(screen.getByTestId('server-card-icon-1')).toHaveAttribute('data-status-tone', 'stopped')
+
+    // Gestoppten Server favorisieren -> wandert sofort ganz nach oben.
+    fireEvent.click(screen.getByTestId('server-favorite-3'))
+    expect(headingsOrder()).toEqual(['Stopped-Gamma', 'Running-Beta', 'Stopped-Alpha'])
+
+    // Gestoppten Server als zuletzt besucht markieren -> direkt sichtbar ganz oben neben Favoriten + Badge.
+    fireEvent.click(screen.getByRole('link', { name: 'Stopped-Alpha' }))
+    expect(headingsOrder()).toEqual(['Stopped-Gamma', 'Stopped-Alpha', 'Running-Beta'])
+    expect(screen.getByTestId('server-last-visited-1')).toHaveTextContent('Zuletzt geöffnet')
+
+    expect(document.body.querySelectorAll('[title]')).toHaveLength(0)
+  })
+
+  it('rendert große Serverlisten per Lazy-Load in Stapeln und öffnet über +N den durchsuchbaren Schnellzugriff', async () => {
+    const manyServers = Array.from({ length: 30 }, (_, index) => {
+      const id = index + 1
+      const status =
+        id === 1
+          ? 'restarting'
+          : id === 2
+            ? 'failed'
+            : id <= 10
+              ? 'running'
+              : 'stopped'
+      return buildServer(id, {
+        name: id === 30 ? 'Target-Omega' : `Fleet-${String(id).padStart(2, '0')}`,
+        status,
+      })
+    })
+
+    vi.mocked(client.api).mockImplementation(async (path: string) => {
+      if (path === '/servers') return manyServers as any
+      if (path === '/system/games') return GAMES as any
+      if (path === '/nodes') return [] as any
+      return undefined as any
+    })
+
+    renderServers()
+
+    expect(await screen.findByText('Fleet-01')).toBeInTheDocument()
+
+    // Status-Töne: gelb (transient) und rot (failed)
+    expect(screen.getByTestId('server-card-icon-1')).toHaveAttribute('data-status-tone', 'transient')
+    expect(screen.getByTestId('server-card-icon-2')).toHaveAttribute('data-status-tone', 'failed')
+
+    // Kartenliste startet bei 24 Einträgen und lädt auf Wunsch weitere nach
+    expect(screen.getAllByRole('heading', { level: 3 })).toHaveLength(24)
+    const loadMoreBtn = screen.getByTestId('servers-load-more')
+    expect(loadMoreBtn).toHaveTextContent('6')
+    fireEvent.click(loadMoreBtn)
+    expect(screen.getAllByRole('heading', { level: 3 })).toHaveLength(30)
+
+    // +N-Button öffnet den Schnellzugriff mit Suchfilter für alle 30 Server
+    const moreBtn = screen.getByTestId('servers-page-block-more')
+    expect(moreBtn).toHaveTextContent('+6')
+    fireEvent.click(moreBtn)
+
+    const searchInput = await screen.findByTestId('servers-page-block-quick-search')
+    expect(screen.getByTestId('servers-page-block-quick-item-30')).toBeInTheDocument()
+    fireEvent.change(searchInput, { target: { value: 'Omega' } })
+    expect(screen.getByTestId('servers-page-block-quick-item-30')).toBeInTheDocument()
+    expect(screen.queryByTestId('servers-page-block-quick-item-3')).not.toBeInTheDocument()
   })
 })
