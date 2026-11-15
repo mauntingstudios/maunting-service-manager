@@ -216,15 +216,44 @@ def ensure_internal_postgres(admin_password: str) -> dict[str, Any]:
 
     if state and state.get("status") in {"exited", "created", "paused"}:
         start_result = docker_service.start_managed(container_name)
-        if not start_result.get("ok"):
+        if start_result.get("ok"):
+            if state.get("has_bootstrap_secret"):
+                _sanitize_bootstrap_environment(admin_password)
+            docker_service.ensure_managed_restart_policy(container_name, "unless-stopped")
+            return {"ok": True, "status": "started"}
+
+        logger.warning(
+            "Managed PostgreSQL start failed (%s) — recreating container with existing data_dir",
+            start_result.get("error") or "unknown",
+        )
+        initialized = os.path.isfile(os.path.join(data_dir, "PG_VERSION"))
+        recreate = docker_service.run_managed_postgres(
+            name=container_name,
+            image=settings.managed_postgres_image,
+            env=(
+                None
+                if initialized
+                else {
+                    "POSTGRES_USER": ADMIN_USER,
+                    "POSTGRES_PASSWORD": admin_password,
+                    "POSTGRES_DB": CONTROL_DB,
+                }
+            ),
+            host_port=settings.managed_postgres_port,
+            host_ip=_db_host(),
+            data_dir=data_dir,
+            network_name=settings.managed_postgres_network,
+            cap_adds=_PG_CAPS,
+        )
+        if not recreate.get("ok"):
             raise PostgresAgentError(
-                start_result.get("error") or "Could not start PostgreSQL container",
+                recreate.get("error") or start_result.get("error") or "Could not start PostgreSQL container",
                 status_code=503,
             )
-        if state.get("has_bootstrap_secret"):
+        if not initialized:
             _sanitize_bootstrap_environment(admin_password)
         docker_service.ensure_managed_restart_policy(container_name, "unless-stopped")
-        return {"ok": True, "status": "started"}
+        return {"ok": True, "status": "recreated"}
 
     result = docker_service.run_managed_postgres(
         name=container_name,

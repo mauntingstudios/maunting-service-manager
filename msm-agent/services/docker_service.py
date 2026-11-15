@@ -550,7 +550,9 @@ def create_container(
                     pass
                 detail = f"Container wurde direkt nach dem Start beendet (Exit-Code {exit_code})."
                 if logs:
-                    detail = f"{detail} Letzte Logs: {logs[:700]}"
+                    # Das ENDE der Ausgabe zeigen, nicht den Anfang: Crash-Gründe
+                    # und Tracebacks stehen in den letzten Zeilen.
+                    detail = f"{detail} Letzte Logs: {logs[-1200:]}"
                 try:
                     container.remove(force=True)
                 except (DockerException, OSError):

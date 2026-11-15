@@ -35,6 +35,8 @@ _SYNC_CLIENTS: dict[tuple[int, str], Any] = {}
 _ASYNC_CLIENTS: dict[tuple[int, int, str], Any] = {}
 _LOCAL_LOCKS: dict[str, tuple[threading.Lock, str | None]] = {}
 _LOCAL_LOCK_GUARD = threading.Lock()
+_LOCAL_MOD_ABORT_GEN: dict[int, int] = {}
+_LOCAL_MOD_ABORT_GUARD = threading.Lock()
 _CLIENT_GUARD = threading.Lock()
 
 CHANNEL_SETTINGS_INVALIDATE = "msm:panel_settings:invalidate"
@@ -417,6 +419,35 @@ def release_remote_install_lock(server_id: int) -> None:
         client.delete(srv_key)
     except Exception:
         pass
+
+
+def get_mod_abort_generation(server_id: int) -> int:
+    """Return current abort generation counter for a server's mod jobs."""
+    sid = int(server_id)
+    client = get_sync_redis()
+    if client is not None:
+        try:
+            raw = client.get(f"msm:mod_abort_gen:{sid}")
+            return int(raw) if raw is not None else 0
+        except Exception:
+            pass
+    with _LOCAL_MOD_ABORT_GUARD:
+        return int(_LOCAL_MOD_ABORT_GEN.get(sid, 0))
+
+
+def bump_mod_abort_generation(server_id: int) -> int:
+    """Increment abort generation so in-flight mod loops stop cleanly across workers."""
+    sid = int(server_id)
+    with _LOCAL_MOD_ABORT_GUARD:
+        local_val = int(_LOCAL_MOD_ABORT_GEN.get(sid, 0)) + 1
+        _LOCAL_MOD_ABORT_GEN[sid] = local_val
+    client = get_sync_redis()
+    if client is not None:
+        try:
+            return int(client.incr(f"msm:mod_abort_gen:{sid}"))
+        except Exception:
+            pass
+    return local_val
 
 
 # ── Pub/Sub & Stream helpers ──────────────────────────────────────────────────

@@ -219,3 +219,30 @@ def test_restore_rolls_back_prior_database_when_later_dump_has_meta_command():
     assert execute.call_count == 2
     assert execute.call_args_list[0].args[2] == "SELECT 'new';"
     assert execute.call_args_list[1].args[2] == "SELECT 'old';"
+
+
+def test_ensure_recreates_stopped_container_on_missing_network(tmp_path: Path):
+    data_dir = tmp_path / "postgres"
+    data_dir.mkdir(parents=True)
+    (data_dir / "PG_VERSION").write_text("16\n", encoding="utf-8")
+
+    with patch("services.postgres_service._postgres_data_dir", return_value=str(data_dir)), \
+         patch("services.postgres_service.docker_service.ensure_network", return_value={"ok": True}), \
+         patch("services.postgres_service.docker_service.inspect_managed_state", return_value={"status": "exited"}), \
+         patch(
+             "services.postgres_service.docker_service.start_managed",
+             return_value={"ok": False, "error": "network 59f0b9f6 not found"},
+         ), \
+         patch(
+             "services.postgres_service.docker_service.run_managed_postgres",
+             return_value={"ok": True},
+         ) as run_pg, \
+         patch("services.postgres_service.docker_service.ensure_managed_restart_policy", return_value={"ok": True}):
+        result = ensure_internal_postgres("admin-secret")
+
+    assert result == {"ok": True, "status": "recreated"}
+    run_pg.assert_called_once()
+    kwargs = run_pg.call_args.kwargs
+    assert kwargs["data_dir"] == str(data_dir)
+    assert kwargs["env"] is None
+

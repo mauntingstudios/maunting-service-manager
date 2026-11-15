@@ -605,6 +605,52 @@ def check_workshop_mod_updates(
 
 # ── Server-Datei-Update-Check (passiv, nur Restart-Zeit) ─────────────────────
 
+
+def _agent_local_repo_sha(client: Any, server_key: str | int) -> str | None:
+    """Liest den lokalen Git-HEAD-Commit über den Node-Agenten aus ``.git``."""
+    from services.node_client import NodeClientError
+
+    try:
+        head = (client.files_read(server_key, ".git/HEAD") or "").strip()
+    except NodeClientError as exc:
+        if exc.status_code == 404:
+            return None
+        logger.debug("Agent .git/HEAD-Abruf fehlgeschlagen (%s): %s", server_key, exc.message)
+        return None
+    except Exception:
+        return None
+
+    if not head:
+        return None
+    if head.startswith("ref:"):
+        ref_path = head.split(":", 1)[1].strip().lstrip("/")
+        if not ref_path or ".." in Path(ref_path).parts:
+            return None
+        try:
+            ref_val = (client.files_read(server_key, f".git/{ref_path}") or "").strip()
+            if ref_val:
+                return ref_val
+        except NodeClientError as exc:
+            if exc.status_code != 404:
+                return None
+        except Exception:
+            return None
+        # Fallback: gepackte Refs in .git/packed-refs durchsuchen
+        try:
+            packed = client.files_read(server_key, ".git/packed-refs") or ""
+        except Exception:
+            return None
+        for line in packed.splitlines():
+            s = line.strip()
+            if not s or s.startswith(("#", "^")):
+                continue
+            parts = s.split()
+            if len(parts) >= 2 and parts[1] == ref_path:
+                return parts[0]
+        return None
+    return head
+
+
 def check_server_file_update(server: Any, blueprint: Blueprint) -> dict[str, Any]:
     """
     Passive Erkennung, ob Server-Binaries (Game-Dateien) aktualisiert werden
@@ -859,7 +905,10 @@ def check_server_file_update(server: Any, blueprint: Blueprint) -> dict[str, Any
         branch = (gh.branch or "main").strip() or "main"
         token = _resolve_github_token_for_server(server_id) if server_id else None
         remote_sha = remote_branch_sha(repo, branch, token=token)
-        local_sha = local_repo_sha(install_dir)
+        if client is not None:
+            local_sha = _agent_local_repo_sha(client, server_key)
+        else:
+            local_sha = local_repo_sha(install_dir)
 
         result["remote_commit"] = remote_sha
         result["local_commit"] = local_sha

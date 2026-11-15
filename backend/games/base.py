@@ -514,12 +514,23 @@ class GamePlugin(ABC):
     def container_extra_networks(self, server) -> list[str]:
         """Optionale interne Netze fuer servergebundene Dienste."""
         try:
+            from config import settings
             from database import SessionLocal
-            from services.postgres_service import server_extra_networks
+            from services.postgres_service import ensure_internal_postgres, server_extra_networks
 
             db = SessionLocal()
             try:
-                return server_extra_networks(db, server.id)
+                networks = server_extra_networks(db, server.id)
+                if settings.managed_postgres_network in networks:
+                    try:
+                        ensure_internal_postgres(db, server)
+                    except Exception as exc:
+                        logging.getLogger(__name__).warning(
+                            "Managed PostgreSQL ensure vor Start fehlgeschlagen (Server %s): %s",
+                            getattr(server, "id", "?"),
+                            exc,
+                        )
+                return networks
             finally:
                 db.close()
         except Exception:

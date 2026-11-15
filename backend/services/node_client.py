@@ -740,6 +740,7 @@ class NodeClient:
         self,
         server_id: int | str,
         *,
+        server_key: str | None = None,
         s3_config: dict[str, Any],
         encryption_key_b64: str,
         s3_key: str,
@@ -747,16 +748,19 @@ class NodeClient:
         postgres: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Trigger encrypted backup on agent ÔåÆ direct S3 upload (no panel data path)."""
+        payload: dict[str, Any] = {
+            "server_id": str(server_id),
+            "s3_config": s3_config,
+            "encryption_key": encryption_key_b64,
+            "s3_key": s3_key,
+            "postgres": postgres,
+        }
+        if server_key:
+            payload["server_key"] = server_key
         return self._request(
             "POST",
             "/backup/create",
-            json={
-                "server_id": str(server_id),
-                "s3_config": s3_config,
-                "encryption_key": encryption_key_b64,
-                "s3_key": s3_key,
-                "postgres": postgres,
-            },
+            json=payload,
             timeout=timeout,
         )
 
@@ -764,6 +768,7 @@ class NodeClient:
         self,
         server_id: int | str,
         *,
+        server_key: str | None = None,
         s3_config: dict[str, Any],
         encryption_key_b64: str,
         s3_key: str,
@@ -771,16 +776,19 @@ class NodeClient:
         postgres: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Trigger S3 download + decrypt + extract on agent."""
+        payload: dict[str, Any] = {
+            "server_id": str(server_id),
+            "s3_config": s3_config,
+            "encryption_key": encryption_key_b64,
+            "s3_key": s3_key,
+            "postgres": postgres,
+        }
+        if server_key:
+            payload["server_key"] = server_key
         return self._request(
             "POST",
             "/backup/restore",
-            json={
-                "server_id": str(server_id),
-                "s3_config": s3_config,
-                "encryption_key": encryption_key_b64,
-                "s3_key": s3_key,
-                "postgres": postgres,
-            },
+            json=payload,
             timeout=timeout,
         )
 

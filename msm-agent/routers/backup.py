@@ -27,6 +27,7 @@ class S3ConfigIn(BaseModel):
 
 class BackupCreateIn(BaseModel):
     server_id: str = Field(..., min_length=1, max_length=19, pattern=r"^[1-9]\d*$")
+    server_key: str | None = Field(default=None, min_length=1, max_length=128)
     s3_config: S3ConfigIn
     encryption_key: str = Field(..., min_length=16, description="base64 AES-256 key")
     s3_key: str = Field(..., min_length=1, max_length=512)
@@ -35,6 +36,7 @@ class BackupCreateIn(BaseModel):
 
 class BackupRestoreIn(BaseModel):
     server_id: str = Field(..., min_length=1, max_length=19, pattern=r"^[1-9]\d*$")
+    server_key: str | None = Field(default=None, min_length=1, max_length=128)
     s3_config: S3ConfigIn
     encryption_key: str = Field(..., min_length=16)
     s3_key: str = Field(..., min_length=1, max_length=512)
@@ -54,9 +56,10 @@ def _s3_dict(cfg: S3ConfigIn) -> dict[str, Any]:
 @router.post("/create")
 def backup_create(body: BackupCreateIn) -> dict[str, Any]:
     try:
+        target_key = (body.server_key or "").strip() or body.server_id
         with planned_operation(int(body.server_id), "server_backup", lease_seconds=4 * 60 * 60):
             return create_encrypted_s3_backup(
-                body.server_id,
+                target_key,
                 s3=_s3_dict(body.s3_config),
                 encryption_key_b64=body.encryption_key,
                 s3_object_key=body.s3_key,
@@ -69,9 +72,10 @@ def backup_create(body: BackupCreateIn) -> dict[str, Any]:
 @router.post("/restore")
 def backup_restore(body: BackupRestoreIn) -> dict[str, Any]:
     try:
+        target_key = (body.server_key or "").strip() or body.server_id
         with planned_operation(int(body.server_id), "server_restore", lease_seconds=4 * 60 * 60):
             return restore_encrypted_s3_backup(
-                body.server_id,
+                target_key,
                 s3=_s3_dict(body.s3_config),
                 encryption_key_b64=body.encryption_key,
                 s3_object_key=body.s3_key,

@@ -67,6 +67,7 @@ def test_remote_agent_s3_backup_success(db):
     assert backup.size_mb == 5
     client.backup_create_s3.assert_called_once()
     call_kw = client.backup_create_s3.call_args.kwargs
+    assert call_kw["server_key"] == "x"
     assert "encryption_key_b64" in call_kw
     assert call_kw["s3_config"]["access_key"] == "ak"
 

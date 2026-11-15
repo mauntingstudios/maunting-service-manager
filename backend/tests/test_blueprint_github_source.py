@@ -721,3 +721,59 @@ def test_run_git_timeout_sanitizes_token(monkeypatch):
 
     assert "secret123" not in str(exc_info.value)
     assert "***" in str(exc_info.value)
+
+
+def test_check_server_file_update_github_reads_head_via_agent_without_local_git(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    from blueprints.schema import Blueprint
+    from games.updater import check_server_file_update
+    from services.node_client import NodeClientError
+
+    server = SimpleNamespace(
+        id=80,
+        name="singra_backend",
+        game_type="bp_t",
+        install_dir="/opt/msm/servers/singra_backend_80",
+        branch="main",
+        node_id=1,
+    )
+    bp = Blueprint.model_validate({
+        "version": 1,
+        "meta": {"id": "t", "name": "T", "category": "bot"},
+        "runtime": {"image": "node:22", "startup": "node index.js"},
+        "ports": [],
+        "source": {
+            "type": "github",
+            "github": {"repo": "owner/repo", "branch": "main"},
+        },
+    })
+
+    class _FakeAgentClient:
+        def files_list(self, server_key, path):
+            assert server_key == "singra_backend_80"
+            return [{"name": "package.json", "is_dir": False, "size": 120}]
+
+        def files_read(self, server_key, rel_path):
+            assert server_key == "singra_backend_80"
+            if rel_path == ".git/HEAD":
+                return "ref: refs/heads/main\n"
+            if rel_path == ".git/refs/heads/main":
+                raise NodeClientError("Not found", status_code=404)
+            if rel_path == ".git/packed-refs":
+                return "# pack-refs\nabc1234567890 refs/heads/main\n"
+            raise AssertionError(f"unexpected path: {rel_path}")
+
+    fake_node = SimpleNamespace(id=1, is_local=True, status="online")
+    monkeypatch.setattr("services.node_service.resolve_server_node", lambda _s: fake_node)
+    monkeypatch.setattr("services.node_capacity.should_delegate_node_fs_to_agent", lambda _n: True)
+    monkeypatch.setattr("services.node_service.client_for_server", lambda _s: _FakeAgentClient())
+    monkeypatch.setattr("blueprints.github_source.remote_branch_sha", lambda *a, **kw: "abc1234567890")
+    monkeypatch.setattr(
+        "blueprints.github_source.local_repo_sha",
+        lambda _p: (_ for _ in ()).throw(AssertionError("local_repo_sha must not run when delegated")),
+    )
+
+    res = check_server_file_update(server, bp)
+    assert res["action"] == "none"
+    assert res["reason"] == "up_to_date"
+    assert res["local_commit"] == "abc1234567890"

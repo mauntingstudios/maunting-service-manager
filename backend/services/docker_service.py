@@ -1254,7 +1254,7 @@ def _run_container_via_node(
         return {"ok": True, "stdout": f"{cid}\n" if cid else "", "stderr": ""}
     except NodeClientError as exc:
         logger.warning("node create_container failed")
-        return {"ok": False, "error": exc.message[:500], "stdout": "", "stderr": ""}
+        return {"ok": False, "error": exc.message[:1500], "stdout": "", "stderr": ""}
     except Exception as exc:
         logger.warning("node create_container failed")
         return {"ok": False, "error": "Agent-Container-Start fehlgeschlagen", "stdout": "", "stderr": ""}

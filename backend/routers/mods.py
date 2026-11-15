@@ -1,5 +1,7 @@
 from concurrent.futures import ThreadPoolExecutor
+from contextvars import ContextVar
 import logging
+import os
 import re
 import time
 from typing import Literal
@@ -22,8 +24,10 @@ from services.install_update_lock_service import (
     release_install_update_lock,
 )
 from services import mod_update_service
+from services.redis_backplane import bump_mod_abort_generation, get_mod_abort_generation
 from services.mod_install_status_service import (
     INSTALL_DONE,
+    INSTALL_PENDING,
     INSTALL_RUNNING,
     mark_mod_failed,
     mark_mod_installed,
@@ -101,6 +105,29 @@ def _server_has_active_mod_jobs(db: Session, server_id: int) -> bool:
 
 
 _MOD_EXECUTOR = ThreadPoolExecutor(max_workers=4, thread_name_prefix="msm-mod-worker")
+_ENQUEUED_MOD_ABORT_GEN: ContextVar[tuple[int, int] | None] = ContextVar(
+    "msm_enqueued_mod_abort_gen",
+    default=None,
+)
+
+
+def _captured_mod_generation(server_id: int) -> int:
+    ctx_val = _ENQUEUED_MOD_ABORT_GEN.get()
+    if ctx_val is not None and ctx_val[0] == int(server_id):
+        return ctx_val[1]
+    return get_mod_abort_generation(server_id)
+
+
+def _is_mod_run_aborted(server_id: int, captured_generation: int) -> bool:
+    return get_mod_abort_generation(server_id) != captured_generation
+
+
+def _run_with_mod_generation(server_id: int, generation: int, fn, *args) -> None:
+    token = _ENQUEUED_MOD_ABORT_GEN.set((int(server_id), generation))
+    try:
+        fn(*args)
+    finally:
+        _ENQUEUED_MOD_ABORT_GEN.reset(token)
 
 
 def _submit_mod_job(fn, *args) -> None:
@@ -112,10 +139,14 @@ def _submit_mod_job(fn, *args) -> None:
 
 def _enqueue_mod_task(background_tasks: BackgroundTasks, server: Server, fn, *args) -> None:
     register_server_node_hint(server.id, server.node_id)
-    if getattr(settings, "testing", False):
-        background_tasks.add_task(fn, *args)
+    generation = get_mod_abort_generation(server.id)
+    is_testing = bool(getattr(settings, "testing", False)) or (
+        os.environ.get("MSM_TESTING", "").strip().lower() == "true"
+    )
+    if is_testing:
+        background_tasks.add_task(_run_with_mod_generation, server.id, generation, fn, *args)
     else:
-        background_tasks.add_task(_submit_mod_job, fn, *args)
+        background_tasks.add_task(_submit_mod_job, _run_with_mod_generation, server.id, generation, fn, *args)
 
 
 def _load_detached_server_for_mods(server_id: int) -> Server | None:
@@ -135,10 +166,15 @@ def _load_detached_server_for_mods(server_id: int) -> Server | None:
 
 
 def install_mod_bg(server_id: int, workshop_id: str, action: str = "install", remote_updated: str | None = None):
+    captured_gen = _captured_mod_generation(server_id)
+    if _is_mod_run_aborted(server_id, captured_gen):
+        return
     # Lock zuerst — ohne offene DB-Session warten (verhindert QueuePool-Timeout bei vielen Mods).
     node_id = get_server_node_hint(server_id)
     acquire_install_update_lock_blocking(server_id, "mod_install", node_id=node_id, scope="server")
     try:
+        if _is_mod_run_aborted(server_id, captured_gen):
+            return
         server = _load_detached_server_for_mods(server_id)
         if not server:
             logger.error("Server %s nicht gefunden in Background Task", server_id)
@@ -150,6 +186,8 @@ def install_mod_bg(server_id: int, workshop_id: str, action: str = "install", re
             mark_mod_failed(server_id, workshop_id, "Steam Workshop nicht in diesem Spiel aktiviert")
             return
 
+        if _is_mod_run_aborted(server_id, captured_gen):
+            return
         mark_mod_installing(server.id, workshop_id, action)
         if action == "reinstall":
             try:
@@ -158,6 +196,8 @@ def install_mod_bg(server_id: int, workshop_id: str, action: str = "install", re
             except Exception as ce:
                 _append_console_log(server.id, f"[MSM] Mod {workshop_id} Re-Install Cleanup Warnung: {ce}\n")
         result = plugin.install_mod(server, workshop_id)
+        if _is_mod_run_aborted(server_id, captured_gen):
+            return
         has_error = bool(result.get("error")) if isinstance(result, dict) else bool(result)
         is_ok = result.get("ok", True) is not False if isinstance(result, dict) else not has_error
         success = isinstance(result, dict) and is_ok and not has_error
@@ -176,7 +216,8 @@ def install_mod_bg(server_id: int, workshop_id: str, action: str = "install", re
             server_id,
             workshop_id,
         )
-        mark_mod_failed(server_id, workshop_id, _safe_error(exc))
+        if not _is_mod_run_aborted(server_id, captured_gen):
+            mark_mod_failed(server_id, workshop_id, _safe_error(exc))
     finally:
         release_install_update_lock(server_id)
 
@@ -186,6 +227,9 @@ def install_mods_batch_bg(server_id: int, workshop_ids: list[str]) -> None:
     if not workshop_ids:
         return
 
+    captured_gen = _captured_mod_generation(server_id)
+    if _is_mod_run_aborted(server_id, captured_gen):
+        return
     node_id = get_server_node_hint(server_id)
     acquired = acquire_install_update_lock_blocking(
         server_id,
@@ -194,11 +238,14 @@ def install_mods_batch_bg(server_id: int, workshop_ids: list[str]) -> None:
         scope="server",
     )
     if acquired is False:
-        for wid in workshop_ids:
-            mark_mod_failed(server_id, wid, "Eine andere Installation oder ein Update läuft bereits")
+        if not _is_mod_run_aborted(server_id, captured_gen):
+            for wid in workshop_ids:
+                mark_mod_failed(server_id, wid, "Eine andere Installation oder ein Update läuft bereits")
         return
 
     try:
+        if _is_mod_run_aborted(server_id, captured_gen):
+            return
         server = _load_detached_server_for_mods(server_id)
         if not server:
             logger.error("Server %s nicht gefunden (batch-install)", server_id)
@@ -218,8 +265,12 @@ def install_mods_batch_bg(server_id: int, workshop_ids: list[str]) -> None:
         )
 
         ok_count = 0
+        aborted = False
         chunk_size = max(1, int(_BATCH_CHUNK_SIZE))
         for offset in range(0, len(workshop_ids), chunk_size):
+            if _is_mod_run_aborted(server_id, captured_gen):
+                aborted = True
+                break
             chunk = workshop_ids[offset:offset + chunk_size]
 
             # Zwischen den Chunks prüfen, welche Mods noch pending sind (ermöglicht sauberen Abbruch)
@@ -242,6 +293,10 @@ def install_mods_batch_bg(server_id: int, workshop_ids: list[str]) -> None:
             if not active_chunk:
                 continue
 
+            if _is_mod_run_aborted(server_id, captured_gen):
+                aborted = True
+                break
+
             if active_chunk:
                 mark_mod_installing(server_id, active_chunk[0], "install")
 
@@ -252,18 +307,30 @@ def install_mods_batch_bg(server_id: int, workshop_ids: list[str]) -> None:
                     # Fallback für Plugins ohne Batch-Implementierung
                     per_item: dict[str, dict] = {}
                     for wid in active_chunk:
+                        if _is_mod_run_aborted(server_id, captured_gen):
+                            aborted = True
+                            break
                         single_res = plugin.install_mod(server, wid)
                         per_item[wid] = single_res if isinstance(single_res, dict) else {"ok": bool(single_res)}
+                    if aborted:
+                        break
                     result = {
                         "ok": all(v.get("ok", True) is not False and not v.get("error") for v in per_item.values()),
                         "items": per_item,
                     }
             except Exception as exc:
+                if _is_mod_run_aborted(server_id, captured_gen):
+                    aborted = True
+                    break
                 err_msg = _safe_error(exc)
                 for wid in active_chunk:
                     mark_mod_failed(server_id, wid, err_msg)
                 _append_console_log(server_id, f"[MSM] Batch-Block fehlgeschlagen — {exc}\n")
                 continue
+
+            if _is_mod_run_aborted(server_id, captured_gen):
+                aborted = True
+                break
 
             items_map = result.get("items") if isinstance(result, dict) and isinstance(result.get("items"), dict) else {}
             global_ok = result.get("ok", True) is not False and not result.get("error") if isinstance(result, dict) else not bool(result)
@@ -288,6 +355,10 @@ def install_mods_batch_bg(server_id: int, workshop_ids: list[str]) -> None:
                     ok_count += 1
                 else:
                     mark_mod_failed(server_id, wid, _safe_error(item_err))
+
+        if aborted:
+            _append_console_log(server_id, "[MSM] Batch-Installation durch Benutzer abgebrochen.\n")
+            return
 
         try:
             plugin.update_modlist(server)
@@ -321,9 +392,14 @@ def install_mods_batch_bg(server_id: int, workshop_ids: list[str]) -> None:
 
 
 def reinstall_all_mods_bg(server_id: int, workshop_ids: list[str]) -> None:
+    captured_gen = _captured_mod_generation(server_id)
+    if _is_mod_run_aborted(server_id, captured_gen):
+        return
     node_id = get_server_node_hint(server_id)
     acquire_install_update_lock_blocking(server_id, "mod_reinstall_all", node_id=node_id, scope="server")
     try:
+        if _is_mod_run_aborted(server_id, captured_gen):
+            return
         server = _load_detached_server_for_mods(server_id)
         if not server:
             logger.error("Server %s nicht gefunden (reinstall-all)", server_id)
@@ -342,7 +418,11 @@ def reinstall_all_mods_bg(server_id: int, workshop_ids: list[str]) -> None:
             f"[MSM] Neuinstallation für {len(workshop_ids)} Workshop-Mod(s) gestartet (nacheinander).\n",
         )
         ok_count = 0
+        aborted = False
         for wid in workshop_ids:
+            if _is_mod_run_aborted(server_id, captured_gen):
+                aborted = True
+                break
             mark_mod_installing(server.id, wid, "reinstall")
             try:
                 plugin.cleanup_mod(server, wid)
@@ -354,9 +434,15 @@ def reinstall_all_mods_bg(server_id: int, workshop_ids: list[str]) -> None:
             try:
                 result = plugin.install_mod(server, wid)
             except Exception as exc:
+                if _is_mod_run_aborted(server_id, captured_gen):
+                    aborted = True
+                    break
                 mark_mod_failed(server.id, wid, _safe_error(exc))
                 _append_console_log(server.id, f"[MSM] Mod {wid}: fehlgeschlagen — {exc}\n")
                 continue
+            if _is_mod_run_aborted(server_id, captured_gen):
+                aborted = True
+                break
             has_error = bool(result.get("error")) if isinstance(result, dict) else bool(result)
             is_ok = result.get("ok", True) is not False if isinstance(result, dict) else not has_error
             success = isinstance(result, dict) and is_ok and not has_error
@@ -375,6 +461,10 @@ def reinstall_all_mods_bg(server_id: int, workshop_ids: list[str]) -> None:
                 mark_mod_failed(server.id, wid, _safe_error(err))
                 _append_console_log(server.id, f"[MSM] Mod {wid}: fehlgeschlagen — {err}\n")
 
+        if aborted:
+            _append_console_log(server.id, "[MSM] Neuinstallation durch Benutzer abgebrochen.\n")
+            return
+
         try:
             plugin.update_modlist(server)
         except Exception as exc:
@@ -386,8 +476,9 @@ def reinstall_all_mods_bg(server_id: int, workshop_ids: list[str]) -> None:
         )
     except Exception:
         logger.exception("reinstall-all fehlgeschlagen für Server %s", server_id)
-        for wid in workshop_ids:
-            mark_mod_failed(server_id, wid, "Neuinstallation abgebrochen")
+        if not _is_mod_run_aborted(server_id, captured_gen):
+            for wid in workshop_ids:
+                mark_mod_failed(server_id, wid, "Neuinstallation abgebrochen")
     finally:
         release_install_update_lock(server_id)
 
@@ -402,6 +493,9 @@ def bulk_mod_action_bg(
     if not workshop_ids:
         return
 
+    captured_gen = _captured_mod_generation(server_id)
+    if _is_mod_run_aborted(server_id, captured_gen):
+        return
     node_id = get_server_node_hint(server_id)
     acquired = acquire_install_update_lock_blocking(
         server_id,
@@ -410,11 +504,14 @@ def bulk_mod_action_bg(
         scope="server",
     )
     if acquired is False:
-        for wid in workshop_ids:
-            mark_mod_failed(server_id, wid, "Eine andere Installation oder ein Update läuft bereits")
+        if not _is_mod_run_aborted(server_id, captured_gen):
+            for wid in workshop_ids:
+                mark_mod_failed(server_id, wid, "Eine andere Installation oder ein Update läuft bereits")
         return
 
     try:
+        if _is_mod_run_aborted(server_id, captured_gen):
+            return
         server = _load_detached_server_for_mods(server_id)
         if not server:
             logger.error("Server %s nicht gefunden (bulk-action)", server_id)
@@ -435,8 +532,12 @@ def bulk_mod_action_bg(
         )
 
         ok_count = 0
+        aborted = False
         chunk_size = max(1, int(_BATCH_CHUNK_SIZE))
         for offset in range(0, len(workshop_ids), chunk_size):
+            if _is_mod_run_aborted(server_id, captured_gen):
+                aborted = True
+                break
             chunk = workshop_ids[offset:offset + chunk_size]
 
             db_check = SessionLocal()
@@ -458,6 +559,10 @@ def bulk_mod_action_bg(
             if not active_chunk:
                 continue
 
+            if _is_mod_run_aborted(server_id, captured_gen):
+                aborted = True
+                break
+
             for idx, wid in enumerate(active_chunk):
                 if idx == 0:
                     mark_mod_installing(server_id, wid, action)
@@ -473,18 +578,30 @@ def bulk_mod_action_bg(
                 else:
                     per_item: dict[str, dict] = {}
                     for wid in active_chunk:
+                        if _is_mod_run_aborted(server_id, captured_gen):
+                            aborted = True
+                            break
                         single_res = plugin.install_mod(server, wid)
                         per_item[wid] = single_res if isinstance(single_res, dict) else {"ok": bool(single_res)}
+                    if aborted:
+                        break
                     result = {
                         "ok": all(v.get("ok", True) is not False and not v.get("error") for v in per_item.values()),
                         "items": per_item,
                     }
             except Exception as exc:
+                if _is_mod_run_aborted(server_id, captured_gen):
+                    aborted = True
+                    break
                 err_msg = _safe_error(exc)
                 for wid in active_chunk:
                     mark_mod_failed(server_id, wid, err_msg)
                 _append_console_log(server_id, f"[MSM] Bulk-{action_label}-Block fehlgeschlagen — {exc}\n")
                 continue
+
+            if _is_mod_run_aborted(server_id, captured_gen):
+                aborted = True
+                break
 
             items_map = result.get("items") if isinstance(result, dict) and isinstance(result.get("items"), dict) else {}
             global_ok = result.get("ok", True) is not False and not result.get("error") if isinstance(result, dict) else not bool(result)
@@ -510,6 +627,10 @@ def bulk_mod_action_bg(
                     ok_count += 1
                 else:
                     mark_mod_failed(server_id, wid, _safe_error(item_err))
+
+        if aborted:
+            _append_console_log(server_id, f"[MSM] Bulk-{action_label} durch Benutzer abgebrochen.\n")
+            return
 
         try:
             plugin.update_modlist(server)
@@ -916,6 +1037,7 @@ def abort_mod_installs(
     from services.install_update_lock_service import force_release_install_update_lock
     from services.mod_install_status_service import mark_mod_failed, mark_mod_installed
 
+    bump_mod_abort_generation(server_id)
     mods = db.query(Mod).filter(Mod.server_id == server_id).all()
     changed = False
     for mod in mods:
@@ -926,15 +1048,15 @@ def abort_mod_installs(
                 "Installation abgebrochen — bitte erneut starten (Server-Konsole prüfen).",
             )
             changed = True
-        elif mod.install_status == "pending" and mod.install_action == "reinstall":
-            mark_mod_installed(server_id, mod.workshop_id)
-            changed = True
-        elif mod.install_status == "pending" and mod.install_action == "install":
-            mark_mod_failed(
-                server_id,
-                mod.workshop_id,
-                "Installation abgebrochen — bitte erneut starten (Server-Konsole prüfen).",
-            )
+        elif mod.install_status == INSTALL_PENDING:
+            if mod.install_action == "reinstall":
+                mark_mod_installed(server_id, mod.workshop_id)
+            else:
+                mark_mod_failed(
+                    server_id,
+                    mod.workshop_id,
+                    "Installation abgebrochen — bitte erneut starten (Server-Konsole prüfen).",
+                )
             changed = True
     force_release_install_update_lock(server_id)
     if changed:

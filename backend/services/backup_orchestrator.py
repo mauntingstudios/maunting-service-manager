@@ -167,10 +167,15 @@ def _create_remote_agent_s3_backup(
         key_b64 = BackupCryptoService.derive_raw_key_b64(password, salt)
         s3_cfg = S3Service.get_ephemeral_agent_s3_config()
         client = NodeClient.from_node(node, timeout=float(timeout_seconds))
+        from models import Server
+        from services.node_capacity import agent_server_key
         from services.postgres_service import backup_context
 
+        server = db.query(Server).filter(Server.id == server_id).first()
+        resolved_key = agent_server_key(server_id, getattr(server, "install_dir", None))
         result = client.backup_create_s3(
             server_id,
+            server_key=resolved_key,
             s3_config=s3_cfg,
             encryption_key_b64=key_b64,
             s3_key=s3_key,
@@ -384,10 +389,12 @@ def restore_via_agent_s3(
         if backup.s3_bucket:
             s3_cfg = {**s3_cfg, "bucket": backup.s3_bucket}
         client = NodeClient.from_node(node, timeout=float(timeout_seconds))
+        from services.node_capacity import agent_server_key
         from services.postgres_service import backup_context
 
         client.backup_restore_s3(
             server.id,
+            server_key=agent_server_key(server.id, getattr(server, "install_dir", None)),
             s3_config=s3_cfg,
             encryption_key_b64=key_b64,
             s3_key=backup.s3_key,
