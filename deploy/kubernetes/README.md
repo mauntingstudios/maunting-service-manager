@@ -19,57 +19,45 @@ Deshalb gilt:
 
 | | Läuft wo |
 | --- | --- |
-| Panel (API + Frontend) | Kubernetes-Pod |
-| DIS-Sidecar (Krypto) | Container **im selben Pod** wie das Panel |
+| Panel-API (`msm-panel`, ≥ 2 Replicas) | Kubernetes-Pod (`MSM_WORKER_MODE=api`) |
+| Hintergrund-Worker (`msm-worker`, Singleton) | Kubernetes-Pod (`MSM_WORKER_MODE=worker`) |
+| DIS-Sidecar (Krypto) | Container **im selben Pod** wie Panel und Worker |
+| Redis | Kubernetes-Deployment (`25-redis.yaml`) für Backplane und Locks |
 | PostgreSQL | Kubernetes-StatefulSet **oder** extern/managed (empfohlen) |
-| Gameserver | Docker auf den angebundenen MSM-Nodes, wie bisher |
-| `msm-agent` | Auf den Node-Hosts, wie bisher |
+| Gameserver | Rootless Docker (`msm-docker`) über `msm-agent` auf den MSM-Nodes |
 
-Kapazität wächst also weiterhin über **weitere MSM-Nodes**, nicht über weitere
-Panel-Replicas. Das Panel bleibt die zentrale Steuerung; die Nodes führen aus.
+HTTP-, WebSocket- und SSE-Verkehr skaliert horizontal über `msm-panel`-Replicas;
+Container-Kapazität wächst über weitere MSM-Nodes.
 
-### Rootless Docker ist der Grund für diesen Schnitt
+### Rootless Docker und Privilegientrennung auf den Nodes
 
-MSM läuft bewusst auf **rootless Docker**: Der Daemon gehört dem `msm`-User, der
-Socket liegt unter `/run/user/<uid>/docker.sock`, und Container starten mit
-`cap-drop`, `no-new-privileges` und ohne `--privileged` (siehe
-[`backend/services/docker_service.py`](../../backend/services/docker_service.py)).
-Das ist kein Detail der Installation, sondern die Sicherheitsgrundlage: ein
-ausgebrochener Gameserver-Container landet beim unprivilegierten `msm`-User,
-nicht bei `root`.
+Auf den Node-Hosts laufen die drei Konten getrennt (`msm`, `msm-agent`,
+`msm-docker`). Der Docker-Socket gehört ausschließlich `msm-docker`, liegt unter
+`/run/user/<uid>/docker.sock` und wird per POSIX-ACL nur für `msm-agent`
+freigeschaltet (`chmod 0710` auf `/opt/msm/servers`, `cap-drop`,
+`no-new-privileges`, `icc: false`).
 
-Dieser Socket gehört zu einer User-Systemd-Session auf einem Host. **In einem Pod
-existiert er nicht** — und ihn per `hostPath` hineinzureichen würde genau die
-Trennung aufheben, für die er da ist.
+Dieser Socket gehört zu einer User-Systemd-Session auf einem Node-Host. **In
+einem Kubernetes-Pod existiert er nicht** — und ihn per `hostPath` hineinzureichen
+würde die Trennung zwischen Control Plane und Workloads aufheben.
 
 Deshalb setzt [`30-config.yaml`](30-config.yaml) `MSM_LOCAL_AGENT_ENABLED: "false"`.
-Das Panel ist im Cluster reine Steuerung und niemals selbst ein Node. Wer den
-Wert auf `true` dreht, bekommt beim Start Fehler aus dem internen
-PostgreSQL-Setup und der iptables-Baseline, die wie ein Docker-Problem aussehen,
-aber eine Fehlkonfiguration sind. `test_panel_pod_never_acts_as_a_node_itself`
-schreibt den Wert deshalb fest und prüft zusätzlich, dass kein Manifest einen
-Docker-Socket in den Pod mountet.
+Das Panel ist im Cluster reine Control Plane und niemals selbst ein Node.
+`test_panel_pod_never_acts_as_a_node_itself` schreibt den Wert fest und prüft
+zusätzlich, dass kein Manifest einen Docker-Socket in den Pod mountet.
 
-Auf den Node-Hosts ändert sich nichts: dort läuft rootless Docker weiter wie in
-der klassischen Installation.
+## Aufgabenteilung: API-Pods und Singleton-Worker
 
-## Warum genau eine Panel-Replica
+`msm-panel` läuft mit mindestens 2 Replicas (`strategy: RollingUpdate`) und
+`MSM_WORKER_MODE=api`. Alle Event-Streams (Chat, Server-Logs, Node-Status),
+Presence-Einträge, verteilte Rate-Limits und Lifecycle-Sperren laufen über Redis
+(`25-redis.yaml`).
 
-`replicas: 1` und `strategy: Recreate` sind **keine Vorsichtsmaßnahme, sondern
-eine Korrektheitsbedingung**. Das Panel hält prozesslokalen Zustand, der bei
-zwei gleichzeitigen Instanzen doppelt oder widersprüchlich wirken würde:
-
-- **APScheduler-Jobs** (Auto-Restart, Backups, Guardian-Reconciliation,
-  Hoster-Webhooks, Node-Heartbeat) würden doppelt feuern.
-- **Lifecycle-Job-Sperren** liegen im Prozessspeicher; eine zweite Instanz sähe
-  laufende Operationen nicht und könnte parallel starten oder stoppen.
-- **Panel-Settings-Cache** wird nicht prozessübergreifend invalidiert.
-- **Startup-Reconciliation** würde die Aufgaben der jeweils anderen Instanz als
-  unterbrochen bewerten.
-
-`Recreate` stellt sicher, dass während eines Rollouts nie zwei Panels
-gleichzeitig laufen. Der Preis ist eine kurze Downtime beim Update — bewusst
-gewählt gegenüber doppelt ausgeführten Serveraktionen.
+`msm-worker` (`45-worker.yaml`) läuft genau einmal (`replicas: 1`, `strategy:
+Recreate`, `MSM_WORKER_MODE=worker`) und übernimmt APScheduler-Jobs
+(Auto-Restart, Backups, Guardian-Reconciliation, Hoster-Webhooks,
+Node-Heartbeats) sowie PostgreSQL-Advisory-Locks. Dadurch entstehen keine
+doppelten Jobs bei Zero-Downtime-Rollouts der API-Pods.
 
 ## Voraussetzungen
 
@@ -96,7 +84,9 @@ kubectl -n msm create secret generic msm-secrets \
   --from-literal=MSM_DIS_SALT="$(openssl rand -hex 16)" \
   --from-literal=MSM_DATABASE_URL='postgresql+psycopg2://msm:PASSWORT@msm-postgres:5432/msm' \
   --from-literal=MSM_DATABASE_URL_ASYNC='postgresql+asyncpg://msm:PASSWORT@msm-postgres:5432/msm' \
-  --from-literal=POSTGRES_PASSWORD='PASSWORT'
+  --from-literal=POSTGRES_PASSWORD='PASSWORT' \
+  --from-literal=MSM_REDIS_PASSWORD='REDIS_PASSWORT' \
+  --from-literal=MSM_REDIS_URL='redis://:REDIS_PASSWORT@msm-redis:6379/0'
 ```
 
 `10-secrets.example.yaml` ist nur eine **Feldreferenz** und enthält bewusst
@@ -106,8 +96,10 @@ Danach:
 
 ```bash
 kubectl apply -f deploy/kubernetes/20-postgres.yaml     # entfällt bei externer DB
+kubectl apply -f deploy/kubernetes/25-redis.yaml
 kubectl apply -f deploy/kubernetes/30-config.yaml
 kubectl apply -f deploy/kubernetes/40-panel.yaml
+kubectl apply -f deploy/kubernetes/45-worker.yaml
 kubectl apply -f deploy/kubernetes/50-ingress.yaml
 kubectl apply -f deploy/kubernetes/60-networkpolicy.yaml
 ```

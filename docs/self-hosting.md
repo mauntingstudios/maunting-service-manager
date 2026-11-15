@@ -133,9 +133,11 @@ curl -fsSL https://panel.example.com/api/agent/bootstrap.sh \
 
 ### Security & Isolation Model
 
+- **Three-User OS Privilege Separation:** On Linux hosts, MSM isolates components across `msm` (Control Plane API/Worker, DIS, `.env` configs `0600`), `msm-agent` (host agent with narrow `sudoers` access to `/usr/local/sbin/msm-iptables` and `/usr/local/sbin/msm-quota`), and `msm-docker` (rootless Docker daemon and workloads), sharing server directories via group `msm-servers` (`0710`).
+- **Systemd QoS Slices & Control-Plane HA:** `msm-control.slice` reserves memory and protects PostgreSQL (`max_connections = 250`, `OOMScoreAdjust=-900`), hardened Redis (`requirepass`, dangerous commands renamed), `msm-panel` (2–4 Uvicorn workers in `MSM_WORKER_MODE=api`), and singleton `msm-worker` (`MSM_WORKER_MODE=worker`). `msm-workloads.slice` caps the `msm-docker` user slice below `MSM_HOST_RESERVED_RAM_MB` (`OOMScoreAdjust=+300`). Even if a game container stalls or crashes, control-plane APIs stay responsive.
 - **Mutual TLS with Fingerprint Pinning:** Remote nodes communicate exclusively over encrypted TLS. During enrollment, the worker permanently pins the Control Plane's TLS certificate fingerprint, preventing Man-in-the-Middle (MitM) attacks.
 - **Zero Inbound Node Ports Required:** The agent exposes its control port only to the panel. Remote nodes do not require open management ports to the public internet.
-- **Rootless Container Execution:** All game instances, bots, and voice apps run in rootless user namespaces (`cap-drop=ALL`, `no-new-privileges`). Even in the event of an application exploit, the container cannot break out to host root.
+- **Rootless Container, Network & Disk Containment:** All game instances run under rootless `msm-docker` (`cap-drop=ALL`, `no-new-privileges`, `icc=false`, `DOCKERD_ROOTLESS_ROOTLESSKIT_DISABLE_HOST_LOOPBACK=true`, AppArmor `msm-container-default`, sysctl hardening, optional `--with-gvisor` `runsc`), per-server disjoint `/29` networks with `msm-iptables` host/netns egress filtering, image registry allowlists, strict host capacity guards, and hard disk quotas via `msm-quota` (`prjquota` or loopback fallback).
 
 ---
 

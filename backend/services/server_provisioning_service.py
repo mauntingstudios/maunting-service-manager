@@ -261,7 +261,7 @@ def provision_server(
         ):
             bind_ip = "0.0.0.0"
 
-        from services.node_capacity import ensure_ram_limit_fits
+        from services.node_capacity import ensure_ram_limit_fits, ensure_strict_capacity_fits
 
         set_phase(db, task, "allocating")
         # Die Node-Zeile serialisiert Kapazitäts- und Portvergabe über mehrere
@@ -278,6 +278,13 @@ def provision_server(
             db,
             target_node,
             new_ram_limit_mb=req.ram_limit_mb,
+            exclude_server_id=None,
+        )
+        ensure_strict_capacity_fits(
+            db,
+            target_node,
+            new_ram_limit_mb=req.ram_limit_mb,
+            new_disk_limit_gb=req.disk_limit_gb,
             exclude_server_id=None,
         )
         try:
@@ -362,12 +369,14 @@ def provision_server(
                 server_deleted = True
                 raise install_update_busy_error()
 
-        is_remote_node = bool(target_node is not None and not target_node.is_local)
+        from services.node_capacity import should_delegate_node_fs_to_agent, sync_node_disk_quota
+
+        is_agent_fs = should_delegate_node_fs_to_agent(target_node)
         install_dir = os.path.join(
             os.path.abspath(settings.servers_dir),
-            str(server.id) if is_remote_node else f"{req.game_type}_{server.id}",
+            str(server.id) if is_agent_fs else f"{req.game_type}_{server.id}",
         )
-        if not is_remote_node and os.path.exists(install_dir):
+        if not is_agent_fs and os.path.exists(install_dir):
             db.delete(server)
             db.commit()
             server_deleted = True
@@ -380,23 +389,41 @@ def provision_server(
             )
 
         try:
-            if is_remote_node:
+            if is_agent_fs:
                 from services.node_client import NodeClient
                 from services.node_service import ensure_node_online
 
                 ensure_node_online(target_node)
                 NodeClient.from_node(target_node).files_ensure_server_root(server.id)
+                created_install_dir = True
+                sync_node_disk_quota(
+                    target_node,
+                    server.id,
+                    server.disk_limit_gb,
+                    enforce=True,
+                )
             else:
                 os.makedirs(install_dir, exist_ok=False)
                 # Panel-User und Gruppe dürfen arbeiten; kein world-writable
                 # Host-Verzeichnis. Container-Owner werden vor Start gezielt
                 # durch den bestehenden Bind-Mount-Repair normalisiert.
                 os.chmod(install_dir, 0o750)
-            created_install_dir = True
-        except OSError as exc:
+                created_install_dir = True
+        except Exception as exc:
+            if created_install_dir and is_agent_fs:
+                try:
+                    from services.node_capacity import remove_node_disk_quota
+                    from services.node_client import NodeClient
+
+                    remove_node_disk_quota(target_node, server.id)
+                    NodeClient.from_node(target_node).files_delete_server_root(server.id)
+                except Exception:
+                    pass
             db.delete(server)
             db.commit()
             server_deleted = True
+            if isinstance(exc, HTTPException):
+                raise
             raise HTTPException(
                 status_code=500,
                 detail={
@@ -583,9 +610,12 @@ def provision_server(
             # bereits geloescht sind — und dessen Ports weiterhin belegt waeren.
             if server_deleted and created_install_dir:
                 try:
-                    if target_node is not None and not target_node.is_local:
+                    from services.node_capacity import remove_node_disk_quota, should_delegate_node_fs_to_agent
+
+                    if should_delegate_node_fs_to_agent(target_node):
                         from services.node_client import NodeClient
 
+                        remove_node_disk_quota(target_node, failed_server_id)
                         NodeClient.from_node(target_node).files_delete_server_root(failed_server_id)
                     elif failed_install_dir and os.path.exists(failed_install_dir):
                         shutil.rmtree(failed_install_dir)

@@ -1,52 +1,287 @@
 #!/bin/sh
-# MSM iptables wrapper — thin, root-owned privilege gate for DOCKER-USER defense-in-depth.
-# Invoked exclusively via `sudo -n /usr/local/sbin/msm-iptables ...` by the `msm` user (see msm-panel.sudoers).
+# MSM iptables wrapper — thin, root-owned privilege gate for container network isolation.
+# Invoked via `sudo -n /usr/local/sbin/msm-iptables ...` by `msm` (msm-panel) or `msm-agent`.
 #
-# Purpose: allow the exact dynamic long argument lists that docker_iptables_service.py emits
-# for baseline DROP + per-server ACCEPT rules, while preventing any access to other iptables
-# chains, -F, -P, or other subcommands. KISS: minimal validation, full exec of iptables for allowed cases.
+# Supports:
+#   --version
+#   -L DOCKER-USER -n
+#   -C|-A|-D|-I DOCKER-USER ...
+#   apply-isolation <json-plan>   (validates strict JSON and reconciles both host netfilter
+#                                  and all running RootlessKit child network namespaces)
 #
-# Security: this file must be owned by root:root, mode 0755, and never writable by the msm user.
-# If compromised `msm` account calls it, it can still only touch DOCKER-USER (Docker's designated hook chain).
-#
-# Do not add logging of args (may contain IPs in comments).
+# Security: owned root:root, mode 0755, never writable by unprivileged users.
+# Do not log raw arguments or rule comments.
 
 set -eu
 
 IPT="/usr/sbin/iptables"
+if [ ! -x "$IPT" ]; then
+    IPT="$(command -v iptables 2>/dev/null || echo /usr/sbin/iptables)"
+fi
 
 if [ $# -eq 0 ]; then
     printf 'msm-iptables: refused disallowed invocation (no args)\n' >&2
     exit 1
 fi
 
-# Allowed patterns (must match first 1-3 tokens after wrapper; remaining args passed through)
 case "${1:-}" in
     --version)
-        # iptables --version
         exec "$IPT" "$@"
         ;;
     -L)
-        # iptables -L DOCKER-USER -n   (exactly as _chain_exists)
-        if [ $# -eq 3 ] && [ "$2" = "DOCKER-USER" ] && [ "$3" = "-n" ]; then
+        if [ $# -eq 3 ] && [ "${2:-}" = "DOCKER-USER" ] && [ "${3:-}" = "-n" ]; then
             exec "$IPT" "$@"
         fi
         ;;
-    -C|-A|-D)
-        # iptables -C DOCKER-USER ... (long rule with -p -dport -m comment --comment MSM:... -j DROP/ACCEPT)
-        # same for -A and -D
-        if [ "$2" = "DOCKER-USER" ]; then
+    -C|-A|-D|-I)
+        if [ "${2:-}" = "DOCKER-USER" ]; then
             exec "$IPT" "$@"
         fi
         ;;
-    -I)
-        # iptables -I DOCKER-USER 1 ... (insert at position 1; our code builds rule_for_insert)
-        if [ "$2" = "DOCKER-USER" ]; then
-            exec "$IPT" "$@"
+    apply-isolation)
+        if [ $# -eq 2 ]; then
+            exec /usr/bin/python3 - "$2" <<'PYEOF'
+import ipaddress
+import json
+import os
+import pwd
+import re
+import shutil
+import subprocess
+import sys
+
+IPT = shutil.which("iptables") or "/usr/sbin/iptables"
+IPT6 = shutil.which("ip6tables") or "/usr/sbin/ip6tables"
+NSENTER = shutil.which("nsenter") or "/usr/bin/nsenter"
+CHAIN_EGRESS = "MSM-EGRESS-BLOCK"
+CHAIN_ISO = "MSM-ISOLATION"
+CHAIN_OUT = "MSM-DOCKER-OUTPUT"
+BRIDGE_RE = re.compile(r"^(docker0|br-[0-9a-f]{12})$")
+
+
+def _norm_nets(items, *, v6=False, limit=128):
+    if not isinstance(items, list) or len(items) > limit:
+        raise ValueError("invalid network list")
+    cls = ipaddress.IPv6Network if v6 else ipaddress.IPv4Network
+    return [str(cls(str(item).strip(), strict=False)) for item in items]
+
+
+def _norm_host_v4(raw):
+    text = str(raw).strip().split("/", 1)[0]
+    addr = ipaddress.IPv4Address(text)
+    return f"{addr}/32"
+
+
+def _parse_plan(raw_json):
+    plan = json.loads(raw_json)
+    if not isinstance(plan, dict):
+        raise ValueError("plan must be a JSON object")
+    blocked_v4 = _norm_nets(plan.get("blocked_v4") or [], v6=False)
+    blocked_v6 = _norm_nets(plan.get("blocked_v6") or [], v6=True)
+    sources = _norm_nets(plan.get("container_sources") or [], v6=False, limit=64)
+    gateways = [_norm_host_v4(g) for g in (plan.get("dns_gateways") or [])[:128]]
+
+    raw_grants = plan.get("db_allows") or []
+    if not isinstance(raw_grants, list) or len(raw_grants) > 512:
+        raise ValueError("invalid db_allows")
+    grants = []
+    for item in raw_grants:
+        if not isinstance(item, dict):
+            raise ValueError("invalid grant")
+        src = str(ipaddress.IPv4Network(str(item["src"]).strip(), strict=False))
+        dst = str(ipaddress.IPv4Network(str(item["dst"]).strip(), strict=False))
+        port = int(item["port"])
+        if port < 1 or port > 65535:
+            raise ValueError("invalid port")
+        grants.append((src, dst, str(port)))
+
+    raw_bridges = plan.get("icc_drop_bridges") or []
+    if not isinstance(raw_bridges, list) or len(raw_bridges) > 512:
+        raise ValueError("invalid icc_drop_bridges")
+    bridges = []
+    for br in raw_bridges:
+        b = str(br).strip()
+        if not BRIDGE_RE.match(b):
+            raise ValueError("invalid bridge interface")
+        bridges.append(b)
+
+    return {
+        "blocked_v4": blocked_v4,
+        "blocked_v6": blocked_v6,
+        "sources": sources,
+        "gateways": list(dict.fromkeys(gateways)),
+        "grants": grants,
+        "bridges": list(dict.fromkeys(bridges)),
+    }
+
+
+def _run(cmd):
+    return subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+
+
+def _apply_netfilter(prefix, binary, data, *, v6=False):
+    cmds = [
+        ["-N", CHAIN_EGRESS],
+        ["-F", CHAIN_EGRESS],
+        ["-N", CHAIN_ISO],
+        ["-F", CHAIN_ISO],
+        ["-N", "DOCKER-USER"],
+    ]
+    if v6:
+        for cidr in data["blocked_v6"]:
+            cmds.append(["-A", CHAIN_EGRESS, "-d", cidr, "-j", "DROP"])
+        cmds.extend([
+            ["-A", CHAIN_EGRESS, "-j", "RETURN"],
+            ["-A", CHAIN_ISO, "-m", "conntrack", "--ctstate", "ESTABLISHED,RELATED", "-j", "ACCEPT"],
+            ["-A", CHAIN_ISO, "-i", "br-+", "-j", CHAIN_EGRESS],
+            ["-A", CHAIN_ISO, "-i", "docker0", "-j", CHAIN_EGRESS],
+            ["-A", CHAIN_ISO, "-j", "RETURN"],
+        ])
+    else:
+        for cidr in data["blocked_v4"]:
+            cmds.append(["-A", CHAIN_EGRESS, "-d", cidr, "-j", "DROP"])
+        cmds.append(["-A", CHAIN_EGRESS, "-j", "RETURN"])
+        cmds.append(["-A", CHAIN_ISO, "-m", "conntrack", "--ctstate", "ESTABLISHED,RELATED", "-j", "ACCEPT"])
+        for src, dst, port in data["grants"]:
+            cmds.append(["-A", CHAIN_ISO, "-s", src, "-d", dst, "-p", "tcp", "--dport", port, "-j", "ACCEPT"])
+        for gw in data["gateways"]:
+            for proto in ("udp", "tcp"):
+                cmds.append(["-A", CHAIN_ISO, "-d", gw, "-p", proto, "--dport", "53", "-j", "ACCEPT"])
+        for br in data["bridges"]:
+            cmds.append(["-A", CHAIN_ISO, "-i", br, "-o", br, "-j", "DROP"])
+        for src_net in data["sources"]:
+            cmds.append(["-A", CHAIN_ISO, "-s", src_net, "-j", CHAIN_EGRESS])
+        cmds.append(["-A", CHAIN_ISO, "-i", "br-+", "-j", CHAIN_EGRESS])
+        cmds.append(["-A", CHAIN_ISO, "-i", "docker0", "-j", CHAIN_EGRESS])
+        cmds.append(["-A", CHAIN_ISO, "-j", "RETURN"])
+
+    for args in cmds:
+        is_create = args[0] == "-N"
+        res = _run([*prefix, binary, "-w", "5", *args])
+        if res.returncode != 0 and not is_create:
+            return False
+
+    chk = _run([*prefix, binary, "-w", "5", "-C", "DOCKER-USER", "-j", CHAIN_ISO])
+    if chk.returncode != 0:
+        ins = _run([*prefix, binary, "-w", "5", "-I", "DOCKER-USER", "1", "-j", CHAIN_ISO])
+        if ins.returncode != 0:
+            return False
+    return True
+
+
+def _resolv_nameservers():
+    v4, v6 = ["127.0.0.53", "127.0.0.1"], ["::1"]
+    try:
+        with open("/etc/resolv.conf", "r", encoding="utf-8") as fh:
+            for line in fh:
+                parts = line.strip().split()
+                if len(parts) >= 2 and parts[0] == "nameserver":
+                    try:
+                        ip = ipaddress.ip_address(parts[1])
+                        if ip.version == 4 and str(ip) not in v4:
+                            v4.append(str(ip))
+                        elif ip.version == 6 and str(ip) not in v6:
+                            v6.append(str(ip))
+                    except ValueError:
+                        pass
+    except OSError:
+        pass
+    return v4, v6
+
+
+def _apply_docker_user_output_guard(data):
+    try:
+        uid = str(pwd.getpwnam("msm-docker").pw_uid)
+    except KeyError:
+        return True
+    ns4, ns6 = _resolv_nameservers()
+    v4_cmds = [
+        ["-N", CHAIN_OUT],
+        ["-F", CHAIN_OUT],
+        ["-A", CHAIN_OUT, "-m", "conntrack", "--ctstate", "ESTABLISHED,RELATED", "-j", "ACCEPT"],
+    ]
+    for ns in ns4:
+        for proto in ("udp", "tcp"):
+            v4_cmds.append(["-A", CHAIN_OUT, "-d", f"{ns}/32", "-p", proto, "--dport", "53", "-j", "ACCEPT"])
+    for cidr in data["blocked_v4"]:
+        v4_cmds.append(["-A", CHAIN_OUT, "-d", cidr, "-j", "DROP"])
+    v4_cmds.append(["-A", CHAIN_OUT, "-j", "RETURN"])
+
+    for args in v4_cmds:
+        res = _run([IPT, "-w", "5", *args])
+        if res.returncode != 0 and args[0] != "-N":
+            return False
+    chk = _run([IPT, "-w", "5", "-C", "OUTPUT", "-m", "owner", "--uid-owner", uid, "-j", CHAIN_OUT])
+    if chk.returncode != 0:
+        _run([IPT, "-w", "5", "-I", "OUTPUT", "1", "-m", "owner", "--uid-owner", uid, "-j", CHAIN_OUT])
+
+    if os.path.exists(IPT6):
+        v6_cmds = [
+            ["-N", CHAIN_OUT],
+            ["-F", CHAIN_OUT],
+            ["-A", CHAIN_OUT, "-m", "conntrack", "--ctstate", "ESTABLISHED,RELATED", "-j", "ACCEPT"],
+        ]
+        for ns in ns6:
+            for proto in ("udp", "tcp"):
+                v6_cmds.append(["-A", CHAIN_OUT, "-d", f"{ns}/128", "-p", proto, "--dport", "53", "-j", "ACCEPT"])
+        for cidr in data["blocked_v6"]:
+            v6_cmds.append(["-A", CHAIN_OUT, "-d", cidr, "-j", "DROP"])
+        v6_cmds.append(["-A", CHAIN_OUT, "-j", "RETURN"])
+        for args in v6_cmds:
+            _run([IPT6, "-w", "5", *args])
+        chk6 = _run([IPT6, "-w", "5", "-C", "OUTPUT", "-m", "owner", "--uid-owner", uid, "-j", CHAIN_OUT])
+        if chk6.returncode != 0:
+            _run([IPT6, "-w", "5", "-I", "OUTPUT", "1", "-m", "owner", "--uid-owner", uid, "-j", CHAIN_OUT])
+    return True
+
+
+def _find_rootlesskit_pids():
+    try:
+        self_ns = os.readlink("/proc/self/ns/net")
+    except OSError:
+        return []
+    pids = []
+    for entry in os.listdir("/proc"):
+        if not entry.isdigit():
+            continue
+        pid = int(entry)
+        try:
+            with open(f"/proc/{pid}/cmdline", "rb") as fh:
+                cmd = fh.read().replace(b"\x00", b" ").decode("utf-8", "ignore").lower()
+            if "rootlesskit" not in cmd and "dockerd-rootless" not in cmd:
+                continue
+            if os.readlink(f"/proc/{pid}/ns/net") != self_ns:
+                pids.append(pid)
+        except OSError:
+            continue
+    return pids
+
+
+try:
+    parsed = _parse_plan(sys.argv[1])
+except Exception as exc:
+    sys.stderr.write(f"msm-iptables: invalid isolation plan: {exc}\n")
+    sys.exit(2)
+
+ok = _apply_netfilter([], IPT, parsed, v6=False)
+if os.path.exists(IPT6):
+    _apply_netfilter([], IPT6, parsed, v6=True)
+
+for rpid in _find_rootlesskit_pids():
+    ns_prefix = [NSENTER, "--user", "--net", "-t", str(rpid)]
+    if _apply_netfilter(ns_prefix, IPT, parsed, v6=False):
+        ok = True
+    if os.path.exists(IPT6):
+        _apply_netfilter(ns_prefix, IPT6, parsed, v6=True)
+
+if not _apply_docker_user_output_guard(parsed):
+    sys.exit(1)
+
+sys.exit(0 if ok else 1)
+PYEOF
         fi
         ;;
 esac
 
-# Refuse everything else (prevents -t, other chains, flush, policy etc.)
-printf 'msm-iptables: refused disallowed invocation: %s\n' "$*" >&2
+printf 'msm-iptables: refused disallowed invocation\n' >&2
 exit 1

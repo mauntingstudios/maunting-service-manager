@@ -17,26 +17,26 @@ from games.updater import should_preserve_file
 
 
 class TestGenericContainerTmpfsHardening:
-    """Prueft, dass tmpfs-Mounts fuer Container generisch 'exec' erlauben."""
+    """Prueft Default-noexec-Haertung und explizite Opt-in-exec-Option fuer /tmp."""
 
     def test_backend_docker_service_tmpfs_options(self):
-        """_tmpfs_dict muss fuer /tmp zwingend 'exec' deklarieren."""
-        result = docker_service._tmpfs_dict(["/tmp"])
-        assert result is not None, "tmpfs_dict darf fuer ['/tmp'] nicht None sein"
-        assert "/tmp" in result
-        options = result["/tmp"].split(",")
+        """_tmpfs_dict erzwingt per Default noexec und erlaubt exec nur per Opt-in."""
+        default_result = docker_service._tmpfs_dict(["/tmp"])
+        assert default_result is not None, "tmpfs_dict darf fuer ['/tmp'] nicht None sein"
+        assert "/tmp" in default_result
+        default_options = default_result["/tmp"].split(",")
 
-        # 'exec' MUSS vorhanden sein (Docker defaultet sonst auf 'noexec'!)
-        assert "exec" in options, f"'exec' fehlt in den Mount-Optionen: {result['/tmp']}"
-        assert "noexec" not in options, f"'noexec' darf nicht aktiv sein: {result['/tmp']}"
+        # Default-Haertung (Milestone 1): /tmp ist noexec, nosuid, nodev
+        assert "noexec" in default_options
+        assert "nosuid" in default_options
+        assert "nodev" in default_options
+        assert "rw" in default_options
+        assert default_result["/tmp"] == "rw,noexec,nosuid,nodev,size=128m,mode=1777"
 
-        # Sicherheits-Haertung muss gewahrt bleiben
-        assert "nosuid" in options, f"'nosuid' muss aktiv sein: {result['/tmp']}"
-        assert "nodev" in options, f"'nodev' muss aktiv sein: {result['/tmp']}"
-        assert "rw" in options, f"'rw' muss aktiv sein: {result['/tmp']}"
-
-        # Exakte Vorgabe gemaess Architekturplan
-        assert result["/tmp"] == "rw,exec,nosuid,nodev,size=128m,mode=1777"
+        # Opt-in fuer Workloads mit JNI/CFFI/nativen Addons in /tmp
+        opt_in_result = docker_service._tmpfs_dict(["/tmp"], allow_exec=True)
+        assert opt_in_result is not None
+        assert opt_in_result["/tmp"] == "rw,exec,nosuid,nodev,size=128m,mode=1777"
 
 
 class TestAssetAndScriptPreservationFilter:

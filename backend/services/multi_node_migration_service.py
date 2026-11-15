@@ -18,6 +18,9 @@ def _local_agent_token() -> str | None:
     explicit = os.getenv("MSM_LOCAL_AGENT_TOKEN", "").strip()
     if explicit:
         return explicit
+    configured = (getattr(settings, "local_agent_token", "") or "").strip()
+    if configured:
+        return configured
     env_path = Path(settings.local_agent_env_file)
     if not env_path.is_absolute():
         env_path = (Path(__file__).resolve().parent.parent / env_path).resolve()

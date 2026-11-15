@@ -143,7 +143,10 @@ def delete_server_completely(db: Session, *, server_id: int, actor: ActorContext
 
     # ── 5. Unwiderrufliche Dateiloeschung ─────────────────────────────────
     dir_removed = False
-    if not is_local:
+    from services.node_capacity import remove_node_disk_quota, should_delegate_node_fs_to_agent
+
+    if should_delegate_node_fs_to_agent(node):
+        remove_node_disk_quota(node, server.id)
         try:
             from services.node_client import NodeClient
 

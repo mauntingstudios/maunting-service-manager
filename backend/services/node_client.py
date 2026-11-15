@@ -565,6 +565,23 @@ class NodeClient:
     def files_disk_info(self, server_id: int | str) -> dict[str, int]:
         return self._request("GET", "/files/disk", params={"server_id": str(server_id)})
 
+    def files_apply_quota(self, server_id: int | str, limit_gb: float | int) -> dict[str, Any]:
+        """Apply OS project or loopback filesystem disk quota for a server directory."""
+        return self._request(
+            "PUT",
+            "/files/quota",
+            params={"server_id": str(server_id)},
+            json={"limit_gb": float(limit_gb)},
+        )
+
+    def files_inspect_quota(self, server_id: int | str) -> dict[str, Any]:
+        """Inspect active filesystem disk quota for a server directory."""
+        return self._request("GET", "/files/quota", params={"server_id": str(server_id)})
+
+    def files_remove_quota(self, server_id: int | str) -> dict[str, Any]:
+        """Remove OS project or loopback filesystem disk quota for a server directory."""
+        return self._request("DELETE", "/files/quota", params={"server_id": str(server_id)})
+
     def ports_available(self, ports: list[tuple[int, str, str]], bind_ip: str) -> dict[str, Any]:
         return self._request("POST", "/runtime/ports/check", json={
             "ports": [{"port": port, "protocol": protocol, "role": role} for port, protocol, role in ports],

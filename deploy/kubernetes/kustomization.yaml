@@ -4,8 +4,10 @@ namespace: msm
 resources:
   - 00-namespace.yaml
   - 20-postgres.yaml
+  - 25-redis.yaml
   - 30-config.yaml
   - 40-panel.yaml
+  - 45-worker.yaml
   - 50-ingress.yaml
   - 60-networkpolicy.yaml
 # 10-secrets.example.yaml ist bewusst NICHT enthalten: Secrets werden ausserhalb

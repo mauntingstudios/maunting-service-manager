@@ -279,3 +279,93 @@ def test_disk_capacity_accounting(db):
     # 200 GB total - 50 GB allocated = 150 GB allocatable
     assert node_capacity.allocatable_disk_gb(node, 50) == 150
 
+
+def test_strict_capacity_guard_blocks_ram_and_disk_overcommit(db, monkeypatch):
+    from config import settings
+
+    node = Node(
+        name="strict_node",
+        host="https://strict:9000",
+        auth_token_enc="enc",
+        is_local=False,
+        status="online",
+        ram_total=8192,
+        disk_total=102400,  # 100 GB in MB
+    )
+    db.add(node)
+    db.commit()
+    db.refresh(node)
+
+    db.add(
+        Server(
+            name="existing",
+            game_type="t",
+            install_dir="/tmp/existing",
+            node_id=node.id,
+            ram_limit_mb=4096,
+            disk_limit_gb=70,
+        )
+    )
+    db.commit()
+
+    # Overbook stays allowed when strict_resource_capacity_guard is False
+    monkeypatch.setattr(settings, "strict_resource_capacity_guard", False)
+    node_capacity.ensure_strict_capacity_fits(
+        db, node, new_ram_limit_mb=4096, new_disk_limit_gb=50
+    )
+
+    monkeypatch.setattr(settings, "strict_resource_capacity_guard", True)
+    monkeypatch.setattr(settings, "host_reserved_ram_mb", 1536)
+    # Remaining RAM = 8192 - 1536 - 4096 = 2560 MB -> 3072 MB must fail with 409
+    with pytest.raises(HTTPException) as ram_exc:
+        node_capacity.ensure_strict_capacity_fits(
+            db, node, new_ram_limit_mb=3072, new_disk_limit_gb=20
+        )
+    assert ram_exc.value.status_code == 409
+    assert ram_exc.value.detail["code"] == "insufficient_node_ram"
+
+    # Remaining disk = 100 - 70 = 30 GB -> 40 GB must fail with 409
+    with pytest.raises(HTTPException) as disk_exc:
+        node_capacity.ensure_strict_capacity_fits(
+            db, node, new_ram_limit_mb=2048, new_disk_limit_gb=40
+        )
+    assert disk_exc.value.status_code == 409
+    assert disk_exc.value.detail["code"] == "insufficient_node_disk"
+
+    # Fits within both RAM and disk ceilings -> passes
+    node_capacity.ensure_strict_capacity_fits(
+        db, node, new_ram_limit_mb=2048, new_disk_limit_gb=25
+    )
+
+
+def test_quota_delegation_respects_local_agent_required(monkeypatch):
+    from config import settings
+    from services.node_client import NodeClient
+
+    local_node = SimpleNamespace(is_local=True, host="http://127.0.0.1:9000", auth_token_enc="enc")
+    remote_node = SimpleNamespace(is_local=False, host="https://r:9000", auth_token_enc="enc")
+
+    monkeypatch.setattr(settings, "local_agent_required", False)
+    assert node_capacity.should_delegate_node_fs_to_agent(local_node) is False
+    assert node_capacity.should_delegate_node_fs_to_agent(remote_node) is True
+
+    monkeypatch.setattr(settings, "local_agent_required", True)
+    assert node_capacity.should_delegate_node_fs_to_agent(local_node) is True
+
+    calls = []
+
+    class FakeClient:
+        def files_apply_quota(self, server_id, limit_gb):
+            calls.append(("apply", server_id, limit_gb))
+            return {"ok": True}
+
+        def files_remove_quota(self, server_id):
+            calls.append(("remove", server_id))
+            return {"ok": True}
+
+    monkeypatch.setattr(NodeClient, "from_node", staticmethod(lambda _n: FakeClient()))
+    node_capacity.sync_node_disk_quota(local_node, 42, 30, enforce=True)
+    node_capacity.sync_node_disk_quota(local_node, 42, None, enforce=True)
+    node_capacity.remove_node_disk_quota(remote_node, 42)
+    assert calls == [("apply", 42, 30), ("remove", 42), ("remove", 42)]
+

@@ -17,15 +17,12 @@ metadata:
     app.kubernetes.io/name: msm
     app.kubernetes.io/component: panel
 spec:
-  # Genau eine Instanz. Das Panel haelt prozesslokalen Zustand (Scheduler-Jobs,
-  # Lifecycle-Sperren, Settings-Cache); zwei Instanzen wuerden Serveraktionen
-  # doppelt ausfuehren. Kapazitaet waechst ueber weitere MSM-Nodes, nicht ueber
-  # weitere Panel-Replicas. Ausfuehrliche Begruendung im README.
-  replicas: 1
+  # Zustaende (Presence, Events, Locks) laufen ueber Redis (`msm-redis`);
+  # periodische Hintergrund-Jobs und Node-Heartbeats liegen im Singleton `msm-worker`.
+  # Dadurch skaliert die HTTP-/WebSocket-API horizontal ohne Doppelausfuehrung.
+  replicas: 2
   strategy:
-    # Recreate statt RollingUpdate: waehrend eines Rollouts duerfen nie zwei
-    # Panels gleichzeitig laufen. Kurze Downtime ist der bewusst gewaehlte Preis.
-    type: Recreate
+    type: RollingUpdate
   selector:
     matchLabels:
       app.kubernetes.io/name: msm
@@ -106,6 +103,8 @@ spec:
             - configMapRef:
                 name: msm-config
           env:
+            - name: MSM_WORKER_MODE
+              value: "api"
             - name: MSM_SECRET_KEY
               valueFrom:
                 secretKeyRef:
@@ -131,6 +130,11 @@ spec:
                 secretKeyRef:
                   name: msm-secrets
                   key: MSM_DATABASE_URL_ASYNC
+            - name: MSM_REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: msm-secrets
+                  key: MSM_REDIS_URL
           securityContext:
             allowPrivilegeEscalation: false
             # Nicht read-only: das Panel schreibt Konfiguration, Blueprints und
@@ -187,8 +191,9 @@ metadata:
   namespace: msm
 spec:
   accessModes:
-    # ReadWriteOnce genuegt und passt zu `replicas: 1`.
-    - ReadWriteOnce
+    # Mehrere Panel-Replicas und der Singleton-Worker teilen sich das Volume.
+    # Fuer Multi-Node-Cluster eine StorageClass mit ReadWriteMany verwenden.
+    - ReadWriteMany
   resources:
     requests:
       storage: 10Gi

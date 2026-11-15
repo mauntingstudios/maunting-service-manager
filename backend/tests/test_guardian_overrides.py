@@ -51,7 +51,7 @@ def _blueprint(grace: int = 10, timeout: int = 120):
                 "description": "",
             },
             "runtime": {
-                "image": "synthetic.invalid/runtime:1",
+                "image": "ghcr.io/synthetic/runtime:1",
                 "startup": "./start",
                 "env": {},
             },
@@ -638,7 +638,7 @@ class TestAbleitungImReparaturlauf:
                     "description": "",
                 },
                 "runtime": {
-                    "image": "synthetic.invalid/leer:1",
+                    "image": "ghcr.io/synthetic/leer:1",
                     "startup": "./start",
                     "env": {},
                 },

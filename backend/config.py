@@ -125,6 +125,9 @@ class Settings(BaseSettings):
     # Gehoert ins Backup: ohne diese Dateien sind die Tresor-Eintraege Verweise ins Leere.
     vault_blob_dir: str = "/opt/msm/vault-blobs"
     local_agent_env_file: str = "/opt/msm/msm-agent/.env"
+    # Direkter Enrollment-/Handshake-Token fuer den lokalen Agent (bei 3-User-Isolation
+    # kann msm die msm-agent/.env nicht direkt lesen; install.sh setzt ihn hier).
+    local_agent_token: str = ""
     # false = reine Control Plane ohne Docker/Agent auf demselben Host.
     # Ein bestehender lokaler Node muss vor dem Start kontrolliert in einen
     # verifizierten Remote-Node umgewandelt werden; kein stiller Fallback.
@@ -245,6 +248,18 @@ class Settings(BaseSettings):
     # Never execute blueprint setupCommands bare-metal inside msm-panel unless
     # explicitly opted-in for legacy single-binary dev environments.
     allow_legacy_bare_metal_setup: bool = False
+
+    # Enforce strict node RAM/disk capacity ceilings on provisioning/update (409 on overbook)
+    strict_resource_capacity_guard: bool = False
+    default_container_disk_limit_gb: int = 20
+
+    # Route local node container/filesystem/quota mutations through local msm-agent (3-user isolation)
+    local_agent_required: bool = False
+
+    # Allowed OCI image registries for blueprints (comma-separated; "*" allows any registry)
+    allowed_image_registries: str = (
+        "docker.io,ghcr.io,lscr.io,mcr.microsoft.com,quay.io,gcr.io,public.ecr.aws,registry.gitlab.com"
+    )
 
     model_config = SettingsConfigDict(
         env_prefix="MSM_",

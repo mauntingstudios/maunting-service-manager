@@ -730,3 +730,60 @@ def test_blueprint_mods_curseforge_traversal_install_path_rejected() -> None:
     with pytest.raises(BlueprintValidationError):
         load_blueprint_dict(d)
 
+
+@pytest.mark.parametrize(
+    "image_ref",
+    [
+        "evil.registry.example/attacker/backdoor:latest",
+        "127.0.0.1:5000/internal/image:1",
+        "localhost:5000/private/app:latest",
+        "ghcr.io/../escape/image:latest",
+    ],
+)
+def test_blueprint_unapproved_or_traversal_image_registry_rejected(image_ref: str) -> None:
+    d = _minimal_valid_dict()
+    d["runtime"]["image"] = image_ref
+    with pytest.raises(BlueprintValidationError):
+        load_blueprint_dict(d)
+
+
+@pytest.mark.parametrize(
+    "image_ref",
+    [
+        "alpine:3.20",
+        "itzg/minecraft-server:latest",
+        "ghcr.io/parkervcp/steamcmd:debian",
+        "mcr.microsoft.com/dotnet/runtime:8.0",
+    ],
+)
+def test_blueprint_allowlisted_image_registries_accepted(image_ref: str) -> None:
+    d = _minimal_valid_dict()
+    d["runtime"]["image"] = image_ref
+    bp = load_blueprint_dict(d)
+    assert bp.runtime.image == image_ref
+
+
+@pytest.mark.parametrize(
+    "env_key,env_val",
+    [
+        ("DOCKER_HOST", "unix:///var/run/docker.sock"),
+        ("DOCKER_CONTEXT", "host"),
+        ("LD_PRELOAD", "/data/evil.so"),
+        ("LD_AUDIT", "/data/audit.so"),
+        ("BASH_ENV", "/data/init.sh"),
+        ("LD_LIBRARY_PATH", ".:../../host/lib"),
+    ],
+)
+def test_blueprint_forbidden_runtime_env_rejected(env_key: str, env_val: str) -> None:
+    d = _minimal_valid_dict()
+    d["runtime"]["env"] = {env_key: env_val}
+    with pytest.raises(BlueprintValidationError):
+        load_blueprint_dict(d)
+
+
+def test_blueprint_allows_relative_ld_library_path() -> None:
+    d = _minimal_valid_dict()
+    d["runtime"]["env"] = {"LD_LIBRARY_PATH": ".:./linux64:/usr/lib/x86_64-linux-gnu"}
+    bp = load_blueprint_dict(d)
+    assert "linux64" in bp.runtime.env["LD_LIBRARY_PATH"]
+

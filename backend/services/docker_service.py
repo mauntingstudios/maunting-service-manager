@@ -1346,7 +1346,10 @@ def _cpu_percent(raw: dict) -> float | None:
 
 
 def logs(name: str, lines: int = 200, *, node: Any | None = None) -> str:
-    if node is not None and not getattr(node, "is_local", True):
+    if node is not None and (
+        not getattr(node, "is_local", True)
+        or bool(getattr(settings, "local_agent_required", False))
+    ):
         try:
             from services.node_client import NodeClient
 
@@ -1548,7 +1551,10 @@ async def stream_logs(name: str, tail: int = 200, *, node: Any | None = None) ->
 
 
 def disk_usage_mb(path: str, *, node=None, server_id: int | str | None = None) -> int | None:
-    if node is not None and not getattr(node, "is_local", True):
+    if node is not None and (
+        not getattr(node, "is_local", True)
+        or bool(getattr(settings, "local_agent_required", False))
+    ):
         if server_id is None:
             return None
         try:

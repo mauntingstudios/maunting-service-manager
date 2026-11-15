@@ -12,6 +12,9 @@ umask 077
 export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
 MSM_USER="msm"
+MSM_DOCKER_USER="msm-docker"
+MSM_SERVERS_GROUP="msm-servers"
+MSM_DOCKER_HOME="/var/lib/msm-docker"
 AGENT_DIR="/opt/msm-agent"
 SERVERS_DIR="/opt/msm/servers"
 CERT_DIR="${AGENT_DIR}/certs"
@@ -78,25 +81,54 @@ apt-get update -qq --allow-releaseinfo-change=true >>"$LOG_FILE" 2>&1 || warn "a
 apt-get install -y -qq \
   python3 python3-venv python3-pip \
   curl ca-certificates gnupg openssl sudo ufw rsync \
-  uidmap dbus-user-session slirp4netns \
+  uidmap dbus-user-session slirp4netns acl quota e2fsprogs iptables \
   >>"$LOG_FILE" 2>&1 || err "apt-get install fehlgeschlagen (siehe $LOG_FILE)"
 ok "System-Pakete"
 
-# ── 4. msm system user ────────────────────────────────────────
+# ── 4. msm + msm-docker system users ──────────────────────────
 if ! id -u "$MSM_USER" >/dev/null 2>&1; then
   useradd --system --create-home --home-dir /home/msm --shell /bin/bash "$MSM_USER"
   ok "User $MSM_USER angelegt"
 else
   ok "User $MSM_USER existiert"
 fi
+if ! id -u "$MSM_DOCKER_USER" >/dev/null 2>&1; then
+  useradd --system --create-home --home-dir "$MSM_DOCKER_HOME" --shell /bin/bash "$MSM_DOCKER_USER"
+  ok "User $MSM_DOCKER_USER angelegt"
+fi
+if ! getent group "$MSM_SERVERS_GROUP" >/dev/null 2>&1; then
+  groupadd --system "$MSM_SERVERS_GROUP"
+fi
+usermod -aG "$MSM_SERVERS_GROUP" "$MSM_USER" 2>/dev/null || true
+usermod -aG "$MSM_SERVERS_GROUP" "$MSM_DOCKER_USER" 2>/dev/null || true
 
-# ── 5. Rootless Docker ────────────────────────────────────────
+# ── 5. Rootless Docker (isoliert unter $MSM_DOCKER_USER) ──────
 install_rootless_docker() {
-  local msm_home docker_bin
-  msm_home="$(getent passwd "$MSM_USER" | cut -d: -f6)"
-  # Ensure linger so user services survive logout
+  local docker_home docker_uid
+  docker_home="$(getent passwd "$MSM_DOCKER_USER" | cut -d: -f6)"
+  docker_uid="$(id -u "$MSM_DOCKER_USER")"
+
+  for f in /etc/subuid /etc/subgid; do
+    touch "$f"; chmod 644 "$f"
+    if ! grep -qE "^${MSM_DOCKER_USER}:" "$f"; then
+      local start
+      start=$(awk -F: 'BEGIN{m=99999} NF>=3{e=$2+$3-1; if(e>m)m=e} END{print m+1}' "$f")
+      echo "${MSM_DOCKER_USER}:${start}:65536" >> "$f"
+    fi
+  done
+
   if command -v loginctl >/dev/null 2>&1; then
-    loginctl enable-linger "$MSM_USER" >>"$LOG_FILE" 2>&1 || true
+    loginctl enable-linger "$MSM_DOCKER_USER" >>"$LOG_FILE" 2>&1 || true
+  fi
+
+  # cgroup v2 delegation & workload slice
+  if [[ -d /run/systemd/system ]]; then
+    mkdir -p /etc/systemd/system/user@.service.d "/etc/systemd/system/user@${docker_uid}.service.d"
+    printf '[Service]\nDelegate=cpu cpuset io memory pids\n' > /etc/systemd/system/user@.service.d/delegate.conf
+    printf '[Service]\nSlice=msm-workloads.slice\nOOMScoreAdjust=500\n' > "/etc/systemd/system/user@${docker_uid}.service.d/msm-workloads.conf"
+    systemctl daemon-reload >>"$LOG_FILE" 2>&1 || true
+    systemctl start "user@${docker_uid}.service" >>"$LOG_FILE" 2>&1 || true
+    install -d -o "$MSM_DOCKER_USER" -g "$MSM_DOCKER_USER" -m 710 "/run/user/${docker_uid}" 2>/dev/null || true
   fi
 
   # Docker engine packages if missing
@@ -117,41 +149,75 @@ install_rootless_docker() {
     fi
   fi
 
-  # Rootless setup for msm user
-  if [[ ! -S "/run/user/$(id -u "$MSM_USER")/docker.sock" ]] && \
-     [[ ! -S "${msm_home}/.docker/run/docker.sock" ]]; then
-    log "Richte rootless Docker fuer $MSM_USER ein..."
-    # Prefer official rootless installer as msm
+  # Rootless setup for $MSM_DOCKER_USER
+  if [[ ! -f "${docker_home}/.config/systemd/user/docker.service" ]]; then
+    log "Richte rootless Docker fuer $MSM_DOCKER_USER ein..."
+    if ! command -v dockerd-rootless-setuptool.sh >/dev/null 2>&1; then
+      apt-get install -y -qq docker-ce-rootless-extras >>"$LOG_FILE" 2>&1 || true
+    fi
     if command -v dockerd-rootless-setuptool.sh >/dev/null 2>&1; then
-      sudo -u "$MSM_USER" -H bash -c 'dockerd-rootless-setuptool.sh install' >>"$LOG_FILE" 2>&1 \
+      su -s /bin/bash "$MSM_DOCKER_USER" -c "export XDG_RUNTIME_DIR=/run/user/${docker_uid}; dockerd-rootless-setuptool.sh install" >>"$LOG_FILE" 2>&1 \
         || warn "dockerd-rootless-setuptool.sh meldete Fehler — manuell pruefen"
     else
-      # Fallback: rootless-extras package path
-      apt-get install -y -qq docker-ce-rootless-extras >>"$LOG_FILE" 2>&1 || true
-      if command -v dockerd-rootless-setuptool.sh >/dev/null 2>&1; then
-        sudo -u "$MSM_USER" -H bash -c 'dockerd-rootless-setuptool.sh install' >>"$LOG_FILE" 2>&1 \
-          || warn "rootless Docker Setup unvollstaendig"
-      else
-        warn "Rootless-Setup-Tool fehlt — Docker manuell als rootless fuer $MSM_USER konfigurieren"
-      fi
+      warn "Rootless-Setup-Tool fehlt — Docker manuell als rootless fuer $MSM_DOCKER_USER konfigurieren"
     fi
   else
-    ok "Rootless Docker Socket bereits vorhanden"
+    ok "Rootless Docker fuer $MSM_DOCKER_USER bereits eingerichtet"
   fi
 
-  # sysctl for rootless networking
-  if [[ ! -f /etc/sysctl.d/99-msm-rootless-docker.conf ]]; then
-    cat > /etc/sysctl.d/99-msm-rootless-docker.conf <<'EOF'
-kernel.unprivileged_userns_clone=1
-net.ipv4.ip_unprivileged_port_start=0
+  # Docker daemon & rootlesskit hardening
+  install -d -o "$MSM_DOCKER_USER" -g "$MSM_DOCKER_USER" -m 700 "${docker_home}/.config/docker"
+  cat > "${docker_home}/.config/docker/daemon.json" <<'EOF'
+{
+  "icc": false,
+  "no-new-privileges": true,
+  "userland-proxy": false,
+  "log-driver": "json-file",
+  "log-opts": {
+    "max-size": "20m",
+    "max-file": "3"
+  }
+}
 EOF
-    sysctl --system >>"$LOG_FILE" 2>&1 || true
+  chown "$MSM_DOCKER_USER:$MSM_DOCKER_USER" "${docker_home}/.config/docker/daemon.json"
+  su -s /bin/bash "$MSM_DOCKER_USER" -c "mkdir -p ~/.config/systemd/user/docker.service.d && printf '[Service]\nEnvironment=\"DOCKERD_ROOTLESS_ROOTLESSKIT_PORT_DRIVER=slirp4netns\"\nEnvironment=\"DOCKERD_ROOTLESS_ROOTLESSKIT_DISABLE_HOST_LOOPBACK=true\"\n' > ~/.config/systemd/user/docker.service.d/override.conf" >>"$LOG_FILE" 2>&1 || true
+  if [[ -d /run/systemd/system ]]; then
+    su -s /bin/bash "$MSM_DOCKER_USER" -c "export XDG_RUNTIME_DIR=/run/user/${docker_uid}; systemctl --user daemon-reload && systemctl --user enable docker.service && systemctl --user restart docker.service" >>"$LOG_FILE" 2>&1 || true
   fi
+
+  cat > /usr/local/sbin/msm-docker-socket-acl <<ACLEOF
+#!/bin/sh
+set -eu
+DOCKER_UID="${docker_uid}"
+AGENT_USER="${MSM_USER}"
+RUNTIME_DIR="/run/user/\${DOCKER_UID}"
+SOCK="\${RUNTIME_DIR}/docker.sock"
+[ -d "\$RUNTIME_DIR" ] && command -v setfacl >/dev/null 2>&1 && { chmod 0710 "\$RUNTIME_DIR" || true; setfacl -m "u:\${AGENT_USER}:x" "\$RUNTIME_DIR" || true; }
+[ -S "\$SOCK" ] && command -v setfacl >/dev/null 2>&1 && { chmod 0660 "\$SOCK" || true; setfacl -m "u:\${AGENT_USER}:rw" "\$SOCK" || true; }
+ACLEOF
+  chown root:root /usr/local/sbin/msm-docker-socket-acl
+  chmod 0755 /usr/local/sbin/msm-docker-socket-acl
+  /usr/local/sbin/msm-docker-socket-acl || true
+
+  # sysctl hardening
+  cat > /etc/sysctl.d/99-msm-hardening.conf <<'EOF'
+fs.protected_symlinks = 1
+fs.protected_hardlinks = 1
+fs.protected_fifos = 2
+fs.protected_regular = 2
+fs.suid_dumpable = 0
+kernel.kptr_restrict = 2
+kernel.dmesg_restrict = 1
+kernel.unprivileged_bpf_disabled = 1
+net.ipv4.conf.all.rp_filter = 1
+net.ipv4.conf.default.rp_filter = 1
+EOF
+  sysctl --system >>"$LOG_FILE" 2>&1 || true
 }
 install_rootless_docker
 ok "Rootless Docker Schritt abgeschlossen"
 
-MSM_UID="$(id -u "$MSM_USER")"
+MSM_UID="$(id -u "$MSM_DOCKER_USER")"
 DOCKER_HOST_DEFAULT="unix:///run/user/${MSM_UID}/docker.sock"
 
 # ── 6. Deploy agent files ─────────────────────────────────────
@@ -169,7 +235,9 @@ rsync -a --delete \
   --exclude '.pytest_cache/' \
   "$SRC_AGENT/" "$AGENT_DIR/" 2>>"$LOG_FILE" \
   || err "Gefiltertes Agent-Deployment fehlgeschlagen"
-chown -R "$MSM_USER:$MSM_USER" "$AGENT_DIR" "$SERVERS_DIR"
+chown -R "$MSM_USER:$MSM_USER" "$AGENT_DIR"
+chown "$MSM_USER:$MSM_SERVERS_GROUP" "$SERVERS_DIR"
+chmod 0710 "$SERVERS_DIR"
 ok "Agent-Dateien deployed"
 
 # ── 7. venv + deps ────────────────────────────────────────────
@@ -227,6 +295,10 @@ MSM_AGENT_HOST=${AGENT_HOST}
 MSM_AGENT_PORT=${AGENT_PORT}
 MSM_SERVERS_DIR=${SERVERS_DIR}
 MSM_DOCKER_HOST=${DOCKER_HOST_DEFAULT}
+MSM_REQUIRE_NETWORK_ISOLATION=true
+MSM_QUOTA_DRIVER=auto
+MSM_REQUIRE_DISK_QUOTA=false
+MSM_HOST_RESERVED_RAM_MB=1536
 MSM_AGENT_LOG_LEVEL=INFO
 MSM_TLS_CERTFILE=${CERT_FILE}
 MSM_TLS_KEYFILE=${KEY_FILE}
@@ -259,15 +331,45 @@ exec ufw delete allow "${port}/${protocol}"
 EOF
 chown root:root "$FIREWALL_WRAPPER"
 chmod 0755 "$FIREWALL_WRAPPER"
+
+# Install root-owned iptables isolation + disk quota wrappers on remote nodes too
+cp -f "$REPO_ROOT/backend/scripts/msm-iptables" /usr/local/sbin/msm-iptables
+chown root:root /usr/local/sbin/msm-iptables
+chmod 0755 /usr/local/sbin/msm-iptables
+cp -f "$REPO_ROOT/backend/scripts/msm-quota" /usr/local/sbin/msm-quota
+chown root:root /usr/local/sbin/msm-quota
+chmod 0755 /usr/local/sbin/msm-quota
+
 cat > /etc/sudoers.d/msm-agent-firewall <<EOF
+Defaults:${MSM_USER} !authenticate
 ${MSM_USER} ALL=(root) NOPASSWD: ${FIREWALL_WRAPPER} *
+${MSM_USER} ALL=(root) NOPASSWD: /usr/local/sbin/msm-iptables
+${MSM_USER} ALL=(root) NOPASSWD: /usr/local/sbin/msm-quota
 ${MSM_USER} ALL=(root) NOPASSWD: /usr/bin/systemctl restart msm-agent.service, /bin/systemctl restart msm-agent.service
 EOF
 chmod 0440 /etc/sudoers.d/msm-agent-firewall
 visudo -cf /etc/sudoers.d/msm-agent-firewall >/dev/null || err "Ungueltige Firewall-sudoers-Regel"
-ok "Node-Firewall-Wrapper installiert"
+ok "Node-Firewall-, Netfilter- & Quota-Wrapper installiert"
 
-# ── 10. systemd unit ──────────────────────────────────────────
+# ── 10. systemd unit & slices ─────────────────────────────────
+if [[ -d /run/systemd/system ]]; then
+  cat > /etc/systemd/system/msm-control.slice <<'EOF'
+[Unit]
+Description=MSM Node Control Slice (Agent)
+
+[Slice]
+CPUWeight=200
+MemoryMin=256M
+EOF
+  cat > /etc/systemd/system/msm-workloads.slice <<'EOF'
+[Unit]
+Description=MSM Tenant Workload Slice
+
+[Slice]
+CPUWeight=50
+IOWeight=50
+EOF
+fi
 UNIT_PATH="/etc/systemd/system/msm-agent.service"
 cat > "$UNIT_PATH" <<EOF
 [Unit]
@@ -279,11 +381,14 @@ Wants=network-online.target
 Type=simple
 User=${MSM_USER}
 Group=${MSM_USER}
+Slice=msm-control.slice
+OOMScoreAdjust=-500
 WorkingDirectory=${AGENT_DIR}
 Environment="PATH=${AGENT_DIR}/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 Environment="DOCKER_HOST=${DOCKER_HOST_DEFAULT}"
 Environment="XDG_RUNTIME_DIR=/run/user/${MSM_UID}"
 EnvironmentFile=-${ENV_FILE}
+ExecStartPre=+/usr/local/sbin/msm-docker-socket-acl
 ExecStart=${AGENT_DIR}/venv/bin/python main.py
 Restart=on-failure
 RestartSec=5
@@ -295,7 +400,7 @@ PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=false
 StateDirectory=msm-agent
-ReadWritePaths=${AGENT_DIR} ${SERVERS_DIR} -/run/user/${MSM_UID} -/home/${MSM_USER} -/var/lib/msm-agent
+ReadWritePaths=${AGENT_DIR} ${SERVERS_DIR} -/run/user/${MSM_UID} -/run/sudo -/home/${MSM_USER} -/var/lib/msm-agent -/var/lib/msm-quotas
 
 [Install]
 WantedBy=multi-user.target

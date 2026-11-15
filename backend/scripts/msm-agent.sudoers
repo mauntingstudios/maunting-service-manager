@@ -1,0 +1,9 @@
+# MSM Agent — Firewall & Disk Quota Privilege Boundary
+# Single Source of Truth (SSOT). Deployed by install.sh and update.sh to /etc/sudoers.d/msm-agent.
+# Edit ONLY this file. Never grant msm-agent unrestricted root commands or service updates.
+
+Defaults:msm-agent !authenticate
+
+msm-agent ALL=(root) NOPASSWD: /usr/local/sbin/msm-iptables
+msm-agent ALL=(root) NOPASSWD: /usr/local/sbin/msm-quota
+msm-agent ALL=(root) NOPASSWD: /usr/local/sbin/msm-agent-firewall *

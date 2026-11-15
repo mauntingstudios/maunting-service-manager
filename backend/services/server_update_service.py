@@ -135,10 +135,12 @@ def _verify_update_permissions_and_preconditions(
                 detail="Server Lifecycle-Aktion läuft, Netzwerkeinstellungen können nicht geändert werden",
             )
 
-    # RAM-Kapazitätsprüfung nur bei konkretem Zahlenwert (None = unbegrenzt).
-    if plan.ram_changed and plan.payload.get("ram_limit_mb") is not None:
+    # RAM-/Disk-Kapazitätsprüfung bei konkretem Zahlenwert (None = unbegrenzt).
+    ram_target = plan.payload.get("ram_limit_mb") if plan.ram_changed else None
+    disk_target = plan.payload.get("disk_limit_gb") if plan.disk_changed else None
+    if ram_target is not None or disk_target is not None:
         from models import Node as NodeModel
-        from services.node_capacity import ensure_ram_limit_fits
+        from services.node_capacity import ensure_ram_limit_fits, ensure_strict_capacity_fits
 
         guard_node = None
         if server.node_id is not None:
@@ -148,10 +150,18 @@ def _verify_update_permissions_and_preconditions(
                 .with_for_update()
                 .first()
             )
-        ensure_ram_limit_fits(
+        if ram_target is not None:
+            ensure_ram_limit_fits(
+                db,
+                guard_node,
+                new_ram_limit_mb=ram_target,
+                exclude_server_id=server.id,
+            )
+        ensure_strict_capacity_fits(
             db,
             guard_node,
-            new_ram_limit_mb=plan.payload.get("ram_limit_mb"),
+            new_ram_limit_mb=ram_target,
+            new_disk_limit_gb=disk_target,
             exclude_server_id=server.id,
         )
 
@@ -255,6 +265,23 @@ def _apply_live_resource_and_disk_updates(
     disk_eval_needed = plan.disk_changed
     needs_lock = resource_live_change or (disk_eval_needed and server.status == "running")
 
+    def _apply_disk_quota_and_soft_limit() -> None:
+        from services.node_capacity import sync_node_disk_quota
+
+        try:
+            sync_node_disk_quota(server.node, server.id, server.disk_limit_gb, enforce=True)
+        except Exception as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="Disk-Quota konnte auf dem Node nicht angewendet werden",
+            ) from exc
+        disk_result = srv.evaluate_disk_soft_limit(db, server)
+        if not disk_result.get("ok"):
+            raise HTTPException(
+                status_code=503,
+                detail="Disk-Limit konnte nicht neu bewertet werden",
+            )
+
     if needs_lock:
         container_name = srv.container_name_for(server.id)
         if srv.is_lifecycle_job_active(server_id):
@@ -311,21 +338,11 @@ def _apply_live_resource_and_disk_updates(
                             detail="Ressourcen-Update konnte nicht angewendet werden",
                         )
             if disk_eval_needed:
-                disk_result = srv.evaluate_disk_soft_limit(db, server)
-                if not disk_result.get("ok"):
-                    raise HTTPException(
-                        status_code=503,
-                        detail="Disk-Limit konnte nicht neu bewertet werden",
-                    )
+                _apply_disk_quota_and_soft_limit()
         finally:
             lock.release()
     elif disk_eval_needed:
-        disk_result = srv.evaluate_disk_soft_limit(db, server)
-        if not disk_result.get("ok"):
-            raise HTTPException(
-                status_code=503,
-                detail="Disk-Limit konnte nicht neu bewertet werden",
-            )
+        _apply_disk_quota_and_soft_limit()
 
 
 def execute_server_update(

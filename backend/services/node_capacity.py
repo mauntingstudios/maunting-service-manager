@@ -235,3 +235,91 @@ def sum_running_ram_mb(db: Session, node_id: int) -> int:
         return int(total or 0)
     except (TypeError, ValueError):
         return 0
+
+
+def ensure_strict_capacity_fits(
+    db: Session,
+    node: Node | None,
+    *,
+    new_ram_limit_mb: int | None = None,
+    new_disk_limit_gb: int | None = None,
+    exclude_server_id: int | None = None,
+) -> None:
+    """Enforce hard node RAM & disk ceilings when strict capacity guard is enabled."""
+    if not bool(getattr(settings, "strict_resource_capacity_guard", False)) or node is None:
+        return
+
+    from fastapi import HTTPException
+
+    if new_ram_limit_mb is not None and node.ram_total is not None:
+        try:
+            total_ram = int(node.ram_total)
+        except (TypeError, ValueError):
+            total_ram = 0
+        reserved = max(ram_headroom_mb(), int(getattr(settings, "host_reserved_ram_mb", 0) or 0))
+        used_ram = sum_allocated_ram_mb(db, node.id, exclude_server_id=exclude_server_id)
+        max_allocatable_ram = max(0, total_ram - reserved)
+        if used_ram + int(new_ram_limit_mb) > max_allocatable_ram:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "insufficient_node_ram",
+                    "message": "errors.insufficient_node_ram",
+                },
+            )
+
+    if new_disk_limit_gb is not None and node.disk_total is not None:
+        used_disk = sum_allocated_disk_gb(db, node.id, exclude_server_id=exclude_server_id)
+        remaining_disk = allocatable_disk_gb(node, used_disk)
+        if remaining_disk is not None and int(new_disk_limit_gb) > remaining_disk:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "insufficient_node_disk",
+                    "message": "errors.insufficient_node_disk",
+                },
+            )
+
+
+def should_delegate_node_fs_to_agent(node: Node | None) -> bool:
+    """Return True when server root & disk quota operations must go through msm-agent."""
+    if node is None:
+        return False
+    if not getattr(node, "is_local", False):
+        return True
+    return bool(getattr(settings, "local_agent_required", False))
+
+
+def sync_node_disk_quota(
+    node: Node | None,
+    server_id: int,
+    disk_limit_gb: int | None,
+    *,
+    enforce: bool = False,
+) -> None:
+    """Apply or remove physical OS quota on the node agent when agent-delegated."""
+    if not should_delegate_node_fs_to_agent(node):
+        return
+    try:
+        from services.node_client import NodeClient
+
+        client = NodeClient.from_node(node)
+        if disk_limit_gb is not None and int(disk_limit_gb) >= 1:
+            client.files_apply_quota(server_id, int(disk_limit_gb))
+        else:
+            client.files_remove_quota(server_id)
+    except Exception:
+        if enforce:
+            raise
+
+
+def remove_node_disk_quota(node: Node | None, server_id: int) -> None:
+    """Best-effort cleanup of OS disk quota during server teardown or rollback."""
+    if not should_delegate_node_fs_to_agent(node):
+        return
+    try:
+        from services.node_client import NodeClient
+
+        NodeClient.from_node(node).files_remove_quota(server_id)
+    except Exception:
+        pass

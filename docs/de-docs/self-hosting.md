@@ -870,19 +870,21 @@ zusätzlich zur DB-Mandantenisolation (siehe
 [Zugangsdaten und Mandantenisolation](#zugangsdaten-panelweit-pro-benutzer-pro-server-phase-7)) diese Betriebs-Checkliste.
 Sie ergänzt Code-Gates und ersetzt kein Host-CIS-Audit.
 
-### Node-Härtung (Host / Agent / Docker)
+### Node-Härtung (Host / Agent / Docker / Multi-Worker)
 
-| Thema | Erwartung |
+| Thema | Umsetzung |
 | --- | --- |
-| SSH / Root | Wenige privilegierte Personen; kein shared root; Keys statt Passwort wo möglich |
-| Agent-Port | Nur Panel→Agent über TLS (+ Fingerprint-Pinning bei Remote-Nodes); nicht ungeschützt im Internet freigeben |
-| Managed Postgres | Host-Bind nur `127.0.0.1`; Game-Container über **internal** Docker-Netz (`msm-internal`) |
-| Docker | Kein unnötiges `privileged`; Agent-Hardening (`cap_drop`, Container-Name-Gates) beibehalten |
-| systemd | Agent-Unit mit restriktiven Defaults (`ProtectSystem` u. a. wie von Installer gesetzt) |
-| Trennung | Kritische Kunden optional auf eigenen Nodes, wenn Host-Compromise inakzeptabel ist |
+| 3-Benutzer-Trennung | `msm` (Control Plane / Panel / Worker), `msm-agent` (lokaler Agent) und `msm-docker` (rootless Docker und Server-Container). Serververzeichnisse liegen unter `0710` mit Gruppe `msm-servers`, Konfigurationsdateien von Panel und Agent unter `0600`. |
+| Systemd-QoS-Slices | `msm-control.slice` schützt Control Plane, PostgreSQL (`max_connections = 250`, `OOMScoreAdjust=-900`) und Redis (`OOMScoreAdjust=-850`). `msm-workloads.slice` begrenzt die User-Slice von `msm-docker` unterhalb von `MSM_HOST_RESERVED_RAM_MB`, spart CPU 0 für das Hostsystem aus und trägt `OOMScoreAdjust=+300`. |
+| Multi-Worker-API & Worker-Split | `msm-panel.service` startet 2 bis 4 Uvicorn-Worker im Modus `MSM_WORKER_MODE=api` für HTTP und WebSockets. Scheduler, Guardian-Reconciliation, Health-Checks und Webhooks laufen getrennt in `msm-worker.service` (`MSM_WORKER_MODE=worker`), damit hängende Nodes niemals API-Worker oder den DB-Pool blockieren. |
+| Gehärtetes Redis-Backplane | Redis läuft lokal hinter `/etc/redis/msm-hardening.conf` mit `requirepass` und umbenannten Admin-Kommandos (`FLUSHALL`, `FLUSHDB`, `CONFIG`, `DEBUG`, `SHUTDOWN`, `SCRIPT`). Über `MSM_REDIS_URL` koordiniert Redis WebSocket-Events, Locks und Presence zwischen allen API-Workern und dem Worker-Prozess. |
+| Rootless Docker & Laufzeit | `daemon.json` setzt `icc: false`, `no-new-privileges: true`, `userland-proxy: false` und Log-Rotation; `DOCKERD_ROOTLESS_ROOTLESSKIT_DISABLE_HOST_LOOPBACK=true` kappt Loopback zum Host. Container erhalten `cap-drop=ALL`, CPU-/RAM-/PID-/Blkio-Grenzen, `noexec,nosuid,nodev` auf tmpfs-Mounts, schreibgeschützte Root-FS-Option und kein `seccomp=unconfined`. Optional richtet `install.sh --with-gvisor` `runsc` für nicht vertrauenswürdige Container ein. |
+| Netzwerk- & Paketfilterung | Jeder Server bekommt ein disjunktes `/29`-Container-Netz (`enable_icc=false`) und eigene Point-to-Point-DB-Netze. `/usr/local/sbin/msm-iptables` synchronisiert `DOCKER-USER`, Host-`OUTPUT` (für `msm-docker`) und Rootlesskit-Namespaces, sodass RFC1918, CGNAT, Cloud-Metadaten, Loopback und Host-Gateways gesperrt bleiben. |
+| Speicher-Quotas & Blueprints | `/usr/local/sbin/msm-quota` setzt harte Laufzeit-Quotas über XFS/ext4 `prjquota` oder per Loopback-Image (inklusive Vergrößern/Verkleinern). Registry-Allowlist (`MSM_ALLOWED_IMAGE_REGISTRIES`), strikter Host-Kapazitätsguard (`MSM_STRICT_RESOURCE_CAPACITY_GUARD`), Entpack-Schutz gegen Symlink-/Hardlink-/FIFO-/Zip-Bomb-Tricks sowie der Verzicht auf Bare-Metal-Subprozesse im Panel begrenzen fehlerhafte Mods und Blueprints. |
+| Kernel & AppArmor | `/etc/sysctl.d/99-msm-hardening.conf` härtet Symlink-/Hardlink-/Netzwerkparameter, `/etc/apparmor.d/msm-container-default` schränkt Container zusätzlich ein. Sudo-Rechte von `msm-agent` sind über `/etc/sudoers.d/msm-agent` auf `msm-iptables`, `msm-quota` und `msm-agent-firewall` beschränkt. |
 
-Produktseitig erzwingbar: Loopback-Postgres, internal net, Agent-Auth, Panel-RBAC.
-Nicht erzwingbar im Code: wer SSH auf dem Host hat — das bleibt Betriebsdisziplin.
+Produktseitig erzwingbar: 3-Benutzer-Rechte, cgroup-/systemd-Slices, Netzwerk-Isolation, Loopback-Postgres, Quotas, Agent-Auth und Panel-RBAC.
+Nicht erzwingbar im Code: wer Root-/SSH-Zugriff auf dem Host hat, bleibt reine Betriebsdisziplin.
 
 ### Secret-Rotation (was und wann)
 
@@ -2492,19 +2494,11 @@ Manifeste und Betriebsablauf liegen unter
 Docker-Container über den `msm-agent` auf angebundenen Nodes — sie werden
 **nicht** zu Pods. Kapazität wächst weiterhin über weitere MSM-Nodes.
 
-Zwei Punkte, die man nicht ändern sollte, ohne die Folgen zu kennen:
+Drei Architekturpunkte im Cluster, die man vor Änderungen kennen sollte:
 
-- Der **DIS-Sidecar läuft im selben Pod** wie das Panel. Er bindet nur an
-  `127.0.0.1`; ein eigener Service würde die Krypto-Schnittstelle clusterweit
-  erreichbar machen.
-- **Genau eine Panel-Replica**, Rollout-Strategie `Recreate`. Scheduler-Jobs,
-  Lifecycle-Sperren und der Settings-Cache liegen im Prozessspeicher — zwei
-  gleichzeitige Panels würden Auto-Restarts, Backups und Webhook-Zustellungen
-  doppelt ausführen. Dasselbe gilt für den KI-Laufvermittler und die
-  KI-Meldestelle (Tipp-Signal, Live-Ströme): beide sind prozesslokal. Die
-  Zustellung der Hintergrund-Aufträge verliert dadurch bei einem Neustart
-  nichts — Meldungen stehen in der Datenbank, die Oberfläche pollt und lädt
-  die persistierte Chat-Nachricht nach; nur das Live-Zusehen reisst kurz ab.
+- Der **DIS-Sidecar läuft jeweils lokal im Pod** (API und Worker über `127.0.0.1`). Ein getrennter Cluster-Service würde die Krypto-Schnittstelle im gesamten Cluster exponieren.
+- **API-Pods und Worker-Singleton sind getrennt:** `40-panel.yaml` skaliert zustandslos (`replicas: 2`, `RollingUpdate`, `MSM_WORKER_MODE=api`) mit einem `ReadWriteMany`-PVC für Vault-/Upload-Daten, während `25-redis.yaml` das gehärtete Redis-Backplane (`requirepass`) für WebSocket-Pub/Sub, Präsenz und verteilte Locks bereitstellt.
+- **Genau eine Worker-Replica (`45-worker.yaml`, `Recreate`, `MSM_WORKER_MODE=worker`):** Scheduler, Guardian-Reconciliation, Webhooks und Auto-Healing laufen isoliert im Worker-Pod, damit sie weder doppelt feuern noch einen der API-Pods durch langsame Node-Probes blockieren. Fällt Redis kurz aus, greift PostgreSQL als Persistenzebene weiter.
 
 Ohne Caddy davor liefert das Panel die Oberfläche selbst aus. Jede Unterseite
 wie `/ai` oder ein Freigabelink aus einer Mail bekommt dann die `index.html`,

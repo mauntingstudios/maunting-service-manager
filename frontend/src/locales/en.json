@@ -5874,6 +5874,34 @@
         "title": "DIS sidecar",
         "body": "The sidecar computes the account index. If it cannot be reached, all vault routes and account deletion answer with 503, and nothing is deleted."
       }
+    },
+    "nodeIsolation": {
+      "title": "Server isolation and multi-worker HA",
+      "intro": "Installers, updater and node scripts separate the control plane, local agent and container workloads across OS users, networks, cgroups and storage so a stalled or compromised game container cannot disrupt the host or API.",
+      "users": {
+        "title": "Three isolated system users",
+        "body": "msm runs the panel API and worker; msm-agent runs the local node agent with narrow sudoers rules (/usr/local/sbin/msm-iptables, msm-quota, msm-agent-firewall); msm-docker runs rootless Docker and workloads. Server directories use 0710 via group msm-servers while panel and agent secrets stay 0600."
+      },
+      "slices": {
+        "title": "Systemd QoS slices and OOM protection",
+        "body": "msm-control.slice reserves memory for the control plane, PostgreSQL (max_connections = 250, OOMScoreAdjust=-900) and Redis (OOMScoreAdjust=-850). msm-workloads.slice caps the msm-docker user slice below MSM_HOST_RESERVED_RAM_MB and reserves CPU 0 for the host."
+      },
+      "multiworker": {
+        "title": "Multi-worker API and hardened Redis",
+        "body": "msm-panel launches 2 to 4 Uvicorn workers in MSM_WORKER_MODE=api while singleton msm-worker (MSM_WORKER_MODE=worker) runs scheduling, Guardian reconciliation and webhooks. Locally hardened Redis (requirepass, admin commands renamed) coordinates events, presence and locks via MSM_REDIS_URL."
+      },
+      "network": {
+        "title": "Disjoint server networks and egress filtering",
+        "body": "Each server gets its own /29 container network (enable_icc=false) and dedicated point-to-point DB nets. Rootless Docker disables host loopback and msm-iptables programs DOCKER-USER, host OUTPUT and rootlesskit netns rules to block RFC1918, CGNAT, cloud metadata, loopback and gateways."
+      },
+      "storage": {
+        "title": "Disk quotas and archive safety",
+        "body": "msm-quota enforces storage caps via XFS/ext4 prjquota or loopback images (including grow and shrink). Archive extraction enforces size limits and blocks symlink, hardlink and FIFO escapes, while image registry allowlists and host capacity guards reject unsafe blueprints."
+      },
+      "runtime": {
+        "title": "Kernel hardening, AppArmor and gVisor",
+        "body": "/etc/sysctl.d/99-msm-hardening.conf and /etc/apparmor.d/msm-container-default restrict workloads alongside cap-drop=ALL, seccomp and noexec,nosuid,nodev tmpfs mounts. Optionally pass --with-gvisor to install.sh to enable runsc for untrusted containers."
+      }
     }
   },
   "docsOAuth": {

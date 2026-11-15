@@ -63,8 +63,8 @@ def _build_steamcmd_bash_command(steam_args: list[str], chown_uid: int, chown_gi
     )
     script = (
         cleanup +
-        f"if command -v stdbuf >/dev/null 2>&1; then stdbuf -oL -eL {shlex.quote(STEAMCMD_BIN)} {quoted}; "
-        f"else {shlex.quote(STEAMCMD_BIN)} {quoted}; fi; "
+        "_stdbuf=''; command -v stdbuf >/dev/null 2>&1 && _stdbuf='stdbuf -oL -eL'; "
+        f"$_stdbuf {shlex.quote(STEAMCMD_BIN)} {quoted}; "
         "rc=$?; "
         f"chown -R {int(chown_uid)}:{int(chown_gid)} {shlex.quote(data_dir)} 2>/dev/null || true; "
         f"chmod -R a+rwx {shlex.quote(data_dir)} 2>/dev/null || true; "

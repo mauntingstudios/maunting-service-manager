@@ -16,6 +16,10 @@ umask 077
 
 MSM_DIR="/opt/msm"
 MSM_USER="msm"
+MSM_AGENT_USER="msm-agent"
+MSM_DOCKER_USER="msm-docker"
+MSM_SERVERS_GROUP="msm-servers"
+MSM_DOCKER_HOME="/var/lib/msm-docker"
 LOG_FILE="/tmp/msm-update.log"
 BACKUP_DIR="/opt/msm/backups"
 ENV_FILE="$MSM_DIR/backend/.env"
@@ -65,15 +69,26 @@ restore_panel_ownership() {
     # aber manuelle "Sauberkeit" Befehle sind riskant. Immer --dry-run zuerst.
     # Es gibt helper-scripts/recover-docker-storage.sh als Recovery (für den Docker-Store-Corruption-Fall).
     mkdir -p "$MSM_DIR/blueprints/community" 2>/dev/null || true
-    for sub in backend frontend docs dis-sidecar docs-sidecar searxng-sidecar livekit-sidecar wetter-sidecar msm-agent scripts helper-scripts blueprints; do
+    for sub in backend frontend docs dis-sidecar docs-sidecar scripts helper-scripts blueprints; do
         if [[ -d "$MSM_DIR/$sub" ]]; then
-            # Hard fail for code trees used by venv setup — silent || true left
-            # root-owned msm-agent after git pull and caused PEP 668 cascades.
             chown -R "$MSM_USER:$MSM_USER" "$MSM_DIR/$sub" \
                 || err "chown $MSM_USER:$MSM_USER auf $MSM_DIR/$sub fehlgeschlagen"
             if [[ "$sub" == "blueprints" ]]; then
                 chmod -R u+rwX,g+rwX "$MSM_DIR/$sub" 2>/dev/null || true
             fi
+        fi
+    done
+    local agent_owner="$MSM_USER"
+    id "$MSM_AGENT_USER" &>/dev/null && agent_owner="$MSM_AGENT_USER"
+    if [[ -d "$MSM_DIR/msm-agent" ]]; then
+        chown -R "$agent_owner:$agent_owner" "$MSM_DIR/msm-agent" \
+            || err "chown $agent_owner:$agent_owner auf $MSM_DIR/msm-agent fehlgeschlagen"
+    fi
+    local docker_owner="$MSM_USER"
+    id "$MSM_DOCKER_USER" &>/dev/null && docker_owner="$MSM_DOCKER_USER"
+    for dsub in searxng-sidecar livekit-sidecar wetter-sidecar; do
+        if [[ -d "$MSM_DIR/$dsub" ]]; then
+            chown -R "$docker_owner:$docker_owner" "$MSM_DIR/$dsub" 2>/dev/null || true
         fi
     done
     # npm-Cache des msm-Users (HOME=/opt/msm). Falls ein frueherer fehlge-
@@ -88,33 +103,34 @@ restore_panel_ownership() {
         -exec chown "$MSM_USER:$MSM_USER" {} + 2>/dev/null || true
 }
 
-# Create/repair a per-app Python venv as $MSM_USER only (no system pip / PEP 668).
+# Create/repair a per-app Python venv as target_user (defaults to $MSM_USER; no system pip / PEP 668).
 prepare_app_venv() {
     local app_dir="$1"
     local label="$2"
     local recreate="${3:-false}"
+    local target_user="${4:-$MSM_USER}"
 
     [[ -d "$app_dir" ]] || err "$label: Verzeichnis fehlt: $app_dir"
-    id "$MSM_USER" &>/dev/null || err "$label: Systemuser $MSM_USER existiert nicht"
+    id "$target_user" &>/dev/null || err "$label: Systemuser $target_user existiert nicht"
     command -v python3 &>/dev/null || err "$label: python3 fehlt"
     if ! python3 -c "import venv" 2>/dev/null; then
         err "$label: python3-venv fehlt (apt install python3-venv)"
     fi
 
-    chown -R "$MSM_USER:$MSM_USER" "$app_dir" \
-        || err "$label: chown $MSM_USER:$MSM_USER auf $app_dir fehlgeschlagen"
+    chown -R "$target_user:$target_user" "$app_dir" \
+        || err "$label: chown $target_user:$target_user auf $app_dir fehlgeschlagen"
 
     if [[ -e "$app_dir/venv" ]]; then
         local vowner
         vowner=$(stat -c '%U' "$app_dir/venv" 2>/dev/null || echo "")
         if [[ "$recreate" == "true" ]] \
-            || [[ "$vowner" != "$MSM_USER" ]] \
+            || [[ "$vowner" != "$target_user" ]] \
             || [[ ! -x "$app_dir/venv/bin/python" ]]; then
             rm -rf "$app_dir/venv"
         fi
     fi
 
-    if ! su - "$MSM_USER" -c "
+    if ! su -s /bin/bash "$target_user" -c "
         set -euo pipefail
         cd $(printf '%q' "$app_dir")
         if [[ ! -x venv/bin/python ]]; then
@@ -138,7 +154,7 @@ prepare_app_venv() {
     [[ -x "$app_dir/venv/bin/python" ]] || err "$label: venv/bin/python fehlt nach Setup"
     local venv_owner
     venv_owner=$(stat -c '%U' "$app_dir/venv" 2>/dev/null || echo "")
-    [[ "$venv_owner" == "$MSM_USER" ]] || err "$label: venv gehört $venv_owner, nicht $MSM_USER"
+    [[ "$venv_owner" == "$target_user" ]] || err "$label: venv gehört $venv_owner, nicht $target_user"
 }
 
 CHECK_ONLY=false
@@ -497,12 +513,14 @@ fi
 if [[ -d /etc/sudoers.d ]]; then
     log "Aktualisiere sudoers-Regeln..."
     mkdir -p /usr/local/sbin
-    # Wrapper direkt als root
+    # Wrapper direkt als root (inkl. apply-isolation + quota)
     cat > /usr/local/sbin/msm-iptables <<'WRAPEOF'
 #!/bin/sh
-# MSM iptables wrapper — thin, root-owned privilege gate for DOCKER-USER defense-in-depth.
 set -eu
 IPT="/usr/sbin/iptables"
+if [ ! -x "$IPT" ]; then
+    IPT="$(command -v iptables 2>/dev/null || echo /usr/sbin/iptables)"
+fi
 if [ $# -eq 0 ]; then
     printf 'msm-iptables: refused disallowed invocation (no args)\n' >&2
     exit 1
@@ -512,26 +530,293 @@ case "${1:-}" in
         exec "$IPT" "$@"
         ;;
     -L)
-        if [ $# -eq 3 ] && [ "$2" = "DOCKER-USER" ] && [ "$3" = "-n" ]; then
+        if [ $# -eq 3 ] && [ "${2:-}" = "DOCKER-USER" ] && [ "${3:-}" = "-n" ]; then
             exec "$IPT" "$@"
         fi
         ;;
-    -C|-A|-D)
-        if [ "$2" = "DOCKER-USER" ]; then
+    -C|-A|-D|-I)
+        if [ "${2:-}" = "DOCKER-USER" ]; then
             exec "$IPT" "$@"
         fi
         ;;
-    -I)
-        if [ "$2" = "DOCKER-USER" ]; then
-            exec "$IPT" "$@"
+    apply-isolation)
+        if [ $# -eq 2 ]; then
+            exec /usr/bin/python3 - "$2" <<'PYEOF'
+import ipaddress, json, os, pwd, re, shutil, subprocess, sys
+IPT = shutil.which("iptables") or "/usr/sbin/iptables"
+IPT6 = shutil.which("ip6tables") or "/usr/sbin/ip6tables"
+NSENTER = shutil.which("nsenter") or "/usr/bin/nsenter"
+CHAIN_EGRESS, CHAIN_ISO, CHAIN_OUT = "MSM-EGRESS-BLOCK", "MSM-ISOLATION", "MSM-DOCKER-OUTPUT"
+BRIDGE_RE = re.compile(r"^(docker0|br-[0-9a-f]{12})$")
+
+def _norm_nets(items, *, v6=False, limit=128):
+    if not isinstance(items, list) or len(items) > limit:
+        raise ValueError("invalid network list")
+    cls = ipaddress.IPv6Network if v6 else ipaddress.IPv4Network
+    return [str(cls(str(i).strip(), strict=False)) for i in items]
+
+def _parse(raw):
+    p = json.loads(raw)
+    if not isinstance(p, dict):
+        raise ValueError("plan must be JSON object")
+    grants = []
+    for g in (p.get("db_allows") or [])[:512]:
+        port = int(g["port"])
+        if port < 1 or port > 65535:
+            raise ValueError("invalid port")
+        grants.append((
+            str(ipaddress.IPv4Network(str(g["src"]).strip(), strict=False)),
+            str(ipaddress.IPv4Network(str(g["dst"]).strip(), strict=False)),
+            str(port),
+        ))
+    bridges = []
+    for b in (p.get("icc_drop_bridges") or [])[:512]:
+        bs = str(b).strip()
+        if not BRIDGE_RE.match(bs):
+            raise ValueError("invalid bridge")
+        bridges.append(bs)
+    gws = [f"{ipaddress.IPv4Address(str(g).strip().split('/', 1)[0])}/32" for g in (p.get("dns_gateways") or [])[:128]]
+    return {
+        "blocked_v4": _norm_nets(p.get("blocked_v4") or []),
+        "blocked_v6": _norm_nets(p.get("blocked_v6") or [], v6=True),
+        "sources": _norm_nets(p.get("container_sources") or [], limit=64),
+        "gateways": list(dict.fromkeys(gws)),
+        "grants": grants,
+        "bridges": list(dict.fromkeys(bridges)),
+    }
+
+def _run(cmd):
+    return subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+
+def _apply_nf(prefix, binary, data, *, v6=False):
+    cmds = [["-N", CHAIN_EGRESS], ["-F", CHAIN_EGRESS], ["-N", CHAIN_ISO], ["-F", CHAIN_ISO], ["-N", "DOCKER-USER"]]
+    if v6:
+        for c in data["blocked_v6"]:
+            cmds.append(["-A", CHAIN_EGRESS, "-d", c, "-j", "DROP"])
+        cmds += [["-A", CHAIN_EGRESS, "-j", "RETURN"], ["-A", CHAIN_ISO, "-m", "conntrack", "--ctstate", "ESTABLISHED,RELATED", "-j", "ACCEPT"], ["-A", CHAIN_ISO, "-i", "br-+", "-j", CHAIN_EGRESS], ["-A", CHAIN_ISO, "-i", "docker0", "-j", CHAIN_EGRESS], ["-A", CHAIN_ISO, "-j", "RETURN"]]
+    else:
+        for c in data["blocked_v4"]:
+            cmds.append(["-A", CHAIN_EGRESS, "-d", c, "-j", "DROP"])
+        cmds += [["-A", CHAIN_EGRESS, "-j", "RETURN"], ["-A", CHAIN_ISO, "-m", "conntrack", "--ctstate", "ESTABLISHED,RELATED", "-j", "ACCEPT"]]
+        for s, d, port in data["grants"]:
+            cmds.append(["-A", CHAIN_ISO, "-s", s, "-d", d, "-p", "tcp", "--dport", port, "-j", "ACCEPT"])
+        for gw in data["gateways"]:
+            for proto in ("udp", "tcp"):
+                cmds.append(["-A", CHAIN_ISO, "-d", gw, "-p", proto, "--dport", "53", "-j", "ACCEPT"])
+        for br in data["bridges"]:
+            cmds.append(["-A", CHAIN_ISO, "-i", br, "-o", br, "-j", "DROP"])
+        for sn in data["sources"]:
+            cmds.append(["-A", CHAIN_ISO, "-s", sn, "-j", CHAIN_EGRESS])
+        cmds += [["-A", CHAIN_ISO, "-i", "br-+", "-j", CHAIN_EGRESS], ["-A", CHAIN_ISO, "-i", "docker0", "-j", CHAIN_EGRESS], ["-A", CHAIN_ISO, "-j", "RETURN"]]
+    for a in cmds:
+        r = _run([*prefix, binary, "-w", "5", *a])
+        if r.returncode != 0 and a[0] != "-N":
+            return False
+    if _run([*prefix, binary, "-w", "5", "-C", "DOCKER-USER", "-j", CHAIN_ISO]).returncode != 0:
+        if _run([*prefix, binary, "-w", "5", "-I", "DOCKER-USER", "1", "-j", CHAIN_ISO]).returncode != 0:
+            return False
+    return True
+
+def _resolv_ns():
+    v4, v6 = ["127.0.0.53", "127.0.0.1"], ["::1"]
+    try:
+        with open("/etc/resolv.conf", "r", encoding="utf-8") as fh:
+            for line in fh:
+                parts = line.strip().split()
+                if len(parts) >= 2 and parts[0] == "nameserver":
+                    try:
+                        ip = ipaddress.ip_address(parts[1])
+                        (v4 if ip.version == 4 else v6).append(str(ip))
+                    except ValueError:
+                        pass
+    except OSError:
+        pass
+    return list(dict.fromkeys(v4)), list(dict.fromkeys(v6))
+
+def _apply_output_guard(data):
+    try:
+        uid = str(pwd.getpwnam("msm-docker").pw_uid)
+    except KeyError:
+        return True
+    ns4, ns6 = _resolv_ns()
+    cmds = [["-N", CHAIN_OUT], ["-F", CHAIN_OUT], ["-A", CHAIN_OUT, "-m", "conntrack", "--ctstate", "ESTABLISHED,RELATED", "-j", "ACCEPT"]]
+    for ns in ns4:
+        for proto in ("udp", "tcp"):
+            cmds.append(["-A", CHAIN_OUT, "-d", f"{ns}/32", "-p", proto, "--dport", "53", "-j", "ACCEPT"])
+    for c in data["blocked_v4"]:
+        cmds.append(["-A", CHAIN_OUT, "-d", c, "-j", "DROP"])
+    cmds.append(["-A", CHAIN_OUT, "-j", "RETURN"])
+    for a in cmds:
+        r = _run([IPT, "-w", "5", *a])
+        if r.returncode != 0 and a[0] != "-N":
+            return False
+    if _run([IPT, "-w", "5", "-C", "OUTPUT", "-m", "owner", "--uid-owner", uid, "-j", CHAIN_OUT]).returncode != 0:
+        _run([IPT, "-w", "5", "-I", "OUTPUT", "1", "-m", "owner", "--uid-owner", uid, "-j", CHAIN_OUT])
+    if os.path.exists(IPT6):
+        c6 = [["-N", CHAIN_OUT], ["-F", CHAIN_OUT], ["-A", CHAIN_OUT, "-m", "conntrack", "--ctstate", "ESTABLISHED,RELATED", "-j", "ACCEPT"]]
+        for ns in ns6:
+            for proto in ("udp", "tcp"):
+                c6.append(["-A", CHAIN_OUT, "-d", f"{ns}/128", "-p", proto, "--dport", "53", "-j", "ACCEPT"])
+        for c in data["blocked_v6"]:
+            c6.append(["-A", CHAIN_OUT, "-d", c, "-j", "DROP"])
+        c6.append(["-A", CHAIN_OUT, "-j", "RETURN"])
+        for a in c6:
+            _run([IPT6, "-w", "5", *a])
+        if _run([IPT6, "-w", "5", "-C", "OUTPUT", "-m", "owner", "--uid-owner", uid, "-j", CHAIN_OUT]).returncode != 0:
+            _run([IPT6, "-w", "5", "-I", "OUTPUT", "1", "-m", "owner", "--uid-owner", uid, "-j", CHAIN_OUT])
+    return True
+
+def _rootless_pids():
+    try:
+        self_ns = os.readlink("/proc/self/ns/net")
+    except OSError:
+        return []
+    out = []
+    for ent in os.listdir("/proc"):
+        if not ent.isdigit():
+            continue
+        pid = int(ent)
+        try:
+            with open(f"/proc/{pid}/cmdline", "rb") as fh:
+                cmd = fh.read().replace(b"\x00", b" ").decode("utf-8", "ignore").lower()
+            if ("rootlesskit" in cmd or "dockerd-rootless" in cmd) and os.readlink(f"/proc/{pid}/ns/net") != self_ns:
+                out.append(pid)
+        except OSError:
+            continue
+    return out
+
+parsed = _parse(sys.argv[1])
+ok = _apply_nf([], IPT, parsed, v6=False)
+if os.path.exists(IPT6):
+    _apply_nf([], IPT6, parsed, v6=True)
+for rpid in _rootless_pids():
+    pfx = [NSENTER, "--user", "--net", "-t", str(rpid)]
+    if _apply_nf(pfx, IPT, parsed, v6=False):
+        ok = True
+    if os.path.exists(IPT6):
+        _apply_nf(pfx, IPT6, parsed, v6=True)
+sys.exit(0 if (ok and _apply_output_guard(parsed)) else 1)
+PYEOF
         fi
         ;;
 esac
-printf 'msm-iptables: refused disallowed invocation: %s\n' "$*" >&2
+printf 'msm-iptables: refused disallowed invocation\n' >&2
 exit 1
 WRAPEOF
     chown root:root /usr/local/sbin/msm-iptables
     chmod 755 /usr/local/sbin/msm-iptables
+
+    cat > /usr/local/sbin/msm-quota <<'QUOTAEOF'
+#!/usr/bin/env bash
+set -euo pipefail
+BASE_DIR="${MSM_QUOTA_SERVERS_DIR:-/opt/msm/servers}"
+IMG_DIR="${MSM_QUOTA_IMAGE_DIR:-/var/lib/msm-quotas}"
+FSTAB_FILE="/etc/fstab"
+validate_sid() { case "${1:-}" in ""|*[!0-9]*|0*) return 1 ;; esac; }
+validate_limit_mb() { case "${1:-}" in ""|*[!0-9]*|0*) return 1 ;; esac; [ "$1" -ge 1024 ] && [ "$1" -le 104857600 ]; }
+resolve_owners() {
+    AGENT_USER=$(id -u msm-agent >/dev/null 2>&1 && echo msm-agent || echo msm)
+    DOCKER_USER=$(id -u msm-docker >/dev/null 2>&1 && echo msm-docker || echo "$AGENT_USER")
+    SERVERS_GROUP=$(getent group msm-servers >/dev/null 2>&1 && echo msm-servers || echo "$AGENT_USER")
+}
+apply_shared_acl() {
+    local target="$1"
+    resolve_owners
+    chown "$DOCKER_USER:$SERVERS_GROUP" "$target"
+    chmod 2770 "$target"
+    command -v setfacl >/dev/null 2>&1 && setfacl -R -m "u:${AGENT_USER}:rwX,u:${DOCKER_USER}:rwX,d:u:${AGENT_USER}:rwX,d:u:${DOCKER_USER}:rwX,m::rwx" "$target" 2>/dev/null || true
+}
+ensure_safe_dir() {
+    local sid="$1"
+    [ ! -L "$BASE_DIR" ] || exit 1
+    mkdir -p "$BASE_DIR"
+    local srv_dir="${BASE_DIR}/${sid}"
+    [ ! -L "$srv_dir" ] || exit 1
+    mkdir -p "$srv_dir"
+    local rb rs
+    rb="$(readlink -f "$BASE_DIR")"; rs="$(readlink -f "$srv_dir")"
+    [ "$rs" = "${rb}/${sid}" ] || exit 1
+    SRV_DIR="$rs"
+}
+rm_fstab() {
+    local marker="# MSM-QUOTA-SRV-${1}"
+    [ -f "$FSTAB_FILE" ] || return 0
+    if grep -qF "$marker" "$FSTAB_FILE" 2>/dev/null; then
+        local t; t="$(mktemp /tmp/msm-fstab.XXXXXX)"
+        grep -vF "$marker" "$FSTAB_FILE" > "$t" || true
+        cat "$t" > "$FSTAB_FILE"; rm -f "$t"
+    fi
+}
+case "${1:-}" in
+    --version) printf 'msm-quota 1.0\n'; exit 0 ;;
+    apply-prjquota)
+        [ $# -eq 3 ] && validate_sid "$2" && validate_limit_mb "$3" || exit 2
+        ensure_safe_dir "$2"; proj_id=$((10000 + $2))
+        mnt="$(findmnt -rn -T "$SRV_DIR" -o TARGET | head -n1)"
+        fstype="$(findmnt -rn -T "$SRV_DIR" -o FSTYPE | head -n1)"
+        opts="$(findmnt -rn -T "$SRV_DIR" -o OPTIONS | head -n1)"
+        case ",${opts}," in *,prjquota,*|*,pquota,*|*,uqnoenforce,*) ;; *) exit 3 ;; esac
+        apply_shared_acl "$SRV_DIR"
+        if [ "$fstype" = "xfs" ] && command -v xfs_quota >/dev/null 2>&1; then
+            xfs_quota -x -c "project -s -p ${SRV_DIR} ${proj_id}" "$mnt"
+            xfs_quota -x -c "limit -p bsoft=${3}m bhard=${3}m ${proj_id}" "$mnt"
+            exit 0
+        elif [ "$fstype" = "ext4" ] && command -v chattr >/dev/null 2>&1 && command -v setquota >/dev/null 2>&1; then
+            chattr -R +P -p "$proj_id" "$SRV_DIR"; kb=$(($3 * 1024))
+            setquota -P "$proj_id" "$kb" "$kb" 0 0 "$mnt"
+            exit 0
+        fi
+        exit 3
+        ;;
+    apply-loopback)
+        [ $# -eq 3 ] && validate_sid "$2" && validate_limit_mb "$3" || exit 2
+        ensure_safe_dir "$2"; mkdir -p "$IMG_DIR"; chmod 0700 "$IMG_DIR"
+        img="${IMG_DIR}/srv-${2}.img"; marker="# MSM-QUOTA-SRV-${2}"
+        msrc="$(findmnt -rn -M "$SRV_DIR" -o SOURCE 2>/dev/null | head -n1 || true)"
+        if [ -n "$msrc" ]; then
+            cb="$(stat -c '%s' "$img" 2>/dev/null || echo 0)"; cm=$((cb / 1048576))
+            if [ "$3" -gt "$cm" ]; then
+                truncate -s "${3}M" "$img"; losetup -c "$msrc" 2>/dev/null || true; resize2fs "$msrc" >/dev/null
+            elif [ "$3" -lt "$cm" ]; then
+                umount "$SRV_DIR"; e2fsck -fy "$img" >/dev/null 2>&1 || true; resize2fs "$img" "${3}M" >/dev/null
+                truncate -s "${3}M" "$img"; mount -o loop,nosuid,nodev "$img" "$SRV_DIR"
+            fi
+        else
+            [ -f "$img" ] || { truncate -s "${3}M" "$img"; mkfs.ext4 -q -F "$img"; }
+            if [ -n "$(ls -A "$SRV_DIR" 2>/dev/null || true)" ]; then
+                st="$(mktemp -d /run/msm-quota-stage.XXXXXX)"
+                mount -o loop,nosuid,nodev "$img" "$st"
+                cp -a "${SRV_DIR}/." "${st}/"
+                umount "$st"; rmdir "$st"
+                find "$SRV_DIR" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+            fi
+            mount -o loop,nosuid,nodev "$img" "$SRV_DIR"
+        fi
+        rm_fstab "$2"; printf '%s %s ext4 loop,nosuid,nodev,nofail 0 0 %s\n' "$img" "$SRV_DIR" "$marker" >> "$FSTAB_FILE"
+        apply_shared_acl "$SRV_DIR"
+        ;;
+    remove)
+        [ $# -eq 2 ] && validate_sid "$2" || exit 2
+        srv_dir="${BASE_DIR}/${2}"; img="${IMG_DIR}/srv-${2}.img"
+        mountpoint -q "$srv_dir" 2>/dev/null && { umount "$srv_dir" 2>/dev/null || umount -l "$srv_dir" 2>/dev/null || true; }
+        rm_fstab "$2"
+        if [ -f "$img" ]; then
+            command -v losetup >/dev/null 2>&1 && for dev in $(losetup -j "$img" | cut -d: -f1); do losetup -d "$dev" 2>/dev/null || true; done
+            rm -f "$img"
+        fi
+        if [ -d "$srv_dir" ] && [ ! -L "$srv_dir" ]; then
+            mnt="$(findmnt -rn -T "$srv_dir" -o TARGET | head -n1 || true)"
+            fstype="$(findmnt -rn -T "$srv_dir" -o FSTYPE | head -n1 || true)"
+            proj_id=$((10000 + $2))
+            [ "$fstype" = "xfs" ] && command -v xfs_quota >/dev/null 2>&1 && [ -n "$mnt" ] && xfs_quota -x -c "limit -p bsoft=0 bhard=0 ${proj_id}" "$mnt" 2>/dev/null || true
+            [ "$fstype" = "ext4" ] && command -v setquota >/dev/null 2>&1 && [ -n "$mnt" ] && setquota -P "$proj_id" 0 0 0 0 "$mnt" 2>/dev/null || true
+        fi
+        ;;
+    *) printf 'msm-quota: disallowed invocation\n' >&2; exit 1 ;;
+esac
+QUOTAEOF
+    chown root:root /usr/local/sbin/msm-quota
+    chmod 755 /usr/local/sbin/msm-quota
 
     # Caddy-Wrapper (Root-Gate für Caddyfile-Konfigurationen)
     cat > /usr/local/sbin/msm-caddy <<'CADDYEOF'
@@ -659,6 +944,17 @@ msm ALL=(root) NOPASSWD: /usr/local/sbin/msm-caddy
 msm ALL=(root) NOPASSWD: /opt/msm/update.sh
 SUDOEOF
     chmod 440 /etc/sudoers.d/msm-panel
+
+    cat > /etc/sudoers.d/msm-agent <<'AGENTSUDOEOF'
+# MSM Agent — Firewall & Disk Quota Privilege Boundary
+Defaults:msm-agent !authenticate
+
+msm-agent ALL=(root) NOPASSWD: /usr/local/sbin/msm-iptables
+msm-agent ALL=(root) NOPASSWD: /usr/local/sbin/msm-quota
+msm-agent ALL=(root) NOPASSWD: /usr/local/sbin/msm-agent-firewall *
+AGENTSUDOEOF
+    chmod 440 /etc/sudoers.d/msm-agent
+
     # Validierung des Caddy-Root-Helfers
     sudo -u msm sudo -n /usr/local/sbin/msm-caddy reload >/dev/null 2>&1 || true
     ok "sudoers aktualisiert (direkt als root + Wrapper, ohne Container-systemctl)"
@@ -689,30 +985,173 @@ su - msm -c "
 " 2>&1 | tee -a "$LOG_FILE" || warn "Embeddingmodell nicht verfuegbar - KI-Gedaechtnis laeuft ohne Vektoren."
 
 
-# ── MSM Agent aktualisieren (Monorepo, rootless Node) ──
+# ── 3-User-Privilegientrennung & Kernel/Systemd/DB-Härten sicherstellen ──
+if ! command -v setfacl &>/dev/null || ! command -v quota &>/dev/null; then
+    apt-get install -y -qq acl quota e2fsprogs 2>/dev/null || true
+fi
+if ! id "$MSM_AGENT_USER" &>/dev/null; then
+    useradd -r -m -s /usr/sbin/nologin -d /var/lib/msm-agent "$MSM_AGENT_USER"
+fi
+if ! id "$MSM_DOCKER_USER" &>/dev/null; then
+    useradd -r -m -s /bin/bash -d "$MSM_DOCKER_HOME" "$MSM_DOCKER_USER"
+fi
+if ! getent group "$MSM_SERVERS_GROUP" &>/dev/null; then
+    groupadd -r "$MSM_SERVERS_GROUP"
+fi
+usermod -aG "$MSM_SERVERS_GROUP" "$MSM_AGENT_USER" 2>/dev/null || true
+usermod -aG "$MSM_SERVERS_GROUP" "$MSM_DOCKER_USER" 2>/dev/null || true
+install -d -o "$MSM_AGENT_USER" -g "$MSM_AGENT_USER" -m 750 /var/lib/msm-agent/guardian 2>/dev/null || true
+install -d -o "$MSM_DOCKER_USER" -g "$MSM_DOCKER_USER" -m 750 "$MSM_DOCKER_HOME" 2>/dev/null || true
+
+# PG max_connections erhöhen falls nötig
+PG_CONF_DIR=$(find /etc/postgresql -name "conf.d" -type d 2>/dev/null | head -1)
+if [[ -n "$PG_CONF_DIR" ]] && [[ ! -f "${PG_CONF_DIR}/99-msm.conf" ]]; then
+    cat > "${PG_CONF_DIR}/99-msm.conf" <<'PGCONF'
+max_connections = 250
+PGCONF
+    systemctl reload-or-restart postgresql 2>/dev/null || true
+fi
+
+# Kernel Hardening sysctl
+if [[ -d /etc/sysctl.d ]]; then
+    cat > /etc/sysctl.d/99-msm-hardening.conf <<'SYSCTLEOF'
+fs.protected_symlinks = 1
+fs.protected_hardlinks = 1
+fs.protected_fifos = 2
+fs.protected_regular = 2
+fs.suid_dumpable = 0
+kernel.kptr_restrict = 2
+kernel.dmesg_restrict = 1
+kernel.unprivileged_bpf_disabled = 1
+net.ipv4.conf.all.rp_filter = 1
+net.ipv4.conf.default.rp_filter = 1
+SYSCTLEOF
+    sysctl --system >/dev/null 2>&1 || true
+fi
+
+# Rootless Docker Migration nach $MSM_DOCKER_USER (falls bisher unter $MSM_USER)
+DOCKER_HOST_ACTIVE="unix:///run/user/$(id -u "$MSM_DOCKER_USER")/docker.sock"
+if [[ -d "$MSM_DIR/msm-agent" ]]; then
+    for f in /etc/subuid /etc/subgid; do
+        if ! grep -qE "^${MSM_DOCKER_USER}:" "$f" 2>/dev/null; then
+            START_ID=$(awk -F: 'BEGIN{m=99999} NF>=3{e=$2+$3-1; if(e>m)m=e} END{print m+1}' "$f" 2>/dev/null || echo 100000)
+            echo "${MSM_DOCKER_USER}:${START_ID}:65536" >> "$f"
+        fi
+    done
+    MSM_DOCKER_UID=$(id -u "$MSM_DOCKER_USER")
+    if [[ -d "$MSM_DIR/.local/share/docker" ]] && [[ ! -d "$MSM_DOCKER_HOME/.local/share/docker" ]]; then
+        log "Migriere Rootless Docker nach $MSM_DOCKER_USER..."
+        MSM_UID_OLD=$(id -u "$MSM_USER" 2>/dev/null || echo 0)
+        systemctl stop msm-searxng msm-wetter msm-livekit msm-agent 2>/dev/null || true
+        su -s /bin/bash "$MSM_USER" -c "export XDG_RUNTIME_DIR=/run/user/${MSM_UID_OLD}; systemctl --user stop docker.service" 2>/dev/null || true
+        mkdir -p "$MSM_DOCKER_HOME/.local/share"
+        mv "$MSM_DIR/.local/share/docker" "$MSM_DOCKER_HOME/.local/share/docker"
+        chown -R "$MSM_DOCKER_USER:$MSM_DOCKER_USER" "$MSM_DOCKER_HOME"
+    fi
+    if $SYSTEMD_AVAILABLE && command -v dockerd-rootless-setuptool.sh &>/dev/null; then
+        mkdir -p /etc/systemd/system/user@.service.d "/etc/systemd/system/user@${MSM_DOCKER_UID}.service.d"
+        printf '[Service]\nDelegate=cpu cpuset io memory pids\n' > /etc/systemd/system/user@.service.d/delegate.conf
+        printf '[Service]\nSlice=msm-workloads.slice\nOOMScoreAdjust=500\n' > "/etc/systemd/system/user@${MSM_DOCKER_UID}.service.d/msm-workloads.conf"
+        systemctl daemon-reload
+        loginctl enable-linger "$MSM_DOCKER_USER" 2>/dev/null || true
+        systemctl start "user@${MSM_DOCKER_UID}.service" 2>/dev/null || true
+        install -d -o "$MSM_DOCKER_USER" -g "$MSM_DOCKER_USER" -m 710 "/run/user/${MSM_DOCKER_UID}" 2>/dev/null || true
+        if [[ ! -f "${MSM_DOCKER_HOME}/.config/systemd/user/docker.service" ]]; then
+            su -s /bin/bash "$MSM_DOCKER_USER" -c "export XDG_RUNTIME_DIR=/run/user/${MSM_DOCKER_UID}; dockerd-rootless-setuptool.sh install" 2>/dev/null || true
+        fi
+        install -d -o "$MSM_DOCKER_USER" -g "$MSM_DOCKER_USER" -m 700 "${MSM_DOCKER_HOME}/.config/docker"
+        if [[ ! -f "${MSM_DOCKER_HOME}/.config/docker/daemon.json" ]]; then
+            cat > "${MSM_DOCKER_HOME}/.config/docker/daemon.json" <<'EOF'
+{
+  "icc": false,
+  "no-new-privileges": true,
+  "userland-proxy": false,
+  "log-driver": "json-file",
+  "log-opts": {
+    "max-size": "20m",
+    "max-file": "3"
+  }
+}
+EOF
+            chown "$MSM_DOCKER_USER:$MSM_DOCKER_USER" "${MSM_DOCKER_HOME}/.config/docker/daemon.json"
+        fi
+        su -s /bin/bash "$MSM_DOCKER_USER" -c "mkdir -p ~/.config/systemd/user/docker.service.d && printf '[Service]\nEnvironment=\"DOCKERD_ROOTLESS_ROOTLESSKIT_PORT_DRIVER=slirp4netns\"\nEnvironment=\"DOCKERD_ROOTLESS_ROOTLESSKIT_DISABLE_HOST_LOOPBACK=true\"\n' > ~/.config/systemd/user/docker.service.d/override.conf" 2>/dev/null || true
+        su -s /bin/bash "$MSM_DOCKER_USER" -c "export XDG_RUNTIME_DIR=/run/user/${MSM_DOCKER_UID}; systemctl --user daemon-reload && systemctl --user enable docker.service && systemctl --user start docker.service" 2>/dev/null || true
+    fi
+    cat > /usr/local/sbin/msm-docker-socket-acl <<ACLEOF
+#!/bin/sh
+set -eu
+DOCKER_UID="$(id -u "$MSM_DOCKER_USER")"
+AGENT_USER="$MSM_AGENT_USER"
+RUNTIME_DIR="/run/user/\${DOCKER_UID}"
+SOCK="\${RUNTIME_DIR}/docker.sock"
+[ -d "\$RUNTIME_DIR" ] && command -v setfacl >/dev/null 2>&1 && { chmod 0710 "\$RUNTIME_DIR" || true; setfacl -m "u:\${AGENT_USER}:x" "\$RUNTIME_DIR" || true; }
+[ -S "\$SOCK" ] && command -v setfacl >/dev/null 2>&1 && { chmod 0660 "\$SOCK" || true; setfacl -m "u:\${AGENT_USER}:rw" "\$SOCK" || true; }
+ACLEOF
+    chown root:root /usr/local/sbin/msm-docker-socket-acl
+    chmod 0755 /usr/local/sbin/msm-docker-socket-acl
+    /usr/local/sbin/msm-docker-socket-acl || true
+    if [[ -d /opt/msm/servers ]]; then
+        chown "$MSM_AGENT_USER:$MSM_SERVERS_GROUP" /opt/msm/servers
+        chmod 0710 /opt/msm/servers
+        if command -v setfacl &>/dev/null; then
+            for _sd in /opt/msm/servers/*/; do
+                [[ -d "$_sd" ]] && setfacl -m "u:${MSM_AGENT_USER}:rwX,u:${MSM_DOCKER_USER}:rwX,d:u:${MSM_AGENT_USER}:rwX,d:u:${MSM_DOCKER_USER}:rwX" "$_sd" 2>/dev/null || true
+            done
+        fi
+    fi
+fi
+
+# ── MSM Agent aktualisieren (Monorepo, rootless Node, User $MSM_AGENT_USER) ──
 if [[ -d "$MSM_DIR/msm-agent" ]]; then
     log "Aktualisiere MSM Agent..."
-    prepare_app_venv "$MSM_DIR/msm-agent" "MSM Agent" false
-    # .env nur anlegen wenn fehlend — Token niemals ueberschreiben/loggen
-    if [[ ! -f "$MSM_DIR/msm-agent/.env" ]]; then
+    prepare_app_venv "$MSM_DIR/msm-agent" "MSM Agent" false "$MSM_AGENT_USER"
+    AGENT_ENV="$MSM_DIR/msm-agent/.env"
+    if [[ ! -f "$AGENT_ENV" ]]; then
         AGENT_TOKEN=$(python3 -c "import secrets; print(secrets.token_urlsafe(32))")
-        MSM_UID=$(id -u msm 2>/dev/null || echo 0)
-        cat > "$MSM_DIR/msm-agent/.env" <<EOF
+        cat > "$AGENT_ENV" <<EOF
 # Automatisch generiert. Dokumentation: $MSM_DIR/msm-agent/.env.example
 MSM_AGENT_TOKEN="$AGENT_TOKEN"
 MSM_AGENT_HOST="127.0.0.1"
 MSM_AGENT_PORT="9000"
 MSM_SERVERS_DIR="$MSM_DIR/servers"
-MSM_DOCKER_HOST="unix:///run/user/${MSM_UID}/docker.sock"
+MSM_DOCKER_HOST="$DOCKER_HOST_ACTIVE"
+MSM_REQUIRE_NETWORK_ISOLATION=true
+MSM_QUOTA_DRIVER="auto"
+MSM_GUARDIAN_STATE_DIR="/var/lib/msm-agent/guardian"
 MSM_AGENT_LOG_LEVEL="INFO"
 EOF
-        chmod 600 "$MSM_DIR/msm-agent/.env"
-        chown msm:msm "$MSM_DIR/msm-agent/.env"
-        ok "MSM Agent .env erzeugt"
     else
-        chown msm:msm "$MSM_DIR/msm-agent/.env" 2>/dev/null || true
+        AGENT_TOKEN=$(grep -E '^MSM_AGENT_TOKEN=' "$AGENT_ENV" | cut -d'=' -f2- | sed 's/^"//;s/"$//' || true)
+        if grep -qE '^MSM_DOCKER_HOST=' "$AGENT_ENV"; then
+            sed -i -E "s|^MSM_DOCKER_HOST=.*|MSM_DOCKER_HOST=\"${DOCKER_HOST_ACTIVE}\"|" "$AGENT_ENV"
+        else
+            printf 'MSM_DOCKER_HOST="%s"\n' "$DOCKER_HOST_ACTIVE" >> "$AGENT_ENV"
+        fi
+        if ! grep -qE '^MSM_REQUIRE_NETWORK_ISOLATION=' "$AGENT_ENV"; then
+            printf 'MSM_REQUIRE_NETWORK_ISOLATION=true\n' >> "$AGENT_ENV"
+        fi
+        if ! grep -qE '^MSM_QUOTA_DRIVER=' "$AGENT_ENV"; then
+            printf 'MSM_QUOTA_DRIVER="auto"\n' >> "$AGENT_ENV"
+        fi
     fi
-    ok "MSM Agent Dependencies aktualisiert"
+    chmod 600 "$AGENT_ENV"
+    chown "$MSM_AGENT_USER:$MSM_AGENT_USER" "$AGENT_ENV"
+    # Backend .env mit lokalem Agent-Token & Hardening-Flags synchronisieren
+    if [[ -f "$ENV_FILE" ]]; then
+        if [[ -n "${AGENT_TOKEN:-}" ]]; then
+            if grep -qE '^MSM_LOCAL_AGENT_TOKEN=' "$ENV_FILE"; then
+                sed -i -E "s|^MSM_LOCAL_AGENT_TOKEN=.*|MSM_LOCAL_AGENT_TOKEN=\"${AGENT_TOKEN}\"|" "$ENV_FILE"
+            else
+                printf 'MSM_LOCAL_AGENT_TOKEN="%s"\n' "$AGENT_TOKEN" >> "$ENV_FILE"
+            fi
+        fi
+        for _kv in "MSM_LOCAL_AGENT_REQUIRED=true" "MSM_REQUIRE_NETWORK_ISOLATION=true" "MSM_ALLOW_LEGACY_BARE_METAL_SETUP=false"; do
+            _k="${_kv%%=*}"
+            grep -qE "^${_k}=" "$ENV_FILE" || printf '%s\n' "$_kv" >> "$ENV_FILE"
+        done
+    fi
+    ok "MSM Agent Dependencies & 3-User Isolation aktualisiert"
 fi
 
 # ── Datenbank-Migrationen ──
@@ -980,9 +1419,87 @@ ok "Dokumente-Sidecar Abhaengigkeiten installiert."
 
 # ── systemd Services registrieren ──
 if $SYSTEMD_AVAILABLE; then
-    log "Aktualisiere systemd Services..."
+    log "Aktualisiere systemd Services & QoS-Slices..."
     MSM_UID=$(id -u "$MSM_USER")
-    MSM_DOCKER_HOST="unix:///run/user/${MSM_UID}/docker.sock"
+    MSM_DOCKER_UID=$(id -u "$MSM_DOCKER_USER" 2>/dev/null || echo "$MSM_UID")
+    MSM_DOCKER_HOST="unix:///run/user/${MSM_DOCKER_UID}/docker.sock"
+
+    TOTAL_MEM_MB=$(awk '/MemTotal:/ {print int($2/1024)}' /proc/meminfo 2>/dev/null || echo 4096)
+    RESERVE_MEM_MB=$(( TOTAL_MEM_MB * 15 / 100 ))
+    if [[ "$RESERVE_MEM_MB" -lt 1536 ]]; then RESERVE_MEM_MB=1536; fi
+    if [[ "$TOTAL_MEM_MB" -gt $(( RESERVE_MEM_MB + 512 )) ]]; then
+        WORKLOAD_MAX_MB=$(( TOTAL_MEM_MB - RESERVE_MEM_MB ))
+    else
+        WORKLOAD_MAX_MB=512
+    fi
+    WORKLOAD_HIGH_MB=$(( WORKLOAD_MAX_MB * 92 / 100 ))
+
+    cat > /etc/systemd/system/msm-control.slice <<EOF
+[Unit]
+Description=MSM Control Plane Slice (Backend, Worker, DB, Redis, Agent)
+
+[Slice]
+CPUWeight=200
+MemoryMin=512M
+EOF
+    cat > /etc/systemd/system/msm-workloads.slice <<EOF
+[Unit]
+Description=MSM Tenant Workload Slice (Rootless Docker Gameserver & Apps)
+
+[Slice]
+CPUWeight=50
+IOWeight=50
+MemoryHigh=${WORKLOAD_HIGH_MB}M
+MemoryMax=${WORKLOAD_MAX_MB}M
+EOF
+    mkdir -p /etc/systemd/system/postgresql.service.d /etc/systemd/system/redis-server.service.d /etc/systemd/system/msm-docs-sidecar.service.d
+    printf '[Service]\nSlice=msm-control.slice\nOOMScoreAdjust=-900\n' > /etc/systemd/system/postgresql.service.d/msm-oom.conf
+    printf '[Service]\nSlice=msm-control.slice\nOOMScoreAdjust=-850\n' > /etc/systemd/system/redis-server.service.d/msm-oom.conf
+    printf '[Service]\nSlice=msm-control.slice\nOOMScoreAdjust=-750\n' > /etc/systemd/system/msm-docs-sidecar.service.d/msm-slice.conf
+
+    cat > /etc/systemd/system/msm-docker-socket-acl.service <<'EOF'
+[Unit]
+Description=MSM Docker Socket ACL Sync
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/msm-docker-socket-acl
+EOF
+    cat > /etc/systemd/system/msm-docker-socket-acl.path <<PATHEOF
+[Unit]
+Description=Watch msm-docker Rootless Socket for ACL Sync
+
+[Path]
+PathExists=/run/user/${MSM_DOCKER_UID}/docker.sock
+
+[Install]
+WantedBy=multi-user.target
+PATHEOF
+    systemctl enable msm-docker-socket-acl.path >/dev/null 2>&1 || true
+    systemctl start msm-docker-socket-acl.path >/dev/null 2>&1 || true
+
+    EFFECTIVE_REDIS_URL=""
+    if [[ -f "$ENV_FILE" ]]; then
+        EFFECTIVE_REDIS_URL=$(grep -E '^MSM_REDIS_URL=' "$ENV_FILE" | cut -d'=' -f2- | sed 's/^"//;s/"$//' || true)
+    fi
+    if [[ -n "$EFFECTIVE_REDIS_URL" ]]; then
+        PANEL_WORKER_MODE="api"
+        CPU_CORES=$(nproc 2>/dev/null || echo 2)
+        if [[ "$CPU_CORES" -lt 2 ]]; then MSM_UVICORN_WORKERS=2
+        elif [[ "$CPU_CORES" -gt 4 ]]; then MSM_UVICORN_WORKERS=4
+        else MSM_UVICORN_WORKERS="$CPU_CORES"
+        fi
+    else
+        PANEL_WORKER_MODE="all"
+        MSM_UVICORN_WORKERS=1
+    fi
+    if [[ -f "$ENV_FILE" ]]; then
+        if grep -qE '^MSM_WORKER_MODE=' "$ENV_FILE"; then
+            sed -i -E "s|^MSM_WORKER_MODE=.*|MSM_WORKER_MODE=\"${PANEL_WORKER_MODE}\"|" "$ENV_FILE"
+        else
+            printf 'MSM_WORKER_MODE="%s"\n' "$PANEL_WORKER_MODE" >> "$ENV_FILE"
+        fi
+    fi
 
     # Dokumente-Sidecar Service
     cat > /etc/systemd/system/msm-docs-sidecar.service <<EOF
@@ -1023,6 +1540,8 @@ After=network.target
 Type=simple
 User=$MSM_USER
 Group=$MSM_USER
+Slice=msm-control.slice
+OOMScoreAdjust=-750
 WorkingDirectory=$MSM_DIR/dis-sidecar
 Environment="NODE_ENV=production"
 Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
@@ -1041,8 +1560,9 @@ EOF
     # Docker den angelegten Container liegen. Der naechste Versuch startete ihn
     # dann ohne jede Portfreigabe, und systemd meldete „Started“ (27.09.2026).
     # Frisch angelegt scheitert jeder Versuch sichtbar, bis der Port frei ist.
-    # SearXNG Search Sidecar Service
+    # SearXNG Search Sidecar Service (isoliert unter $MSM_DOCKER_USER)
     if [[ -d "$MSM_DIR/searxng-sidecar" ]]; then
+        chown -R "$MSM_DOCKER_USER:$MSM_DOCKER_USER" "$MSM_DIR/searxng-sidecar" 2>/dev/null || true
         cat > /etc/systemd/system/msm-searxng.service <<EOF
 [Unit]
 Description=MSM SearXNG Search Sidecar
@@ -1051,8 +1571,9 @@ Wants=network.target
 
 [Service]
 Type=simple
-User=$MSM_USER
-Group=$MSM_USER
+User=$MSM_DOCKER_USER
+Group=$MSM_DOCKER_USER
+Slice=msm-control.slice
 WorkingDirectory=$MSM_DIR/searxng-sidecar
 Environment="DOCKER_HOST=$MSM_DOCKER_HOST"
 Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
@@ -1068,8 +1589,9 @@ WantedBy=multi-user.target
 EOF
     fi
 
-    # Wetter Sidecar Service (Vorhersage über MSM)
+    # Wetter Sidecar Service (Vorhersage über MSM, isoliert unter $MSM_DOCKER_USER)
     if [[ -d "$MSM_DIR/wetter-sidecar" ]]; then
+        chown -R "$MSM_DOCKER_USER:$MSM_DOCKER_USER" "$MSM_DIR/wetter-sidecar" 2>/dev/null || true
         cat > /etc/systemd/system/msm-wetter.service <<EOF
 [Unit]
 Description=MSM Weather Sidecar
@@ -1078,8 +1600,9 @@ Wants=network.target
 
 [Service]
 Type=simple
-User=$MSM_USER
-Group=$MSM_USER
+User=$MSM_DOCKER_USER
+Group=$MSM_DOCKER_USER
+Slice=msm-control.slice
 WorkingDirectory=$MSM_DIR/wetter-sidecar
 Environment="DOCKER_HOST=$MSM_DOCKER_HOST"
 Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
@@ -1095,8 +1618,9 @@ WantedBy=multi-user.target
 EOF
     fi
 
-    # LiveKit Media Sidecar Service (Anrufe im Messenger)
+    # LiveKit Media Sidecar Service (Anrufe im Messenger, isoliert unter $MSM_DOCKER_USER)
     if [[ -d "$MSM_DIR/livekit-sidecar" ]]; then
+        chown -R "$MSM_DOCKER_USER:$MSM_DOCKER_USER" "$MSM_DIR/livekit-sidecar" 2>/dev/null || true
         cat > /etc/systemd/system/msm-livekit.service <<EOF
 [Unit]
 Description=MSM LiveKit Media Sidecar
@@ -1105,8 +1629,9 @@ Wants=network.target
 
 [Service]
 Type=simple
-User=$MSM_USER
-Group=$MSM_USER
+User=$MSM_DOCKER_USER
+Group=$MSM_DOCKER_USER
+Slice=msm-control.slice
 WorkingDirectory=$MSM_DIR/livekit-sidecar
 Environment="DOCKER_HOST=$MSM_DOCKER_HOST"
 Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
@@ -1128,7 +1653,7 @@ EOF
         fi
     fi
 
-    # Panel Service
+    # Panel Service (Multi-Worker API)
     cat > /etc/systemd/system/msm-panel.service <<EOF
 [Unit]
 Description=Maunting Service Manager Panel
@@ -1140,10 +1665,12 @@ Requires=msm-dis-sidecar.service
 Type=simple
 User=msm
 Group=msm
+Slice=msm-control.slice
+OOMScoreAdjust=-800
 WorkingDirectory=/opt/msm/backend
 Environment="PATH=/opt/msm/backend/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-Environment="DOCKER_HOST=$MSM_DOCKER_HOST"
-ExecStart=/opt/msm/backend/venv/bin/uvicorn main:app --host 127.0.0.1 --port 8000 --workers 1 --timeout-graceful-shutdown 2
+Environment="MSM_WORKER_MODE=${PANEL_WORKER_MODE}"
+ExecStart=/opt/msm/backend/venv/bin/uvicorn main:app --host 127.0.0.1 --port 8000 --workers ${MSM_UVICORN_WORKERS} --timeout-graceful-shutdown 5
 Restart=on-failure
 RestartSec=5
 TimeoutStopSec=10
@@ -1159,21 +1686,56 @@ ReadWritePaths=/opt/msm -/etc/ufw -/var/lib/ufw -/run/ufw -/run/ufw.lock -/run/u
 WantedBy=multi-user.target
 EOF
 
-    # MSM Agent (local node)
+    # Dedizierter Hintergrund-Worker (APScheduler / Pumpen / Node Heartbeats)
+    cat > /etc/systemd/system/msm-worker.service <<'EOF'
+[Unit]
+Description=Maunting Service Manager Background Worker
+After=network.target postgresql.service redis-server.service msm-dis-sidecar.service msm-docs-sidecar.service
+Wants=redis-server.service msm-docs-sidecar.service
+Requires=msm-dis-sidecar.service
+
+[Service]
+Type=simple
+User=msm
+Group=msm
+Slice=msm-control.slice
+OOMScoreAdjust=-300
+WorkingDirectory=/opt/msm/backend
+Environment="PATH=/opt/msm/backend/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+Environment="MSM_WORKER_MODE=worker"
+ExecStart=/opt/msm/backend/venv/bin/python -u worker.py
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=15
+StandardOutput=journal
+StandardError=journal
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=false
+ReadWritePaths=/opt/msm -/etc/ufw -/var/lib/ufw -/run/ufw -/run/ufw.lock -/run/sudo -/etc/caddy -/run/caddy
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    # MSM Agent (local node, isolierter User $MSM_AGENT_USER)
     if [[ -d "$MSM_DIR/msm-agent" ]]; then
         cat > /etc/systemd/system/msm-agent.service <<EOF
 [Unit]
 Description=MSM Agent (Node Runtime)
-After=network.target
+After=network.target msm-docker-socket-acl.service
 
 [Service]
 Type=simple
-User=$MSM_USER
-Group=$MSM_USER
+User=$MSM_AGENT_USER
+Group=$MSM_AGENT_USER
+Slice=msm-control.slice
+OOMScoreAdjust=-500
 WorkingDirectory=$MSM_DIR/msm-agent
 Environment="PATH=$MSM_DIR/msm-agent/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 Environment="DOCKER_HOST=$MSM_DOCKER_HOST"
 EnvironmentFile=-$MSM_DIR/msm-agent/.env
+ExecStartPre=+/usr/local/sbin/msm-docker-socket-acl
 ExecStart=$MSM_DIR/msm-agent/venv/bin/python main.py
 Restart=on-failure
 RestartSec=5
@@ -1183,7 +1745,7 @@ PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=false
 StateDirectory=msm-agent
-ReadWritePaths=$MSM_DIR -/run/user -/var/lib/msm-agent
+ReadWritePaths=$MSM_DIR/msm-agent $MSM_DIR/servers -/run/user -/run/sudo -/var/lib/msm-agent -/var/lib/msm-quotas
 
 [Install]
 WantedBy=multi-user.target
@@ -1205,6 +1767,12 @@ EOF
         systemctl enable msm-livekit.service 2>/dev/null || true
     fi
     systemctl enable msm-panel.service
+    if [[ "$PANEL_WORKER_MODE" == "api" ]]; then
+        systemctl enable msm-worker.service
+    else
+        systemctl disable msm-worker.service >/dev/null 2>&1 || true
+        systemctl stop msm-worker.service >/dev/null 2>&1 || true
+    fi
     if [[ -f /etc/systemd/system/msm-agent.service ]]; then
         systemctl enable msm-agent.service
     fi
@@ -1305,22 +1873,24 @@ if [[ -f "$PANEL_UNIT" ]] && grep -q 'ProtectHome=true' "$PANEL_UNIT"; then
     ok "Panel-Service ProtectHome deaktiviert"
 fi
 
-# ── Rootless Docker reparieren: UDP Source-IP Fix (slirp4netns) ──
-# Rootless Docker's default 'builtin' port driver drops Source-IPs for UDP connections.
-# This prevents games like DayZ or Ark from functioning properly. We force slirp4netns.
+# ── Rootless Docker reparieren: UDP Source-IP + Host-Loopback-Sperre ──
 if ! command -v slirp4netns &>/dev/null; then
     log "Installiere slirp4netns für UDP Source-IP Erhalt..."
     apt-get install -y -qq slirp4netns 2>/dev/null || true
 fi
-if id "msm" &>/dev/null; then
-    MSM_UID=$(id -u "msm")
-    MSM_OVERRIDE_CONF="/opt/msm/.config/systemd/user/docker.service.d/override.conf"
-    if ! su - msm -c "grep -q 'DOCKERD_ROOTLESS_ROOTLESSKIT_PORT_DRIVER=slirp4netns' $MSM_OVERRIDE_CONF 2>/dev/null"; then
-        log "Konfiguriere Rootless Docker für Source-IP Erhalt bei UDP (slirp4netns)..."
-        su - msm -c "mkdir -p /opt/msm/.config/systemd/user/docker.service.d && echo -e '[Service]\nEnvironment=\"DOCKERD_ROOTLESS_ROOTLESSKIT_PORT_DRIVER=slirp4netns\"' > $MSM_OVERRIDE_CONF" 2>/dev/null || true
+TARGET_DOCKER_USER="$(id "$MSM_DOCKER_USER" &>/dev/null && echo "$MSM_DOCKER_USER" || echo "$MSM_USER")"
+TARGET_DOCKER_HOME="$(getent passwd "$TARGET_DOCKER_USER" | cut -d: -f6 || echo "$MSM_DOCKER_HOME")"
+if id "$TARGET_DOCKER_USER" &>/dev/null; then
+    TARGET_DOCKER_UID=$(id -u "$TARGET_DOCKER_USER")
+    MSM_OVERRIDE_CONF="${TARGET_DOCKER_HOME}/.config/systemd/user/docker.service.d/override.conf"
+    if ! grep -q 'DOCKERD_ROOTLESS_ROOTLESSKIT_DISABLE_HOST_LOOPBACK=true' "$MSM_OVERRIDE_CONF" 2>/dev/null \
+       || ! grep -q 'DOCKERD_ROOTLESS_ROOTLESSKIT_PORT_DRIVER=slirp4netns' "$MSM_OVERRIDE_CONF" 2>/dev/null; then
+        log "Konfiguriere Rootless Docker für $TARGET_DOCKER_USER (slirp4netns + disable-host-loopback)..."
+        su -s /bin/bash "$TARGET_DOCKER_USER" -c "mkdir -p ~/.config/systemd/user/docker.service.d && printf '[Service]\nEnvironment=\"DOCKERD_ROOTLESS_ROOTLESSKIT_PORT_DRIVER=slirp4netns\"\nEnvironment=\"DOCKERD_ROOTLESS_ROOTLESSKIT_DISABLE_HOST_LOOPBACK=true\"\n' > ~/.config/systemd/user/docker.service.d/override.conf" 2>/dev/null || true
         if $SYSTEMD_AVAILABLE; then
-            su - msm -c "export XDG_RUNTIME_DIR=/run/user/${MSM_UID}; systemctl --user daemon-reload && systemctl --user restart docker.service" 2>/dev/null || true
-            ok "Rootless Docker mit slirp4netns neugestartet"
+            su -s /bin/bash "$TARGET_DOCKER_USER" -c "export XDG_RUNTIME_DIR=/run/user/${TARGET_DOCKER_UID}; systemctl --user daemon-reload && systemctl --user restart docker.service" 2>/dev/null || true
+            /usr/local/sbin/msm-docker-socket-acl 2>/dev/null || true
+            ok "Rootless Docker mit slirp4netns und Loopback-Isolation neugestartet"
         fi
     fi
 fi
@@ -1425,6 +1995,12 @@ if $SYSTEMD_AVAILABLE; then
     fi
 
     systemctl restart msm-panel.service || err "Panel konnte nicht gestartet werden."
+    if [[ -f /etc/systemd/system/msm-worker.service ]] && systemctl is-enabled --quiet msm-worker.service 2>/dev/null; then
+        systemctl restart msm-worker.service \
+            || systemctl start msm-worker.service \
+            || err "Hintergrund-Worker (msm-worker) konnte nicht gestartet werden."
+        ok "Hintergrund-Worker aktiv (msm-worker)"
+    fi
     PANEL_READY=false
     for _attempt in $(seq 1 30); do
         if curl -fsS --max-time 2 http://127.0.0.1:8000/api/health >/dev/null 2>&1; then

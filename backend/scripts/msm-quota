@@ -1,0 +1,256 @@
+#!/usr/bin/env bash
+# MSM Disk Quota Wrapper — thin, root-owned privilege gate for server filesystem quotas.
+# Invoked exclusively via `sudo -n /usr/local/sbin/msm-quota ...` by `msm-agent` (or `msm`).
+#
+# Commands:
+#   --version
+#   apply-prjquota <server_id> <limit_mb>
+#   apply-loopback <server_id> <limit_mb>
+#   remove <server_id>
+#
+# Security: owned root:root, mode 0755, never writable by unprivileged users.
+set -euo pipefail
+
+BASE_DIR="${MSM_QUOTA_SERVERS_DIR:-/opt/msm/servers}"
+IMG_DIR="${MSM_QUOTA_IMAGE_DIR:-/var/lib/msm-quotas}"
+FSTAB_FILE="/etc/fstab"
+
+validate_sid() {
+    case "${1:-}" in
+        ""|*[!0-9]*|0*) return 1 ;;
+    esac
+    return 0
+}
+
+validate_limit_mb() {
+    case "${1:-}" in
+        ""|*[!0-9]*|0*) return 1 ;;
+    esac
+    local val="$1"
+    [ "$val" -ge 1024 ] && [ "$val" -le 104857600 ]
+}
+
+resolve_owners() {
+    if id -u msm-agent >/dev/null 2>&1; then
+        AGENT_USER="msm-agent"
+    else
+        AGENT_USER="msm"
+    fi
+    if id -u msm-docker >/dev/null 2>&1; then
+        DOCKER_USER="msm-docker"
+    else
+        DOCKER_USER="$AGENT_USER"
+    fi
+    if getent group msm-servers >/dev/null 2>&1; then
+        SERVERS_GROUP="msm-servers"
+    else
+        SERVERS_GROUP="$AGENT_USER"
+    fi
+}
+
+apply_shared_acl() {
+    local target="$1"
+    resolve_owners
+    chown "$DOCKER_USER:$SERVERS_GROUP" "$target"
+    chmod 2770 "$target"
+    if command -v setfacl >/dev/null 2>&1; then
+        setfacl -R -m "u:${AGENT_USER}:rwX,u:${DOCKER_USER}:rwX,d:u:${AGENT_USER}:rwX,d:u:${DOCKER_USER}:rwX,m::rwx" "$target" 2>/dev/null || true
+    fi
+}
+
+ensure_safe_server_dir() {
+    local sid="$1"
+    if [ -L "$BASE_DIR" ]; then
+        printf 'msm-quota: refusing symlink base directory\n' >&2
+        exit 1
+    fi
+    mkdir -p "$BASE_DIR"
+    local srv_dir="${BASE_DIR}/${sid}"
+    if [ -L "$srv_dir" ]; then
+        printf 'msm-quota: refusing symlink server directory\n' >&2
+        exit 1
+    fi
+    mkdir -p "$srv_dir"
+    local resolved_base resolved_srv
+    resolved_base="$(readlink -f "$BASE_DIR")"
+    resolved_srv="$(readlink -f "$srv_dir")"
+    case "$resolved_srv" in
+        "${resolved_base}/${sid}") ;;
+        *)
+            printf 'msm-quota: path traversal check failed\n' >&2
+            exit 1
+            ;;
+    esac
+    SRV_DIR="$resolved_srv"
+}
+
+remove_fstab_entry() {
+    local sid="$1"
+    [ -f "$FSTAB_FILE" ] || return 0
+    local marker="# MSM-QUOTA-SRV-${sid}"
+    if grep -qF "$marker" "$FSTAB_FILE" 2>/dev/null; then
+        local tmp
+        tmp="$(mktemp /tmp/msm-fstab.XXXXXX)"
+        grep -vF "$marker" "$FSTAB_FILE" > "$tmp" || true
+        cat "$tmp" > "$FSTAB_FILE"
+        rm -f "$tmp"
+    fi
+}
+
+upsert_fstab_entry() {
+    local img="$1"
+    local target="$2"
+    local sid="$3"
+    local marker="# MSM-QUOTA-SRV-${sid}"
+    remove_fstab_entry "$sid"
+    printf '%s %s ext4 loop,nosuid,nodev,nofail 0 0 %s\n' "$img" "$target" "$marker" >> "$FSTAB_FILE"
+}
+
+cmd_apply_prjquota() {
+    local sid="$1"
+    local limit_mb="$2"
+    ensure_safe_server_dir "$sid"
+    local mnt fstype opts proj_id
+    mnt="$(findmnt -rn -T "$SRV_DIR" -o TARGET | head -n1)"
+    fstype="$(findmnt -rn -T "$SRV_DIR" -o FSTYPE | head -n1)"
+    opts="$(findmnt -rn -T "$SRV_DIR" -o OPTIONS | head -n1)"
+    proj_id=$((10000 + sid))
+
+    case ",${opts}," in
+        *,prjquota,*|*,pquota,*|*,uqnoenforce,*) ;;
+        *)
+            printf 'msm-quota: filesystem %s on %s lacks prjquota mount option\n' "$fstype" "$mnt" >&2
+            exit 3
+            ;;
+    esac
+
+    apply_shared_acl "$SRV_DIR"
+
+    if [ "$fstype" = "xfs" ] && command -v xfs_quota >/dev/null 2>&1; then
+        xfs_quota -x -c "project -s -p ${SRV_DIR} ${proj_id}" "$mnt"
+        xfs_quota -x -c "limit -p bsoft=${limit_mb}m bhard=${limit_mb}m ${proj_id}" "$mnt"
+        exit 0
+    fi
+
+    if [ "$fstype" = "ext4" ] && command -v chattr >/dev/null 2>&1 && command -v setquota >/dev/null 2>&1; then
+        chattr -R +P -p "$proj_id" "$SRV_DIR"
+        local kb=$((limit_mb * 1024))
+        setquota -P "$proj_id" "$kb" "$kb" 0 0 "$mnt"
+        exit 0
+    fi
+
+    printf 'msm-quota: unsupported prjquota driver tools for %s\n' "$fstype" >&2
+    exit 3
+}
+
+cmd_apply_loopback() {
+    local sid="$1"
+    local limit_mb="$2"
+    ensure_safe_server_dir "$sid"
+    mkdir -p "$IMG_DIR"
+    chmod 0700 "$IMG_DIR"
+    local img="${IMG_DIR}/srv-${sid}.img"
+    local mounted_src
+    mounted_src="$(findmnt -rn -M "$SRV_DIR" -o SOURCE 2>/dev/null | head -n1 || true)"
+
+    if [ -n "$mounted_src" ]; then
+        local cur_bytes cur_mb
+        cur_bytes="$(stat -c '%s' "$img" 2>/dev/null || echo 0)"
+        cur_mb=$((cur_bytes / 1048576))
+        if [ "$limit_mb" -gt "$cur_mb" ]; then
+            truncate -s "${limit_mb}M" "$img"
+            losetup -c "$mounted_src" 2>/dev/null || true
+            resize2fs "$mounted_src" >/dev/null
+        elif [ "$limit_mb" -lt "$cur_mb" ]; then
+            umount "$SRV_DIR"
+            e2fsck -fy "$img" >/dev/null 2>&1 || true
+            resize2fs "$img" "${limit_mb}M" >/dev/null
+            truncate -s "${limit_mb}M" "$img"
+            mount -o loop,nosuid,nodev "$img" "$SRV_DIR"
+        fi
+        upsert_fstab_entry "$img" "$SRV_DIR" "$sid"
+        apply_shared_acl "$SRV_DIR"
+        exit 0
+    fi
+
+    local stage
+    stage="$(mktemp -d /run/msm-quota-stage.XXXXXX)"
+    cleanup_stage() {
+        if mountpoint -q "$stage" 2>/dev/null; then
+            umount "$stage" 2>/dev/null || true
+        fi
+        rmdir "$stage" 2>/dev/null || true
+    }
+    trap cleanup_stage EXIT
+
+    if [ ! -f "$img" ]; then
+        truncate -s "${limit_mb}M" "$img"
+        mkfs.ext4 -q -F "$img"
+    fi
+
+    if [ -n "$(ls -A "$SRV_DIR" 2>/dev/null || true)" ]; then
+        mount -o loop,nosuid,nodev "$img" "$stage"
+        cp -a "${SRV_DIR}/." "${stage}/"
+        umount "$stage"
+        find "$SRV_DIR" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+    fi
+
+    mount -o loop,nosuid,nodev "$img" "$SRV_DIR"
+    upsert_fstab_entry "$img" "$SRV_DIR" "$sid"
+    apply_shared_acl "$SRV_DIR"
+}
+
+cmd_remove() {
+    local sid="$1"
+    local srv_dir="${BASE_DIR}/${sid}"
+    local img="${IMG_DIR}/srv-${sid}.img"
+
+    if mountpoint -q "$srv_dir" 2>/dev/null; then
+        umount "$srv_dir" 2>/dev/null || umount -l "$srv_dir" 2>/dev/null || true
+    fi
+    remove_fstab_entry "$sid"
+
+    if [ -f "$img" ]; then
+        if command -v losetup >/dev/null 2>&1; then
+            for dev in $(losetup -j "$img" | cut -d: -f1); do
+                losetup -d "$dev" 2>/dev/null || true
+            done
+        fi
+        rm -f "$img"
+    fi
+
+    if [ -d "$srv_dir" ] && [ ! -L "$srv_dir" ]; then
+        local mnt fstype proj_id
+        mnt="$(findmnt -rn -T "$srv_dir" -o TARGET | head -n1 || true)"
+        fstype="$(findmnt -rn -T "$srv_dir" -o FSTYPE | head -n1 || true)"
+        proj_id=$((10000 + sid))
+        if [ "$fstype" = "xfs" ] && command -v xfs_quota >/dev/null 2>&1 && [ -n "$mnt" ]; then
+            xfs_quota -x -c "limit -p bsoft=0 bhard=0 ${proj_id}" "$mnt" 2>/dev/null || true
+        elif [ "$fstype" = "ext4" ] && command -v setquota >/dev/null 2>&1 && [ -n "$mnt" ]; then
+            setquota -P "$proj_id" 0 0 0 0 "$mnt" 2>/dev/null || true
+        fi
+    fi
+}
+
+case "${1:-}" in
+    --version)
+        printf 'msm-quota 1.0\n'
+        exit 0
+        ;;
+    apply-prjquota)
+        [ $# -eq 3 ] && validate_sid "$2" && validate_limit_mb "$3" || exit 2
+        cmd_apply_prjquota "$2" "$3"
+        ;;
+    apply-loopback)
+        [ $# -eq 3 ] && validate_sid "$2" && validate_limit_mb "$3" || exit 2
+        cmd_apply_loopback "$2" "$3"
+        ;;
+    remove)
+        [ $# -eq 2 ] && validate_sid "$2" || exit 2
+        cmd_remove "$2"
+        ;;
+    *)
+        printf 'msm-quota: disallowed invocation\n' >&2
+        exit 1
+        ;;
+esac

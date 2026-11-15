@@ -40,7 +40,7 @@ def _blueprint(*, unresolved: bool = False):
                 "description": "",
             },
             "runtime": {
-                "image": "synthetic.invalid/runtime:1",
+                "image": "ghcr.io/synthetic/runtime:1",
                 "startup": "./start",
                 "env": {},
             },

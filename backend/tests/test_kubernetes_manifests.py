@@ -39,6 +39,12 @@ def _panel_deployment() -> dict:
     return deployments[0]
 
 
+def _worker_deployment() -> dict:
+    deployments = [d for d in _by_kind("Deployment") if d["metadata"]["name"] == "msm-worker"]
+    assert len(deployments) == 1
+    return deployments[0]
+
+
 def _containers(doc: dict) -> list[dict]:
     return doc["spec"]["template"]["spec"]["containers"]
 
@@ -48,19 +54,29 @@ def test_manifests_exist_and_parse() -> None:
     assert _documents(), "keine Manifeste gefunden"
 
 
-def test_panel_runs_exactly_once_and_never_overlaps_during_a_rollout() -> None:
-    """Zwei gleichzeitige Panels wuerden Serveraktionen doppelt ausfuehren.
+def test_panel_scales_stateless_api_with_redis_and_worker_is_singleton() -> None:
+    """API-Pods skalieren ueber RollingUpdate; periodische Jobs laufen nur im Singleton-Worker."""
+    panel = _panel_deployment()
+    assert panel["spec"]["replicas"] >= 2
+    assert panel["spec"]["strategy"]["type"] == "RollingUpdate"
+    panel_container = next(c for c in _containers(panel) if c["name"] == "panel")
+    panel_env = {e["name"]: e.get("value") for e in panel_container.get("env", [])}
+    assert panel_env.get("MSM_WORKER_MODE") == "api"
 
-    Scheduler-Jobs, Lifecycle-Sperren und der Settings-Cache liegen im
-    Prozessspeicher. `Recreate` stellt zusaetzlich sicher, dass sich alte und
-    neue Instanz waehrend eines Updates nicht ueberlappen.
-    """
-    deployment = _panel_deployment()
-    assert deployment["spec"]["replicas"] == 1
-    assert deployment["spec"]["strategy"]["type"] == "Recreate"
+    worker = _worker_deployment()
+    assert worker["spec"]["replicas"] == 1
+    assert worker["spec"]["strategy"]["type"] == "Recreate"
+    worker_names = {c["name"] for c in _containers(worker)}
+    assert {"worker", "dis-sidecar"} <= worker_names
+    worker_container = next(c for c in _containers(worker) if c["name"] == "worker")
+    worker_env = {e["name"]: e.get("value") for e in worker_container.get("env", [])}
+    assert worker_env.get("MSM_WORKER_MODE") == "worker"
+
+    redis_deployments = [d for d in _by_kind("Deployment") if d["metadata"]["name"] == "msm-redis"]
+    assert len(redis_deployments) == 1
 
 
-def test_dis_sidecar_is_in_the_panel_pod_and_has_no_service() -> None:
+def test_dis_sidecar_is_in_panel_and_worker_pods_and_has_no_service() -> None:
     """Der Sidecar bindet nur an 127.0.0.1.
 
     Er muss deshalb im selben Pod laufen. Ein Service dafuer waere ein
@@ -69,6 +85,8 @@ def test_dis_sidecar_is_in_the_panel_pod_and_has_no_service() -> None:
     """
     names = {c["name"] for c in _containers(_panel_deployment())}
     assert {"panel", "dis-sidecar"} <= names
+    worker_names = {c["name"] for c in _containers(_worker_deployment())}
+    assert {"worker", "dis-sidecar"} <= worker_names
 
     for service in _by_kind("Service"):
         selector = service["spec"].get("selector") or {}
@@ -117,6 +135,8 @@ def test_no_secret_value_is_inlined_in_any_manifest() -> None:
         "MSM_DATABASE_URL",
         "MSM_DATABASE_URL_ASYNC",
         "POSTGRES_PASSWORD",
+        "MSM_REDIS_PASSWORD",
+        "MSM_REDIS_URL",
     }
     for doc in _documents():
         assert doc.get("kind") != "Secret", "Kein Secret-Objekt im angewendeten Satz"

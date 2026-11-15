@@ -205,6 +205,38 @@ _ALLOWED_ENV_VALUE_TOKENS: frozenset[str] = frozenset({
 })
 
 _ENV_KEY_RE = re.compile(r"^[A-Z][A-Z0-9_]*$")
+_FORBIDDEN_ENV_KEYS: frozenset[str] = frozenset({
+    "DOCKER_HOST",
+    "DOCKER_CONTEXT",
+    "DOCKER_TLS_VERIFY",
+    "DOCKER_CERT_PATH",
+    "DOCKER_CONFIG",
+    "LD_PRELOAD",
+    "LD_AUDIT",
+    "LD_DEBUG",
+    "LD_DEBUG_OUTPUT",
+    "LD_SHOW_AUXV",
+    "LD_DYNAMIC_WEAK",
+    "LD_ORIGIN_PATH",
+    "GCONV_PATH",
+    "BASH_ENV",
+    "ENV",
+    "ZDOTDIR",
+    "PERL5OPT",
+    "RUBYOPT",
+    "PYTHONINSPECT",
+})
+
+
+def _extract_image_registry(image_ref: str) -> str:
+    """Resolve the OCI registry hostname (defaulting to docker.io for short refs)."""
+    no_digest = image_ref.split("@", 1)[0]
+    if "/" not in no_digest:
+        return "docker.io"
+    first = no_digest.split("/", 1)[0]
+    if "." in first or ":" in first or first.lower() == "localhost":
+        return first
+    return "docker.io"
 _ALLOWED_CONFIG_VALUE_TOKENS: frozenset[str] = frozenset({
     "GAME_PORT",
     "QUERY_PORT",
@@ -336,10 +368,9 @@ class BlueprintRuntime(BaseModel):
     # Erlaubt pro-Blueprint Tuning. Default niedrig; für SCUM/Wine oft 45-120s nötig,
     # bis erste Console-Logs erscheinen (KISS: zentrale Config statt harter Defaults pro Game).
     startupCheckSeconds: float = Field(default=5.0, ge=0.0, le=300.0)
-    # Enges Opt-in fuer Runtimes wie UMU/pressure-vessel, die innerhalb des
-    # bereits rootless laufenden Containers einen User-Namespace erzeugen.
-    # Aktiviert ausschliesslich seccomp=unconfined; cap_drop=ALL,
-    # no-new-privileges und das Verbot von privileged/host-network bleiben.
+    # Nur fuer Runtimes wie UMU/pressure-vessel. Default aus. Aktiviert
+    # das schmalere Wine/Proton-Seccomp-Profil (niemals seccomp=unconfined);
+    # cap_drop=ALL, no-new-privileges und Host-/Privileged-Verbote bleiben.
     allowUnprivilegedUserNamespaces: bool = Field(default=False)
     # Opt-in fuer den Exec-Tab (POST /servers/{id}/exec). Default aus,
     # weil Exec sicherheitsrelevant ist (User fuehrt Befehle im Container
@@ -352,11 +383,21 @@ class BlueprintRuntime(BaseModel):
     @field_validator("image")
     @classmethod
     def _check_image(cls, v: str) -> str:
-        if not _DOCKER_IMAGE_RE.match(v):
+        if not _DOCKER_IMAGE_RE.match(v) or ".." in v.split("/"):
             raise ValueError(
                 "runtime.image ist kein gueltiger Docker-Image-Name "
                 "(erlaubt: Buchstaben, Ziffern, ``._/:@-``)."
             )
+        from config import settings
+
+        allowed_raw = (getattr(settings, "allowed_image_registries", "") or "").strip()
+        if allowed_raw and allowed_raw != "*":
+            allowed_hosts = {h.strip().lower() for h in allowed_raw.split(",") if h.strip()}
+            registry_host = _extract_image_registry(v).lower()
+            if registry_host not in allowed_hosts:
+                raise ValueError(
+                    f"runtime.image Registry '{registry_host}' ist nicht auf der Allowlist."
+                )
         return v
 
     @field_validator("workdir")
@@ -391,6 +432,16 @@ class BlueprintRuntime(BaseModel):
                     f"runtime.env-Key '{key}' ist ungueltig "
                     "(erlaubt: ^[A-Z][A-Z0-9_]*$)."
                 )
+            if key in _FORBIDDEN_ENV_KEYS:
+                raise ValueError(
+                    f"runtime.env-Key '{key}' ist aus Sicherheitsgruenden verboten."
+                )
+            if key == "LD_LIBRARY_PATH":
+                for segment in value.split(":"):
+                    if ".." in Path(segment.replace("\\", "/")).parts:
+                        raise ValueError(
+                            "runtime.env['LD_LIBRARY_PATH'] darf keine '..'-Segmente enthalten."
+                        )
             # Shell-Substitutionszeichen auch in Env-Werten ausschliessen.
             # ``docker run -e KEY=VALUE`` uebergibt das ohne Shell-Auswertung,
             # aber Defense-in-Depth fuer den Fall, dass ein Konsument den Wert
@@ -1897,7 +1948,7 @@ COMMENTED_TEMPLATE_EN: str = """{
     // Grace-Period for docker stop (SIGTERM then SIGKILL). Default 30s, range 5..600.
     // Raise for persistent-world servers (save/snapshot) to avoid data loss.
     "stopGracePeriodSeconds": 30,
-    // Only for runtimes such as UMU/pressure-vessel. Defaults to false. Relaxes Docker seccomp only;
+    // Only for runtimes such as UMU/pressure-vessel. Defaults to false. Selects the narrowed Wine/Proton seccomp profile (never seccomp=unconfined);
     // cap-drop=ALL, no-new-privileges, non-root user, and host-network/privileged bans remain active.
     "allowUnprivilegedUserNamespaces": false,
     // Files that should be automatically patched before startup (e.g., INI files)

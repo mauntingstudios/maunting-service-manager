@@ -49,6 +49,7 @@ def _agent_key(server: Server) -> str:
 
 
 def _agent(server: Server, db: Session) -> NodeClient | None:
+    from config import settings
     from services.node_service import NODE_OFFLINE_MSG, is_node_offline
 
     node = resolve_server_node(server, db)
@@ -56,7 +57,12 @@ def _agent(server: Server, db: Session) -> NodeClient | None:
         return None
     if is_node_offline(node) and not node.is_local:
         raise HTTPException(status_code=503, detail=NODE_OFFLINE_MSG)
-    if node.is_local and server.install_dir and os.path.isdir(server.install_dir):
+    if (
+        node.is_local
+        and not getattr(settings, "local_agent_required", False)
+        and server.install_dir
+        and os.path.isdir(server.install_dir)
+    ):
         return None
     try:
         return NodeClient.from_node(node)

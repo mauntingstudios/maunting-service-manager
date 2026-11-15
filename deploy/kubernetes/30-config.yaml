@@ -21,6 +21,13 @@ data:
   # Im Cluster laeuft kein lokaler Agent: Gameserver liegen auf den
   # angebundenen MSM-Nodes, nicht im Panel-Pod.
   MSM_LOCAL_AGENT_ENABLED: "false"
+  MSM_LOCAL_AGENT_REQUIRED: "false"
+  MSM_DB_POOL_SIZE: "5"
+  MSM_DB_MAX_OVERFLOW: "10"
+  MSM_DB_POOL_TIMEOUT: "30"
+  MSM_DB_STATEMENT_TIMEOUT_MS: "15000"
+  MSM_STRICT_RESOURCE_CAPACITY_GUARD: "true"
+  MSM_ALLOW_LEGACY_BARE_METAL_SETUP: "false"
   MSM_SETUP_COMPLETED_FILE: "/opt/msm/.setup_completed"
   MSM_PANEL_CONFIG_DIR: "/opt/msm"
   MSM_PANEL_BACKUP_DIR: "/opt/msm/backups/panel"

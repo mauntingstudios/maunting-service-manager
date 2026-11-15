@@ -42,7 +42,11 @@
 #
 set -euo pipefail
 
-PANEL_USER="${PANEL_USER:-msm}"
+if id msm-agent >/dev/null 2>&1; then
+    PANEL_USER="${PANEL_USER:-msm-agent}"
+else
+    PANEL_USER="${PANEL_USER:-msm}"
+fi
 SERVERS_DIR="${SERVERS_DIR:-/opt/msm/servers}"
 BLUEPRINTS_DIR="${BLUEPRINTS_DIR:-/opt/msm/blueprints}"
 TROCKEN=0

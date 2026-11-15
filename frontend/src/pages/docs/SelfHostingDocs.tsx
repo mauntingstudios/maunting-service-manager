@@ -83,6 +83,7 @@ export function SelfHostingDocs() {
           { id: 'component-migration', label: t('docsSelfHosting.migration.title') },
           { id: 'enrollment', label: t('docsSelfHosting.enrollment.title') },
           { id: 'guardian-state', label: t('docsSelfHosting.guardian.title') },
+          { id: 'node-isolation', label: t('docsSelfHosting.nodeIsolation.title') },
           { id: 'db-encryption', label: t('docsSelfHosting.encryption.title') },
           { id: 'vault-cloud', label: t('docsSelfHosting.vaultCloud.title') },
           { id: 'postgres-studio', label: t('docsSelfHosting.postgres.title') },
@@ -269,6 +270,24 @@ export function SelfHostingDocs() {
             <div key={item} className="bg-surface-container p-4">
               <dt className="text-sm font-semibold text-on-surface">{t(`docsSelfHosting.guardian.${item}.title`)}</dt>
               <dd className="mt-1 text-sm leading-6 text-on-surface-variant">{t(`docsSelfHosting.guardian.${item}.body`)}</dd>
+            </div>
+          ))}
+        </dl>
+      </section>
+
+      <section aria-labelledby="node-isolation" className="msm-card mb-10 p-5 sm:p-6">
+        <div className="flex items-start gap-3">
+          <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
+          <div>
+            <h2 id="node-isolation" className={`${SPRUNGZIEL_ABSTAND} font-headline text-headline-md text-on-surface`}>{t('docsSelfHosting.nodeIsolation.title')}</h2>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-on-surface-variant">{t('docsSelfHosting.nodeIsolation.intro')}</p>
+          </div>
+        </div>
+        <dl className="mt-5 grid gap-px overflow-hidden rounded-xl border border-outline-variant bg-outline-variant md:grid-cols-2">
+          {(['users', 'slices', 'multiworker', 'network', 'storage', 'runtime'] as const).map(item => (
+            <div key={item} className="bg-surface-container p-4">
+              <dt className="text-sm font-semibold text-on-surface">{t(`docsSelfHosting.nodeIsolation.${item}.title`)}</dt>
+              <dd className="mt-1 text-sm leading-6 text-on-surface-variant">{t(`docsSelfHosting.nodeIsolation.${item}.body`)}</dd>
             </div>
           ))}
         </dl>

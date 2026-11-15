@@ -36,7 +36,7 @@ def _valid_blueprint_dict() -> dict:
             "description": "Integration test blueprint for Guardian Engine phases",
         },
         "runtime": {
-            "image": "synthetic.invalid/runtime:1",
+            "image": "ghcr.io/synthetic/runtime:1",
             "startup": "./start_game",
             "env": {},
         },
