@@ -1053,10 +1053,15 @@ if [[ -d "$MSM_DIR/msm-agent" ]]; then
         printf 'br_netfilter\n' > /etc/modules-load.d/msm-docker.conf
         mkdir -p /etc/systemd/system/user@.service.d "/etc/systemd/system/user@${MSM_DOCKER_UID}.service.d"
         printf '[Service]\nDelegate=cpu cpuset io memory pids\n' > /etc/systemd/system/user@.service.d/delegate.conf
-        printf '[Service]\nSlice=msm-workloads.slice\nOOMScoreAdjust=500\n' > "/etc/systemd/system/user@${MSM_DOCKER_UID}.service.d/msm-workloads.conf"
+        # Keep user@UID.service in its default user-UID.slice so runc can detect OwnerUID from /proc/self/cgroup
+        printf '[Service]\nOOMScoreAdjust=500\n' > "/etc/systemd/system/user@${MSM_DOCKER_UID}.service.d/msm-workloads.conf"
         systemctl daemon-reload
         loginctl enable-linger "$MSM_DOCKER_USER" 2>/dev/null || true
-        systemctl start "user@${MSM_DOCKER_UID}.service" 2>/dev/null || true
+        if systemctl show -p ControlGroup --value "user@${MSM_DOCKER_UID}.service" 2>/dev/null | grep -q "msm-workloads.slice"; then
+            systemctl restart "user@${MSM_DOCKER_UID}.service" 2>/dev/null || true
+        else
+            systemctl start "user@${MSM_DOCKER_UID}.service" 2>/dev/null || true
+        fi
         install -d -o "$MSM_DOCKER_USER" -g "$MSM_DOCKER_USER" -m 710 "/run/user/${MSM_DOCKER_UID}" 2>/dev/null || true
         if [[ ! -f "${MSM_DOCKER_HOME}/.config/systemd/user/docker.service" ]]; then
             su -s /bin/bash "$MSM_DOCKER_USER" -c "export XDG_RUNTIME_DIR=/run/user/${MSM_DOCKER_UID}; dockerd-rootless-setuptool.sh install" 2>/dev/null || true
@@ -1068,7 +1073,7 @@ if [[ -d "$MSM_DIR/msm-agent" ]]; then
   "icc": false,
   "no-new-privileges": true,
   "userland-proxy": false,
-  "exec-opts": ["native.cgroupdriver=cgroupfs"],
+  "exec-opts": ["native.cgroupdriver=systemd"],
   "log-driver": "json-file",
   "log-opts": {
     "max-size": "20m",
@@ -1086,7 +1091,7 @@ try:
         cfg = json.load(fh)
     if isinstance(cfg, dict):
         opts = [o for o in cfg.get("exec-opts", []) if not str(o).startswith("native.cgroupdriver=")]
-        opts.append("native.cgroupdriver=cgroupfs")
+        opts.append("native.cgroupdriver=systemd")
         cfg["exec-opts"] = opts
         with open(path, "w", encoding="utf-8") as fh:
             json.dump(cfg, fh, indent=2)

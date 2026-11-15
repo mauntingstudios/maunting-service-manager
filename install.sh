@@ -523,9 +523,9 @@ Delegate=cpu cpuset io memory pids
 EOF
 
         mkdir -p "/etc/systemd/system/user@${MSM_DOCKER_UID}.service.d"
+        # Keep user@UID.service in its default user-UID.slice so runc can detect OwnerUID from /proc/self/cgroup
         cat > "/etc/systemd/system/user@${MSM_DOCKER_UID}.service.d/msm-workloads.conf" <<'EOF'
 [Service]
-Slice=msm-workloads.slice
 OOMScoreAdjust=500
 EOF
         systemctl daemon-reload
@@ -549,7 +549,7 @@ EOF
   "icc": false,
   "no-new-privileges": true,
   "userland-proxy": false,
-  "exec-opts": ["native.cgroupdriver=cgroupfs"],
+  "exec-opts": ["native.cgroupdriver=systemd"],
   "log-driver": "json-file",
   "log-opts": {
     "max-size": "20m",
@@ -568,7 +568,7 @@ EOF
   "icc": false,
   "no-new-privileges": true,
   "userland-proxy": false,
-  "exec-opts": ["native.cgroupdriver=cgroupfs"],
+  "exec-opts": ["native.cgroupdriver=systemd"],
   "log-driver": "json-file",
   "log-opts": {
     "max-size": "20m",

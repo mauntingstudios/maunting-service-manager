@@ -289,16 +289,7 @@ class DisClient:
             raise
 
     # ── Health ───────────────────────────────────────────────────────────
-
-    @staticmethod
-    def health_check() -> bool:
-        """Prueft ob der Sidecar erreichbar ist."""
-        try:
-            url = settings.dis_sidecar_url.rstrip("/") + "/health"
-            resp = _client.get(url, headers=DisClient._headers(), timeout=5.0)
-            return resp.status_code == 200
-        except httpx.HTTPError:
-            return False
+    # (Verwendet die oben definierte health_check(timeout: float = 2.0)-Methode.)
 
 
 # Ein gehaltener Client statt der Modulfunktion `httpx.post` je Aufruf: diese

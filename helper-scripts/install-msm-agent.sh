@@ -127,7 +127,8 @@ install_rootless_docker() {
     printf 'br_netfilter\n' > /etc/modules-load.d/msm-docker.conf
     mkdir -p /etc/systemd/system/user@.service.d "/etc/systemd/system/user@${docker_uid}.service.d"
     printf '[Service]\nDelegate=cpu cpuset io memory pids\n' > /etc/systemd/system/user@.service.d/delegate.conf
-    printf '[Service]\nSlice=msm-workloads.slice\nOOMScoreAdjust=500\n' > "/etc/systemd/system/user@${docker_uid}.service.d/msm-workloads.conf"
+    # Keep user@UID.service in its default user-UID.slice so runc can detect OwnerUID from /proc/self/cgroup
+    printf '[Service]\nOOMScoreAdjust=500\n' > "/etc/systemd/system/user@${docker_uid}.service.d/msm-workloads.conf"
     systemctl daemon-reload >>"$LOG_FILE" 2>&1 || true
     systemctl start "user@${docker_uid}.service" >>"$LOG_FILE" 2>&1 || true
     install -d -o "$MSM_DOCKER_USER" -g "$MSM_DOCKER_USER" -m 710 "/run/user/${docker_uid}" 2>/dev/null || true
@@ -174,7 +175,7 @@ install_rootless_docker() {
   "icc": false,
   "no-new-privileges": true,
   "userland-proxy": false,
-  "exec-opts": ["native.cgroupdriver=cgroupfs"],
+  "exec-opts": ["native.cgroupdriver=systemd"],
   "log-driver": "json-file",
   "log-opts": {
     "max-size": "20m",
