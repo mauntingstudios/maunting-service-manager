@@ -1045,7 +1045,12 @@ def map_container_uid_gid_to_host(
     return host_uid, host_gid
 
 
-def _clear_setgid_on_owned_dirs(root: Path, *, skip_subpath: Path | None = None) -> None:
+def _clear_setgid_on_owned_dirs(
+    root: Path,
+    *,
+    skip_subpath: Path | None = None,
+    recursive: bool = True,
+) -> None:
     """Entfernt g+s auf eigenen Verzeichnissen, damit keine unmapped Host-GIDs vererbt werden."""
     isgid = getattr(stat_module, "S_ISGID", 0)
     if not isgid:
@@ -1065,6 +1070,16 @@ def _clear_setgid_on_owned_dirs(root: Path, *, skip_subpath: Path | None = None)
             pass
 
     _strip(root)
+    if not recursive:
+        try:
+            for candidate in root.iterdir():
+                if candidate.is_symlink() or (skip_subpath is not None and candidate == skip_subpath):
+                    continue
+                _strip(candidate)
+        except OSError:
+            pass
+        return
+
     for current_root, dirs, _ in os.walk(root, followlinks=False):
         current = Path(current_root)
         kept: list[str] = []
@@ -1083,6 +1098,7 @@ def apply_shared_server_acl(
     root: Path,
     *,
     container_uid_gids: list[tuple[int, int]] | None = None,
+    recursive: bool = True,
 ) -> None:
     """Restore shared msm-agent / msm-docker and container userns POSIX ACLs.
 
@@ -1122,7 +1138,7 @@ def apply_shared_server_acl(
         except OSError:
             pass
     pg_data_dir = root / ".msm" / "postgres-data"
-    _clear_setgid_on_owned_dirs(root, skip_subpath=pg_data_dir)
+    _clear_setgid_on_owned_dirs(root, skip_subpath=pg_data_dir, recursive=recursive)
 
     if not docker_user or not agent_user or not shutil.which("setfacl"):
         return
@@ -1153,6 +1169,23 @@ def apply_shared_server_acl(
                 acl_entries.append(entry)
     acl_entries.append("m::rwx")
     acl_spec = ",".join(acl_entries)
+    if not recursive:
+        targets = [str(root)]
+        try:
+            for child in root.iterdir():
+                if child.name == ".msm" or child.is_symlink():
+                    continue
+                targets.append(str(child))
+        except OSError:
+            pass
+        subprocess.run(
+            ["setfacl", "-m", acl_spec, *targets],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        return
     if pg_data_dir.exists():
         # PostgreSQL container data must keep its 0700 subUID/subGID permissions.
         subprocess.run(
@@ -1326,7 +1359,7 @@ def prepare_runtime(
         ):
             continue
         raise PermissionError("Executable runtime file could not be prepared")
-    apply_shared_server_acl(server_root(server_id))
+    apply_shared_server_acl(server_root(server_id), recursive=False)
 
 
 def search_paths(server_id: str | int, query: str, *, limit: int = 200) -> dict[str, Any]:

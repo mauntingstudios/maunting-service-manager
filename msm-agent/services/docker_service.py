@@ -1378,6 +1378,7 @@ def repair_bind_mount_permissions(
             apply_shared_server_acl(
                 base_path,
                 container_uid_gids=[owner_uid_gid] if owner_uid_gid else None,
+                recursive=False,
             )
         except Exception:
             pass

@@ -337,3 +337,16 @@ def test_apply_shared_server_acl_clears_setgid_and_adds_mapped_uid_gid(
     # postgres-data still skipped
     assert all("postgres-data" not in arg for cmd in setfacl_cmds for arg in cmd)
 
+    # Non-recursive runtime mode must NOT pass -R and must skip .msm
+    setfacl_cmds.clear()
+    nested = sub / "deep"
+    nested.mkdir()
+    file_service.apply_shared_server_acl(root, recursive=False)
+    assert len(setfacl_cmds) == 1
+    cmd = setfacl_cmds[0]
+    assert "-R" not in cmd
+    assert str(root) in cmd
+    assert str(sub) in cmd
+    assert str(nested) not in cmd
+    assert all(".msm" not in arg for arg in cmd)
+

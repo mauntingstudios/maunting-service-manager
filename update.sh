@@ -1005,11 +1005,19 @@ install -d -o "$MSM_DOCKER_USER" -g "$MSM_DOCKER_USER" -m 750 "$MSM_DOCKER_HOME"
 
 # PG max_connections erhöhen falls nötig
 PG_CONF_DIR=$(find /etc/postgresql -name "conf.d" -type d 2>/dev/null | head -1)
-if [[ -n "$PG_CONF_DIR" ]] && [[ ! -f "${PG_CONF_DIR}/99-msm.conf" ]]; then
-    cat > "${PG_CONF_DIR}/99-msm.conf" <<'PGCONF'
+if [[ -n "$PG_CONF_DIR" ]]; then
+    _pg_conf_created=0
+    if [[ ! -f "${PG_CONF_DIR}/99-msm.conf" ]]; then
+        cat > "${PG_CONF_DIR}/99-msm.conf" <<'PGCONF'
 max_connections = 250
 PGCONF
-    systemctl reload-or-restart postgresql 2>/dev/null || true
+        _pg_conf_created=1
+    fi
+    chown postgres:postgres "${PG_CONF_DIR}/99-msm.conf" 2>/dev/null || true
+    chmod 0644 "${PG_CONF_DIR}/99-msm.conf" 2>/dev/null || true
+    if [[ "$_pg_conf_created" -eq 1 ]]; then
+        systemctl reload-or-restart postgresql 2>/dev/null || true
+    fi
 fi
 
 # Kernel Hardening sysctl

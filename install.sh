@@ -1366,6 +1366,8 @@ if [[ -n "$PG_CONF_DIR" ]]; then
 # Multi-Worker HA + Connection-Pool Reserve (Panel + Worker + Admin)
 max_connections = 250
 PGCONF
+    chown postgres:postgres "${PG_CONF_DIR}/99-msm.conf" 2>/dev/null || true
+    chmod 0644 "${PG_CONF_DIR}/99-msm.conf" 2>/dev/null || true
 fi
 PG_HBA=$(find /etc/postgresql -name pg_hba.conf | head -1)
 if [[ -n "$PG_HBA" ]]; then
