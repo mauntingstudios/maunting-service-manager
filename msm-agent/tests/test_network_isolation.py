@@ -163,6 +163,39 @@ def test_build_isolation_plan_blocks_loopback_metadata_rfc1918_host_ips_and_rout
     assert any("-i br-111122223333 -o br-111122223333 -j DROP" in line for line in rendered)
 
 
+def test_build_isolation_plan_reloads_db_network_when_list_omits_containers() -> None:
+    class LazyNetwork:
+        def __init__(self) -> None:
+            self.id = "9999aaaabbbbcccc"
+            self.name = "msm-pg-hub"
+            self.reloaded = False
+            self.attrs = {
+                "Id": "9999aaaabbbbcccc",
+                "Name": "msm-pg-hub",
+                "Driver": "bridge",
+                "IPAM": {"Config": [{"Subnet": "172.23.0.0/16", "Gateway": "172.23.0.1"}]},
+                "Containers": None,
+            }
+
+        def reload(self) -> None:
+            self.reloaded = True
+            self.attrs = {
+                **self.attrs,
+                "Containers": {
+                    "pg": {"IPv4Address": "172.23.0.2/16", "Name": "msm-postgres"},
+                    "app": {"IPv4Address": "172.23.0.3/16", "Name": "msm-srv-80"},
+                },
+            }
+
+    pg_hub = LazyNetwork()
+    fake_client = SimpleNamespace(networks=SimpleNamespace(list=lambda: [pg_hub]))
+
+    plan = netiso.build_isolation_plan(fake_client)
+
+    assert pg_hub.reloaded is True
+    assert {"src": "172.23.0.3/32", "dst": "172.23.0.2/32", "port": 5432} in plan["db_allows"]
+
+
 def test_reconcile_invokes_msm_iptables_wrapper_with_json_and_respects_fail_closed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

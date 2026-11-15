@@ -315,7 +315,21 @@ def build_isolation_plan(client: Any) -> dict[str, Any]:
                     if br and br not in icc_drop_bridges:
                         icc_drop_bridges.append(br)
 
-                containers = attrs.get("Containers") or {}
+                containers = attrs.get("Containers")
+                if (
+                    containers is None
+                    and callable(getattr(net, "reload", None))
+                    and (
+                        net_name in {managed_pg_net, "msm-pg-hub"}
+                        or net_name.startswith("msm-db-net-")
+                    )
+                ):
+                    net.reload()
+                    refreshed = getattr(net, "attrs", None)
+                    if isinstance(refreshed, dict):
+                        attrs = refreshed
+                        containers = attrs.get("Containers")
+                containers = containers or {}
                 if net_name in {managed_pg_net, "msm-pg-hub"}:
                     pg_ip = None
                     app_ips: list[str] = []
