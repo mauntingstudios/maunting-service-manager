@@ -756,8 +756,8 @@ export function FileManager({ serverId }: FileManagerProps) {
               </div>
               <Switch checked={autosave} onCheckedChange={setAutosave} disabled={!canWrite} aria-label={t('files.autosave')} className="before:absolute before:-inset-x-2 before:-inset-y-3" />
             </div>
-            <Button variant="ghost" size="sm" ref={treeTriggerRef} type="button" onClick={() => { setInspectorOpen(false); setTreeOpen((value) => !value) }} className="inline-flex items-center justify-center gap-2" aria-label={t('files.showTree')} aria-expanded={treeOpen}><Menu className="h-4 w-4" /><span>{t('files.filesDrawer')}</span></Button>
-            <Button variant="ghost" size="sm" ref={inspectorTriggerRef} type="button" onClick={() => { setTreeOpen(false); setInspectorOpen((value) => !value) }} className="inline-flex items-center justify-center gap-2 xl:hidden" aria-label={t('files.showInspector')} aria-expanded={inspectorOpen}><Info className="h-4 w-4" /><span>{t('files.detailsDrawer')}</span></Button>
+            <Button variant="ghost" size="sm" ref={treeTriggerRef} type="button" onClick={() => { setInspectorOpen(false); setTreeOpen((value) => !value) }} className="inline-flex min-h-[44px] sm:min-h-[32px] items-center justify-center gap-2" aria-label={t('files.showTree')} aria-expanded={treeOpen}><Menu className="h-4 w-4" /><span>{t('files.filesDrawer')}</span></Button>
+            <Button variant="ghost" size="sm" ref={inspectorTriggerRef} type="button" onClick={() => { setTreeOpen(false); setInspectorOpen((value) => !value) }} className="inline-flex min-h-[44px] sm:min-h-[32px] items-center justify-center gap-2 xl:hidden" aria-label={t('files.showInspector')} aria-expanded={inspectorOpen}><Info className="h-4 w-4" /><span>{t('files.detailsDrawer')}</span></Button>
           </div>
         )}
         <input ref={fileInputRef} type="file" multiple className="hidden" onChange={(event) => { enqueueUpload(event.target.files); event.target.value = '' }} />

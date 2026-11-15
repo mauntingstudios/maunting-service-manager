@@ -62,6 +62,21 @@ describe('ActionMenu', () => {
     expect(await screen.findByRole('menuitem', { name: 'Archivieren' })).toBeInTheDocument()
   })
 
+  it('rendert ein Standard-Icon, wenn iconOnly ohne icon-Prop gesetzt ist', () => {
+    render(
+      <ActionMenu
+        label="Aktionen"
+        ariaLabel="Dateimenü öffnen"
+        iconOnly
+        items={[{ key: 'a', label: 'Umbenennen', onSelect: vi.fn() }]}
+      />,
+    )
+
+    const trigger = screen.getByRole('button', { name: 'Dateimenü öffnen' })
+    expect(trigger).not.toHaveTextContent('Aktionen')
+    expect(trigger.querySelector('svg')).not.toBeNull()
+  })
+
   it('schließt mit der Zurück-Taste', async () => {
     await waitFor(() => expect(window.history.state?.msmTiefe ?? 0).toBe(0))
     render(<ActionMenu label="Mehr" items={[{ key: 'a', label: 'Umbenennen', onSelect: vi.fn() }]} />)

@@ -4147,7 +4147,8 @@
     "sortByName": "Sort by name",
     "sortBySize": "Sort by size",
     "sortByModified": "Sort by modified date",
-    "filterNoMatches": "No files in this category"
+    "filterNoMatches": "No files in this category",
+    "pageRange": "{{from}}–{{to}} of {{total}}"
   },
   "backups": {
     "subtitle": "Create, restore, and manage server backups.",

@@ -4135,7 +4135,8 @@
     "sortByName": "Nach Name sortieren",
     "sortBySize": "Nach Größe sortieren",
     "sortByModified": "Nach Änderungsdatum sortieren",
-    "filterNoMatches": "Keine Dateien in dieser Kategorie"
+    "filterNoMatches": "Keine Dateien in dieser Kategorie",
+    "pageRange": "{{from}}–{{to}} von {{total}}"
   },
   "backups": {
     "subtitle": "Backups erstellen, wiederherstellen und verwalten.",

@@ -1,7 +1,9 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   ArrowDownUp,
+  ChevronLeft,
+  ChevronRight,
   Database,
   Download,
   FileArchive,
@@ -9,6 +11,7 @@ import {
   FileText,
   Folder,
   FolderOpen,
+  MoreHorizontal,
   PackageOpen,
   ScrollText,
   Search,
@@ -22,6 +25,8 @@ import type { ContentMatch, EditorTab, FileEntry, SearchResult } from './fileWor
 export type FileCategoryFilter = 'all' | 'config' | 'logs' | 'archives' | 'database'
 type SortKey = 'name' | 'size' | 'modified'
 type SortDirection = 'asc' | 'desc'
+
+const PAGE_SIZE = 40
 
 interface FileExplorerViewProps {
   currentPath: string
@@ -155,6 +160,11 @@ export function FileExplorerView({
   const [category, setCategory] = useState<FileCategoryFilter>('all')
   const [sortKey, setSortKey] = useState<SortKey>('name')
   const [sortDir, setSortDir] = useState<SortDirection>('asc')
+  const [page, setPage] = useState(1)
+
+  useEffect(() => {
+    setPage(1)
+  }, [currentPath, category, sortKey, sortDir])
 
   const toggleSort = (key: SortKey) => {
     if (sortKey === key) {
@@ -183,6 +193,15 @@ export function FileExplorerView({
       return sortDir === 'asc' ? cmp : -cmp
     })
   }, [category, entries, sortDir, sortKey])
+
+  const totalPages = Math.max(1, Math.ceil(visibleEntries.length / PAGE_SIZE))
+  const currentPage = Math.min(page, totalPages)
+  const pagedEntries = useMemo(
+    () => visibleEntries.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE),
+    [currentPage, visibleEntries],
+  )
+  const pageFrom = visibleEntries.length === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1
+  const pageTo = Math.min(currentPage * PAGE_SIZE, visibleEntries.length)
 
   const kindLabel = (kind: FileKind): string | null => {
     switch (kind) {
@@ -224,12 +243,12 @@ export function FileExplorerView({
               key={tab.path}
               type="button"
               onClick={() => onResumeTab(tab.path)}
-              className="inline-flex min-h-[36px] items-center gap-1.5 rounded-full border border-outline bg-surface-container-high px-3 text-xs font-mono text-on-surface hover:border-secondary hover:text-primary transition-colors"
+              className="inline-flex min-h-[44px] sm:min-h-[34px] max-w-full items-center gap-1.5 rounded-full border border-outline bg-surface-container-high px-3 text-xs font-mono text-on-surface hover:border-secondary hover:text-primary transition-colors"
             >
-              <FileText className="h-3.5 w-3.5 text-secondary" aria-hidden="true" />
-              <span>{fileName(tab.path)}</span>
+              <FileText className="h-3.5 w-3.5 shrink-0 text-secondary" aria-hidden="true" />
+              <span className="truncate max-w-[12rem]">{fileName(tab.path)}</span>
               {tab.saveState === 'dirty' && (
-                <span className="h-1.5 w-1.5 rounded-full bg-status-warning" aria-hidden="true" />
+                <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-status-warning" aria-hidden="true" />
               )}
             </button>
           ))}
@@ -247,7 +266,7 @@ export function FileExplorerView({
                 type="button"
                 aria-pressed={active}
                 onClick={() => setCategory(btn.key)}
-                className={`inline-flex min-h-[40px] sm:min-h-[34px] items-center rounded-full border px-3 text-xs font-medium transition-colors ${
+                className={`inline-flex min-h-[44px] sm:min-h-[34px] items-center rounded-full border px-3 text-xs font-medium transition-colors ${
                   active
                     ? 'border-secondary bg-secondary/15 text-primary'
                     : 'border-outline bg-surface-container-low/70 text-on-surface-variant hover:text-on-surface'
@@ -285,7 +304,7 @@ export function FileExplorerView({
                 type="button"
                 aria-pressed={searchMode === mode}
                 onClick={() => onSearchModeChange(mode)}
-                className={`min-h-[40px] sm:min-h-[36px] px-2.5 text-label-sm ${
+                className={`min-h-[44px] sm:min-h-[36px] px-2.5 text-label-sm ${
                   searchMode === mode
                     ? 'bg-secondary text-on-secondary'
                     : 'text-on-surface-variant hover:bg-surface-container-highest'
@@ -320,9 +339,9 @@ export function FileExplorerView({
         </div>
       )}
 
-      {/* Suchtreffer oder Dateitabelle */}
+      {/* Suchtreffer oder Dateitabelle (begrenzte Scroll-Höhe + Sticky-Kopf + Seitenblättern) */}
       {isSearching ? (
-        <div className="rounded-xl border border-outline-variant/80 bg-surface-container-low/60 divide-y divide-outline/60">
+        <div className="rounded-xl border border-outline-variant/80 bg-surface-container-low/60 divide-y divide-outline/60 max-h-[min(460px,55dvh)] overflow-y-auto">
           {contentMatches !== null ? (
             contentMatches.length === 0 ? (
               <p className="p-8 text-center text-sm text-on-surface-variant">{t('files.searchEmpty')}</p>
@@ -370,173 +389,216 @@ export function FileExplorerView({
           )}
         </div>
       ) : (
-        <div
-          role="region"
-          aria-label={t('files.serverFiles')}
-          tabIndex={0}
-          className="@container rounded-xl border border-outline-variant/80 bg-surface-container-low/60 overflow-hidden"
-        >
-          {loading && entries.length === 0 ? (
-            <div className="flex items-center justify-center p-12">
-              <Spinner size="md" className="text-secondary" />
-            </div>
-          ) : visibleEntries.length === 0 ? (
-            <div className="p-10 text-center space-y-2">
-              <FolderOpen className="mx-auto h-8 w-8 text-on-surface-variant/60" aria-hidden="true" />
-              <p className="text-sm text-on-surface-variant">
-                {entries.length === 0 ? t('files.empty') : t('files.filterNoMatches')}
-              </p>
-            </div>
-          ) : (
-            <table className="w-full border-collapse text-left">
-              <thead className="hidden @md:table-header-group border-b border-outline-variant/80 bg-surface-container-low/80 text-label-sm uppercase tracking-wider text-on-surface-variant">
-                <tr>
-                  <th
-                    scope="col"
-                    aria-sort={sortKey === 'name' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
-                    className="py-2.5 pl-4 pr-2 font-semibold"
-                  >
-                    <button
-                      type="button"
-                      onClick={() => toggleSort('name')}
-                      aria-label={t('files.sortByName')}
-                      className="inline-flex items-center gap-1 hover:text-on-surface"
+        <div className="space-y-2.5">
+          <div
+            role="region"
+            aria-label={t('files.serverFiles')}
+            tabIndex={0}
+            className="@container rounded-xl border border-outline-variant/80 bg-surface-container-low/60 max-h-[min(520px,62dvh)] overflow-auto"
+          >
+            {loading && entries.length === 0 ? (
+              <div className="flex items-center justify-center p-12">
+                <Spinner size="md" className="text-secondary" />
+              </div>
+            ) : visibleEntries.length === 0 ? (
+              <div className="p-10 text-center space-y-2">
+                <FolderOpen className="mx-auto h-8 w-8 text-on-surface-variant/60" aria-hidden="true" />
+                <p className="text-sm text-on-surface-variant">
+                  {entries.length === 0 ? t('files.empty') : t('files.filterNoMatches')}
+                </p>
+              </div>
+            ) : (
+              <table className="w-full border-collapse text-left">
+                <thead className="hidden @md:table-header-group sticky top-0 z-10 border-b border-outline-variant/80 bg-surface-container-low/95 backdrop-blur-sm text-label-sm uppercase tracking-wider text-on-surface-variant">
+                  <tr>
+                    <th
+                      scope="col"
+                      aria-sort={sortKey === 'name' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
+                      className="py-2.5 pl-4 pr-2 font-semibold"
                     >
-                      <span>{t('files.nameColumn')}</span>
-                      <ArrowDownUp className="h-3 w-3 opacity-60" aria-hidden="true" />
-                    </button>
-                  </th>
-                  <th scope="col" className="px-3 py-2.5 font-semibold w-28">
-                    {t('files.typeColumn')}
-                  </th>
-                  <th
-                    scope="col"
-                    aria-sort={sortKey === 'size' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
-                    className="px-3 py-2.5 font-semibold w-28"
-                  >
-                    <button
-                      type="button"
-                      onClick={() => toggleSort('size')}
-                      aria-label={t('files.sortBySize')}
-                      className="inline-flex items-center gap-1 hover:text-on-surface"
+                      <button
+                        type="button"
+                        onClick={() => toggleSort('name')}
+                        aria-label={t('files.sortByName')}
+                        className="inline-flex items-center gap-1 hover:text-on-surface"
+                      >
+                        <span>{t('files.nameColumn')}</span>
+                        <ArrowDownUp className="h-3 w-3 opacity-60" aria-hidden="true" />
+                      </button>
+                    </th>
+                    <th scope="col" className="px-3 py-2.5 font-semibold w-28">
+                      {t('files.typeColumn')}
+                    </th>
+                    <th
+                      scope="col"
+                      aria-sort={sortKey === 'size' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
+                      className="px-3 py-2.5 font-semibold w-28"
                     >
-                      <span>{t('files.size')}</span>
-                      <ArrowDownUp className="h-3 w-3 opacity-60" aria-hidden="true" />
-                    </button>
-                  </th>
-                  <th
-                    scope="col"
-                    aria-sort={sortKey === 'modified' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
-                    className="px-3 py-2.5 font-semibold w-44"
-                  >
-                    <button
-                      type="button"
-                      onClick={() => toggleSort('modified')}
-                      aria-label={t('files.sortByModified')}
-                      className="inline-flex items-center gap-1 hover:text-on-surface"
+                      <button
+                        type="button"
+                        onClick={() => toggleSort('size')}
+                        aria-label={t('files.sortBySize')}
+                        className="inline-flex items-center gap-1 hover:text-on-surface"
+                      >
+                        <span>{t('files.size')}</span>
+                        <ArrowDownUp className="h-3 w-3 opacity-60" aria-hidden="true" />
+                      </button>
+                    </th>
+                    <th
+                      scope="col"
+                      aria-sort={sortKey === 'modified' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
+                      className="px-3 py-2.5 font-semibold w-44"
                     >
-                      <span>{t('files.modified')}</span>
-                      <ArrowDownUp className="h-3 w-3 opacity-60" aria-hidden="true" />
-                    </button>
-                  </th>
-                  <th scope="col" className="py-2.5 pl-2 pr-4 text-right font-semibold w-24">
-                    {t('files.actionsColumn')}
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-outline/50">
-                {visibleEntries.map((entry) => {
-                  const fullPath = joinPath(currentPath, entry.name)
-                  const kind = classifyEntry(entry)
-                  const badge = kindLabel(kind)
-                  const rowMenuItems = actionItemsForEntry(entry, currentPath)
+                      <button
+                        type="button"
+                        onClick={() => toggleSort('modified')}
+                        aria-label={t('files.sortByModified')}
+                        className="inline-flex items-center gap-1 hover:text-on-surface"
+                      >
+                        <span>{t('files.modified')}</span>
+                        <ArrowDownUp className="h-3 w-3 opacity-60" aria-hidden="true" />
+                      </button>
+                    </th>
+                    <th scope="col" className="py-2.5 pl-2 pr-4 text-right font-semibold w-24">
+                      {t('files.actionsColumn')}
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-outline/50">
+                  {pagedEntries.map((entry) => {
+                    const fullPath = joinPath(currentPath, entry.name)
+                    const kind = classifyEntry(entry)
+                    const badge = kindLabel(kind)
+                    const rowMenuItems = actionItemsForEntry(entry, currentPath)
 
-                  return (
-                    <tr
-                      key={entry.name}
-                      draggable={canWrite}
-                      onDragStart={(event) => onDragStart(event, entry, currentPath)}
-                      onDragOver={(event) => {
-                        if (entry.is_dir && canWrite) event.preventDefault()
-                      }}
-                      onDrop={(event) => {
-                        if (entry.is_dir) void onDropFolder(event, entry, currentPath)
-                      }}
-                      onContextMenu={(event) => onContextMenu(event, entry, currentPath)}
-                      className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 @md:table-row @md:p-0 hover:bg-surface-container-high/55 transition-colors"
-                    >
-                      <td className="min-w-0 flex-1 @md:py-2 @md:pl-4 @md:pr-2">
-                        <button
-                          type="button"
-                          onClick={() => (entry.is_dir ? onEnterDirectory(fullPath) : onOpenFile(fullPath))}
-                          className="flex min-h-[44px] @md:min-h-[34px] w-full items-center gap-2.5 text-left group"
-                        >
-                          <EntryIcon kind={kind} />
-                          <span className="truncate font-mono text-xs text-on-surface group-hover:text-primary">
-                            {entry.name}
-                          </span>
-                        </button>
-                      </td>
-                      <td className="hidden @md:table-cell px-3 py-2">
-                        {badge ? (
-                          <span className="inline-flex items-center rounded-full border border-outline/70 bg-surface-container-high/70 px-2 py-0.5 text-label-sm text-on-surface-variant">
-                            {badge}
-                          </span>
-                        ) : (
-                          <span className="text-xs text-on-surface-variant">—</span>
-                        )}
-                      </td>
-                      <td className="text-xs font-mono text-on-surface-variant @md:px-3 @md:py-2">
-                        {entry.is_dir ? '—' : formatBytes(entry.size)}
-                      </td>
-                      <td className="hidden @md:table-cell px-3 py-2 text-xs text-on-surface-variant">
-                        {entry.modified ? formatZeitpunkt(entry.modified * 1000, i18n.language) : t('files.notAvailable')}
-                      </td>
-                      <td className="flex items-center justify-end gap-1 @md:table-cell @md:py-1.5 @md:pl-2 @md:pr-4 @md:text-right">
-                        <div className="inline-flex items-center justify-end gap-1">
-                          {!entry.is_dir && canWrite && isArchive(entry.name) && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              type="button"
-                              onClick={() => onExtractEntry(entry, currentPath)}
-                              aria-label={`${t('files.extract')}: ${entry.name}`}
-                              className="min-h-[44px] min-w-[44px] @md:min-h-[32px] @md:min-w-[32px]"
-                            >
-                              <PackageOpen className="h-4 w-4" aria-hidden="true" />
-                            </Button>
+                    return (
+                      <tr
+                        key={entry.name}
+                        draggable={canWrite}
+                        onDragStart={(event) => onDragStart(event, entry, currentPath)}
+                        onDragOver={(event) => {
+                          if (entry.is_dir && canWrite) event.preventDefault()
+                        }}
+                        onDrop={(event) => {
+                          if (entry.is_dir) void onDropFolder(event, entry, currentPath)
+                        }}
+                        onContextMenu={(event) => onContextMenu(event, entry, currentPath)}
+                        className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 @md:table-row @md:p-0 hover:bg-surface-container-high/55 transition-colors"
+                      >
+                        <td className="min-w-0 flex-1 @md:py-2 @md:pl-4 @md:pr-2">
+                          <button
+                            type="button"
+                            onClick={() => (entry.is_dir ? onEnterDirectory(fullPath) : onOpenFile(fullPath))}
+                            className="flex min-h-[44px] @md:min-h-[34px] w-full items-center gap-2.5 text-left group"
+                          >
+                            <EntryIcon kind={kind} />
+                            <span className="truncate font-mono text-xs text-on-surface group-hover:text-primary">
+                              {entry.name}
+                            </span>
+                          </button>
+                        </td>
+                        <td className="hidden @md:table-cell px-3 py-2">
+                          {badge ? (
+                            <span className="inline-flex items-center rounded-full border border-outline/70 bg-surface-container-high/70 px-2 py-0.5 text-label-sm text-on-surface-variant">
+                              {badge}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-on-surface-variant">—</span>
                           )}
-                          {!entry.is_dir && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              type="button"
-                              onClick={() => onDownloadEntry(entry, currentPath)}
-                              aria-label={`${t('files.download')}: ${entry.name}`}
-                              className="min-h-[44px] min-w-[44px] @md:min-h-[32px] @md:min-w-[32px]"
-                            >
-                              <Download className="h-4 w-4" aria-hidden="true" />
-                            </Button>
-                          )}
-                          {rowMenuItems.length > 0 && (
-                            <ActionMenu
-                              label={t('files.more')}
-                              ariaLabel={`${t('files.more')}: ${entry.name}`}
-                              items={rowMenuItems}
-                              variant="ghost"
-                              surface="dna"
-                              align="end"
-                              compact
-                              iconOnly
-                            />
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
+                        </td>
+                        <td className="text-xs font-mono text-on-surface-variant @md:px-3 @md:py-2">
+                          {entry.is_dir ? '—' : formatBytes(entry.size)}
+                        </td>
+                        <td className="hidden @md:table-cell px-3 py-2 text-xs text-on-surface-variant">
+                          {entry.modified ? formatZeitpunkt(entry.modified * 1000, i18n.language) : t('files.notAvailable')}
+                        </td>
+                        <td className="flex items-center justify-end gap-1 @md:table-cell @md:py-1.5 @md:pl-2 @md:pr-4 @md:text-right">
+                          <div className="inline-flex items-center justify-end gap-1">
+                            {!entry.is_dir && canWrite && isArchive(entry.name) && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                type="button"
+                                onClick={() => onExtractEntry(entry, currentPath)}
+                                aria-label={`${t('files.extract')}: ${entry.name}`}
+                                className="min-h-[44px] min-w-[44px] @md:min-h-[32px] @md:min-w-[32px]"
+                              >
+                                <PackageOpen className="h-4 w-4" aria-hidden="true" />
+                              </Button>
+                            )}
+                            {!entry.is_dir && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                type="button"
+                                onClick={() => onDownloadEntry(entry, currentPath)}
+                                aria-label={`${t('files.download')}: ${entry.name}`}
+                                className="min-h-[44px] min-w-[44px] @md:min-h-[32px] @md:min-w-[32px]"
+                              >
+                                <Download className="h-4 w-4" aria-hidden="true" />
+                              </Button>
+                            )}
+                            {rowMenuItems.length > 0 && (
+                              <ActionMenu
+                                label={t('files.more')}
+                                ariaLabel={`${t('files.more')}: ${entry.name}`}
+                                icon={<MoreHorizontal className="h-4 w-4 shrink-0" aria-hidden="true" />}
+                                items={rowMenuItems}
+                                variant="ghost"
+                                surface="dna"
+                                align="end"
+                                compact
+                                iconOnly
+                              />
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            )}
+          </div>
+
+          {visibleEntries.length > PAGE_SIZE && (
+            <nav
+              aria-label={t('files.serverFiles')}
+              className="flex flex-wrap items-center justify-between gap-2 px-1 text-xs text-on-surface-variant"
+            >
+              <span>
+                {t('files.pageRange', { from: pageFrom, to: pageTo, total: visibleEntries.length })}
+              </span>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  fingerziel
+                  type="button"
+                  disabled={currentPage <= 1}
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  className="inline-flex items-center gap-1 disabled:opacity-45"
+                >
+                  <ChevronLeft className="h-3.5 w-3.5" aria-hidden="true" />
+                  <span>{t('common.back')}</span>
+                </Button>
+                <span className="font-mono px-1">
+                  {currentPage} / {totalPages}
+                </span>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  fingerziel
+                  type="button"
+                  disabled={currentPage >= totalPages}
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  className="inline-flex items-center gap-1 disabled:opacity-45"
+                >
+                  <span>{t('common.next')}</span>
+                  <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
+                </Button>
+              </div>
+            </nav>
           )}
         </div>
       )}
@@ -548,7 +610,7 @@ export function FileExplorerView({
             <Upload className="h-4 w-4 text-secondary" aria-hidden="true" />
             <span>{t('files.dropzoneHint')}</span>
           </span>
-          <Button variant="secondary" size="sm" type="button" onClick={onUploadClick} className="min-h-[40px] sm:min-h-[32px]">
+          <Button variant="secondary" size="sm" fingerziel type="button" onClick={onUploadClick} className="min-h-[44px] sm:min-h-[32px]">
             {t('files.upload')}
           </Button>
         </div>

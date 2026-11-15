@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, waitFor, act, fireEvent } from '@testing-library/react'
+import { render, screen, waitFor, act, fireEvent, within } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { ServerDetail } from './ServerDetail'
 import * as client from '@/api/client'
@@ -247,14 +247,12 @@ describe('ServerDetail permission topology — VAL-UI-002 / VAL-UI-018', () => {
     renderServerDetail()
     await waitForServerToLoad()
 
-    const hostIp = screen.getByText('127.0.0.1')
-    const gamePorts = screen.getAllByText(/27015/)
+    const networkRegion = screen.getByRole('region', { name: i18n.t('servers.network') })
+    const hostIp = within(networkRegion).getByText('127.0.0.1')
+    const gamePort = within(networkRegion).getByText('27015')
 
-    expect(gamePorts.length).toBeGreaterThanOrEqual(1)
-    for (const gamePort of gamePorts) {
-      expect(gamePort.className).toContain('text-body-md')
-      expect(gamePort.className).not.toContain('text-display')
-    }
+    expect(gamePort.className).toContain('text-body-md')
+    expect(gamePort.className).not.toContain('text-display')
     expect(hostIp.className).toContain('text-body-md')
   })
 

@@ -9,12 +9,12 @@ import {
   Download,
   FileText,
   HardDrive,
+  Menu,
   Package,
   Play,
   RefreshCw,
   RotateCcw,
   Shield,
-  SlidersHorizontal,
   Square,
   Terminal,
   Trash2,
@@ -38,7 +38,6 @@ import { ServerTechnikPanel } from "@/components/server/ServerTechnikPanel";
 import { ServerDetailTabs, type ServerDetailTab } from "@/components/server/ServerDetailTabs";
 import {
   ActionMenu,
-  Blattmenue,
   Button,
   Dialog,
   DialogContent,
@@ -62,8 +61,7 @@ import { GuardianTab } from "@/features/guardian/GuardianTab";
 import { AiMemoryManager } from "@/components/ai/AiMemoryManager";
 import type { GameInfo, Server } from "@/types";
 import { mapBlueprintPorts } from "@/utils/portRoles";
-import { UptimeDisplay } from "@/components/server/UptimeDisplay";
-import { formatMb, formatPortRoleLabel } from "@/lib/serverConnect";
+import { formatPortRoleLabel } from "@/lib/serverConnect";
 import { meldeErrungenschaft } from "@/lib/errungenschaft";
 type TabKey =
   | "files"
@@ -211,8 +209,6 @@ export function ServerDetail() {
   const showMemoryTab = !permissionsLoading && canUseAiMemory;
 
   const [showEditResource, setShowEditResource] = useState(false);
-  const [desktopTechnikOpen, setDesktopTechnikOpen] = useState(true);
-  const [mobileTechnikOpen, setMobileTechnikOpen] = useState(false);
   const [allServers, setAllServers] = useState<Server[]>([]);
 
   const fetchAll = async () => {
@@ -398,7 +394,6 @@ export function ServerDetail() {
       : defaultTab;
 
   const setActiveTab = (next: TabKey) => {
-    if (next === "files") setMobileTechnikOpen(false);
     const params = new URLSearchParams(searchParams);
     params.set("tab", next);
     setSearchParams(params, { replace: true });
@@ -733,14 +728,15 @@ export function ServerDetail() {
   );
   const netzwerkKnopf = (
     <Button
-      variant="secondary"
+      variant="ghost"
       size="sm"
+      fingerziel
       onClick={() => setShowEditNetwork(true)}
       disabled={effectiveStatus === "running" || !!actionLoading}
       aria-description={effectiveStatus === "running" ? t("servers.networkEditRequiresStopped") : undefined}
-      className={
+      className={`h-7 px-2 text-xs text-on-surface-variant hover:text-primary ${
         effectiveStatus === "running" || !!actionLoading ? "opacity-50 cursor-not-allowed" : ""
-      }
+      }`}
     >
       {t("common.edit")}
     </Button>
@@ -823,6 +819,7 @@ export function ServerDetail() {
 
   const technikPanelProps = {
     server,
+    gameLabel: gameName(server.game_type),
     status,
     effectiveStatus,
     configuredCpuLimit,
@@ -841,11 +838,11 @@ export function ServerDetail() {
 
   return (
     <div className="msm-page">
-      {/* Kompaktes Server-Deck (Hybrid Variante C + Schnellwechsler aus Variante B) */}
-      <header className="rounded-2xl border border-outline bg-surface-container-low/80 backdrop-blur-xl px-4 py-3.5 sm:px-5 space-y-2.5">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          {/* Links: Zurück, Titel/Schnellwechsler, Status, Smart Connect-Adresse */}
-          <div className="flex flex-wrap items-center gap-2 min-w-0">
+      {/* Server-Deck: Fokus-Aktionen oben, ruhiges Telemetrie-&-Netzwerkband darunter, volle Breite für Tabs */}
+      <header className="rounded-2xl border border-outline bg-surface-container-low/80 backdrop-blur-xl px-3.5 py-3 sm:px-5 sm:py-3.5 space-y-3 overflow-hidden">
+        <div className="flex flex-wrap items-center justify-between gap-2.5 sm:gap-3">
+          {/* Links: Zurück, Servername, Schnellwechsler, Status & kompakter Connect-Chip */}
+          <div className="flex flex-wrap items-center gap-2 min-w-0 max-w-full">
             <Button
               variant="secondary"
               size="sm"
@@ -858,12 +855,12 @@ export function ServerDetail() {
               <span className="hidden sm:inline">{t("common.back")}</span>
             </Button>
 
-            <h1 className="font-headline text-lg sm:text-xl font-semibold text-primary truncate max-w-[16rem] sm:max-w-[22rem]">
+            <h1 className="font-headline text-base sm:text-xl font-semibold text-primary truncate max-w-[14rem] sm:max-w-[22rem]">
               {server.name}
             </h1>
 
             {switcherOptions.length > 1 && (
-              <div className="w-44 sm:w-52">
+              <div className="w-full sm:w-52 min-w-0">
                 <Dropdown
                   value={String(server.id)}
                   onChange={(value) => {
@@ -897,7 +894,7 @@ export function ServerDetail() {
             )}
           </div>
 
-          {/* Rechts: Fokus-Steuerung (Start/Stop, Neustart, Technik & Limits, Weitere Aktionen) */}
+          {/* Rechts: Fokus-Steuerung (Start/Stop, Neustart & Hamburger-Menü für weitere Aktionen) */}
           <div
             role="toolbar"
             aria-label={t("serverDetail.serverActions")}
@@ -929,31 +926,10 @@ export function ServerDetail() {
               {actionLoading === "restart" ? t("common.loading") : t("servers.restart")}
             </Button>
 
-            {/* Desktop: gedocktes Rechts-Panel ein/aus; Mobil/Tablet: Slide-Over-Drawer */}
-            <Button
-              variant="secondary"
-              type="button"
-              onClick={() => setDesktopTechnikOpen((v) => !v)}
-              aria-expanded={desktopTechnikOpen}
-              className="hidden xl:inline-flex min-h-[38px] items-center gap-1.5"
-            >
-              <SlidersHorizontal className="w-4 h-4" aria-hidden="true" />
-              <span>{t("serverDetail.technikPanel")}</span>
-            </Button>
-            <Button
-              variant="secondary"
-              type="button"
-              onClick={() => setMobileTechnikOpen(true)}
-              aria-expanded={mobileTechnikOpen}
-              className="inline-flex xl:hidden min-h-[44px] md:min-h-[38px] items-center gap-1.5"
-            >
-              <SlidersHorizontal className="w-4 h-4" aria-hidden="true" />
-              <span>{t("serverDetail.technikPanel")}</span>
-            </Button>
-
             <ActionMenu
               label={t("serverDetail.moreActions")}
               ariaLabel={t("serverDetail.moreActions")}
+              icon={<Menu className="h-[18px] w-[18px] md:h-4 md:w-4 shrink-0" aria-hidden="true" />}
               items={moreActionItems}
               variant="secondary"
               surface="dna"
@@ -963,34 +939,8 @@ export function ServerDetail() {
           </div>
         </div>
 
-        {/* Kompakte Telemetrie- & Kontexthinweis-Zeile */}
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-outline/50 pt-2 text-xs text-on-surface-variant">
-          <span className="font-medium text-on-surface">{gameName(server.game_type)}</span>
-          {server.node_name ? (
-            <>
-              <span aria-hidden="true">·</span>
-              <span>{t("servers.node")}: {server.node_name}</span>
-            </>
-          ) : null}
-          <span aria-hidden="true">·</span>
-          <span className="font-mono">
-            CPU {status?.cpu_percent != null ? `${status.cpu_percent.toFixed(1)}%` : "—"}
-          </span>
-          <span aria-hidden="true">·</span>
-          <span className="font-mono">
-            RAM {status?.ram_mb != null ? formatMb(status.ram_mb) : "—"}
-          </span>
-          <span aria-hidden="true">·</span>
-          <span className="font-mono">
-            Disk {status?.disk_used_mb != null ? formatMb(status.disk_used_mb) : "—"}
-          </span>
-          {effectiveStatus === "running" ? (
-            <>
-              <span aria-hidden="true">·</span>
-              <UptimeDisplay server={server} label="" compact />
-            </>
-          ) : null}
-        </div>
+        {/* Ruhiger Ressourcen-, Node- & Netzwerk-Streifen direkt im oberen Deck */}
+        <ServerTechnikPanel {...technikPanelProps} />
       </header>
 
       {/* Auth-Setup-Banner: sichtbar waehrend der Container auf interaktiven Auth-Flow wartet */}
@@ -1051,57 +1001,39 @@ export function ServerDetail() {
         moreLabel={t("serverDetail.moreTabs")}
       />
 
-      {/* Zweispaltiger Arbeitsbereich: Aktiver Reiter links + optionales Technik-&-Limits-Panel rechts */}
-      <div className="flex flex-col xl:flex-row gap-6 items-start">
-        <div role="tabpanel" aria-label={activeTabLabel} className="flex-1 min-w-0 w-full">
-          {activeTab === "files" && <FileManager serverId={serverId} />}
-          {activeTab === "console" && <ServerConsolePanel serverId={serverId} />}
-          {activeTab === "exec" && gameInfo?.enable_exec && (
-            <ServerConsolePanel serverId={serverId} mode="exec" />
-          )}
-          {activeTab === "mods" && showModTab && (
-            <ModManager serverId={serverId} gameInfo={gameInfo} />
-          )}
-          {activeTab === "restarts" && (
-            <ServerRestartPanel
-              server={server}
-              serverId={serverId}
-              onSaved={fetchAll}
-            />
-          )}
-          {activeTab === "backups" && <Backups serverId={serverId} />}
-          {activeTab === "databases" && <DatabaseManager serverId={serverId} dedicated={isDatabaseServer} />}
-          {activeTab === "webhooks" && <OutgoingWebhooksPanel serverId={serverId} />}
-          {activeTab === "memory" && showMemoryTab && (
-            <AiMemoryManager
-              scope={{
-                kind: "server_shared",
-                serverId,
-                canManage: canWriteServerConfig,
-              }}
-            />
-          )}
-          {activeTab === "guardian" && (
-            <GuardianTab server={server} onRefreshServer={fetchAll} />
-          )}
-        </div>
-
-        <aside
-          aria-label={t("serverDetail.technikPanel")}
-          className={desktopTechnikOpen ? "hidden xl:block xl:w-[360px] xl:shrink-0" : "hidden"}
-        >
-          <ServerTechnikPanel {...technikPanelProps} />
-        </aside>
+      {/* Vollflächiger Arbeitsbereich über die komplette Breite (Mods, Dateien, Konsole, ...) */}
+      <div role="tabpanel" aria-label={activeTabLabel} className="w-full min-w-0">
+        {activeTab === "files" && <FileManager serverId={serverId} />}
+        {activeTab === "console" && <ServerConsolePanel serverId={serverId} />}
+        {activeTab === "exec" && gameInfo?.enable_exec && (
+          <ServerConsolePanel serverId={serverId} mode="exec" />
+        )}
+        {activeTab === "mods" && showModTab && (
+          <ModManager serverId={serverId} gameInfo={gameInfo} />
+        )}
+        {activeTab === "restarts" && (
+          <ServerRestartPanel
+            server={server}
+            serverId={serverId}
+            onSaved={fetchAll}
+          />
+        )}
+        {activeTab === "backups" && <Backups serverId={serverId} />}
+        {activeTab === "databases" && <DatabaseManager serverId={serverId} dedicated={isDatabaseServer} />}
+        {activeTab === "webhooks" && <OutgoingWebhooksPanel serverId={serverId} />}
+        {activeTab === "memory" && showMemoryTab && (
+          <AiMemoryManager
+            scope={{
+              kind: "server_shared",
+              serverId,
+              canManage: canWriteServerConfig,
+            }}
+          />
+        )}
+        {activeTab === "guardian" && (
+          <GuardianTab server={server} onRefreshServer={fetchAll} />
+        )}
       </div>
-
-      {/* Mobil & Tablet (< xl): Technik & Limits als Design-DNA Bottom-Sheet/Drawer */}
-      <Blattmenue
-        offen={mobileTechnikOpen}
-        onSchliessen={() => setMobileTechnikOpen(false)}
-        titel={t("serverDetail.technikPanel")}
-      >
-        {mobileTechnikOpen ? <ServerTechnikPanel {...technikPanelProps} /> : null}
-      </Blattmenue>
 
       {/* Netzwerk-Dialog mit Design-DNA Dialog & Input */}
       <Dialog open={showEditNetwork} onOpenChange={setShowEditNetwork}>

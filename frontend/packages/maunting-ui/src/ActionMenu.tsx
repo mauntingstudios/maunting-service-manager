@@ -7,7 +7,7 @@ import {
   type ReactNode,
 } from 'react'
 import { createPortal } from 'react-dom'
-import { ChevronDown } from 'lucide-react'
+import { ChevronDown, MoreHorizontal } from 'lucide-react'
 import { cx } from './intern/cx'
 import { buttonClasses } from './Button'
 import { useAnkerLage } from './Ankerlage'
@@ -149,6 +149,10 @@ export function ActionMenu({
         {icon ? (
           <span className="inline-flex shrink-0 items-center justify-center" aria-hidden>
             {icon}
+          </span>
+        ) : iconOnly ? (
+          <span className="inline-flex shrink-0 items-center justify-center" aria-hidden>
+            <MoreHorizontal className="h-4 w-4 shrink-0" />
           </span>
         ) : null}
         {!iconOnly && <span>{label}</span>}

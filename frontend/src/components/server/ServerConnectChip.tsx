@@ -76,24 +76,24 @@ export function ServerConnectChip({ server, compact = false, className = '' }: S
     <div
       role="group"
       aria-label={t('serverDetail.connectAddress')}
-      className={`inline-flex items-center rounded-full border border-outline bg-surface-container-high/85 backdrop-blur-md transition-colors hover:border-outline-variant ${className}`}
+      className={`inline-flex max-w-full min-w-0 items-center rounded-full border border-outline bg-surface-container-high/85 backdrop-blur-md transition-colors hover:border-outline-variant ${className}`}
     >
       <Kurzinfo text={tooltipText} portal>
         <button
           type="button"
           onClick={() => void handleCopy(primary, 'primary')}
           aria-label={`${t('serverDetail.copyAddress')}: ${primaryText}`}
-          className={`inline-flex items-center gap-1.5 rounded-l-full ${
-            resolved.endpoints.length <= 1 ? 'rounded-r-full pr-3' : 'pr-2'
-          } ${compact ? 'min-h-[34px] pl-2.5 text-xs' : 'min-h-[44px] md:min-h-[34px] pl-3 text-xs'} font-body-md text-on-surface hover:text-primary transition-colors`}
+          className={`inline-flex min-w-0 items-center gap-1.5 rounded-l-full ${
+            resolved.endpoints.length <= 1 ? 'rounded-r-full pr-2.5' : 'pr-2'
+          } ${compact ? 'min-h-[34px] pl-2.5 text-xs' : 'min-h-[44px] md:min-h-[34px] pl-2.5 text-xs'} font-body-md text-on-surface hover:text-primary transition-colors`}
         >
           <Plug className="h-3.5 w-3.5 shrink-0 text-secondary" aria-hidden="true" />
           {showRoleBadge ? (
-            <span className="text-label-sm font-medium uppercase tracking-wider text-on-surface-variant">
+            <span className="shrink-0 text-label-sm font-medium uppercase tracking-wider text-on-surface-variant">
               {primary.baseRole === 'database' ? 'DB' : primary.baseRole}
             </span>
           ) : null}
-          <span className="font-mono text-body-md">{primaryText}</span>
+          <span className="truncate font-mono text-xs">{primaryText}</span>
           {copiedKey === 'primary' ? (
             <Check className="h-3.5 w-3.5 shrink-0 text-secondary" aria-hidden="true" />
           ) : (
