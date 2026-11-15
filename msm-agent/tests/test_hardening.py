@@ -192,6 +192,38 @@ def test_create_preserves_runtime_hardening_and_attaches_extra_network(monkeypat
     network.connect.assert_called_once_with(container)
 
 
+def test_create_attaches_extra_networks_before_container_start(monkeypatch) -> None:
+    events: list[str] = []
+    container = MagicMock(id="abcdef1234567890", attrs={"State": {"Status": "running"}})
+    container.start.side_effect = lambda: events.append("start")
+
+    def fake_create(**kwargs):
+        assert "detach" not in kwargs
+        events.append("create")
+        return container
+
+    network = MagicMock()
+    network.connect.side_effect = lambda _c: events.append("connect")
+    docker_client = SimpleNamespace(
+        containers=SimpleNamespace(
+            get=MagicMock(side_effect=NotFound("missing")),
+            create=fake_create,
+        ),
+        networks=SimpleNamespace(get=MagicMock(return_value=network)),
+    )
+    monkeypatch.setattr("services.docker_service._get_client", lambda: docker_client)
+
+    result = create_container(
+        name="msm-srv-80",
+        image="example.invalid/runtime:test",
+        network="msm-srv-net-80",
+        extra_networks=["msm-pg-hub"],
+    )
+
+    assert result["ok"] is True
+    assert events == ["create", "connect", "start"]
+
+
 def test_network_attach_failure_removes_started_container(monkeypatch) -> None:
     container = MagicMock(id="abcdef1234567890")
     docker_client = SimpleNamespace(

@@ -518,20 +518,42 @@ def create_container(
         kwargs["ulimits"] = ulimits
 
     kwargs = {k: v for k, v in kwargs.items() if v is not None}
-    try:
-        container = client.containers.run(**kwargs)
+    extra_nets = [
+        network_name
+        for network_name in dict.fromkeys(extra_networks or [])
+        if network_name and network_name != effective_network
+    ]
+    create_fn = getattr(client.containers, "create", None)
+
+    def _attach_extra_networks(container_obj: Any) -> None:
         try:
-            for network_name in dict.fromkeys(extra_networks or []):
-                if network_name and network_name != effective_network:
-                    _ensure_extra_db_network(client, network_name)
-                    extra = client.networks.get(network_name)
-                    extra.connect(container)
+            for network_name in extra_nets:
+                _ensure_extra_db_network(client, network_name)
+                extra = client.networks.get(network_name)
+                extra.connect(container_obj)
         except (DockerException, OSError) as exc:
             try:
-                container.remove(force=True)
+                container_obj.remove(force=True)
             except (DockerException, OSError):
                 logger.warning("docker cleanup after network attach failure failed")
             raise DockerUnavailableError("Container network attachment failed") from exc
+
+    try:
+        if extra_nets and callable(create_fn):
+            create_kwargs = {k: v for k, v in kwargs.items() if k != "detach"}
+            container = create_fn(**create_kwargs)
+            _attach_extra_networks(container)
+            try:
+                container.start()
+            except (DockerException, OSError):
+                try:
+                    container.remove(force=True)
+                except (DockerException, OSError):
+                    logger.warning("docker cleanup after start failure failed")
+                raise
+        else:
+            container = client.containers.run(**kwargs)
+            _attach_extra_networks(container)
 
         _apply_network_isolation_safe(client)
 

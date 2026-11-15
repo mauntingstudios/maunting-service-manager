@@ -1259,6 +1259,12 @@ EOF
             grep -qE "^${_k}=" "$ENV_FILE" || printf '%s\n' "$_kv" >> "$ENV_FILE"
         done
     fi
+    for _pg_env in "$ENV_FILE" "$AGENT_ENV"; do
+        if [[ -f "$_pg_env" ]] && grep -qE '^MSM_MANAGED_POSTGRES_NETWORK=["'\'']?msm-internal["'\'']?([[:space:]]*#.*)?$' "$_pg_env"; then
+            sed -i -E 's|^MSM_MANAGED_POSTGRES_NETWORK=.*|MSM_MANAGED_POSTGRES_NETWORK="msm-pg-hub"|' "$_pg_env"
+        fi
+    done
+    [[ -f "$ENV_FILE" ]] && { chown "$MSM_USER:$MSM_USER" "$ENV_FILE" || true; chmod 600 "$ENV_FILE" || true; }
     ok "MSM Agent Dependencies & 3-User Isolation aktualisiert"
 fi
 

@@ -290,7 +290,7 @@ def build_isolation_plan(client: Any) -> dict[str, Any]:
     icc_drop_bridges: list[str] = []
 
     managed_pg_container = getattr(settings, "managed_postgres_container_name", "msm-postgres")
-    managed_pg_net = getattr(settings, "managed_postgres_network", "msm-internal")
+    managed_pg_net = getattr(settings, "managed_postgres_network", "msm-pg-hub")
     prefix = getattr(settings, "container_name_prefix", "msm-srv-")
 
     if client is not None and hasattr(client, "networks") and hasattr(client.networks, "list"):
