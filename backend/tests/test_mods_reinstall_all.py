@@ -124,3 +124,61 @@ def test_abort_installs_stops_running_reinstall_loop_and_clears_pending_update(
         headers=headers,
     )
     assert reinstall_resp.status_code == 200
+
+
+def test_reinstall_all_batches_via_install_mods(db, test_server, monkeypatch):
+    from routers.mods import _BATCH_CHUNK_SIZE, reinstall_all_mods_bg
+    from services.install_update_lock_service import reset_install_update_lock_for_tests
+
+    reset_install_update_lock_for_tests()
+    assert _BATCH_CHUNK_SIZE == 25
+
+    wids = [str(1000 + i) for i in range(30)]
+    for idx, wid in enumerate(wids):
+        db.add(
+            Mod(
+                server_id=test_server.id,
+                workshop_id=wid,
+                name=f"Mod {wid}",
+                load_order=idx,
+                install_status="pending",
+                install_action="reinstall",
+            )
+        )
+    db.commit()
+
+    cleaned: list[str] = []
+    batches: list[list[str]] = []
+    modlist_calls = 0
+
+    class _BatchPlugin:
+        supports_mods = True
+
+        def cleanup_mod(self, server, workshop_id):
+            cleaned.append(workshop_id)
+            return {"ok": True}
+
+        def install_mods(self, server, workshop_ids):
+            batches.append(list(workshop_ids))
+            return {"ok": True, "items": {wid: {"ok": True} for wid in workshop_ids}}
+
+        def install_mod(self, server, workshop_id):
+            raise AssertionError("install_mod must not run when install_mods is available")
+
+        def update_modlist(self, server):
+            nonlocal modlist_calls
+            modlist_calls += 1
+
+    monkeypatch.setattr("routers.mods.get_plugin", lambda _gt: _BatchPlugin())
+    reinstall_all_mods_bg(test_server.id, wids)
+
+    assert [len(b) for b in batches] == [25, 5]
+    assert batches[0] == wids[:25]
+    assert batches[1] == wids[25:]
+    assert cleaned == wids
+    assert modlist_calls == 1
+
+    db.expire_all()
+    rows = db.query(Mod).filter(Mod.server_id == test_server.id).all()
+    assert len(rows) == 30
+    assert all(r.install_status == "installed" for r in rows)

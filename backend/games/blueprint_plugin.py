@@ -51,6 +51,7 @@ from games.base import (
 )
 from games.curseforge_installer import install_curseforge_mods
 from games.ini_utils import set_ini_value
+from games.steamcmd_runner import cleanup_workshop_state
 from services.docker_service import PortPublish, VolumeBind
 from services.port_role_service import blueprint_port_requirements, normalize_port_protocol
 from services.steam_account_service import SteamAccountService
@@ -1380,6 +1381,13 @@ class BlueprintPlugin(GamePlugin):
         )
         if downloads_cache.exists() or downloads_cache.is_symlink():
             _safe_remove(downloads_cache)
+
+        if bp_mods.workshopAppId:
+            cleanup_workshop_state(
+                base,
+                bp_mods.workshopAppId,
+                remove_ids={workshop_id},
+            )
 
         _append_console_log(server.id, f"[MSM] Mod {workshop_id} entfernt\n")
         return {"ok": True, "removed": removed}

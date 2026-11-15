@@ -413,53 +413,124 @@ def reinstall_all_mods_bg(server_id: int, workshop_ids: list[str]) -> None:
                 mark_mod_failed(server_id, wid, "Steam Workshop nicht in diesem Spiel aktiviert")
             return
 
+        chunk_size = max(1, int(_BATCH_CHUNK_SIZE))
+        chunks = [
+            workshop_ids[i : i + chunk_size]
+            for i in range(0, len(workshop_ids), chunk_size)
+        ]
+        batch_supported = callable(getattr(plugin, "install_mods", None))
+        mode_desc = f"in {len(chunks)} Batch(es)" if batch_supported else "nacheinander"
         _append_console_log(
             server.id,
-            f"[MSM] Neuinstallation für {len(workshop_ids)} Workshop-Mod(s) gestartet (nacheinander).\n",
+            f"[MSM] Neuinstallation für {len(workshop_ids)} Workshop-Mod(s) gestartet ({mode_desc}).\n",
         )
         ok_count = 0
         aborted = False
-        for wid in workshop_ids:
-            if _is_mod_run_aborted(server_id, captured_gen):
-                aborted = True
-                break
-            mark_mod_installing(server.id, wid, "reinstall")
-            try:
-                plugin.cleanup_mod(server, wid)
-            except Exception as exc:
-                _append_console_log(
-                    server.id,
-                    f"[MSM] Mod {wid} Cleanup-Warnung: {exc}\n",
-                )
-            try:
-                result = plugin.install_mod(server, wid)
-            except Exception as exc:
-                if _is_mod_run_aborted(server_id, captured_gen):
-                    aborted = True
-                    break
-                mark_mod_failed(server.id, wid, _safe_error(exc))
-                _append_console_log(server.id, f"[MSM] Mod {wid}: fehlgeschlagen — {exc}\n")
-                continue
-            if _is_mod_run_aborted(server_id, captured_gen):
-                aborted = True
-                break
-            has_error = bool(result.get("error")) if isinstance(result, dict) else bool(result)
-            is_ok = result.get("ok", True) is not False if isinstance(result, dict) else not has_error
-            success = isinstance(result, dict) and is_ok and not has_error
+
+        def _extract_error(res: object, fallback: str | None = None) -> str | None:
+            if isinstance(res, dict):
+                if res.get("error"):
+                    return str(res["error"])
+                if res.get("errors"):
+                    return "; ".join(str(e) for e in (res.get("errors") or []))
+                return fallback
+            return str(res) if res else fallback
+
+        def _record_outcome(wid: str, success: bool, err: object = None) -> None:
+            nonlocal ok_count
             if success:
                 updater.update_mod_metadata_after_success(server.id, wid, None)
                 mark_mod_installed(server.id, wid)
                 ok_count += 1
                 _append_console_log(server.id, f"[MSM] Mod {wid}: neu installiert\n")
             else:
-                if isinstance(result, dict):
-                    err = result.get("error") or (
-                        "; ".join(result.get("errors") or []) if result.get("errors") else None
-                    )
-                else:
-                    err = str(result)
                 mark_mod_failed(server.id, wid, _safe_error(err))
                 _append_console_log(server.id, f"[MSM] Mod {wid}: fehlgeschlagen — {err}\n")
+
+        for chunk in chunks:
+            if _is_mod_run_aborted(server_id, captured_gen):
+                aborted = True
+                break
+
+            if batch_supported:
+                for wid in chunk:
+                    if _is_mod_run_aborted(server_id, captured_gen):
+                        aborted = True
+                        break
+                    try:
+                        plugin.cleanup_mod(server, wid)
+                    except Exception as exc:
+                        _append_console_log(
+                            server.id,
+                            f"[MSM] Mod {wid} Cleanup-Warnung: {exc}\n",
+                        )
+                if aborted:
+                    break
+                mark_mod_installing(server.id, chunk[0], "reinstall")
+                try:
+                    batch_result = plugin.install_mods(server, chunk)
+                except Exception as exc:
+                    if _is_mod_run_aborted(server_id, captured_gen):
+                        aborted = True
+                        break
+                    for wid in chunk:
+                        _record_outcome(wid, False, exc)
+                    continue
+                if _is_mod_run_aborted(server_id, captured_gen):
+                    aborted = True
+                    break
+                has_error = bool(batch_result.get("error")) if isinstance(batch_result, dict) else bool(batch_result)
+                is_ok = batch_result.get("ok", True) is not False if isinstance(batch_result, dict) else not has_error
+                batch_success = isinstance(batch_result, dict) and is_ok and not has_error
+                batch_err = _extract_error(batch_result)
+                items_map = (
+                    batch_result.get("items")
+                    if isinstance(batch_result, dict) and isinstance(batch_result.get("items"), dict)
+                    else {}
+                )
+                for wid in chunk:
+                    item_res = items_map.get(wid)
+                    if isinstance(item_res, dict):
+                        item_has_err = bool(item_res.get("error"))
+                        item_ok = item_res.get("ok", True) is not False and not item_has_err
+                        _record_outcome(
+                            wid,
+                            item_ok,
+                            None if item_ok else _extract_error(item_res, fallback=batch_err),
+                        )
+                    else:
+                        _record_outcome(wid, batch_success, None if batch_success else batch_err)
+                continue
+
+            for wid in chunk:
+                if _is_mod_run_aborted(server_id, captured_gen):
+                    aborted = True
+                    break
+                mark_mod_installing(server.id, wid, "reinstall")
+                try:
+                    plugin.cleanup_mod(server, wid)
+                except Exception as exc:
+                    _append_console_log(
+                        server.id,
+                        f"[MSM] Mod {wid} Cleanup-Warnung: {exc}\n",
+                    )
+                try:
+                    result = plugin.install_mod(server, wid)
+                except Exception as exc:
+                    if _is_mod_run_aborted(server_id, captured_gen):
+                        aborted = True
+                        break
+                    _record_outcome(wid, False, exc)
+                    continue
+                if _is_mod_run_aborted(server_id, captured_gen):
+                    aborted = True
+                    break
+                has_error = bool(result.get("error")) if isinstance(result, dict) else bool(result)
+                is_ok = result.get("ok", True) is not False if isinstance(result, dict) else not has_error
+                success = isinstance(result, dict) and is_ok and not has_error
+                _record_outcome(wid, success, None if success else _extract_error(result))
+            if aborted:
+                break
 
         if aborted:
             _append_console_log(server.id, "[MSM] Neuinstallation durch Benutzer abgebrochen.\n")

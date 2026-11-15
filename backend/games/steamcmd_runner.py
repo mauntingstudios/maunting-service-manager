@@ -5,6 +5,7 @@ import os
 import re
 import shlex
 import shutil
+import tempfile
 import threading
 import time
 from pathlib import Path
@@ -30,6 +31,477 @@ STEAMCMD_BIN = "/home/steam/steamcmd/steamcmd.sh"
 STEAMCMD_CAPS = ["DAC_OVERRIDE", "DAC_READ_SEARCH", "CHOWN", "FOWNER"]
 
 _BAD_MANIFEST_MARKERS = ("550", "0x226", "0x206", "0x2", "Timed out waiting")
+_WORKSHOP_ITEM_SECTIONS = frozenset({"WorkshopItemsInstalled", "WorkshopItemDetails"})
+
+_WORKSHOP_ACF_PERL_SCRIPT = r"""
+use strict;
+use warnings;
+my ($acf, $cdir, $rem) = @ARGV;
+exit 0 if !defined $acf || -l $acf || !-f $acf;
+my $cdir_ok = defined($cdir) && $cdir ne "" && !-l $cdir && -d $cdir;
+my %drop = map { $_ => 1 } grep { $_ ne "" } split /,/, ($rem // "");
+open my $in, "<", $acf or exit 0;
+my @lines = <$in>;
+close $in;
+my @out;
+my @stack;
+my ($pend_k, $pend_l, $skip_d);
+my ($kept, $unbal) = (0, 0);
+my %cache;
+my $keep = sub {
+  my ($id) = @_;
+  return 0 if $drop{$id} || !$cdir_ok || $id eq "." || $id eq ".." || $id =~ m{[\\/]};
+  return $cache{$id} if exists $cache{$id};
+  my $d = "$cdir/$id";
+  my $ok = 0;
+  if (!-l $d && -d $d && opendir(my $dh, $d)) {
+    while (defined(my $e = readdir $dh)) {
+      if ($e ne "." && $e ne "..") { $ok = 1; last; }
+    }
+    closedir $dh;
+  }
+  return $cache{$id} = $ok;
+};
+for my $l (@lines) {
+  my @tok;
+  my ($o, $c) = (0, 0);
+  my ($inq, $esc, $buf) = (0, 0, "");
+  for my $ch (split //, $l) {
+    if ($esc) { $buf .= $ch if $inq; $esc = 0; next; }
+    if ($ch eq "\\" && $inq) { $esc = 1; $buf .= $ch; next; }
+    if ($ch eq q(")) {
+      if ($inq) { push @tok, $buf; $buf = ""; $inq = 0; }
+      else { $inq = 1; }
+      next;
+    }
+    if ($inq) { $buf .= $ch; }
+    elsif ($ch eq "{") { $o++; }
+    elsif ($ch eq "}") { $c++; }
+  }
+  if (defined $skip_d) {
+    push @stack, "_s" for 1..$o;
+    for (1..$c) {
+      if (!@stack) { $unbal = 1; last; }
+      pop @stack;
+      $skip_d = undef if defined $skip_d && @stack == $skip_d;
+    }
+    last if $unbal;
+    next;
+  }
+  if (defined $pend_l && $o > 0 && !@tok) {
+    if (@stack == 2 && $stack[0] eq "AppWorkshop" && ($stack[1] eq "WorkshopItemsInstalled" || $stack[1] eq "WorkshopItemDetails") && defined $pend_k && !$keep->($pend_k)) {
+      $skip_d = scalar @stack;
+      push @stack, $pend_k;
+      $pend_k = undef; $pend_l = undef;
+      push @stack, "_s" for 2..$o;
+      for (1..$c) {
+        if (!@stack) { $unbal = 1; last; }
+        pop @stack;
+        $skip_d = undef if defined $skip_d && @stack == $skip_d;
+      }
+      last if $unbal;
+      next;
+    }
+    $kept++ if @stack == 2 && $stack[0] eq "AppWorkshop" && $stack[1] eq "WorkshopItemsInstalled";
+    push @out, $pend_l, $l;
+    push @stack, (defined $pend_k ? $pend_k : "_a");
+    $pend_k = undef; $pend_l = undef;
+    push @stack, "_s" for 2..$o;
+    for (1..$c) { if (!@stack) { $unbal = 1; last; } pop @stack; }
+    last if $unbal;
+    next;
+  }
+  if (defined $pend_l && $l =~ /^\s*$/) { $pend_l .= $l; next; }
+  if (defined $pend_l) { push @out, $pend_l; $pend_l = undef; $pend_k = undef; }
+  if (@tok == 1 && $o == 1 && $c == 0 && @stack == 2 && $stack[0] eq "AppWorkshop" && ($stack[1] eq "WorkshopItemsInstalled" || $stack[1] eq "WorkshopItemDetails") && !$keep->($tok[0])) {
+    $skip_d = scalar @stack; push @stack, $tok[0]; next;
+  }
+  if (@tok == 1 && $o == 0 && $c == 0) { $pend_k = $tok[0]; $pend_l = $l; next; }
+  if (@stack == 1 && $stack[0] eq "AppWorkshop" && @tok == 2 && $o == 0 && $c == 0 && ($tok[0] eq "NeedsUpdate" || $tok[0] eq "NeedsDownload")) {
+    if ($tok[1] ne "0") {
+      my ($ind) = ($l =~ /^([ \t]*)/);
+      my ($nl) = ($l =~ /(\r?\n)$/);
+      $nl = "" unless defined $nl;
+      $l = qq(${ind}"$tok[0]"\t\t"0"$nl);
+    }
+    push @out, $l; next;
+  }
+  if (@stack == 3 && $stack[0] eq "AppWorkshop" && $stack[1] eq "WorkshopItemDetails" && @tok == 2 && $o == 0 && $c == 0 && ($tok[0] eq "BytesDownloaded" || $tok[0] eq "BytesToDownload")) {
+    next;
+  }
+  $kept++ if @tok == 1 && $o == 1 && $c == 0 && @stack == 2 && $stack[0] eq "AppWorkshop" && $stack[1] eq "WorkshopItemsInstalled";
+  push @stack, (@tok ? $tok[0] : "_s") for 1..$o;
+  for (1..$c) { if (!@stack) { $unbal = 1; last; } pop @stack; }
+  last if $unbal;
+  push @out, $l;
+}
+if (defined $pend_l) { push @out, $pend_l; }
+if ($unbal || @stack || defined $skip_d || $kept == 0) { unlink $acf; exit 0; }
+my $tmp = "$acf.tmp.$$";
+open my $fh, ">", $tmp or exit 1;
+print {$fh} @out or do { close $fh; unlink $tmp; exit 1; };
+close $fh or do { unlink $tmp; exit 1; };
+rename $tmp, $acf or do { unlink $tmp; exit 1; };
+""".strip()
+
+
+def _scan_vdf_line(line: str) -> tuple[list[str], int, int]:
+    """Extract quoted VDF tokens and brace counts outside quotes."""
+    tokens: list[str] = []
+    open_braces = 0
+    close_braces = 0
+    in_quotes = False
+    escaped = False
+    token_chars: list[str] = []
+
+    for ch in line:
+        if escaped:
+            if in_quotes:
+                token_chars.append(ch)
+            escaped = False
+            continue
+        if ch == "\\" and in_quotes:
+            escaped = True
+            token_chars.append(ch)
+            continue
+        if ch == '"':
+            if in_quotes:
+                tokens.append("".join(token_chars))
+                token_chars.clear()
+                in_quotes = False
+            else:
+                in_quotes = True
+            continue
+        if in_quotes:
+            token_chars.append(ch)
+        elif ch == "{":
+            open_braces += 1
+        elif ch == "}":
+            close_braces += 1
+    return tokens, open_braces, close_braces
+
+
+def prune_appworkshop_acf(
+    acf_path: Path,
+    content_app_dir: Path | None,
+    remove_ids: set[str] | None = None,
+) -> bool:
+    """Prune missing or removed Workshop IDs and dirty flags from ``appworkshop_<appid>.acf``.
+
+    Returns True if the manifest was modified or removed.
+    """
+    if acf_path.is_symlink():
+        acf_path.unlink(missing_ok=True)
+        return True
+    if not acf_path.is_file():
+        return False
+
+    try:
+        original = acf_path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return False
+
+    remove_set = {str(w).strip() for w in (remove_ids or set()) if str(w).strip()}
+    valid_cache: dict[str, bool] = {}
+
+    def _keep_item(wid: str) -> bool:
+        if wid in remove_set or content_app_dir is None:
+            return False
+        cached = valid_cache.get(wid)
+        if cached is not None:
+            return cached
+        item_dir = content_app_dir / wid
+        try:
+            ok = (
+                not item_dir.is_symlink()
+                and item_dir.is_dir()
+                and any(True for _ in item_dir.iterdir())
+            )
+        except OSError:
+            ok = False
+        valid_cache[wid] = ok
+        return ok
+
+    output_lines: list[str] = []
+    stack: list[str] = []
+    pending_key: str | None = None
+    pending_line: str | None = None
+    skip_depth: int | None = None
+    kept_installed = 0
+    changed = False
+    unbalanced = False
+
+    def _flush_pending() -> None:
+        nonlocal pending_key, pending_line
+        if pending_line is not None:
+            output_lines.append(pending_line)
+            pending_line = None
+        pending_key = None
+
+    for line in original.splitlines(keepends=True):
+        tokens, opens, closes = _scan_vdf_line(line)
+
+        if skip_depth is not None:
+            for _ in range(opens):
+                stack.append("_skip")
+            for _ in range(closes):
+                if not stack:
+                    unbalanced = True
+                    break
+                stack.pop()
+                if len(stack) == skip_depth:
+                    skip_depth = None
+            changed = True
+            if unbalanced:
+                break
+            continue
+
+        if pending_line is not None and opens > 0 and not tokens:
+            if (
+                len(stack) == 2
+                and stack[0] == "AppWorkshop"
+                and stack[1] in _WORKSHOP_ITEM_SECTIONS
+                and pending_key is not None
+                and not _keep_item(pending_key)
+            ):
+                skip_depth = len(stack)
+                stack.append(pending_key)
+                pending_key = None
+                pending_line = None
+                changed = True
+                for _ in range(opens - 1):
+                    stack.append("_sub")
+                for _ in range(closes):
+                    if not stack:
+                        unbalanced = True
+                        break
+                    stack.pop()
+                    if skip_depth is not None and len(stack) == skip_depth:
+                        skip_depth = None
+                if unbalanced:
+                    break
+                continue
+            if (
+                len(stack) == 2
+                and stack[0] == "AppWorkshop"
+                and stack[1] == "WorkshopItemsInstalled"
+            ):
+                kept_installed += 1
+            output_lines.append(pending_line)
+            pending_line = None
+            section = pending_key or "_anon"
+            pending_key = None
+            stack.append(section)
+            for _ in range(opens - 1):
+                stack.append("_sub")
+            for _ in range(closes):
+                if not stack:
+                    unbalanced = True
+                    break
+                stack.pop()
+            output_lines.append(line)
+            if unbalanced:
+                break
+            continue
+
+        if pending_line is not None and not line.strip():
+            pending_line += line
+            continue
+
+        if pending_line is not None:
+            _flush_pending()
+
+        if (
+            len(tokens) == 1
+            and opens == 1
+            and closes == 0
+            and len(stack) == 2
+            and stack[0] == "AppWorkshop"
+            and stack[1] in _WORKSHOP_ITEM_SECTIONS
+            and not _keep_item(tokens[0])
+        ):
+            skip_depth = len(stack)
+            stack.append(tokens[0])
+            changed = True
+            continue
+
+        if len(tokens) == 1 and opens == 0 and closes == 0:
+            pending_key = tokens[0]
+            pending_line = line
+            continue
+
+        if (
+            len(stack) == 1
+            and stack[0] == "AppWorkshop"
+            and len(tokens) == 2
+            and opens == 0
+            and closes == 0
+            and tokens[0] in {"NeedsUpdate", "NeedsDownload"}
+        ):
+            if tokens[1] != "0":
+                indent = line[: len(line) - len(line.lstrip(" \t"))]
+                newline = "\r\n" if line.endswith("\r\n") else ("\n" if line.endswith("\n") else "")
+                line = f'{indent}"{tokens[0]}"\t\t"0"{newline}'
+                changed = True
+            output_lines.append(line)
+            continue
+
+        if (
+            len(stack) == 3
+            and stack[0] == "AppWorkshop"
+            and stack[1] == "WorkshopItemDetails"
+            and len(tokens) == 2
+            and opens == 0
+            and closes == 0
+            and tokens[0] in {"BytesDownloaded", "BytesToDownload"}
+        ):
+            changed = True
+            continue
+
+        if (
+            len(tokens) == 1
+            and opens == 1
+            and len(stack) == 2
+            and stack[0] == "AppWorkshop"
+            and stack[1] == "WorkshopItemsInstalled"
+            and closes == 0
+        ):
+            kept_installed += 1
+
+        for i in range(opens):
+            stack.append(tokens[0] if i == 0 and tokens else "_sub")
+        for _ in range(closes):
+            if not stack:
+                unbalanced = True
+                break
+            stack.pop()
+        if unbalanced:
+            break
+        output_lines.append(line)
+
+    _flush_pending()
+
+    if unbalanced or stack or skip_depth is not None or kept_installed == 0:
+        acf_path.unlink(missing_ok=True)
+        return True
+
+    new_text = "".join(output_lines)
+    if not changed and new_text == original:
+        return False
+
+    tmp_fd, tmp_name = tempfile.mkstemp(prefix=".acf_prune_", dir=str(acf_path.parent))
+    try:
+        with os.fdopen(tmp_fd, "w", encoding="utf-8", newline="") as fh:
+            fh.write(new_text)
+        os.replace(tmp_name, acf_path)
+    except Exception:
+        Path(tmp_name).unlink(missing_ok=True)
+        raise
+    return True
+
+
+def _safe_existing_subdir(root: Path, *parts: str) -> Path | None:
+    cur = root
+    for part in parts:
+        cur = cur / part
+        if cur.is_symlink() or not cur.exists():
+            return None
+    return cur if cur.is_dir() else None
+
+
+def _remove_path_if_present(target: Path) -> None:
+    if target.is_symlink() or target.is_file():
+        target.unlink(missing_ok=True)
+    elif target.is_dir():
+        shutil.rmtree(target, ignore_errors=True)
+
+
+def cleanup_workshop_state(
+    install_dir: str | Path,
+    workshop_app_id: str,
+    remove_ids: set[str] | None = None,
+) -> None:
+    """Clean stale SteamCMD Workshop temp probes and prune ``appworkshop_<appid>.acf``."""
+    root = Path(install_dir)
+    if root.is_symlink() or not root.is_dir():
+        return
+
+    app_id = str(workshop_app_id).strip()
+    temp_dir = _safe_existing_subdir(root, "steamapps", "workshop", "temp")
+    if temp_dir is not None:
+        for entry in list(temp_dir.iterdir()):
+            _remove_path_if_present(entry)
+
+    probe_dirs: list[Path] = []
+    steam_dir = _safe_existing_subdir(root, "Steam")
+    if steam_dir is not None:
+        probe_dirs.append(steam_dir)
+    downloads_root = _safe_existing_subdir(root, "steamapps", "workshop", "downloads")
+    if downloads_root is not None:
+        probe_dirs.append(downloads_root)
+        if app_id:
+            app_dl = _safe_existing_subdir(root, "steamapps", "workshop", "downloads", app_id)
+            if app_dl is not None:
+                probe_dirs.append(app_dl)
+        for wid in remove_ids or set():
+            if wid and app_id:
+                wid_dl = _safe_existing_subdir(
+                    root, "steamapps", "workshop", "downloads", app_id, str(wid).strip()
+                )
+                if wid_dl is not None:
+                    _remove_path_if_present(wid_dl)
+
+    for probe_dir in probe_dirs:
+        for probe in list(probe_dir.glob(".temp_write_*")):
+            _remove_path_if_present(probe)
+
+    if app_id:
+        workshop_dir = _safe_existing_subdir(root, "steamapps", "workshop")
+        if workshop_dir is not None:
+            content_app_dir = _safe_existing_subdir(
+                root, "steamapps", "workshop", "content", app_id
+            )
+            prune_appworkshop_acf(
+                workshop_dir / f"appworkshop_{app_id}.acf",
+                content_app_dir,
+                remove_ids=remove_ids,
+            )
+
+
+def _extract_workshop_targets(steam_args: list[str]) -> tuple[str | None, list[str]]:
+    """Return ``(workshop_app_id, item_ids)`` parsed from ``+workshop_download_item`` args."""
+    app_id: str | None = None
+    item_ids: list[str] = []
+    seen: set[str] = set()
+    for idx, arg in enumerate(steam_args):
+        if arg == "+workshop_download_item" and idx + 2 < len(steam_args):
+            cand_app = str(steam_args[idx + 1]).strip()
+            cand_item = str(steam_args[idx + 2]).strip()
+            if cand_app.isdigit() and app_id is None:
+                app_id = cand_app
+            if cand_item.isdigit() and cand_item not in seen:
+                seen.add(cand_item)
+                item_ids.append(cand_item)
+    return app_id, item_ids
+
+
+def _build_workshop_acf_reconcile_cmd(data_dir: str, workshop_app_id: str, item_ids: list[str]) -> str:
+    """Build an in-container shell command that reconciles ``appworkshop_<appid>.acf`` via perl."""
+    q_sa = shlex.quote(f"{data_dir}/steamapps")
+    q_ws = shlex.quote(f"{data_dir}/steamapps/workshop")
+    q_cnt = shlex.quote(f"{data_dir}/steamapps/workshop/content")
+    q_acf = shlex.quote(f"{data_dir}/steamapps/workshop/appworkshop_{workshop_app_id}.acf")
+    q_cdir = shlex.quote(f"{data_dir}/steamapps/workshop/content/{workshop_app_id}")
+    q_pl = shlex.quote(_WORKSHOP_ACF_PERL_SCRIPT)
+    q_ids = shlex.quote(",".join(item_ids))
+    return (
+        f"_acf={q_acf}; _cdir={q_cdir}; "
+        f"if [ -L $_acf ] || [ -L {q_sa} ] || [ -L {q_ws} ]; then rm -f $_acf 2>/dev/null || true; "
+        f"elif [ -f $_acf ] && command -v perl >/dev/null 2>&1; then "
+        f"[ -L {q_cnt} ] || [ -L $_cdir ] && _cdir=''; "
+        f"perl -e {q_pl} \"$_acf\" \"$_cdir\" {q_ids} || rm -f $_acf 2>/dev/null || true; "
+        "fi; "
+    )
 
 
 def _build_steamcmd_bash_command(steam_args: list[str], chown_uid: int, chown_gid: int) -> list[str]:
@@ -44,30 +516,39 @@ def _build_steamcmd_bash_command(steam_args: list[str], chown_uid: int, chown_gi
     Nach dem Lauf chown'en wir /data zurück auf die msm-Host-UID, damit das
     Panel als unprivilegierter User weiterarbeiten kann.
 
-    Zusätzlich: Vor dem SteamCMD-Lauf werden stale downloading/ und temp/
-    Reste für alle Apps im Server-Ordner entfernt. Das verhindert "state is
-    0x202/0x226 after update job" durch Dateiblockaden von vorherigen
-    fehlgeschlagenen Jobs (häufig bei SCUM und anderen großen Windows-Servern
-    via Wine/Proton).
+    Zusätzlich: Vor dem SteamCMD-Lauf werden stale downloading/, temp/,
+    `.temp_write_*`-Probes und defekte `appworkshop_<appid>.acf`-Einträge
+    bereinigt. Das verhindert "state is 0x202/0x226 after update job" sowie
+    Workshop-"Missing game files"-Fehler nach fehlgeschlagenen Jobs.
     """
     from games import base as _base
 
     data_dir = _base.CONTAINER_DATA_DIR
     quoted = " ".join(shlex.quote(a) for a in steam_args)
+    q_data = shlex.quote(data_dir)
     # KISS-Cleanup: stale Steam partials sind immer nur von fehlgeschlagenen
     # vorherigen Jobs. Löschen ist sicher (keine Nutzerdaten) und löst
-    # den häufigsten Grund für 0x2xx State-Fehler nach App-Update.
+    # 0x2xx-State-Fehler sowie stale Workshop-Staging/.temp_write_*-Reste.
     cleanup = (
-        f"rm -rf {shlex.quote(data_dir)}/steamapps/downloading/* "
-        f"{shlex.quote(data_dir)}/steamapps/temp/* 2>/dev/null || true; "
+        f"rm -rf {q_data}/steamapps/downloading/* "
+        f"{q_data}/steamapps/temp/* "
+        f"{q_data}/Steam/.temp_write_* "
+        f"{q_data}/steamapps/workshop/temp/* "
+        f"{q_data}/steamapps/workshop/downloads/*/* "
+        f"{q_data}/steamapps/workshop/downloads/.temp_write_* "
+        f"{q_data}/steamapps/workshop/downloads/*/.temp_write_* "
+        "2>/dev/null || true; "
     )
+    workshop_app_id, workshop_item_ids = _extract_workshop_targets(steam_args)
+    if workshop_app_id:
+        cleanup += _build_workshop_acf_reconcile_cmd(data_dir, workshop_app_id, workshop_item_ids)
     script = (
         cleanup +
         "_stdbuf=''; command -v stdbuf >/dev/null 2>&1 && _stdbuf='stdbuf -oL -eL'; "
         f"$_stdbuf {shlex.quote(STEAMCMD_BIN)} {quoted}; "
         "rc=$?; "
-        f"chown -R {int(chown_uid)}:{int(chown_gid)} {shlex.quote(data_dir)} 2>/dev/null || true; "
-        f"chmod -R a+rwx {shlex.quote(data_dir)} 2>/dev/null || true; "
+        f"chown -R {int(chown_uid)}:{int(chown_gid)} {q_data} 2>/dev/null || true; "
+        f"chmod -R a+rwx {q_data} 2>/dev/null || true; "
         "exit $rc"
     )
     return ["-c", script]
@@ -717,6 +1198,8 @@ def run_steamcmd_workshop_download_batch(
                 except Exception:
                     pass
 
+    if node is None:
+        cleanup_workshop_state(install_dir, workshop_app_id, remove_ids=set(item_ids))
     uid, gid = _base.docker_service.container_runtime_uid_gid()
     image = steamcmd_image or STEAMCMD_IMAGE
     monitor_thread: threading.Thread | None = None

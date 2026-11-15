@@ -162,3 +162,99 @@ def test_workshop_apply_executes_purge_before(client, auth_headers, servers_dir:
     assert response.status_code == 200, response.text
     assert not (extracted / "HeroMod-LinuxServer.pak").exists()
     assert (servers_dir / "77" / "ConanSandbox" / "Mods" / "HeroMod.pak").read_bytes() == b"new-pak"
+
+
+def test_workshop_cleanup_prunes_appworkshop_acf_and_cleans_temp(
+    client, auth_headers, servers_dir: Path
+) -> None:
+    srv = servers_dir / "78"
+    kept_dir = srv / "steamapps" / "workshop" / "content" / "108600" / "111"
+    kept_dir.mkdir(parents=True)
+    (kept_dir / "mod.txt").write_text("ok", encoding="utf-8")
+
+    gone_dir = srv / "steamapps" / "workshop" / "content" / "108600" / "222"
+    gone_dir.mkdir(parents=True)
+    (gone_dir / "old.txt").write_text("old", encoding="utf-8")
+
+    dl_222 = srv / "steamapps" / "workshop" / "downloads" / "108600" / "222"
+    dl_222.mkdir(parents=True)
+    (dl_222 / "partial.bin").write_bytes(b"123")
+
+    (srv / "Steam").mkdir(parents=True)
+    (srv / "Steam" / ".temp_write_1").write_bytes(b"")
+    (srv / "steamapps" / "workshop" / "downloads" / "108600" / ".temp_write_2").write_bytes(b"")
+    stale_tmp = srv / "steamapps" / "workshop" / "temp" / "108600"
+    stale_tmp.mkdir(parents=True)
+    (stale_tmp / "junk").write_text("x", encoding="utf-8")
+
+    acf_path = srv / "steamapps" / "workshop" / "appworkshop_108600.acf"
+    acf_path.write_text(
+        '"AppWorkshop"\n'
+        '{\n'
+        '\t"appid"\t\t"108600"\n'
+        '\t"NeedsUpdate"\t\t"1"\n'
+        '\t"NeedsDownload"\t\t"1"\n'
+        '\t"WorkshopItemsInstalled"\n'
+        '\t{\n'
+        '\t\t"111"\n'
+        '\t\t{\n'
+        '\t\t\t"size"\t\t"2"\n'
+        '\t\t}\n'
+        '\t\t"222"\n'
+        '\t\t{\n'
+        '\t\t\t"size"\t\t"3"\n'
+        '\t\t}\n'
+        '\t\t"333"\n'
+        '\t\t{\n'
+        '\t\t\t"size"\t\t"4"\n'
+        '\t\t}\n'
+        '\t}\n'
+        '\t"WorkshopItemDetails"\n'
+        '\t{\n'
+        '\t\t"111"\n'
+        '\t\t{\n'
+        '\t\t\t"manifest"\t\t"10"\n'
+        '\t\t\t"BytesDownloaded"\t\t"0"\n'
+        '\t\t\t"BytesToDownload"\t\t"100"\n'
+        '\t\t}\n'
+        '\t\t"222"\n'
+        '\t\t{\n'
+        '\t\t\t"manifest"\t\t"20"\n'
+        '\t\t}\n'
+        '\t\t"333"\n'
+        '\t\t{\n'
+        '\t\t\t"manifest"\t\t"30"\n'
+        '\t\t}\n'
+        '\t}\n'
+        '}\n',
+        encoding="utf-8",
+    )
+
+    resp = client.post(
+        "/files/workshop?server_id=78",
+        json={"workshop_app_id": "108600", "workshop_id": "222", "mode": "cleanup", "actions": []},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200, resp.text
+    assert not gone_dir.exists()
+    assert not dl_222.exists()
+    assert not (srv / "Steam" / ".temp_write_1").exists()
+    assert not (srv / "steamapps" / "workshop" / "downloads" / "108600" / ".temp_write_2").exists()
+    assert list((srv / "steamapps" / "workshop" / "temp").iterdir()) == []
+
+    updated = acf_path.read_text(encoding="utf-8")
+    assert '"111"' in updated
+    assert '"222"' not in updated
+    assert '"333"' not in updated
+    assert 'BytesDownloaded' not in updated
+    assert 'BytesToDownload' not in updated
+    assert '"NeedsUpdate"\t\t"0"' in updated
+    assert '"NeedsDownload"\t\t"0"' in updated
+
+    resp2 = client.post(
+        "/files/workshop?server_id=78",
+        json={"workshop_app_id": "108600", "workshop_id": "111", "mode": "cleanup", "actions": []},
+        headers=auth_headers,
+    )
+    assert resp2.status_code == 200, resp2.text
+    assert not acf_path.exists()

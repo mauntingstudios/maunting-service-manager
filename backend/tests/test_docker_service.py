@@ -1056,6 +1056,121 @@ class TestSteamCMDHelpers:
         script = mock_eph.call_args_list[0].kwargs["command"][1]
         assert "chown -R " in script and "/data" in script
 
+    def test_build_steamcmd_bash_command_reconciles_workshop_acf_and_temps(self):
+        from games.steamcmd_runner import _build_steamcmd_bash_command
+
+        cmd = _build_steamcmd_bash_command(
+            [
+                "+force_install_dir",
+                "/data",
+                "+login",
+                "anonymous",
+                "+workshop_download_item",
+                "108600",
+                "3817555882",
+                "+workshop_download_item",
+                "108600",
+                "3839118549",
+                "+quit",
+            ],
+            chown_uid=1001,
+            chown_gid=1001,
+        )
+        script = cmd[1]
+        assert ".temp_write_*" in script
+        assert "steamapps/workshop/temp/*" in script
+        assert "appworkshop_108600.acf" in script
+        assert "perl -e" in script
+        assert "3817555882,3839118549" in script
+        assert script.count("chown -R ") == 1
+
+    def test_prune_appworkshop_acf_drops_missing_and_dirty_flags(self, tmp_path):
+        from games.steamcmd_runner import prune_appworkshop_acf
+
+        content_dir = tmp_path / "steamapps" / "workshop" / "content" / "108600"
+        (content_dir / "111").mkdir(parents=True)
+        (content_dir / "111" / "mod.txt").write_text("ok", encoding="utf-8")
+        (content_dir / "222").mkdir(parents=True)  # empty dir -> missing/broken
+
+        acf_path = tmp_path / "steamapps" / "workshop" / "appworkshop_108600.acf"
+        acf_path.write_text(
+            '"AppWorkshop"\n'
+            '{\n'
+            '\t"appid"\t\t"108600"\n'
+            '\t"NeedsUpdate"\t\t"1"\n'
+            '\t"NeedsDownload"\t\t"1"\n'
+            '\t"WorkshopItemsInstalled"\n'
+            '\t{\n'
+            '\t\t"111"\n'
+            '\t\t{\n'
+            '\t\t\t"size"\t\t"12"\n'
+            '\t\t}\n'
+            '\t\t"222"\n'
+            '\t\t{\n'
+            '\t\t\t"size"\t\t"0"\n'
+            '\t\t}\n'
+            '\t\t"333"\n'
+            '\t\t{\n'
+            '\t\t\t"size"\t\t"99"\n'
+            '\t\t}\n'
+            '\t}\n'
+            '\t"WorkshopItemDetails"\n'
+            '\t{\n'
+            '\t\t"111"\n'
+            '\t\t{\n'
+            '\t\t\t"manifest"\t\t"abc"\n'
+            '\t\t\t"BytesDownloaded"\t\t"10"\n'
+            '\t\t\t"BytesToDownload"\t\t"20"\n'
+            '\t\t}\n'
+            '\t\t"333"\n'
+            '\t\t{\n'
+            '\t\t\t"manifest"\t\t"def"\n'
+            '\t\t}\n'
+            '\t}\n'
+            '}\n',
+            encoding="utf-8",
+        )
+
+        changed = prune_appworkshop_acf(acf_path, content_dir)
+        assert changed is True
+        text = acf_path.read_text(encoding="utf-8")
+        assert '"111"' in text
+        assert '"222"' not in text
+        assert '"333"' not in text
+        assert 'BytesDownloaded' not in text
+        assert 'BytesToDownload' not in text
+        assert '"NeedsUpdate"\t\t"0"' in text
+        assert '"NeedsDownload"\t\t"0"' in text
+
+        # Explicit remove_ids of last remaining item removes the manifest cleanly.
+        assert prune_appworkshop_acf(acf_path, content_dir, remove_ids={"111"}) is True
+        assert not acf_path.exists()
+
+    def test_run_ephemeral_remote_node_clears_stdout_stderr_when_streaming(self):
+        from types import SimpleNamespace
+        from services import docker_service
+
+        fake_client = SimpleNamespace(
+            run_ephemeral_container=lambda _body: {
+                "ok": True,
+                "stdout": "line-1\nline-2\n",
+                "stderr": "err-1\n",
+                "exit_code": 0,
+            }
+        )
+        streamed: list[str] = []
+        with patch("services.node_client.NodeClient.from_node", return_value=fake_client):
+            res = docker_service.run_ephemeral(
+                image="cm2network/steamcmd:root",
+                command=["+quit"],
+                node=SimpleNamespace(id=99),
+                log_callback=streamed.append,
+            )
+
+        assert streamed == ["line-1\n", "line-2\n", "err-1\n"]
+        assert res["stdout"] == ""
+        assert res["stderr"] == ""
+
 
 class TestUpdateContainerResources:
     """Unit-Tests fuer ``docker_service.update_container_resources``.

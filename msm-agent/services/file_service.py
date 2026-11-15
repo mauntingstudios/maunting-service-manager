@@ -416,6 +416,310 @@ def _workshop_target_ready(root: Path, target: Path) -> bool:
     return True
 
 
+_WORKSHOP_ITEM_SECTIONS = frozenset({"WorkshopItemsInstalled", "WorkshopItemDetails"})
+
+
+def _scan_vdf_line(line: str) -> tuple[list[str], int, int]:
+    """Extract quoted VDF tokens and brace counts outside quotes."""
+    tokens: list[str] = []
+    open_braces = 0
+    close_braces = 0
+    in_quotes = False
+    escaped = False
+    token_chars: list[str] = []
+
+    for ch in line:
+        if escaped:
+            if in_quotes:
+                token_chars.append(ch)
+            escaped = False
+            continue
+        if ch == "\\" and in_quotes:
+            escaped = True
+            token_chars.append(ch)
+            continue
+        if ch == '"':
+            if in_quotes:
+                tokens.append("".join(token_chars))
+                token_chars.clear()
+                in_quotes = False
+            else:
+                in_quotes = True
+            continue
+        if in_quotes:
+            token_chars.append(ch)
+        elif ch == "{":
+            open_braces += 1
+        elif ch == "}":
+            close_braces += 1
+    return tokens, open_braces, close_braces
+
+
+def prune_appworkshop_acf(
+    acf_path: Path,
+    content_app_dir: Path | None,
+    remove_ids: set[str] | None = None,
+) -> bool:
+    """Prune missing or removed Workshop IDs and dirty flags from ``appworkshop_<appid>.acf``.
+
+    Returns True if the manifest was modified or removed.
+    """
+    if acf_path.is_symlink():
+        acf_path.unlink(missing_ok=True)
+        return True
+    if not acf_path.is_file():
+        return False
+
+    try:
+        original = acf_path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return False
+
+    remove_set = {str(w).strip() for w in (remove_ids or set()) if str(w).strip()}
+    valid_cache: dict[str, bool] = {}
+
+    def _keep_item(wid: str) -> bool:
+        if wid in remove_set or content_app_dir is None:
+            return False
+        cached = valid_cache.get(wid)
+        if cached is not None:
+            return cached
+        item_dir = content_app_dir / wid
+        try:
+            ok = (
+                not item_dir.is_symlink()
+                and item_dir.is_dir()
+                and any(True for _ in item_dir.iterdir())
+            )
+        except OSError:
+            ok = False
+        valid_cache[wid] = ok
+        return ok
+
+    output_lines: list[str] = []
+    stack: list[str] = []
+    pending_key: str | None = None
+    pending_line: str | None = None
+    skip_depth: int | None = None
+    kept_installed = 0
+    changed = False
+    unbalanced = False
+
+    def _flush_pending() -> None:
+        nonlocal pending_key, pending_line
+        if pending_line is not None:
+            output_lines.append(pending_line)
+            pending_line = None
+        pending_key = None
+
+    for line in original.splitlines(keepends=True):
+        tokens, opens, closes = _scan_vdf_line(line)
+
+        if skip_depth is not None:
+            for _ in range(opens):
+                stack.append("_skip")
+            for _ in range(closes):
+                if not stack:
+                    unbalanced = True
+                    break
+                stack.pop()
+                if len(stack) == skip_depth:
+                    skip_depth = None
+            changed = True
+            if unbalanced:
+                break
+            continue
+
+        if pending_line is not None and opens > 0 and not tokens:
+            if (
+                len(stack) == 2
+                and stack[0] == "AppWorkshop"
+                and stack[1] in _WORKSHOP_ITEM_SECTIONS
+                and pending_key is not None
+                and not _keep_item(pending_key)
+            ):
+                skip_depth = len(stack)
+                stack.append(pending_key)
+                pending_key = None
+                pending_line = None
+                changed = True
+                for _ in range(opens - 1):
+                    stack.append("_sub")
+                for _ in range(closes):
+                    if not stack:
+                        unbalanced = True
+                        break
+                    stack.pop()
+                    if skip_depth is not None and len(stack) == skip_depth:
+                        skip_depth = None
+                if unbalanced:
+                    break
+                continue
+            if (
+                len(stack) == 2
+                and stack[0] == "AppWorkshop"
+                and stack[1] == "WorkshopItemsInstalled"
+            ):
+                kept_installed += 1
+            output_lines.append(pending_line)
+            pending_line = None
+            section = pending_key or "_anon"
+            pending_key = None
+            stack.append(section)
+            for _ in range(opens - 1):
+                stack.append("_sub")
+            for _ in range(closes):
+                if not stack:
+                    unbalanced = True
+                    break
+                stack.pop()
+            output_lines.append(line)
+            if unbalanced:
+                break
+            continue
+
+        if pending_line is not None and not line.strip():
+            pending_line += line
+            continue
+
+        if pending_line is not None:
+            _flush_pending()
+
+        if (
+            len(tokens) == 1
+            and opens == 1
+            and closes == 0
+            and len(stack) == 2
+            and stack[0] == "AppWorkshop"
+            and stack[1] in _WORKSHOP_ITEM_SECTIONS
+            and not _keep_item(tokens[0])
+        ):
+            skip_depth = len(stack)
+            stack.append(tokens[0])
+            changed = True
+            continue
+
+        if len(tokens) == 1 and opens == 0 and closes == 0:
+            pending_key = tokens[0]
+            pending_line = line
+            continue
+
+        if (
+            len(stack) == 1
+            and stack[0] == "AppWorkshop"
+            and len(tokens) == 2
+            and opens == 0
+            and closes == 0
+            and tokens[0] in {"NeedsUpdate", "NeedsDownload"}
+        ):
+            if tokens[1] != "0":
+                indent = line[: len(line) - len(line.lstrip(" \t"))]
+                newline = "\r\n" if line.endswith("\r\n") else ("\n" if line.endswith("\n") else "")
+                line = f'{indent}"{tokens[0]}"\t\t"0"{newline}'
+                changed = True
+            output_lines.append(line)
+            continue
+
+        if (
+            len(stack) == 3
+            and stack[0] == "AppWorkshop"
+            and stack[1] == "WorkshopItemDetails"
+            and len(tokens) == 2
+            and opens == 0
+            and closes == 0
+            and tokens[0] in {"BytesDownloaded", "BytesToDownload"}
+        ):
+            changed = True
+            continue
+
+        if (
+            len(tokens) == 1
+            and opens == 1
+            and len(stack) == 2
+            and stack[0] == "AppWorkshop"
+            and stack[1] == "WorkshopItemsInstalled"
+            and closes == 0
+        ):
+            kept_installed += 1
+
+        for i in range(opens):
+            stack.append(tokens[0] if i == 0 and tokens else "_sub")
+        for _ in range(closes):
+            if not stack:
+                unbalanced = True
+                break
+            stack.pop()
+        if unbalanced:
+            break
+        output_lines.append(line)
+
+    _flush_pending()
+
+    if unbalanced or stack or skip_depth is not None or kept_installed == 0:
+        acf_path.unlink(missing_ok=True)
+        return True
+
+    new_text = "".join(output_lines)
+    if not changed and new_text == original:
+        return False
+
+    tmp_fd, tmp_name = tempfile.mkstemp(prefix=".acf_prune_", dir=str(acf_path.parent))
+    try:
+        with os.fdopen(tmp_fd, "w", encoding="utf-8", newline="") as fh:
+            fh.write(new_text)
+        os.replace(tmp_name, acf_path)
+    except Exception:
+        Path(tmp_name).unlink(missing_ok=True)
+        raise
+    return True
+
+
+def _remove_path_if_present(target: Path) -> None:
+    if target.is_symlink() or target.is_file():
+        target.unlink(missing_ok=True)
+    elif target.is_dir():
+        shutil.rmtree(target, ignore_errors=True)
+
+
+def _safe_existing_subdir(root: Path, *parts: str) -> Path | None:
+    cur = root
+    for part in parts:
+        cur = cur / part
+        if cur.is_symlink():
+            return None
+        if not cur.exists():
+            return None
+    return cur if cur.is_dir() else None
+
+
+def _clean_workshop_temp_files(root: Path, workshop_app_id: str | None = None) -> None:
+    """Remove leftover SteamCMD temp directories and ``.temp_write_*`` probe files."""
+    temp_dir = _safe_existing_subdir(root, "steamapps", "workshop", "temp")
+    if temp_dir is not None:
+        for entry in list(temp_dir.iterdir()):
+            _remove_path_if_present(entry)
+
+    probe_dirs: list[Path] = []
+    steam_dir = _safe_existing_subdir(root, "Steam")
+    if steam_dir is not None:
+        probe_dirs.append(steam_dir)
+    downloads_root = _safe_existing_subdir(root, "steamapps", "workshop", "downloads")
+    if downloads_root is not None:
+        probe_dirs.append(downloads_root)
+        if workshop_app_id:
+            app_dl = _safe_existing_subdir(root, "steamapps", "workshop", "downloads", str(workshop_app_id))
+            if app_dl is not None:
+                probe_dirs.append(app_dl)
+        else:
+            for app_dir in list(downloads_root.iterdir()):
+                if not app_dir.is_symlink() and app_dir.is_dir():
+                    probe_dirs.append(app_dir)
+
+    for probe_dir in probe_dirs:
+        for probe in list(probe_dir.glob(".temp_write_*")):
+            _remove_path_if_present(probe)
+
+
 def workshop_files(
     server_id: str | int,
     *,
@@ -591,6 +895,17 @@ def workshop_files(
                 cache.unlink(missing_ok=True)
             elif cache.is_dir():
                 shutil.rmtree(cache)
+        _clean_workshop_temp_files(root, str(workshop_app_id))
+        workshop_dir = _safe_existing_subdir(root, "steamapps", "workshop")
+        if workshop_dir is not None:
+            content_app_dir = _safe_existing_subdir(
+                root, "steamapps", "workshop", "content", str(workshop_app_id)
+            )
+            prune_appworkshop_acf(
+                workshop_dir / f"appworkshop_{workshop_app_id}.acf",
+                content_app_dir,
+                remove_ids={str(workshop_id)},
+            )
 
     ready = all(_workshop_target_ready(root, target) for target in unique_targets)
     return {

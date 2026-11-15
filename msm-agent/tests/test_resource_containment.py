@@ -282,3 +282,35 @@ def test_quota_service_applies_resizes_removes_and_fails_closed_when_required(
     monkeypatch.setattr(settings, "require_disk_quota", True, raising=False)
     with pytest.raises(quota_service.DiskQuotaError):
         quota_service.apply_quota(13, 5)
+
+
+def test_seccomp_allows_32bit_steamcmd_syscalls_and_backend_fallback_matches(monkeypatch) -> None:
+    import importlib.util
+    from security import seccomp as agent_seccomp
+
+    profile = agent_seccomp.seccomp_profile_dict()
+    allow_names = {
+        name
+        for rule in profile["syscalls"]
+        if rule.get("action") == "SCMP_ACT_ALLOW"
+        for name in rule.get("names", [])
+    }
+    assert "_llseek" in allow_names
+    assert "_newselect" in allow_names
+
+    backend_seccomp_path = Path(__file__).resolve().parents[2] / "backend" / "security" / "seccomp.py"
+    spec = importlib.util.spec_from_file_location("backend_seccomp_fallback", backend_seccomp_path)
+    assert spec is not None and spec.loader is not None
+    orig_is_file = Path.is_file
+    monkeypatch.setattr(
+        Path,
+        "is_file",
+        lambda self: False
+        if self.as_posix().endswith("msm-agent/security/seccomp.py")
+        else orig_is_file(self),
+    )
+    backend_seccomp = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(backend_seccomp)
+    assert frozenset(backend_seccomp._BASE_ALLOWED_SYSCALLS) == frozenset(
+        agent_seccomp._BASE_ALLOWED_SYSCALLS
+    )

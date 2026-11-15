@@ -1084,6 +1084,7 @@ def run_ephemeral(
             if log_callback is not None and combined:
                 for line in combined.splitlines(keepends=True):
                     log_callback(line)
+                return {**result, "stdout": "", "stderr": ""}
             return result
         except NodeClientError as exc:
             return {"ok": False, "error": exc.message[:500], "stdout": "", "stderr": ""}
