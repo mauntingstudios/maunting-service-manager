@@ -1120,6 +1120,8 @@ ACLEOF
     if [[ -d /opt/msm/servers ]]; then
         chown "$MSM_AGENT_USER:$MSM_SERVERS_GROUP" /opt/msm/servers
         chmod 0710 /opt/msm/servers
+    fi
+    if [[ -d /opt/msm/servers || -d /opt/msm/postgres ]]; then
         python3 - "$MSM_USER" "$MSM_DOCKER_USER" "$MSM_AGENT_USER" "$MSM_SERVERS_GROUP" <<'UIDMAPEOF' || true
 import grp
 import os
@@ -1149,6 +1151,7 @@ try:
     old_host_uid = pwd.getpwnam(old_user).pw_uid
     old_host_gid = pwd.getpwnam(old_user).pw_gid
     new_host_uid = pwd.getpwnam(new_user).pw_uid
+    new_host_gid = pwd.getpwnam(new_user).pw_gid
     servers_gid = grp.getgrnam(servers_group).gr_gid
 except KeyError:
     sys.exit(0)
@@ -1168,30 +1171,38 @@ def map_uid(uid: int) -> int:
         return new_host_uid
     return uid
 
-def map_gid(gid: int) -> int:
+def map_gid(gid: int, host_gid_target: int) -> int:
     if old_g0 <= gid < old_g0 + old_gc:
         return new_g0 + (gid - old_g0)
     if gid == old_host_gid:
-        return servers_gid
+        return host_gid_target
     return gid
 
-base = "/opt/msm/servers"
-for root, dirs, files in os.walk(base, followlinks=False):
-    for name in dirs + files:
-        p = os.path.join(root, name)
-        try:
-            st = os.lstat(p)
-        except OSError:
-            continue
-        nu = map_uid(st.st_uid)
-        ng = map_gid(st.st_gid)
-        if nu != st.st_uid or ng != st.st_gid:
+def remap_tree(base: str, host_gid_target: int, include_root: bool = False) -> None:
+    if not os.path.isdir(base):
+        return
+    for root, dirs, files in os.walk(base, followlinks=False):
+        entries = ([root] if include_root and root == base else []) + [
+            os.path.join(root, name) for name in dirs + files
+        ]
+        for p in entries:
             try:
-                os.lchown(p, nu, ng)
+                st = os.lstat(p)
             except OSError:
-                pass
+                continue
+            nu = map_uid(st.st_uid)
+            ng = map_gid(st.st_gid, host_gid_target)
+            if nu != st.st_uid or ng != st.st_gid:
+                try:
+                    os.lchown(p, nu, ng)
+                except OSError:
+                    pass
+
+remap_tree("/opt/msm/servers", servers_gid, include_root=False)
+# Keep postgres data strictly under msm-docker subUID/subGID (no setfacl / 0700 intact).
+remap_tree("/opt/msm/postgres", new_host_gid, include_root=True)
 UIDMAPEOF
-        if command -v setfacl &>/dev/null; then
+        if [[ -d /opt/msm/servers ]] && command -v setfacl &>/dev/null; then
             for _sd in /opt/msm/servers/*/; do
                 [[ -d "$_sd" && ! -L "${_sd%/}" ]] && setfacl -R -m "u:${MSM_AGENT_USER}:rwX,u:${MSM_DOCKER_USER}:rwX,d:u:${MSM_AGENT_USER}:rwX,d:u:${MSM_DOCKER_USER}:rwX,m::rwx" "$_sd" 2>/dev/null || true
             done
