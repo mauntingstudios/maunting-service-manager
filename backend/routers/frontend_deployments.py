@@ -25,7 +25,23 @@ def _get_frontend_server(server_id: int, db: Session) -> Server:
     return server
 
 
-def _serialize_deployment(row: FrontendDeployment) -> dict[str, Any]:
+def _deployment_url(row: FrontendDeployment, server: Server | None = None, fs=None) -> str | None:
+    if row.url:
+        return row.url
+    if not row.is_live or server is None:
+        return None
+    if row.kind == "production" and fs is not None:
+        return _production_url(server, fs)
+    if row.kind == "preview" and row.port is not None:
+        preview_host = frontend_domain_service.build_preview_subdomain(server, row.branch_slug)
+        if preview_host:
+            return f"https://{preview_host}"
+        ip = server.public_bind_ip or (server.node.public_ip if server.node else None) or "127.0.0.1"
+        return f"http://{ip}:{int(row.port)}"
+    return None
+
+
+def _serialize_deployment(row: FrontendDeployment, *, server: Server | None = None, fs=None) -> dict[str, Any]:
     return {
         "id": row.id,
         "server_id": row.server_id,
@@ -39,7 +55,7 @@ def _serialize_deployment(row: FrontendDeployment) -> dict[str, Any]:
         "status": row.status,
         "is_live": row.is_live,
         "port": row.port,
-        "url": row.url,
+        "url": _deployment_url(row, server=server, fs=fs),
         "error_summary": row.error_summary,
         "created_at": row.created_at.isoformat() if row.created_at else None,
         "started_at": row.started_at.isoformat() if row.started_at else None,
@@ -110,8 +126,8 @@ def get_frontend_overview(
         "previews_enabled": fs.previews_enabled,
         "online": fs.online,
         "production_url": _production_url(server, fs),
-        "production_deployment": _serialize_deployment(prod_live) if prod_live else None,
-        "previews": [_serialize_deployment(p) for p in previews],
+        "production_deployment": _serialize_deployment(prod_live, server=server, fs=fs) if prod_live else None,
+        "previews": [_serialize_deployment(p, server=server, fs=fs) for p in previews],
         "domain": fs.domain,
         "domain_verified": fs.domain_verified,
         "domain_verify_txt_host": f"_msm-verify.{fs.domain}" if fs.domain else None,
@@ -198,13 +214,15 @@ def list_deployments(
     user: User = Depends(get_current_user),
 ) -> list[dict[str, Any]]:
     require_server_permission(user, server_id, db, "server.view")
+    server = _get_frontend_server(server_id, db)
+    fs = db.get(frontend_deploy_service.FrontendSettings, server.id)
     q = db.query(FrontendDeployment).filter(FrontendDeployment.server_id == server_id)
     if branch:
         q = q.filter(FrontendDeployment.branch == branch)
     if kind:
         q = q.filter(FrontendDeployment.kind == kind)
     rows = q.order_by(FrontendDeployment.created_at.desc()).limit(50).all()
-    return [_serialize_deployment(r) for r in rows]
+    return [_serialize_deployment(r, server=server, fs=fs) for r in rows]
 
 
 @router.get("/deployments/{dep_id}/log")
@@ -219,8 +237,39 @@ def get_deployment_log(
     dep = db.get(FrontendDeployment, dep_id)
     if dep is None or dep.server_id != server_id:
         raise HTTPException(status_code=404, detail="Deployment nicht gefunden")
-    content = frontend_deploy_service.read_build_log(server, dep)
+    content = frontend_deploy_service.strip_ansi(frontend_deploy_service.read_build_log(server, dep))
     return {"id": dep.id, "status": dep.status, "log": content}
+
+
+@router.post("/deployments/{dep_id}/cancel")
+def cancel_deployment(
+    server_id: int,
+    dep_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    _: None = Depends(verify_csrf),
+) -> dict[str, Any]:
+    require_server_permission(user, server_id, db, "server.restart")
+    server = _get_frontend_server(server_id, db)
+    dep = db.get(FrontendDeployment, dep_id)
+    if dep is None or dep.server_id != server_id:
+        raise HTTPException(status_code=404, detail="Deployment nicht gefunden")
+    canceled = frontend_deploy_service.cancel_deployment(db, server, dep)
+    db.commit()
+    return _serialize_deployment(canceled)
+
+
+@router.post("/cache/clear")
+def clear_cache(
+    server_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    _: None = Depends(verify_csrf),
+) -> dict[str, Any]:
+    require_server_permission(user, server_id, db, "server.restart")
+    server = _get_frontend_server(server_id, db)
+    frontend_deploy_service.clear_build_cache(server)
+    return {"cleared": True}
 
 
 @router.post("/deployments", status_code=201)

@@ -1097,3 +1097,25 @@ html[data-season="christmas"] .season-logo-christmas {
     animation: msm-blueprint-drilldown-in 180ms cubic-bezier(0.22, 1, 0.36, 1);
   }
 }
+
+/* Native Modal Scroll-Containment (keine Hintergrund-Scrolls unter offenen Dialogen) */
+dialog:modal {
+  overscroll-behavior: contain;
+}
+
+dialog::backdrop {
+  overflow: hidden;
+  overscroll-behavior: contain;
+}
+
+/* Off-screen Deployment-Zeilen verzoegert rendern und Layout lokal isolieren */
+.msm-deferred-card {
+  content-visibility: auto;
+  contain-intrinsic-size: auto none auto 84px;
+}
+
+@supports not (content-visibility: auto) {
+  .msm-deferred-card {
+    contain: layout style paint;
+  }
+}

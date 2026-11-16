@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { Trash2 } from 'lucide-react'
 import { Badge, Button, Input, Spinner, Switch } from '@maunting/ui'
-import { frontendApi, type FrontendOverview } from '@/api/frontend'
+import { frontendApi, type FrontendOverview, type VerifyDomainResponse } from '@/api/frontend'
 import { toast } from '@/stores/toastStore'
 
 interface FrontendSettingsPanelProps {
@@ -21,6 +22,8 @@ export function FrontendSettingsPanel({ serverId, onUpdated }: FrontendSettingsP
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [verifying, setVerifying] = useState(false)
+  const [clearingCache, setClearingCache] = useState(false)
+  const [verifyReport, setVerifyReport] = useState<VerifyDomainResponse | null>(null)
 
   const load = useCallback(async () => {
     try {
@@ -77,6 +80,7 @@ export function FrontendSettingsPanel({ serverId, onUpdated }: FrontendSettingsP
     setVerifying(true)
     try {
       const res = await frontendApi.verifyDomain(serverId)
+      setVerifyReport(res)
       if (res.verified) {
         toast.success(t('frontendDeployments.domainVerified'))
         await load()
@@ -88,6 +92,18 @@ export function FrontendSettingsPanel({ serverId, onUpdated }: FrontendSettingsP
       toast.error(t('frontendDeployments.domainVerifyFailed'))
     } finally {
       setVerifying(false)
+    }
+  }
+
+  const handleClearCache = async () => {
+    setClearingCache(true)
+    try {
+      await frontendApi.clearCache(serverId)
+      toast.success(t('frontendDeployments.cacheCleared', { defaultValue: 'Build-Cache geleert' }))
+    } catch {
+      toast.error(t('frontendDeployments.actionError'))
+    } finally {
+      setClearingCache(false)
     }
   }
 
@@ -150,16 +166,55 @@ export function FrontendSettingsPanel({ serverId, onUpdated }: FrontendSettingsP
         />
 
         {overview?.domain && !overview.domain_verified && overview.domain_verify_txt_host && (
-          <div className="rounded-lg border border-outline-variant/40 bg-surface-container-low p-3 text-xs space-y-1">
+          <div className="rounded-lg border border-outline-variant/40 bg-surface-container-low p-3 text-xs space-y-2">
             <p className="font-medium text-on-surface">{t('frontendDeployments.dnsInstructions')}</p>
             <p className="font-mono break-all">
               TXT {overview.domain_verify_txt_host} → {overview.domain_verify_txt_value}
             </p>
+            {verifyReport && !verifyReport.verified && (
+              <div className="rounded border border-status-warning/40 bg-status-warning/10 p-2 space-y-1 text-on-surface">
+                <p>
+                  TXT-Nachweis:{' '}
+                  <strong className={verifyReport.txt_ok ? 'text-status-success' : 'text-status-destructive'}>
+                    {verifyReport.txt_ok ? 'OK' : 'Fehlt noch'}
+                  </strong>
+                  {' · '}
+                  A-Record:{' '}
+                  <strong className={verifyReport.a_ok ? 'text-status-success' : 'text-status-destructive'}>
+                    {verifyReport.a_ok
+                      ? 'OK'
+                      : `Erwartet ${verifyReport.expected_ip || 'Server-IP'}, gefunden: ${(verifyReport.actual_ips || []).join(', ') || 'keine'}`}
+                  </strong>
+                </p>
+                {verifyReport.caddy_error && (
+                  <p className="text-status-destructive font-mono">{verifyReport.caddy_error}</p>
+                )}
+              </div>
+            )}
             <Button variant="secondary" size="sm" onClick={handleVerifyDomain} disabled={verifying}>
               {verifying ? t('common.loading') : t('frontendDeployments.verifyDomain')}
             </Button>
           </div>
         )}
+      </section>
+
+      <section className="rounded-xl border border-outline-variant/40 bg-surface-container p-4 sm:p-5 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-semibold text-on-surface">
+            {t('frontendDeployments.buildCacheTitle', { defaultValue: 'Build-Cache' })}
+          </h3>
+          <p className="text-xs text-on-surface-variant">
+            {t('frontendDeployments.buildCacheHint', {
+              defaultValue: 'Abhängigkeiten werden pro Server zwischengespeichert, damit wiederholte Builds schneller laufen.',
+            })}
+          </p>
+        </div>
+        <Button variant="secondary" size="sm" onClick={handleClearCache} disabled={clearingCache}>
+          <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+          {clearingCache
+            ? t('common.loading')
+            : t('frontendDeployments.clearCache', { defaultValue: 'Build-Cache leeren' })}
+        </Button>
       </section>
 
       <section className="rounded-xl border border-outline-variant/40 bg-surface-container p-4 sm:p-5 space-y-4">

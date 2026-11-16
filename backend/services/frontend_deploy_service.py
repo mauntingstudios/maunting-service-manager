@@ -5,11 +5,13 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import secrets
 import shutil
 import subprocess
+import threading
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -45,6 +47,43 @@ from services.frontend_caddy_config import (
 logger = logging.getLogger(__name__)
 
 MAX_RETAINED_PRODUCTION_BUILDS = 10
+
+_ACTIVE_BUILD_LOCK = threading.Lock()
+_ACTIVE_BUILD_IDS: set[int] = set()
+_ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
+
+
+def _mark_build_active(deployment_id: int) -> None:
+    with _ACTIVE_BUILD_LOCK:
+        _ACTIVE_BUILD_IDS.add(int(deployment_id))
+
+
+def _mark_build_done(deployment_id: int) -> None:
+    with _ACTIVE_BUILD_LOCK:
+        _ACTIVE_BUILD_IDS.discard(int(deployment_id))
+
+
+def is_build_active(deployment_id: int) -> bool:
+    with _ACTIVE_BUILD_LOCK:
+        return int(deployment_id) in _ACTIVE_BUILD_IDS
+
+
+def strip_ansi(text: str) -> str:
+    return _ANSI_ESCAPE_RE.sub("", text or "")
+
+
+def _extract_git_metadata(log_text: str) -> tuple[str | None, str | None, str | None]:
+    sha: str | None = None
+    author: str | None = None
+    message: str | None = None
+    for line in (log_text or "").splitlines():
+        if line.startswith("MSM_COMMIT_SHA="):
+            sha = line.split("=", 1)[1].strip() or sha
+        elif line.startswith("MSM_COMMIT_AUTHOR="):
+            author = line.split("=", 1)[1].strip() or author
+        elif line.startswith("MSM_COMMIT_MESSAGE="):
+            message = line.split("=", 1)[1].strip() or message
+    return sha, author, message
 
 
 class _AgentStepError(RuntimeError):
@@ -353,8 +392,10 @@ def _run_agent_clone(
         "  export GIT_ASKPASS=/tmp/askpass.sh\n"
         "  export GIT_TERMINAL_PROMPT=0\n"
         "fi\n"
-        'git clone --progress --depth 1 --branch "$GIT_BRANCH" "$GIT_REPO_URL" "$DEST"\n'
+        'git clone --depth 1 --branch "$GIT_BRANCH" "$GIT_REPO_URL" "$DEST"\n'
         'printf "MSM_COMMIT_SHA=%s\\n" "$(git -C "$DEST" rev-parse HEAD)"\n'
+        'printf "MSM_COMMIT_AUTHOR=%s\\n" "$(git -C "$DEST" log -1 --pretty=%an 2>/dev/null || true)"\n'
+        'printf "MSM_COMMIT_MESSAGE=%s\\n" "$(git -C "$DEST" log -1 --pretty=%s 2>/dev/null || true)"\n'
     )
     script = _wrap_script_with_live_log(core_script, log_rel_path)
     env = {"GIT_REPO_URL": clean_url, "GIT_BRANCH": branch}
@@ -459,9 +500,10 @@ def _run_agent_node_build(
 
     has_custom_cmds = "1" if (install_command or build_command) else "0"
     core_script = (
+        'mkdir -p /srv/_build_cache/npm /srv/_build_cache/pnpm /srv/_build_cache/yarn\n'
         f'cd "{proj}"\n'
         f'if [ -f package.json ] || [ "{has_custom_cmds}" = "1" ]; then\n'
-        '  echo "[MSM] === Dependencies installieren ==="\n'
+        '  echo "[MSM] === Dependencies installieren (inkl. Build-Cache) ==="\n'
         f'  {install_cmd}\n'
         f'  {build_block}\n'
         'else\n'
@@ -490,7 +532,12 @@ def _run_agent_node_build(
     build_env: dict[str, str] = {
         "CI": "true",
         "FORCE_COLOR": "0",
+        "NO_COLOR": "1",
         "NPM_CONFIG_LOGLEVEL": "info",
+        "NPM_CONFIG_PROGRESS": "false",
+        "NPM_CONFIG_CACHE": "/srv/_build_cache/npm",
+        "PNPM_STORE_DIR": "/srv/_build_cache/pnpm",
+        "YARN_CACHE_FOLDER": "/srv/_build_cache/yarn",
     }
     if env_vars:
         build_env.update(env_vars)
@@ -735,7 +782,22 @@ def _clone_repo(
         timeout=30,
     )
     sha = sha_res.stdout.strip() if sha_res.returncode == 0 else None
-    return sha, (res.stdout or "") + "\n" + (res.stderr or "")
+    meta_lines: list[str] = []
+    for key, fmt in (("MSM_COMMIT_AUTHOR", "%an"), ("MSM_COMMIT_MESSAGE", "%s")):
+        try:
+            r = subprocess.run(
+                ["git", "-C", str(dest), "log", "-1", f"--pretty={fmt}"],
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if r.returncode == 0 and r.stdout.strip():
+                meta_lines.append(f"{key}={r.stdout.strip()}")
+        except Exception:
+            pass
+    meta_suffix = ("\n" + "\n".join(meta_lines)) if meta_lines else ""
+    return sha, ((res.stdout or "") + "\n" + (res.stderr or "") + meta_suffix)
 
 
 def run_build(
@@ -755,6 +817,7 @@ def run_build(
         raise HTTPException(status_code=400, detail="Server ist kein GitHub-Frontend")
 
     quota = resolve_build_quota(db, actor_user_id)
+    _mark_build_active(dep.id)
     dep.status = "building"
     dep.started_at = _now()
 
@@ -792,8 +855,14 @@ def run_build(
             )
         full_log += clone_log + "\n"
         _write_server_text(server, log_rel_path, _mask_secret_values(full_log, secrets_to_mask))
-        if sha and not dep.commit_sha:
-            dep.commit_sha = sha
+        meta_sha, meta_author, meta_msg = _extract_git_metadata(clone_log)
+        if (sha or meta_sha) and not dep.commit_sha:
+            dep.commit_sha = (sha or meta_sha or "")[:64]
+        if meta_author and not dep.commit_author:
+            dep.commit_author = meta_author[:128]
+        if meta_msg and not dep.commit_message:
+            dep.commit_message = meta_msg[:255]
+        db.flush()
 
         scope = "production" if dep.kind == "production" else "preview"
         merged_env = dict(bp.frontend.env)
@@ -854,6 +923,14 @@ def run_build(
                 shutil.rmtree(release_dir, ignore_errors=True)
             shutil.copytree(build_res.output_dir, release_dir)
 
+        current_status = db.scalar(
+            select(FrontendDeployment.status).where(FrontendDeployment.id == dep.id)
+        )
+        if current_status == "canceled":
+            dep.status = "canceled"
+            full_log += "\n[MSM] Build wurde abgebrochen — Deployment wird nicht aktiviert.\n"
+            return dep
+
         _activate_deployment(db, server, dep, release_dir, bp)
         full_log += f"\n[MSM] Deployment #{dep.id} ist live.\n"
         dep.status = "ready"
@@ -870,8 +947,9 @@ def run_build(
         dep.error_summary = summary[:1000]
         full_log += f"\n[FEHLER] {summary}\n"
     finally:
+        _mark_build_done(dep.id)
         try:
-            _write_server_text(server, log_rel_path, _mask_secret_values(full_log, secrets_to_mask))
+            _write_server_text(server, log_rel_path, _mask_secret_values(strip_ansi(full_log), secrets_to_mask))
         except Exception as log_exc:
             logger.warning("Build-Log fuer Deployment %s nicht schreibbar: %s", dep.id, log_exc)
         if not use_agent and work_src.exists():
@@ -1246,7 +1324,7 @@ def set_online(db: Session, server: Server, online: bool) -> FrontendSettings:
 
 def trigger_async_build(deployment_id: int, *, actor_user_id: int | None = None) -> None:
     """Startet einen Frontend-Build asynchron in einem eigenen Daemon-Thread."""
-    import threading
+    _mark_build_active(deployment_id)
 
     def _worker() -> None:
         from database import SessionLocal
@@ -1259,6 +1337,7 @@ def trigger_async_build(deployment_id: int, *, actor_user_id: int | None = None)
             session.rollback()
             logger.exception("Asynchroner Frontend-Build %s fehlgeschlagen: %s", deployment_id, exc)
         finally:
+            _mark_build_done(deployment_id)
             session.close()
 
     threading.Thread(
@@ -1266,3 +1345,93 @@ def trigger_async_build(deployment_id: int, *, actor_user_id: int | None = None)
         name=f"frontend-build-{deployment_id}",
         daemon=True,
     ).start()
+
+
+def reconcile_orphaned_frontend_deployments(db: Session, *, max_age_hours: int = 2) -> int:
+    """Bereinigt verwaiste Builds in 'queued'/'building' ohne laufenden Worker-Thread."""
+    stale = (
+        db.query(FrontendDeployment)
+        .filter(FrontendDeployment.status.in_(("queued", "building")))
+        .all()
+    )
+    now = _now()
+    cutoff = now - timedelta(hours=max_age_hours)
+    changed = 0
+    for dep in stale:
+        if is_build_active(dep.id):
+            continue
+        created = dep.started_at or dep.created_at
+        if created is not None and created.tzinfo is None:
+            created = created.replace(tzinfo=timezone.utc)
+        # Beim Worker-Start (max_age_hours=0) sofort alles Verwaiste auf failed setzen;
+        # im laufenden Betrieb nur Builds jenseits des Timeout-Fensters.
+        if max_age_hours > 0 and created is not None and created > cutoff:
+            continue
+        dep.status = "failed"
+        dep.is_live = False
+        dep.finished_at = now
+        if not dep.error_summary:
+            dep.error_summary = "Build durch Dienst-Neustart unterbrochen"
+        changed += 1
+    if changed:
+        db.commit()
+    return changed
+
+
+def cancel_deployment(db: Session, server: Server, dep: FrontendDeployment) -> FrontendDeployment:
+    """Bricht einen wartenden oder laufenden Build als 'canceled' ab."""
+    if dep.status not in ("queued", "building"):
+        raise HTTPException(status_code=400, detail="Nur laufende oder wartende Builds koennen abgebrochen werden")
+    dep.status = "canceled"
+    dep.is_live = False
+    dep.finished_at = _now()
+    dep.error_summary = "Build manuell abgebrochen"
+    _mark_build_done(dep.id)
+    db.flush()
+    return dep
+
+
+def clear_build_cache(server: Server) -> None:
+    """Leert den server-eigenen Dependency-Cache (_build_cache) sauber."""
+    if _use_agent_fs(server):
+        from services.node_capacity import agent_server_key
+        from services.node_client import NodeClient
+
+        try:
+            NodeClient.from_node(server.node).files_delete(
+                agent_server_key(server.id, server.install_dir),
+                "_build_cache",
+            )
+        except Exception:
+            pass
+        return
+    cache_dir = Path(server.install_dir) / "_build_cache"
+    if cache_dir.exists():
+        shutil.rmtree(cache_dir, ignore_errors=True)
+
+
+def get_active_frontend_builds_map(db: Session, server_ids: list[int]) -> dict[int, dict[str, Any]]:
+    """Liefert aktive Frontend-Builds ('queued'/'building') fuer mehrere Server in einer Query."""
+    if not server_ids:
+        return {}
+    rows = (
+        db.query(FrontendDeployment)
+        .filter(
+            FrontendDeployment.server_id.in_(server_ids),
+            FrontendDeployment.status.in_(("queued", "building")),
+        )
+        .order_by(FrontendDeployment.created_at.desc())
+        .all()
+    )
+    out: dict[int, dict[str, Any]] = {}
+    for row in rows:
+        if row.server_id in out:
+            continue
+        out[row.server_id] = {
+            "id": row.id,
+            "branch": row.branch,
+            "status": row.status,
+            "kind": row.kind,
+            "started_at": row.started_at,
+        }
+    return out

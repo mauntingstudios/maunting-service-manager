@@ -198,26 +198,40 @@ def _server_response(server: Server) -> ServerResponse:
 
 @router.get("", response_model=list[ServerResponse])
 def list_servers(db: Session = Depends(get_db), user: User = Depends(get_current_user)) -> list[ServerResponse]:
+    from services.frontend_deploy_service import get_active_frontend_builds_map
+
     servers = permission_service.list_visible_servers(db, user)
     # Ein Batch-Query fuer alle Kundenserver — kein Lookup je Server, die
     # Liste wird alle fuenf Sekunden abgefragt.
     hoster_ids = permission_service.hoster_customer_server_ids(db)
+    active_builds = get_active_frontend_builds_map(db, [s.id for s in servers])
     responses = []
     for s in servers:
         data = _server_response(s)
         data.is_hoster_managed = s.id in hoster_ids
+        if s.id in active_builds:
+            from schemas.server import FrontendBuildBadge
+
+            data.active_frontend_build = FrontendBuildBadge(**active_builds[s.id])
         responses.append(data)
     return responses
 
 
 @router.get("/{server_id}", response_model=ServerResponse)
 def get_server(server_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)) -> ServerResponse:
+    from services.frontend_deploy_service import get_active_frontend_builds_map
+
     require_server_permission(user, server_id, db, "server.view")
     server = db.query(Server).filter(Server.id == server_id).first()
     if not server:
         raise HTTPException(status_code=404, detail="Server nicht gefunden")
     data = _server_response(server)
     data.is_hoster_managed = permission_service.is_hoster_customer_server(db, server_id)
+    active_builds = get_active_frontend_builds_map(db, [server_id])
+    if server_id in active_builds:
+        from schemas.server import FrontendBuildBadge
+
+        data.active_frontend_build = FrontendBuildBadge(**active_builds[server_id])
     return data
 
 

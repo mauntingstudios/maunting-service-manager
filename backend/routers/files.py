@@ -110,7 +110,15 @@ def _get_server(server_id: int, db: Session) -> Server:
     return server
 
 
-_GITHUB_FRONTEND_READONLY_PREFIXES = ("current", "previews", "deployments", "build-logs", "Caddyfile")
+_GITHUB_FRONTEND_READONLY_PREFIXES = (
+    "current",
+    "previews",
+    "deployments",
+    "build-logs",
+    "Caddyfile",
+    "_build_src",
+    "_build_cache",
+)
 
 
 def _assert_frontend_writable(server: Server, *rel_paths: str) -> None:

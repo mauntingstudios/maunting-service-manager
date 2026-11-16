@@ -91,6 +91,13 @@ export interface Server {
   guardian_transition_timestamp?: string | null
   guardian_sync_error_statistics?: string | null
   guardian_quarantine_clear_pending?: boolean
+  active_frontend_build?: {
+    id: number
+    branch: string
+    status: string
+    kind: string
+    started_at?: string | null
+  } | null
 }
 
 export interface GuardianAttempt {

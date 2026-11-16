@@ -47,6 +47,18 @@ export interface FrontendSettingsPatch {
   env_preview?: Record<string, string>
 }
 
+export interface VerifyDomainResponse {
+  verified: boolean
+  txt_ok: boolean
+  a_ok: boolean
+  actual_ips?: string[]
+  expected_ip?: string | null
+  expected_txt_host?: string
+  expected_txt_value?: string
+  caddy_applied?: boolean
+  caddy_error?: string | null
+}
+
 export const frontendApi = {
   getOverview: (serverId: number) =>
     api<FrontendOverview>(`/servers/${serverId}/frontend`),
@@ -58,7 +70,7 @@ export const frontendApi = {
     }),
 
   verifyDomain: (serverId: number) =>
-    api<{ verified: boolean; txt_ok: boolean; a_ok: boolean }>(
+    api<VerifyDomainResponse>(
       `/servers/${serverId}/frontend/domain/verify`,
       { method: 'POST' },
     ),
@@ -83,6 +95,16 @@ export const frontendApi = {
     api<FrontendDeployment>(`/servers/${serverId}/frontend/deployments`, {
       method: 'POST',
       body: JSON.stringify(branch ? { branch } : {}),
+    }),
+
+  cancelDeployment: (serverId: number, depId: number) =>
+    api<FrontendDeployment>(`/servers/${serverId}/frontend/deployments/${depId}/cancel`, {
+      method: 'POST',
+    }),
+
+  clearCache: (serverId: number) =>
+    api<{ cleared: boolean }>(`/servers/${serverId}/frontend/cache/clear`, {
+      method: 'POST',
     }),
 
   promoteDeployment: (serverId: number, depId: number) =>

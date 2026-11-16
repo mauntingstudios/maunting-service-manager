@@ -22,6 +22,31 @@ logger = logging.getLogger(__name__)
 _DOMAIN_RE = re.compile(
     r"^(?=.{3,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$"
 )
+_RESERVED_DOMAIN_SUFFIXES = (
+    ".local",
+    ".localhost",
+    ".internal",
+    ".localdomain",
+    ".arpa",
+    ".invalid",
+    ".example",
+)
+
+
+def _panel_own_hostname() -> str | None:
+    try:
+        from urllib.parse import urlparse
+
+        from config import settings
+
+        raw = (PanelSettingsService.get("panel_url", "") or getattr(settings, "panel_url", "") or "").strip()
+        if not raw:
+            return None
+        parsed = urlparse(raw if "://" in raw else f"https://{raw}")
+        host = (parsed.hostname or "").strip().lower().rstrip(".")
+        return host or None
+    except Exception:
+        return None
 
 
 def resolve_operator_preview_base_domain() -> str | None:
@@ -51,6 +76,11 @@ def normalize_domain(raw: str | None) -> str | None:
         return None
     if not _DOMAIN_RE.match(cleaned):
         raise HTTPException(status_code=400, detail="Ungültiger Domainname (nur Hostname ohne http:// oder Port).")
+    if cleaned == "localhost" or any(cleaned.endswith(sfx) for sfx in _RESERVED_DOMAIN_SUFFIXES):
+        raise HTTPException(status_code=400, detail="Lokale oder reservierte Domains sind nicht zulässig.")
+    panel_host = _panel_own_hostname()
+    if panel_host and cleaned == panel_host:
+        raise HTTPException(status_code=400, detail="Die Panel-Domain kann nicht als Projekt-Domain verwendet werden.")
     return cleaned
 
 
@@ -87,14 +117,26 @@ def set_custom_domain(db: Session, server: Server, raw_domain: str | None) -> Fr
 
 
 def _default_lookup_a(domain: str) -> list[str]:
+    ips: set[str] = set()
     try:
         infos = socket.getaddrinfo(domain, None, family=socket.AF_INET)
-        return sorted({info[4][0] for info in infos})
+        ips.update(info[4][0] for info in infos)
     except OSError:
-        return []
+        pass
+    if not ips:
+        try:
+            import dns.resolver
+
+            answers = dns.resolver.resolve(domain, "A", lifetime=4.0)
+            for rdata in answers:
+                ips.add(rdata.to_text().strip())
+        except Exception:
+            pass
+    return sorted(ips)
 
 
 def _default_lookup_txt(name: str) -> list[str]:
+    records: list[str] = []
     try:
         res = subprocess.run(
             ["dig", "+short", "TXT", name],
@@ -103,10 +145,27 @@ def _default_lookup_txt(name: str) -> list[str]:
             timeout=5,
         )
         if res.returncode == 0 and res.stdout.strip():
-            return [line.strip().strip('"') for line in res.stdout.splitlines() if line.strip()]
+            for line in res.stdout.splitlines():
+                cleaned = line.strip().strip('"').replace('" "', "")
+                if cleaned:
+                    records.append(cleaned)
     except Exception:
         pass
-    return []
+    if not records:
+        try:
+            import dns.resolver
+
+            answers = dns.resolver.resolve(name, "TXT", lifetime=4.0)
+            for rdata in answers:
+                txt = "".join(
+                    part.decode("utf-8", errors="replace") if isinstance(part, bytes) else str(part)
+                    for part in getattr(rdata, "strings", ())
+                ).strip()
+                if txt:
+                    records.append(txt)
+        except Exception:
+            pass
+    return records
 
 
 def _expected_server_ip(server: Server) -> str | None:
@@ -133,11 +192,11 @@ def verify_custom_domain(
 
     expected_txt = f"msm-verify={fs.domain_verify_token}"
     txt_records = txt_fn(f"_msm-verify.{fs.domain}")
-    txt_ok = any(expected_txt in rec for rec in txt_records)
+    txt_ok = any(rec.strip().strip('"') == expected_txt for rec in txt_records)
 
     a_records = a_fn(fs.domain)
     expected_ip = _expected_server_ip(server)
-    a_ok = bool(a_records) and (expected_ip is None or expected_ip in a_records)
+    a_ok = bool(expected_ip) and bool(a_records) and (expected_ip in a_records)
 
     if not txt_ok or not a_ok:
         fs.domain_verified = False
@@ -146,6 +205,7 @@ def verify_custom_domain(
             "verified": False,
             "txt_ok": txt_ok,
             "a_ok": a_ok,
+            "actual_ips": a_records,
             "expected_txt_host": f"_msm-verify.{fs.domain}",
             "expected_txt_value": expected_txt,
             "expected_ip": expected_ip,
@@ -160,11 +220,25 @@ def verify_custom_domain(
         server_name=server.name,
     )
     apply_res = caddy_service.apply_vhost(server.id, vhost_cfg, node=server.node)
+    if not apply_res:
+        fs.domain_verified = False
+        db.flush()
+        return {
+            "verified": False,
+            "txt_ok": True,
+            "a_ok": True,
+            "actual_ips": a_records,
+            "expected_ip": expected_ip,
+            "caddy_applied": False,
+            "caddy_error": apply_res.error,
+        }
     db.flush()
     return {
         "verified": True,
         "txt_ok": True,
         "a_ok": True,
-        "caddy_applied": bool(apply_res),
-        "caddy_error": None if apply_res else apply_res.error,
+        "actual_ips": a_records,
+        "expected_ip": expected_ip,
+        "caddy_applied": True,
+        "caddy_error": None,
     }

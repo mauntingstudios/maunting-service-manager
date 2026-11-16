@@ -438,3 +438,41 @@ def test_frontend_online_sync_with_lifecycle_and_static_repo_build(
     (ng_proj / "dist" / "my-app" / "browser").mkdir(parents=True)
     (ng_proj / "dist" / "my-app" / "browser" / "index.html").write_text("<h1>ng</h1>", encoding="utf-8")
     assert detect_output_dir(ng_proj) == ng_proj / "dist" / "my-app" / "browser"
+
+
+def test_reconcile_orphaned_builds_cancel_and_build_cache(db: Session, tmp_path: Path) -> None:
+    srv = _make_server(db, tmp_path / "reconcile_srv")
+    dep_stuck = frontend_deploy_service.enqueue(db, srv, branch="main", source="manual")
+    dep_stuck.status = "building"
+    dep_active = frontend_deploy_service.enqueue(db, srv, branch="dev", source="manual")
+    dep_active.status = "building"
+    db.commit()
+
+    frontend_deploy_service._mark_build_active(dep_active.id)
+    try:
+        cleaned = frontend_deploy_service.reconcile_orphaned_frontend_deployments(db, max_age_hours=0)
+        assert cleaned == 1
+        db.refresh(dep_stuck)
+        db.refresh(dep_active)
+        assert dep_stuck.status == "failed"
+        assert "unterbrochen" in (dep_stuck.error_summary or "")
+        assert dep_active.status == "building"
+
+        active_map = frontend_deploy_service.get_active_frontend_builds_map(db, [srv.id])
+        assert srv.id in active_map
+        assert active_map[srv.id]["id"] == dep_active.id
+        assert active_map[srv.id]["branch"] == "dev"
+
+        canceled = frontend_deploy_service.cancel_deployment(db, srv, dep_active)
+        db.commit()
+        assert canceled.status == "canceled"
+    finally:
+        frontend_deploy_service._mark_build_done(dep_active.id)
+
+    # Isolierter Build-Cache pro Server
+    cache_npm = Path(srv.install_dir) / "_build_cache" / "npm"
+    cache_npm.mkdir(parents=True, exist_ok=True)
+    (cache_npm / "pkg.tgz").write_text("cached", encoding="utf-8")
+    with patch("services.frontend_deploy_service._use_agent_fs", return_value=False):
+        frontend_deploy_service.clear_build_cache(srv)
+    assert not (Path(srv.install_dir) / "_build_cache").exists()

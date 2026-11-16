@@ -282,9 +282,21 @@ class ServerResponse(BaseModel):
     # Integrationsname und Vertragsstatus sind Geschaeftsdaten und gehen nicht
     # an jeden mit server.view — auch nicht an den Kunden selbst.
     is_hoster_managed: bool = False
+    active_frontend_build: FrontendBuildBadge | None = None
 
     class Config:
         from_attributes = True
+
+
+class FrontendBuildBadge(BaseModel):
+    id: int
+    branch: str
+    status: str
+    kind: str
+    started_at: datetime | None = None
+
+
+ServerResponse.model_rebuild()
 
 
 class ServerCreateResponse(ServerResponse):

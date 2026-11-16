@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { DeploymentsPanel } from './DeploymentsPanel'
 import { frontendApi } from '@/api/frontend'
 
@@ -7,6 +7,7 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string, opts?: Record<string, unknown>) =>
       opts?.defaultValue ? String(opts.defaultValue) : key,
+    i18n: { language: 'de' },
   }),
 }))
 
@@ -15,6 +16,8 @@ vi.mock('@/api/frontend', () => ({
     getOverview: vi.fn(),
     listDeployments: vi.fn(),
     triggerBuild: vi.fn(),
+    cancelDeployment: vi.fn(),
+    clearCache: vi.fn(),
     promoteDeployment: vi.fn(),
     rollbackDeployment: vi.fn(),
     deletePreview: vi.fn(),
@@ -153,12 +156,23 @@ describe('DeploymentsPanel', () => {
       },
     ])
 
+    vi.mocked(frontendApi.getDeploymentLog).mockResolvedValue({
+      id: 21,
+      status: 'failed',
+      log: 'npm ci completed\nERR_BUILD_FAILED',
+    })
+
     render(<DeploymentsPanel serverId={7} />)
 
     await waitFor(() => {
-      expect(screen.getByText('Build wird ausgefuehrt')).toBeInTheDocument()
+      expect(screen.getByText('Build läuft gerade')).toBeInTheDocument()
     })
-    expect(screen.getByText('Live-Log oeffnen')).toBeInTheDocument()
+    expect(screen.getByText('Live-Log öffnen')).toBeInTheDocument()
     expect(screen.getByText('Letzter Build #21 (main) fehlgeschlagen')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByText('#21'))
+    await waitFor(() => {
+      expect(screen.getByText(/ERR_BUILD_FAILED/)).toBeInTheDocument()
+    })
   })
 })

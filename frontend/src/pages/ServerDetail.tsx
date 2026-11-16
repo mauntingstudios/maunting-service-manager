@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
@@ -60,10 +60,19 @@ import {
 } from '@maunting/ui'
 import { DatabaseManager } from "@/components/server/DatabaseManager";
 import { OutgoingWebhooksPanel } from "@/components/server/OutgoingWebhooksPanel";
-import { DeploymentsPanel } from "@/components/frontend/DeploymentsPanel";
-import { FrontendSettingsPanel } from "@/components/frontend/FrontendSettingsPanel";
 import { frontendApi, type FrontendOverview } from "@/api/frontend";
 import { SwitchBlueprintDialog } from "@/components/server/SwitchBlueprintDialog";
+
+const DeploymentsPanel = lazy(() =>
+  import("@/components/frontend/DeploymentsPanel").then((m) => ({
+    default: m.DeploymentsPanel,
+  })),
+);
+const FrontendSettingsPanel = lazy(() =>
+  import("@/components/frontend/FrontendSettingsPanel").then((m) => ({
+    default: m.FrontendSettingsPanel,
+  })),
+);
 import { GuardianBadge } from "@/features/guardian/GuardianBadge";
 import { GuardianQuarantineBanner } from "@/features/guardian/GuardianQuarantineBanner";
 import { GuardianTab } from "@/features/guardian/GuardianTab";
@@ -943,6 +952,16 @@ export function ServerDetail() {
               {t(`servers.status.${displayStatus}`, { defaultValue: displayStatus })}
             </span>
 
+            {server.active_frontend_build && (
+              <span className="inline-flex items-center gap-1.5 font-mono-sm text-mono-sm px-2.5 py-1 rounded-full border bg-status-warning/10 border-status-warning/30 text-status-warning animate-pulse">
+                <Hammer className="w-3 h-3" aria-hidden="true" />
+                {t("frontendDeployments.buildingBadge", {
+                  branch: server.active_frontend_build.branch,
+                  defaultValue: `Baut: ${server.active_frontend_build.branch}`,
+                })}
+              </span>
+            )}
+
             <ServerConnectChip server={server} />
             <GuardianBadge server={server} />
 
@@ -1115,17 +1134,33 @@ export function ServerDetail() {
       {/* Vollflächiger Arbeitsbereich über die komplette Breite (Mods, Dateien, Konsole, ...) */}
       <div role="tabpanel" aria-label={activeTabLabel} className="w-full min-w-0">
         {activeTab === "deployments" && isFrontendServer && (
-          <DeploymentsPanel
-            serverId={serverId}
-            overview={frontendOverview}
-            onRefreshOverview={loadFrontendOverview}
-          />
+          <Suspense
+            fallback={
+              <div className="flex justify-center py-12">
+                <Spinner />
+              </div>
+            }
+          >
+            <DeploymentsPanel
+              serverId={serverId}
+              overview={frontendOverview}
+              onRefreshOverview={loadFrontendOverview}
+            />
+          </Suspense>
         )}
         {activeTab === "frontend_settings" && isFrontendServer && (
-          <FrontendSettingsPanel
-            serverId={serverId}
-            onUpdated={loadFrontendOverview}
-          />
+          <Suspense
+            fallback={
+              <div className="flex justify-center py-12">
+                <Spinner />
+              </div>
+            }
+          >
+            <FrontendSettingsPanel
+              serverId={serverId}
+              onUpdated={loadFrontendOverview}
+            />
+          </Suspense>
         )}
         {activeTab === "files" && <FileManager serverId={serverId} />}
         {activeTab === "console" && <ServerConsolePanel serverId={serverId} />}

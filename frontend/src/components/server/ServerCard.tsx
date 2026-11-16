@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
-import { Activity, Clock, Cpu, Database, HardDrive, History, Network, Store } from 'lucide-react'
+import { Activity, Clock, Cpu, Database, Hammer, HardDrive, History, Network, Store } from 'lucide-react'
 import { Badge, Kurzinfo } from '@maunting/ui'
 import { FavoriteButton, FAVORITE_CARD_HIGHLIGHT_CLASS } from '@/components/FavoriteButton'
 import { ServerConnectChip } from '@/components/server/ServerConnectChip'
@@ -40,7 +40,7 @@ export function ServerCard({ server, gameLabel, variant = 'list' }: ServerCardPr
       <div className="flex items-start justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2 min-w-0">
           <ServerStatusIcon
-            status={server.status}
+            status={server.active_frontend_build ? 'updating' : server.status}
             kind={server.server_kind === 'database' ? 'database' : 'application'}
             size="sm"
             favorite={isFavorite}
@@ -87,6 +87,15 @@ export function ServerCard({ server, gameLabel, variant = 'list' }: ServerCardPr
             <Badge variant="info" className="relative z-10 shrink-0">
               <Store className="w-3 h-3 mr-1 inline" aria-hidden="true" />
               {t('servers.customerBadge')}
+            </Badge>
+          )}
+          {server.active_frontend_build && (
+            <Badge variant="warning" className="relative z-10 shrink-0 animate-pulse">
+              <Hammer className="w-3 h-3 mr-1 inline" aria-hidden="true" />
+              {t('frontendDeployments.buildingBadge', {
+                branch: server.active_frontend_build.branch,
+                defaultValue: `Baut: ${server.active_frontend_build.branch}`,
+              })}
             </Badge>
           )}
         </div>

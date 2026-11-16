@@ -122,3 +122,39 @@ def test_frontend_api_endpoints_build_promote_rollback_online(
         )
         assert r_off.status_code == 200
         assert r_off.json()["online"] is False
+
+    # Reservierte / lokale / Panel-Domains werden strikt abgelehnt
+    PanelSettingsService.set("panel_url", "https://panel.myhost.de")
+    for bad_domain in ("localhost", "app.local", "evil.internal", "panel.myhost.de"):
+        r_bad = client.patch(
+            f"/api/servers/{srv.id}/frontend",
+            cookies=owner_cookies,
+            headers={"X-CSRF-Token": csrf_token},
+            json={"domain": bad_domain},
+        )
+        assert r_bad.status_code == 400
+
+    # Cancel + Cache-Clear Endpunkte sowie /api/servers active_frontend_build Badge
+    srv_list = client.get("/api/servers", cookies=owner_cookies)
+    assert srv_list.status_code == 200
+    srv_entry = next(item for item in srv_list.json() if item["id"] == srv.id)
+    assert srv_entry["active_frontend_build"]["branch"] == "main"
+
+    dep_id = r_build.json()["id"]
+    r_cancel = client.post(
+        f"/api/servers/{srv.id}/frontend/deployments/{dep_id}/cancel",
+        cookies=owner_cookies,
+        headers={"X-CSRF-Token": csrf_token},
+    )
+    assert r_cancel.status_code == 200
+    assert r_cancel.json()["status"] == "canceled"
+
+    with patch("services.frontend_deploy_service.clear_build_cache") as mock_clear:
+        r_cache = client.post(
+            f"/api/servers/{srv.id}/frontend/cache/clear",
+            cookies=owner_cookies,
+            headers={"X-CSRF-Token": csrf_token},
+        )
+        assert r_cache.status_code == 200
+        assert r_cache.json()["cleared"] is True
+        mock_clear.assert_called_once()
