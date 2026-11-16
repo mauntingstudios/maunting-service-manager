@@ -3,6 +3,8 @@
   "meta": {
     "id": "minecraft_forge",
     "name": "Minecraft (Forge)",
+    "game": "Minecraft",
+    "edition": "Forge",
     "category": "non_steam_game",
     "author": "Maunting Studios",
     "description": "Forge-Server via itzg/minecraft-server. Klassischer Minecraft-Mod-Loader. Mods (.jar) in /data/mods ablegen."
@@ -15,6 +17,8 @@
       "TYPE": "FORGE",
       "VERSION": "LATEST",
       "SERVER_PORT": "{GAME_PORT}",
+      "ENABLE_QUERY": "true",
+      "QUERY_PORT": "{QUERY_PORT}",
       "ENABLE_RCON": "true",
       "RCON_PORT": "{RCON_PORT}"
     },

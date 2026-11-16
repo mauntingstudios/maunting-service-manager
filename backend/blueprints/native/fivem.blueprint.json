@@ -5,24 +5,32 @@
     "name": "FiveM / RedM (FXServer)",
     "category": "non_steam_game",
     "author": "Maunting Studios",
-    "description": "FiveM and RedM multiplayer server based on Cfx.re FXServer (dockerOnly). Uses the official parkervcp yolks image."
+    "description": "FiveM und RedM Multiplayer-Server (Cfx.re FXServer Build 38435) über das gepinnte MSM-Runtime-Image. Trage deinen kostenlosen Keymaster-Lizenzschlüssel (portal.cfx.re) als sv_licenseKey in server.cfg ein."
   },
   "runtime": {
-    "image": "ghcr.io/parkervcp/yolks:fivem",
+    "image": "ghcr.io/mauntingstudios/msm-fivem-runtime:build-38435",
     "workdir": "/home/container",
     "user": "1000:1000",
     "env": {
       "HOME": "/home/container",
+      "TXHOST_DATA_PATH": "/home/container/txData",
       "TAGS": "msm",
       "PROJECT_NAME": "My MSM FXServer",
       "PROJECT_DESC": "FiveM server powered by Maunting Service Manager"
     },
-    "startup": "/opt/cfx-server/FXServer +localvar serverProfile default +exec server.cfg +set tags {ENV.TAGS} +set sv_projectName {ENV.PROJECT_NAME} +set sv_projectDesc {ENV.PROJECT_DESC}",
+    "startup": "/usr/local/bin/msm-fivem-server +exec server.cfg +set tags {ENV.TAGS} +set sv_projectName {ENV.PROJECT_NAME} +set sv_projectDesc {ENV.PROJECT_DESC}",
     "ensureDirs": [
-      "resources"
+      "resources",
+      "txData"
     ],
     "requiredFiles": [
       "server.cfg"
+    ],
+    "seedFiles": [
+      {
+        "file": "server.cfg",
+        "content": "endpoint_add_tcp \"0.0.0.0:{GAME_PORT}\"\nendpoint_add_udp \"0.0.0.0:{GAME_PORT}\"\n\nsv_maxclients 48\nsv_hostname \"My MSM FXServer\"\nsets locale \"de-DE\"\n\n# Set your Cfx.re license key from https://portal.cfx.re/\nsv_licenseKey \"changeme\"\nset steam_webApiKey \"\"\n\nensure mapmanager\nensure chat\nensure spawnmanager\nensure sessionmanager\nensure basic-gamemode\nensure hardcap\n"
+      }
     ],
     "configPatches": [
       {

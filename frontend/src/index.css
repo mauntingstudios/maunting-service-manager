@@ -1038,3 +1038,62 @@ html[data-season="christmas"] .season-logo-christmas {
     box-shadow: none;
   }
 }
+
+.msm-blueprint-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 17.5rem), 1fr));
+  gap: 1rem;
+}
+
+.msm-game-card,
+.msm-bp-card {
+  container-type: inline-size;
+  min-inline-size: 0;
+}
+
+.msm-game-card h3,
+.msm-bp-card h3 {
+  text-wrap: balance;
+  overflow-wrap: break-word;
+}
+
+.msm-game-card p,
+.msm-bp-card p {
+  text-wrap: pretty;
+  overflow-wrap: break-word;
+}
+
+.msm-game-card-trigger {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  gap: 0.75rem;
+  inline-size: 100%;
+  min-block-size: 44px;
+  padding: 1.25rem;
+  text-align: start;
+}
+
+@container (inline-size >= 20rem) {
+  .msm-bp-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  @keyframes msm-blueprint-drilldown-in {
+    from {
+      opacity: 0;
+      transform: translateX(0.75rem);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+
+  .msm-blueprint-drilldown {
+    animation: msm-blueprint-drilldown-in 180ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+}

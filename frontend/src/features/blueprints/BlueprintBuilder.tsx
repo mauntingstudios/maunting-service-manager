@@ -392,6 +392,27 @@ export function BlueprintBuilder({ mode, sourceId, entries, onClose, onSaved }: 
         </Field>
       </div>
 
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field id="bp-game" label={t('blueprintBuilder.fields.game.label')} help={t('blueprintBuilder.fields.game.help')}>
+          <Input
+            maxLength={128}
+            placeholder={t('blueprintBuilder.fields.game.placeholder')}
+            className="text-base sm:text-sm"
+            value={draft.meta.game ?? ''}
+            onChange={event => setDraft({ ...draft, meta: { ...draft.meta, game: event.target.value } })}
+          />
+        </Field>
+        <Field id="bp-edition" label={t('blueprintBuilder.fields.edition.label')} help={t('blueprintBuilder.fields.edition.help')}>
+          <Input
+            maxLength={128}
+            placeholder={t('blueprintBuilder.fields.edition.placeholder')}
+            className="text-base sm:text-sm"
+            value={draft.meta.edition ?? ''}
+            onChange={event => setDraft({ ...draft, meta: { ...draft.meta, edition: event.target.value } })}
+          />
+        </Field>
+      </div>
+
       <Field id="bp-description" label={t('blueprintBuilder.fields.description.label')} help={t('blueprintBuilder.fields.description.help')}>
         <Textarea
           rows={3}

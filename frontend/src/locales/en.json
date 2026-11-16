@@ -2501,6 +2501,14 @@
     "filterCommunity": "Community",
     "filterCategory": "Category",
     "noResults": "No blueprints found.",
+    "gamesHeading": "Games & server groups",
+    "backToGames": "All games",
+    "backToGamesAria": "Back to game overview",
+    "blueprintCount_one": "{{count}} blueprint",
+    "blueprintCount_other": "{{count}} blueprints",
+    "gameCountSummary": "{{games}} games · {{blueprints}} blueprints",
+    "openGameBlueprints": "Show blueprints for {{game}}",
+    "searchActiveHint": "Search results across all games",
     "docsBannerTitle": "Host custom blueprints & Discord bots",
     "docsBannerText": "Do you want to host your own Discord bot or open-source software via GitHub ZIP? Read our guide in the documentation.",
     "docsBannerBtn": "Read guide"
@@ -3065,6 +3073,10 @@
     "favoriteAction": "Mark as favorite",
     "favoriteServer": "Mark {{name}} as favorite",
     "game": "Game",
+    "blueprintEdition": "Blueprint / edition",
+    "selectBlueprintEdition": "Choose edition …",
+    "gameGroupHint_one": "{{count}} blueprint",
+    "gameGroupHint_other": "{{count}} blueprints",
     "lastVisitedBadge": "Recently opened",
     "loadMoreServers": "Load more servers ({{remaining}} remaining)",
     "quickAccessAll": "Open quick access for all {{count}} servers",
@@ -6537,6 +6549,16 @@
       "category": {
         "label": "Category",
         "help": "Places this template in the right section."
+      },
+      "game": {
+        "label": "Game group (optional)",
+        "help": "Groups related blueprints under one game (for example Minecraft or ARK).",
+        "placeholder": "e.g. Minecraft"
+      },
+      "edition": {
+        "label": "Edition / variant (optional)",
+        "help": "Short label within the game group (for example Paper or Survival Ascended).",
+        "placeholder": "e.g. Paper"
       },
       "author": {
         "label": "Author (optional)",

@@ -13,16 +13,17 @@
     "user": "1000:1000",
     "env": {
       "HOME": "/data",
-      "LD_LIBRARY_PATH": ".:./linux64:/usr/lib32:/usr/lib/x86_64-linux-gnu",
+      "LD_LIBRARY_PATH": ".:./RustDedicated_Data/Plugins/x86_64:./linux64:/usr/lib32:/usr/lib/x86_64-linux-gnu",
       "SERVER_NAME": "My Rust Server",
       "RCON_PASSWORD": "adminpassword",
       "SEED": "123456",
       "WORLD_SIZE": "3000",
       "MAX_PLAYERS": "50"
     },
-    "startup": "./RustDedicated -batchmode +server.ip 0.0.0.0 +server.port {GAME_PORT} +server.queryport {QUERY_PORT} +rcon.port {RCON_PORT} +server.identity \"msm_server\" +server.seed {ENV.SEED} +server.worldsize {ENV.WORLD_SIZE} +server.maxplayers {ENV.MAX_PLAYERS} +server.hostname \"{ENV.SERVER_NAME}\" +rcon.web 1 +rcon.password \"{ENV.RCON_PASSWORD}\"",
+    "startup": "./RustDedicated -batchmode -nographics +server.ip 0.0.0.0 +server.port {GAME_PORT} +server.queryport {QUERY_PORT} +rcon.ip 0.0.0.0 +rcon.port {RCON_PORT} +server.identity \"msm_server\" +server.seed {ENV.SEED} +server.worldsize {ENV.WORLD_SIZE} +server.maxplayers {ENV.MAX_PLAYERS} +server.hostname \"{ENV.SERVER_NAME}\" +rcon.web 1 +rcon.password \"{ENV.RCON_PASSWORD}\" -logfile logs/rust_server.log",
     "ensureDirs": [
-      "msm_server"
+      "msm_server",
+      "logs"
     ],
     "requiredFiles": [
       "RustDedicated"

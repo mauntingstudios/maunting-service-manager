@@ -1,0 +1,149 @@
+{
+  "version": 1,
+  "meta": {
+    "id": "farming_simulator_25",
+    "name": "Farming Simulator 25",
+    "game": "Farming Simulator",
+    "edition": "2025",
+    "category": "steam_game",
+    "author": "Maunting Studios",
+    "description": "Farming Simulator 25 Dedicated Server (Steam App-ID 2300320) via Wine/Xvfb. Erfordert einen globalen Steam-Account mit gekaufter FS25-Lizenz (requiresLogin=true, ohne Steam Guard) sowie Einrichtung von dedicatedServer.xml / Web-Admin."
+  },
+  "runtime": {
+    "image": "ghcr.io/parkervcp/yolks:wine_10",
+    "workdir": "/home/container",
+    "user": "1000:1000",
+    "env": {
+      "WINEDEBUG": "-all",
+      "WINEESYNC": "1",
+      "WINEFSYNC": "1"
+    },
+    "startup": "xvfb-run -a wine ./dedicatedServer.exe",
+    "ensureDirs": [
+      "profile"
+    ],
+    "requiredFiles": [
+      "dedicatedServer.exe"
+    ],
+    "seedFiles": [
+      {
+        "file": "steam_appid.txt",
+        "content": "2300320\n"
+      }
+    ],
+    "configPatches": [
+      {
+        "type": "regex",
+        "file": "profile/dedicatedServerConfig.xml",
+        "regex": "(<port>)\\d+(</port>)",
+        "value": "\\g<1>{GAME_PORT}\\g<2>"
+      },
+      {
+        "type": "regex",
+        "file": "dedicatedServer.xml",
+        "regex": "(<webserver\\b[^>]*\\bport=\")\\d+(\")",
+        "value": "\\g<1>{WEB_PORT}\\g<2>"
+      }
+    ],
+    "startupCheckSeconds": 90.0
+  },
+  "ports": [
+    {
+      "name": "game",
+      "protocol": "udp"
+    },
+    {
+      "name": "game",
+      "protocol": "tcp"
+    },
+    {
+      "name": "web",
+      "protocol": "tcp"
+    }
+  ],
+  "source": {
+    "type": "steam",
+    "steam": {
+      "appId": "2300320",
+      "platform": "windows",
+      "compatibility": "wine",
+      "requiresLogin": true,
+      "validate": false
+    },
+    "updateStrategy": "checkBased"
+  },
+  "mods": {
+    "supportsMods": false,
+    "supportsSteamWorkshop": false,
+    "workshopAppId": null,
+    "modInjection": "none",
+    "modStartupArgumentFormat": null,
+    "modListFilePath": null,
+    "modListContent": "workshopIds",
+    "postInstall": []
+  },
+  "health": {
+    "process": {},
+    "application": {
+      "type": "tcp",
+      "port": "{{PORT:game}}",
+      "interval": "60s",
+      "failure_threshold": 3
+    },
+    "startup": {
+      "grace_period_seconds": 60,
+      "success_patterns": [
+        "Game server started"
+      ],
+      "failure_patterns": [
+        "Unable to start game server",
+        "Address already in use"
+      ]
+    }
+  },
+  "logs": {
+    "sources": [
+      "profile/server.log",
+      "stdout"
+    ],
+    "redact": [
+      "regex:password",
+      "regex:adminPassword"
+    ]
+  },
+  "diagnostics": {
+    "parsers": [
+      "linux-oom",
+      "port-conflict"
+    ]
+  },
+  "recovery": {
+    "policies": [
+      {
+        "match": "process_not_running",
+        "action": "restart"
+      },
+      {
+        "match": "tcp_connect_failed",
+        "action": "restart"
+      },
+      {
+        "match": "port-conflict",
+        "action": "clear_declared_lock_files"
+      },
+      {
+        "match": "linux-oom",
+        "action": "graceful_restart"
+      }
+    ],
+    "attempt_window_seconds": 600,
+    "max_attempts": 3,
+    "cooldown_seconds": 60
+  },
+  "backup": {
+    "includePaths": [
+      "profile",
+      "dedicatedServer.xml"
+    ]
+  }
+}

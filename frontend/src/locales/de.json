@@ -2501,6 +2501,14 @@
     "filterCommunity": "Community",
     "filterCategory": "Kategorie",
     "noResults": "Keine Blueprints gefunden.",
+    "gamesHeading": "Spiele & Server-Reihen",
+    "backToGames": "Alle Spiele",
+    "backToGamesAria": "Zurück zur Spieleübersicht",
+    "blueprintCount_one": "{{count}} Blueprint",
+    "blueprintCount_other": "{{count}} Blueprints",
+    "gameCountSummary": "{{games}} Spiele · {{blueprints}} Blueprints",
+    "openGameBlueprints": "Blueprints für {{game}} anzeigen",
+    "searchActiveHint": "Suchtreffer über alle Spiele",
     "docsBannerTitle": "Eigene Blueprints & Discord-Bots hosten",
     "docsBannerText": "Möchtest du einen eigenen Discord-Bot oder Open-Source-Software per GitHub-ZIP hosten? Lies die Anleitung in der Dokumentation.",
     "docsBannerBtn": "Anleitung lesen"
@@ -3065,6 +3073,10 @@
     "favoriteAction": "Als Favorit markieren",
     "favoriteServer": "{{name}} als Favorit markieren",
     "game": "Spiel",
+    "blueprintEdition": "Blueprint / Version",
+    "selectBlueprintEdition": "Version wählen …",
+    "gameGroupHint_one": "{{count}} Blueprint",
+    "gameGroupHint_other": "{{count}} Blueprints",
     "lastVisitedBadge": "Zuletzt geöffnet",
     "loadMoreServers": "Weitere Server laden ({{remaining}} verbleibend)",
     "quickAccessAll": "Alle {{count}} Server im Schnellzugriff öffnen",
@@ -6537,6 +6549,16 @@
       "category": {
         "label": "Bereich",
         "help": "Ordnet die Vorlage passend in der Übersicht ein."
+      },
+      "game": {
+        "label": "Spielgruppe (optional)",
+        "help": "Fasst zusammengehörige Blueprints unter einem Spiel zusammen (z. B. Minecraft oder ARK).",
+        "placeholder": "z. B. Minecraft"
+      },
+      "edition": {
+        "label": "Version / Variante (optional)",
+        "help": "Kurzer Name innerhalb der Spielgruppe (z. B. Paper oder Survival Ascended).",
+        "placeholder": "z. B. Paper"
       },
       "author": {
         "label": "Autor (optional)",

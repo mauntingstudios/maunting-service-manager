@@ -68,6 +68,8 @@ def list_game_info() -> list[dict]:
         out.append({
             "id": bp.meta.id,
             "name": bp.meta.name,
+            "game": bp.meta.game,
+            "edition": bp.meta.edition,
             "platform": "linux",
             "category": bp.meta.category.value,
             "mod_support": bp_mods.supportsMods,

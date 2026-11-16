@@ -3,9 +3,11 @@
   "meta": {
     "id": "minecraft_paper",
     "name": "Minecraft (Paper)",
+    "game": "Minecraft",
+    "edition": "Paper",
     "category": "non_steam_game",
     "author": "Maunting Studios",
-    "description": "Paper-Server via itzg/minecraft-server. Performance-Fork mit Plugin-API (Bukkit/Spigot-kompatibel). Plugins in /data/plugins ablegen \u00e2\u20ac\u201d werden beim Start automatisch geladen (modInjection=none)."
+    "description": "Paper-Server via itzg/minecraft-server. Performance-Fork mit Plugin-API (Bukkit/Spigot-kompatibel). Plugins in /data/plugins ablegen; werden beim Start automatisch geladen (modInjection=none)."
   },
   "runtime": {
     "image": "itzg/minecraft-server:latest",
@@ -15,6 +17,8 @@
       "TYPE": "PAPER",
       "VERSION": "LATEST",
       "SERVER_PORT": "{GAME_PORT}",
+      "ENABLE_QUERY": "true",
+      "QUERY_PORT": "{QUERY_PORT}",
       "ENABLE_RCON": "true",
       "RCON_PORT": "{RCON_PORT}"
     },
@@ -45,7 +49,7 @@
     "workshopAppId": null,
     "supportsCurseForge": true,
     "curseforgeGameId": "432",
-    "curseforgeClassId": "4552",
+    "curseforgeClassId": "5",
     "curseforgeInstallPath": "plugins",
     "modInjection": "none",
     "modStartupArgumentFormat": null,

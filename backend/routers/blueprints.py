@@ -46,6 +46,8 @@ def _serialize_entry(entry) -> dict:
     return {
         "id": bp.meta.id,
         "name": bp.meta.name,
+        "game": bp.meta.game,
+        "edition": bp.meta.edition,
         "category": bp.meta.category.value,
         "author": bp.meta.author,
         "description": bp.meta.description,

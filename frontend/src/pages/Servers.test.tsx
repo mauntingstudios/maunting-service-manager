@@ -56,6 +56,36 @@ const GAMES: GameInfo[] = [
     ],
     source: 'community',
   },
+  {
+    id: 'farming_simulator_22',
+    name: 'Farming Simulator 22',
+    game: 'Farming Simulator',
+    edition: '2022',
+    platform: 'linux',
+    mod_support: false,
+    supports_steam_workshop: false,
+    ports: [
+      { name: 'game', protocol: 'udp' },
+      { name: 'game', protocol: 'tcp' },
+      { name: 'web', protocol: 'tcp' },
+    ],
+    source: 'native',
+  },
+  {
+    id: 'farming_simulator_25',
+    name: 'Farming Simulator 25',
+    game: 'Farming Simulator',
+    edition: '2025',
+    platform: 'linux',
+    mod_support: false,
+    supports_steam_workshop: false,
+    ports: [
+      { name: 'game', protocol: 'udp' },
+      { name: 'game', protocol: 'tcp' },
+      { name: 'web', protocol: 'tcp' },
+    ],
+    source: 'native',
+  },
 ]
 
 function mockApi(games: GameInfo[], nodes: any[] = [{ id: 1, name: 'Local Node', is_local: true, ram_total: 16384, ram_allocatable_mb: 2048 }]) {
@@ -125,6 +155,29 @@ describe('Servers create form — dynamic port fields', () => {
     // 'voice' ist NICHT im roleToField-Mapping enthalten (das Mapping schreibt
     // nur in server.game_port/query_port/rcon_port). Folge: bei einer reinen
     // Voice-Blueprint wird das gesamte Port-Field-Grid versteckt (KISS).
+  })
+
+  it('groups multi-edition games and exposes secondary blueprint edition dropdown', async () => {
+    mockApi(GAMES)
+    renderServers()
+    await waitFor(() => {
+      expect(vi.mocked(client.api)).toHaveBeenCalledWith('/system/games')
+    })
+
+    const createButtons = await screen.findAllByRole('button', { name: /server erstellen|create server/i })
+    fireEvent.click(createButtons[0])
+
+    expect(screen.queryByTestId('create-server-blueprint')).toBeNull()
+
+    fireEvent.click(screen.getByTestId('create-server-game'))
+    const fsOption = await screen.findByRole('option', { name: /farming simulator/i })
+    fireEvent.click(fsOption)
+
+    const editionDropdown = await screen.findByTestId('create-server-blueprint')
+    expect(editionDropdown).toHaveTextContent('2022')
+    fireEvent.click(editionDropdown)
+    fireEvent.click(await screen.findByRole('option', { name: /2025/i }))
+    expect(editionDropdown).toHaveTextContent('2025')
   })
 })
 

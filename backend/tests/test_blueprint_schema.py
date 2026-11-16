@@ -787,3 +787,31 @@ def test_blueprint_allows_relative_ld_library_path() -> None:
     bp = load_blueprint_dict(d)
     assert "linux64" in bp.runtime.env["LD_LIBRARY_PATH"]
 
+
+def test_blueprint_game_grouping_and_farming_simulator_editions() -> None:
+    d = _minimal_valid_dict()
+    d["meta"]["game"] = "   "
+    d["meta"]["edition"] = "  Custom Edition "
+    bp = load_blueprint_dict(d)
+    assert bp.meta.game is None
+    assert bp.meta.edition == "Custom Edition"
+
+    for bid in ("ark_ascended", "ark_survival_evolved"):
+        assert load_blueprint_file(_NATIVE_DIR / f"{bid}.blueprint.json").meta.game == "ARK"
+
+    expected_fs = {
+        "farming_simulator_15": ("313160", "2015"),
+        "farming_simulator_17": ("447020", "2017"),
+        "farming_simulator_19": ("787860", "2019"),
+        "farming_simulator_22": ("1248130", "2022"),
+        "farming_simulator_25": ("2300320", "2025"),
+    }
+    for bid, (app_id, edition) in expected_fs.items():
+        fs_bp = load_blueprint_file(_NATIVE_DIR / f"{bid}.blueprint.json")
+        assert fs_bp.meta.game == "Farming Simulator"
+        assert fs_bp.meta.edition == edition
+        assert fs_bp.source.steam is not None
+        assert fs_bp.source.steam.appId == app_id
+        assert fs_bp.source.steam.requiresLogin is True
+
+

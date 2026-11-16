@@ -5,7 +5,7 @@
     "name": "Hytale (Dedicated)",
     "category": "non_steam_game",
     "author": "Maunting Studios",
-    "description": "Hytale Dedicated Server via offiziellem Hytale Linux-Downloader. Beim ersten Start zeigt die Console den Hytale-OAuth-Link an; danach l\u00c3\u00a4dt der Downloader die Serverdateien in das Server-Verzeichnis."
+    "description": "Hytale Dedicated Server via offiziellem Hytale Linux-Downloader. Beim ersten Start zeigt die Console den Hytale-OAuth-Link an; danach lädt der Downloader die Serverdateien in das Server-Verzeichnis."
   },
   "runtime": {
     "image": "ghcr.io/natroutter/egg-hytale:latest",
@@ -21,7 +21,7 @@
       "DISABLE_SENTRY": "1",
       "ACCEPT_EARLY_PLUGINS": "0",
       "LEVERAGE_AHEAD_OF_TIME_CACHE": "1",
-      "USE_PERSISTENT_AUTHENTICATION": "DISABLED",
+      "USE_PERSISTENT_AUTHENTICATION": "ENABLED",
       "MEMORY_OVERHEAD": "0"
     },
     "startup": "/entrypoint.sh"
@@ -58,6 +58,7 @@
     "startup": {
       "grace_period_seconds": 120,
       "success_patterns": [
+        "Hytale Server Booted!",
         "Server started",
         "Done \\("
       ],

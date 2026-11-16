@@ -3,6 +3,8 @@
   "meta": {
     "id": "minecraft_neoforge",
     "name": "Minecraft (NeoForge)",
+    "game": "Minecraft",
+    "edition": "NeoForge",
     "category": "non_steam_game",
     "author": "Maunting Studios",
     "description": "NeoForge-Server via itzg/minecraft-server. Community-Fork von Forge, fuer 1.20.4+ der neue Standard fuer Mod-Server. Mods (.jar) in /data/mods."
@@ -15,6 +17,8 @@
       "TYPE": "NEOFORGE",
       "VERSION": "LATEST",
       "SERVER_PORT": "{GAME_PORT}",
+      "ENABLE_QUERY": "true",
+      "QUERY_PORT": "{QUERY_PORT}",
       "ENABLE_RCON": "true",
       "RCON_PORT": "{RCON_PORT}"
     },

@@ -201,6 +201,7 @@ export function SwitchBlueprintDialog({
                 value={selectedId || null}
                 onChange={setSelectedId}
                 disabled={submitting || server.status !== "stopped"}
+                searchable={blueprints.length > 5}
                 placeholder={t("servers.selectNewBlueprint")}
                 aria-label={t("servers.selectNewBlueprint")}
                 options={blueprints.map((bp) => ({

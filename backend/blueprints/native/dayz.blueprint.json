@@ -5,7 +5,7 @@
     "name": "DayZ",
     "category": "steam_game",
     "author": "Maunting Studios",
-    "description": "DayZ Linux Dedicated Server (App-ID 223350, Workshop 221100). Ben\u00c3\u00b6tigt einen konfigurierten globalen Steam-Account unter Settings (Steam Guard muss deaktiviert sein)."
+    "description": "DayZ Linux Dedicated Server (App-ID 223350, Workshop 221100). Benötigt einen konfigurierten globalen Steam-Account unter Settings (Steam Guard muss deaktiviert sein; RCON per BattlEye UDP)."
   },
   "runtime": {
     "image": "ghcr.io/parkervcp/steamcmd:debian",
@@ -25,12 +25,28 @@
       "DayZServer",
       "serverDZ.cfg"
     ],
+    "seedFiles": [
+      {
+        "file": "serverDZ.cfg",
+        "content": "hostname = \"DayZ Server\";\npassword = \"\";\npasswordAdmin = \"\";\nmaxPlayers = 60;\nverifySignatures = 2;\nforceSameBuild = 1;\ndisableVoN = 0;\nvonCodecQuality = 20;\ndisable3rdPerson = 0;\ndisableCrosshair = 0;\nserverTime = \"SystemTime\";\nserverTimeAcceleration = 1;\nserverNightTimeAcceleration = 1;\nserverTimePersistent = 0;\nguaranteedUpdates = 1;\nloginQueueConcurrentPlayers = 5;\nloginQueueMaxPlayers = 500;\ninstanceId = 1;\nstorageAutoFix = 1;\nsteamQueryPort = {QUERY_PORT};\n\nclass Missions\n{\n\tclass DayZ\n\t{\n\t\ttemplate = \"dayzOffline.chernarusplus\";\n\t};\n};\n"
+      },
+      {
+        "file": "battleye/BEServer_x64.cfg",
+        "content": "RConPort {RCON_PORT}\nRestrictRCon 0\n"
+      }
+    ],
     "configPatches": [
       {
         "type": "regex",
         "file": "serverDZ.cfg",
         "regex": "(steamQueryPort\\s*=\\s*)\\d+;",
         "value": "\\g<1>{QUERY_PORT};"
+      },
+      {
+        "type": "regex",
+        "file": "battleye/BEServer_x64.cfg",
+        "regex": "(?m)^(RConPort\\s+)\\d+",
+        "value": "\\g<1>{RCON_PORT}"
       }
     ]
   },
@@ -45,7 +61,7 @@
     },
     {
       "name": "rcon",
-      "protocol": "tcp"
+      "protocol": "udp"
     }
   ],
   "source": {

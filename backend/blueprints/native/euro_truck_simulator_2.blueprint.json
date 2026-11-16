@@ -5,7 +5,7 @@
     "name": "Euro Truck Simulator 2 (ETS2)",
     "category": "steam_game",
     "author": "Maunting Studios",
-    "description": "Euro Truck Simulator 2 Dedicated Server via SteamCMD (App-ID 1948160). Nativer Linux-Support. Konfiguration \u00c3\u00bcber server_config.sii."
+    "description": "Euro Truck Simulator 2 Dedicated Server via SteamCMD (App-ID 1948160). Nativer Linux-Support. Wichtig: Exportiere im Spiel per Konsole 'export_server_packages' und lade server_packages.dat + server_packages.sii in .local/share/Euro Truck Simulator 2/ hoch."
   },
   "runtime": {
     "image": "ghcr.io/parkervcp/steamcmd:debian",
@@ -15,24 +15,30 @@
       "HOME": "/data",
       "LD_LIBRARY_PATH": ".:./linux64:/usr/lib32:/usr/lib/x86_64-linux-gnu"
     },
-    "startup": "./bin/linux_x64/eurotrucks2_server -server",
+    "startup": "./bin/linux_x64/eurotrucks2_server -nosingle",
     "ensureDirs": [
       ".local/share/Euro Truck Simulator 2"
     ],
     "requiredFiles": [
       "bin/linux_x64/eurotrucks2_server"
     ],
+    "seedFiles": [
+      {
+        "file": ".local/share/Euro Truck Simulator 2/server_config.sii",
+        "content": "SiiNunit\n{\nserver_config : _nameless.config {\n lobby_name: \"My MSM ETS2 Server\"\n description: \"\"\n welcome_message: \"\"\n password: \"\"\n max_players: 8\n max_vehicles_total: 100\n max_ai_vehicles_player: 50\n max_ai_vehicles_player_spawn: 50\n connection_virtual_port: 100\n query_virtual_port: 101\n connection_dedicated_port: {GAME_PORT}\n query_dedicated_port: {QUERY_PORT}\n server_logon_token: \"\"\n player_damage: true\n traffic: true\n hide_in_company: false\n hide_colliding: true\n force_speed_limiter: false\n mods_optioning: false\n timezones: 0\n service_no_collision: false\n in_menu_ghosting: false\n name_tags: true\n friends_only: false\n show_server: true\n moderator_list: 0\n}\n}\n"
+      }
+    ],
     "configPatches": [
       {
         "type": "regex",
         "file": ".local/share/Euro Truck Simulator 2/server_config.sii",
-        "regex": "(connection_server_port\\s*:\\s*)\\d+",
+        "regex": "(connection_dedicated_port\\s*:\\s*)\\d+",
         "value": "\\g<1>{GAME_PORT}"
       },
       {
         "type": "regex",
         "file": ".local/share/Euro Truck Simulator 2/server_config.sii",
-        "regex": "(connection_query_port\\s*:\\s*)\\d+",
+        "regex": "(query_dedicated_port\\s*:\\s*)\\d+",
         "value": "\\g<1>{QUERY_PORT}"
       }
     ],
@@ -44,8 +50,16 @@
       "protocol": "udp"
     },
     {
+      "name": "game",
+      "protocol": "tcp"
+    },
+    {
       "name": "query",
       "protocol": "udp"
+    },
+    {
+      "name": "query",
+      "protocol": "tcp"
     }
   ],
   "source": {

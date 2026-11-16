@@ -5,7 +5,7 @@
     "name": "Sons of the Forest",
     "category": "steam_game",
     "author": "Maunting Studios",
-    "description": "Sons of the Forest Dedicated Server via SteamCMD (App-ID 2465200). Runs on Windows-binary via GE-Proton/Wine."
+    "description": "Sons of the Forest Dedicated Server via SteamCMD (App-ID 2465200). Windows-Binary (SonsOfTheForestDS.exe) läuft über Wine + Xvfb."
   },
   "runtime": {
     "image": "ghcr.io/parkervcp/yolks:wine_10",
@@ -16,14 +16,39 @@
       "WINEESYNC": "1",
       "WINEFSYNC": "1"
     },
-    "startup": "./SonsOfTheForestServer.exe -userfolderpath {INSTALL_DIR}/userdata -port {GAME_PORT} -queryport {QUERY_PORT} -blobport {RCON_PORT}",
+    "startup": "xvfb-run -a wine ./SonsOfTheForestDS.exe -userdatapath {INSTALL_DIR}/userdata -dedicatedserver.IpAddress 0.0.0.0 -dedicatedserver.GamePort {GAME_PORT} -dedicatedserver.QueryPort {QUERY_PORT} -dedicatedserver.BlobSyncPort {CUSTOM_PORT_1}",
     "ensureDirs": [
       "userdata"
     ],
     "requiredFiles": [
-      "SonsOfTheForestServer.exe"
+      "SonsOfTheForestDS.exe"
     ],
-    "configPatches": [],
+    "seedFiles": [
+      {
+        "file": "userdata/dedicatedserver.cfg",
+        "content": "{\n  \"IpAddress\": \"0.0.0.0\",\n  \"GamePort\": {GAME_PORT},\n  \"QueryPort\": {QUERY_PORT},\n  \"BlobSyncPort\": {CUSTOM_PORT_1},\n  \"ServerName\": \"My Sons Of The Forest Server\",\n  \"MaxPlayers\": 8,\n  \"Password\": \"\",\n  \"LanOnly\": false,\n  \"SaveSlot\": 1,\n  \"SaveMode\": \"Continue\",\n  \"GameMode\": \"Normal\",\n  \"SaveInterval\": 600\n}\n"
+      }
+    ],
+    "configPatches": [
+      {
+        "type": "regex",
+        "file": "userdata/dedicatedserver.cfg",
+        "regex": "(\"GamePort\"\\s*:\\s*)\\d+",
+        "value": "\\g<1>{GAME_PORT}"
+      },
+      {
+        "type": "regex",
+        "file": "userdata/dedicatedserver.cfg",
+        "regex": "(\"QueryPort\"\\s*:\\s*)\\d+",
+        "value": "\\g<1>{QUERY_PORT}"
+      },
+      {
+        "type": "regex",
+        "file": "userdata/dedicatedserver.cfg",
+        "regex": "(\"BlobSyncPort\"\\s*:\\s*)\\d+",
+        "value": "\\g<1>{CUSTOM_PORT_1}"
+      }
+    ],
     "startupCheckSeconds": 90.0
   },
   "ports": [
@@ -36,7 +61,7 @@
       "protocol": "udp"
     },
     {
-      "name": "rcon",
+      "name": "custom",
       "protocol": "udp"
     }
   ],

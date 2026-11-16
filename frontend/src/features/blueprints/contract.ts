@@ -86,7 +86,7 @@ export interface BlueprintHealthApplication extends GuardianThresholds {
 
 export interface BlueprintDraft {
   version: 1
-  meta: { id: string; name: string; category: BlueprintCategory; author?: string; description?: string }
+  meta: { id: string; name: string; game?: string; edition?: string; category: BlueprintCategory; author?: string; description?: string }
   runtime: {
     image: string; workdir?: string; user?: string; env: Record<string, string>; startup: string
     startupProfiles: Array<{ whenFile: string; startup: string }>; ensureDirs: string[]; requiredFiles: string[]
@@ -508,8 +508,12 @@ export function normalizeBlueprintDraft(draft: BlueprintDraft): BlueprintDraft {
     .map(seed => ({ file: seed.file.trim(), content: seed.content }))
     .filter(seed => seed.file || seed.content.trim())
   clean.runtime.env = Object.fromEntries(Object.entries(clean.runtime.env).map(([key, value]) => [key.trim(), value]))
-  if (!clean.meta.author) delete clean.meta.author
-  if (!clean.meta.description) delete clean.meta.description
+  if (!clean.meta.author?.trim()) delete clean.meta.author
+  if (!clean.meta.description?.trim()) delete clean.meta.description
+  if (!clean.meta.game?.trim()) delete clean.meta.game
+  else clean.meta.game = clean.meta.game.trim()
+  if (!clean.meta.edition?.trim()) delete clean.meta.edition
+  else clean.meta.edition = clean.meta.edition.trim()
   if (!clean.runtime.workdir) delete clean.runtime.workdir
   if (!clean.runtime.user) delete clean.runtime.user
   if (clean.source.steam && !clean.source.steam.branch) delete clean.source.steam.branch

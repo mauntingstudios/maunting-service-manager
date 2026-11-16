@@ -1,0 +1,8 @@
+#!/bin/sh
+set -eu
+
+exec /opt/cfx-server/alpine/opt/cfx-server/ld-musl-x86_64.so.1 \
+  --library-path "/opt/cfx-server/alpine/usr/lib/v8/:/opt/cfx-server/alpine/lib/:/opt/cfx-server/alpine/usr/lib/" \
+  -- /opt/cfx-server/alpine/opt/cfx-server/FXServer \
+  +set citizen_dir /opt/cfx-server/alpine/opt/cfx-server/citizen/ \
+  "$@"

@@ -5,7 +5,7 @@
     "name": "The Forest",
     "category": "steam_game",
     "author": "Maunting Studios",
-    "description": "The Forest Dedicated Server via SteamCMD (App-ID 556450). Runs on Windows-binary via GE-Proton/Wine."
+    "description": "The Forest Dedicated Server via SteamCMD (App-ID 556450). Windows-Binary (TheForestDedicatedServer.exe) läuft über Wine + Xvfb."
   },
   "runtime": {
     "image": "ghcr.io/parkervcp/yolks:wine_10",
@@ -16,14 +16,42 @@
       "WINEESYNC": "1",
       "WINEFSYNC": "1",
       "SERVER_NAME": "My Forest Server",
-      "RCON_PASSWORD": "adminpassword"
+      "SERVER_PASSWORD": ""
     },
-    "startup": "./TheForestServer.exe -serverport {GAME_PORT} -serverqueryport {QUERY_PORT} -serverrconport {RCON_PORT} -serversteamport {RCON_PORT} -serverrconpassword {ENV.RCON_PASSWORD} -servername {ENV.SERVER_NAME}",
-    "ensureDirs": [],
-    "requiredFiles": [
-      "TheForestServer.exe"
+    "startup": "xvfb-run -a wine ./TheForestDedicatedServer.exe -batchmode -nographics -configfilepath {INSTALL_DIR}/config/config.cfg -savefolderpath {INSTALL_DIR}/saves -serverip 0.0.0.0 -servergameport {GAME_PORT} -serverqueryport {QUERY_PORT} -serversteamport {CUSTOM_PORT_1} -servername \"{SERVER_NAME}\"",
+    "ensureDirs": [
+      "config",
+      "saves"
     ],
-    "configPatches": [],
+    "requiredFiles": [
+      "TheForestDedicatedServer.exe"
+    ],
+    "seedFiles": [
+      {
+        "file": "config/config.cfg",
+        "content": "serverIP 0.0.0.0\nserverSteamPort {CUSTOM_PORT_1}\nserverGamePort {GAME_PORT}\nserverQueryPort {QUERY_PORT}\nserverName My Forest Server\nserverPlayers 8\nenableVAC off\nserverPassword\nserverPasswordAdmin adminpassword\nserverSteamAccount\ndifficulty Normal\ninitType Continue\nslot 1\nsaveFolderPath Z:\\home\\container\\saves\n"
+      }
+    ],
+    "configPatches": [
+      {
+        "type": "regex",
+        "file": "config/config.cfg",
+        "regex": "(?m)^serverGamePort\\s+\\d+$",
+        "value": "serverGamePort {GAME_PORT}"
+      },
+      {
+        "type": "regex",
+        "file": "config/config.cfg",
+        "regex": "(?m)^serverQueryPort\\s+\\d+$",
+        "value": "serverQueryPort {QUERY_PORT}"
+      },
+      {
+        "type": "regex",
+        "file": "config/config.cfg",
+        "regex": "(?m)^serverSteamPort\\s+\\d+$",
+        "value": "serverSteamPort {CUSTOM_PORT_1}"
+      }
+    ],
     "startupCheckSeconds": 60.0
   },
   "ports": [
@@ -36,8 +64,8 @@
       "protocol": "udp"
     },
     {
-      "name": "rcon",
-      "protocol": "tcp"
+      "name": "custom",
+      "protocol": "udp"
     }
   ],
   "source": {

@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import {
+  ArrowLeft,
   Boxes,
   BookOpen,
+  ChevronRight,
   Copy,
   Download,
   Pencil,
@@ -23,6 +25,7 @@ import { PageHeader } from '@maunting/ui'
 import { Dropdown } from '@maunting/ui'
 import { BlueprintBuilder, type BlueprintBuilderMode } from '@/features/blueprints/BlueprintBuilder'
 import { normalizeBlueprintId } from '@/features/blueprints/contract'
+import { groupByGame, resolveBlueprintEditionLabel } from '@/utils/blueprintGroups'
 import { Button, buttonClasses, Kurzinfo } from '@maunting/ui'
 import { Spinner } from '@maunting/ui'
 /** Hilfsfunktion: lesbarer Label pro source_type */
@@ -60,6 +63,10 @@ export function Blueprints() {
   const newFileRef = useRef<HTMLInputElement | null>(null)
   const replaceFileRef = useRef<HTMLInputElement | null>(null)
   const replaceTargetIdRef = useRef<string | null>(null)
+  const backButtonRef = useRef<HTMLButtonElement | null>(null)
+  const lastGameTriggerRef = useRef<string | null>(null)
+  const [searchParams, setSearchParams] = useSearchParams()
+  const selectedGameKey = searchParams.get('game')
   const [builder, setBuilder] = useState<{ mode: BlueprintBuilderMode; sourceId?: string } | null>(null)
 
   const load = useCallback(async () => {
@@ -86,7 +93,7 @@ export function Blueprints() {
   // Gefilterte + gesuchte Liste
   const filtered = useMemo<BlueprintListEntry[]>(() => {
     if (!entries) return []
-    const q = search.toLowerCase()
+    const q = search.toLowerCase().trim()
     return entries.filter((e) => {
       if (originFilter !== 'all' && e.origin !== originFilter) return false
       if (categoryFilter !== 'all' && e.category !== categoryFilter) return false
@@ -94,6 +101,8 @@ export function Blueprints() {
         const hit =
           e.name.toLowerCase().includes(q) ||
           e.id.toLowerCase().includes(q) ||
+          (e.game ?? '').toLowerCase().includes(q) ||
+          (e.edition ?? '').toLowerCase().includes(q) ||
           (e.description ?? '').toLowerCase().includes(q) ||
           (e.author ?? '').toLowerCase().includes(q)
         if (!hit) return false
@@ -101,6 +110,42 @@ export function Blueprints() {
       return true
     })
   }, [entries, search, originFilter, categoryFilter])
+
+  const gameGroups = useMemo(() => groupByGame(filtered), [filtered])
+  const selectedGroup = useMemo(
+    () => (selectedGameKey ? gameGroups.find((g) => g.key === selectedGameKey) ?? null : null),
+    [gameGroups, selectedGameKey],
+  )
+  const hasSearch = search.trim().length > 0
+
+  const openGameGroup = (key: string) => {
+    lastGameTriggerRef.current = key
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev)
+      next.set('game', key)
+      return next
+    })
+    requestAnimationFrame(() => {
+      backButtonRef.current?.focus({ preventScroll: true })
+    })
+  }
+
+  const closeGameGroup = () => {
+    const returnKey = selectedGameKey || lastGameTriggerRef.current
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev)
+      next.delete('game')
+      return next
+    })
+    if (returnKey) {
+      requestAnimationFrame(() => {
+        const trigger = document.querySelector<HTMLButtonElement>(
+          `[data-game-trigger="${returnKey}"]`,
+        )
+        trigger?.focus({ preventScroll: true })
+      })
+    }
+  }
 
   const uploadFile = async (file: File, expectedId: string | null) => {
     const text = await file.text()
@@ -343,134 +388,258 @@ export function Blueprints() {
         </div>
       )}
 
-      {/* Blueprint-Cards Grid */}
-      {filtered.length > 0 && (
-        <>
-          <p className="font-body-md text-xs text-on-surface-variant/60 mb-3">
-            {filtered.length} / {entries?.length ?? 0}
-          </p>
-          <div
-            className="grid gap-4"
-            style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))' }}
-            data-testid="blueprints-list"
-          >
-            {filtered.map((entry) => {
-              const isNative = entry.origin === 'native'
-              const isDeleting = busy === `delete:${entry.id}`
-              const isReplacing = busy === `replace:${entry.id}`
+      {/* Schritt 1: Spiele-Übersicht (kompakt & mobilfreundlich, wenn keine Suche aktiv und kein Spiel gewählt) */}
+      {entries !== null && !hasSearch && !selectedGroup && gameGroups.length > 0 && (
+        <section aria-label={t('blueprints.gamesHeading')} className="space-y-3 mt-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="font-headline text-label-md uppercase tracking-wider text-on-surface-variant">
+              {t('blueprints.gamesHeading')}
+            </h2>
+            <p className="font-body-md text-xs text-on-surface-variant/70">
+              {t('blueprints.gameCountSummary', { games: gameGroups.length, blueprints: filtered.length })}
+            </p>
+          </div>
+          <div className="msm-blueprint-grid" data-testid="blueprints-game-list">
+            {gameGroups.map((group) => {
+              const hasNative = group.items.some((item) => item.origin === 'native')
+              const hasCommunity = group.items.some((item) => item.origin === 'community')
+              const hasMods = group.items.some((item) => item.supports_mods)
+              const hasWorkshop = group.items.some((item) => item.supports_steam_workshop)
+              const categoriesInGroup = Array.from(new Set(group.items.map((item) => item.category)))
+              const editionPreview = group.items.length > 1
+                ? group.items
+                    .slice(0, 4)
+                    .map((item) => resolveBlueprintEditionLabel(item, group.name))
+                    .join(' · ') + (group.items.length > 4 ? ` +${group.items.length - 4}` : '')
+                : group.items[0]?.description
 
               return (
-                <div
-                  key={entry.id}
-                  className="msm-card p-5 flex flex-col gap-3 hover:border-primary/30 transition-colors"
-                  data-testid={`blueprint-row-${entry.id}`}
+                <article
+                  key={group.key}
+                  className="msm-card msm-game-card overflow-hidden hover:border-primary/40 transition-colors"
+                  data-testid={`blueprint-game-card-${group.key}`}
                 >
-                  {/* Name + Origin-Badge */}
-                  <div className="flex items-start justify-between gap-2">
-                    <h3 className="font-headline text-body-md font-bold text-on-surface leading-tight">
-                      {entry.name}
-                    </h3>
-                    <span className={`flex-shrink-0 inline-block rounded-full px-2 py-0.5 text-xs font-label-md ${
-                      isNative
-                        ? 'bg-primary/10 text-primary border border-primary/20'
-                        : 'bg-surface-container-highest text-on-surface-variant border border-outline-variant/40'
-                    }`}>
-                      {isNative ? t('blueprints.originNative') : t('blueprints.originCommunity')}
-                    </span>
-                  </div>
-
-                  {/* Description */}
-                  {entry.description && (
-                    <p className="font-body-md text-xs text-on-surface-variant line-clamp-2">
-                      {entry.description}
-                    </p>
-                  )}
-
-                  {/* Meta-Chips */}
-                  <div className="flex flex-wrap gap-1.5">
-                    <span className="inline-block px-2 py-0.5 rounded text-xs bg-surface-container-highest text-on-surface-variant border border-outline-variant/30">
-                      {categoryLabel(entry.category)}
-                    </span>
-                    <span className="inline-block px-2 py-0.5 rounded text-xs bg-surface-container-highest text-on-surface-variant border border-outline-variant/30">
-                      {sourceLabel(entry.source_type)}
-                    </span>
-                    {entry.supports_mods && (
-                      <span className="inline-block px-2 py-0.5 rounded text-xs bg-primary/8 text-primary border border-primary/20">
-                        Mods
+                  <button
+                    type="button"
+                    data-game-trigger={group.key}
+                    aria-label={t('blueprints.openGameBlueprints', { game: group.name })}
+                    onClick={() => openGameGroup(group.key)}
+                    className="msm-game-card-trigger focus-visible:outline-none hover:bg-surface-container-highest/40 transition-colors"
+                  >
+                    <header className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <h3 className="font-headline text-body-md font-bold text-on-surface leading-tight">
+                          {group.name}
+                        </h3>
+                      </div>
+                      <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-label-md text-primary border border-primary/20">
+                        {t('blueprints.blueprintCount', { count: group.items.length })}
+                        <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
                       </span>
-                    )}
-                    {entry.supports_steam_workshop && (
-                      <span className="inline-block px-2 py-0.5 rounded text-xs bg-primary/8 text-primary border border-primary/20">
-                        Workshop
-                      </span>
-                    )}
-                  </div>
+                    </header>
 
-                  {/* ID — kompakt, copyable feel */}
-                  <Kurzinfo text={entry.id} seite="anfang" aussen="min-w-0 max-w-full">
-                    <span className="block min-w-0 font-mono-sm text-xs text-on-surface-variant/50 truncate">
-                      {entry.id}
-                    </span>
-                  </Kurzinfo>
+                    {editionPreview ? (
+                      <p className="font-body-md text-xs text-on-surface-variant line-clamp-2">
+                        {editionPreview}
+                      </p>
+                    ) : (
+                      <span className="sr-only">{group.name}</span>
+                    )}
 
-                  {/* Aktionen */}
-                  <div className="grid grid-cols-2 gap-2 mt-auto pt-2 border-t border-outline-variant/20 sm:flex sm:flex-wrap">
-                    <a
-                      href={apiUrl(`/blueprints/${encodeURIComponent(entry.id)}`)}
-                      download
-                      className={buttonClasses('secondary', 'sm', 'min-h-11')}
-                      data-testid={`blueprint-download-${entry.id}`}
-                    >
-                      <Download className="w-3.5 h-3.5" />
-                      {t('blueprints.download')}
-                    </a>
-                    {canWrite && isNative && (
-                      <Button variant="secondary" size="sm" type="button" onClick={() => setBuilder({ mode: 'clone', sourceId: entry.id })} className="inline-flex min-h-11 items-center justify-center gap-1" data-testid={`blueprint-clone-${entry.id}`}>
-                        <Copy className="h-3.5 w-3.5" />{t('blueprints.clone')}
-                      </Button>
-                    )}
-                    {canWrite && !isNative && (
-                      <>
-                        <Button variant="secondary" size="sm" type="button" onClick={() => setBuilder({ mode: 'edit', sourceId: entry.id })} className="inline-flex min-h-11 items-center justify-center gap-1" data-testid={`blueprint-edit-${entry.id}`}>
-                          <Pencil className="h-3.5 w-3.5" />{t('common.edit')}
-                        </Button>
-                        <Button variant="secondary" size="sm"
-                          type="button"
-                          onClick={() => handleReplace(entry.id)}
-                          disabled={isReplacing}
-                          className="inline-flex min-h-11 items-center justify-center gap-1 disabled:opacity-50"
-                          data-testid={`blueprint-replace-${entry.id}`}
+                    <div className="flex flex-wrap gap-1.5">
+                      {categoriesInGroup.map((cat) => (
+                        <span
+                          key={cat}
+                          className="inline-block px-2 py-0.5 rounded text-xs bg-surface-container-highest text-on-surface-variant border border-outline-variant/30"
                         >
-                          {isReplacing ? (
-                            <Spinner />
-                          ) : (
-                            <RefreshCw className="w-3.5 h-3.5" />
-                          )}
-                          {t('blueprints.replace')}
-                        </Button>
-                        <button
-                          type="button"
-                          onClick={() => handleDelete(entry)}
-                          disabled={isDeleting}
-                          className="inline-flex min-h-11 items-center justify-center gap-1 px-3 py-2 text-xs rounded-md text-status-destructive hover:bg-status-destructive/10 transition-colors disabled:opacity-50 sm:ml-auto"
-                          data-testid={`blueprint-delete-${entry.id}`}
-                        >
-                          {isDeleting ? (
-                            <Spinner />
-                          ) : (
-                            <Trash2 className="w-3.5 h-3.5" />
-                          )}
-                          {t('common.delete')}
-                        </button>
-                      </>
-                    )}
-                  </div>
-                </div>
+                          {categoryLabel(cat)}
+                        </span>
+                      ))}
+                      {hasNative && (
+                        <span className="inline-block rounded-full px-2 py-0.5 text-xs font-label-md bg-primary/10 text-primary border border-primary/20">
+                          {t('blueprints.originNative')}
+                        </span>
+                      )}
+                      {hasCommunity && (
+                        <span className="inline-block rounded-full px-2 py-0.5 text-xs font-label-md bg-surface-container-highest text-on-surface-variant border border-outline-variant/40">
+                          {t('blueprints.originCommunity')}
+                        </span>
+                      )}
+                      {hasMods && (
+                        <span className="inline-block px-2 py-0.5 rounded text-xs bg-primary/8 text-primary border border-primary/20">
+                          Mods
+                        </span>
+                      )}
+                      {hasWorkshop && (
+                        <span className="inline-block px-2 py-0.5 rounded text-xs bg-primary/8 text-primary border border-primary/20">
+                          Workshop
+                        </span>
+                      )}
+                    </div>
+                  </button>
+                </article>
               )
             })}
           </div>
-        </>
+        </section>
       )}
+
+      {/* Schritt 2 (Spiel gewählt) oder globale Suche: Detail-Karten */}
+      {entries !== null && (hasSearch || selectedGroup) && (hasSearch ? filtered : selectedGroup?.items ?? []).length > 0 && (() => {
+        const visibleEntries = hasSearch ? filtered : selectedGroup!.items
+        return (
+          <section className="msm-blueprint-drilldown space-y-4 mt-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              {selectedGroup && !hasSearch ? (
+                <div className="flex flex-wrap items-center gap-3 min-w-0">
+                  <Button
+                    ref={backButtonRef}
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={closeGameGroup}
+                    aria-label={t('blueprints.backToGamesAria')}
+                    className="inline-flex min-h-11 items-center gap-1.5"
+                    data-testid="blueprints-back-to-games"
+                  >
+                    <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+                    {t('blueprints.backToGames')}
+                  </Button>
+                  <div className="min-w-0">
+                    <h2 className="font-headline text-title-sm font-bold text-on-surface leading-tight">
+                      {selectedGroup.name}
+                    </h2>
+                    <p className="font-body-md text-xs text-on-surface-variant">
+                      {t('blueprints.blueprintCount', { count: visibleEntries.length })}
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <p className="font-body-md text-xs text-on-surface-variant">
+                  {t('blueprints.searchActiveHint')} · {visibleEntries.length} / {entries.length}
+                </p>
+              )}
+            </div>
+
+            <div className="msm-blueprint-grid" data-testid="blueprints-list">
+              {visibleEntries.map((entry) => {
+                const isNative = entry.origin === 'native'
+                const isDeleting = busy === `delete:${entry.id}`
+                const isReplacing = busy === `replace:${entry.id}`
+
+                return (
+                  <article
+                    key={entry.id}
+                    className="msm-card msm-bp-card p-5 flex flex-col gap-3 hover:border-primary/30 transition-colors"
+                    data-testid={`blueprint-row-${entry.id}`}
+                  >
+                    {/* Name + Origin-Badge */}
+                    <div className="flex items-start justify-between gap-2">
+                      <h3 className="font-headline text-body-md font-bold text-on-surface leading-tight">
+                        {entry.name}
+                      </h3>
+                      <span className={`flex-shrink-0 inline-block rounded-full px-2 py-0.5 text-xs font-label-md ${
+                        isNative
+                          ? 'bg-primary/10 text-primary border border-primary/20'
+                          : 'bg-surface-container-highest text-on-surface-variant border border-outline-variant/40'
+                      }`}>
+                        {isNative ? t('blueprints.originNative') : t('blueprints.originCommunity')}
+                      </span>
+                    </div>
+
+                    {/* Description */}
+                    {entry.description && (
+                      <p className="font-body-md text-xs text-on-surface-variant line-clamp-2">
+                        {entry.description}
+                      </p>
+                    )}
+
+                    {/* Meta-Chips */}
+                    <div className="flex flex-wrap gap-1.5">
+                      <span className="inline-block px-2 py-0.5 rounded text-xs bg-surface-container-highest text-on-surface-variant border border-outline-variant/30">
+                        {categoryLabel(entry.category)}
+                      </span>
+                      <span className="inline-block px-2 py-0.5 rounded text-xs bg-surface-container-highest text-on-surface-variant border border-outline-variant/30">
+                        {sourceLabel(entry.source_type)}
+                      </span>
+                      {entry.supports_mods && (
+                        <span className="inline-block px-2 py-0.5 rounded text-xs bg-primary/8 text-primary border border-primary/20">
+                          Mods
+                        </span>
+                      )}
+                      {entry.supports_steam_workshop && (
+                        <span className="inline-block px-2 py-0.5 rounded text-xs bg-primary/8 text-primary border border-primary/20">
+                          Workshop
+                        </span>
+                      )}
+                    </div>
+
+                    {/* ID — kompakt, copyable feel */}
+                    <Kurzinfo text={entry.id} seite="anfang" aussen="min-w-0 max-w-full">
+                      <span className="block min-w-0 font-mono-sm text-xs text-on-surface-variant/50 truncate">
+                        {entry.id}
+                      </span>
+                    </Kurzinfo>
+
+                    {/* Aktionen */}
+                    <div className="msm-bp-actions grid grid-cols-2 gap-2 mt-auto pt-2 border-t border-outline-variant/20 sm:flex sm:flex-wrap">
+                      <a
+                        href={apiUrl(`/blueprints/${encodeURIComponent(entry.id)}`)}
+                        download
+                        className={buttonClasses('secondary', 'sm', 'min-h-11')}
+                        data-testid={`blueprint-download-${entry.id}`}
+                      >
+                        <Download className="w-3.5 h-3.5" aria-hidden="true" />
+                        {t('blueprints.download')}
+                      </a>
+                      {canWrite && isNative && (
+                        <Button variant="secondary" size="sm" type="button" onClick={() => setBuilder({ mode: 'clone', sourceId: entry.id })} className="inline-flex min-h-11 items-center justify-center gap-1" data-testid={`blueprint-clone-${entry.id}`}>
+                          <Copy className="h-3.5 w-3.5" aria-hidden="true" />{t('blueprints.clone')}
+                        </Button>
+                      )}
+                      {canWrite && !isNative && (
+                        <>
+                          <Button variant="secondary" size="sm" type="button" onClick={() => setBuilder({ mode: 'edit', sourceId: entry.id })} className="inline-flex min-h-11 items-center justify-center gap-1" data-testid={`blueprint-edit-${entry.id}`}>
+                            <Pencil className="h-3.5 w-3.5" aria-hidden="true" />{t('common.edit')}
+                          </Button>
+                          <Button variant="secondary" size="sm"
+                            type="button"
+                            onClick={() => handleReplace(entry.id)}
+                            disabled={isReplacing}
+                            className="inline-flex min-h-11 items-center justify-center gap-1 disabled:opacity-50"
+                            data-testid={`blueprint-replace-${entry.id}`}
+                          >
+                            {isReplacing ? (
+                              <Spinner />
+                            ) : (
+                              <RefreshCw className="w-3.5 h-3.5" aria-hidden="true" />
+                            )}
+                            {t('blueprints.replace')}
+                          </Button>
+                          <button
+                            type="button"
+                            onClick={() => handleDelete(entry)}
+                            disabled={isDeleting}
+                            className="inline-flex min-h-11 items-center justify-center gap-1 px-3 py-2 text-xs rounded-md text-status-destructive hover:bg-status-destructive/10 transition-colors disabled:opacity-50 sm:ml-auto"
+                            data-testid={`blueprint-delete-${entry.id}`}
+                          >
+                            {isDeleting ? (
+                              <Spinner />
+                            ) : (
+                              <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
+                            )}
+                            {t('common.delete')}
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </article>
+                )
+              })}
+            </div>
+          </section>
+        )
+      })()}
       {builder && entries && <BlueprintBuilder mode={builder.mode} sourceId={builder.sourceId} entries={entries} onClose={() => setBuilder(null)} onSaved={load} />}
     </div>
   )

@@ -51,6 +51,8 @@ const sampleList = {
     {
       id: 'minecraft_paper',
       name: 'Minecraft (Paper)',
+      game: 'Minecraft',
+      edition: 'Paper',
       category: 'non_steam_game',
       author: 'Maunting Studios',
       description: null,
@@ -59,6 +61,23 @@ const sampleList = {
       image: 'itzg/minecraft-server:latest',
       source_type: 'dockerOnly',
       supports_mods: true,
+      supports_steam_workshop: false,
+      mod_injection: 'none',
+      ports: [{ name: 'game', protocol: 'tcp' }],
+    },
+    {
+      id: 'minecraft_vanilla',
+      name: 'Minecraft (Vanilla)',
+      game: 'Minecraft',
+      edition: 'Vanilla',
+      category: 'non_steam_game',
+      author: 'Maunting Studios',
+      description: null,
+      origin: 'native',
+      version: 1,
+      image: 'itzg/minecraft-server:latest',
+      source_type: 'dockerOnly',
+      supports_mods: false,
       supports_steam_workshop: false,
       mod_injection: 'none',
       ports: [{ name: 'game', protocol: 'tcp' }],
@@ -81,6 +100,11 @@ const sampleList = {
   ],
 }
 
+async function openGameCard(key: string) {
+  const card = await screen.findByTestId(`blueprint-game-card-${key}`)
+  fireEvent.click(within(card).getByRole('button'))
+}
+
 describe('Blueprints page', () => {
   let fetchSpy: ReturnType<typeof vi.spyOn>
 
@@ -96,20 +120,36 @@ describe('Blueprints page', () => {
     fetchSpy.mockRestore()
   })
 
-  it('renders blueprints from API with origin badge', async () => {
+  it('groups blueprints by game first and drills into the selected game', async () => {
     fetchSpy.mockReturnValueOnce(mockJson(200, sampleList))
     renderPage()
+
+    const minecraftCard = await screen.findByTestId('blueprint-game-card-minecraft')
+    expect(screen.getByTestId('blueprint-game-card-my-custom-game')).toBeInTheDocument()
+    expect(within(minecraftCard).getByText('2 blueprints')).toBeInTheDocument()
+    // Blueprints are not shown flat before choosing a game.
+    expect(screen.queryByTestId('blueprint-row-minecraft_paper')).toBeNull()
+
+    fireEvent.click(within(minecraftCard).getByRole('button'))
     await screen.findByTestId('blueprint-row-minecraft_paper')
-    await screen.findByTestId('blueprint-row-my_custom')
-    expect(screen.getByText('Minecraft (Paper)')).toBeInTheDocument()
-    expect(screen.getByText('My Custom Game')).toBeInTheDocument()
+    expect(screen.getByTestId('blueprint-row-minecraft_vanilla')).toBeInTheDocument()
+    expect(screen.queryByTestId('blueprint-row-my_custom')).toBeNull()
+
+    fireEvent.click(screen.getByTestId('blueprints-back-to-games'))
+    await screen.findByTestId('blueprint-game-card-minecraft')
+    expect(screen.queryByTestId('blueprint-row-minecraft_paper')).toBeNull()
   })
 
-  it('gives the blueprint search an accessible name', async () => {
+  it('shows matching blueprints across all games while searching', async () => {
     fetchSpy.mockReturnValueOnce(mockJson(200, sampleList))
     renderPage()
 
-    expect(await screen.findByRole('searchbox', { name: new RegExp(i18n.t('blueprints.search'), 'i') })).toBeInTheDocument()
+    const searchInput = await screen.findByRole('searchbox', { name: new RegExp(i18n.t('blueprints.search'), 'i') })
+    await screen.findByTestId('blueprint-game-card-minecraft')
+
+    fireEvent.change(searchInput, { target: { value: 'paper' } })
+    await screen.findByTestId('blueprint-row-minecraft_paper')
+    expect(screen.queryByTestId('blueprint-row-minecraft_vanilla')).toBeNull()
   })
 
   it('keeps header actions aligned and removes visible schema-version chrome', async () => {
@@ -117,7 +157,7 @@ describe('Blueprints page', () => {
     fetchSpy.mockReturnValueOnce(mockJson(200, sampleList))
     renderPage()
 
-    await screen.findByTestId('blueprint-row-minecraft_paper')
+    await screen.findByTestId('blueprint-game-card-minecraft')
     const actions = screen.getByTestId('blueprints-header-actions')
     expect(actions).toHaveClass('grid-flow-col', 'items-stretch')
     expect(screen.getByRole('link', { name: i18n.t('blueprints.guide') })).toHaveClass('h-10')
@@ -130,7 +170,7 @@ describe('Blueprints page', () => {
     fetchSpy.mockReturnValueOnce(mockJson(200, sampleList))
     renderPage()
 
-    await screen.findByTestId('blueprint-row-minecraft_paper')
+    await screen.findByTestId('blueprint-game-card-minecraft')
     fireEvent.click(screen.getByTestId('blueprints-create'))
 
     const dialog = screen.getByRole('dialog', { name: i18n.t('blueprintBuilder.title.create') })
@@ -144,9 +184,13 @@ describe('Blueprints page', () => {
     setMe(ownerMe)
     fetchSpy.mockReturnValueOnce(mockJson(200, sampleList))
     renderPage()
+    await openGameCard('minecraft')
     await screen.findByTestId('blueprint-row-minecraft_paper')
     expect(screen.queryByTestId('blueprint-replace-minecraft_paper')).toBeNull()
     expect(screen.queryByTestId('blueprint-delete-minecraft_paper')).toBeNull()
+
+    fireEvent.click(screen.getByTestId('blueprints-back-to-games'))
+    await openGameCard('my-custom-game')
     // Community-Row hat beide Buttons fuer Owner.
     expect(screen.getByTestId('blueprint-replace-my_custom')).toBeInTheDocument()
     expect(screen.getByTestId('blueprint-delete-my_custom')).toBeInTheDocument()
@@ -157,6 +201,7 @@ describe('Blueprints page', () => {
     setMe(readOnlyMe)
     fetchSpy.mockReturnValueOnce(mockJson(200, sampleList))
     renderPage()
+    await openGameCard('my-custom-game')
     await screen.findByTestId('blueprint-row-my_custom')
     expect(screen.queryByTestId('blueprints-upload-new')).toBeNull()
     expect(screen.queryByTestId('blueprint-replace-my_custom')).toBeNull()
@@ -167,6 +212,7 @@ describe('Blueprints page', () => {
     setMe(readOnlyMe)
     fetchSpy.mockReturnValueOnce(mockJson(200, sampleList))
     renderPage()
+    await openGameCard('minecraft')
     const download = await screen.findByTestId('blueprint-download-minecraft_paper')
     expect(download.getAttribute('href')).toBe('/api/blueprints/minecraft_paper')
   })
@@ -179,6 +225,7 @@ describe('Blueprints page', () => {
       .mockReturnValueOnce(mockJson(200, { blueprints: [sampleList.blueprints[0]] }))
     renderPage()
 
+    await openGameCard('my-custom-game')
     const deleteBtn = await screen.findByTestId('blueprint-delete-my_custom')
     fireEvent.click(deleteBtn)
 
@@ -201,6 +248,7 @@ describe('Blueprints page', () => {
     fetchSpy.mockReturnValueOnce(mockJson(200, sampleList))
     renderPage()
 
+    await openGameCard('my-custom-game')
     const deleteBtn = await screen.findByTestId('blueprint-delete-my_custom')
     fireEvent.click(deleteBtn)
     await waitFor(() => expect(useConfirmStore.getState().pending).not.toBeNull())
@@ -217,6 +265,7 @@ describe('Blueprints page', () => {
       .mockReturnValueOnce(mockJson(200, { id: 'my_custom' }))
       .mockReturnValueOnce(mockJson(200, sampleList))
     renderPage()
+    await openGameCard('my-custom-game')
     fireEvent.click(await screen.findByTestId('blueprint-replace-my_custom'))
 
     const input = screen.getByTestId('blueprints-replace-input') as HTMLInputElement
@@ -239,6 +288,7 @@ describe('Blueprints page', () => {
     setMe(ownerMe)
     fetchSpy.mockReturnValueOnce(mockJson(200, sampleList))
     renderPage()
+    await openGameCard('my-custom-game')
     const replaceBtn = await screen.findByTestId('blueprint-replace-my_custom')
     fireEvent.click(replaceBtn)
 

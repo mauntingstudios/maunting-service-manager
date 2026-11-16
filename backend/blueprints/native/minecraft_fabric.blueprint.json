@@ -3,9 +3,11 @@
   "meta": {
     "id": "minecraft_fabric",
     "name": "Minecraft (Fabric)",
+    "game": "Minecraft",
+    "edition": "Fabric",
     "category": "non_steam_game",
     "author": "Maunting Studios",
-    "description": "Fabric-Server via itzg/minecraft-server. Leichter, moderner Mod-Loader. Fabric-Mods (.jar) in /data/mods ablegen \u00e2\u20ac\u201d werden beim Start automatisch geladen."
+    "description": "Fabric-Server via itzg/minecraft-server. Leichter, moderner Mod-Loader. Fabric-Mods (.jar) in /data/mods ablegen; werden beim Start automatisch geladen."
   },
   "runtime": {
     "image": "itzg/minecraft-server:latest",
@@ -15,6 +17,8 @@
       "TYPE": "FABRIC",
       "VERSION": "LATEST",
       "SERVER_PORT": "{GAME_PORT}",
+      "ENABLE_QUERY": "true",
+      "QUERY_PORT": "{QUERY_PORT}",
       "ENABLE_RCON": "true",
       "RCON_PORT": "{RCON_PORT}"
     },

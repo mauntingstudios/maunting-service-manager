@@ -3,9 +3,11 @@
   "meta": {
     "id": "farming_simulator_22",
     "name": "Farming Simulator 22",
+    "game": "Farming Simulator",
+    "edition": "2022",
     "category": "steam_game",
     "author": "Maunting Studios",
-    "description": "Farming Simulator 22 Dedicated Server via SteamCMD (App-ID 1782290). Runs on Windows-binary via GE-Proton/Wine."
+    "description": "Farming Simulator 22 Dedicated Server (Steam App-ID 1248130) via Wine/Xvfb. Erfordert einen globalen Steam-Account mit gekaufter FS22-Lizenz (requiresLogin=true, ohne Steam Guard) sowie Einrichtung von dedicatedServer.xml / Web-Admin."
   },
   "runtime": {
     "image": "ghcr.io/parkervcp/yolks:wine_10",
@@ -16,12 +18,18 @@
       "WINEESYNC": "1",
       "WINEFSYNC": "1"
     },
-    "startup": "./FarmingSimulator2022.exe -server",
+    "startup": "xvfb-run -a wine ./dedicatedServer.exe",
     "ensureDirs": [
       "profile"
     ],
     "requiredFiles": [
-      "FarmingSimulator2022.exe"
+      "dedicatedServer.exe"
+    ],
+    "seedFiles": [
+      {
+        "file": "steam_appid.txt",
+        "content": "1248130\n"
+      }
     ],
     "configPatches": [
       {
@@ -29,6 +37,12 @@
         "file": "profile/dedicatedServerConfig.xml",
         "regex": "(<port>)\\d+(</port>)",
         "value": "\\g<1>{GAME_PORT}\\g<2>"
+      },
+      {
+        "type": "regex",
+        "file": "dedicatedServer.xml",
+        "regex": "(<webserver\\b[^>]*\\bport=\")\\d+(\")",
+        "value": "\\g<1>{WEB_PORT}\\g<2>"
       }
     ],
     "startupCheckSeconds": 90.0
@@ -36,16 +50,24 @@
   "ports": [
     {
       "name": "game",
+      "protocol": "udp"
+    },
+    {
+      "name": "game",
+      "protocol": "tcp"
+    },
+    {
+      "name": "web",
       "protocol": "tcp"
     }
   ],
   "source": {
     "type": "steam",
     "steam": {
-      "appId": "1782290",
+      "appId": "1248130",
       "platform": "windows",
-      "compatibility": "proton",
-      "requiresLogin": false,
+      "compatibility": "wine",
+      "requiresLogin": true,
       "validate": false
     },
     "updateStrategy": "checkBased"
@@ -120,7 +142,8 @@
   },
   "backup": {
     "includePaths": [
-      "profile"
+      "profile",
+      "dedicatedServer.xml"
     ]
   }
 }

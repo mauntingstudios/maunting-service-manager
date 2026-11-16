@@ -3,6 +3,8 @@
   "meta": {
     "id": "minecraft_purpur",
     "name": "Minecraft (Purpur)",
+    "game": "Minecraft",
+    "edition": "Purpur",
     "category": "non_steam_game",
     "author": "Maunting Studios",
     "description": "Purpur-Server via itzg/minecraft-server. Paper-Fork mit erweiterten Konfig-Optionen. Plugins in /data/plugins."
@@ -15,6 +17,8 @@
       "TYPE": "PURPUR",
       "VERSION": "LATEST",
       "SERVER_PORT": "{GAME_PORT}",
+      "ENABLE_QUERY": "true",
+      "QUERY_PORT": "{QUERY_PORT}",
       "ENABLE_RCON": "true",
       "RCON_PORT": "{RCON_PORT}"
     },
@@ -45,7 +49,7 @@
     "workshopAppId": null,
     "supportsCurseForge": true,
     "curseforgeGameId": "432",
-    "curseforgeClassId": "4552",
+    "curseforgeClassId": "5",
     "curseforgeInstallPath": "plugins",
     "modInjection": "none",
     "modStartupArgumentFormat": null,

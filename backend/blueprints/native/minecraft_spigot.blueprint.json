@@ -3,6 +3,8 @@
   "meta": {
     "id": "minecraft_spigot",
     "name": "Minecraft (Spigot)",
+    "game": "Minecraft",
+    "edition": "Spigot",
     "category": "non_steam_game",
     "author": "Maunting Studios",
     "description": "Spigot-Server via itzg/minecraft-server. Klassischer Bukkit-Fork mit Plugin-Support. Plugins in /data/plugins ablegen."
@@ -15,6 +17,8 @@
       "TYPE": "SPIGOT",
       "VERSION": "LATEST",
       "SERVER_PORT": "{GAME_PORT}",
+      "ENABLE_QUERY": "true",
+      "QUERY_PORT": "{QUERY_PORT}",
       "ENABLE_RCON": "true",
       "RCON_PORT": "{RCON_PORT}"
     },
@@ -45,7 +49,7 @@
     "workshopAppId": null,
     "supportsCurseForge": true,
     "curseforgeGameId": "432",
-    "curseforgeClassId": "4552",
+    "curseforgeClassId": "5",
     "curseforgeInstallPath": "plugins",
     "modInjection": "none",
     "modStartupArgumentFormat": null,

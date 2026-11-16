@@ -327,9 +327,19 @@ class BlueprintMeta(BaseModel):
 
     id: str = Field(min_length=1, max_length=64)
     name: str = Field(min_length=1, max_length=128)
+    game: str | None = Field(default=None, max_length=128)
+    edition: str | None = Field(default=None, max_length=128)
     category: BlueprintCategory
     author: str | None = Field(default=None, max_length=128)
     description: str | None = Field(default=None, max_length=1024)
+
+    @field_validator("game", "edition", mode="before")
+    @classmethod
+    def _normalize_optional_group_label(cls, v: object) -> object:
+        if isinstance(v, str):
+            stripped = v.strip()
+            return stripped or None
+        return v
 
     @field_validator("id", mode="before")
     @classmethod

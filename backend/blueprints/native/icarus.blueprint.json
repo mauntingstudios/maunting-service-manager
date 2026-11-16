@@ -5,7 +5,7 @@
     "name": "Icarus",
     "category": "steam_game",
     "author": "Maunting Studios",
-    "description": "Icarus Dedicated Server via SteamCMD (App-ID 2089390). Runs on Windows-binary via GE-Proton/Wine."
+    "description": "Icarus Dedicated Server via SteamCMD (App-ID 2089300). Windows-Binary läuft über Wine im Headless-Modus (-nullrhi)."
   },
   "runtime": {
     "image": "ghcr.io/parkervcp/yolks:wine_10",
@@ -16,7 +16,7 @@
       "WINEESYNC": "1",
       "WINEFSYNC": "1"
     },
-    "startup": "./IcarusServer.exe -Port={GAME_PORT} -QueryPort={QUERY_PORT} -Log",
+    "startup": "./IcarusServer.exe -Port={GAME_PORT} -QueryPort={QUERY_PORT} -SteamServerName=\"{SERVER_NAME}\" -Log -nullrhi",
     "ensureDirs": [
       "Icarus/Saved"
     ],
@@ -39,7 +39,7 @@
   "source": {
     "type": "steam",
     "steam": {
-      "appId": "2089390",
+      "appId": "2089300",
       "platform": "windows",
       "compatibility": "proton",
       "requiresLogin": false,

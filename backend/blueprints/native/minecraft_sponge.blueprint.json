@@ -3,6 +3,8 @@
   "meta": {
     "id": "minecraft_sponge",
     "name": "Minecraft (SpongeVanilla)",
+    "game": "Minecraft",
+    "edition": "SpongeVanilla",
     "category": "non_steam_game",
     "author": "Maunting Studios",
     "description": "SpongeVanilla-Server via itzg/minecraft-server. Sponge-Plugin-Plattform auf Vanilla-Basis. Plugins in /data/mods (Sponge laedt aus diesem Ordner)."
@@ -15,6 +17,8 @@
       "TYPE": "SPONGEVANILLA",
       "VERSION": "LATEST",
       "SERVER_PORT": "{GAME_PORT}",
+      "ENABLE_QUERY": "true",
+      "QUERY_PORT": "{QUERY_PORT}",
       "ENABLE_RCON": "true",
       "RCON_PORT": "{RCON_PORT}"
     },

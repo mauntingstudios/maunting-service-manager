@@ -731,7 +731,7 @@ def test_dayz_blueprint_renders_runtime_env_command_and_dirs(tmp_path) -> None:
 
 def test_dayz_blueprint_runtime_preflight_rejects_missing_required_files(tmp_path) -> None:
     plugin = _native_plugin("dayz")
-    server = _FakeServer(id=77, install_dir=str(tmp_path), game_port=2302, query_port=27016)
+    server = _FakeServer(id=77, install_dir=str(tmp_path), game_port=2302, query_port=27016, rcon_port=2310)
 
     try:
         plugin.prepare_runtime(server)
@@ -741,7 +741,9 @@ def test_dayz_blueprint_runtime_preflight_rejects_missing_required_files(tmp_pat
 
     assert "Runtime-Dateien fehlen" in message
     assert "DayZServer" in message
-    assert "serverDZ.cfg" in message
+    assert (tmp_path / "serverDZ.cfg").is_file()
+    assert "steamQueryPort = 27016;" in (tmp_path / "serverDZ.cfg").read_text(encoding="utf-8")
+    assert "RConPort 2310" in (tmp_path / "battleye" / "BEServer_x64.cfg").read_text(encoding="utf-8")
     assert str(tmp_path) not in message
 
 

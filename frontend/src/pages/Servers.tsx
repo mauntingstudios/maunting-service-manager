@@ -9,6 +9,7 @@ import { useHasPermission } from '@/hooks/useHasPermission'
 import { sortServersByPriority, useServerPreferencesStore } from '@/stores/serverPreferencesStore'
 import type { Server, GameInfo, PostgresCredential, ServerCreateResult, Node } from '@/types'
 import { labelRole, mapBlueprintPorts } from '@/utils/portRoles'
+import { groupByGame, resolveBlueprintEditionLabel } from '@/utils/blueprintGroups'
 import { Server as ServerIcon, Plus, AlertTriangle, Database, Store } from 'lucide-react'
 import { PostgresCredentialsDialog } from '@/components/server/PostgresCredentialsDialog'
 import { ServerCard } from '@/components/server/ServerCard'
@@ -347,6 +348,11 @@ export function Servers({ ohneHintergrund = false }: { ohneHintergrund?: boolean
 
   // PostgreSQL entsteht über „Datenbankserver", nicht als Spiel in der Liste.
   const applicationGames = (Array.isArray(games) ? games : []).filter((g) => g.category !== 'database')
+  const gameGroups = useMemo(() => groupByGame(applicationGames), [applicationGames])
+  const selectedGameGroup = useMemo(
+    () => gameGroups.find((grp) => grp.items.some((item) => item.id === form.game_type)) ?? null,
+    [gameGroups, form.game_type],
+  )
   const gameName = (id: string) => (Array.isArray(games) ? games : []).find((g) => g.id === id)?.name || id
 
   // Datengetrieben statt rechtegetrieben: das Backend liefert Kundenserver nur
@@ -588,22 +594,70 @@ export function Servers({ ohneHintergrund = false }: { ohneHintergrund?: boolean
                 required
               />
               {!isDatabaseServer && (
-              <div>
-                <label className="block font-label-md text-label-md text-on-surface-variant mb-1.5 uppercase tracking-wider">
-                  {t('servers.game')}
-                </label>
-                <Dropdown
-                  value={form.game_type || null}
-                  onChange={(value) => setForm({ ...form, game_type: value })}
-                  options={applicationGames.map((g) => ({
-                    value: g.id,
-                    label: g.name,
-                  }))}
-                  searchable={applicationGames.length > 5}
-                  placeholder={t('servers.game')}
-                  aria-label={t('servers.game')}
-                  data-testid="create-server-game"
-                />
+              <div className="space-y-3">
+                <div>
+                  <label className="block font-label-md text-label-md text-on-surface-variant mb-1.5 uppercase tracking-wider">
+                    {t('servers.game')}
+                  </label>
+                  <Dropdown
+                    value={selectedGameGroup?.key ?? null}
+                    onChange={(groupKey) => {
+                      const group = gameGroups.find((grp) => grp.key === groupKey)
+                      if (!group || group.items.length === 0) return
+                      const preferred = group.items.find((item) => item.id === form.game_type) ?? group.items[0]
+                      setForm({
+                        ...form,
+                        game_type: preferred.id,
+                        game_port: '',
+                        query_port: '',
+                        rcon_port: '',
+                        ports: {},
+                      })
+                    }}
+                    options={gameGroups.map((grp) => ({
+                      value: grp.key,
+                      label: grp.name,
+                      hint: grp.items.length > 1
+                        ? t('servers.gameGroupHint', { count: grp.items.length })
+                        : undefined,
+                    }))}
+                    searchable={gameGroups.length > 5}
+                    placeholder={t('servers.game')}
+                    aria-label={t('servers.game')}
+                    data-testid="create-server-game"
+                  />
+                </div>
+                {selectedGameGroup && selectedGameGroup.items.length > 1 && (
+                  <div>
+                    <label className="block font-label-md text-label-md text-on-surface-variant mb-1.5 uppercase tracking-wider">
+                      {t('servers.blueprintEdition')}
+                    </label>
+                    <Dropdown
+                      value={form.game_type || null}
+                      onChange={(value) => setForm({
+                        ...form,
+                        game_type: value,
+                        game_port: '',
+                        query_port: '',
+                        rcon_port: '',
+                        ports: {},
+                      })}
+                      options={selectedGameGroup.items.map((g) => ({
+                        value: g.id,
+                        label: resolveBlueprintEditionLabel(g, selectedGameGroup.name),
+                        hint: [
+                          g.source === 'community' ? t('blueprints.originCommunity') : null,
+                          g.mod_support ? 'Mods' : null,
+                          g.supports_steam_workshop ? 'Workshop' : null,
+                        ].filter(Boolean).join(' · ') || undefined,
+                      }))}
+                      searchable={selectedGameGroup.items.length > 5}
+                      placeholder={t('servers.selectBlueprintEdition')}
+                      aria-label={t('servers.blueprintEdition')}
+                      data-testid="create-server-blueprint"
+                    />
+                  </div>
+                )}
               </div>
               )}
               {isDatabaseServer && (

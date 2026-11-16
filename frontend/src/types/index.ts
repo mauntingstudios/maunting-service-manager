@@ -255,6 +255,8 @@ export interface BlueprintPortDef {
 export interface GameInfo {
   id: string
   name: string
+  game?: string | null
+  edition?: string | null
   platform: string
   category?: string
   mod_support: boolean
@@ -274,6 +276,8 @@ export interface GameInfo {
 export interface BlueprintListEntry {
   id: string
   name: string
+  game?: string | null
+  edition?: string | null
   category: string
   author: string | null
   description: string | null
