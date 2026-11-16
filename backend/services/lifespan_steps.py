@@ -515,13 +515,22 @@ def recover_scheduler_and_cleanup_expired() -> None:
                 len(recovered_servers),
                 recovered_servers,
             )
-        from services.frontend_deploy_service import reconcile_orphaned_frontend_deployments
+        from services.frontend_deploy_service import (
+            prune_all_old_deployments,
+            reconcile_orphaned_frontend_deployments,
+        )
 
         reconciled_builds = reconcile_orphaned_frontend_deployments(db, max_age_hours=0)
         if reconciled_builds:
             logger.info(
                 "%d verwaiste(r) Frontend-Build(s) nach Panel-Start bereinigt.",
                 reconciled_builds,
+            )
+        pruned_builds = prune_all_old_deployments(db)
+        if pruned_builds:
+            logger.info(
+                "%d alte/fehlgeschlagene Frontend-Deployment(s) beim Start aufgeraeumt.",
+                pruned_builds,
             )
         init_server_schedules(db)
     finally:

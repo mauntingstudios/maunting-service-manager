@@ -81,9 +81,19 @@ export const frontendApi = {
       body: JSON.stringify({ online }),
     }),
 
-  listDeployments: (serverId: number, branch?: string) => {
-    const q = branch ? `?branch=${encodeURIComponent(branch)}` : ''
-    return api<FrontendDeployment[]>(`/servers/${serverId}/frontend/deployments${q}`)
+  listDeployments: (
+    serverId: number,
+    branch?: string,
+    opts?: { limit?: number; offset?: number },
+  ) => {
+    const params = new URLSearchParams()
+    if (branch) params.set('branch', branch)
+    if (opts?.limit !== undefined) params.set('limit', String(opts.limit))
+    if (opts?.offset !== undefined) params.set('offset', String(opts.offset))
+    const qs = params.toString()
+    return api<FrontendDeployment[]>(
+      `/servers/${serverId}/frontend/deployments${qs ? `?${qs}` : ''}`,
+    )
   },
 
   getDeploymentLog: (serverId: number, depId: number) =>

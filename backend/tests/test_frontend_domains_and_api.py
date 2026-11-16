@@ -149,6 +149,33 @@ def test_frontend_api_endpoints_build_promote_rollback_online(
     assert r_cancel.status_code == 200
     assert r_cancel.json()["status"] == "canceled"
 
+    # Zweiter Cancel-Aufruf bleibt idempotent
+    r_cancel_again = client.post(
+        f"/api/servers/{srv.id}/frontend/deployments/{dep_id}/cancel",
+        cookies=owner_cookies,
+        headers={"X-CSRF-Token": csrf_token},
+    )
+    assert r_cancel_again.status_code == 200
+    assert r_cancel_again.json()["status"] == "canceled"
+
+    # Paginierung + X-Total-Count Header beim Deployment-Listing
+    with patch("services.frontend_deploy_service.trigger_async_build"):
+        r_build_2 = client.post(
+            f"/api/servers/{srv.id}/frontend/deployments",
+            cookies=owner_cookies,
+            headers={"X-CSRF-Token": csrf_token},
+            json={"branch": "main"},
+        )
+        assert r_build_2.status_code == 201
+
+    r_page = client.get(
+        f"/api/servers/{srv.id}/frontend/deployments?limit=1&offset=0",
+        cookies=owner_cookies,
+    )
+    assert r_page.status_code == 200
+    assert len(r_page.json()) == 1
+    assert int(r_page.headers.get("X-Total-Count", "0")) >= 2
+
     with patch("services.frontend_deploy_service.clear_build_cache") as mock_clear:
         r_cache = client.post(
             f"/api/servers/{srv.id}/frontend/cache/clear",

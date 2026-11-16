@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   ArrowUpRight,
@@ -24,6 +24,7 @@ import {
   Spinner,
   type DropdownOption,
 } from '@maunting/ui'
+import { SanitizedApiError } from '@/api/client'
 import {
   frontendApi,
   type FrontendDeployment,
@@ -56,44 +57,59 @@ function statusDotClasses(status: FrontendDeployment['status']): string {
   return 'bg-on-surface-variant/50'
 }
 
+const HISTORY_PAGE_SIZE = 8
+
 export function DeploymentsPanel({
   serverId,
   overview: externalOverview,
   onRefreshOverview,
 }: DeploymentsPanelProps) {
   const { t, i18n } = useTranslation()
+  const tRef = useRef(t)
+  tRef.current = t
   const [overview, setOverview] = useState<FrontendOverview | null>(externalOverview ?? null)
   const [deployments, setDeployments] = useState<FrontendDeployment[]>([])
   const [branchFilter, setBranchFilter] = useState<string>('')
+  const [historyLimit, setHistoryLimit] = useState(HISTORY_PAGE_SIZE)
+  const [hasMoreDeployments, setHasMoreDeployments] = useState(false)
   const [loading, setLoading] = useState(true)
   const [busyId, setBusyId] = useState<number | null>(null)
-  const [showHeroPreview, setShowHeroPreview] = useState(false)
   const [nowMs, setNowMs] = useState(() => Date.now())
   const [inspector, setInspector] = useState<{
     open: boolean
     deploymentId?: number
     log: string
     logLoading: boolean
+    initialView: 'logs' | 'preview'
   }>({
     open: false,
     log: '',
     logLoading: false,
+    initialView: 'logs',
   })
 
   const loadAll = useCallback(async () => {
     try {
       const [ov, deps] = await Promise.all([
         frontendApi.getOverview(serverId),
-        frontendApi.listDeployments(serverId, branchFilter || undefined),
+        frontendApi.listDeployments(serverId, branchFilter || undefined, {
+          limit: historyLimit + 1,
+        }),
       ])
       setOverview(ov)
-      setDeployments(deps)
+      const safeDeps = Array.isArray(deps) ? deps : []
+      setHasMoreDeployments(safeDeps.length > historyLimit)
+      setDeployments(safeDeps.slice(0, historyLimit))
     } catch {
-      toast.error(t('frontendDeployments.loadError'))
+      toast.error(tRef.current('frontendDeployments.loadError'))
     } finally {
       setLoading(false)
     }
-  }, [serverId, branchFilter, t])
+  }, [serverId, branchFilter, historyLimit])
+
+  useEffect(() => {
+    setHistoryLimit(HISTORY_PAGE_SIZE)
+  }, [serverId])
 
   useEffect(() => {
     loadAll()
@@ -109,10 +125,17 @@ export function DeploymentsPanel({
   )
   const hasActiveBuild = activeBuilds.length > 0
 
-  const inspectedDeployment = useMemo(
-    () => deployments.find((d) => d.id === inspector.deploymentId) ?? null,
-    [deployments, inspector.deploymentId],
-  )
+  const inspectedDeployment = useMemo(() => {
+    if (!inspector.deploymentId) return null
+    return (
+      deployments.find((d) => d.id === inspector.deploymentId) ??
+      (overview?.production_deployment?.id === inspector.deploymentId
+        ? overview.production_deployment
+        : null) ??
+      overview?.previews?.find((p) => p.id === inspector.deploymentId) ??
+      null
+    )
+  }, [deployments, overview, inspector.deploymentId])
 
   const inspectedIsActive =
     inspectedDeployment?.status === 'queued' || inspectedDeployment?.status === 'building'
@@ -185,26 +208,34 @@ export function DeploymentsPanel({
     }
   }
 
-  const openInspector = async (dep: FrontendDeployment) => {
+  const openInspector = async (
+    dep: FrontendDeployment,
+    initialView: 'logs' | 'preview' = 'logs',
+  ) => {
     setInspector({
       open: true,
       deploymentId: dep.id,
       log: '',
       logLoading: true,
+      initialView,
     })
     try {
       const res = await frontendApi.getDeploymentLog(serverId, dep.id)
-      setInspector({
+      setInspector((prev) => ({
+        ...prev,
         open: true,
         deploymentId: dep.id,
         log: res.log || t('frontendDeployments.emptyLog'),
         logLoading: false,
-      })
+      }))
     } catch {
       setInspector((prev) => ({ ...prev, logLoading: false }))
       toast.error(t('frontendDeployments.loadError'))
     }
   }
+
+  const getApiErrorMessage = (err: unknown, fallback: string) =>
+    err instanceof SanitizedApiError && err.message ? err.message : fallback
 
   const handleBuild = async (branch?: string) => {
     try {
@@ -213,10 +244,12 @@ export function DeploymentsPanel({
       await loadAll()
       onRefreshOverview?.()
       if (created?.id) {
-        await openInspector(created)
+        await openInspector(created, 'logs')
       }
-    } catch {
-      toast.error(t('frontendDeployments.buildError'))
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, t('frontendDeployments.buildError')))
+      await loadAll()
+      onRefreshOverview?.()
     }
   }
 
@@ -227,8 +260,10 @@ export function DeploymentsPanel({
       toast.success(t('frontendDeployments.buildCanceled', { defaultValue: 'Build abgebrochen' }))
       await loadAll()
       onRefreshOverview?.()
-    } catch {
-      toast.error(t('frontendDeployments.actionError'))
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, t('frontendDeployments.actionError')))
+      await loadAll()
+      onRefreshOverview?.()
     } finally {
       setBusyId(null)
     }
@@ -241,8 +276,10 @@ export function DeploymentsPanel({
       toast.success(t('frontendDeployments.promoted'))
       await loadAll()
       onRefreshOverview?.()
-    } catch {
-      toast.error(t('frontendDeployments.actionError'))
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, t('frontendDeployments.actionError')))
+      await loadAll()
+      onRefreshOverview?.()
     } finally {
       setBusyId(null)
     }
@@ -255,8 +292,10 @@ export function DeploymentsPanel({
       toast.success(t('frontendDeployments.rolledBack'))
       await loadAll()
       onRefreshOverview?.()
-    } catch {
-      toast.error(t('frontendDeployments.actionError'))
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, t('frontendDeployments.actionError')))
+      await loadAll()
+      onRefreshOverview?.()
     } finally {
       setBusyId(null)
     }
@@ -274,8 +313,10 @@ export function DeploymentsPanel({
       toast.success(t('frontendDeployments.previewDeleted'))
       await loadAll()
       onRefreshOverview?.()
-    } catch {
-      toast.error(t('frontendDeployments.actionError'))
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, t('frontendDeployments.actionError')))
+      await loadAll()
+      onRefreshOverview?.()
     } finally {
       setBusyId(null)
     }
@@ -431,19 +472,16 @@ export function DeploymentsPanel({
                   <Copy className="mr-1.5 h-3.5 w-3.5" />
                   {t('frontendDeployments.copyUrl')}
                 </Button>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => setShowHeroPreview((v) => !v)}
-                >
-                  <Eye className="mr-1.5 h-3.5 w-3.5" />
-                  {t('frontendDeployments.livePreviewTab', { defaultValue: 'Live-Vorschau' })}
-                  {showHeroPreview ? (
-                    <ChevronUp className="ml-1 h-3.5 w-3.5" />
-                  ) : (
-                    <ChevronDown className="ml-1 h-3.5 w-3.5" />
-                  )}
-                </Button>
+                {prod && (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => void openInspector(prod, 'preview')}
+                  >
+                    <Eye className="mr-1.5 h-3.5 w-3.5" />
+                    {t('frontendDeployments.livePreviewTab', { defaultValue: 'Live-Vorschau' })}
+                  </Button>
+                )}
                 <a
                   href={prodUrl}
                   target="_blank"
@@ -461,24 +499,6 @@ export function DeploymentsPanel({
             </Button>
           </div>
         </div>
-
-        {/* Lazy geladene Live-Vorschau der Produktionsseite */}
-        {showHeroPreview && prodUrl && (
-          <div className="rounded-xl border border-outline-variant/30 bg-surface-container-lowest p-2 space-y-1.5">
-            <iframe
-              src={prodUrl}
-              loading="lazy"
-              title="Produktions-Vorschau"
-              className="h-[360px] w-full rounded-lg border border-outline-variant/30 bg-surface"
-            />
-            <p className="text-xs text-on-surface-variant text-center">
-              {t('frontendDeployments.previewEmbedHint', {
-                defaultValue:
-                  'Falls die Seite Einbettung per X-Frame-Options blockiert, öffne sie direkt über „Öffnen“.',
-              })}
-            </p>
-          </div>
-        )}
       </section>
 
       {/* Branch-Previews */}
@@ -606,7 +626,10 @@ export function DeploymentsPanel({
             <Dropdown
               options={branchOptions}
               value={branchFilter}
-              onChange={(val) => setBranchFilter(String(val))}
+              onChange={(val) => {
+                setBranchFilter(String(val))
+                setHistoryLimit(HISTORY_PAGE_SIZE)
+              }}
             />
           </div>
         </div>
@@ -730,11 +753,37 @@ export function DeploymentsPanel({
             })}
           </div>
         )}
+
+        {(hasMoreDeployments || historyLimit > HISTORY_PAGE_SIZE) && (
+          <div className="flex flex-wrap items-center justify-center gap-2 pt-2">
+            {hasMoreDeployments && (
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setHistoryLimit((prev) => prev + HISTORY_PAGE_SIZE)}
+              >
+                <ChevronDown className="mr-1.5 h-3.5 w-3.5" />
+                {t('frontendDeployments.loadMore', { defaultValue: 'Mehr laden' })}
+              </Button>
+            )}
+            {historyLimit > HISTORY_PAGE_SIZE && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setHistoryLimit(HISTORY_PAGE_SIZE)}
+              >
+                <ChevronUp className="mr-1.5 h-3.5 w-3.5" />
+                {t('frontendDeployments.showLess', { defaultValue: 'Weniger anzeigen' })}
+              </Button>
+            )}
+          </div>
+        )}
       </section>
 
       <DeploymentInspectorDialog
         open={inspector.open}
         onOpenChange={(open) => setInspector((prev) => ({ ...prev, open }))}
+        initialView={inspector.initialView}
         deployment={inspectedDeployment}
         logText={inspector.log}
         logLoading={inspector.logLoading}

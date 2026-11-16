@@ -476,3 +476,60 @@ def test_reconcile_orphaned_builds_cancel_and_build_cache(db: Session, tmp_path:
     with patch("services.frontend_deploy_service._use_agent_fs", return_value=False):
         frontend_deploy_service.clear_build_cache(srv)
     assert not (Path(srv.install_dir) / "_build_cache").exists()
+
+
+def test_prune_and_cancel_deployment_idempotency(db: Session, tmp_path: Path) -> None:
+    from datetime import datetime, timedelta, timezone
+    from fastapi import HTTPException
+    import pytest
+
+    srv = _make_server(db, tmp_path / "prune_srv")
+    base_dir = Path(srv.install_dir)
+    old_ts = datetime.now(timezone.utc) - timedelta(days=10)
+
+    # 1. Altes fehlgeschlagenes Deployment + Artefakt + Log -> wird geloescht
+    old_fail = frontend_deploy_service.enqueue(db, srv, branch="main", source="manual")
+    old_fail.status = "failed"
+    old_fail.created_at = old_ts
+    (base_dir / "deployments" / str(old_fail.id)).mkdir(parents=True, exist_ok=True)
+    (base_dir / "build-logs").mkdir(parents=True, exist_ok=True)
+    (base_dir / "build-logs" / f"deploy-{old_fail.id}.log").write_text("err", encoding="utf-8")
+
+    # 2. Altes inaktives Preview -> wird geloescht
+    old_pv = frontend_deploy_service.enqueue(db, srv, branch="feat/old", source="push")
+    old_pv.kind = "preview"
+    old_pv.status = "ready"
+    old_pv.is_live = False
+    old_pv.created_at = old_ts
+
+    # 3. Live-Produktion -> bleibt immer erhalten + kann nicht mehr abgebrochen werden (409)
+    live_prod = frontend_deploy_service.enqueue(db, srv, branch="main", source="manual")
+    live_prod.status = "ready"
+    live_prod.is_live = True
+    (base_dir / "deployments" / str(live_prod.id)).mkdir(parents=True, exist_ok=True)
+
+    # 4. Abgebrochener Build ist idempotent
+    canceled = frontend_deploy_service.enqueue(db, srv, branch="dev", source="manual")
+    canceled.status = "building"
+    db.commit()
+
+    res_c1 = frontend_deploy_service.cancel_deployment(db, srv, canceled)
+    res_c2 = frontend_deploy_service.cancel_deployment(db, srv, canceled)
+    assert res_c1.status == "canceled"
+    assert res_c2.status == "canceled"
+
+    with pytest.raises(HTTPException) as exc_info:
+        frontend_deploy_service.cancel_deployment(db, srv, live_prod)
+    assert exc_info.value.status_code == 409
+
+    with patch("services.frontend_deploy_service._use_agent_fs", return_value=False):
+        removed = frontend_deploy_service.prune(db, srv, retention_days=7)
+    db.commit()
+
+    assert removed == 2
+    assert db.get(frontend_deploy_service.FrontendDeployment, old_fail.id) is None
+    assert db.get(frontend_deploy_service.FrontendDeployment, old_pv.id) is None
+    assert db.get(frontend_deploy_service.FrontendDeployment, live_prod.id) is not None
+    assert not (base_dir / "deployments" / str(old_fail.id)).exists()
+    assert not (base_dir / "build-logs" / f"deploy-{old_fail.id}.log").exists()
+    assert (base_dir / "deployments" / str(live_prod.id)).exists()

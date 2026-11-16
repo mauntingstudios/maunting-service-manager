@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { DeploymentsPanel } from './DeploymentsPanel'
-import { frontendApi } from '@/api/frontend'
+import { frontendApi, type FrontendDeployment } from '@/api/frontend'
+import { SanitizedApiError } from '@/api/client'
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -173,6 +174,91 @@ describe('DeploymentsPanel', () => {
     fireEvent.click(screen.getByText('#21'))
     await waitFor(() => {
       expect(screen.getByText(/ERR_BUILD_FAILED/)).toBeInTheDocument()
+    })
+  })
+
+  it('opens Live-Vorschau inside inspector modal instead of inline, supports lazy load pagination, and refreshes on cancel error', async () => {
+    const makeDep = (id: number, status: FrontendDeployment['status'] = 'ready'): FrontendDeployment => ({
+      id,
+      server_id: 7,
+      kind: 'production',
+      branch: 'main',
+      branch_slug: 'main',
+      commit_sha: `sha${id}0000`,
+      commit_message: `build ${id}`,
+      commit_author: 'Maik',
+      source: 'push',
+      status,
+      is_live: id === 100,
+      port: 28080,
+      url: 'https://shop.example.de',
+      error_summary: null,
+      created_at: null,
+      started_at: null,
+      finished_at: null,
+    })
+
+    const manyDeps: FrontendDeployment[] = [
+      makeDep(101, 'building'),
+      ...Array.from({ length: 10 }, (_, idx) => makeDep(100 - idx, 'ready')),
+    ]
+
+    vi.mocked(frontendApi.getOverview).mockResolvedValue({
+      server_id: 7,
+      production_branch: 'main',
+      auto_deploy: true,
+      previews_enabled: false,
+      online: true,
+      production_url: 'https://shop.example.de',
+      production_deployment: makeDep(100, 'ready'),
+      previews: [],
+      domain: null,
+      domain_verified: false,
+      domain_verify_txt_host: null,
+      domain_verify_txt_value: null,
+      webhook_registered: false,
+      env_production: {},
+      env_preview: {},
+    })
+    vi.mocked(frontendApi.listDeployments).mockImplementation(async (_sid, _branch, opts) => {
+      const limit = opts?.limit ?? 50
+      return manyDeps.slice(0, limit)
+    })
+    vi.mocked(frontendApi.getDeploymentLog).mockResolvedValue({
+      id: 100,
+      status: 'ready',
+      log: 'build ok',
+    })
+    vi.mocked(frontendApi.cancelDeployment).mockRejectedValue(
+      new SanitizedApiError('Der Build ist bereits abgeschlossen.', 409),
+    )
+
+    render(<DeploymentsPanel serverId={7} />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Mehr laden')).toBeInTheDocument()
+    })
+    expect(screen.queryByTitle('Produktions-Vorschau')).not.toBeInTheDocument()
+
+    // Live-Vorschau Button oeffnet direkt das Inspector-Modal im Vorschau-Tab
+    fireEvent.click(screen.getByRole('button', { name: /Live-Vorschau/i }))
+    await waitFor(() => {
+      expect(screen.getByTitle('main Vorschau')).toBeInTheDocument()
+    })
+
+    // Lazy-Load erweitert die Liste und blendet „Weniger anzeigen“ ein
+    fireEvent.click(screen.getByText('Mehr laden'))
+    await waitFor(() => {
+      expect(screen.getByText('Weniger anzeigen')).toBeInTheDocument()
+    })
+
+    // Fehlgeschlagener Abbruch triggert Refresh ueber getOverview
+    const overviewCallsBefore = vi.mocked(frontendApi.getOverview).mock.calls.length
+    fireEvent.click(screen.getByRole('button', { name: /Abbrechen/i }))
+    await waitFor(() => {
+      expect(vi.mocked(frontendApi.getOverview).mock.calls.length).toBeGreaterThan(
+        overviewCallsBefore,
+      )
     })
   })
 })

@@ -24,6 +24,7 @@ import {
   Button,
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
   Spinner,
@@ -36,6 +37,7 @@ interface DeploymentInspectorDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   deployment: FrontendDeployment | null
+  initialView?: 'logs' | 'preview'
   logText: string
   logLoading?: boolean
   productionUrl?: string | null
@@ -60,6 +62,7 @@ export function DeploymentInspectorDialog({
   open,
   onOpenChange,
   deployment,
+  initialView = 'logs',
   logText,
   logLoading = false,
   productionUrl,
@@ -71,7 +74,7 @@ export function DeploymentInspectorDialog({
   onCancel,
 }: DeploymentInspectorDialogProps) {
   const { t, i18n } = useTranslation()
-  const [viewMode, setViewMode] = useState<'logs' | 'preview'>('logs')
+  const [viewMode, setViewMode] = useState<'logs' | 'preview'>(initialView)
   const [previewViewport, setPreviewViewport] = useState<'desktop' | 'mobile'>('desktop')
   const [previewKey, setPreviewKey] = useState(0)
   const [nowMs, setNowMs] = useState(() => Date.now())
@@ -86,10 +89,12 @@ export function DeploymentInspectorDialog({
   }, [open, isActive])
 
   useEffect(() => {
-    if (!open) {
+    if (open) {
+      setViewMode(initialView)
+    } else {
       setViewMode('logs')
     }
-  }, [open, deployment?.id])
+  }, [open, initialView, deployment?.id])
 
   useEffect(() => {
     if (open && viewMode === 'logs' && logPreRef.current) {
@@ -142,10 +147,10 @@ export function DeploymentInspectorDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col overflow-hidden">
-        <DialogHeader className="shrink-0 border-b border-outline-variant/30 pb-3">
-          <div className="flex flex-wrap items-center justify-between gap-2 pr-8">
-            <div className="flex flex-wrap items-center gap-2 min-w-0">
+      <DialogContent className="w-[95vw] max-w-6xl max-h-[92vh] flex flex-col overflow-hidden">
+        <DialogHeader className="shrink-0 px-6 py-5 pr-14">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-2.5 min-w-0">
               <DialogTitle className="truncate">
                 {deployment.branch} #{deployment.id}
               </DialogTitle>
@@ -160,7 +165,7 @@ export function DeploymentInspectorDialog({
               )}
             </div>
             {durationText && (
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-outline-variant/40 bg-surface-container-low px-2.5 py-1 text-xs font-mono text-on-surface-variant tabular-nums">
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-outline-variant/40 bg-surface-container-low px-3 py-1.5 text-xs font-mono text-on-surface-variant tabular-nums">
                 <Clock className="h-3.5 w-3.5 text-primary" aria-hidden="true" />
                 {isActive
                   ? t('frontendDeployments.elapsedRunning', {
@@ -173,7 +178,7 @@ export function DeploymentInspectorDialog({
           </div>
         </DialogHeader>
 
-        <div className="flex-1 overflow-y-auto space-y-4 py-3 pr-1">
+        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
           {/* Metadaten-Übersicht */}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <div className="rounded-xl border border-outline-variant/30 bg-surface-container-low p-3 space-y-1">
@@ -358,20 +363,20 @@ export function DeploymentInspectorDialog({
           {viewMode === 'logs' ? (
             <pre
               ref={logPreRef}
-              className="min-h-[260px] max-h-[46vh] overflow-auto rounded-xl border border-outline-variant/30 bg-surface-container-lowest p-3.5 text-xs leading-relaxed font-mono text-on-surface whitespace-pre-wrap break-words"
+              className="min-h-[300px] max-h-[54vh] overflow-auto rounded-xl border border-outline-variant/30 bg-surface-container-lowest p-4 text-xs leading-relaxed font-mono text-on-surface whitespace-pre-wrap break-words"
             >
               {cleanedLog || t('frontendDeployments.emptyLog')}
             </pre>
           ) : (
             reachableUrl && (
-              <div className="space-y-2">
-                <div className="flex justify-center rounded-xl border border-outline-variant/40 bg-surface-container-lowest p-2">
+              <div className="space-y-3">
+                <div className="flex justify-center rounded-xl border border-outline-variant/40 bg-surface-container-lowest p-3">
                   <iframe
                     key={`${reachableUrl}-${previewKey}`}
                     src={reachableUrl}
                     loading="lazy"
                     title={`${deployment.branch} Vorschau`}
-                    className={`h-[44vh] rounded-lg border border-outline-variant/30 bg-surface transition-all ${
+                    className={`h-[62vh] rounded-lg border border-outline-variant/30 bg-surface transition-all ${
                       previewViewport === 'mobile' ? 'w-[390px] max-w-full' : 'w-full'
                     }`}
                   />
@@ -379,7 +384,7 @@ export function DeploymentInspectorDialog({
                 <p className="text-xs text-on-surface-variant text-center">
                   {t('frontendDeployments.previewEmbedHint', {
                     defaultValue:
-                      'Falls die Seite Einbettung per X-Frame-Options blockiert, nutze oben „Öffnen“ für einen neuen Tab.',
+                      'Falls die Seite Einbettung blockiert, öffne sie direkt über „Öffnen“.',
                   })}
                 </p>
               </div>
@@ -387,9 +392,8 @@ export function DeploymentInspectorDialog({
           )}
         </div>
 
-        {/* Footer-Aktionen */}
-        <div className="shrink-0 flex flex-wrap items-center justify-between gap-2 border-t border-outline-variant/30 pt-3">
-          <div className="flex flex-wrap items-center gap-2">
+        <DialogFooter className="shrink-0 px-6 py-4 flex-wrap justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2.5">
             {isActive && (
               <Button
                 variant="destructive"
@@ -398,7 +402,7 @@ export function DeploymentInspectorDialog({
                 disabled={busy}
               >
                 <Ban className="mr-1.5 h-3.5 w-3.5" />
-                {t('frontendDeployments.cancelBuild', { defaultValue: 'Build abbrechen' })}
+                {t('frontendDeployments.cancelBuild', { defaultValue: 'Abbrechen' })}
               </Button>
             )}
             <Button
@@ -438,7 +442,7 @@ export function DeploymentInspectorDialog({
           <Button variant="secondary" size="sm" onClick={() => onOpenChange(false)}>
             {t('common.close', { defaultValue: 'Schließen' })}
           </Button>
-        </div>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   )

@@ -18,6 +18,8 @@ logger = logging.getLogger(__name__)
 
 POLL_INTERVAL_SECONDS = 30
 WEBHOOK_GRACE_WINDOW = timedelta(minutes=10)
+_PRUNE_INTERVAL = timedelta(hours=1)
+_last_prune_at: datetime | None = None
 
 
 def poll_once(db: Session) -> int:
@@ -87,6 +89,14 @@ def poll_once(db: Session) -> int:
             db.commit()
             frontend_deploy_service.trigger_async_build(dep.id)
             triggered += 1
+
+    global _last_prune_at
+    if _last_prune_at is None or (now - _last_prune_at) >= _PRUNE_INTERVAL:
+        _last_prune_at = now
+        try:
+            frontend_deploy_service.prune_all_old_deployments(db)
+        except Exception as exc:
+            logger.debug("Periodisches Frontend-Deployment-Pruning uebersprungen: %s", exc)
     return triggered
 
 

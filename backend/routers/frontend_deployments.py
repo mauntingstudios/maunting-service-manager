@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -208,8 +208,11 @@ def toggle_online(
 @router.get("/deployments")
 def list_deployments(
     server_id: int,
+    response: Response,
     branch: str | None = Query(default=None),
     kind: str | None = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> list[dict[str, Any]]:
@@ -221,7 +224,9 @@ def list_deployments(
         q = q.filter(FrontendDeployment.branch == branch)
     if kind:
         q = q.filter(FrontendDeployment.kind == kind)
-    rows = q.order_by(FrontendDeployment.created_at.desc()).limit(50).all()
+    total = q.count()
+    response.headers["X-Total-Count"] = str(total)
+    rows = q.order_by(FrontendDeployment.created_at.desc()).offset(offset).limit(limit).all()
     return [_serialize_deployment(r, server=server, fs=fs) for r in rows]
 
 

@@ -4336,6 +4336,8 @@
     "buildCacheHint": "Abhängigkeiten werden pro Server zwischengespeichert, damit wiederholte Builds schneller laufen.",
     "clearCache": "Build-Cache leeren",
     "cacheCleared": "Build-Cache geleert",
+    "loadMore": "Mehr laden",
+    "showLess": "Weniger anzeigen",
     "statuses": {
       "queued": "Warteschlange",
       "building": "Baut gerade",

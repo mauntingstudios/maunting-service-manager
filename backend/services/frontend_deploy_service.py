@@ -47,6 +47,8 @@ from services.frontend_caddy_config import (
 logger = logging.getLogger(__name__)
 
 MAX_RETAINED_PRODUCTION_BUILDS = 10
+MAX_RETAINED_FAILED_BUILDS = 10
+DEPLOYMENT_RETENTION_DAYS = 7
 
 _ACTIVE_BUILD_LOCK = threading.Lock()
 _ACTIVE_BUILD_IDS: set[int] = set()
@@ -937,15 +939,26 @@ def run_build(
         dep.finished_at = _now()
         prune(db, server)
     except Exception as exc:
-        dep.status = "failed"
-        dep.is_live = False
-        dep.finished_at = _now()
-        step_log = getattr(exc, "log_output", "")
-        if step_log and step_log.strip() not in full_log:
-            full_log += step_log.rstrip() + "\n"
-        summary = _mask_secret_values(str(exc), secrets_to_mask)
-        dep.error_summary = summary[:1000]
-        full_log += f"\n[FEHLER] {summary}\n"
+        current_status = db.scalar(
+            select(FrontendDeployment.status).where(FrontendDeployment.id == dep.id)
+        )
+        if current_status == "canceled":
+            dep.status = "canceled"
+            dep.is_live = False
+            if not dep.finished_at:
+                dep.finished_at = _now()
+            full_log += "\n[MSM] Build wurde abgebrochen.\n"
+        else:
+            dep.status = "failed"
+            dep.is_live = False
+            dep.finished_at = _now()
+            step_log = getattr(exc, "log_output", "")
+            if step_log and step_log.strip() not in full_log:
+                full_log += step_log.rstrip() + "\n"
+            summary = _mask_secret_values(str(exc), secrets_to_mask)
+            dep.error_summary = summary[:1000]
+            full_log += f"\n[FEHLER] {summary}\n"
+            prune(db, server)
     finally:
         _mark_build_done(dep.id)
         try:
@@ -1202,7 +1215,41 @@ def rollback(db: Session, deployment_id: int) -> FrontendDeployment:
     return dep
 
 
-def prune(db: Session, server: Server) -> int:
+def _delete_deployment_artifacts(server: Server, dep_id: int, use_agent: bool) -> None:
+    if use_agent:
+        try:
+            from services.node_capacity import agent_server_key
+            from services.node_client import NodeClient
+
+            client = NodeClient.from_node(server.node)
+            skey = agent_server_key(server.id, server.install_dir)
+            for rel in (f"deployments/{dep_id}", f"build-logs/deploy-{dep_id}.log"):
+                try:
+                    client.files_delete(skey, rel)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        return
+
+    base = Path(server.install_dir)
+    art = base / "deployments" / str(dep_id)
+    if art.exists():
+        shutil.rmtree(art, ignore_errors=True)
+    log_f = base / "build-logs" / f"deploy-{dep_id}.log"
+    if log_f.exists():
+        try:
+            log_f.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+def prune(db: Session, server: Server, *, retention_days: int = DEPLOYMENT_RETENTION_DAYS) -> int:
+    """Bereinigt alte Deployments, fehlgeschlagene Eintraege, Artefakte und Logs."""
+    use_agent = _use_agent_fs(server)
+    cutoff = _now() - timedelta(days=max(1, retention_days))
+    to_remove: dict[int, FrontendDeployment] = {}
+
     ready_prod = (
         db.query(FrontendDeployment)
         .filter(
@@ -1214,26 +1261,64 @@ def prune(db: Session, server: Server) -> int:
         .order_by(FrontendDeployment.created_at.desc())
         .all()
     )
-    use_agent = _use_agent_fs(server)
-    removed = 0
     for stale in ready_prod[MAX_RETAINED_PRODUCTION_BUILDS:]:
-        if use_agent:
-            try:
-                from services.node_capacity import agent_server_key
-                from services.node_client import NodeClient
+        to_remove[stale.id] = stale
 
-                NodeClient.from_node(server.node).files_delete(
-                    agent_server_key(server.id, server.install_dir),
-                    f"deployments/{stale.id}",
-                )
-            except Exception:
-                pass
-        else:
-            path = Path(server.install_dir) / "deployments" / str(stale.id)
-            if path.exists():
-                shutil.rmtree(path, ignore_errors=True)
-        removed += 1
-    return removed
+    failed_rows = (
+        db.query(FrontendDeployment)
+        .filter(
+            FrontendDeployment.server_id == server.id,
+            FrontendDeployment.is_live.is_(False),
+            FrontendDeployment.status.in_(("failed", "canceled", "superseded")),
+        )
+        .order_by(FrontendDeployment.created_at.desc())
+        .all()
+    )
+    for idx, row in enumerate(failed_rows):
+        created = row.created_at
+        if created is not None and created.tzinfo is None:
+            created = created.replace(tzinfo=timezone.utc)
+        if idx >= MAX_RETAINED_FAILED_BUILDS or (created is not None and created < cutoff):
+            to_remove[row.id] = row
+
+    old_previews = (
+        db.query(FrontendDeployment)
+        .filter(
+            FrontendDeployment.server_id == server.id,
+            FrontendDeployment.kind == "preview",
+            FrontendDeployment.is_live.is_(False),
+            FrontendDeployment.created_at < cutoff,
+        )
+        .all()
+    )
+    for row in old_previews:
+        to_remove[row.id] = row
+
+    for dep_id, row in to_remove.items():
+        _delete_deployment_artifacts(server, dep_id, use_agent)
+        db.delete(row)
+
+    if to_remove:
+        db.flush()
+    return len(to_remove)
+
+
+def prune_all_old_deployments(db: Session, *, retention_days: int = DEPLOYMENT_RETENTION_DAYS) -> int:
+    """Bereinigt ueber alle Frontend-Server hinweg alte und fehlgeschlagene Deployments."""
+    server_ids = [
+        sid
+        for (sid,) in db.query(FrontendDeployment.server_id).distinct().all()
+        if sid is not None
+    ]
+    total = 0
+    for sid in server_ids:
+        srv = db.get(Server, sid)
+        if srv is None:
+            continue
+        total += prune(db, srv, retention_days=retention_days)
+    if total:
+        db.commit()
+    return total
 
 
 def delete_preview(db: Session, server: Server, branch: str) -> int:
@@ -1380,8 +1465,13 @@ def reconcile_orphaned_frontend_deployments(db: Session, *, max_age_hours: int =
 
 def cancel_deployment(db: Session, server: Server, dep: FrontendDeployment) -> FrontendDeployment:
     """Bricht einen wartenden oder laufenden Build als 'canceled' ab."""
+    if dep.status == "canceled":
+        return dep
     if dep.status not in ("queued", "building"):
-        raise HTTPException(status_code=400, detail="Nur laufende oder wartende Builds koennen abgebrochen werden")
+        raise HTTPException(
+            status_code=409,
+            detail="Der Build ist bereits abgeschlossen und kann nicht mehr abgebrochen werden.",
+        )
     dep.status = "canceled"
     dep.is_live = False
     dep.finished_at = _now()

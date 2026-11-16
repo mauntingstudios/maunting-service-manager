@@ -4161,6 +4161,8 @@
     "buildCacheHint": "Dependencies are cached per server so repeated builds finish faster.",
     "clearCache": "Clear build cache",
     "cacheCleared": "Build cache cleared",
+    "loadMore": "Load more",
+    "showLess": "Show less",
     "statuses": {
       "queued": "Queued",
       "building": "Building",
