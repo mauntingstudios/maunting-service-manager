@@ -870,4 +870,76 @@ describe('ModManager Reorder, Multi-Select & Bulk Operations', () => {
       )
     })
   })
+
+  it('does not cache empty or failed Trending responses permanently when switching categories or sorts', async () => {
+    let trendingAllCalls = 0
+    mockApi.mockImplementation(async (path: string) => {
+      if (path === '/mods/51') return []
+      if (path === '/steam/workshop/filters?server_id=51') {
+        return { tags: [{ id: 'Build 42', name: 'Build 42' }] }
+      }
+      if (path.startsWith('/steam/workshop/popular?server_id=51&sort=trending') && !path.includes('tags=')) {
+        trendingAllCalls += 1
+        if (trendingAllCalls === 1) {
+          throw new Error('Upstream timeout')
+        }
+        return [
+          {
+            publishedfileid: '9901',
+            title: 'Recovered Trending Mod',
+            description: 'Back online',
+            creator: 'Author',
+            file_size_mb: 1.5,
+            subscriptions: 500,
+            favorites: 40,
+            tags: ['Build 42'],
+            preview_url: null,
+            direct_url: 'https://steamcommunity.com/sharedfiles/filedetails/?id=9901',
+          },
+        ]
+      }
+      if (path.includes('tags=Build%2042')) {
+        return [
+          {
+            publishedfileid: '9902',
+            title: 'Build 42 Category Mod',
+            description: 'Filtered',
+            creator: 'Author',
+            file_size_mb: 2.0,
+            subscriptions: 250,
+            favorites: 20,
+            tags: ['Build 42'],
+            preview_url: null,
+            direct_url: 'https://steamcommunity.com/sharedfiles/filedetails/?id=9902',
+          },
+        ]
+      }
+      return []
+    })
+
+    render(
+      <ModManager
+        serverId={51}
+        gameInfo={{
+          id: 'project_zomboid',
+          name: 'Project Zomboid',
+          mod_support: true,
+        }}
+      />,
+    )
+
+    expect(await screen.findByText('mods.noSearchResults')).toBeInTheDocument()
+
+    // Switch to category Build 42
+    const tagTrigger = await screen.findByRole('button', { name: 'mods.gameFilterPlaceholder' })
+    fireEvent.click(tagTrigger)
+    fireEvent.click(await screen.findByRole('option', { name: 'Build 42' }))
+    expect(await screen.findByText('Build 42 Category Mod')).toBeInTheDocument()
+
+    // Switch back to All Categories while on Trending -> retries and shows Recovered Trending Mod
+    fireEvent.click(tagTrigger)
+    fireEvent.click(await screen.findByRole('option', { name: 'mods.gameFilterAll' }))
+    expect(await screen.findByText('Recovered Trending Mod')).toBeInTheDocument()
+    expect(trendingAllCalls).toBe(2)
+  })
 })

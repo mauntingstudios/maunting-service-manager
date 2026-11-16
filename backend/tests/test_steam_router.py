@@ -147,3 +147,50 @@ def test_workshop_search_and_popular_forward_tags_and_sort(
     pop_kwargs = mock_service.get_popular_mods.call_args.kwargs
     assert pop_kwargs["sort"] == "newest"
     assert "Vehicles" in pop_kwargs["required_tags"]
+
+
+def test_steam_service_does_not_cache_empty_popular_or_filters() -> None:
+    import asyncio
+    from unittest.mock import MagicMock
+    from services.steam_service import SteamService
+
+    service = SteamService()
+    service.api_key = "test-key"
+
+    empty_resp = MagicMock()
+    empty_resp.raise_for_status = MagicMock()
+    empty_resp.json.return_value = {"response": {"publishedfiledetails": []}}
+
+    populated_resp = MagicMock()
+    populated_resp.raise_for_status = MagicMock()
+    populated_resp.json.return_value = {
+        "response": {
+            "publishedfiledetails": [
+                {
+                    "publishedfileid": "2169435993",
+                    "result": 1,
+                    "title": "Mod Options",
+                    "short_description": "desc",
+                    "creator": "author",
+                    "file_size": 1024,
+                    "time_created": 1700000000,
+                    "time_updated": 1700000000,
+                    "subscriptions": 100,
+                    "favorited": 10,
+                    "tags": [{"tag": "QoL"}],
+                }
+            ]
+        }
+    }
+
+    with patch.object(
+        service.client,
+        "get",
+        new=AsyncMock(side_effect=[empty_resp, populated_resp]),
+    ):
+        first = asyncio.run(service.get_popular_mods("108600", sort="trending", limit=24, page=1))
+        second = asyncio.run(service.get_popular_mods("108600", sort="trending", limit=24, page=1))
+
+    assert first == []
+    assert len(second) == 1
+    assert second[0].publishedfileid == "2169435993"

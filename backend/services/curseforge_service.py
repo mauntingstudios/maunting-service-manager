@@ -361,7 +361,8 @@ class CurseForgeService:
             response.raise_for_status()
             data = response.json()
             games = data.get("data") or []
-            self._set_cache(cache_key, games)
+            if games:
+                self._set_cache(cache_key, games)
             return games
         except Exception as e:
             logger.warning("CurseForge get_games failed: %s", type(e).__name__)
@@ -665,7 +666,8 @@ class CurseForgeService:
                         if fb_mods:
                             mods = fb_mods
 
-            self._set_cache(cache_key, mods)
+            if mods:
+                self._set_cache(cache_key, mods)
             return mods
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 401 or e.response.status_code == 403:

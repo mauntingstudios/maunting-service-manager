@@ -273,6 +273,7 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
   const [brokenThumbIds, setBrokenThumbIds] = useState<Set<string>>(() => new Set())
   const [installBatchTotal, setInstallBatchTotal] = useState(0)
   const fetchedMetadataSigRef = useRef<string>('')
+  const browserRequestIdRef = useRef(0)
   const [installBarExpanded, setInstallBarExpanded] = useState(false)
   const [mobileSection, setMobileSection] = useState<'library' | 'active'>('library')
   const [curseforgeUrlMap, setCurseforgeUrlMap] = useState<Record<string, string>>({})
@@ -426,7 +427,9 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
     api<Record<string, InstalledModMeta>>(`/mods/${serverId}/metadata`)
       .then((meta) => {
         if (cancelled || !meta || typeof meta !== 'object' || Array.isArray(meta)) return
-        fetchedMetadataSigRef.current = fetchKey
+        if (Object.keys(meta).length > 0) {
+          fetchedMetadataSigRef.current = fetchKey
+        }
         setModMetadata((prev) => ({ ...prev, ...meta }))
       })
       .catch(() => {
@@ -448,6 +451,10 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
 
   useEffect(() => {
     setSelectedGameFilter('')
+    setBrowserCache({})
+    setSteamResults([])
+    setSearchActive(false)
+    setBrowserPage(1)
     if (!isCurseForge) {
       setCurseforgeClasses([])
       setCurseforgeCategories([])
@@ -507,7 +514,7 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
       void loadBrowserTab(browserTab, 1, false, contentType, steamContentType, selectedGameFilter)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [browserTab, isCurseForge, contentType, steamContentType, selectedGameFilter])
+  }, [serverId, browserTab, isCurseForge, contentType, steamContentType, selectedGameFilter])
 
   const buildCurseForgeClassParam = (typeFilter: string): string => {
     if (!isCurseForge) return ''
@@ -530,7 +537,7 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
     typeFilter: string,
     steamType: 'mods' | 'collections',
     gameFilter: string,
-  ) => `${tab}::${typeFilter}::${steamType}::${gameFilter}::p${page}`
+  ) => `${serverId}::${tab}::${typeFilter}::${steamType}::${gameFilter}::p${page}`
 
   const buildGameFilterParam = (gameFilter: string, steamType: 'mods' | 'collections'): string => {
     if (!gameFilter) return ''
@@ -585,10 +592,12 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
     gameFilter: string = selectedGameFilter,
   ) => {
     const key = getBrowserCacheKey(tab, page, typeFilter, steamType, gameFilter)
-    if (!append && browserCache[key]) {
+    const cachedEntry = browserCache[key]
+    if (!append && cachedEntry && cachedEntry.mods.length > 0) {
       setBrowserPage(page)
       return
     }
+    const reqId = ++browserRequestIdRef.current
     setBrowserLoading(true)
     try {
       const classParam = buildCurseForgeClassParam(typeFilter)
@@ -598,27 +607,42 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
         ? `/curseforge/popular?server_id=${serverId}&sort=${tab}&limit=${BROWSER_PAGE_SIZE}&page=${page}${classParam}${filterParam}`
         : `/steam/workshop/popular?server_id=${serverId}&sort=${tab}&limit=${BROWSER_PAGE_SIZE}&page=${page}${steamTypeParam}${filterParam}`
       const data = await api<SteamMod[]>(endpoint)
-      cacheCurseForgeUrls(data)
-      cacheModMetadata(data)
+      if (reqId !== browserRequestIdRef.current) return
+      const items = Array.isArray(data) ? data : []
+      cacheCurseForgeUrls(items)
+      cacheModMetadata(items)
       setBrowserPage(page)
-      setBrowserCache((prev) => ({
-        ...prev,
-        [key]: {
-          mods: data,
-          page,
-          hasMore: data.length === BROWSER_PAGE_SIZE,
-        },
-      }))
+      setBrowserCache((prev) => {
+        if (items.length === 0) {
+          if (!(key in prev)) return prev
+          const next = { ...prev }
+          delete next[key]
+          return next
+        }
+        return {
+          ...prev,
+          [key]: {
+            mods: items,
+            page,
+            hasMore: items.length === BROWSER_PAGE_SIZE,
+          },
+        }
+      })
     } catch (err: unknown) {
+      if (reqId !== browserRequestIdRef.current) return
       toast.error(err instanceof Error ? err.message : String(err))
       if (!append) {
-        setBrowserCache((prev) => ({
-          ...prev,
-          [key]: { mods: [], page, hasMore: false },
-        }))
+        setBrowserCache((prev) => {
+          if (!(key in prev)) return prev
+          const next = { ...prev }
+          delete next[key]
+          return next
+        })
       }
     } finally {
-      setBrowserLoading(false)
+      if (reqId === browserRequestIdRef.current) {
+        setBrowserLoading(false)
+      }
     }
   }
 

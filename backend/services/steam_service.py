@@ -211,7 +211,8 @@ class SteamService:
                     if mod_data.get('result') == 1:
                         mods.append(self._parse_mod_data(mod_data))
 
-            self._set_cache(cache_key, mods)
+            if mods:
+                self._set_cache(cache_key, mods)
             return mods
 
         except Exception as e:
@@ -225,22 +226,45 @@ class SteamService:
         """Public keyless Steam fallback via ISteamRemoteStorage/GetPublishedFileDetails/v1."""
         results: Dict[str, SteamModInfo] = {}
         chunk_size = 50
-        for offset in range(0, len(publishedfileids), chunk_size):
-            chunk = publishedfileids[offset:offset + chunk_size]
+        chunks = [
+            publishedfileids[offset:offset + chunk_size]
+            for offset in range(0, len(publishedfileids), chunk_size)
+        ]
+
+        async def _fetch_chunk(chunk: List[str]) -> List[SteamModInfo]:
             form_data: Dict[str, Any] = {"itemcount": len(chunk)}
             for idx, pid in enumerate(chunk):
                 form_data[f"publishedfileids[{idx}]"] = str(pid)
-            response = await self.client.post(
-                f"{self.API_BASE}/ISteamRemoteStorage/GetPublishedFileDetails/v1/",
-                data=form_data,
+            response = await asyncio.wait_for(
+                self.client.post(
+                    f"{self.API_BASE}/ISteamRemoteStorage/GetPublishedFileDetails/v1/",
+                    data=form_data,
+                ),
+                timeout=10.0,
             )
             response.raise_for_status()
             data = response.json()
             details_list = (data.get("response") or {}).get("publishedfiledetails") or []
+            parsed_items: List[SteamModInfo] = []
             for mod_data in details_list:
                 if mod_data.get("result") == 1:
-                    parsed = self._parse_mod_data(mod_data)
-                    results[parsed.publishedfileid] = parsed
+                    parsed_items.append(self._parse_mod_data(mod_data))
+            return parsed_items
+
+        chunk_results = await asyncio.gather(
+            *(_fetch_chunk(chunk) for chunk in chunks),
+            return_exceptions=True,
+        )
+        first_error: Optional[BaseException] = None
+        for entry in chunk_results:
+            if isinstance(entry, BaseException):
+                if first_error is None:
+                    first_error = entry
+                continue
+            for parsed in entry:
+                results[parsed.publishedfileid] = parsed
+        if not results and first_error is not None:
+            raise first_error
         return results
 
     async def get_details_batch(
@@ -277,31 +301,54 @@ class SteamService:
 
         if self.api_key:
             chunk_size = 50
-            try:
-                for offset in range(0, len(missing_ids), chunk_size):
-                    chunk = missing_ids[offset:offset + chunk_size]
-                    query_data = {
-                        "publishedfileids": [int(pid) for pid in chunk],
-                        "includevotes": True,
-                        "short_description": True,
-                        "includechildren": True,
-                        "includetags": True,
-                    }
-                    params = {
-                        'key': self.api_key,
-                        'input_json': json.dumps(query_data, separators=(',', ':')),
-                    }
-                    response = await self.client.get(
+            chunks = [
+                missing_ids[offset:offset + chunk_size]
+                for offset in range(0, len(missing_ids), chunk_size)
+            ]
+
+            async def _fetch_primary_chunk(chunk: List[str]) -> List[SteamModInfo]:
+                query_data = {
+                    "publishedfileids": [int(pid) for pid in chunk],
+                    "includevotes": True,
+                    "short_description": True,
+                    "includechildren": True,
+                    "includetags": True,
+                }
+                params = {
+                    'key': self.api_key,
+                    'input_json': json.dumps(query_data, separators=(',', ':')),
+                }
+                response = await asyncio.wait_for(
+                    self.client.get(
                         f"{self.API_BASE}/IPublishedFileService/GetDetails/v1/",
                         params=params,
-                    )
-                    response.raise_for_status()
-                    data = response.json()
-                    details_list = (data.get('response') or {}).get('publishedfiledetails') or []
-                    for mod_data in details_list:
-                        if mod_data.get('result') == 1:
-                            parsed = self._parse_mod_data(mod_data)
-                            results[parsed.publishedfileid] = parsed
+                    ),
+                    timeout=10.0,
+                )
+                response.raise_for_status()
+                data = response.json()
+                details_list = (data.get('response') or {}).get('publishedfiledetails') or []
+                return [
+                    self._parse_mod_data(mod_data)
+                    for mod_data in details_list
+                    if mod_data.get('result') == 1
+                ]
+
+            try:
+                chunk_results = await asyncio.gather(
+                    *(_fetch_primary_chunk(chunk) for chunk in chunks),
+                    return_exceptions=True,
+                )
+                first_error: Optional[BaseException] = None
+                for entry in chunk_results:
+                    if isinstance(entry, BaseException):
+                        if first_error is None:
+                            first_error = entry
+                        continue
+                    for parsed in entry:
+                        results[parsed.publishedfileid] = parsed
+                if first_error is not None and not any(pid in results for pid in missing_ids):
+                    raise first_error
             except Exception as e:
                 if not allow_public_fallback:
                     logger.warning("Steam API batch details failed: %s", type(e).__name__)
@@ -761,9 +808,12 @@ class SteamService:
                     'input_json': json.dumps(query_data, separators=(',', ':')),
                 }
 
-                response = await self.client.get(
-                    f"{self.API_BASE}/IPublishedFileService/QueryFiles/v1/",
-                    params=params
+                response = await asyncio.wait_for(
+                    self.client.get(
+                        f"{self.API_BASE}/IPublishedFileService/QueryFiles/v1/",
+                        params=params,
+                    ),
+                    timeout=12.0,
                 )
                 response.raise_for_status()
 
@@ -778,7 +828,10 @@ class SteamService:
                             if parsed.publishedfileid:
                                 self._set_cache(f"details_{appid}_{parsed.publishedfileid}", parsed)
 
-                self._set_cache(cache_key, mods)
+                # Leere Antworten von Steam nie 15 Min. cachen, damit ein fluechtiger
+                # Upstream-Aussetzer die Startansicht nicht dauerhaft blockiert.
+                if mods:
+                    self._set_cache(cache_key, mods)
                 return mods
 
             except Exception as e:
@@ -868,7 +921,8 @@ class SteamService:
                 for tag_id, label in list(tags_map.items())[:40]
             ]
             result = {"appid": clean_appid, "tags": tag_items, "source": source}
-            self._set_cache(cache_key, result, ttl=self._filters_ttl)
+            if tag_items:
+                self._set_cache(cache_key, result, ttl=self._filters_ttl)
             return result
 
         return await self._singleflight(cache_key, _fetch_filters)
