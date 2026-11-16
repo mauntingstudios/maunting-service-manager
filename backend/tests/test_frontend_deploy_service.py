@@ -217,3 +217,48 @@ def test_github_frontend_output_is_readonly_via_files_api(
         json={"content": "<h1>ok</h1>"},
     )
     assert res_allowed.status_code == 200
+
+
+def test_frontend_blueprint_install_skips_game_github_clone(db: Session, tmp_path: Path) -> None:
+    from games import get_plugin
+
+    srv = _make_server(db, tmp_path / "gh_init", game_type="web_frontend_github")
+    plugin = get_plugin("web_frontend_github")
+    assert plugin is not None
+
+    with patch("games.blueprint_plugin.finish_install") as mock_finish:
+        res = plugin.install(srv)
+    assert "error" not in res
+    mock_finish.assert_called_once_with(srv.id, {"ok": True})
+    assert not (Path(srv.install_dir) / ".git").exists()
+
+
+def test_run_build_writes_initial_log_immediately(
+    db: Session, tmp_path: Path, regular_user
+) -> None:
+    srv = _make_server(db, tmp_path / "live_log")
+    dep = frontend_deploy_service.enqueue(db, srv, branch="main", source="manual")
+    db.commit()
+
+    observed_during_clone: dict[str, object] = {}
+
+    def _clone_and_inspect(*, repo, branch, dest, token=None):
+        observed_during_clone["log_exists"] = (
+            Path(srv.install_dir) / "build-logs" / f"deploy-{dep.id}.log"
+        ).exists()
+        observed_during_clone["log_text"] = (
+            Path(srv.install_dir) / "build-logs" / f"deploy-{dep.id}.log"
+        ).read_text(encoding="utf-8")
+        dest.mkdir(parents=True, exist_ok=True)
+        return "abc1234", "cloned"
+
+    with patch("services.frontend_deploy_service._clone_repo", side_effect=_clone_and_inspect), patch(
+        "services.frontend_deploy_service.run_node_frontend_build",
+        return_value=FrontendBuildResult(ok=False, output_dir=None, log_output="err"),
+    ):
+        res = frontend_deploy_service.run_build(db, dep.id, actor_user_id=regular_user.id)
+        db.commit()
+
+    assert observed_during_clone.get("log_exists") is True
+    assert f"Build #{dep.id} gestartet" in str(observed_during_clone.get("log_text", ""))
+    assert res.status == "failed"

@@ -464,7 +464,6 @@ def run_build(
     quota = resolve_build_quota(db, actor_user_id)
     dep.status = "building"
     dep.started_at = _now()
-    db.flush()
 
     install_dir = Path(server.install_dir)
     logs_dir = install_dir / "build-logs"
@@ -477,7 +476,10 @@ def run_build(
     secrets_to_mask = [token] if token else []
 
     work_src = install_dir / "_build_src" / f"dep-{dep.id}"
-    full_log = ""
+    full_log = f"[MSM] Build #{dep.id} gestartet (Branch: {dep.branch}, Kind: {dep.kind})\n"
+    log_file.write_text(full_log, encoding="utf-8")
+    db.commit()
+
     try:
         sha, clone_log = _clone_repo(
             repo=bp.source.github.repo,
@@ -486,6 +488,7 @@ def run_build(
             token=token,
         )
         full_log += clone_log + "\n"
+        log_file.write_text(_mask_secret_values(full_log, secrets_to_mask), encoding="utf-8")
         if sha and not dep.commit_sha:
             dep.commit_sha = sha
 

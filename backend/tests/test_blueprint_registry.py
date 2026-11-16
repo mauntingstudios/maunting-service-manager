@@ -116,3 +116,33 @@ def test_mismatched_id_in_file_ignored(tmp_path: Path, monkeypatch: pytest.Monke
     # ID-Mismatch -> Blueprint wird verworfen.
     assert get_registry().get("filename_id") is None
     assert get_registry().get("different_id") is None
+
+
+def test_get_registry_detects_cross_worker_disk_changes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Simuliert mehrere Uvicorn-Worker: Aenderungen durch Worker A auf Disk
+    muessen in Worker B sofort ueber get_registry() sichtbar sein, ohne dass
+    Worker B reload_registry() aufruft.
+    """
+    from config import settings
+
+    monkeypatch.setattr(settings, "blueprints_dir", str(tmp_path))
+    reload_registry()
+    assert get_registry().get("worker_bp") is None
+
+    # Worker A schreibt neue Community-Blueprint auf Disk
+    _write_blueprint(tmp_path, "worker_bp", name="V1")
+    entry = get_registry().get("worker_bp")
+    assert entry is not None
+    assert entry.blueprint.meta.name == "V1"
+
+    # Worker A aktualisiert sie (mit leicht anderem Groessen-/Zeitstempelwert)
+    _write_blueprint(tmp_path, "worker_bp", name="Version Zwei (Updated)")
+    updated = get_registry().get("worker_bp")
+    assert updated is not None
+    assert updated.blueprint.meta.name == "Version Zwei (Updated)"
+
+    # Worker A loescht sie wieder
+    (tmp_path / "worker_bp.blueprint.json").unlink()
+    assert get_registry().get("worker_bp") is None

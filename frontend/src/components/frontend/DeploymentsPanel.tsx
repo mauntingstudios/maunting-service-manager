@@ -49,7 +49,12 @@ export function DeploymentsPanel({ serverId, overview: externalOverview, onRefre
   const [branchFilter, setBranchFilter] = useState<string>('')
   const [loading, setLoading] = useState(true)
   const [busyId, setBusyId] = useState<number | null>(null)
-  const [logDialog, setLogDialog] = useState<{ open: boolean; title: string; log: string }>({
+  const [logDialog, setLogDialog] = useState<{
+    open: boolean
+    deploymentId?: number
+    title: string
+    log: string
+  }>({
     open: false,
     title: '',
     log: '',
@@ -77,6 +82,30 @@ export function DeploymentsPanel({ serverId, overview: externalOverview, onRefre
   useEffect(() => {
     if (externalOverview) setOverview(externalOverview)
   }, [externalOverview])
+
+  const hasActiveBuild = deployments.some(
+    (d) => d.status === 'queued' || d.status === 'building',
+  )
+
+  useEffect(() => {
+    if (!hasActiveBuild) return
+    const timer = window.setInterval(() => {
+      void loadAll()
+      if (logDialog.open && logDialog.deploymentId) {
+        void frontendApi
+          .getDeploymentLog(serverId, logDialog.deploymentId)
+          .then((res) => {
+            setLogDialog((prev) =>
+              prev.open && prev.deploymentId === logDialog.deploymentId
+                ? { ...prev, log: res.log || prev.log }
+                : prev,
+            )
+          })
+          .catch(() => {})
+      }
+    }, 3000)
+    return () => window.clearInterval(timer)
+  }, [hasActiveBuild, loadAll, logDialog.open, logDialog.deploymentId, serverId])
 
   const branchOptions: DropdownOption[] = useMemo(() => {
     const names = Array.from(new Set(deployments.map((d) => d.branch)))
@@ -158,6 +187,7 @@ export function DeploymentsPanel({ serverId, overview: externalOverview, onRefre
       const res = await frontendApi.getDeploymentLog(serverId, dep.id)
       setLogDialog({
         open: true,
+        deploymentId: dep.id,
         title: `${dep.branch} (#${dep.id})`,
         log: res.log || t('frontendDeployments.emptyLog'),
       })

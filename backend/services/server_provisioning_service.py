@@ -162,6 +162,61 @@ def _start_database_server(db: Session, server: Server) -> None:
         logger.warning("Erster Start des Datenbankservers %s nicht moeglich", server.id)
 
 
+def _initialize_and_start_frontend_server(
+    db: Session,
+    server: Server,
+    blueprint,
+    actor_user_id: int | None,
+) -> None:
+    """Initialisiert Frontend-Einstellungen, Caddyfile, Container-Start und ersten GitHub-Build."""
+    from pathlib import Path
+
+    from blueprints.schema import BlueprintSourceType
+    from services.frontend_deploy_service import (
+        enqueue,
+        get_or_create_settings,
+        rewrite_caddyfile,
+        trigger_async_build,
+    )
+    from services.server_lifecycle_service import queue_lifecycle_operation
+
+    db.refresh(server)
+    try:
+        get_or_create_settings(db, server.id, blueprint)
+        if blueprint.source.type == BlueprintSourceType.GITHUB and server.install_dir:
+            try:
+                (Path(server.install_dir) / "current").mkdir(parents=True, exist_ok=True)
+            except OSError:
+                pass
+        rewrite_caddyfile(db, server, blueprint)
+        db.commit()
+    except Exception:
+        db.rollback()
+        logger.warning("Frontend-Initialisierung fuer Server %s fehlgeschlagen", server.id)
+
+    try:
+        queue_lifecycle_operation(db, server, "start")
+    except Exception:
+        logger.warning("Erster Start des Frontend-Servers %s nicht moeglich", server.id)
+
+    if blueprint.source.type == BlueprintSourceType.GITHUB and blueprint.source.github is not None:
+        try:
+            dep = enqueue(
+                db,
+                server=server,
+                branch=blueprint.source.github.branch,
+                commit_sha="",
+                actor_user_id=actor_user_id,
+                kind="production",
+                force=True,
+            )
+            db.commit()
+            trigger_async_build(dep.id, actor_user_id=actor_user_id)
+        except Exception:
+            db.rollback()
+            logger.warning("Initialer Frontend-Build fuer Server %s nicht moeglich", server.id)
+
+
 def provision_server(
     db: Session,
     req: ServerCreate,
@@ -561,6 +616,13 @@ def provision_server(
             install_started = True
             if is_database:
                 _start_database_server(db, server)
+            elif blueprint is not None and blueprint.frontend is not None:
+                _initialize_and_start_frontend_server(
+                    db,
+                    server,
+                    blueprint,
+                    actor.user.id if actor.user else None,
+                )
         else:
             finish_server_provisioning(db, server.id, succeeded=True)
 

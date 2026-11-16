@@ -14,6 +14,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+import threading
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -174,6 +175,8 @@ class BlueprintRegistry:
 
 
 _REGISTRY: BlueprintRegistry | None = None
+_REGISTRY_SIGNATURE: tuple | None = None
+_REGISTRY_LOCK = threading.Lock()
 
 
 def _community_dir() -> Path:
@@ -186,6 +189,42 @@ def _community_dir() -> Path:
     return Path(settings.blueprints_dir)
 
 
+def _dir_signature(directory: Path) -> tuple[tuple[str, int, int], ...]:
+    """Erstellt eine leichtgewichtige Dateisystem-Signatur fuer ``directory``.
+
+    Damit erkennt jeder uvicorn-Worker sofort, wenn ein anderer Worker-Prozess
+    eine Community-Blueprint importiert, aktualisiert oder geloescht hat.
+    """
+    if not directory.is_dir():
+        return ()
+    entries: list[tuple[str, int, int]] = []
+    try:
+        with os.scandir(directory) as it:
+            for entry in it:
+                if not _FILENAME_RE.match(entry.name):
+                    continue
+                try:
+                    if not entry.is_file():
+                        continue
+                    stat = entry.stat()
+                    entries.append((entry.name, stat.st_mtime_ns, stat.st_size))
+                except OSError:
+                    continue
+    except OSError:
+        return ()
+    entries.sort()
+    return tuple(entries)
+
+
+def _current_signature() -> tuple[str, tuple[tuple[str, int, int], ...], tuple[tuple[str, int, int], ...]]:
+    community_dir = _community_dir()
+    return (
+        str(community_dir),
+        _dir_signature(_NATIVE_DIR),
+        _dir_signature(community_dir),
+    )
+
+
 def _build_registry() -> BlueprintRegistry:
     registry = BlueprintRegistry()
     # Reihenfolge zaehlt: native zuerst, damit Community-IDs bei Konflikten ignoriert werden.
@@ -196,17 +235,22 @@ def _build_registry() -> BlueprintRegistry:
 
 
 def get_registry() -> BlueprintRegistry:
-    global _REGISTRY
-    if _REGISTRY is None:
-        _REGISTRY = _build_registry()
-    return _REGISTRY
+    global _REGISTRY, _REGISTRY_SIGNATURE
+    sig = _current_signature()
+    with _REGISTRY_LOCK:
+        if _REGISTRY is None or _REGISTRY_SIGNATURE != sig:
+            _REGISTRY = _build_registry()
+            _REGISTRY_SIGNATURE = _current_signature()
+        return _REGISTRY
 
 
 def reload_registry() -> BlueprintRegistry:
     """Verwirft den Cache und liest beide Ordner neu. Nutzbar nach Import/Delete."""
-    global _REGISTRY
-    _REGISTRY = _build_registry()
-    return _REGISTRY
+    global _REGISTRY, _REGISTRY_SIGNATURE
+    with _REGISTRY_LOCK:
+        _REGISTRY = _build_registry()
+        _REGISTRY_SIGNATURE = _current_signature()
+        return _REGISTRY
 
 
 def community_blueprint_path(blueprint_id: str) -> Path:

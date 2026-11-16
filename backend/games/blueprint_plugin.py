@@ -619,6 +619,13 @@ class BlueprintPlugin(GamePlugin):
 
     def install(self, server) -> dict:
         bp = self._blueprint
+        if bp.frontend is not None:
+            _append_console_log(
+                server.id,
+                f"[MSM] Frontend-Blueprint '{bp.meta.id}' initialisiert.\n",
+            )
+            finish_install(server.id, {"ok": True})
+            return {"message": "Frontend-Server bereit"}
         src_type = bp.source.type
         if src_type == BlueprintSourceType.STEAM:
             return self._install_steam_source(server, bp)
