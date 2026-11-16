@@ -18,6 +18,7 @@ from .postgres_studio import router as postgres_studio_router
 from .sqlite_studio import router as sqlite_studio_router
 from .webhooks_outbound import router as webhooks_outbound_router
 from .singra_webhook import router as singra_webhook_router
+from .frontend_webhook import router as frontend_webhook_router
 from .backup_config import router as backup_config_router
 from .panel_backups import router as panel_backups_router
 from .nodes import router as nodes_router
@@ -77,6 +78,7 @@ __all__ = [
     "panel_database_studio_router",
     "webhooks_outbound_router",
     "singra_webhook_router",
+    "frontend_webhook_router",
     "backup_config_router",
     "panel_backups_router",
     "nodes_router",

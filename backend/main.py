@@ -41,6 +41,7 @@ from routers import (
     panel_database_studio_router,
     webhooks_outbound_router,
     singra_webhook_router,
+    frontend_webhook_router,
     backup_config_router,
     panel_backups_router,
     nodes_router,
@@ -118,8 +119,21 @@ async def lifespan(app: FastAPI):
     recover_scheduler_and_cleanup_expired()
     await reconcile_ai_runs_on_startup()
 
+    frontend_stop_event = None
+    frontend_poller_task = None
+    if not is_testing:
+        import asyncio
+        from services.frontend_poller import poller_loop
+
+        frontend_stop_event = asyncio.Event()
+        frontend_poller_task = asyncio.create_task(poller_loop(frontend_stop_event))
+
     yield
 
+    if frontend_stop_event is not None:
+        frontend_stop_event.set()
+    if frontend_poller_task is not None:
+        frontend_poller_task.cancel()
     await shutdown_panel_services(app, is_testing)
 
 
@@ -526,6 +540,7 @@ app.include_router(panel_database_studio_router)
 # Subscriptions mit Secret-Auth ueber X-Webhook-Secret-Header.
 app.include_router(webhooks_outbound_router)
 app.include_router(singra_webhook_router)
+app.include_router(frontend_webhook_router)
 # OAuth-Endpoints liegen absichtlich NICHT unter auth_rate_limit, weil das
 # Rate-Limit pro IP und pro Minute gilt (10/min). Bei Shared-IPs (Unternehmen,
 # Schulen, mobile Carrier) wuerde der Login-Flow sonst regelmaessig 429

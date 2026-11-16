@@ -581,3 +581,56 @@ def prune(db: Session, server: Server) -> int:
             shutil.rmtree(path, ignore_errors=True)
         removed += 1
     return removed
+
+
+def delete_preview(db: Session, server: Server, branch: str) -> int:
+    """Entfernt eine Branch-Preview samt Symlink und Caddyfile-Block."""
+    slug = slugify_branch(branch)
+    rows = (
+        db.query(FrontendDeployment)
+        .filter(
+            FrontendDeployment.server_id == server.id,
+            FrontendDeployment.kind == "preview",
+            FrontendDeployment.branch_slug == slug,
+            FrontendDeployment.is_live.is_(True),
+        )
+        .all()
+    )
+    for row in rows:
+        row.is_live = False
+
+    link_path = Path(server.install_dir) / "previews" / slug
+    if link_path.is_symlink():
+        link_path.unlink(missing_ok=True)
+    elif link_path.exists():
+        shutil.rmtree(link_path, ignore_errors=True)
+
+    bp = _resolve_frontend_blueprint(server)
+    rewrite_caddyfile(db, server, bp)
+    _reload_caddy_container(server)
+    db.flush()
+    return len(rows)
+
+
+def trigger_async_build(deployment_id: int, *, actor_user_id: int | None = None) -> None:
+    """Startet einen Frontend-Build asynchron in einem eigenen Daemon-Thread."""
+    import threading
+
+    def _worker() -> None:
+        from database import SessionLocal
+
+        session = SessionLocal()
+        try:
+            run_build(session, deployment_id, actor_user_id=actor_user_id)
+            session.commit()
+        except Exception as exc:
+            session.rollback()
+            logger.exception("Asynchroner Frontend-Build %s fehlgeschlagen: %s", deployment_id, exc)
+        finally:
+            session.close()
+
+    threading.Thread(
+        target=_worker,
+        name=f"frontend-build-{deployment_id}",
+        daemon=True,
+    ).start()
