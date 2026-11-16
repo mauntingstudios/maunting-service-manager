@@ -219,6 +219,7 @@ SERVER_PERMISSIONS: tuple[PermissionDef, ...] = (
     # Eigene Zugangsdaten anlegen darf jeder Benutzer im Profil; hier geht es
     # ausschliesslich um die Bindung an einen konkreten Server.
     PermissionDef("server.credentials.manage", "server", "Zugangsdaten für diesen Server zuweisen"),
+    PermissionDef("server.frontend.preview", "server", "Frontend-Vorschau-URLs aufrufen"),
 )
 
 

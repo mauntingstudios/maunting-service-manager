@@ -52,6 +52,7 @@ def _render_site_block(
     spa_fallback: bool,
     noindex: bool = False,
     forward_auth_url: str | None = None,
+    server_id: int | None = None,
     comment: str | None = None,
 ) -> str:
     lines: list[str] = []
@@ -64,9 +65,14 @@ def _render_site_block(
         lines.append('    header X-Robots-Tag "noindex, nofollow"')
 
     if forward_auth_url:
+        auth_uri = (
+            f"/api/frontend-previews/authorize?server_id={int(server_id)}"
+            if server_id is not None
+            else "/api/frontend-previews/authorize"
+        )
         lines.extend([
             f"    forward_auth {forward_auth_url} {{",
-            "        uri /api/frontend-previews/authorize",
+            f"        uri {auth_uri}",
             "        copy_headers X-MSM-Preview-User",
             "    }",
         ])

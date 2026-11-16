@@ -42,6 +42,7 @@ from routers import (
     webhooks_outbound_router,
     singra_webhook_router,
     frontend_webhook_router,
+    frontend_previews_auth_router,
     backup_config_router,
     panel_backups_router,
     nodes_router,
@@ -541,6 +542,7 @@ app.include_router(panel_database_studio_router)
 app.include_router(webhooks_outbound_router)
 app.include_router(singra_webhook_router)
 app.include_router(frontend_webhook_router)
+app.include_router(frontend_previews_auth_router)
 # OAuth-Endpoints liegen absichtlich NICHT unter auth_rate_limit, weil das
 # Rate-Limit pro IP und pro Minute gilt (10/min). Bei Shared-IPs (Unternehmen,
 # Schulen, mobile Carrier) wuerde der Login-Flow sonst regelmaessig 429

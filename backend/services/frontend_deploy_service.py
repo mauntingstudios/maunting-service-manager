@@ -20,18 +20,21 @@ from sqlalchemy.orm import Session
 from blueprints.github_source import _build_git_env, _clone_url
 from blueprints.registry import get_registry
 from blueprints.schema import Blueprint, BlueprintCategory, BlueprintSourceType
+from config import settings
 from models import (
     KIND_GITHUB_TOKEN,
     FrontendDeployment,
     FrontendSettings,
     RoleFrontendBuildQuota,
     Server,
+    ServerPort,
     User,
     UserRole,
 )
-from services import credential_service, docker_service
+from services import credential_service, docker_service, port_allocation_service
 from services.auth_service import AuthService
 from services.dis_client import DisDecryptionError
+from services.firewall_service import close_ports, open_ports
 from services.frontend_build_runner import run_node_frontend_build
 from services.frontend_caddy_config import (
     PreviewRoute,
@@ -251,11 +254,13 @@ def rewrite_caddyfile(db: Session, server: Server, bp: Blueprint | None) -> Path
         )
         .all()
     )
+    panel_auth_url = (getattr(settings, "panel_url", "") or "").strip().rstrip("/") or None
     preview_routes = [
         PreviewRoute(
             branch_slug=row.branch_slug,
             port=int(row.port),
             root_dir=f"/data/previews/{row.branch_slug}",
+            forward_auth_url=panel_auth_url,
         )
         for row in previews_rows
         if row.port is not None
@@ -287,6 +292,64 @@ def _reload_caddy_container(server: Server) -> None:
         logger.debug("Caddy reload fuer Server %s uebersprungen: %s", server.id, exc)
 
 
+def _ensure_preview_port(
+    db: Session,
+    server: Server,
+    slug: str,
+    *,
+    actor_user_id: int | None = None,
+) -> int:
+    existing_live = (
+        db.query(FrontendDeployment)
+        .filter(
+            FrontendDeployment.server_id == server.id,
+            FrontendDeployment.kind == "preview",
+            FrontendDeployment.branch_slug == slug,
+            FrontendDeployment.port.isnot(None),
+        )
+        .order_by(FrontendDeployment.created_at.desc())
+        .first()
+    )
+    if existing_live is not None and existing_live.port is not None:
+        return int(existing_live.port)
+
+    bp = _resolve_frontend_blueprint(server)
+    bp_limit = bp.frontend.maxPreviews if bp and bp.frontend else 5
+    role_limit = resolve_build_quota(db, actor_user_id).max_previews_per_server
+    max_previews = min(bp_limit, role_limit)
+    if max_previews <= 0:
+        raise HTTPException(status_code=403, detail="Previews sind fuer dieses Frontend deaktiviert.")
+
+    active_previews = (
+        db.query(FrontendDeployment)
+        .filter(
+            FrontendDeployment.server_id == server.id,
+            FrontendDeployment.kind == "preview",
+            FrontendDeployment.is_live.is_(True),
+        )
+        .order_by(FrontendDeployment.created_at.asc())
+        .all()
+    )
+    distinct_branches: list[str] = []
+    for row in active_previews:
+        if row.branch_slug != slug and row.branch not in distinct_branches:
+            distinct_branches.append(row.branch)
+    while len(distinct_branches) >= max_previews:
+        oldest_branch = distinct_branches.pop(0)
+        delete_preview(db, server, oldest_branch)
+
+    allocated = port_allocation_service.allocate_ports(
+        db,
+        port_requirements=[("preview", "tcp")],
+        node_id=server.node_id,
+        check_host=server.node_id is None,
+    )
+    port = int(allocated[0][1])
+    db.add(ServerPort(server_id=server.id, role="preview", port=port, protocol="tcp"))
+    db.flush()
+    return port
+
+
 def enqueue(
     db: Session,
     server: Server,
@@ -297,11 +360,15 @@ def enqueue(
     commit_author: str | None = None,
     source: str = "manual",
     preview_port: int | None = None,
+    actor_user_id: int | None = None,
 ) -> FrontendDeployment:
     settings_row = get_or_create_settings(db, server)
     clean_branch = (branch or settings_row.production_branch).strip()
     kind = "production" if clean_branch == settings_row.production_branch else "preview"
     slug = slugify_branch(clean_branch)
+
+    if kind == "preview" and preview_port is None:
+        preview_port = _ensure_preview_port(db, server, slug, actor_user_id=actor_user_id)
 
     # Warte-Builds auf demselben Branch verdichten (neuester Commit gewinnt).
     queued_old = (
@@ -509,6 +576,18 @@ def _activate_deployment(
     dep.is_live = True
     rewrite_caddyfile(db, server, bp)
     _reload_caddy_container(server)
+    fs = get_or_create_settings(db, server)
+    if fs.online and dep.kind == "preview" and dep.port is not None:
+        try:
+            open_ports(
+                server.name,
+                [(int(dep.port), "tcp", "preview")],
+                node=server.node,
+                db=db,
+                server_id=server.id,
+            )
+        except Exception as exc:
+            logger.debug("Firewall open_ports fuer Preview %s uebersprungen: %s", dep.port, exc)
 
 
 def promote(db: Session, deployment_id: int) -> FrontendDeployment:
@@ -584,7 +663,7 @@ def prune(db: Session, server: Server) -> int:
 
 
 def delete_preview(db: Session, server: Server, branch: str) -> int:
-    """Entfernt eine Branch-Preview samt Symlink und Caddyfile-Block."""
+    """Entfernt eine Branch-Preview samt Symlink, Port, Firewall-Freigabe und Caddyfile-Block."""
     slug = slugify_branch(branch)
     rows = (
         db.query(FrontendDeployment)
@@ -596,8 +675,28 @@ def delete_preview(db: Session, server: Server, branch: str) -> int:
         )
         .all()
     )
+    ports_to_close: list[int] = []
     for row in rows:
         row.is_live = False
+        if row.port is not None:
+            ports_to_close.append(int(row.port))
+
+    if ports_to_close:
+        try:
+            close_ports(
+                [(p, "tcp", "preview") for p in ports_to_close],
+                node=server.node,
+                name=server.name,
+                db=db,
+                server_id=server.id,
+            )
+        except Exception as exc:
+            logger.debug("Firewall close_ports fuer Preview uebersprungen: %s", exc)
+        db.query(ServerPort).filter(
+            ServerPort.server_id == server.id,
+            ServerPort.role == "preview",
+            ServerPort.port.in_(ports_to_close),
+        ).delete(synchronize_session=False)
 
     link_path = Path(server.install_dir) / "previews" / slug
     if link_path.is_symlink():
@@ -610,6 +709,38 @@ def delete_preview(db: Session, server: Server, branch: str) -> int:
     _reload_caddy_container(server)
     db.flush()
     return len(rows)
+
+
+def set_online(db: Session, server: Server, online: bool) -> FrontendSettings:
+    """Schaltet ein Frontend online/offline und oeffnet/schliesst Ports dynamisch."""
+    fs = get_or_create_settings(db, server)
+    fs.online = bool(online)
+    web_port = _server_web_port(server)
+    preview_ports = [
+        int(row.port)
+        for row in db.query(FrontendDeployment)
+        .filter(
+            FrontendDeployment.server_id == server.id,
+            FrontendDeployment.kind == "preview",
+            FrontendDeployment.is_live.is_(True),
+            FrontendDeployment.port.isnot(None),
+        )
+        .all()
+        if row.port is not None
+    ]
+    tuples: list[tuple[int, str, str]] = [(web_port, "tcp", "web")] + [
+        (p, "tcp", "preview") for p in preview_ports
+    ]
+    try:
+        if fs.online:
+            open_ports(server.name, tuples, node=server.node, db=db, server_id=server.id)
+        else:
+            close_ports(tuples, node=server.node, name=server.name, db=db, server_id=server.id)
+    except Exception as exc:
+        logger.debug("Firewall-Umschaltung fuer Frontend %s uebersprungen: %s", server.id, exc)
+    server.desired_power_state = "running" if fs.online else "stopped"
+    db.flush()
+    return fs
 
 
 def trigger_async_build(deployment_id: int, *, actor_user_id: int | None = None) -> None:

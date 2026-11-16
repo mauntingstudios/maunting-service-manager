@@ -3636,6 +3636,10 @@
       "title": "Zugangsdaten zuweisen",
       "desc": "Eigene Steam- oder GitHub-Zugangsdaten diesem Server zuordnen."
     },
+    "server_frontend_preview": {
+      "title": "Frontend-Vorschau aufrufen",
+      "desc": "Erlaubt das Öffnen geschützter Branch-Preview-URLs dieses Frontend-Servers, auch ohne Sichtbarkeit in der Serverliste."
+    },
     "servers_create_database": {
       "title": "Datenbankserver erstellen",
       "desc": "Eigene PostgreSQL-Instanzen als Datenbankserver anlegen, auch mit Zugriff von außen. Braucht zusätzlich „Server erstellen“."

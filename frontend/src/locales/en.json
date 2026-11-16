@@ -3636,6 +3636,10 @@
       "title": "Assign credentials",
       "desc": "Assign custom Steam or GitHub credentials to this server."
     },
+    "server_frontend_preview": {
+      "title": "Open frontend previews",
+      "desc": "Allows opening protected branch preview URLs of this frontend server, even without access to the server list."
+    },
     "servers_create_database": {
       "title": "Create database servers",
       "desc": "Create dedicated PostgreSQL instances as database servers, including external access. Also requires \"Create servers\"."
