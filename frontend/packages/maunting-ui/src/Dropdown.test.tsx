@@ -269,5 +269,64 @@ describe('Dropdown Suche und Tastaturnavigation', () => {
     expect(await screen.findByRole('option', { name: 'Modell Alpha' })).toBeInTheDocument()
     expect(screen.getByRole('option', { name: 'Modell Beta' })).toBeInTheDocument()
   })
+
+  it('rendert option.badge nur im Menü, filtert über keywords und begrenzt minMenuWidth am Fensterrand', async () => {
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
+      top: 80,
+      bottom: 120,
+      left: window.innerWidth - 150,
+      right: window.innerWidth - 10,
+      width: 140,
+      height: 40,
+      x: window.innerWidth - 150,
+      y: 80,
+      toJSON: () => ({}),
+    } as DOMRect)
+
+    render(
+      <Dropdown
+        aria-label="Server"
+        value="1"
+        onChange={() => {}}
+        searchable
+        minMenuWidth={320}
+        options={[
+          {
+            value: '1',
+            label: 'Server Eins',
+            badge: <span data-testid="badge-eins">Aktuell</span>,
+          },
+          {
+            value: '2',
+            label: 'Server Zwei',
+            keywords: 'Favorit',
+            optionClassName: 'ring-1 ring-status-warning/35',
+            badge: <span data-testid="badge-zwei">Zuletzt geöffnet</span>,
+          },
+        ]}
+      />,
+    )
+
+    const knopf = screen.getByRole('button', { name: 'Server' })
+    // Auf dem geschlossenen Auslöser erscheinen keine Options-Badges.
+    expect(knopf).not.toHaveTextContent('Aktuell')
+    expect(screen.queryByTestId('badge-eins')).not.toBeInTheDocument()
+
+    fireEvent.click(knopf)
+
+    const menue = screen.getByRole('listbox').parentElement as HTMLElement
+    expect(menue.style.width).toBe('320px')
+    // Menü wird innerhalb des rechten Fensterrands (8px Rand) eingespannt.
+    expect(parseFloat(menue.style.left)).toBeLessThanOrEqual(window.innerWidth - 320 - 8)
+    expect(screen.getByTestId('badge-zwei')).toHaveTextContent('Zuletzt geöffnet')
+
+    const optionZwei = screen.getByRole('option', { name: /Server Zwei/ })
+    expect(optionZwei.className).toContain('ring-status-warning/35')
+
+    const suchfeld = await screen.findByPlaceholderText('Suchen …')
+    fireEvent.change(suchfeld, { target: { value: 'favorit' } })
+    expect(screen.getByRole('option', { name: /Server Zwei/ })).toBeInTheDocument()
+    expect(screen.queryByRole('option', { name: /Server Eins/ })).not.toBeInTheDocument()
+  })
 })
 

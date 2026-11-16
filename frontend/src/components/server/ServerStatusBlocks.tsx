@@ -70,7 +70,7 @@ const FAVORITE_ICON_HOVER_BORDER =
 export interface ServerStatusIconProps {
   status: string
   kind?: StatusEntityKind
-  size?: 'sm' | 'md'
+  size?: 'xs' | 'sm' | 'md'
   interactive?: boolean
   favorite?: boolean
   className?: string
@@ -93,8 +93,8 @@ export function ServerStatusIcon({
 }: ServerStatusIconProps) {
   const tone = getStatusBlockTone(status, kind)
   const palette = ICON_TONE_CLASSES[tone]
-  const boxSize = size === 'md' ? 'h-8 w-8' : 'h-7 w-7'
-  const iconSize = size === 'md' ? 'h-4 w-4' : 'h-3.5 w-3.5'
+  const boxSize = size === 'md' ? 'h-8 w-8 rounded-lg' : size === 'xs' ? 'h-5 w-5 rounded-md' : 'h-7 w-7 rounded-lg'
+  const iconSize = size === 'md' ? 'h-4 w-4' : size === 'xs' ? 'h-3 w-3' : 'h-3.5 w-3.5'
   const borderClass = favorite ? FAVORITE_ICON_BORDER : palette.border
   const hoverBorderClass = favorite ? FAVORITE_ICON_HOVER_BORDER : palette.hoverBorder
 
@@ -104,7 +104,7 @@ export function ServerStatusIcon({
       data-status={status}
       data-status-tone={tone}
       data-favorite={favorite ? 'true' : 'false'}
-      className={`inline-flex ${boxSize} items-center justify-center rounded-lg border transition-all duration-150 shrink-0 ${palette.fill} ${borderClass} ${
+      className={`inline-flex ${boxSize} items-center justify-center border transition-all duration-150 shrink-0 ${palette.fill} ${borderClass} ${
         interactive ? `${palette.hoverFill} ${hoverBorderClass}` : ''
       } ${className}`}
     >

@@ -3079,6 +3079,7 @@
     "execSend": "Run",
     "execTab": "Exec (container)",
     "favoriteAction": "Mark as favorite",
+    "favoriteBadge": "Favorite",
     "favoriteServer": "Mark {{name}} as favorite",
     "game": "Game",
     "blueprintEdition": "Blueprint / edition",

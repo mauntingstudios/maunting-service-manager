@@ -10,6 +10,7 @@ import {
   FileText,
   Hammer,
   HardDrive,
+  History,
   Menu,
   Network,
   Package,
@@ -20,6 +21,7 @@ import {
   Shield,
   Sliders,
   Square,
+  Star,
   Terminal,
   Trash2,
   Webhook,
@@ -28,7 +30,7 @@ import { api, getRateLimitRemainingMs } from "@/api/client";
 import { toast } from "@/stores/toastStore";
 import { confirm } from "@/stores/confirmStore";
 import { usePermissionsStore } from "@/stores/permissionsStore";
-import { useServerPreferencesStore } from "@/stores/serverPreferencesStore";
+import { sortServersByPriority, useServerPreferencesStore } from "@/stores/serverPreferencesStore";
 import { useHostInterfaces } from "@/hooks/useHostInterfaces";
 import { useHasPermission } from "@/hooks/useHasPermission";
 import { ResourceEditorDialog } from "@/components/server/ResourceEditorDialog";
@@ -39,10 +41,12 @@ import { ServerConsolePanel } from "@/components/server/ServerConsolePanel";
 import { ServerRestartPanel } from "@/components/server/ServerRestartPanel";
 import { AuthSetupBanner } from "@/components/server/AuthSetupBanner";
 import { ServerConnectChip } from "@/components/server/ServerConnectChip";
+import { ServerStatusIcon } from "@/components/server/ServerStatusBlocks";
 import { ServerTechnikPanel } from "@/components/server/ServerTechnikPanel";
 import { ServerDetailTabs, type ServerDetailTab } from "@/components/server/ServerDetailTabs";
 import {
   ActionMenu,
+  Badge,
   Button,
   Dialog,
   DialogContent,
@@ -208,6 +212,7 @@ export function ServerDetail() {
   );
 
   const serverId = parseInt(id || "0");
+  const { favoriteIds, lastVisitedId, recentVisitedIds } = useServerPreferencesStore();
 
   useEffect(() => {
     if (serverId > 0) {
@@ -808,14 +813,66 @@ export function ServerDetail() {
     </span>
   );
 
-  const switcherServers = allServers.some((s) => s.id === server.id)
-    ? allServers
-    : [server, ...allServers];
-  const switcherOptions: DropdownOption[] = switcherServers.map((item) => ({
-    value: String(item.id),
-    label: item.name,
-    hint: gameName(item.game_type),
-  }));
+  const mergedSwitcherServers = allServers.some((s) => s.id === server.id)
+    ? allServers.map((s) => (s.id === server.id ? { ...s, ...server, status: displayStatus } : s))
+    : [{ ...server, status: displayStatus }, ...allServers];
+  const switcherServers = sortServersByPriority(
+    mergedSwitcherServers,
+    favoriteIds,
+    lastVisitedId,
+    recentVisitedIds,
+  );
+  const favoriteSet = new Set(favoriteIds);
+  const recentOtherSet = new Set(recentVisitedIds.filter((visitedId) => visitedId !== server.id));
+  const switcherOptions: DropdownOption[] = switcherServers.map((item) => {
+    const isFavorite = favoriteSet.has(item.id);
+    const isRecent = recentOtherSet.has(item.id);
+    const itemStatus = item.active_frontend_build ? "updating" : item.status;
+    const itemKind = item.server_kind === "database" ? "database" : "application";
+    const keywords = [
+      isFavorite ? t("servers.favoriteBadge") : "",
+      isRecent ? t("servers.lastVisitedBadge") : "",
+    ]
+      .filter(Boolean)
+      .join(" ");
+
+    return {
+      value: String(item.id),
+      label: item.name,
+      hint: gameName(item.game_type),
+      keywords: keywords || undefined,
+      icon: (
+        <ServerStatusIcon
+          status={itemStatus}
+          kind={itemKind}
+          size="xs"
+          favorite={isFavorite}
+        />
+      ),
+      optionClassName: isFavorite
+        ? "ring-1 ring-inset ring-status-warning/35 bg-status-warning/[0.06] hover:bg-status-warning/15"
+        : undefined,
+      badge:
+        isFavorite || isRecent ? (
+          <>
+            {isRecent && (
+              <Badge variant="default" className="px-2 py-0.5">
+                <History className="w-3 h-3 mr-1 inline" aria-hidden="true" />
+                <span className="sr-only">. </span>
+                {t("servers.lastVisitedBadge")}
+              </Badge>
+            )}
+            {isFavorite && (
+              <span className="inline-flex items-center text-status-warning">
+                <Star className="h-3.5 w-3.5 fill-status-warning text-status-warning" aria-hidden="true" />
+                <span className="sr-only">. </span>
+                <span className="sr-only">{t("servers.favoriteBadge")}</span>
+              </span>
+            )}
+          </>
+        ) : undefined,
+    };
+  });
 
   const isTransientLifecycle = [
     "installing",
@@ -942,6 +999,8 @@ export function ServerDetail() {
                   }}
                   options={switcherOptions}
                   searchable={switcherOptions.length > 5}
+                  minMenuWidth={340}
+                  data-testid="server-switcher-dropdown"
                   aria-label={t("serverDetail.serverSwitcher")}
                   buttonClassName="min-h-[44px] md:min-h-[36px] text-xs"
                 />

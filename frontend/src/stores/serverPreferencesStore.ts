@@ -12,6 +12,8 @@ import type { Server } from '@/types'
 
 const FAVORITES_KEY_PREFIX = 'msm:server-favorites:'
 const LAST_VISITED_KEY_PREFIX = 'msm:server-last-visited:'
+const RECENT_VISITED_KEY_PREFIX = 'msm:server-recent-visited:'
+const MAX_RECENT_SERVERS = 5
 const LOG_SCOPE = 'serverPreferences'
 
 const ACTIVE_TRANSIENT_STATUSES = new Set([
@@ -50,9 +52,28 @@ function writeLastVisitedId(konto: number | null, serverId: number | null): void
   }
 }
 
+function readRecentVisitedIds(konto: number | null, fallbackLastVisitedId: number | null): number[] {
+  const fromList = readFavoriteIdList(RECENT_VISITED_KEY_PREFIX, konto, LOG_SCOPE).slice(
+    0,
+    MAX_RECENT_SERVERS,
+  )
+  if (fallbackLastVisitedId != null && fromList[0] !== fallbackLastVisitedId) {
+    return [fallbackLastVisitedId, ...fromList.filter((id) => id !== fallbackLastVisitedId)].slice(
+      0,
+      MAX_RECENT_SERVERS,
+    )
+  }
+  return fromList
+}
+
+function writeRecentVisitedIds(konto: number | null, ids: readonly number[]): void {
+  writeFavoriteIdList(RECENT_VISITED_KEY_PREFIX, konto, ids.slice(0, MAX_RECENT_SERVERS), LOG_SCOPE)
+}
+
 function clearAccountPreferences(konto: number | null): void {
   removeStorageKey(FAVORITES_KEY_PREFIX, konto, LOG_SCOPE)
   removeStorageKey(LAST_VISITED_KEY_PREFIX, konto, LOG_SCOPE)
+  removeStorageKey(RECENT_VISITED_KEY_PREFIX, konto, LOG_SCOPE)
 }
 
 function statusRank(status: string | undefined): number {
@@ -64,16 +85,19 @@ function statusRank(status: string | undefined): number {
 interface ServerPreferencesState {
   favoriteIds: number[]
   lastVisitedId: number | null
+  recentVisitedIds: number[]
   toggleFavorite: (serverId: number) => void
   setLastVisited: (serverId: number) => void
   resetForTests: () => void
 }
 
 const initialKonto = angemeldetesKonto()
+const initialLastVisitedId = readLastVisitedId(initialKonto)
 
 export const useServerPreferencesStore = create<ServerPreferencesState>((set, get) => ({
   favoriteIds: readFavoriteIdList(FAVORITES_KEY_PREFIX, initialKonto, LOG_SCOPE),
-  lastVisitedId: readLastVisitedId(initialKonto),
+  lastVisitedId: initialLastVisitedId,
+  recentVisitedIds: readRecentVisitedIds(initialKonto, initialLastVisitedId),
 
   toggleFavorite: (serverId) => {
     const next = toggleFavoriteIdInList(get().favoriteIds, serverId)
@@ -84,59 +108,81 @@ export const useServerPreferencesStore = create<ServerPreferencesState>((set, ge
 
   setLastVisited: (serverId) => {
     if (!Number.isInteger(serverId) || serverId <= 0) return
-    if (get().lastVisitedId === serverId) return
-    writeLastVisitedId(angemeldetesKonto(), serverId)
-    set({ lastVisitedId: serverId })
+    const currentRecent = get().recentVisitedIds
+    if (get().lastVisitedId === serverId && currentRecent[0] === serverId) return
+    const nextRecent = [serverId, ...currentRecent.filter((id) => id !== serverId)].slice(
+      0,
+      MAX_RECENT_SERVERS,
+    )
+    const konto = angemeldetesKonto()
+    writeLastVisitedId(konto, serverId)
+    writeRecentVisitedIds(konto, nextRecent)
+    set({ lastVisitedId: serverId, recentVisitedIds: nextRecent })
   },
 
   resetForTests: () => {
     const konto = angemeldetesKonto()
     clearAccountPreferences(konto)
     clearAccountPreferences(null)
-    set({ favoriteIds: [], lastVisitedId: null })
+    set({ favoriteIds: [], lastVisitedId: null, recentVisitedIds: [] })
   },
 }))
 
 beiKontowechsel((konto) => {
+  const nextLastVisitedId = readLastVisitedId(konto)
   useServerPreferencesStore.setState({
     favoriteIds: readFavoriteIdList(FAVORITES_KEY_PREFIX, konto, LOG_SCOPE),
-    lastVisitedId: readLastVisitedId(konto),
+    lastVisitedId: nextLastVisitedId,
+    recentVisitedIds: readRecentVisitedIds(konto, nextLastVisitedId),
   })
 })
 
 /**
- * Sortiert Server stabil für Dashboard und Serverliste:
- * Favoriten zuerst (intern aktiv vor gestoppt), danach der zuletzt geöffnete
- * Server (auch wenn er gestoppt ist), dann laufende und aktive Übergänge,
- * schließlich die übrigen gestoppten Server.
+ * Sortiert Server stabil für Dashboard, Serverliste und Server-Wechsler:
+ * Favoriten zuerst (intern aktiv vor gestoppt), danach der bzw. die zuletzt
+ * geöffneten Server (auch wenn sie gestoppt sind), dann laufende und aktive
+ * Übergänge, schließlich die übrigen gestoppten Server.
  */
 export function sortServersByPriority(
   servers: readonly Server[],
   favoriteIds: readonly number[],
   lastVisitedId: number | null,
+  recentVisitedIds?: readonly number[],
 ): Server[] {
   if (servers.length <= 1) return [...servers]
   const favoriteSet = new Set(favoriteIds)
+  const effectiveRecentIds =
+    recentVisitedIds && recentVisitedIds.length > 0
+      ? recentVisitedIds
+      : lastVisitedId != null
+        ? [lastVisitedId]
+        : []
+  const recentRankMap = new Map<number, number>()
+  effectiveRecentIds.forEach((id, idx) => {
+    if (!recentRankMap.has(id)) recentRankMap.set(id, idx)
+  })
 
   return servers
     .map((server, index) => {
       const isFavorite = favoriteSet.has(server.id)
-      const isLastVisited = lastVisitedId != null && server.id === lastVisitedId
+      const recentRank = recentRankMap.get(server.id) ?? Number.POSITIVE_INFINITY
+      const isRecent = recentRank < Number.POSITIVE_INFINITY
       const sRank = statusRank(server.status)
 
       let tier = 3 + sRank // 3 = running, 4 = transient, 5 = stopped/other
-      if (isFavorite && isLastVisited) {
+      if (isFavorite && isRecent) {
         tier = 0
       } else if (isFavorite) {
         tier = 1
-      } else if (isLastVisited) {
+      } else if (isRecent) {
         tier = 2
       }
 
-      return { server, index, tier, sRank }
+      return { server, index, tier, recentRank, sRank }
     })
     .sort((a, b) => {
       if (a.tier !== b.tier) return a.tier - b.tier
+      if (a.recentRank !== b.recentRank) return a.recentRank - b.recentRank
       if (a.sRank !== b.sRank) return a.sRank - b.sRank
       return a.index - b.index
     })

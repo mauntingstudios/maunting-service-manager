@@ -16,6 +16,9 @@ export interface DropdownOption {
   label: string
   hint?: string
   icon?: ReactNode
+  badge?: ReactNode
+  keywords?: string
+  optionClassName?: string
   disabled?: boolean
 }
 
@@ -31,6 +34,7 @@ interface DropdownProps {
   disabled?: boolean
   className?: string
   buttonClassName?: string
+  minMenuWidth?: number
   align?: 'start' | 'end'
   'aria-label'?: string
   'aria-describedby'?: string
@@ -52,6 +56,7 @@ export const Dropdown = forwardRef<HTMLDivElement, DropdownProps>(
       disabled = false,
       className = '',
       buttonClassName = '',
+      minMenuWidth,
       align = 'start',
       'aria-label': ariaLabel,
       'aria-describedby': ariaDescribedBy,
@@ -71,10 +76,14 @@ export const Dropdown = forwardRef<HTMLDivElement, DropdownProps>(
     const selected = safeOptions.find((option) => option.value === value)
 
     const filteredOptions = searchable && query.trim()
-      ? safeOptions.filter((option) =>
-          option.label.toLowerCase().includes(query.toLowerCase().trim()) ||
-          (option.hint && option.hint.toLowerCase().includes(query.toLowerCase().trim())),
-        )
+      ? safeOptions.filter((option) => {
+          const normalizedQuery = query.toLowerCase().trim()
+          return (
+            option.label.toLowerCase().includes(normalizedQuery) ||
+            (option.hint && option.hint.toLowerCase().includes(normalizedQuery)) ||
+            (option.keywords && option.keywords.toLowerCase().includes(normalizedQuery))
+          )
+        })
       : safeOptions
 
     // Die Optionen liegen per Portal an `document.body` und damit außerhalb
@@ -181,7 +190,8 @@ export const Dropdown = forwardRef<HTMLDivElement, DropdownProps>(
         const nachOben = platzUnten < MIN_MENUE_HOEHE && platzOben > platzUnten
         const verfuegbar = nachOben ? Math.max(60, platzOben) : Math.max(60, platzUnten)
         const maxHeight = Math.min(MAX_MENUE_HOEHE, verfuegbar)
-        const breite = Math.min(rect.width, window.innerWidth - RAND * 2)
+        const wunschBreite = minMenuWidth ? Math.max(rect.width, minMenuWidth) : rect.width
+        const breite = Math.min(wunschBreite, window.innerWidth - RAND * 2)
         const links = align === 'end' ? undefined : Math.max(RAND, Math.min(rect.left, window.innerWidth - breite - RAND))
         const rechts = align === 'end' ? Math.max(RAND, Math.min(window.innerWidth - rect.right, window.innerWidth - breite - RAND)) : undefined
 
@@ -204,7 +214,7 @@ export const Dropdown = forwardRef<HTMLDivElement, DropdownProps>(
         window.removeEventListener('resize', updatePosition)
         window.removeEventListener('scroll', updatePosition, true)
       }
-    }, [align, open])
+    }, [align, minMenuWidth, open])
 
     const hatEigeneBreite = className?.includes('w-')
     return (
@@ -230,7 +240,7 @@ export const Dropdown = forwardRef<HTMLDivElement, DropdownProps>(
           >
             <span className={cx('min-w-0 flex-1 truncate', !selected && 'text-on-surface-variant')}>
               {selected ? (
-                <span className="inline-flex min-w-0 items-center gap-2">
+                <span className="inline-flex min-w-0 max-w-full items-center gap-2">
                   {selected.icon}
                   <span className="truncate">{selected.label}</span>
                 </span>
@@ -327,6 +337,7 @@ export const Dropdown = forwardRef<HTMLDivElement, DropdownProps>(
                                 active
                                   ? 'bg-primary/15 text-primary'
                                   : 'text-on-surface-variant hover:bg-surface-container-highest/70 hover:text-on-surface',
+                                !active && option.optionClassName,
                               )}
                             >
                               {option.icon}
@@ -336,6 +347,11 @@ export const Dropdown = forwardRef<HTMLDivElement, DropdownProps>(
                                   <span className="ml-2 text-xs text-on-surface-variant/60">{option.hint}</span>
                                 )}
                               </span>
+                              {option.badge && (
+                                <span className="inline-flex shrink-0 items-center gap-1.5">
+                                  {option.badge}
+                                </span>
+                              )}
                               {active && <Check className="h-4 w-4 shrink-0 text-primary" aria-hidden="true" />}
                             </button>
                           </li>

@@ -6,6 +6,7 @@ import * as client from '@/api/client'
 import i18n from '@/i18n'
 import { useToastStore } from '@/stores/toastStore'
 import { usePermissionsStore } from '@/stores/permissionsStore'
+import { useServerPreferencesStore } from '@/stores/serverPreferencesStore'
 import type { MePermissions } from '@/types/permissions'
 import type { Server, GameInfo } from '@/types'
 
@@ -651,6 +652,87 @@ describe('ServerDetail permission topology — VAL-UI-002 / VAL-UI-018', () => {
         expect(screen.getByRole('tab', { name: 'Autopilot' })).toBeInTheDocument()
       })
       expect(screen.getByRole('tab', { name: /deployments/i })).toBeInTheDocument()
+    })
+  })
+
+  // -------------------------------------------------------------------------
+  // Server-Wechsler: Favoriten & Zuletzt geöffnet wie in der Serverübersicht
+  // -------------------------------------------------------------------------
+
+  describe('Server-Wechsler (Favoriten & Zuletzt geöffnet)', () => {
+    afterEach(async () => {
+      useServerPreferencesStore.getState().resetForTests()
+      await i18n.changeLanguage('en')
+    })
+
+    it('sortiert Favoriten und zuletzt besuchte Server nach oben, markiert sie wie in der Übersicht und wechselt direkt', async () => {
+      await i18n.changeLanguage('de')
+      const prefs = useServerPreferencesStore.getState()
+      prefs.resetForTests()
+      // Nutzer hat zuvor Server 103 besucht (Favorit fehlt noch) und Server 102 favorisiert.
+      prefs.setLastVisited(103)
+      prefs.toggleFavorite(102)
+
+      const serversList: Server[] = [
+        { ...SYNTHETIC_SERVER, id: SERVER_ID, name: 'Aktuell-Alpha', status: 'stopped' },
+        { ...SYNTHETIC_SERVER, id: 101, name: 'Laufend-Normal', status: 'running' },
+        { ...SYNTHETIC_SERVER, id: 102, name: 'Gestoppt-Favorit', status: 'stopped' },
+        { ...SYNTHETIC_SERVER, id: 103, name: 'Vorher-Besucht', status: 'stopped' },
+      ]
+
+      mockApi.mockImplementation(async (path: string) => {
+        if (path === `/servers/${SERVER_ID}`) return serversList[0] as any
+        if (path === `/servers/${SERVER_ID}/status`) return SYNTHETIC_STATUS as any
+        if (path === '/servers/103') return serversList[3] as any
+        if (path === '/servers/103/status') return SYNTHETIC_STATUS as any
+        if (path === '/servers') return serversList as any
+        if (path === '/system/games') return SYNTHETIC_GAMES as any
+        return [] as any
+      })
+
+      setPermissions(OWNER_ME)
+      renderServerDetail()
+
+      const switcherTrigger = await screen.findByTestId('server-switcher-dropdown')
+      fireEvent.click(switcherTrigger)
+
+      const options = await screen.findAllByRole('option')
+      const optionTexts = options.map((el) => el.textContent ?? '')
+      // Reihenfolge wie in der Übersicht: Favorit zuerst, dann zuletzt besuchte (aktuell + vorher besucht), dann laufende.
+      expect(optionTexts[0]).toContain('Gestoppt-Favorit')
+      expect(optionTexts[1]).toContain('Aktuell-Alpha')
+      expect(optionTexts[2]).toContain('Vorher-Besucht')
+      expect(optionTexts[3]).toContain('Laufend-Normal')
+
+      // Favorit zeigt goldene Hervorhebung und Stern-Icon; vorher besuchter Server zeigt "Zuletzt geöffnet".
+      const favOption = options[0]
+      expect(favOption.className).toContain('ring-status-warning/35')
+      expect(within(favOption).getByText('Favorit')).toBeInTheDocument()
+      expect(favOption.querySelector('[data-favorite="true"]')).toBeInTheDocument()
+
+      const recentOption = options[2]
+      expect(within(recentOption).getByText('Zuletzt geöffnet')).toBeInTheDocument()
+
+      // Der aktuell geöffnete Server ist markiert, trägt aber nicht doppelt das "Zuletzt geöffnet"-Badge.
+      expect(options[1]).toHaveAttribute('aria-selected', 'true')
+      expect(within(options[1]).queryByText('Zuletzt geöffnet')).not.toBeInTheDocument()
+
+      // Direkter Wechsel auf Server 103 markiert anschließend den vorherigen Server (SERVER_ID) als zuletzt geöffnet.
+      fireEvent.click(recentOption)
+
+      await waitFor(() => {
+        expect(screen.getByRole('heading', { level: 1, name: 'Vorher-Besucht' })).toBeInTheDocument()
+      })
+
+      fireEvent.click(screen.getByTestId('server-switcher-dropdown'))
+      const updatedOptions = await screen.findAllByRole('option')
+      const alphaAfterSwitch = updatedOptions.find((el) =>
+        (el.textContent ?? '').includes('Aktuell-Alpha'),
+      )
+      expect(alphaAfterSwitch).toBeDefined()
+      expect(within(alphaAfterSwitch!).getByText('Zuletzt geöffnet')).toBeInTheDocument()
+
+      expect(document.body.querySelectorAll('[title]')).toHaveLength(0)
     })
   })
 })
