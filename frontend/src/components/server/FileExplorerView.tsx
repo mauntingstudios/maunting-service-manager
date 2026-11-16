@@ -245,7 +245,7 @@ export function FileExplorerView({
               onClick={() => onResumeTab(tab.path)}
               className="inline-flex min-h-[44px] sm:min-h-[34px] max-w-full items-center gap-1.5 rounded-full border border-outline bg-surface-container-high px-3 text-xs font-mono text-on-surface hover:border-secondary hover:text-primary transition-colors"
             >
-              <FileText className="h-3.5 w-3.5 shrink-0 text-secondary" aria-hidden="true" />
+              <FileText className="h-4 w-4 shrink-0 text-secondary" aria-hidden="true" />
               <span className="truncate max-w-[12rem]">{fileName(tab.path)}</span>
               {tab.saveState === 'dirty' && (
                 <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-status-warning" aria-hidden="true" />
@@ -281,7 +281,7 @@ export function FileExplorerView({
         <div className="flex items-center gap-2 min-w-0 lg:w-96">
           <div className="relative min-w-0 flex-1">
             <Search
-              className="pointer-events-none absolute left-3 top-1/2 z-10 h-3.5 w-3.5 -translate-y-1/2 text-on-surface-variant"
+              className="pointer-events-none absolute left-3 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-on-surface-variant"
               aria-hidden="true"
             />
             <Input
@@ -290,7 +290,7 @@ export function FileExplorerView({
               onChange={(event) => onSearchQueryChange(event.target.value)}
               placeholder={searchMode === 'content' ? t('files.searchContentPlaceholder') : t('files.searchPlaceholder')}
               aria-label={searchMode === 'content' ? t('files.searchContentPlaceholder') : t('files.searchPlaceholder')}
-              className="pl-8 text-xs max-md:h-11"
+              className="pl-9 text-xs max-md:h-11"
             />
           </div>
           <div
@@ -423,7 +423,7 @@ export function FileExplorerView({
                         className="inline-flex items-center gap-1 hover:text-on-surface"
                       >
                         <span>{t('files.nameColumn')}</span>
-                        <ArrowDownUp className="h-3 w-3 opacity-60" aria-hidden="true" />
+                        <ArrowDownUp className="h-3.5 w-3.5 shrink-0 opacity-60" aria-hidden="true" />
                       </button>
                     </th>
                     <th scope="col" className="px-3 py-2.5 font-semibold w-28">
@@ -441,7 +441,7 @@ export function FileExplorerView({
                         className="inline-flex items-center gap-1 hover:text-on-surface"
                       >
                         <span>{t('files.size')}</span>
-                        <ArrowDownUp className="h-3 w-3 opacity-60" aria-hidden="true" />
+                        <ArrowDownUp className="h-3.5 w-3.5 shrink-0 opacity-60" aria-hidden="true" />
                       </button>
                     </th>
                     <th
@@ -456,7 +456,7 @@ export function FileExplorerView({
                         className="inline-flex items-center gap-1 hover:text-on-surface"
                       >
                         <span>{t('files.modified')}</span>
-                        <ArrowDownUp className="h-3 w-3 opacity-60" aria-hidden="true" />
+                        <ArrowDownUp className="h-3.5 w-3.5 shrink-0 opacity-60" aria-hidden="true" />
                       </button>
                     </th>
                     <th scope="col" className="py-2.5 pl-2 pr-4 text-right font-semibold w-24">
@@ -517,25 +517,25 @@ export function FileExplorerView({
                             {!entry.is_dir && canWrite && isArchive(entry.name) && (
                               <Button
                                 variant="ghost"
-                                size="sm"
+                                size="icon"
                                 type="button"
                                 onClick={() => onExtractEntry(entry, currentPath)}
                                 aria-label={`${t('files.extract')}: ${entry.name}`}
                                 className="min-h-[44px] min-w-[44px] @md:min-h-[32px] @md:min-w-[32px]"
                               >
-                                <PackageOpen className="h-4 w-4" aria-hidden="true" />
+                                <PackageOpen className="h-4 w-4 shrink-0" aria-hidden="true" />
                               </Button>
                             )}
                             {!entry.is_dir && (
                               <Button
                                 variant="ghost"
-                                size="sm"
+                                size="icon"
                                 type="button"
                                 onClick={() => onDownloadEntry(entry, currentPath)}
                                 aria-label={`${t('files.download')}: ${entry.name}`}
                                 className="min-h-[44px] min-w-[44px] @md:min-h-[32px] @md:min-w-[32px]"
                               >
-                                <Download className="h-4 w-4" aria-hidden="true" />
+                                <Download className="h-4 w-4 shrink-0" aria-hidden="true" />
                               </Button>
                             )}
                             {rowMenuItems.length > 0 && (
@@ -579,7 +579,7 @@ export function FileExplorerView({
                   onClick={() => setPage((p) => Math.max(1, p - 1))}
                   className="inline-flex items-center gap-1 disabled:opacity-45"
                 >
-                  <ChevronLeft className="h-3.5 w-3.5" aria-hidden="true" />
+                  <ChevronLeft className="h-4 w-4 shrink-0" aria-hidden="true" />
                   <span>{t('common.back')}</span>
                 </Button>
                 <span className="font-mono px-1">
@@ -595,7 +595,7 @@ export function FileExplorerView({
                   className="inline-flex items-center gap-1 disabled:opacity-45"
                 >
                   <span>{t('common.next')}</span>
-                  <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
+                  <ChevronRight className="h-4 w-4 shrink-0" aria-hidden="true" />
                 </Button>
               </div>
             </nav>

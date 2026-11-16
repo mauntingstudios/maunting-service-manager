@@ -140,7 +140,7 @@ export function VaultEntryModal({
                   }}
                   className="text-primary"
                 >
-                  <Zap className="h-3 w-3" />
+                  <Zap className="h-4 w-4 shrink-0" />
                   {t('mss.vault.generieren')}
                 </Button>
               </div>
@@ -187,7 +187,7 @@ export function VaultEntryModal({
                   onClick={onOpenQrScanner}
                   className="text-primary"
                 >
-                  <QrCode className="h-3 w-3" />
+                  <QrCode className="h-4 w-4 shrink-0" />
                   {t('mss.vault.qr.scannen')}
                 </Button>
               </div>

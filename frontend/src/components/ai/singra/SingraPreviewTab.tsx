@@ -414,7 +414,7 @@ export function SingraPreviewTab({
                         disabled={devStatusLoading}
                         onClick={onStopDevSandbox}
                       >
-                        <Pause className="h-3 w-3" />
+                        <Pause className="h-3.5 w-3.5 shrink-0" />
                         <span>Sandbox pausieren</span>
                       </Button>
                     ) : (
@@ -425,7 +425,7 @@ export function SingraPreviewTab({
                         disabled={devStatusLoading}
                         onClick={onStartDevSandbox}
                       >
-                        {devStatusLoading ? <Spinner className="h-3 w-3" /> : <Play className="h-3 w-3" />}
+                        {devStatusLoading ? <Spinner className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5 shrink-0" />}
                         <span>Sandbox starten</span>
                       </Button>
                     )}
@@ -471,7 +471,7 @@ export function SingraPreviewTab({
                     className="h-7 text-xs px-2.5 gap-1"
                     onClick={onOpenPublishModal}
                   >
-                    <Settings2 className="h-3 w-3" />
+                    <Settings2 className="h-3.5 w-3.5 shrink-0" />
                     <span>Bereitstellung anpassen</span>
                   </Button>
                 </div>

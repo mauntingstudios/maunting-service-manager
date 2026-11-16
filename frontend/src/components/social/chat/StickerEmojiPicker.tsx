@@ -530,7 +530,7 @@ export function StickerEmojiPicker({
                       aria-label={t('messenger.stickerPacks.deleteSticker')}
                       className="grid h-6 w-6 place-items-center rounded-full border border-outline-variant/40 bg-surface-container-highest text-on-surface-variant before:absolute before:-inset-3 before:content-[''] hover:text-status-destructive"
                     >
-                      <X className="h-3 w-3" aria-hidden="true" />
+                      <X className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
                     </button>
                   </Kurzinfo>
                 </div>

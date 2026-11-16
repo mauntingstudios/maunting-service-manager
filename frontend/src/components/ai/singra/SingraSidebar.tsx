@@ -293,7 +293,7 @@ function SidebarContent({
                       className="rounded p-1 text-on-surface-variant hover:text-primary"
                       aria-label="Unterhaltung umbenennen"
                     >
-                      <Pencil className="h-3 w-3" />
+                      <Pencil className="h-3.5 w-3.5 shrink-0" />
                     </button>
                   )}
                   {onTogglePinConversation && (
@@ -306,7 +306,7 @@ function SidebarContent({
                       className="rounded p-1 text-on-surface-variant hover:text-primary"
                       aria-label={conv.pinned ? 'Anheftung lösen' : 'Anheften'}
                     >
-                      <Pin className="h-3 w-3" />
+                      <Pin className="h-3.5 w-3.5 shrink-0" />
                     </button>
                   )}
                   {onDeleteConversation && (
@@ -319,7 +319,7 @@ function SidebarContent({
                       className="rounded p-1 text-on-surface-variant hover:text-status-destructive"
                       aria-label="Unterhaltung löschen"
                     >
-                      <Trash2 className="h-3 w-3" />
+                      <Trash2 className="h-3.5 w-3.5 shrink-0" />
                     </button>
                   )}
                 </div>

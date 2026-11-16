@@ -120,7 +120,7 @@ export function AiChatComposerHinweise({
                           onClick={() => setQueuedMessages((q) => q.filter((_, i) => i !== idx))}
                           aria-label="Aus Warteschlange entfernen"
                         >
-                          <X className="h-3 w-3" />
+                          <X className="h-3.5 w-3.5 shrink-0" />
                         </button>
                       </span>
                     </Kurzinfo>

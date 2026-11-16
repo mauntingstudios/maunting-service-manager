@@ -199,12 +199,12 @@ export function SqliteStudioWorkspace({ serverId, path, canWrite }: Props) {
           >
             <div className="p-2.5 border-b border-outline-variant/20 flex items-center gap-1.5">
               <div className="relative flex-1">
-                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-on-surface-variant" />
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-on-surface-variant" />
                 <Input
                   value={tableSearch}
                   onChange={(e) => setTableSearch(e.target.value)}
                   placeholder={t('sqliteStudio.searchTables', { defaultValue: 'Tabelle suchen...' })}
-                  className="pl-8 text-xs h-8"
+                  className="pl-9 text-xs h-8"
                 />
               </div>
               <Button
@@ -264,10 +264,10 @@ export function SqliteStudioWorkspace({ serverId, path, canWrite }: Props) {
                     {!sidebarOpen && (
                       <Button
                         variant="ghost"
-                        size="sm"
+                        size="icon"
                         onClick={() => setSidebarOpen(true)}
                         aria-label={t('sqliteStudio.toggleSidebar', { defaultValue: 'Tabellenliste ausklappen' })}
-                        className="hidden md:inline-flex h-7 w-7 p-0"
+                        className="hidden md:inline-flex"
                       >
                         <PanelLeftOpen className="h-4 w-4" />
                       </Button>

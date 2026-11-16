@@ -10,7 +10,7 @@ export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElemen
   fingerziel?: boolean
 }
 
-const BASIS = 'inline-flex items-center justify-center gap-2 whitespace-nowrap'
+const BASIS = 'inline-flex items-center justify-center gap-2 whitespace-nowrap [&_svg]:shrink-0'
 
 const VARIANTEN: Record<ButtonVariant, string> = {
   primary: 'msm-btn-primary',

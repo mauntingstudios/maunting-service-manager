@@ -1192,7 +1192,7 @@ export function SuchzusammenfassungKachel({
                           onClick={() => setQueuedMessages((q) => q.filter((_, i) => i !== qIdx))}
                           aria-label={t('browser.msmSuche.warteschlangeEntfernen')}
                         >
-                          <X className="h-3 w-3" aria-hidden="true" />
+                          <X className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
                         </button>
                       </span>
                     </Kurzinfo>

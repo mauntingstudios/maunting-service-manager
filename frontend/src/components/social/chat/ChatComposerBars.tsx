@@ -21,7 +21,7 @@ export function StagedImageBar({ bild, onEntfernen }: { bild: ImageAttachment; o
           className="absolute -top-1 -right-1 p-0.5 rounded-full bg-surface-container-highest text-on-surface"
           aria-label={t('messenger.removeImage')}
         >
-          <X className="w-3 h-3" />
+          <X className="w-3.5 h-3.5 shrink-0" />
         </button>
       </div>
       <span className="text-xs text-on-surface-variant truncate">

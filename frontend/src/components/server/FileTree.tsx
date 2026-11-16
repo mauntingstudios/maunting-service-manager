@@ -194,9 +194,9 @@ export function FileTree({
                 {loadingPaths.has(path) ? (
                   <Spinner className="text-secondary" />
                 ) : isExpanded ? (
-                  <ChevronDown className="h-3.5 w-3.5" />
+                  <ChevronDown className="h-4 w-4 shrink-0" />
                 ) : (
-                  <ChevronRight className="h-3.5 w-3.5" />
+                  <ChevronRight className="h-4 w-4 shrink-0" />
                 )}
               </span>
             ) : (
@@ -286,7 +286,7 @@ export function FileTree({
         onKeyDown={(event) => handleTreeKeyDown(event, ROOT_KEY)}
         className="flex min-h-9 w-full items-center gap-2 px-3 text-left text-xs font-semibold text-on-surface hover:bg-surface-container-highest focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-primary"
       >
-        <ChevronDown className="h-3.5 w-3.5" />
+        <ChevronDown className="h-4 w-4 shrink-0" />
         <Server className="h-4 w-4 text-secondary" />
         <span>{t('files.serverFiles')}</span>
       </button>

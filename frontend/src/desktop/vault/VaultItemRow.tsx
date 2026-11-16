@@ -141,9 +141,9 @@ export function VaultItemRow({
           aria-label={t('mss.vault.benutzernameKopieren')}
         >
           {copiedIdField === `user-${item.id}` ? (
-            <Check className="h-3 w-3 text-status-success" />
+            <Check className="h-4 w-4 shrink-0 text-status-success" />
           ) : (
-            <Copy className="h-3 w-3" />
+            <Copy className="h-4 w-4 shrink-0" />
           )}
         </Button>
       )}
@@ -192,7 +192,7 @@ export function VaultItemRow({
                     aria-label={t('mss.vault.seiteOeffnen', { name: item.service })}
                     className="text-on-surface-variant hover:text-primary transition-colors"
                   >
-                    <ExternalLink className="h-3 w-3" />
+                    <ExternalLink className="h-3.5 w-3.5 shrink-0" />
                   </a>
                 )}
                 {formatTransferBadge(item) && (

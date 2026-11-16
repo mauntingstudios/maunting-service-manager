@@ -436,7 +436,7 @@ export function TresorNotizDialog({
                       : 'text-on-surface-variant hover:text-on-surface'
                   }`}
                 >
-                  <Edit3 className="w-3 h-3" />
+                  <Edit3 className="w-3.5 h-3.5 shrink-0" />
                   {t('notes.tabEditor')}
                 </button>
                 <button
@@ -448,7 +448,7 @@ export function TresorNotizDialog({
                       : 'text-on-surface-variant hover:text-on-surface'
                   }`}
                 >
-                  <Eye className="w-3 h-3" />
+                  <Eye className="w-3.5 h-3.5 shrink-0" />
                   {t('common.preview')}
                 </button>
               </div>
@@ -461,7 +461,7 @@ export function TresorNotizDialog({
                   onClick={() => setInhalt((prev) => (prev ? `${prev}\n- [ ] ` : '- [ ] '))}
                   className="inline-flex items-center gap-1 text-label-sm px-2.5 py-1 rounded-lg bg-surface-container text-on-surface-variant hover:text-primary hover:bg-surface-container-high border border-outline-variant/25 transition-colors"
                 >
-                  <Plus className="w-3 h-3 text-primary" />
+                  <Plus className="w-3.5 h-3.5 shrink-0 text-primary" />
                   <span>Checkliste</span>
                 </button>
                 <button
@@ -469,7 +469,7 @@ export function TresorNotizDialog({
                   onClick={() => setInhalt((prev) => (prev ? `${prev}\n- [ ] 1x  (~0,00 €)` : '- [ ] 1x  (~0,00 €)'))}
                   className="inline-flex items-center gap-1 text-label-sm px-2.5 py-1 rounded-lg bg-surface-container text-on-surface-variant hover:text-status-success hover:bg-surface-container-high border border-outline-variant/25 transition-colors"
                 >
-                  <Plus className="w-3 h-3 text-status-success" />
+                  <Plus className="w-3.5 h-3.5 shrink-0 text-status-success" />
                   <span>Einkaufsposten</span>
                 </button>
               </div>

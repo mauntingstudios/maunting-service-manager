@@ -307,4 +307,33 @@ describe('FileEditorWorkspace — Tastenkürzel', () => {
     render(<FileEditorWorkspace {...props()} />)
     expect(screen.getByRole('tablist').closest('section')!.className.split(/\s+/)).toContain('min-h-[520px]')
   })
+
+  it('rendert Suchen-und-Ersetzen-Knöpfe ohne px-3-Kollision und mit vollen 16px-Icons', async () => {
+    render(<FileEditorWorkspace {...props()} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Suchen und ersetzen' }))
+
+    const prev = await screen.findByRole('button', { name: i18n.t('files.editor.previousMatch') })
+    const next = screen.getByRole('button', { name: i18n.t('files.editor.nextMatch') })
+    const closeSearch = screen.getByRole('button', { name: i18n.t('files.editor.closeSearch') })
+    const matchCase = screen.getByRole('button', { name: i18n.t('files.editor.matchCase') })
+
+    for (const btn of [prev, next, closeSearch, matchCase]) {
+      expect(btn.className).toContain('p-0')
+      expect(btn.className).toContain('[&_svg]:shrink-0')
+      expect(btn.className).not.toContain('px-3')
+    }
+    for (const btn of [prev, next, closeSearch]) {
+      const svg = btn.querySelector('svg')
+      expect(svg).not.toBeNull()
+      expect(svg!.getAttribute('class')).toContain('h-4')
+      expect(svg!.getAttribute('class')).toContain('w-4')
+      expect(svg!.getAttribute('class')).toContain('shrink-0')
+    }
+
+    const closeTab = screen.getByRole('button', { name: 'liste.txt schließen' })
+    const closeTabSvg = closeTab.querySelector('svg')
+    expect(closeTabSvg).not.toBeNull()
+    expect(closeTabSvg!.getAttribute('class')).not.toContain('h-3 w-3')
+    expect(closeTabSvg!.getAttribute('class')).toContain('h-3.5')
+  })
 })

@@ -318,7 +318,7 @@ export function DataGrid({ table, initialFilters, onJump }: {
                 <span key={`${filter.column}-${index}`} className="inline-flex items-center gap-1 rounded-full border border-secondary/40 bg-secondary/10 px-3 py-1 font-mono text-xs text-secondary">
                   {filter.column} {t(`postgresStudio.data.operators.${filter.operator}`)} {NO_VALUE.includes(filter.operator) ? '' : cellText(filter.value as Json)}
                   <button type="button" aria-label={t('common.remove')} onClick={() => setFilters((list) => list.filter((_, i) => i !== index))} className="ml-1 hover:text-on-surface">
-                    <X className="h-3 w-3" />
+                    <X className="h-3.5 w-3.5 shrink-0" />
                   </button>
                 </span>
               ))}
@@ -363,7 +363,7 @@ export function DataGrid({ table, initialFilters, onJump }: {
                       <button type="button" className="inline-flex items-center gap-1 hover:text-on-surface" onClick={() => toggleSort(column)}>
                         <span className="font-mono text-on-surface">{column}</span>
                         <span className="text-label-sm">{columnMeta.get(column)?.type}</span>
-                        {current && (current.descending ? <ArrowDown className="h-3 w-3" /> : <ArrowUp className="h-3 w-3" />)}
+                        {current && (current.descending ? <ArrowDown className="h-3.5 w-3.5 shrink-0" /> : <ArrowUp className="h-3.5 w-3.5 shrink-0" />)}
                       </button>
                     </th>
                   )
@@ -392,13 +392,13 @@ export function DataGrid({ table, initialFilters, onJump }: {
                       <td className="px-1 py-1.5 text-center">
                         <Button
                           variant="ghost"
-                          size="sm"
+                          size="icon"
                           type="button"
                           onClick={() => openEditRow(rowIndex)}
                           aria-label={t('postgresStudio.data.editRow')}
-                          className="h-7 w-7 p-0 hover:bg-surface-container-highest"
+                          className="hover:bg-surface-container-highest"
                         >
-                          <Pencil className="h-3.5 w-3.5 text-on-surface-variant hover:text-primary" />
+                          <Pencil className="h-4 w-4 shrink-0 text-on-surface-variant hover:text-primary" />
                         </Button>
                       </td>
                     </>
@@ -442,7 +442,7 @@ export function DataGrid({ table, initialFilters, onJump }: {
                                 aria-label={t('postgresStudio.data.jump', { table: fk.table })}
                                 onClick={() => onJump({ schema: fk.schema, table: fk.table, filters: [{ column: fk.column, operator: 'eq', value }] })}
                               >
-                                <Link2 className="h-3 w-3" />
+                                <Link2 className="h-3.5 w-3.5 shrink-0" />
                               </button>
                             )}
                           </span>

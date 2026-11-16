@@ -306,7 +306,9 @@ export function FileManager({ serverId }: FileManagerProps) {
     const existing = tabsRef.current.find((tab) => tab.path === path)
     setActivePath(path)
     setShowExplorer(false)
-    setTreeOpen(false)
+    if (typeof window !== 'undefined' && window.innerWidth < 1024) {
+      setTreeOpen(false)
+    }
     setSelectedEntry(() => {
       const parent = parentPath(path)
       const parentNodes = Array.isArray(nodes[parent]) ? nodes[parent] : []
@@ -743,7 +745,7 @@ export function FileManager({ serverId }: FileManagerProps) {
           </Button>
         )}
         {showWriteActions && <div><ActionMenu label={t('files.new')} icon={<FilePlus2 className="h-4 w-4" />} items={newItems} compact /></div>}
-        <Button variant="ghost" size="sm" type="button" onClick={() => void refreshWorkspace()} className="inline-flex items-center gap-2 h-11 sm:h-auto" aria-label={t('common.refresh')}><RefreshCw className="h-3.5 w-3.5" /> <span>{t('common.refresh')}</span></Button>
+        <Button variant="ghost" size="sm" type="button" onClick={() => void refreshWorkspace()} className="inline-flex items-center gap-2 h-11 sm:h-auto" aria-label={t('common.refresh')}><RefreshCw className="h-4 w-4 shrink-0" /> <span>{t('common.refresh')}</span></Button>
         {isEditorView && selectedActions.length > 0 && <div><ActionMenu label={t('files.more')} icon={<MoreHorizontal className="h-4 w-4" />} items={selectedActions} compact /></div>}
         {isEditorView && (
           <div className="flex w-full flex-wrap items-center gap-2 border-t border-outline-variant/70 pt-2 sm:ml-auto sm:w-auto sm:border-0 sm:pt-0">
@@ -756,8 +758,8 @@ export function FileManager({ serverId }: FileManagerProps) {
               </div>
               <Switch checked={autosave} onCheckedChange={setAutosave} disabled={!canWrite} aria-label={t('files.autosave')} className="before:absolute before:-inset-x-2 before:-inset-y-3" />
             </div>
-            <Button variant="ghost" size="sm" ref={treeTriggerRef} type="button" onClick={() => { setInspectorOpen(false); setTreeOpen((value) => !value) }} className="inline-flex min-h-[44px] sm:min-h-[32px] items-center justify-center gap-2" aria-label={t('files.showTree')} aria-expanded={treeOpen}><Menu className="h-4 w-4" /><span>{t('files.filesDrawer')}</span></Button>
-            <Button variant="ghost" size="sm" ref={inspectorTriggerRef} type="button" onClick={() => { setTreeOpen(false); setInspectorOpen((value) => !value) }} className="inline-flex min-h-[44px] sm:min-h-[32px] items-center justify-center gap-2 xl:hidden" aria-label={t('files.showInspector')} aria-expanded={inspectorOpen}><Info className="h-4 w-4" /><span>{t('files.detailsDrawer')}</span></Button>
+            <Button variant={treeOpen ? 'secondary' : 'ghost'} size="sm" ref={treeTriggerRef} type="button" onClick={() => { setInspectorOpen(false); setTreeOpen((value) => !value) }} className="inline-flex min-h-[44px] sm:min-h-[32px] items-center justify-center gap-2" aria-label={t('files.showTree')} aria-expanded={treeOpen}><Menu className="h-4 w-4 shrink-0" /><span>{t('files.filesDrawer')}</span></Button>
+            <Button variant={inspectorOpen ? 'secondary' : 'ghost'} size="sm" ref={inspectorTriggerRef} type="button" onClick={() => { setTreeOpen(false); setInspectorOpen((value) => !value) }} className="inline-flex min-h-[44px] sm:min-h-[32px] items-center justify-center gap-2 xl:hidden" aria-label={t('files.showInspector')} aria-expanded={inspectorOpen}><Info className="h-4 w-4 shrink-0" /><span>{t('files.detailsDrawer')}</span></Button>
           </div>
         )}
         <input ref={fileInputRef} type="file" multiple className="hidden" onChange={(event) => { enqueueUpload(event.target.files); event.target.value = '' }} />
@@ -829,29 +831,81 @@ export function FileManager({ serverId }: FileManagerProps) {
         ) : (
           <div
             className={`relative grid min-h-[560px] grid-cols-1 lg:h-[clamp(560px,calc(100vh-300px),760px)] lg:min-h-0 lg:overflow-hidden ${
-              activeTab?.isSqlite
-                ? 'lg:grid-cols-[minmax(0,1fr)]'
-                : 'lg:grid-cols-[minmax(0,1fr)] xl:grid-cols-[minmax(0,1fr)_250px]'
+              treeOpen
+                ? activeTab?.isSqlite
+                  ? 'lg:grid-cols-[290px_minmax(0,1fr)]'
+                  : 'lg:grid-cols-[290px_minmax(0,1fr)] xl:grid-cols-[290px_minmax(0,1fr)_250px]'
+                : activeTab?.isSqlite
+                  ? 'lg:grid-cols-[minmax(0,1fr)]'
+                  : 'lg:grid-cols-[minmax(0,1fr)] xl:grid-cols-[minmax(0,1fr)_250px]'
             }`}
           >
-            {(treeOpen || inspectorOpen) && <button type="button" aria-label={t('common.close')} onClick={() => { if (treeOpen) { setTreeOpen(false); window.requestAnimationFrame(() => treeTriggerRef.current?.focus()) } else { setInspectorOpen(false); window.requestAnimationFrame(() => inspectorTriggerRef.current?.focus()) } }} className="fixed inset-0 z-30 cursor-default bg-black/55 backdrop-blur-sm" />}
-            <aside ref={treePanelRef} tabIndex={treeOpen ? -1 : undefined} aria-label={t('files.filesDrawer')} className={`${treeOpen ? 'fixed inset-x-3 bottom-3 top-24 z-40 flex max-w-md shadow-panel-strong' : 'hidden'} min-h-0 flex-col rounded-xl border border-outline-variant bg-surface-container-low/95 outline-none`}>
-              <div className="flex min-h-11 items-center gap-2 border-b border-outline-variant p-2.5">
-                <div className="relative min-w-0 flex-1"><Search className="pointer-events-none absolute left-2.5 top-1/2 z-10 h-3.5 w-3.5 -translate-y-1/2 text-on-surface-variant" /><Input type="search" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder={searchMode === 'content' ? t('files.searchContentPlaceholder') : t('files.searchPlaceholder')} aria-label={searchMode === 'content' ? t('files.searchContentPlaceholder') : t('files.searchPlaceholder')} className="pl-8 text-xs max-md:h-11" /></div>
-                <div role="group" aria-label={t('files.searchMode')} className="flex shrink-0 overflow-hidden rounded-lg border border-outline-variant">
+            {(treeOpen || inspectorOpen) && (
+              <button
+                type="button"
+                aria-label={t('common.close')}
+                onClick={() => {
+                  if (treeOpen) {
+                    setTreeOpen(false)
+                    window.requestAnimationFrame(() => treeTriggerRef.current?.focus())
+                  } else {
+                    setInspectorOpen(false)
+                    window.requestAnimationFrame(() => inspectorTriggerRef.current?.focus())
+                  }
+                }}
+                className={`absolute inset-0 z-20 cursor-default bg-black/55 backdrop-blur-sm ${treeOpen ? 'lg:hidden' : 'xl:hidden'}`}
+              />
+            )}
+            <aside
+              ref={treePanelRef}
+              tabIndex={treeOpen ? -1 : undefined}
+              aria-label={t('files.filesDrawer')}
+              className={`${
+                treeOpen
+                  ? 'absolute inset-2 z-30 flex max-w-sm shadow-panel-strong lg:static lg:inset-auto lg:z-auto lg:max-w-none lg:rounded-none lg:border-0 lg:border-r lg:shadow-none'
+                  : 'hidden'
+              } min-h-0 flex-col rounded-xl border border-outline-variant bg-surface-container-low/95 outline-none`}
+            >
+              <div className="flex flex-col gap-2 border-b border-outline-variant p-2.5">
+                <div className="flex items-center gap-2">
+                  <div className="relative min-w-0 flex-1">
+                    <Search className="pointer-events-none absolute left-3 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-on-surface-variant" />
+                    <Input
+                      type="search"
+                      value={searchQuery}
+                      onChange={(event) => setSearchQuery(event.target.value)}
+                      placeholder={searchMode === 'content' ? t('files.searchContentPlaceholder') : t('files.searchPlaceholder')}
+                      aria-label={searchMode === 'content' ? t('files.searchContentPlaceholder') : t('files.searchPlaceholder')}
+                      className="pl-9 text-xs max-md:h-11"
+                    />
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    fingerziel
+                    type="button"
+                    onClick={() => {
+                      setTreeOpen(false)
+                      window.requestAnimationFrame(() => treeTriggerRef.current?.focus())
+                    }}
+                    aria-label={t('common.close')}
+                  >
+                    <X className="h-4 w-4 shrink-0" />
+                  </Button>
+                </div>
+                <div role="group" aria-label={t('files.searchMode')} className="flex self-start overflow-hidden rounded-lg border border-outline-variant">
                   {(['name', 'content'] as const).map((mode) => (
                     <button
                       key={mode}
                       type="button"
                       aria-pressed={searchMode === mode}
                       onClick={() => setSearchMode(mode)}
-                      className={`px-2 py-1 text-label-sm ${searchMode === mode ? 'bg-secondary text-on-secondary' : 'text-on-surface-variant hover:bg-surface-container-highest'}`}
+                      className={`min-h-[34px] px-2.5 py-1 text-label-sm ${searchMode === mode ? 'bg-secondary text-on-secondary' : 'text-on-surface-variant hover:bg-surface-container-highest'}`}
                     >
                       {mode === 'name' ? t('common.name') : t('files.searchByContent')}
                     </button>
                   ))}
                 </div>
-                <Button variant="ghost" size="sm" type="button" onClick={() => { setTreeOpen(false); window.requestAnimationFrame(() => treeTriggerRef.current?.focus()) }} className="inline-flex items-center justify-center gap-2" aria-label={t('common.close')}><X className="h-4 w-4" /><span>{t('common.close')}</span></Button>
               </div>
               <div className="min-h-0 flex-1 overflow-y-auto">
                 <FileTree
@@ -885,15 +939,15 @@ export function FileManager({ serverId }: FileManagerProps) {
               aria-label={t('files.detailsDrawer')}
               className={`${
                 inspectorOpen
-                  ? 'fixed inset-x-3 bottom-3 top-24 z-40 block overflow-y-auto shadow-panel-strong'
+                  ? 'absolute inset-y-2 right-2 z-30 block w-[min(22rem,calc(100%-1rem))] overflow-y-auto rounded-xl border border-outline-variant shadow-panel-strong'
                   : 'hidden'
               } border-l border-outline-variant bg-surface-container-low/95 outline-none lg:max-h-full lg:overflow-y-auto ${
                 activeTab?.isSqlite
                   ? 'xl:hidden'
-                  : 'xl:static xl:block xl:border-l xl:border-t-0 xl:shadow-none'
+                  : 'xl:static xl:inset-auto xl:z-auto xl:block xl:w-auto xl:rounded-none xl:border-0 xl:border-l xl:border-t-0 xl:shadow-none'
               }`}
             >
-              <div className="flex min-h-11 items-center justify-between border-b border-outline-variant px-3"><h3 className="text-xs font-semibold text-on-surface">{t('files.details')}</h3>{inspectorOpen && <Button variant="ghost" size="sm" type="button" onClick={() => { setInspectorOpen(false); window.requestAnimationFrame(() => inspectorTriggerRef.current?.focus()) }} className="inline-flex items-center justify-center gap-2 xl:hidden" aria-label={t('common.close')}><X className="h-4 w-4" /><span>{t('common.close')}</span></Button>}</div>
+              <div className="flex min-h-11 items-center justify-between border-b border-outline-variant px-3"><h3 className="text-xs font-semibold text-on-surface">{t('files.details')}</h3>{inspectorOpen && <Button variant="ghost" size="icon" fingerziel type="button" onClick={() => { setInspectorOpen(false); window.requestAnimationFrame(() => inspectorTriggerRef.current?.focus()) }} className="xl:hidden" aria-label={t('common.close')}><X className="h-4 w-4 shrink-0" /></Button>}</div>
               {activeTab ? <>
                 <div className="border-b border-outline-variant p-3"><div className="flex items-start gap-2"><ArchiveRestore className="mt-0.5 h-4 w-4 text-secondary" /><div className="min-w-0"><p className="truncate text-xs font-semibold text-on-surface">{fileName(activeTab.path)}</p><p className="mt-0.5 truncate font-mono text-label-sm text-on-surface-variant">{activeTab.path}</p></div></div></div>
                 <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-2 border-b border-outline-variant p-3 text-label-sm"><dt className="text-on-surface-variant">{t('files.modified')}</dt><dd className="text-right text-on-surface">{activeTab.modified ? formatZeitpunkt(activeTab.modified * 1000, i18n.language) : t('files.notAvailable')}</dd><dt className="text-on-surface-variant">{t('files.size')}</dt><dd className="text-right font-mono text-on-surface">{formatBytes(activeTab.size)}</dd></dl>
@@ -919,7 +973,7 @@ export function FileManager({ serverId }: FileManagerProps) {
                 </div>
                 <div className="p-3">
                   <h4 className="mb-2 text-label-sm font-semibold uppercase tracking-wider text-on-surface-variant">{t('files.quickActions')}</h4>
-                  <button type="button" onClick={() => { const parent = parentPath(activeTab.path); const parentNodes = Array.isArray(nodes[parent]) ? nodes[parent] : []; const entry = parentNodes.find((item) => item.name === fileName(activeTab.path)); if (entry) downloadEntry({ entry, parent }) }} className="flex min-h-8 w-full items-center gap-2 rounded-md px-2 text-left text-xs text-on-surface-variant hover:bg-surface-container-highest hover:text-on-surface"><Download className="h-3.5 w-3.5" />{t('files.download')}</button>
+                  <button type="button" onClick={() => { const parent = parentPath(activeTab.path); const parentNodes = Array.isArray(nodes[parent]) ? nodes[parent] : []; const entry = parentNodes.find((item) => item.name === fileName(activeTab.path)); if (entry) downloadEntry({ entry, parent }) }} className="flex min-h-8 w-full items-center gap-2 rounded-md px-2 text-left text-xs text-on-surface-variant hover:bg-surface-container-highest hover:text-on-surface"><Download className="h-4 w-4 shrink-0" />{t('files.download')}</button>
                 </div>
               </> : <p className="p-6 text-center text-xs text-on-surface-variant">{t('files.noDetails')}</p>}
             </aside>

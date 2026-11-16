@@ -609,7 +609,7 @@ function TabReiter({ tab, aktiv, index: _index, onHoverZieh, onDropTab }: TabRei
         }`}
         aria-label={t('browser.tabs.schliessen', { titel })}
       >
-        <X className="h-3 w-3" aria-hidden="true" />
+        <X className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
       </button>
     </div>
   )

@@ -118,7 +118,7 @@ function Beobachten({ tab }: { tab: string }) {
         <div key={a} className="flex items-start gap-1">
           <span className="min-w-0 flex-1">{werte[a] ? <Wert tab={tab} o={werte[a]} name={a} /> : a}</span>
           <button type="button" aria-label={t('browser.entwickler.quellen.beobachtenWeg', { ausdruck: a })} onClick={() => setAusdruecke(ausdruecke.filter((x) => x !== a))} className="text-on-surface-variant hover:text-on-surface">
-            <X className="h-3 w-3" aria-hidden="true" />
+            <X className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
           </button>
         </div>
       ))}
@@ -200,7 +200,7 @@ export function DebuggerSeite({ tab, haltepunktWeg }: { tab: string; haltepunktW
                     {h.bedingung && <span className="text-on-surface-variant"> · {h.bedingung}</span>}
                   </button>
                   <button type="button" aria-label={t('browser.entwickler.quellen.haltepunktWeg', { zeile: h.zeile + 1 })} onClick={() => haltepunktWeg(h.id)} className="text-on-surface-variant hover:text-on-surface">
-                    <X className="h-3 w-3" aria-hidden="true" />
+                    <X className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
                   </button>
                 </li>
               ))}

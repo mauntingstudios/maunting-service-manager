@@ -192,9 +192,9 @@ export function VaultHeaderBereich({
                   className="flex shrink-0 items-center gap-1.5 rounded-full border border-secondary/40 bg-secondary/15 px-3 py-1 text-xs text-secondary"
                   aria-label={t('mss.vault.dashboard.alleAnsehen')}
                 >
-                  <Folder className="h-3 w-3" />
+                  <Folder className="h-3.5 w-3.5 shrink-0" />
                   <span className="max-w-[10rem] truncate">{ordnerFilterName}</span>
-                  <X className="h-3 w-3" />
+                  <X className="h-3.5 w-3.5 shrink-0" />
                 </button>
               )}
             </div>

@@ -119,7 +119,7 @@ export function TresorOrdnerBaum({ ordner, aktuell, pfad, onWaehlen, ablage }: P
                   aria-expanded={hatKinder ? istOffen : undefined}
                   tabIndex={hatKinder ? 0 : -1}
                 >
-                  {istOffen ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                  {istOffen ? <ChevronDown className="h-3.5 w-3.5 shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 shrink-0" />}
                 </button>
                 <button
                   type="button"

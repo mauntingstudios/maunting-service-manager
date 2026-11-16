@@ -1649,7 +1649,7 @@ export function SingraProjectsView({
                         onClick={handleStartDevSandbox}
                         disabled={devStatusLoading}
                       >
-                        {devStatusLoading ? <Spinner className="h-3 w-3" /> : <Play className="h-3 w-3" />}
+                        {devStatusLoading ? <Spinner className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5 shrink-0" />}
                         <span>Dev-Sandbox starten</span>
                       </Button>
                     </div>
