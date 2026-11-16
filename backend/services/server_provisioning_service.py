@@ -178,16 +178,24 @@ def _initialize_and_start_frontend_server(
         rewrite_caddyfile,
         trigger_async_build,
     )
+    from services.node_capacity import agent_server_key, should_delegate_node_fs_to_agent
+    from services.node_client import NodeClient
     from services.server_lifecycle_service import queue_lifecycle_operation
 
     db.refresh(server)
     try:
         get_or_create_settings(db, server.id, blueprint)
         if blueprint.source.type == BlueprintSourceType.GITHUB and server.install_dir:
-            try:
-                (Path(server.install_dir) / "current").mkdir(parents=True, exist_ok=True)
-            except OSError:
-                pass
+            if should_delegate_node_fs_to_agent(getattr(server, "node", None)):
+                NodeClient.from_node(server.node).files_mkdir(
+                    agent_server_key(server.id, server.install_dir),
+                    "current",
+                )
+            else:
+                try:
+                    (Path(server.install_dir) / "current").mkdir(parents=True, exist_ok=True)
+                except OSError:
+                    pass
         rewrite_caddyfile(db, server, blueprint)
         db.commit()
     except Exception:

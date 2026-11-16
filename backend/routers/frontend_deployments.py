@@ -215,14 +215,11 @@ def get_deployment_log(
     user: User = Depends(get_current_user),
 ) -> dict[str, Any]:
     require_server_permission(user, server_id, db, "server.view")
+    server = _get_frontend_server(server_id, db)
     dep = db.get(FrontendDeployment, dep_id)
     if dep is None or dep.server_id != server_id:
         raise HTTPException(status_code=404, detail="Deployment nicht gefunden")
-    content = ""
-    if dep.log_path:
-        p = Path(dep.log_path)
-        if p.is_file():
-            content = p.read_text(encoding="utf-8", errors="replace")
+    content = frontend_deploy_service.read_build_log(server, dep)
     return {"id": dep.id, "status": dep.status, "log": content}
 
 

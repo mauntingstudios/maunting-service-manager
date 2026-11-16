@@ -234,9 +234,199 @@ def _server_web_port(server: Server) -> int:
     return int(server.game_port or 8080)
 
 
+def _use_agent_fs(server: Server) -> bool:
+    from services.node_capacity import should_delegate_node_fs_to_agent
+
+    return should_delegate_node_fs_to_agent(getattr(server, "node", None))
+
+
+def _write_server_text(server: Server, rel_path: str, content: str) -> None:
+    if _use_agent_fs(server):
+        from services.node_capacity import agent_server_key
+        from services.node_client import NodeClient
+
+        client = NodeClient.from_node(server.node)
+        server_key = agent_server_key(server.id, server.install_dir)
+        parent = rel_path.rsplit("/", 1)[0] if "/" in rel_path else ""
+        if parent:
+            client.files_mkdir(server_key, parent)
+        client.files_write(server_key, rel_path, content)
+        return
+
+    target = Path(server.install_dir) / rel_path
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(content, encoding="utf-8")
+
+
+def read_build_log(server: Server, dep: FrontendDeployment) -> str:
+    if not dep.log_path:
+        return ""
+    if _use_agent_fs(server):
+        from services.node_capacity import agent_server_key
+        from services.node_client import NodeClient
+
+        try:
+            return NodeClient.from_node(server.node).files_read(
+                agent_server_key(server.id, server.install_dir),
+                f"build-logs/deploy-{dep.id}.log",
+            )
+        except Exception:
+            return ""
+    p = Path(dep.log_path)
+    if not p.is_file():
+        return ""
+    try:
+        return p.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return ""
+
+
+def _run_agent_clone(
+    server: Server,
+    *,
+    dep_id: int,
+    repo: str,
+    branch: str,
+    token: str | None,
+) -> tuple[str, str]:
+    from services.docker_service import VolumeBind
+
+    clean_url = repo if repo.endswith(".git") else f"{repo}.git"
+    script = (
+        "set -e\n"
+        f'DEST="/srv/_build_src/dep-{dep_id}"\n'
+        'rm -rf "$DEST"\n'
+        'mkdir -p /srv/_build_src\n'
+        'if [ -n "${GIT_TOKEN:-}" ]; then\n'
+        '  printf \'#!/bin/sh\\ncase "$1" in\\n  Username*) echo x-access-token ;;\\n  *) echo "$GIT_TOKEN" ;;\\nesac\\n\' > /tmp/askpass.sh\n'
+        "  chmod +x /tmp/askpass.sh\n"
+        "  export GIT_ASKPASS=/tmp/askpass.sh\n"
+        "  export GIT_TERMINAL_PROMPT=0\n"
+        "fi\n"
+        'git clone --depth 1 --branch "$GIT_BRANCH" "$GIT_REPO_URL" "$DEST"\n'
+        'printf "MSM_COMMIT_SHA=%s\\n" "$(git -C "$DEST" rev-parse HEAD)"\n'
+    )
+    env = {"GIT_REPO_URL": clean_url, "GIT_BRANCH": branch}
+    if token:
+        env["GIT_TOKEN"] = token
+    res = docker_service.run_ephemeral(
+        image="alpine/git:latest",
+        entrypoint="/bin/sh",
+        command=["-c", script],
+        volumes=[VolumeBind(host_path=server.install_dir, container_path="/srv", read_only=False)],
+        env=env,
+        timeout=300,
+        node=server.node,
+    )
+    combined = (res.get("stdout") or "") + "\n" + (res.get("stderr") or "")
+    if not res.get("ok"):
+        raise RuntimeError(f"Git-Clone fehlgeschlagen: {(combined or res.get('error') or '')[-500:]}")
+    sha = ""
+    for line in combined.splitlines():
+        if line.startswith("MSM_COMMIT_SHA="):
+            sha = line.split("=", 1)[1].strip()
+    return sha, combined.strip()
+
+
+def _run_agent_node_build(
+    server: Server,
+    *,
+    dep_id: int,
+    sub_path: str | None,
+    node_version: str,
+    install_command: list[str] | None,
+    build_command: list[str] | None,
+    output_dir: str | None,
+    env_vars: dict[str, str],
+    timeout_seconds: int,
+) -> str:
+    import shlex
+    from services.docker_service import VolumeBind
+
+    proj = f"/srv/_build_src/dep-{dep_id}"
+    if sub_path:
+        proj = f"{proj}/{sub_path.strip('/')}"
+
+    if install_command:
+        install_cmd = " ".join(shlex.quote(a) for a in install_command)
+        if install_command[0] in ("pnpm", "yarn"):
+            install_cmd = f"corepack enable && {install_cmd}"
+    else:
+        install_cmd = (
+            'if [ -f pnpm-lock.yaml ]; then corepack enable && pnpm install --frozen-lockfile; '
+            'elif [ -f yarn.lock ]; then corepack enable && yarn install --frozen-lockfile; '
+            'elif [ -f package-lock.json ]; then npm ci; '
+            "else npm install; fi"
+        )
+
+    build_argv = build_command or ["npm", "run", "build"]
+    build_cmd = " ".join(shlex.quote(a) for a in build_argv)
+
+    if output_dir:
+        out_detect = f'OUT_DIR="{output_dir.strip("/")}"'
+    else:
+        out_detect = (
+            'OUT_DIR=""\n'
+            "for d in dist build out .output/public; do\n"
+            '  if [ -f "$d/index.html" ]; then OUT_DIR="$d"; break; fi\n'
+            "done\n"
+            'if [ -z "$OUT_DIR" ]; then\n'
+            "  for d in dist build out .output/public; do\n"
+            '    if [ -d "$d" ]; then OUT_DIR="$d"; break; fi\n'
+            "  done\n"
+            "fi"
+        )
+
+    script = (
+        "set -e\n"
+        f'cd "{proj}"\n'
+        f"{install_cmd}\n"
+        f"{build_cmd}\n"
+        f"{out_detect}\n"
+        'if [ -z "$OUT_DIR" ] || [ ! -f "$OUT_DIR/index.html" ]; then\n'
+        '  echo "index.html im Ausgabeordner nicht gefunden (OUT_DIR=$OUT_DIR)" >&2\n'
+        "  exit 1\n"
+        "fi\n"
+        f'REL_DIR="/srv/deployments/{dep_id}"\n'
+        'rm -rf "$REL_DIR"\n'
+        "mkdir -p /srv/deployments\n"
+        'cp -a "$OUT_DIR" "$REL_DIR"\n'
+        f'rm -rf "/srv/_build_src/dep-{dep_id}"\n'
+    )
+
+    res = docker_service.run_ephemeral(
+        image=f"node:{node_version}-bookworm-slim",
+        command=["sh", "-c", script],
+        workdir="/srv",
+        volumes=[VolumeBind(host_path=server.install_dir, container_path="/srv", read_only=False)],
+        env=env_vars or None,
+        timeout=timeout_seconds,
+        node=server.node,
+    )
+    combined = (res.get("stdout") or "") + "\n" + (res.get("stderr") or "")
+    if not res.get("ok"):
+        raise RuntimeError(f"Build fehlgeschlagen: {(combined or res.get('error') or '')[-500:]}")
+    return combined
+
+
+def _agent_symlink_command(server: Server, script: str) -> None:
+    from services.docker_service import VolumeBind
+
+    res = docker_service.run_ephemeral(
+        image="alpine:3.20",
+        command=["sh", "-c", script],
+        volumes=[VolumeBind(host_path=server.install_dir, container_path="/srv", read_only=False)],
+        timeout=60,
+        node=server.node,
+    )
+    if not res.get("ok"):
+        raise RuntimeError(res.get("stderr") or res.get("error") or "Container-FS-Operation fehlgeschlagen")
+
+
 def rewrite_caddyfile(db: Session, server: Server, bp: Blueprint | None) -> Path:
-    install_dir = Path(server.install_dir)
-    install_dir.mkdir(parents=True, exist_ok=True)
+    if not _use_agent_fs(server):
+        install_dir = Path(server.install_dir)
+        install_dir.mkdir(parents=True, exist_ok=True)
 
     spa_fallback = bp.frontend.spaFallback if bp and bp.frontend else True
     root_dir = (
@@ -272,9 +462,8 @@ def rewrite_caddyfile(db: Session, server: Server, bp: Blueprint | None) -> Path
         previews=preview_routes,
         server_id=server.id,
     )
-    caddyfile_path = install_dir / "Caddyfile"
-    caddyfile_path.write_text(caddyfile_text, encoding="utf-8")
-    return caddyfile_path
+    _write_server_text(server, "Caddyfile", caddyfile_text)
+    return Path(server.install_dir) / "Caddyfile"
 
 
 def _reload_caddy_container(server: Server) -> None:
@@ -466,58 +655,82 @@ def run_build(
     dep.started_at = _now()
 
     install_dir = Path(server.install_dir)
-    logs_dir = install_dir / "build-logs"
-    logs_dir.mkdir(parents=True, exist_ok=True)
-    log_file = logs_dir / f"deploy-{dep.id}.log"
+    log_rel_path = f"build-logs/deploy-{dep.id}.log"
+    log_file = install_dir / log_rel_path
     dep.log_path = str(log_file)
 
     resolved_cred = credential_service.resolve_for_server(db, server.id, KIND_GITHUB_TOKEN)
     token = resolved_cred.secret if resolved_cred is not None else None
     secrets_to_mask = [token] if token else []
 
+    use_agent = _use_agent_fs(server)
     work_src = install_dir / "_build_src" / f"dep-{dep.id}"
     full_log = f"[MSM] Build #{dep.id} gestartet (Branch: {dep.branch}, Kind: {dep.kind})\n"
-    log_file.write_text(full_log, encoding="utf-8")
+    _write_server_text(server, log_rel_path, full_log)
     db.commit()
 
     try:
-        sha, clone_log = _clone_repo(
-            repo=bp.source.github.repo,
-            branch=dep.branch,
-            dest=work_src,
-            token=token,
-        )
+        if use_agent:
+            sha, clone_log = _run_agent_clone(
+                server,
+                dep_id=dep.id,
+                repo=bp.source.github.repo,
+                branch=dep.branch,
+                token=token,
+            )
+        else:
+            sha, clone_log = _clone_repo(
+                repo=bp.source.github.repo,
+                branch=dep.branch,
+                dest=work_src,
+                token=token,
+            )
         full_log += clone_log + "\n"
-        log_file.write_text(_mask_secret_values(full_log, secrets_to_mask), encoding="utf-8")
+        _write_server_text(server, log_rel_path, _mask_secret_values(full_log, secrets_to_mask))
         if sha and not dep.commit_sha:
             dep.commit_sha = sha
 
-        project_dir = work_src / bp.source.github.subPath if bp.source.github.subPath else work_src
         scope = "production" if dep.kind == "production" else "preview"
         merged_env = dict(bp.frontend.env)
         merged_env.update(get_env_vars(db, server.id, scope))
         secrets_to_mask.extend(v for v in merged_env.values() if len(v) >= 6)
 
         timeout_sec = min(bp.frontend.build.timeoutSeconds, quota.build_timeout_seconds)
-        build_res = run_node_frontend_build(
-            project_dir,
-            node_version=bp.frontend.build.nodeVersion,
-            install_command=bp.frontend.build.installCommand,
-            build_command=bp.frontend.build.buildCommand,
-            output_dir=bp.frontend.build.outputDir,
-            env_vars=merged_env,
-            timeout_seconds=timeout_sec,
-            node=server.node,
-        )
-        full_log += build_res.log_output
+        if use_agent:
+            build_out = _run_agent_node_build(
+                server,
+                dep_id=dep.id,
+                sub_path=bp.source.github.subPath,
+                node_version=bp.frontend.build.nodeVersion,
+                install_command=bp.frontend.build.installCommand,
+                build_command=bp.frontend.build.buildCommand,
+                output_dir=bp.frontend.build.outputDir,
+                env_vars=merged_env,
+                timeout_seconds=timeout_sec,
+            )
+            full_log += build_out
+            release_dir = install_dir / "deployments" / str(dep.id)
+        else:
+            project_dir = work_src / bp.source.github.subPath if bp.source.github.subPath else work_src
+            build_res = run_node_frontend_build(
+                project_dir,
+                node_version=bp.frontend.build.nodeVersion,
+                install_command=bp.frontend.build.installCommand,
+                build_command=bp.frontend.build.buildCommand,
+                output_dir=bp.frontend.build.outputDir,
+                env_vars=merged_env,
+                timeout_seconds=timeout_sec,
+                node=server.node,
+            )
+            full_log += build_res.log_output
 
-        if not build_res.ok or build_res.output_dir is None:
-            raise RuntimeError("Build fehlgeschlagen oder index.html im Ausgabeordner nicht gefunden.")
+            if not build_res.ok or build_res.output_dir is None:
+                raise RuntimeError("Build fehlgeschlagen oder index.html im Ausgabeordner nicht gefunden.")
 
-        release_dir = install_dir / "deployments" / str(dep.id)
-        if release_dir.exists():
-            shutil.rmtree(release_dir, ignore_errors=True)
-        shutil.copytree(build_res.output_dir, release_dir)
+            release_dir = install_dir / "deployments" / str(dep.id)
+            if release_dir.exists():
+                shutil.rmtree(release_dir, ignore_errors=True)
+            shutil.copytree(build_res.output_dir, release_dir)
 
         _activate_deployment(db, server, dep, release_dir, bp)
         dep.status = "ready"
@@ -531,9 +744,23 @@ def run_build(
         dep.error_summary = summary[:1000]
         full_log += f"\n[FEHLER] {summary}\n"
     finally:
-        log_file.write_text(_mask_secret_values(full_log, secrets_to_mask), encoding="utf-8")
-        if work_src.exists():
+        try:
+            _write_server_text(server, log_rel_path, _mask_secret_values(full_log, secrets_to_mask))
+        except Exception as log_exc:
+            logger.warning("Build-Log fuer Deployment %s nicht schreibbar: %s", dep.id, log_exc)
+        if not use_agent and work_src.exists():
             shutil.rmtree(work_src, ignore_errors=True)
+        elif use_agent:
+            try:
+                from services.node_capacity import agent_server_key
+                from services.node_client import NodeClient
+
+                NodeClient.from_node(server.node).files_delete(
+                    agent_server_key(server.id, server.install_dir),
+                    f"_build_src/dep-{dep.id}",
+                )
+            except Exception:
+                pass
         db.flush()
     return dep
 
@@ -546,6 +773,7 @@ def _activate_deployment(
     bp: Blueprint | None,
 ) -> None:
     install_dir = Path(server.install_dir)
+    use_agent = _use_agent_fs(server)
     if dep.kind == "production":
         others = (
             db.query(FrontendDeployment)
@@ -559,7 +787,13 @@ def _activate_deployment(
         )
         for o in others:
             o.is_live = False
-        _atomic_symlink(release_dir, install_dir / "current")
+        if use_agent:
+            _agent_symlink_command(
+                server,
+                f"ln -sfn deployments/{dep.id} /srv/current.tmp && mv -Tf /srv/current.tmp /srv/current",
+            )
+        else:
+            _atomic_symlink(release_dir, install_dir / "current")
     else:
         others = (
             db.query(FrontendDeployment)
@@ -574,7 +808,13 @@ def _activate_deployment(
         )
         for o in others:
             o.is_live = False
-        _atomic_symlink(release_dir, install_dir / "previews" / dep.branch_slug)
+        if use_agent:
+            _agent_symlink_command(
+                server,
+                f'mkdir -p /srv/previews && ln -sfn ../deployments/{dep.id} "/srv/previews/{dep.branch_slug}.tmp" && mv -Tf "/srv/previews/{dep.branch_slug}.tmp" "/srv/previews/{dep.branch_slug}"',
+            )
+        else:
+            _atomic_symlink(release_dir, install_dir / "previews" / dep.branch_slug)
 
     dep.is_live = True
     rewrite_caddyfile(db, server, bp)
@@ -600,8 +840,9 @@ def promote(db: Session, deployment_id: int) -> FrontendDeployment:
     server = db.get(Server, dep.server_id)
     if server is None:
         raise HTTPException(status_code=404, detail="Server nicht gefunden")
+    use_agent = _use_agent_fs(server)
     release_dir = Path(server.install_dir) / "deployments" / str(dep.id)
-    if not release_dir.is_dir():
+    if not use_agent and not release_dir.is_dir():
         raise HTTPException(status_code=404, detail="Build-Artefakt fehlt")
 
     promoted = FrontendDeployment(
@@ -623,7 +864,13 @@ def promote(db: Session, deployment_id: int) -> FrontendDeployment:
     db.add(promoted)
     db.flush()
     promoted_dir = Path(server.install_dir) / "deployments" / str(promoted.id)
-    shutil.copytree(release_dir, promoted_dir)
+    if use_agent:
+        _agent_symlink_command(
+            server,
+            f'set -e\ntest -d "/srv/deployments/{dep.id}"\ncp -a "/srv/deployments/{dep.id}" "/srv/deployments/{promoted.id}"\n',
+        )
+    else:
+        shutil.copytree(release_dir, promoted_dir)
     _activate_deployment(db, server, promoted, promoted_dir, _resolve_frontend_blueprint(server))
     db.flush()
     return promoted
@@ -637,7 +884,7 @@ def rollback(db: Session, deployment_id: int) -> FrontendDeployment:
     if server is None:
         raise HTTPException(status_code=404, detail="Server nicht gefunden")
     release_dir = Path(server.install_dir) / "deployments" / str(dep.id)
-    if not release_dir.is_dir():
+    if not _use_agent_fs(server) and not release_dir.is_dir():
         raise HTTPException(status_code=404, detail="Build-Artefakt wurde bereits aufgeraeumt")
     _activate_deployment(db, server, dep, release_dir, _resolve_frontend_blueprint(server))
     db.flush()
@@ -656,11 +903,24 @@ def prune(db: Session, server: Server) -> int:
         .order_by(FrontendDeployment.created_at.desc())
         .all()
     )
+    use_agent = _use_agent_fs(server)
     removed = 0
     for stale in ready_prod[MAX_RETAINED_PRODUCTION_BUILDS:]:
-        path = Path(server.install_dir) / "deployments" / str(stale.id)
-        if path.exists():
-            shutil.rmtree(path, ignore_errors=True)
+        if use_agent:
+            try:
+                from services.node_capacity import agent_server_key
+                from services.node_client import NodeClient
+
+                NodeClient.from_node(server.node).files_delete(
+                    agent_server_key(server.id, server.install_dir),
+                    f"deployments/{stale.id}",
+                )
+            except Exception:
+                pass
+        else:
+            path = Path(server.install_dir) / "deployments" / str(stale.id)
+            if path.exists():
+                shutil.rmtree(path, ignore_errors=True)
         removed += 1
     return removed
 
@@ -701,11 +961,23 @@ def delete_preview(db: Session, server: Server, branch: str) -> int:
             ServerPort.port.in_(ports_to_close),
         ).delete(synchronize_session=False)
 
-    link_path = Path(server.install_dir) / "previews" / slug
-    if link_path.is_symlink():
-        link_path.unlink(missing_ok=True)
-    elif link_path.exists():
-        shutil.rmtree(link_path, ignore_errors=True)
+    if _use_agent_fs(server):
+        try:
+            from services.node_capacity import agent_server_key
+            from services.node_client import NodeClient
+
+            NodeClient.from_node(server.node).files_delete(
+                agent_server_key(server.id, server.install_dir),
+                f"previews/{slug}",
+            )
+        except Exception:
+            pass
+    else:
+        link_path = Path(server.install_dir) / "previews" / slug
+        if link_path.is_symlink():
+            link_path.unlink(missing_ok=True)
+        elif link_path.exists():
+            shutil.rmtree(link_path, ignore_errors=True)
 
     bp = _resolve_frontend_blueprint(server)
     rewrite_caddyfile(db, server, bp)

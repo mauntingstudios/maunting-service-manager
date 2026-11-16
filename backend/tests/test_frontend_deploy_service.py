@@ -262,3 +262,50 @@ def test_run_build_writes_initial_log_immediately(
     assert observed_during_clone.get("log_exists") is True
     assert f"Build #{dep.id} gestartet" in str(observed_during_clone.get("log_text", ""))
     assert res.status == "failed"
+
+
+def test_run_build_delegates_to_agent_when_node_fs_delegated(
+    db: Session, tmp_path: Path, regular_user
+) -> None:
+    """Auf Produktion (msm-panel ohne POSIX-Rechte auf /opt/msm/servers/<id>)
+    muessen Logs, Caddyfile, Clone, Build und Symlinks ueber NodeClient +
+    docker_service.run_ephemeral laufen.
+    """
+    import shutil
+    from unittest.mock import MagicMock
+
+    srv = _make_server(db, tmp_path / "agent_mode")
+    # Entferne das Verzeichnis lokal, damit jeder direkte Path()-Zugriff sofort scheitern wuerde
+    shutil.rmtree(srv.install_dir, ignore_errors=True)
+
+    dep = frontend_deploy_service.enqueue(db, srv, branch="main", source="manual")
+    db.commit()
+
+    written_files: dict[str, str] = {}
+    ephemeral_calls: list[dict] = []
+
+    mock_client = MagicMock()
+    mock_client.files_write.side_effect = lambda key, rel, content: written_files.__setitem__(rel, content)
+    mock_client.files_read.side_effect = lambda key, rel: written_files.get(rel, "")
+
+    def _fake_ephemeral(**kwargs):
+        ephemeral_calls.append(kwargs)
+        if "alpine/git" in kwargs.get("image", ""):
+            return {"ok": True, "stdout": "Cloning...\nMSM_COMMIT_SHA=deadbeef1234\n", "stderr": ""}
+        return {"ok": True, "stdout": "built dist/index.html\n", "stderr": ""}
+
+    with patch("services.frontend_deploy_service._use_agent_fs", return_value=True), patch(
+        "services.node_client.NodeClient.from_node", return_value=mock_client
+    ), patch("services.docker_service.run_ephemeral", side_effect=_fake_ephemeral):
+        res = frontend_deploy_service.run_build(db, dep.id, actor_user_id=regular_user.id)
+        db.commit()
+        read_back = frontend_deploy_service.read_build_log(srv, res)
+
+    assert res.status == "ready"
+    assert res.is_live is True
+    assert res.commit_sha == "deadbeef1234"
+    assert "Caddyfile" in written_files
+    assert f"build-logs/deploy-{dep.id}.log" in written_files
+    assert any("alpine/git" in c.get("image", "") for c in ephemeral_calls)
+    assert any("node:" in c.get("image", "") for c in ephemeral_calls)
+    assert read_back.startswith(f"[MSM] Build #{dep.id} gestartet")
