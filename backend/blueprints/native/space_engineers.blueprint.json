@@ -126,8 +126,9 @@
   },
   "logs": {
     "sources": [
-      "SpaceEngineersDedicated.log",
-      "stdout"
+      "stdout",
+      "config/SpaceEngineersDedicated*.log",
+      "SpaceEngineersDedicated.log"
     ],
     "redact": [
       "regex:ServerPassword"

@@ -106,8 +106,9 @@
   },
   "logs": {
     "sources": [
+      "stdout",
       "FactoryGame/Saved/Logs/FactoryGame.log",
-      "stdout"
+      "FactoryGame/Saved/Logs/*.log"
     ],
     "redact": [
       "regex:ServerPassword"

@@ -18,7 +18,7 @@
       "SERVER_NAME": "My Forest Server",
       "SERVER_PASSWORD": ""
     },
-    "startup": "xvfb-run -a wine ./TheForestDedicatedServer.exe -batchmode -nographics -configfilepath {INSTALL_DIR}/config/config.cfg -savefolderpath {INSTALL_DIR}/saves -serverip 0.0.0.0 -servergameport {GAME_PORT} -serverqueryport {QUERY_PORT} -serversteamport {CUSTOM_PORT_1} -servername \"{SERVER_NAME}\"",
+    "startup": "xvfb-run -a wine ./TheForestDedicatedServer.exe -batchmode -nographics -configfilepath {INSTALL_DIR}/config/config.cfg -savefolderpath {INSTALL_DIR}/saves -serverip 0.0.0.0 -servergameport {GAME_PORT} -serverqueryport {QUERY_PORT} -serversteamport {CUSTOM_PORT_1} -servername \"{SERVER_NAME}\" -logFile {INSTALL_DIR}/TheForestDedicatedServer.log",
     "ensureDirs": [
       "config",
       "saves"

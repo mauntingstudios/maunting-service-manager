@@ -16,7 +16,7 @@
       "WINEESYNC": "1",
       "WINEFSYNC": "1"
     },
-    "startup": "xvfb-run -a wine ./VRisingServer.exe -address 0.0.0.0 -gamePort {GAME_PORT} -queryPort {QUERY_PORT} -serverName \"{SERVER_NAME}\" -persistentDataPath save-data",
+    "startup": "xvfb-run -a wine ./VRisingServer.exe -address 0.0.0.0 -gamePort {GAME_PORT} -queryPort {QUERY_PORT} -serverName \"{SERVER_NAME}\" -persistentDataPath save-data -logFile logs/VRisingServer.log",
     "ensureDirs": [
       "save-data/Settings",
       "logs"

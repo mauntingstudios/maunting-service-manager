@@ -88,8 +88,9 @@
   },
   "logs": {
     "sources": [
+      "stdout",
       "logs/latest.log",
-      "stdout"
+      "logs/*.log"
     ],
     "redact": [
       "regex:rcon\\.password",

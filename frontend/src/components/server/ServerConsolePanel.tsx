@@ -256,15 +256,17 @@ export function ServerConsolePanel({ serverId, mode = 'console' }: Props) {
   // Das eigentliche Log-Rendering bleibt im flushBuffer (Batching fuer
   // React-Renders).
   const onRawMessage = (raw: string) => {
-    if (raw.includes("pong") || raw.includes("ping")) return; // filter heartbeat control frames - do not show in console log
     try {
-      const frame = parseConsoleFrame(raw)
-      if (typeof frame.id === 'number') {
-        lastServerIdRef.current = frame.id
+      const parsed = JSON.parse(raw) as { action?: unknown; id?: unknown }
+      if (parsed && typeof parsed === 'object' && (parsed.action === 'pong' || parsed.action === 'ping')) {
+        return // filter heartbeat control frames - do not show in console log
+      }
+      if (parsed && typeof parsed === 'object' && typeof parsed.id === 'number') {
+        lastServerIdRef.current = parsed.id
       }
     } catch {
       // Parse-Fehler werden im flushBuffer nochmal versucht; hier nur der
-      // last_id-Read, kein Batching noetig.
+      // Heartbeat-Filter und last_id-Read.
     }
     bufferRef.current.push(raw)
   }

@@ -17,7 +17,7 @@
       "HOME": "/home/container",
       "LD_LIBRARY_PATH": ".:./linux64:/usr/lib32:/usr/lib/x86_64-linux-gnu"
     },
-    "startup": "./arma3server_x64 -ip=0.0.0.0 -port={GAME_PORT} -cfg=basic.cfg -config=server.cfg -bepath=battleye/launch -autoinit {MOD_ARG}",
+    "startup": "./arma3server_x64 -ip=0.0.0.0 -port={GAME_PORT} -cfg=basic.cfg -config=server.cfg -bepath=battleye/launch -profiles=profiles -autoinit {MOD_ARG}",
     "ensureDirs": [
       "battleye/launch",
       "keys",

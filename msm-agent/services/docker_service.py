@@ -1265,12 +1265,14 @@ def stream_logs_sync(name: str, tail: int = 200, *, stop_event: Any | None = Non
     assert_msm_container_name(name)
     proc: subprocess.Popen[str] | None = None
     try:
+        env = {**os.environ, "DOCKER_HOST": resolve_docker_host()}
         proc = subprocess.Popen(
             ["docker", "logs", "--follow", "--tail", str(max(1, min(tail, 2000))), name],
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
             bufsize=1,
+            env=env,
         )
         assert proc.stdout is not None
         while stop_event is None or not stop_event.is_set():

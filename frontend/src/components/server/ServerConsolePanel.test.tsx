@@ -263,5 +263,23 @@ describe('ServerConsolePanel', () => {
     const ws = wsInstances[0]
     expect(ws.url).not.toContain('last_id')
   })
+
+  it('keeps log lines containing ping or pong while filtering heartbeat frames', async () => {
+    setMe(ownerMe)
+    render(<ServerConsolePanel serverId={42} />)
+    const ws = wsInstances[0]
+    act(() => { ws.simulateOpen() })
+    act(() => {
+      ws.simulateMessage({ action: 'pong' })
+      ws.simulateMessage({ text: 'Player ping: 24ms', source: 'docker', id: 1 })
+      ws.simulateMessage({ text: 'Server stopping cleanly', source: 'file', id: 2 })
+      ws.simulateMessage({ text: 'ping pong match started', source: 'file', id: 3 })
+    })
+    await waitFor(() => {
+      expect(screen.getByText('Player ping: 24ms')).toBeInTheDocument()
+      expect(screen.getByText('Server stopping cleanly')).toBeInTheDocument()
+      expect(screen.getByText('ping pong match started')).toBeInTheDocument()
+    })
+  })
 })
 

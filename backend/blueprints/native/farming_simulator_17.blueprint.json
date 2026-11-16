@@ -103,8 +103,10 @@
   },
   "logs": {
     "sources": [
+      "stdout",
       "profile/server.log",
-      "stdout"
+      "profile/log.txt",
+      "dedicatedServer.log"
     ],
     "redact": [
       "regex:password",

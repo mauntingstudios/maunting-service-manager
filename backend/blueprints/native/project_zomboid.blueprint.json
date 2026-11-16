@@ -16,7 +16,8 @@
     },
     "startup": "./start-server.sh -cachedir=/data -servername {SERVER_NAME} -port {GAME_PORT} -udpport {CUSTOM_PORT_1}",
     "ensureDirs": [
-      "Server"
+      "Server",
+      "Logs"
     ],
     "requiredFiles": [
       "start-server.sh",
@@ -122,8 +123,11 @@
   },
   "logs": {
     "sources": [
+      "stdout",
       "server-console.txt",
-      "stdout"
+      "Logs/*_DebugLog-server.txt",
+      "Logs/*_user.txt",
+      "Logs/*_chat.txt"
     ],
     "redact": []
   },

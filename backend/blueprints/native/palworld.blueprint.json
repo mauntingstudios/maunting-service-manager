@@ -78,8 +78,9 @@
   },
   "logs": {
     "sources": [
+      "stdout",
       "Pal/Saved/Logs/Pal.log",
-      "stdout"
+      "Pal/Saved/Logs/*.log"
     ],
     "redact": [
       "regex:AdminPassword",

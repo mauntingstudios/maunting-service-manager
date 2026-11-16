@@ -16,9 +16,10 @@
       "WINEESYNC": "1",
       "WINEFSYNC": "1"
     },
-    "startup": "xvfb-run -a wine ./SonsOfTheForestDS.exe -userdatapath {INSTALL_DIR}/userdata -dedicatedserver.IpAddress 0.0.0.0 -dedicatedserver.GamePort {GAME_PORT} -dedicatedserver.QueryPort {QUERY_PORT} -dedicatedserver.BlobSyncPort {CUSTOM_PORT_1}",
+    "startup": "xvfb-run -a wine ./SonsOfTheForestDS.exe -userdatapath {INSTALL_DIR}/userdata -dedicatedserver.IpAddress 0.0.0.0 -dedicatedserver.GamePort {GAME_PORT} -dedicatedserver.QueryPort {QUERY_PORT} -dedicatedserver.BlobSyncPort {CUSTOM_PORT_1} -logFile {INSTALL_DIR}/userdata/logs/SonsOfTheForestDS.log",
     "ensureDirs": [
-      "userdata"
+      "userdata",
+      "userdata/logs"
     ],
     "requiredFiles": [
       "SonsOfTheForestDS.exe"
@@ -134,8 +135,9 @@
   },
   "logs": {
     "sources": [
-      "SonsOfTheForestDS/Logs/SonsOfTheForestDS.log",
-      "stdout"
+      "stdout",
+      "userdata/logs/SonsOfTheForestDS.log",
+      "userdata/logs/*.txt"
     ],
     "redact": [
       "regex:ServerPassword",

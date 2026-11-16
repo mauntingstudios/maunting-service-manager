@@ -96,7 +96,8 @@
   },
   "logs": {
     "sources": [
-      "stdout"
+      "stdout",
+      "txData/default/logs/*.log"
     ],
     "redact": [
       "regex:sv_licenseKey"

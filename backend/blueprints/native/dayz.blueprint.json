@@ -118,6 +118,8 @@
   "logs": {
     "sources": [
       "profiles/*.RPT",
+      "profiles/*.ADM",
+      "profiles/*.log",
       "stdout"
     ],
     "redact": [
