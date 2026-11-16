@@ -85,6 +85,14 @@ describe('BlueprintsDocs page', () => {
     expect(screen.getByText(/Only Docker seccomp is relaxed/)).toBeInTheDocument()
   })
 
+  it('documents tmpfs exec and multi-target mod fields', () => {
+    renderDocs()
+    expect(screen.getByText('runtime.allowTmpfsExec')).toBeInTheDocument()
+    expect(screen.getByText('mods.modListKey')).toBeInTheDocument()
+    expect(screen.getByText('mods.modIdResolvers')).toBeInTheDocument()
+    expect(screen.getByText('mods.modListTargets')).toBeInTheDocument()
+  })
+
   it('documents that declared file logs also stream to the visible console', () => {
     renderDocs()
     expect(screen.getByText('logs.sources')).toBeInTheDocument()

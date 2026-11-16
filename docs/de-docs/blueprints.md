@@ -20,13 +20,18 @@ Blueprints sind Daten, keine Skripte:
 
 Erlaubt sind nur whitelisted Runtime-Fähigkeiten.
 
-### Unprivilegierte User-Namespaces
+### Unprivilegierte User-Namespaces und Temp-Speicher
 
 `runtime.allowUnprivilegedUserNamespaces` ist standardmäßig `false`. Das Feld
 ist nur für Container-Runtimes wie UMU/pressure-vessel gedacht, die innerhalb
 des bereits rootless laufenden Game-Containers einen eigenen unprivilegierten
-User-Namespace erzeugen müssen. Bei `true` ergänzt MSM ausschließlich
-`seccomp=unconfined`.
+User-Namespace erzeugen müssen. Bei `true` wählt MSM ein schmaleres
+Wine/Proton-Seccomp-Profil (niemals `seccomp=unconfined`).
+
+`runtime.allowTmpfsExec` ist standardmäßig `true` und erlaubt das Ausführen
+von Binaries auf gemounteten `tmpfs`-Pfaden wie `/tmp` (z. B. für Java- oder
+SQLite-JNI-Bibliotheken). Für maximal gehärtete Container lässt sich das Flag
+gezielt auf `false` setzen.
 
 Die übrigen Grenzen bleiben hart: `cap-drop=ALL`, `no-new-privileges`, ein
 numerischer Nicht-root-User sowie die Verbote für `privileged` und Host-Netz.
@@ -300,6 +305,14 @@ Steam Workshop und CurseForge werden über `mods` im Blueprint konfiguriert:
 
 - `workshopIds`: eine Workshop-/CurseForge-ID pro Zeile
 - `postInstallTargetBasenames`: Dateinamen der Ziele aus `postInstall`
+- `iniKey`: schreibt einen flachen INI-Schlüssel (`modListKey`, getrennt über `modListSeparator`)
+
+Für komplexe Spiele stehen zusätzlich `mods.modIdResolvers` (liest interne
+Mod-IDs per `iniKey` oder `regex` aus Dateien wie `mod.info` aus) und
+`mods.modListTargets` (schreibt mehrere Zieldateien oder Schlüssel aus
+`workshopIds`, `postInstallTargetBasenames` oder `resolvedIds:<name>`) zur
+Verfügung. `mods.postInstall[]` unterstützt optional `purgeBefore`, um veraltete
+Mod-Artefakte vor dem Kopieren gezielt zu bereinigen.
 
 ## Runtime-Startup
 
@@ -313,19 +326,24 @@ Erlaubte Platzhalter:
 - `{RCON_PORT}`
 - `{VOICE_PORT}`
 - `{WEB_PORT}`
+- `{PEER_PORT}`
+- `{DATABASE_PORT}`
+- `{BIND_IP}`
 - `{CUSTOM_PORT_1}`, `{CUSTOM_PORT_2}`, ... `{CUSTOM_PORT_<N>}` (für zusätzliche custom Ports in Blueprints)
 - `{INSTALL_DIR}`
 - `{MOD_ARG}`
 - `{SERVER_NAME}` für den individuellen Namen des MSM-Servers
 - `{ENV.<KEY>}` für eigene Werte aus `runtime.env`, z. B. `{ENV.SERVER_NAME}`
 
-`runtime.env`-Werte dürfen nur Port-Platzhalter nutzen:
+`runtime.env`-Werte dürfen nur Port-Platzhalter und `{BIND_IP}` nutzen:
 
 - `{GAME_PORT}`
 - `{QUERY_PORT}`
 - `{RCON_PORT}`
 - `{VOICE_PORT}`
 - `{WEB_PORT}`
+- `{PEER_PORT}`
+- `{BIND_IP}`
 - `{CUSTOM_PORT_<N>}`
 
 `{INSTALL_DIR}`, `{MOD_ARG}` und `{ENV.<KEY>}` sind in `runtime.env` bewusst

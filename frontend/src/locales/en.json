@@ -2543,10 +2543,10 @@
     },
     "quickstart": {
       "p1": "How to create your first custom server type (Community Blueprint):",
-      "s1": "Download the blueprint template using the button above.",
-      "s2": "Open the file (e.g. my_custom_server.blueprint.json) in an editor and adjust the values. Comments (//) are automatically ignored on upload.",
-      "s3": "Navigate to the 'Blueprints' page and click 'Upload new'.",
-      "s4": "Navigate to “Servers” and click “Create Server”: the new game now appears in the dropdown menu.",
+      "s1": "Open 'Blueprints' in the menu and click 'Create blueprint' (or download the JSON template above).",
+      "s2": "Set the name, source (Steam, link, GitHub, or image), startup command, and required ports directly in the menu.",
+      "s3": "Optionally enable mods, backups, or autopilot. Comments (//) in uploaded JSON files are ignored automatically.",
+      "s4": "Save the blueprint and go to 'Servers' → 'Create server': your new server type appears right in the selection.",
       "alertTitle": "Important: the blueprint ID is authoritative",
       "alertBody": "The upload filename may be chosen freely. The panel validates meta.id and stores the Community Blueprint under that ID."
     },
@@ -2559,15 +2559,17 @@
       "no": "No",
       "metaId": "Unique technical ID. Uppercase letters and spaces are normalized to lowercase letters and underscores when saved. Cannot collide with native blueprints.",
       "metaName": "Display name in the UI.",
-      "metaCategory": "steam_game, non_steam_game, voice_server, bot.",
+      "metaCategory": "steam_game, non_steam_game, voice_server, bot, database, web_app, frontend, backend.",
       "metaAuthor": "Creator of the blueprint.",
       "metaDescription": "Short description for the UI dropdown.",
       "runtimeImage": "Valid Docker image (e.g., ubuntu:24.04).",
       "runtimeWorkdir": "Working directory in the container.",
-      "runtimeEnv": "Environment variables as a key-value dict. Values may contain port placeholders: {GAME_PORT}, {QUERY_PORT}, {RCON_PORT}, {VOICE_PORT}, {WEB_PORT}. {INSTALL_DIR} and {ENV.<KEY>} are NOT allowed in env values.",
-      "runtimeStartup": "Startup command (passed as argv, NO shell). Valid placeholders: {SERVER_NAME}, {GAME_PORT}, {QUERY_PORT}, {RCON_PORT}, {VOICE_PORT}, {WEB_PORT}, {INSTALL_DIR}, {MOD_ARG}. {SERVER_NAME} uses the individual MSM server name. Also {ENV.<KEY>} for custom env variables. Forbidden characters: $, backtick.",
+      "runtimeEnv": "Environment variables as a key-value dict. Values may contain port placeholders and {BIND_IP}: {GAME_PORT}, {QUERY_PORT}, {RCON_PORT}, {VOICE_PORT}, {WEB_PORT}, {PEER_PORT}, {CUSTOM_PORT_<N>}. Security-sensitive keys such as DOCKER_HOST or LD_PRELOAD are blocked.",
+      "runtimeStartup": "Startup command (passed as argv, NO shell). Valid placeholders: {SERVER_NAME}, {GAME_PORT}, {QUERY_PORT}, {RCON_PORT}, {VOICE_PORT}, {WEB_PORT}, {PEER_PORT}, {DATABASE_PORT}, {BIND_IP}, {INSTALL_DIR}, {MOD_ARG}, {CUSTOM_PORT_<N>}, plus {ENV.<KEY>}. Forbidden characters: $, backtick.",
+      "runtimeStartupProfiles": "Alternative startup commands selected automatically when a marker file (whenFile, e.g. package.json) exists.",
       "runtimeEnsureDirs": "Relative directories created inside the server directory before each start. Useful for profile, log, cache, or runtime folders expected by startup arguments.",
       "runtimeConfigPatches": "List of configuration patches applied before startup. Each patch requires type, file, and value (plus section/key for ini or regex for regex). They apply to all servers of this blueprint. Per-server overrides can be configured via Singra.",
+      "runtimeAllowTmpfsExec": "Allows execution on mounted tmpfs paths such as /tmp (e.g. for Java or SQLite JNI). Defaults to true; set to false for strictly hardened containers.",
       "runtimeEnableExec": "Enable the Exec tab. Default: false. Self-hosted, but commands run ONLY inside the MSM-managed container of this server, NEVER on the host or in other containers.",
       "runtimeExecTimeoutSeconds": "Timeout per exec call in seconds (1..600). Default: 60.",
       "logsSources": "Log sources for Guardian and the visible server console. stdout shows Docker output; safe relative file paths and simple filename wildcards are additionally followed live.",
@@ -2581,7 +2583,7 @@
       "configPatchRegex": "Search pattern as a regular expression (required when type=regex).",
       "configPatchValue": "Value. Allowed port placeholders: {GAME_PORT}, {QUERY_PORT}, {RCON_PORT}, {VOICE_PORT}, {WEB_PORT}. Not allowed: {ENV.<KEY>}, {MOD_ARG}, {INSTALL_DIR}.",
       "portsDesc": "Declare the required port roles. The user assigns concrete numbers during creation. The same standard role may appear once per protocol, e.g. query/udp and query/tcp; MSM stores these as unique roles such as query and query_2.",
-      "portsName": "Port role. Do not write 'ports.name' as the value; use game, query, rcon, voice, web, or custom. Concrete port numbers are assigned later when creating the server.",
+      "portsName": "Port role. Allowed values: game, query, rcon, voice, web, peer, database, or custom. Concrete port numbers are assigned later when creating the server.",
       "portsProtocol": "tcp or udp. The protocol controls Docker mapping and firewall rules and can be changed later in the network panel.",
       "sourceType": "Where server files come from: steam = SteamCMD, http = HTTPS archive, github = repository, dockerOnly = image contains everything, custom = custom runtime logic, manualUpload = user uploads files manually.",
       "sourceUpdateStrategy": "Controls server file updates before start/restart: alwaysValidate = always run SteamCMD/install; checkBased = only when the update check reports an update (Steam: buildid compare); none = no auto-update.",
@@ -2607,8 +2609,12 @@
       "modsModInjection": "Mod injection strategy (startupArg, file, none).",
       "modsModStartupArgumentFormat": "Format of the startup mod argument (e.g., -mod={mods};).",
       "modsModListFilePath": "File path of the mod list file (e.g., ConanSandbox/Mods/modlist.txt).",
-      "modsModListContent": "Format of entries written to the mod list file (workshopIds, postInstallTargetBasenames).",
-      "modsPostInstall": "List of file operations run after mod downloads complete.",
+      "modsModListContent": "Format of entries written to the mod list file (workshopIds, postInstallTargetBasenames, iniKey).",
+      "modsModListKey": "INI key name when modListContent is set to iniKey (e.g. WorkshopItems).",
+      "modsModListSeparator": "Separator used inside the mod list (default: ;).",
+      "modsModIdResolvers": "Optional list of resolvers that extract internal mod IDs from mod files (e.g. mod.info) using iniKey or regex.",
+      "modsModListTargets": "Optional list of multiple output files or INI keys (with valueSource, separator, and optional entryTemplate).",
+      "modsPostInstall": "List of file operations (copy/symlink) run after mod downloads complete. Optionally supports purgeBefore to clean stale target artifacts.",
       "backupIncludePaths": "Optional. Relative paths/globs under install_dir for backups (config, saves, DB). Without a backup block: full server directory. Restore overwrites only these paths.",
       "runtimeUser": "Numeric User:Group in container (e.g. 1000:1000). Must not be root (0).",
       "runtimeRequiredFiles": "Relative file paths that must exist after installation (e.g., 7DaysToDieServer.x86_64). If any file is missing, MSM stops launch with a clear error message.",
@@ -6280,82 +6286,101 @@
     }
   },
   "blueprintBuilder": {
-    "studio": "Blueprint Studio",
     "draft": "Draft",
-    "close": "Close blueprint editor",
-    "loading": "Loading blueprint …",
-    "loadFailed": "The blueprint could not be loaded for editing.",
+    "loading": "Loading template …",
+    "loadFailed": "The template could not be loaded.",
     "cloneName": "{{name}} – Copy",
     "sectionNavigation": "Blueprint sections",
-    "fieldsArea": "Blueprint fields",
-    "step": "Step {{current}} of {{total}}",
+    "fieldsArea": "Blueprint settings",
     "downloadJson": "Download JSON",
     "saving": "Saving …",
     "saveChanges": "Save changes",
-    "addDirectly": "Add directly",
+    "addDirectly": "Save blueprint",
     "saved": "Blueprint saved.",
     "added": "Blueprint added.",
     "saveFailed": "The blueprint could not be saved.",
+    "advancedOptions": "Advanced settings",
+    "advancedRuntimeHint": "Working directory, seed files, config patches, and security options.",
+    "insertToken": "Insert placeholder",
     "title": {
       "create": "Create blueprint",
       "edit": "Edit community blueprint",
-      "clone": "Clone native blueprint"
+      "clone": "Clone template"
     },
     "description": {
-      "create": "Create a new community blueprint. Existing IDs are never replaced silently.",
-      "edit": "The community ID stays locked. Saving replaces only this community blueprint after backend validation.",
-      "clone": "Native blueprints stay unchanged. The community copy requires a new ID."
+      "create": "Create a custom server template. Existing templates are never replaced silently.",
+      "edit": "The identifier stays locked. Saving updates only this community blueprint.",
+      "clone": "The original stays unchanged. Pick a new name and identifier for your copy."
     },
     "sections": {
       "basics": "Basics",
-      "runtime": "Runtime",
-      "ports": "Ports",
       "source": "Source",
-      "mods": "Mods & Workshop",
-      "backup": "Backup",
+      "runtime": "Start & ports",
+      "ports": "Required ports",
+      "mods": "Mods & backup",
+      "backup": "Backups",
       "guardian": "Autopilot",
       "review": "Review"
     },
+    "sourceCards": {
+      "steam": "Download automatically via SteamCMD",
+      "http": "Download a ZIP or TAR archive",
+      "github": "Clone a repository directly",
+      "dockerOnly": "Everything is inside the image",
+      "manualUpload": "Upload server files yourself later",
+      "custom": "Use custom startup logic"
+    },
     "collision": {
-      "native": "Native blueprint IDs cannot be overwritten. Choose a new ID.",
+      "native": "Built-in templates cannot be overwritten. Choose a different identifier.",
       "title": "Replace community blueprint?",
-      "message": "ID “{{id}}” already exists. Saving explicitly replaces this community blueprint.",
-      "confirm": "Replace intentionally"
+      "message": "The identifier “{{id}}” already exists. Saving will overwrite this community blueprint.",
+      "confirm": "Overwrite"
     },
     "exec": {
-      "title": "Enable exec console",
-      "help": "Extends available container actions. Backend RBAC remains authoritative."
+      "title": "Allow direct container commands",
+      "help": "Enables the Exec tab for authorized users."
+    },
+    "runtimeFlags": {
+      "allowTmpfsExec": "Allow execution in temp storage",
+      "allowTmpfsExecHelp": "Enabled by default (needed for Java or SQLite). Disable for strictly hardened containers.",
+      "allowUserns": "Nested user namespaces (Wine/Proton)",
+      "allowUsernsHelp": "Enable only for runtimes such as UMU/Proton. Selects the matching security profile."
     },
     "ports": {
-      "roleLabel": "Port {{index}} role",
+      "help": "Declare only which connections the server needs. You assign actual port numbers when creating a server.",
+      "roleLabel": "Port {{index}} purpose",
       "protocolLabel": "Port {{index}} protocol",
       "removeLabel": "Remove port {{index}}",
       "add": "Add port"
     },
     "steam": {
       "requiresLogin": "Steam sign-in required",
-      "validate": "Validate SteamCMD files"
+      "validate": "Verify files on update"
     },
     "mods": {
       "supportsMods": "Support mods",
-      "supportsWorkshop": "Support Steam Workshop",
-      "supportsCurseForge": "Support CurseForge"
+      "supportsModsHelp": "Shows the mod section for extensions on the server.",
+      "supportsWorkshop": "Use Steam Workshop",
+      "supportsCurseForge": "Use CurseForge",
+      "advancedTitle": "Advanced mod rules"
     },
     "review": {
       "issueCount_one": "Review {{count}} field",
       "issueCount_other": "Review {{count}} fields",
-      "ready": "The draft is ready for authoritative backend validation.",
-      "backend": "The panel catches common input errors. On save, the backend validates the complete schema authoritatively.",
-      "json": "JSON preview"
+      "ready": "Everything is ready to save.",
+      "backend": "All required fields are verified against the server schema when saving.",
+      "json": "Show JSON preview",
+      "on": "Enabled",
+      "off": "Off"
     },
     "guardian": {
-      "healthTitle": "Health probes",
-      "processEnabled": "Enable process probe",
-      "processEnabledHelp": "Checks whether the main process runs in the container. Disable only when a more suitable application probe is authoritative on its own.",
+      "healthTitle": "Health checks",
+      "processEnabled": "Enable process check",
+      "processEnabledHelp": "Checks whether the main process is running inside the container.",
       "processRequired": "Enforce main process liveness",
-      "processRequiredHelp": "A missing process counts as a failure. Keep enabled for normal game servers.",
-      "logsTitle": "Logs & diagnostics",
-      "recoveryTitle": "Autonomous recovery policies",
+      "processRequiredHelp": "Treats a missing process as an error.",
+      "logsTitle": "Logs & error detection",
+      "recoveryTitle": "Automatic repair rules",
       "backupsTitle": "Backups before recovery",
       "beforeRiskyAction": "Back up declared lock files before removal",
       "beforeRiskyActionHelp": "Before clear_declared_lock_files, only explicitly declared lock files up to 1 MiB are backed up. This creates neither a snapshot nor a backup of protected paths.",
@@ -6366,20 +6391,21 @@
       "applicationProbe": "Application probe",
       "startupWindow": "Startup window",
       "safeLockFiles": "Approved lock files",
-      "safeLockFilesHelp": "Only explicitly approved relative files may be removed automatically. With backup enabled, each existing file up to 1 MiB is backed up byte-for-byte first. Give a clear reason for every path.",
-      "addSafeLockFile": "Approve lock file",
+      "safeLockFilesHelp": "Only these relative files may be removed by autopilot during recovery (with an optional backup first).",
+      "addSafeLockFile": "Add lock file",
       "safeLockPath": "Lock file {{index}} path",
       "safeLockReason": "Lock file {{index}} reason",
+      "safeLockReasonPlaceholder": "Why is it safe to remove this file?",
       "removeSafeLockFile": "Remove lock file {{index}}",
-      "advancedRecovery": "Advanced recovery budgets",
-      "advancedRecoveryHelp": "Limits autonomous attempts and requires stable health before a repair counts as successful.",
-      "presetsTitle": "Autopilot presets",
-      "presetsHelp": "Select a template to automatically fill best-practice configurations for typical servers. You can customize any field afterwards.",
+      "advancedRecovery": "Recovery limits",
+      "advancedRecoveryHelp": "Limits automatic restarts and verifies the server stays healthy afterwards.",
+      "presetsTitle": "Quick-start template",
+      "presetsHelp": "Fills recommended monitoring rules automatically. You can adjust any field afterwards.",
       "presetsSelect": "Load template …",
-      "presetGeneric": "Disable Guardian (opt out)",
-      "appQueryNone": "No query (only port-bind)",
-      "enabled": "Enable Guardian for this blueprint",
-      "enabledHelp": "When disabled, health, logs, diagnostics, recovery, and Guardian backups are completely removed from JSON. Enabling adds safe defaults.",
+      "presetGeneric": "Turn off autopilot",
+      "appQueryNone": "Only check if the port is open",
+      "enabled": "Enable autopilot for this blueprint",
+      "enabledHelp": "Continuously monitors the server and steps in automatically on known failures.",
       "actionsTitle": "Actually supported recovery actions",
       "actionsHelp": "Policies can trigger only these four agent actions. Rollback, snapshots, and node migration are not Guardian recovery actions."
     },
@@ -6457,163 +6483,198 @@
       "valueLabel": "Patch value {{index}}"
     },
     "postInstall": {
-      "title": "Post-install files",
+      "title": "Files after mod download",
+      "help": "Copies or links mod files into the right place inside the server folder.",
       "add": "Add action",
       "operationLabel": "File action {{index}}",
-      "symlink": "Symlink",
+      "symlink": "Link (symlink)",
       "sourceLabel": "Source {{index}}",
       "targetLabel": "Target {{index}}",
       "removeLabel": "Remove file action {{index}}",
-      "required": "Failure blocks installation"
+      "required": "Missing file stops installation",
+      "purgeBeforeTitle": "Clean old files before copying (optional)",
+      "purgeBeforeLabel": "Paths to delete before action {{index}}",
+      "purgeBeforeHelp": "One relative path per line (tokens such as {STEM} allowed)."
+    },
+    "resolvers": {
+      "title": "Read mod IDs from mod files",
+      "help": "Reads internal mod names from files such as mod.info (e.g. for Project Zomboid).",
+      "add": "Add resolver",
+      "nameLabel": "Resolver name {{index}}",
+      "globLabel": "File pattern {{index}}",
+      "formatLabel": "Match type {{index}}",
+      "formatIni": "INI key",
+      "formatRegex": "Text pattern (regex)",
+      "keyLabel": "Key {{index}}",
+      "regexLabel": "Regex {{index}}",
+      "maxMatches": "Max matches",
+      "fallbackLabel": "If nothing found {{index}}",
+      "fallbackSkip": "Skip",
+      "fallbackWorkshop": "Use Workshop ID",
+      "removeLabel": "Remove resolver {{index}}"
+    },
+    "targets": {
+      "title": "Write extra mod lists",
+      "help": "Writes mod lists to multiple files or INI keys at once.",
+      "add": "Add target",
+      "fileLabel": "Target file {{index}}",
+      "keyLabel": "INI key {{index}}",
+      "sourceLabel": "Data source {{index}}",
+      "separatorLabel": "Separator {{index}}",
+      "templateLabel": "Entry template {{index}}",
+      "removeLabel": "Remove target {{index}}"
     },
     "fields": {
       "id": {
-        "label": "Unique ID",
-        "help": "Lowercase letters, digits, and underscores; locked when editing."
+        "label": "Identifier",
+        "help": "Generated automatically from the name (locked when editing)."
       },
       "name": {
-        "label": "Display name",
-        "help": "The readable name in server selection."
+        "label": "Name",
+        "help": "Displayed in server selection.",
+        "placeholder": "My game server"
       },
       "category": {
         "label": "Category",
-        "help": "Groups the blueprint in server selection."
+        "help": "Places this template in the right section."
       },
       "author": {
         "label": "Author (optional)",
-        "help": "Name or organization, never credentials."
+        "help": "Your name or team.",
+        "placeholder": "Your name"
       },
       "description": {
-        "label": "Description (optional)",
-        "help": "Briefly explain what is installed and what it is for."
+        "label": "Short description (optional)",
+        "help": "What is this server used for?",
+        "placeholder": "Short explanation for other users …"
       },
       "image": {
-        "label": "Docker image",
-        "help": "Registry/image:tag; no shell syntax."
+        "label": "System image",
+        "help": "Docker image, e.g. ubuntu:24.04 or node:22-bookworm-slim."
       },
       "workdir": {
         "label": "Working directory (optional)",
-        "help": "Absolute container path, for example /server."
+        "help": "Folder inside the container, e.g. /data."
       },
       "user": {
-        "label": "Container user (optional)",
-        "help": "Non-root UID:GID, for example 1000:1000."
+        "label": "Run as (optional)",
+        "help": "User ID:Group ID (non-root), e.g. 1000:1000."
       },
       "startup": {
         "label": "Startup command",
-        "help": "Executed as a command; shell chaining and substitution are blocked."
+        "help": "Command used to launch the server (no shell chaining such as &&)."
       },
       "stopGrace": {
-        "label": "Stop grace period",
-        "help": "5–600 seconds for a clean stop."
+        "label": "Stop wait time",
+        "help": "5–600 seconds allowed for a clean shutdown."
       },
       "startCheck": {
-        "label": "Startup check",
-        "help": "0–300 seconds before the first status check."
+        "label": "Startup wait time",
+        "help": "0–300 seconds before the first check."
       },
       "execTimeout": {
-        "label": "Exec timeout",
-        "help": "1–600 seconds; applies only when exec is enabled."
+        "label": "Command timeout",
+        "help": "1–600 seconds for direct container commands."
       },
       "dirs": {
-        "label": "Required directories",
-        "help": "One safe relative path per line; up to 16."
+        "label": "Folders to create before start",
+        "help": "One relative folder name per line (max 16)."
       },
       "files": {
-        "label": "Required files",
-        "help": "One safe relative path per line; up to 16."
+        "label": "Required files on start",
+        "help": "Files that must exist (one per line, max 16)."
       },
       "source": {
-        "label": "Source",
-        "help": "Only fields for the selected source are serialized."
+        "label": "Where do the server files come from?",
+        "help": "Controls how the server is installed and updated."
       },
       "update": {
-        "label": "Update strategy",
-        "help": "Check-based is the safe default for Steam, HTTP, and GitHub."
+        "label": "Updates",
+        "help": "Automatic on updates saves time on restarts."
       },
       "appId": {
         "label": "Steam app ID",
-        "help": "Numeric dedicated-server App ID."
+        "help": "Numeric ID of the dedicated server on Steam."
       },
       "platform": {
-        "label": "Platform",
-        "help": "Windows requires Wine or Proton."
+        "label": "System",
+        "help": "Windows servers automatically use Proton or Wine."
       },
       "compatibility": {
-        "label": "Compatibility",
-        "help": "Linux is native; Windows uses Wine or Proton."
+        "label": "Compatibility layer",
+        "help": "Linux runs directly; Windows uses Wine or Proton."
       },
       "steamBranch": {
         "label": "Steam branch (optional)",
-        "help": "Empty uses the public default branch."
+        "help": "Leave blank for the normal default release."
       },
       "url": {
-        "label": "HTTPS download URL",
-        "help": "Direct archive URL; HTTPS is required."
+        "label": "Download link (HTTPS)",
+        "help": "Direct link to the ZIP or TAR archive."
       },
       "archive": {
         "label": "Archive format (optional)",
-        "help": "Leave empty when it can be detected from the URL."
+        "help": "Usually detected automatically from the link."
       },
       "extract": {
-        "label": "Extract to (optional)",
-        "help": "Safe relative subdirectory."
+        "label": "Target subfolder",
+        "help": "Optional relative subfolder when extracting."
       },
       "sha": {
-        "label": "SHA-256 (optional)",
-        "help": "64 lowercase hexadecimal characters for archive verification."
+        "label": "SHA-256 checksum (optional)",
+        "help": "64 lowercase hex characters to verify the download."
       },
       "repo": {
         "label": "GitHub repository",
-        "help": "github.com only, in owner/repo format."
+        "help": "Format: owner/project on github.com."
       },
       "branch": {
         "label": "Branch",
-        "help": "A branch name without path separators."
+        "help": "Repository branch, e.g. main."
       },
       "subPath": {
-        "label": "Subdirectory (optional)",
-        "help": "Safe relative path inside the repository."
+        "label": "Subfolder (optional)",
+        "help": "If the project lives inside a subfolder."
       },
       "manualFiles": {
         "label": "Required files",
-        "help": "At least one and up to 16 safe relative paths."
+        "help": "Files that must be uploaded before starting (one per line)."
       },
       "instructions": {
-        "label": "Upload instructions",
-        "help": "Explain clearly which files belong where."
+        "label": "User instructions",
+        "help": "Brief instructions on which files go where."
       },
       "instructionsUrl": {
-        "label": "Instructions URL (optional)",
-        "help": "HTTPS documentation only."
+        "label": "Instructions link (optional)",
+        "help": "HTTPS link to further instructions."
       },
       "workshopId": {
         "label": "Workshop app ID",
-        "help": "Numeric App ID of the Workshop area."
+        "help": "Steam ID of the game's Workshop."
       },
       "curseforgeGameId": {
         "label": "CurseForge game ID",
-        "help": "Official CurseForge Game ID (e.g. 83374 for ARK: Survival Ascended, 432 for Minecraft)."
+        "help": "Official CurseForge ID (e.g. 83374 for ARK or 432 for Minecraft)."
       },
       "curseforgeClassId": {
-        "label": "CurseForge class ID",
-        "help": "Optional: Filters by category/type (e.g. 6 for Minecraft Mods, 4552 for Bukkit Plugins)."
+        "label": "Category ID (optional)",
+        "help": "Filters mods/plugins (e.g. 6 for Minecraft mods)."
       },
       "curseforgeInstallPath": {
-        "label": "CurseForge target path",
-        "help": "Optional: Relative destination directory for .jar/.zip downloads (e.g. mods or plugins)."
+        "label": "Target folder for mods",
+        "help": "Relative folder for downloads (e.g. mods or plugins)."
       },
       "filterTags": {
-        "label": "Workshop filters",
-        "help": "Up to 10 tags, one per line."
+        "label": "Workshop tags",
+        "help": "Optional up to 10 tags (one per line)."
       },
       "injection": {
-        "label": "Mod injection",
-        "help": "None, startup argument, or managed file."
+        "label": "How are mods loaded?",
+        "help": "Choose whether mods load via startup command or a file."
       },
       "modFormat": {
-        "label": "Argument format",
-        "help": "Must contain the {mods} placeholder."
+        "label": "Startup argument format",
+        "help": "Must contain {mods} as a placeholder."
       },
       "modSeparator": {
         "label": "Separator",
@@ -6621,270 +6682,290 @@
       },
       "modFile": {
         "label": "Mod list path",
-        "help": "Safe relative path."
+        "help": "Relative file path for the generated mod list."
       },
       "modContent": {
-        "label": "List content",
-        "help": "Workshop IDs or target filenames from file actions."
+        "label": "Mod list content",
+        "help": "What gets written to the mod list file."
+      },
+      "modListKey": {
+        "label": "INI key name",
+        "help": "Key name inside the config file (e.g. WorkshopItems)."
+      },
+      "modListSeparator": {
+        "label": "List separator",
+        "help": "Character between entries (default: ;)."
       },
       "backup": {
-        "label": "Paths to back up",
-        "help": "One relative path or glob per line; empty means a full server backup."
+        "label": "Paths to back up (optional)",
+        "help": "One path per line. Leave blank to back up the entire server folder."
       },
       "healthPortProto": {
-        "label": "Liveness port protocol",
-        "help": "Protocol for the liveness check."
+        "label": "Protocol",
+        "help": "TCP or UDP for the reachability check."
       },
       "healthPort": {
-        "label": "Liveness port",
+        "label": "Reachability port",
         "help": "Port or placeholder, e.g. {{SERVER_PORT}}."
       },
       "healthPortTimeout": {
-        "label": "Timeout (liveness port)",
+        "label": "Wait per check",
         "help": "e.g. 3s or 5s."
       },
       "healthAppType": {
-        "label": "Query type",
-        "help": "e.g. minecraft-query."
+        "label": "Status query",
+        "help": "Choose how the running service is checked."
       },
       "healthAppPath": {
         "label": "HTTP path",
-        "help": "Relative HTTP path for ping check, e.g. /healthz."
+        "help": "Relative path for the status check, e.g. /healthz."
       },
       "healthAppPort": {
-        "label": "HTTP port",
-        "help": "Optional port (defaults to liveness port), e.g. {{SERVER_PORT}}."
+        "label": "Query port",
+        "help": "Optional (defaults to reachability port)."
       },
       "healthAppInterval": {
-        "label": "Query interval",
+        "label": "Check interval",
         "help": "e.g. 30s."
       },
       "healthAppThreshold": {
-        "label": "Failure threshold",
-        "help": "Number of failed checks before marked unhealthy."
+        "label": "Failure tolerance",
+        "help": "How many failed checks before reporting an issue."
       },
       "guardianId": {
-        "label": "Probe ID",
-        "help": "Unique technical ID using lowercase letters, digits, hyphens, or underscores."
+        "label": "Check name",
+        "help": "Unique identifier (lowercase letters, digits, - or _)."
       },
       "guardianInterval": {
-        "label": "Probe interval",
-        "help": "Time between checks, such as 30s. Beginners should keep the default."
+        "label": "Interval",
+        "help": "Time between two checks, e.g. 30s."
       },
       "guardianTimeout": {
-        "label": "Probe timeout",
-        "help": "Maximum wait for one check, such as 3s."
+        "label": "Wait time",
+        "help": "Maximum duration of a single check, e.g. 3s."
       },
       "guardianFailureThreshold": {
-        "label": "Failures until unhealthy",
-        "help": "1–20 consecutive failures. Higher values reduce false alarms."
+        "label": "Failures until alert",
+        "help": "1–20 consecutive failures."
       },
       "guardianSuccessThreshold": {
-        "label": "Successes until healthy",
-        "help": "1–20 consecutive successes before changing status."
+        "label": "Successes until OK",
+        "help": "1–20 consecutive passing checks."
       },
       "guardianRequiredStartup": {
         "label": "Required for startup",
-        "help": "The server is not considered started until this probe succeeds."
+        "help": "Server counts as started only after this check passes."
       },
       "guardianRequiredVerification": {
-        "label": "Required for repair verification",
-        "help": "An autonomous repair only completes after this probe succeeds."
+        "label": "Verify after repair",
+        "help": "Repair counts as successful only when this check passes."
       },
       "healthExpectedStatuses": {
-        "label": "Allowed HTTP status codes",
-        "help": "Comma-separated, 100–599. A common safe value is 200."
+        "label": "Allowed HTTP codes",
+        "help": "Comma-separated (100–599), usually 200."
       },
       "healthResponseBytes": {
-        "label": "Maximum response size",
-        "help": "1–1,048,576 bytes; limits the HTTP response read."
-      },
-      "healthFollowRedirects": {
-        "label": "Follow HTTP redirects",
-        "help": "Permanently disabled for security."
+        "label": "Max response size (bytes)",
+        "help": "1–1,048,576 bytes."
       },
       "healthStartupGrace": {
         "label": "Startup grace period",
-        "help": "0–600 seconds without escalation immediately after startup."
+        "help": "0–600 seconds of quiet time right after startup."
       },
       "healthStartupTimeout": {
-        "label": "Startup timeout",
-        "help": "1–3600 seconds and greater than the grace period."
+        "label": "Startup time limit",
+        "help": "1–3,600 seconds (must exceed the grace period)."
       },
       "healthSuccessPatterns": {
-        "label": "Startup success patterns",
-        "help": "Log pattern for successful start."
+        "label": "Success lines in log",
+        "help": "Text indicating a successful start."
       },
       "healthFailurePatterns": {
-        "label": "Startup failure patterns",
-        "help": "Log pattern for startup errors."
+        "label": "Error lines in log",
+        "help": "Text indicating a startup failure."
       },
       "logsSources": {
         "label": "Log files",
-        "help": "Additional relative log paths (e.g. logs/latest.log)."
+        "help": "Relative paths or stdout (one per line)."
       },
       "logsRedact": {
-        "label": "Log redaction",
-        "help": "Sensitive keys to censor in server logs."
+        "label": "Hide secrets in logs",
+        "help": "Automatically masks recognized tokens and keys."
       },
       "logsRegexRedact": {
-        "label": "Custom redaction regex",
-        "help": "One safe regex per line, without a prefix; stored with regex:."
+        "label": "Custom filter patterns",
+        "help": "One regular expression per line."
       },
       "logsMaxTail": {
-        "label": "Maximum log data",
-        "help": "1,024–1,048,576 bytes per analysis; default: 65,536."
+        "label": "Max log size (bytes)",
+        "help": "1,024–1,048,576 bytes per pass."
       },
       "diagnosticsParsers": {
-        "label": "Error parsers",
-        "help": "Enabled diagnostic parsers (e.g. java-stacktrace)."
+        "label": "Automatic error detection",
+        "help": "Detects known crash causes in logs."
       },
       "recoveryMaxAttempts": {
-        "label": "Maximum attempts",
-        "help": "1–10 autonomous repairs within the attempt window."
+        "label": "Max repair attempts",
+        "help": "1–10 attempts within the time window."
       },
       "recoveryAttemptWindow": {
-        "label": "Attempt window",
-        "help": "60–86,400 seconds during which attempts are counted."
+        "label": "Time window (seconds)",
+        "help": "60–86,400 seconds."
       },
       "recoveryCooldown": {
-        "label": "Cooldown",
-        "help": "1–3,600 seconds pause after a repair."
+        "label": "Pause after repair (seconds)",
+        "help": "1–3,600 seconds."
       },
       "verificationDuration": {
-        "label": "Minimum healthy duration",
-        "help": "0–600 seconds of stable health before reporting success."
+        "label": "Stable uptime afterwards",
+        "help": "0–600 seconds without errors."
       },
       "verificationSuccesses": {
-        "label": "Required probe successes",
-        "help": "1–20 consecutive successes to confirm recovery."
+        "label": "Successes to confirm",
+        "help": "1–20 passing checks in a row."
       },
       "verificationTimeout": {
-        "label": "Verification timeout",
-        "help": "5–3,600 seconds for the complete recovery verification."
+        "label": "Verification limit (seconds)",
+        "help": "5–3,600 seconds."
       },
       "backupsProtected": {
-        "label": "Exclusion boundaries",
-        "help": "Relative paths that clear_declared_lock_files must never touch. These paths are not backed up."
+        "label": "Protected paths",
+        "help": "Paths that automatic repairs must never touch."
       }
     },
     "options": {
       "category": {
         "steamGame": "Steam game",
-        "nonSteamGame": "Non-Steam game",
+        "nonSteamGame": "Custom game (non-Steam)",
         "voiceServer": "Voice server",
-        "bot": "Bot"
+        "bot": "Bot",
+        "webApp": "Web app",
+        "frontend": "Web frontend",
+        "backend": "Backend / API",
+        "database": "Database"
       },
       "port": {
         "game": "Game",
         "query": "Query",
-        "rcon": "RCon",
+        "rcon": "Remote control (RCon)",
         "voice": "Voice",
-        "web": "Web",
+        "web": "Web interface",
+        "peer": "Peer-to-peer",
+        "database": "Database",
         "custom": "Custom"
       },
       "source": {
-        "http": "HTTPS archive",
-        "dockerOnly": "Docker image only",
-        "custom": "Custom",
+        "http": "Download link",
+        "dockerOnly": "Ready image",
+        "custom": "Custom source",
         "manualUpload": "Manual upload"
       },
       "update": {
-        "checkBased": "Only when an update is detected",
-        "alwaysValidate": "Validate on every start",
+        "checkBased": "Automatic on updates (recommended)",
+        "alwaysValidate": "Verify on every start",
         "none": "No automatic updates"
       },
       "platform": {
-        "linux": "Linux (native)",
-        "windows": "Windows (compatibility layer)"
+        "linux": "Linux (direct)",
+        "windows": "Windows (Proton / Wine)"
       },
       "compatibility": {
-        "native": "Native"
+        "native": "Direct (native)"
       },
       "archiveAuto": "Detect automatically",
       "injection": {
         "none": "None",
-        "startupArg": "Startup argument",
-        "file": "Mod list file"
+        "startupArg": "Via startup command",
+        "file": "Via a file"
       },
       "modContent": {
         "workshopIds": "Workshop IDs",
-        "targetNames": "Target filenames"
+        "targetNames": "Target filenames",
+        "iniKey": "INI key"
       }
     },
     "validation": {
       "metaId": "Use 1–64 lowercase letters, digits, or underscores.",
-      "metaName": "Enter a name with up to 128 characters.",
+      "metaName": "Enter a name (max 128 characters).",
       "image": "Enter a valid Docker image name.",
-      "startup": "Enter a startup command with up to 2048 characters.",
-      "shellSyntax": "Shell substitutions and logical chaining are not allowed.",
-      "workdir": "The working directory must be a safe absolute container path.",
-      "user": "Enter a numeric non-root UID:GID.",
-      "stopGrace": "Use a value from 5 to 600.",
-      "startCheck": "Use a value from 0 to 300.",
-      "execTimeout": "Use a value from 1 to 600.",
-      "envName": "Invalid environment name: {{name}}",
-      "envValue": "Unsafe environment value for {{name}}",
-      "envEmpty": "Environment row {{row}} needs a name.",
-      "envDuplicate": "Environment name {{name}} is duplicated.",
+      "startup": "Enter a startup command.",
+      "shellSyntax": "Shell special characters such as $ or && are not allowed here.",
+      "workdir": "The working directory must start with / and not contain ..",
+      "user": "Enter a numeric non-root UID:GID (e.g. 1000:1000).",
+      "stopGrace": "Pick a value between 5 and 600.",
+      "startCheck": "Pick a value between 0 and 300.",
+      "execTimeout": "Pick a value between 1 and 600.",
+      "envName": "Invalid variable name: {{name}}",
+      "envForbidden": "The variable {{name}} is blocked for security reasons.",
+      "envValue": "Unsafe value for {{name}}",
+      "envEmpty": "Row {{row}} needs a variable name.",
+      "envDuplicate": "Variable {{name}} appears twice.",
       "maxLines": "Use at most {{count}} lines.",
       "maxProfiles": "Use at most 8 startup profiles.",
-      "markerFile": "Enter a safe marker file.",
+      "markerFile": "Enter a safe relative file.",
       "profileStartup": "Enter a safe startup command.",
-      "patchFile": "Enter a safe configuration file.",
-      "patchValue": "A patch value is required.",
+      "patchFile": "Enter a safe relative file.",
+      "patchValue": "Enter a value.",
       "patchIni": "INI requires a section and key.",
-      "patchRegex": "Regex requires an expression.",
-      "maxPorts": "Use at most 32 port entries.",
-      "duplicatePort": "This port role and protocol already exist.",
+      "patchRegex": "A pattern requires a regular expression.",
+      "maxPorts": "At most 32 ports are allowed.",
+      "duplicatePort": "This port purpose and protocol already exist.",
       "steamAppId": "Enter a numeric Steam App ID.",
-      "windowsCompatibility": "Windows requires Wine or Proton.",
-      "httpsUrl": "Only HTTPS download URLs are allowed.",
-      "githubRepo": "Enter the repository as owner/repo.",
-      "sha256": "SHA-256 must contain 64 lowercase hexadecimal characters.",
-      "relativePath": "Enter a safe relative subdirectory.",
-      "maxSetupCommands": "Use at most 8 setup commands.",
-      "setupCommand": "Each setup command needs 1–32 non-empty arguments.",
-      "manualInstructions": "Enter installation instructions.",
+      "windowsCompatibility": "Windows servers require Wine or Proton.",
+      "httpsUrl": "Only secure https:// links are allowed.",
+      "githubRepo": "Enter in owner/project format.",
+      "sha256": "SHA-256 must be exactly 64 lowercase hex characters.",
+      "relativePath": "Enter a safe relative subfolder.",
+      "maxSetupCommands": "At most 8 commands are allowed.",
+      "setupCommand": "Each command needs 1–32 valid arguments.",
+      "manualInstructions": "Provide brief instructions for users.",
       "manualFiles": "Enter at least one required file.",
       "unsafePath": "Unsafe relative path: {{path}}",
-      "workshopAppId": "Workshop support requires a numeric App ID.",
-      "curseforgeGameId": "CurseForge support requires a numeric Game ID.",
-      "curseforgeClassId": "CurseForge Class ID must be numeric.",
-      "curseforgeInstallPath": "CurseForge target path must be a safe relative path.",
+      "workshopAppId": "Workshop requires a numeric Steam App ID.",
+      "curseforgeGameId": "CurseForge requires a numeric game ID.",
+      "curseforgeClassId": "The category ID must be numeric.",
+      "curseforgeInstallPath": "The target folder must be a safe relative path.",
       "modArgument": "The startup argument must contain {mods}.",
-      "modListPath": "Enter a safe relative list path.",
+      "modListPath": "Enter a safe relative file path.",
+      "modListKey": "Enter a valid INI key name (e.g. WorkshopItems).",
+      "modListSeparator": "This separator contains disallowed characters.",
+      "resolverName": "Resolver name may only use lowercase letters, digits, - and _.",
+      "resolverGlob": "The file pattern must be a safe relative path.",
+      "resolverMaxMatches": "Max matches must be between 1 and 64.",
+      "targetFile": "Target file must be a safe relative path.",
+      "targetSource": "Source must be workshopIds, postInstallTargetBasenames, or resolvedIds:<name>.",
+      "purgeBefore": "Cleanup paths before action must be safe relative paths.",
       "postInstall": "Target filenames require at least one file action.",
       "healthPortEmpty": "Port cannot be empty.",
-      "healthTimeoutEmpty": "Timeout cannot be empty.",
-      "healthAppTypeUnsupported": "Only query types supported by Guardian are allowed.",
-      "healthAppPathInvalid": "The HTTP path must be relative and start with / (e.g. /healthz).",
-      "healthAppPathOnlyHttp": "An HTTP path is only allowed for the http-ping type.",
-      "healthAppPathLength": "The HTTP path may contain at most 512 characters.",
-      "guardianArrayLimit": "Too many Guardian entries. Reduce the list to the documented maximum.",
-      "guardianRegex": "At least one regex is invalid, too long, or uses unsafe constructs.",
-      "logsSource": "Log sources must be stdout or safe relative paths with at most one filename wildcard.",
-      "logsRedactor": "Only built-in redactors or regex: entries are allowed.",
-      "diagnosticsParser": "At least one diagnostic parser is not supported by Guardian.",
-      "recoveryMatchEmpty": "Error match pattern {{row}} cannot be empty.",
-      "recoveryMatchUnsupported": "The selected trigger is not emitted by the Guardian runtime.",
-      "recoveryActionEmpty": "Recovery action {{row}} cannot be empty.",
-      "recoveryActionUnsupported": "The selected recovery action is not supported by Guardian.",
-      "recoveryLockFilesRequired": "The lock-file action requires at least one explicitly approved lock file.",
-      "recoveryLockPath": "Lock files need an explicit safe relative path without wildcards.",
+      "healthTimeoutEmpty": "Wait time cannot be empty.",
+      "healthAppTypeUnsupported": "Only supported query types are allowed.",
+      "healthAppPathInvalid": "The HTTP path must start with / (e.g. /healthz).",
+      "healthAppPathOnlyHttp": "An HTTP path is only allowed for HTTP Ping.",
+      "healthAppPathLength": "The HTTP path may be at most 512 characters.",
+      "guardianArrayLimit": "Too many entries in this list.",
+      "guardianRegex": "At least one pattern is invalid or too complex.",
+      "logsSource": "Log sources must be stdout or safe relative paths.",
+      "logsRedactor": "Only built-in filters or regex: patterns are allowed.",
+      "diagnosticsParser": "At least one selected error parser is not supported.",
+      "recoveryMatchEmpty": "Trigger in row {{row}} cannot be empty.",
+      "recoveryMatchUnsupported": "The selected trigger is not supported.",
+      "recoveryActionEmpty": "Action in row {{row}} cannot be empty.",
+      "recoveryActionUnsupported": "The selected action is not supported.",
+      "recoveryLockFilesRequired": "Clearing lock files requires at least one approved file.",
+      "recoveryLockPath": "Lock files need a safe relative path without wildcards.",
       "recoveryLockReason": "Every approved lock file needs a reason.",
       "recoveryLockDuplicate": "Each lock-file path may only appear once.",
-      "recoveryBounds": "A recovery budget is outside the range allowed by the backend.",
-      "seedFile": "Provide a safe relative seed file path.",
-      "seedContent": "Seed content is required and at most 64 KiB.",
-      "seedDuplicate": "This seed file path is duplicated."
+      "recoveryBounds": "A value in the recovery limits is outside the allowed range.",
+      "seedFile": "Enter a safe relative file path.",
+      "seedContent": "File content cannot be empty and is limited to 64 KiB.",
+      "seedDuplicate": "This startup file is duplicated."
     },
     "seedFiles": {
-      "title": "Seed files (once)",
-      "help": "Create default files only when missing. Port tokens like {QUERY_PORT} are allowed. Existing files are never overwritten.",
-      "add": "Add seed",
-      "fileLabel": "Seed file {{index}}",
-      "contentLabel": "Seed content {{index}}"
+      "title": "Startup files (create once)",
+      "help": "Creates config files only if missing. Port placeholders like {QUERY_PORT} are allowed.",
+      "add": "Add file",
+      "fileLabel": "Startup file {{index}}",
+      "contentLabel": "File content {{index}}"
     }
   },
   "server": {

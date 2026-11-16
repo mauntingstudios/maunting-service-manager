@@ -18,9 +18,11 @@ Blueprints represent declarative configuration data, not executable scripts:
 - **Strict path boundaries:** No absolute host file paths and no directory traversal (`..`) are accepted.
 - **Whitelisted capabilities only:** Container environments enforce strict isolation.
 
-### Unprivileged User Namespaces
+### Unprivileged User Namespaces & Tmpfs Execution
 
-The property `runtime.allowUnprivilegedUserNamespaces` defaults to `false`. This flag is reserved solely for specialized container runtimes (such as UMU/pressure-vessel) that need to nest an unprivileged user namespace inside an already rootless game container. When set to `true`, MSM applies only `seccomp=unconfined`.
+The property `runtime.allowUnprivilegedUserNamespaces` defaults to `false`. This flag is reserved solely for specialized container runtimes (such as UMU/pressure-vessel) that need to nest an unprivileged user namespace inside an already rootless game container. When set to `true`, MSM applies the narrowed Wine/Proton seccomp profile (never `seccomp=unconfined`).
+
+`runtime.allowTmpfsExec` defaults to `true` and allows executing binaries on mounted `tmpfs` paths such as `/tmp` (needed e.g. for Java or SQLite JNI). Set it to `false` for strictly hardened containers.
 
 All standard guardrails remain immutable:
 - `cap-drop=ALL` (complete capability stripping)
@@ -32,17 +34,17 @@ All standard guardrails remain immutable:
 
 ## Blueprint Structure Overview
 
-A blueprint defines an application or server archetype, not a single running instance. When creating an actual instance, users allocate port numbers, RAM/CPU thresholds, and IP bindings based on the blueprint definition.
+A blueprint defines an application or server archetype, not a single running instance. When creating an actual instance, users allocate port numbers, RAM/CPU thresholds, and IP bindings based on the blueprint definition. Blueprints can be created and edited directly in the web panel's Blueprint Editor or imported as JSON.
 
 ### Primary Sections
 
 | Section | Role |
 |---|---|
-| `meta` | Identifier, display title, description, and UI categorization. |
-| `runtime` | Target container image, working directory, environment variables, and startup command. |
-| `ports` | Declarative network requirements with functional names (e.g., `game`, `query`, `rcon`) rather than hardcoded port numbers. |
+| `meta` | Identifier, display title, description, and UI categorization (`steam_game`, `non_steam_game`, `voice_server`, `bot`, `database`, `web_app`, `frontend`, `backend`). |
+| `runtime` | Target container image, working directory, environment variables, startup command, seed files, config patches, and hardening flags. |
+| `ports` | Declarative network requirements with functional names (`game`, `query`, `rcon`, `voice`, `web`, `peer`, `database`, `custom`) rather than hardcoded port numbers. |
 | `source` | Upstream asset distribution: SteamCMD, HTTPS archive download, prebuilt Docker image, Git repository, or manual upload. |
-| `mods` | Optional integration with Modrinth, CurseForge, Steam Workshop, or custom mod managers. |
+| `mods` | Optional integration with CurseForge, Steam Workshop, multi-target mod lists (`modListTargets`), ID resolvers (`modIdResolvers`), `iniKey` lists, and `postInstall` (`purgeBefore`). |
 | `guardian` | Autonomous health checking, log pattern monitoring, diagnostics, and recovery policies. |
 
 ### Source Types

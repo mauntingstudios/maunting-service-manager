@@ -1,8 +1,15 @@
 import { cloneElement, useMemo, useRef, useState, type ReactElement } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Plus, Trash2 } from 'lucide-react'
-import { Button, Dropdown, Checkbox } from '@maunting/ui'
-import type { BlueprintDraft, BlueprintValidationIssue, GuardianRecoveryAction } from './contract'
+import { Button, Dropdown, Input, NumberStepper, Switch, Textarea } from '@maunting/ui'
+import {
+  FORBIDDEN_ENV_KEYS,
+  type BlueprintDraft,
+  type BlueprintModIdResolver,
+  type BlueprintModListTarget,
+  type BlueprintValidationIssue,
+  type GuardianRecoveryAction,
+} from './contract'
 
 interface AccessibleControlProps {
   id?: string
@@ -19,24 +26,33 @@ export function Field({
 }: {
   id: string
   label: string
-  help: string
+  help?: string
   error?: string
   children: ReactElement<AccessibleControlProps>
 }) {
   const helpId = `${id}-help`
+  const errorId = `${id}-error`
+  const describedBy = [help ? helpId : '', error ? errorId : ''].filter(Boolean).join(' ') || undefined
+
   return (
-    <div className="min-w-0 max-w-full">
-      <label htmlFor={id} className="mb-1.5 block break-words font-label-md text-sm font-semibold text-on-surface">
+    <div className="min-w-0 max-w-full space-y-1.5">
+      <label htmlFor={id} className="block break-words text-sm font-medium text-on-surface">
         {label}
       </label>
       {cloneElement(children, {
         id,
-        'aria-describedby': helpId,
+        'aria-describedby': describedBy,
         'aria-invalid': Boolean(error),
       })}
-      <p id={helpId} className={`${error ? 'msm-field-error' : 'msm-field-help'} break-words`}>
-        {error ?? help}
-      </p>
+      {error ? (
+        <p id={errorId} className="msm-field-error mt-1 break-words" role="alert">
+          {error}
+        </p>
+      ) : help ? (
+        <p id={helpId} className="msm-field-help mt-1 break-words">
+          {help}
+        </p>
+      ) : null}
     </div>
   )
 }
@@ -48,19 +64,26 @@ export function LinesField({
   value,
   onChange,
   error,
+  placeholder,
+  rows = 3,
 }: {
   id: string
   label: string
-  help: string
+  help?: string
   value: string[]
   onChange: (value: string[]) => void
   error?: string
+  placeholder?: string
+  rows?: number
 }) {
   const normalize = () => onChange(value.map(line => line.trim()).filter(Boolean))
   return (
     <Field id={id} label={label} help={help} error={error}>
-      <textarea
-        className="msm-input min-h-24 font-mono text-xs"
+      <Textarea
+        mono
+        rows={rows}
+        placeholder={placeholder}
+        className="min-h-20 text-base sm:text-xs"
         value={value.join('\n')}
         onChange={event => onChange(event.target.value.split('\n'))}
         onBlur={normalize}
@@ -87,6 +110,7 @@ function environmentRowIssues(rows: EnvironmentRow[]): Map<number, string> {
     if (!key) issues.set(row.id, 'blueprintBuilder.validation.envEmpty')
     else if ((counts.get(key) ?? 0) > 1) issues.set(row.id, 'blueprintBuilder.validation.envDuplicate')
     else if (!/^[A-Z][A-Z0-9_]*$/.test(key)) issues.set(row.id, 'blueprintBuilder.validation.envName')
+    else if (FORBIDDEN_ENV_KEYS.has(key)) issues.set(row.id, 'blueprintBuilder.validation.envForbidden')
   })
   return issues
 }
@@ -114,7 +138,7 @@ export function EnvironmentEditor({
       [...nextIssues.entries()].map(([id, key]) => ({
         path: 'runtime.env',
         key,
-        values: { row: next.findIndex(item => item.id === id) + 1 },
+        values: { row: next.findIndex(item => item.id === id) + 1, name: next.find(item => item.id === id)?.key.trim() ?? '' },
       })),
     )
     if (nextIssues.size === 0) {
@@ -125,43 +149,50 @@ export function EnvironmentEditor({
   const addRow = () => commitRows([...rows, { id: nextId.current++, key: '', value: '' }])
 
   return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between gap-3">
-        <h4 className="font-semibold">{t('blueprintBuilder.environment.title')}</h4>
-        <Button variant="secondary" onClick={addRow}>
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="min-w-0">
+          <h4 className="text-sm font-semibold text-on-surface">{t('blueprintBuilder.environment.title')}</h4>
+          <p className="msm-field-help mt-0.5">{t('blueprintBuilder.environment.help')}</p>
+        </div>
+        <Button type="button" variant="secondary" size="sm" className="min-h-10 shrink-0" onClick={addRow}>
           <Plus className="h-4 w-4" aria-hidden="true" />
           {t('blueprintBuilder.environment.add')}
         </Button>
       </div>
-      <p className="msm-field-help">{t('blueprintBuilder.environment.help')}</p>
       {rows.map((row, index) => {
         const issueKey = rowIssues.get(row.id)
         const helpId = `bp-env-${row.id}-help`
         return (
-          <div key={row.id} className="grid gap-2 sm:grid-cols-[1fr_1.5fr_auto]">
-            <input
+          <div key={row.id} className="grid gap-2 rounded-xl border border-outline-variant/45 bg-surface-container-lowest/60 p-2.5 sm:grid-cols-[1fr_1.4fr_auto] sm:items-center">
+            <Input
               aria-label={t('blueprintBuilder.environment.nameLabel', { index: index + 1 })}
               aria-describedby={issueKey ? helpId : undefined}
               aria-invalid={Boolean(issueKey)}
-              className="msm-input font-mono"
+              placeholder="SERVER_PORT"
+              className="font-mono text-base sm:text-xs"
               value={row.key}
               onChange={event => commitRows(rows.map(item => item.id === row.id ? { ...item, key: event.target.value } : item))}
             />
-            <input
+            <Input
               aria-label={t('blueprintBuilder.environment.valueLabel', { index: index + 1 })}
-              className="msm-input font-mono"
+              placeholder="{GAME_PORT}"
+              className="font-mono text-base sm:text-xs"
               value={row.value}
               onChange={event => commitRows(rows.map(item => item.id === row.id ? { ...item, value: event.target.value } : item))}
             />
             <Button
+              type="button"
               variant="ghost"
+              size="icon"
+              className="min-h-10 min-w-10 justify-self-end"
               aria-label={t('blueprintBuilder.environment.removeLabel', { index: index + 1 })}
               onClick={() => commitRows(rows.filter(item => item.id !== row.id))}
             >
               <Trash2 className="h-4 w-4" aria-hidden="true" />
             </Button>
             {issueKey && (
-              <p id={helpId} className="msm-field-error sm:col-span-3">
+              <p id={helpId} className="msm-field-error sm:col-span-3" role="alert">
                 {t(issueKey, { row: index + 1, name: row.key })}
               </p>
             )}
@@ -181,14 +212,17 @@ export function SetupCommandsEditor({
 }) {
   const { t } = useTranslation()
   return (
-    <div className="space-y-3 md:col-span-2">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h4 className="font-semibold">{t('blueprintBuilder.setup.title')}</h4>
-          <p className="msm-field-help">{t('blueprintBuilder.setup.help')}</p>
+    <div className="space-y-3 sm:col-span-2">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="min-w-0">
+          <h4 className="text-sm font-semibold text-on-surface">{t('blueprintBuilder.setup.title')}</h4>
+          <p className="msm-field-help mt-0.5">{t('blueprintBuilder.setup.help')}</p>
         </div>
         <Button
+          type="button"
           variant="secondary"
+          size="sm"
+          className="min-h-10 shrink-0"
           disabled={value.length >= 8}
           onClick={() => onChange([...value, ['']])}
         >
@@ -197,25 +231,28 @@ export function SetupCommandsEditor({
         </Button>
       </div>
       {value.map((command, commandIndex) => (
-        <fieldset key={commandIndex} className="space-y-2 rounded-xl border border-outline-variant/50 p-3">
+        <fieldset key={commandIndex} className="space-y-2 rounded-xl border border-outline-variant/45 bg-surface-container-lowest/60 p-3">
           <legend className="px-1 text-xs font-semibold text-on-surface-variant">
             {t('blueprintBuilder.setup.command', { index: commandIndex + 1 })}
           </legend>
           {command.map((argument, argumentIndex) => (
-            <div key={argumentIndex} className="grid gap-2 sm:grid-cols-[1fr_auto]">
-              <input
+            <div key={argumentIndex} className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+              <Input
                 aria-label={t('blueprintBuilder.setup.argumentLabel', {
                   command: commandIndex + 1,
                   argument: argumentIndex + 1,
                 })}
-                className="msm-input font-mono"
+                className="font-mono text-base sm:text-xs"
                 value={argument}
                 onChange={event => onChange(value.map((item, index) => index === commandIndex
                   ? item.map((current, argIndex) => argIndex === argumentIndex ? event.target.value : current)
                   : item))}
               />
               <Button
+                type="button"
                 variant="ghost"
+                size="icon"
+                className="min-h-10 min-w-10"
                 aria-label={t('blueprintBuilder.setup.removeArgument', { index: argumentIndex + 1 })}
                 onClick={() => onChange(value.map((item, index) => index === commandIndex
                   ? item.filter((_, argIndex) => argIndex !== argumentIndex)
@@ -225,26 +262,32 @@ export function SetupCommandsEditor({
               </Button>
             </div>
           ))}
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-2 pt-1">
             <Button
+              type="button"
               variant="secondary"
+              size="sm"
+              className="min-h-9"
               disabled={command.length >= 32}
               onClick={() => onChange(value.map((item, index) => index === commandIndex ? [...item, ''] : item))}
             >
-              <Plus className="h-4 w-4" aria-hidden="true" />
+              <Plus className="h-3.5 w-3.5" aria-hidden="true" />
               {t('blueprintBuilder.setup.addArgument')}
             </Button>
             <Button
+              type="button"
               variant="destructive"
+              size="sm"
+              className="min-h-9"
               onClick={() => onChange(value.filter((_, index) => index !== commandIndex))}
             >
-              <Trash2 className="h-4 w-4" aria-hidden="true" />
+              <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
               {t('blueprintBuilder.setup.removeCommand')}
             </Button>
           </div>
         </fieldset>
       ))}
-      <p className="msm-alert-info">{t('blueprintBuilder.setup.notice')}</p>
+      <p className="msm-alert-info text-xs">{t('blueprintBuilder.setup.notice')}</p>
     </div>
   )
 }
@@ -258,22 +301,22 @@ export function StartupProfilesEditor({
 }) {
   const { t } = useTranslation()
   return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <h4 className="font-semibold">{t('blueprintBuilder.profiles.title')}</h4>
-          <p className="msm-field-help">{t('blueprintBuilder.profiles.help')}</p>
+    <div className="space-y-2.5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="min-w-0">
+          <h4 className="text-sm font-semibold text-on-surface">{t('blueprintBuilder.profiles.title')}</h4>
+          <p className="msm-field-help mt-0.5">{t('blueprintBuilder.profiles.help')}</p>
         </div>
-        <Button variant="secondary" disabled={value.length >= 8} onClick={() => onChange([...value, { whenFile: '', startup: '' }])}>
+        <Button type="button" variant="secondary" size="sm" className="min-h-10 shrink-0" disabled={value.length >= 8} onClick={() => onChange([...value, { whenFile: '', startup: '' }])}>
           <Plus className="h-4 w-4" aria-hidden="true" />
           {t('blueprintBuilder.profiles.add')}
         </Button>
       </div>
       {value.map((row, index) => (
-        <div key={index} className="grid gap-2 rounded-xl border border-outline-variant/50 p-3 sm:grid-cols-[1fr_1.5fr_auto]">
-          <input aria-label={t('blueprintBuilder.profiles.markerLabel', { index: index + 1 })} placeholder="server.marker" className="msm-input font-mono" value={row.whenFile} onChange={event => onChange(value.map((item, itemIndex) => itemIndex === index ? { ...item, whenFile: event.target.value } : item))} />
-          <input aria-label={t('blueprintBuilder.profiles.startupLabel', { index: index + 1 })} placeholder="./start-alt" className="msm-input font-mono" value={row.startup} onChange={event => onChange(value.map((item, itemIndex) => itemIndex === index ? { ...item, startup: event.target.value } : item))} />
-          <Button variant="ghost" aria-label={t('blueprintBuilder.profiles.removeLabel', { index: index + 1 })} onClick={() => onChange(value.filter((_, itemIndex) => itemIndex !== index))}>
+        <div key={index} className="grid gap-2 rounded-xl border border-outline-variant/45 bg-surface-container-lowest/60 p-2.5 sm:grid-cols-[1fr_1.4fr_auto] sm:items-center">
+          <Input aria-label={t('blueprintBuilder.profiles.markerLabel', { index: index + 1 })} placeholder="package.json" className="font-mono text-base sm:text-xs" value={row.whenFile} onChange={event => onChange(value.map((item, itemIndex) => itemIndex === index ? { ...item, whenFile: event.target.value } : item))} />
+          <Input aria-label={t('blueprintBuilder.profiles.startupLabel', { index: index + 1 })} placeholder="npm start" className="font-mono text-base sm:text-xs" value={row.startup} onChange={event => onChange(value.map((item, itemIndex) => itemIndex === index ? { ...item, startup: event.target.value } : item))} />
+          <Button type="button" variant="ghost" size="icon" className="min-h-10 min-w-10 justify-self-end" aria-label={t('blueprintBuilder.profiles.removeLabel', { index: index + 1 })} onClick={() => onChange(value.filter((_, itemIndex) => itemIndex !== index))}>
             <Trash2 className="h-4 w-4" aria-hidden="true" />
           </Button>
         </div>
@@ -292,36 +335,38 @@ export function SeedFileEditor({
   const { t } = useTranslation()
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <h4 className="font-semibold">{t('blueprintBuilder.seedFiles.title')}</h4>
-          <p className="msm-field-help">{t('blueprintBuilder.seedFiles.help')}</p>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="min-w-0">
+          <h4 className="text-sm font-semibold text-on-surface">{t('blueprintBuilder.seedFiles.title')}</h4>
+          <p className="msm-field-help mt-0.5">{t('blueprintBuilder.seedFiles.help')}</p>
         </div>
-        <Button variant="secondary" disabled={value.length >= 16} onClick={() => onChange([...value, { file: '', content: '' }])}>
+        <Button type="button" variant="secondary" size="sm" className="min-h-10 shrink-0" disabled={value.length >= 16} onClick={() => onChange([...value, { file: '', content: '' }])}>
           <Plus className="h-4 w-4" aria-hidden="true" />
           {t('blueprintBuilder.seedFiles.add')}
         </Button>
       </div>
       {value.map((row, index) => (
-        <div key={index} className="grid gap-2 rounded-xl border border-outline-variant/50 p-3">
-          <input
-            aria-label={t('blueprintBuilder.seedFiles.fileLabel', { index: index + 1 })}
-            placeholder="server.json"
-            className="msm-input font-mono"
-            value={row.file}
-            onChange={event => onChange(value.map((item, itemIndex) => itemIndex === index ? { ...item, file: event.target.value } : item))}
-          />
-          <textarea
+        <div key={index} className="grid gap-2.5 rounded-xl border border-outline-variant/45 bg-surface-container-lowest/60 p-3">
+          <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+            <Input
+              aria-label={t('blueprintBuilder.seedFiles.fileLabel', { index: index + 1 })}
+              placeholder="server.json"
+              className="font-mono text-base sm:text-xs"
+              value={row.file}
+              onChange={event => onChange(value.map((item, itemIndex) => itemIndex === index ? { ...item, file: event.target.value } : item))}
+            />
+            <Button type="button" variant="ghost" size="icon" className="min-h-10 min-w-10" aria-label={t('common.remove')} onClick={() => onChange(value.filter((_, itemIndex) => itemIndex !== index))}>
+              <Trash2 className="h-4 w-4" aria-hidden="true" />
+            </Button>
+          </div>
+          <Textarea
+            mono
             aria-label={t('blueprintBuilder.seedFiles.contentLabel', { index: index + 1 })}
             placeholder={'{\n  "queryPort": {QUERY_PORT}\n}\n'}
-            className="msm-input min-h-28 font-mono text-xs"
+            className="min-h-24 text-base sm:text-xs"
             value={row.content}
             onChange={event => onChange(value.map((item, itemIndex) => itemIndex === index ? { ...item, content: event.target.value } : item))}
           />
-          <Button variant="destructive" onClick={() => onChange(value.filter((_, itemIndex) => itemIndex !== index))}>
-            <Trash2 className="h-4 w-4" aria-hidden="true" />
-            {t('common.remove')}
-          </Button>
         </div>
       ))}
     </div>
@@ -338,30 +383,30 @@ export function ConfigPatchEditor({
   const { t } = useTranslation()
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <h4 className="font-semibold">{t('blueprintBuilder.patches.title')}</h4>
-          <p className="msm-field-help">{t('blueprintBuilder.patches.help')}</p>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="min-w-0">
+          <h4 className="text-sm font-semibold text-on-surface">{t('blueprintBuilder.patches.title')}</h4>
+          <p className="msm-field-help mt-0.5">{t('blueprintBuilder.patches.help')}</p>
         </div>
-        <Button variant="secondary" disabled={value.length >= 32} onClick={() => onChange([...value, { type: 'ini', file: '', section: '', key: '', value: '' }])}>
+        <Button type="button" variant="secondary" size="sm" className="min-h-10 shrink-0" disabled={value.length >= 32} onClick={() => onChange([...value, { type: 'ini', file: '', section: '', key: '', value: '' }])}>
           <Plus className="h-4 w-4" aria-hidden="true" />
           {t('blueprintBuilder.patches.add')}
         </Button>
       </div>
       {value.map((row, index) => (
-        <div key={index} className="grid gap-2 rounded-xl border border-outline-variant/50 p-3 md:grid-cols-2">
-          <Dropdown aria-label={t('blueprintBuilder.patches.typeLabel', { index: index + 1 })} value={row.type} options={[{ value: 'ini', label: 'INI' }, { value: 'regex', label: 'Regex' }]} onChange={next => onChange(value.map((item, itemIndex) => itemIndex === index ? next === 'ini' ? { type: 'ini', file: item.file, section: '', key: '', value: item.value } : { type: 'regex', file: item.file, regex: '', value: item.value } : item))} />
-          <input aria-label={t('blueprintBuilder.patches.fileLabel', { index: index + 1 })} placeholder="config/server.ini" className="msm-input font-mono" value={row.file} onChange={event => onChange(value.map((item, itemIndex) => itemIndex === index ? { ...item, file: event.target.value } : item))} />
+        <div key={index} className="grid gap-2.5 rounded-xl border border-outline-variant/45 bg-surface-container-lowest/60 p-3 sm:grid-cols-2">
+          <Dropdown aria-label={t('blueprintBuilder.patches.typeLabel', { index: index + 1 })} value={row.type} options={[{ value: 'ini', label: 'INI' }, { value: 'regex', label: 'Textmuster (Regex)' }]} onChange={next => onChange(value.map((item, itemIndex) => itemIndex === index ? next === 'ini' ? { type: 'ini', file: item.file, section: '', key: '', value: item.value } : { type: 'regex', file: item.file, regex: '', value: item.value } : item))} />
+          <Input aria-label={t('blueprintBuilder.patches.fileLabel', { index: index + 1 })} placeholder="config/server.ini" className="font-mono text-base sm:text-xs" value={row.file} onChange={event => onChange(value.map((item, itemIndex) => itemIndex === index ? { ...item, file: event.target.value } : item))} />
           {row.type === 'ini' ? (
             <>
-              <input aria-label={t('blueprintBuilder.patches.sectionLabel', { index: index + 1 })} placeholder="Server" className="msm-input" value={row.section ?? ''} onChange={event => onChange(value.map((item, itemIndex) => itemIndex === index ? { ...item, section: event.target.value } : item))} />
-              <input aria-label={t('blueprintBuilder.patches.keyLabel', { index: index + 1 })} placeholder="Port" className="msm-input" value={row.key ?? ''} onChange={event => onChange(value.map((item, itemIndex) => itemIndex === index ? { ...item, key: event.target.value } : item))} />
+              <Input aria-label={t('blueprintBuilder.patches.sectionLabel', { index: index + 1 })} placeholder="Server" className="text-base sm:text-sm" value={row.section ?? ''} onChange={event => onChange(value.map((item, itemIndex) => itemIndex === index ? { ...item, section: event.target.value } : item))} />
+              <Input aria-label={t('blueprintBuilder.patches.keyLabel', { index: index + 1 })} placeholder="Port" className="text-base sm:text-sm" value={row.key ?? ''} onChange={event => onChange(value.map((item, itemIndex) => itemIndex === index ? { ...item, key: event.target.value } : item))} />
             </>
           ) : (
-            <input aria-label={t('blueprintBuilder.patches.regexLabel', { index: index + 1 })} placeholder="(port=)\\d+" className="msm-input font-mono md:col-span-2" value={row.regex ?? ''} onChange={event => onChange(value.map((item, itemIndex) => itemIndex === index ? { ...item, regex: event.target.value } : item))} />
+            <Input aria-label={t('blueprintBuilder.patches.regexLabel', { index: index + 1 })} placeholder="(port=)\d+" className="font-mono text-base sm:col-span-2 sm:text-xs" value={row.regex ?? ''} onChange={event => onChange(value.map((item, itemIndex) => itemIndex === index ? { ...item, regex: event.target.value } : item))} />
           )}
-          <input aria-label={t('blueprintBuilder.patches.valueLabel', { index: index + 1 })} placeholder="{GAME_PORT}" className="msm-input font-mono" value={row.value} onChange={event => onChange(value.map((item, itemIndex) => itemIndex === index ? { ...item, value: event.target.value } : item))} />
-          <Button variant="destructive" onClick={() => onChange(value.filter((_, itemIndex) => itemIndex !== index))}>
+          <Input aria-label={t('blueprintBuilder.patches.valueLabel', { index: index + 1 })} placeholder="{GAME_PORT}" className="font-mono text-base sm:text-xs" value={row.value} onChange={event => onChange(value.map((item, itemIndex) => itemIndex === index ? { ...item, value: event.target.value } : item))} />
+          <Button type="button" variant="destructive" size="sm" className="min-h-10 justify-self-start sm:justify-self-end" onClick={() => onChange(value.filter((_, itemIndex) => itemIndex !== index))}>
             <Trash2 className="h-4 w-4" aria-hidden="true" />
             {t('common.remove')}
           </Button>
@@ -380,31 +425,151 @@ export function PostInstallEditor({
 }) {
   const { t } = useTranslation()
   return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between gap-3">
-        <h4 className="font-semibold">{t('blueprintBuilder.postInstall.title')}</h4>
-        <Button variant="secondary" disabled={value.length >= 32} onClick={() => onChange([...value, { operation: 'copy', source: '', target: '', required: false }])}>
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="min-w-0">
+          <h4 className="text-sm font-semibold text-on-surface">{t('blueprintBuilder.postInstall.title')}</h4>
+          <p className="msm-field-help mt-0.5">{t('blueprintBuilder.postInstall.help')}</p>
+        </div>
+        <Button type="button" variant="secondary" size="sm" className="min-h-10 shrink-0" disabled={value.length >= 32} onClick={() => onChange([...value, { operation: 'copy', source: '', target: '', required: false }])}>
           <Plus className="h-4 w-4" aria-hidden="true" />
           {t('blueprintBuilder.postInstall.add')}
         </Button>
       </div>
       {value.map((row, index) => (
-        <div key={index} className="grid gap-2 rounded-xl border border-outline-variant/50 p-3 md:grid-cols-[.7fr_1fr_1fr_auto]">
-          <Dropdown aria-label={t('blueprintBuilder.postInstall.operationLabel', { index: index + 1 })} value={row.operation} options={[{ value: 'copy', label: t('common.copy') }, { value: 'symlink', label: t('blueprintBuilder.postInstall.symlink') }]} onChange={next => onChange(value.map((item, itemIndex) => itemIndex === index ? { ...item, operation: next as 'copy' | 'symlink' } : item))} />
-          <input aria-label={t('blueprintBuilder.postInstall.sourceLabel', { index: index + 1 })} placeholder="workshop/{MOD_ID}/*" className="msm-input font-mono" value={row.source} onChange={event => onChange(value.map((item, itemIndex) => itemIndex === index ? { ...item, source: event.target.value } : item))} />
-          <input aria-label={t('blueprintBuilder.postInstall.targetLabel', { index: index + 1 })} placeholder="mods/{BASENAME}" className="msm-input font-mono" value={row.target} onChange={event => onChange(value.map((item, itemIndex) => itemIndex === index ? { ...item, target: event.target.value } : item))} />
-          <Button variant="ghost" aria-label={t('blueprintBuilder.postInstall.removeLabel', { index: index + 1 })} onClick={() => onChange(value.filter((_, itemIndex) => itemIndex !== index))}>
-            <Trash2 className="h-4 w-4" aria-hidden="true" />
-          </Button>
-          <label className="flex items-center gap-2 text-sm md:col-span-4">
-            <Checkbox checked={row.required} onCheckedChange={gesetzt => onChange(value.map((item, itemIndex) => itemIndex === index ? { ...item, required: gesetzt } : item))} />
-            {t('blueprintBuilder.postInstall.required')}
+        <div key={index} className="grid gap-2.5 rounded-xl border border-outline-variant/45 bg-surface-container-lowest/60 p-3">
+          <div className="grid gap-2 sm:grid-cols-[9rem_1fr_1fr_auto] sm:items-center">
+            <Dropdown aria-label={t('blueprintBuilder.postInstall.operationLabel', { index: index + 1 })} value={row.operation} options={[{ value: 'copy', label: t('common.copy') }, { value: 'symlink', label: t('blueprintBuilder.postInstall.symlink') }]} onChange={next => onChange(value.map((item, itemIndex) => itemIndex === index ? { ...item, operation: next as 'copy' | 'symlink' } : item))} />
+            <Input aria-label={t('blueprintBuilder.postInstall.sourceLabel', { index: index + 1 })} placeholder="workshop/{MOD_ID}/*" className="font-mono text-base sm:text-xs" value={row.source} onChange={event => onChange(value.map((item, itemIndex) => itemIndex === index ? { ...item, source: event.target.value } : item))} />
+            <Input aria-label={t('blueprintBuilder.postInstall.targetLabel', { index: index + 1 })} placeholder="mods/{BASENAME}" className="font-mono text-base sm:text-xs" value={row.target} onChange={event => onChange(value.map((item, itemIndex) => itemIndex === index ? { ...item, target: event.target.value } : item))} />
+            <Button type="button" variant="ghost" size="icon" className="min-h-10 min-w-10 justify-self-end" aria-label={t('blueprintBuilder.postInstall.removeLabel', { index: index + 1 })} onClick={() => onChange(value.filter((_, itemIndex) => itemIndex !== index))}>
+              <Trash2 className="h-4 w-4" aria-hidden="true" />
+            </Button>
+          </div>
+          <label className="flex items-center justify-between gap-3 text-sm text-on-surface-variant">
+            <span>{t('blueprintBuilder.postInstall.required')}</span>
+            <Switch checked={row.required} onCheckedChange={gesetzt => onChange(value.map((item, itemIndex) => itemIndex === index ? { ...item, required: gesetzt } : item))} />
           </label>
+          <details className="rounded-lg border border-outline-variant/35 bg-surface-container-low/40 px-3 py-2">
+            <summary className="cursor-pointer text-xs font-medium text-on-surface-variant">
+              {t('blueprintBuilder.postInstall.purgeBeforeTitle')}
+            </summary>
+            <div className="mt-2">
+              <LinesField
+                id={`bp-postinstall-purge-${index}`}
+                label={t('blueprintBuilder.postInstall.purgeBeforeLabel', { index: index + 1 })}
+                help={t('blueprintBuilder.postInstall.purgeBeforeHelp')}
+                rows={2}
+                placeholder="Saved/ExtractedMods/{STEM}-LinuxServer.pak"
+                value={row.purgeBefore ?? []}
+                onChange={purgeBefore => onChange(value.map((item, itemIndex) => itemIndex === index ? { ...item, purgeBefore } : item))}
+              />
+            </div>
+          </details>
         </div>
       ))}
     </div>
   )
 }
+
+export function ModIdResolversEditor({
+  value,
+  onChange,
+}: {
+  value: BlueprintModIdResolver[]
+  onChange: (value: BlueprintModIdResolver[]) => void
+}) {
+  const { t } = useTranslation()
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="min-w-0">
+          <h4 className="text-sm font-semibold text-on-surface">{t('blueprintBuilder.resolvers.title')}</h4>
+          <p className="msm-field-help mt-0.5">{t('blueprintBuilder.resolvers.help')}</p>
+        </div>
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          className="min-h-10 shrink-0"
+          disabled={value.length >= 8}
+          onClick={() => onChange([...value, { name: '', fileGlob: '', format: 'iniKey', key: 'id', maxMatches: 16, fallback: 'skip' }])}
+        >
+          <Plus className="h-4 w-4" aria-hidden="true" />
+          {t('blueprintBuilder.resolvers.add')}
+        </Button>
+      </div>
+      {value.map((row, index) => (
+        <div key={index} className="grid gap-2.5 rounded-xl border border-outline-variant/45 bg-surface-container-lowest/60 p-3 sm:grid-cols-2">
+          <Input aria-label={t('blueprintBuilder.resolvers.nameLabel', { index: index + 1 })} placeholder="zomboid_mod_info" className="font-mono text-base sm:text-xs" value={row.name} onChange={e => onChange(value.map((item, i) => i === index ? { ...item, name: e.target.value } : item))} />
+          <Input aria-label={t('blueprintBuilder.resolvers.globLabel', { index: index + 1 })} placeholder="steamapps/workshop/content/{WORKSHOP_APP_ID}/{WORKSHOP_ID}/**/mod.info" className="font-mono text-base sm:text-xs" value={row.fileGlob} onChange={e => onChange(value.map((item, i) => i === index ? { ...item, fileGlob: e.target.value } : item))} />
+          <Dropdown aria-label={t('blueprintBuilder.resolvers.formatLabel', { index: index + 1 })} value={row.format} options={[{ value: 'iniKey', label: t('blueprintBuilder.resolvers.formatIni') }, { value: 'regex', label: t('blueprintBuilder.resolvers.formatRegex') }]} onChange={next => onChange(value.map((item, i) => i === index ? { ...item, format: next as 'iniKey' | 'regex' } : item))} />
+          {row.format === 'iniKey' ? (
+            <Input aria-label={t('blueprintBuilder.resolvers.keyLabel', { index: index + 1 })} placeholder="id" className="font-mono text-base sm:text-xs" value={row.key ?? ''} onChange={e => onChange(value.map((item, i) => i === index ? { ...item, key: e.target.value } : item))} />
+          ) : (
+            <Input aria-label={t('blueprintBuilder.resolvers.regexLabel', { index: index + 1 })} placeholder="id=([^\n]+)" className="font-mono text-base sm:text-xs" value={row.regex ?? ''} onChange={e => onChange(value.map((item, i) => i === index ? { ...item, regex: e.target.value } : item))} />
+          )}
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-on-surface-variant">{t('blueprintBuilder.resolvers.maxMatches')}</span>
+            <NumberStepper min={1} max={64} value={row.maxMatches} onValueChange={v => onChange(value.map((item, i) => i === index ? { ...item, maxMatches: Number(v) } : item))} />
+          </div>
+          <div className="flex items-center justify-between gap-2">
+            <Dropdown aria-label={t('blueprintBuilder.resolvers.fallbackLabel', { index: index + 1 })} value={row.fallback} options={[{ value: 'skip', label: t('blueprintBuilder.resolvers.fallbackSkip') }, { value: 'workshopId', label: t('blueprintBuilder.resolvers.fallbackWorkshop') }]} onChange={next => onChange(value.map((item, i) => i === index ? { ...item, fallback: next as 'skip' | 'workshopId' } : item))} />
+            <Button type="button" variant="ghost" size="icon" className="min-h-10 min-w-10 shrink-0" aria-label={t('blueprintBuilder.resolvers.removeLabel', { index: index + 1 })} onClick={() => onChange(value.filter((_, i) => i !== index))}>
+              <Trash2 className="h-4 w-4" aria-hidden="true" />
+            </Button>
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+export function ModListTargetsEditor({
+  value,
+  onChange,
+}: {
+  value: BlueprintModListTarget[]
+  onChange: (value: BlueprintModListTarget[]) => void
+}) {
+  const { t } = useTranslation()
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="min-w-0">
+          <h4 className="text-sm font-semibold text-on-surface">{t('blueprintBuilder.targets.title')}</h4>
+          <p className="msm-field-help mt-0.5">{t('blueprintBuilder.targets.help')}</p>
+        </div>
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          className="min-h-10 shrink-0"
+          disabled={value.length >= 16}
+          onClick={() => onChange([...value, { file: '', valueSource: 'workshopIds', separator: ';' }])}
+        >
+          <Plus className="h-4 w-4" aria-hidden="true" />
+          {t('blueprintBuilder.targets.add')}
+        </Button>
+      </div>
+      {value.map((row, index) => (
+        <div key={index} className="grid gap-2.5 rounded-xl border border-outline-variant/45 bg-surface-container-lowest/60 p-3 sm:grid-cols-2">
+          <Input aria-label={t('blueprintBuilder.targets.fileLabel', { index: index + 1 })} placeholder="Server/{SERVER_NAME}.ini" className="font-mono text-base sm:text-xs" value={row.file} onChange={e => onChange(value.map((item, i) => i === index ? { ...item, file: e.target.value } : item))} />
+          <Input aria-label={t('blueprintBuilder.targets.keyLabel', { index: index + 1 })} placeholder="WorkshopItems (optional)" className="font-mono text-base sm:text-xs" value={row.key ?? ''} onChange={e => onChange(value.map((item, i) => i === index ? { ...item, key: e.target.value } : item))} />
+          <Input aria-label={t('blueprintBuilder.targets.sourceLabel', { index: index + 1 })} placeholder="workshopIds / resolvedIds:name" className="font-mono text-base sm:text-xs" value={row.valueSource} onChange={e => onChange(value.map((item, i) => i === index ? { ...item, valueSource: e.target.value } : item))} />
+          <div className="grid grid-cols-[5.5rem_1fr_auto] gap-2 items-center">
+            <Input aria-label={t('blueprintBuilder.targets.separatorLabel', { index: index + 1 })} placeholder=";" className="font-mono text-base sm:text-xs" value={row.separator} onChange={e => onChange(value.map((item, i) => i === index ? { ...item, separator: e.target.value } : item))} />
+            <Input aria-label={t('blueprintBuilder.targets.templateLabel', { index: index + 1 })} placeholder="*{VALUE}" className="font-mono text-base sm:text-xs" value={row.entryTemplate ?? ''} onChange={e => onChange(value.map((item, i) => i === index ? { ...item, entryTemplate: e.target.value } : item))} />
+            <Button type="button" variant="ghost" size="icon" className="min-h-10 min-w-10" aria-label={t('blueprintBuilder.targets.removeLabel', { index: index + 1 })} onClick={() => onChange(value.filter((_, i) => i !== index))}>
+              <Trash2 className="h-4 w-4" aria-hidden="true" />
+            </Button>
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 export function RecoveryPoliciesEditor({
   value,
   onChange,
@@ -443,12 +608,14 @@ export function RecoveryPoliciesEditor({
   ]
 
   return (
-    <div className="min-w-0 max-w-full space-y-4">
-      <div className="flex min-w-0 flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <h4 className="min-w-0 break-words font-semibold text-sm text-on-surface-variant">{t('blueprintBuilder.recovery.policiesTitle')}</h4>
+    <div className="min-w-0 max-w-full space-y-3">
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+        <h4 className="min-w-0 break-words text-sm font-semibold text-on-surface">{t('blueprintBuilder.recovery.policiesTitle')}</h4>
         <Button
+          type="button"
           variant="secondary"
-          className="h-auto min-h-10 max-w-full whitespace-normal text-left"
+          size="sm"
+          className="min-h-10 shrink-0"
           disabled={value.length >= 16}
           onClick={() => onChange([...value, { match: 'port-conflict', action: 'restart' }])}
         >
@@ -456,43 +623,40 @@ export function RecoveryPoliciesEditor({
           {t('blueprintBuilder.recovery.addPolicy')}
         </Button>
       </div>
-      {value.map((row, index) => {
-        return (
-          <div key={index} className="grid min-w-0 max-w-full gap-3 rounded-xl border border-outline-variant/50 bg-surface-container-lowest p-4">
-            <div className="grid min-w-0 max-w-full gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] lg:items-end">
-              <div className="min-w-0 max-w-full space-y-1">
-                <label className="text-xs font-semibold text-on-surface-variant">{t('blueprintBuilder.recovery.matchSelect')}</label>
-                <Dropdown
-                  aria-label={t('blueprintBuilder.recovery.matchLabel', { index: index + 1 })}
-                  value={row.match}
-                  options={commonMatches}
-                  onChange={next => onChange(value.map((item, itemIndex) => itemIndex === index ? { ...item, match: next } : item))}
-                />
-              </div>
-              <div className="min-w-0 max-w-full space-y-1">
-                <label className="text-xs font-semibold text-on-surface-variant">{t('blueprintBuilder.recovery.actionSelect')}</label>
-                <Dropdown
-                  aria-label={t('blueprintBuilder.recovery.actionLabel', { index: index + 1 })}
-                  value={row.action}
-                  options={commonActions}
-                  onChange={next => onChange(value.map((item, itemIndex) => itemIndex === index
-                    ? { ...item, action: next as GuardianRecoveryAction }
-                    : item))}
-                />
-              </div>
-              <Button
-                variant="ghost"
-                aria-label={t('blueprintBuilder.recovery.removeLabel', { index: index + 1 })}
-                onClick={() => onChange(value.filter((_, itemIndex) => itemIndex !== index))}
-                className="justify-self-start lg:self-end"
-              >
-                <Trash2 className="h-4 w-4" aria-hidden="true" />
-              </Button>
-            </div>
-            
+      {value.map((row, index) => (
+        <div key={index} className="grid min-w-0 max-w-full gap-2.5 rounded-xl border border-outline-variant/45 bg-surface-container-lowest/60 p-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] sm:items-end">
+          <div className="min-w-0 space-y-1">
+            <label className="text-xs font-medium text-on-surface-variant">{t('blueprintBuilder.recovery.matchSelect')}</label>
+            <Dropdown
+              aria-label={t('blueprintBuilder.recovery.matchLabel', { index: index + 1 })}
+              value={row.match}
+              options={commonMatches}
+              onChange={next => onChange(value.map((item, itemIndex) => itemIndex === index ? { ...item, match: next } : item))}
+            />
           </div>
-        )
-      })}
+          <div className="min-w-0 space-y-1">
+            <label className="text-xs font-medium text-on-surface-variant">{t('blueprintBuilder.recovery.actionSelect')}</label>
+            <Dropdown
+              aria-label={t('blueprintBuilder.recovery.actionLabel', { index: index + 1 })}
+              value={row.action}
+              options={commonActions}
+              onChange={next => onChange(value.map((item, itemIndex) => itemIndex === index
+                ? { ...item, action: next as GuardianRecoveryAction }
+                : item))}
+            />
+          </div>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            aria-label={t('blueprintBuilder.recovery.removeLabel', { index: index + 1 })}
+            onClick={() => onChange(value.filter((_, itemIndex) => itemIndex !== index))}
+            className="min-h-10 min-w-10 justify-self-end"
+          >
+            <Trash2 className="h-4 w-4" aria-hidden="true" />
+          </Button>
+        </div>
+      ))}
     </div>
   )
 }

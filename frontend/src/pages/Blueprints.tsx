@@ -29,7 +29,9 @@ import { Spinner } from '@maunting/ui'
 function sourceLabel(src: string): string {
   if (src === 'steam') return 'Steam'
   if (src === 'http') return 'HTTP'
+  if (src === 'github') return 'GitHub'
   if (src === 'dockerOnly') return 'Docker'
+  if (src === 'manualUpload') return 'Upload'
   return src
 }
 

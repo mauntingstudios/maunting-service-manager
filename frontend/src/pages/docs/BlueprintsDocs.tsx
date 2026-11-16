@@ -405,6 +405,7 @@ export function BlueprintsDocs() {
               <FieldRow field="runtime.user" type="string" required={false}>{t('docs.reference.runtimeUser')}</FieldRow>
               <FieldRow field="runtime.env" type="dict" required={false}>{t('docs.reference.runtimeEnv')}</FieldRow>
               <FieldRow field="runtime.startup" type="string" required={true}>{t('docs.reference.runtimeStartup')}</FieldRow>
+              <FieldRow field="runtime.startupProfiles" type="list" required={false}>{t('docs.reference.runtimeStartupProfiles')}</FieldRow>
               <FieldRow field="runtime.ensureDirs" type="list" required={false}>
                 {t('docs.reference.runtimeEnsureDirs')}
               </FieldRow>
@@ -417,6 +418,9 @@ export function BlueprintsDocs() {
               <FieldRow field="runtime.startupCheckSeconds" type="float" required={false}>{t('docs.reference.runtimeStartupCheckSeconds')}</FieldRow>
               <FieldRow field="runtime.allowUnprivilegedUserNamespaces" type="boolean" required={false}>
                 {t('docs.reference.runtimeAllowUnprivilegedUserNamespaces')}
+              </FieldRow>
+              <FieldRow field="runtime.allowTmpfsExec" type="boolean" required={false}>
+                {t('docs.reference.runtimeAllowTmpfsExec')}
               </FieldRow>
               {/* v1.4.7+: Exec-Tab-Opt-in. Default false. Erlaubt authentifizierten
                   Usern mit Permission ``server.console.exec``, One-Shot-Befehle
@@ -488,6 +492,10 @@ export function BlueprintsDocs() {
               <FieldRow field="mods.modStartupArgumentFormat" type="string" required={false}>{t('docs.reference.modsModStartupArgumentFormat')}</FieldRow>
               <FieldRow field="mods.modListFilePath" type="string" required={false}>{t('docs.reference.modsModListFilePath')}</FieldRow>
               <FieldRow field="mods.modListContent" type="enum" required={false}>{t('docs.reference.modsModListContent')}</FieldRow>
+              <FieldRow field="mods.modListKey" type="string" required={false}>{t('docs.reference.modsModListKey')}</FieldRow>
+              <FieldRow field="mods.modListSeparator" type="string" required={false}>{t('docs.reference.modsModListSeparator')}</FieldRow>
+              <FieldRow field="mods.modIdResolvers" type="list" required={false}>{t('docs.reference.modsModIdResolvers')}</FieldRow>
+              <FieldRow field="mods.modListTargets" type="list" required={false}>{t('docs.reference.modsModListTargets')}</FieldRow>
               <FieldRow field="mods.postInstall" type="list" required={false}>{t('docs.reference.modsPostInstall')}</FieldRow>
               <FieldRow field="backup.includePaths" type="list" required={false}>{t('docs.reference.backupIncludePaths')}</FieldRow>
             </FieldTable>

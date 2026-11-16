@@ -1,11 +1,59 @@
-export type BlueprintCategory = 'steam_game' | 'non_steam_game' | 'voice_server' | 'bot' | 'database'
+export type BlueprintCategory =
+  | 'steam_game'
+  | 'non_steam_game'
+  | 'voice_server'
+  | 'bot'
+  | 'database'
+  | 'web_app'
+  | 'frontend'
+  | 'backend'
 export type BlueprintSourceType = 'steam' | 'http' | 'github' | 'dockerOnly' | 'custom' | 'manualUpload'
 export type BlueprintUpdateStrategy = 'alwaysValidate' | 'checkBased' | 'none'
-export type BlueprintPortName = 'game' | 'query' | 'rcon' | 'voice' | 'web' | 'custom'
+export type BlueprintPortName = 'game' | 'query' | 'rcon' | 'voice' | 'web' | 'peer' | 'database' | 'custom'
 export type GuardianApplicationProbeType = 'tcp' | 'http-ping' | 'minecraft-status' | 'minecraft-query' | 'source-query'
 export type GuardianRecoveryAction = 'restart' | 'graceful_restart' | 'clear_declared_lock_files' | 'quarantine'
 export type GuardianDiagnosticParser = 'linux-oom' | 'java-stacktrace' | 'nodejs-stacktrace' | 'port-conflict' | 'missing-runtime' | 'corrupted-config' | 'startup-pattern'
 export type GuardianBuiltinRedactor = 'discord_token' | 'api_key' | 'authorization_header' | 'database_url' | 'jwt'
+
+export interface BlueprintModIdResolver {
+  name: string
+  fileGlob: string
+  format: 'iniKey' | 'regex'
+  key?: string
+  regex?: string
+  maxMatches: number
+  fallback: 'skip' | 'workshopId'
+}
+
+export interface BlueprintModListTarget {
+  file: string
+  key?: string
+  valueSource: string
+  separator: string
+  entryTemplate?: string
+}
+
+export const FORBIDDEN_ENV_KEYS = new Set([
+  'DOCKER_HOST',
+  'DOCKER_CONTEXT',
+  'DOCKER_TLS_VERIFY',
+  'DOCKER_CERT_PATH',
+  'DOCKER_CONFIG',
+  'LD_PRELOAD',
+  'LD_AUDIT',
+  'LD_DEBUG',
+  'LD_DEBUG_OUTPUT',
+  'LD_SHOW_AUXV',
+  'LD_DYNAMIC_WEAK',
+  'LD_ORIGIN_PATH',
+  'GCONV_PATH',
+  'BASH_ENV',
+  'ENV',
+  'ZDOTDIR',
+  'PERL5OPT',
+  'RUBYOPT',
+  'PYTHONINSPECT',
+])
 
 interface GuardianThresholds {
   id: string
@@ -44,7 +92,9 @@ export interface BlueprintDraft {
     startupProfiles: Array<{ whenFile: string; startup: string }>; ensureDirs: string[]; requiredFiles: string[]
     seedFiles: Array<{ file: string; content: string }>
     configPatches: Array<{ type: 'ini' | 'regex'; file: string; section?: string; key?: string; regex?: string; value: string }>
-    stopGracePeriodSeconds: number; startupCheckSeconds: number; enableExec: boolean; execTimeoutSeconds: number
+    stopGracePeriodSeconds: number; startupCheckSeconds: number
+    allowUnprivilegedUserNamespaces?: boolean; allowTmpfsExec?: boolean
+    enableExec: boolean; execTimeoutSeconds: number
   }
   ports: Array<{ name: BlueprintPortName; protocol: 'tcp' | 'udp' }>
   source: {
@@ -59,7 +109,9 @@ export interface BlueprintDraft {
     supportsCurseForge?: boolean; curseforgeGameId?: string; curseforgeClassId?: string; curseforgeInstallPath?: string
     modInjection: 'none' | 'startupArg' | 'file'; modStartupArgumentFormat?: string; modStartupArgumentSeparator?: string; modListFilePath?: string; modListKey?: string; modListSeparator?: string
     modListContent: 'workshopIds' | 'postInstallTargetBasenames' | 'iniKey'
-    postInstall: Array<{ operation: 'copy' | 'symlink'; source: string; target: string; required: boolean }>
+    modIdResolvers?: BlueprintModIdResolver[]
+    modListTargets?: BlueprintModListTarget[]
+    postInstall: Array<{ operation: 'copy' | 'symlink'; source: string; target: string; purgeBefore?: string[]; required: boolean }>
   }
   backup?: { includePaths: string[] }
   health?: {
@@ -186,6 +238,18 @@ function safeRelativePath(value: string): boolean {
   return Boolean(value) && !value.startsWith('/') && !value.startsWith('~') && !value.includes('\\') && value.split('/').every(part => part !== '' && part !== '.' && part !== '..') && !value.includes('\0')
 }
 
+function safeRelativeTemplate(value: string, allowedTokens: Set<string>, allowGlob: boolean): boolean {
+  if (!value || value.startsWith('/') || value.startsWith('~') || value.includes('\\') || value.includes('\0')) return false
+  for (const match of value.matchAll(/\{([^{}\s]+)\}/g)) {
+    if (!allowedTokens.has(match[1])) return false
+  }
+  const sanitized = value.replace(/\{([^{}\s]+)\}/g, 'token')
+  return sanitized.split('/').every(part => part !== '' && part !== '.' && part !== '..' && (allowGlob || !/[*?\[]/.test(part)))
+}
+
+const WORKSHOP_PATH_TOKENS = new Set(['WORKSHOP_APP_ID', 'WORKSHOP_ID', 'BASENAME', 'STEM'])
+const TARGET_FILE_TOKENS = new Set(['SERVER_NAME'])
+
 function validGuardianRegex(value: string): boolean {
   if (!value || value.length > 256 || /[\0\n\r]/.test(value)) return false
   if (/\\[1-9]|\(\?[=!<]|\(\?P|\(\?>|\(\?\(/.test(value)) return false
@@ -214,6 +278,10 @@ export function validateBlueprintDraft(draft: BlueprintDraft): BlueprintValidati
   if (draft.runtime.execTimeoutSeconds < 1 || draft.runtime.execTimeoutSeconds > 600) add('runtime.execTimeoutSeconds', 'blueprintBuilder.validation.execTimeout')
   Object.entries(draft.runtime.env).forEach(([key, value]) => {
     if (!/^[A-Z][A-Z0-9_]*$/.test(key)) add('runtime.env', 'blueprintBuilder.validation.envName', { name: key })
+    else if (FORBIDDEN_ENV_KEYS.has(key)) add('runtime.env', 'blueprintBuilder.validation.envForbidden', { name: key })
+    if (key === 'LD_LIBRARY_PATH' && value.split(':').some(seg => seg.replace(/\\/g, '/').split('/').includes('..'))) {
+      add('runtime.env', 'blueprintBuilder.validation.envValue', { name: key })
+    }
     if (/[$`]/.test(value) || value.includes('&&') || value.includes('||')) add('runtime.env', 'blueprintBuilder.validation.envValue', { name: key })
   })
   if (draft.runtime.ensureDirs.length > 16) add('runtime.ensureDirs', 'blueprintBuilder.validation.maxLines', { count: 16 })
@@ -266,8 +334,35 @@ export function validateBlueprintDraft(draft: BlueprintDraft): BlueprintValidati
   if (draft.mods?.curseforgeClassId && !/^\d{1,10}$/.test(draft.mods.curseforgeClassId)) add('mods.curseforgeClassId', 'blueprintBuilder.validation.curseforgeClassId')
   if (draft.mods?.curseforgeInstallPath && !safeRelativePath(draft.mods.curseforgeInstallPath)) add('mods.curseforgeInstallPath', 'blueprintBuilder.validation.curseforgeInstallPath')
   if (draft.mods?.modInjection === 'startupArg' && !(draft.mods.modStartupArgumentFormat ?? '').includes('{mods}')) add('mods.modStartupArgumentFormat', 'blueprintBuilder.validation.modArgument')
-  if (draft.mods?.modInjection === 'file' && !safeRelativePath(draft.mods.modListFilePath ?? '')) add('mods.modListFilePath', 'blueprintBuilder.validation.modListPath')
-  if (draft.mods?.modListContent === 'postInstallTargetBasenames' && !draft.mods.postInstall.length) add('mods.postInstall', 'blueprintBuilder.validation.postInstall')
+  if (draft.mods?.modInjection === 'file' && !safeRelativePath(draft.mods.modListFilePath ?? '') && !(draft.mods.modListTargets?.length)) add('mods.modListFilePath', 'blueprintBuilder.validation.modListPath')
+  if (draft.mods?.modListContent === 'postInstallTargetBasenames' && !(draft.mods.modListTargets?.length) && !draft.mods.postInstall.length) add('mods.postInstall', 'blueprintBuilder.validation.postInstall')
+  if (draft.mods?.modListContent === 'iniKey' && !(draft.mods.modListTargets?.length)) {
+    if (!draft.mods.modListKey || !/^[A-Za-z][A-Za-z0-9_]*$/.test(draft.mods.modListKey)) {
+      add('mods.modListKey', 'blueprintBuilder.validation.modListKey')
+    }
+  }
+  if (draft.mods?.modListSeparator && /[\n\r\0=]/.test(draft.mods.modListSeparator)) {
+    add('mods.modListSeparator', 'blueprintBuilder.validation.modListSeparator')
+  }
+  const resolverNames = new Set<string>()
+  ;(draft.mods?.modIdResolvers ?? []).forEach((resolver, index) => {
+    if (!/^[a-z0-9_-]{1,64}$/.test(resolver.name)) add(`mods.modIdResolvers.${index}`, 'blueprintBuilder.validation.resolverName')
+    else resolverNames.add(resolver.name)
+    if (!safeRelativeTemplate(resolver.fileGlob, WORKSHOP_PATH_TOKENS, true)) add(`mods.modIdResolvers.${index}`, 'blueprintBuilder.validation.resolverGlob')
+    if (resolver.maxMatches < 1 || resolver.maxMatches > 64) add(`mods.modIdResolvers.${index}`, 'blueprintBuilder.validation.resolverMaxMatches')
+  })
+  ;(draft.mods?.modListTargets ?? []).forEach((target, index) => {
+    if (!safeRelativeTemplate(target.file, TARGET_FILE_TOKENS, false)) add(`mods.modListTargets.${index}`, 'blueprintBuilder.validation.targetFile')
+    const validSource = target.valueSource === 'workshopIds'
+      || target.valueSource === 'postInstallTargetBasenames'
+      || (target.valueSource.startsWith('resolvedIds:') && resolverNames.has(target.valueSource.slice(12)))
+    if (!validSource) add(`mods.modListTargets.${index}`, 'blueprintBuilder.validation.targetSource')
+  })
+  ;(draft.mods?.postInstall ?? []).forEach((action, index) => {
+    if ((action.purgeBefore ?? []).some(p => !safeRelativeTemplate(p, WORKSHOP_PATH_TOKENS, true))) {
+      add(`mods.postInstall.${index}`, 'blueprintBuilder.validation.purgeBefore')
+    }
+  })
 
   // Autopilot/Guardian Validation
   if (draft.health?.port && !draft.health.port.port.trim()) add('health.port.port', 'blueprintBuilder.validation.healthPortEmpty')
@@ -393,6 +488,16 @@ export function normalizeBlueprintId(value: string): string {
   return value.trim().toLowerCase().replace(/ +/g, '_')
 }
 
+export function slugifyBlueprintName(value: string): string {
+  return value
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 64)
+}
+
 export function normalizeBlueprintDraft(draft: BlueprintDraft): BlueprintDraft {
   const clean = structuredClone(draft)
   const normalizeLines = (values: string[]) => values.map(value => value.trim()).filter(Boolean)
@@ -425,7 +530,41 @@ export function normalizeBlueprintDraft(draft: BlueprintDraft): BlueprintDraft {
     delete clean.mods.modStartupArgumentFormat
     delete clean.mods.modStartupArgumentSeparator
   }
-  if (clean.mods && clean.mods.modInjection !== 'file') delete clean.mods.modListFilePath
+  if (clean.mods && !clean.mods.modListKey) delete clean.mods.modListKey
+  if (clean.mods && !clean.mods.modListSeparator) delete clean.mods.modListSeparator
+  if (clean.mods && clean.mods.modInjection !== 'file') {
+    delete clean.mods.modListFilePath
+    delete clean.mods.modListKey
+    delete clean.mods.modListSeparator
+  }
+  if (clean.mods && clean.mods.modListContent !== 'iniKey') delete clean.mods.modListKey
+  if (clean.mods) {
+    clean.mods.postInstall = clean.mods.postInstall.map(action => {
+      const purged = normalizeLines(action.purgeBefore ?? [])
+      const next = { ...action }
+      if (purged.length) next.purgeBefore = purged
+      else delete next.purgeBefore
+      return next
+    })
+    if (clean.mods.modIdResolvers) {
+      clean.mods.modIdResolvers = clean.mods.modIdResolvers.map(r => {
+        const next = { ...r, name: r.name.trim(), fileGlob: r.fileGlob.trim() }
+        if (!next.key?.trim()) delete next.key
+        if (!next.regex?.trim()) delete next.regex
+        return next
+      })
+      if (!clean.mods.modIdResolvers.length) delete clean.mods.modIdResolvers
+    }
+    if (clean.mods.modListTargets) {
+      clean.mods.modListTargets = clean.mods.modListTargets.map(target => {
+        const next = { ...target, file: target.file.trim(), valueSource: target.valueSource.trim() }
+        if (!next.key?.trim()) delete next.key
+        if (!next.entryTemplate?.trim()) delete next.entryTemplate
+        return next
+      })
+      if (!clean.mods.modListTargets.length) delete clean.mods.modListTargets
+    }
+  }
   if (clean.mods) {
     const isDefaultModsBlock = !clean.mods.supportsMods
       && !clean.mods.supportsSteamWorkshop
@@ -434,12 +573,15 @@ export function normalizeBlueprintDraft(draft: BlueprintDraft): BlueprintDraft {
       && clean.mods.modInjection === 'none'
       && clean.mods.modListContent === 'workshopIds'
       && clean.mods.postInstall.length === 0
+      && !(clean.mods.modIdResolvers?.length)
+      && !(clean.mods.modListTargets?.length)
       && !clean.mods.workshopAppId
       && !clean.mods.curseforgeGameId
       && !clean.mods.curseforgeClassId
       && !clean.mods.curseforgeInstallPath
       && !clean.mods.modStartupArgumentFormat
       && !clean.mods.modListFilePath
+      && !clean.mods.modListKey
     if (isDefaultModsBlock) delete clean.mods
   }
   if (clean.backup) clean.backup.includePaths = normalizeLines(clean.backup.includePaths)

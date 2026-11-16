@@ -110,4 +110,44 @@ describe('Blueprint builder contract', () => {
       'blueprintBuilder.validation.recoveryBounds',
     ]))
   })
+
+  it('validates forbidden env keys, iniKey mod lists, modIdResolvers, modListTargets, and purgeBefore', () => {
+    const draft = createBlueprintDraft()
+    draft.meta.id = 'zomboid_test'
+    draft.meta.name = 'Zomboid Test'
+    draft.meta.category = 'web_app'
+    draft.ports.push({ name: 'peer', protocol: 'tcp' }, { name: 'database', protocol: 'tcp' })
+    draft.runtime.startup = './start'
+    draft.runtime.env = { DOCKER_HOST: 'unix:///evil.sock' }
+    draft.source.steam!.appId = '380870'
+    draft.mods = {
+      supportsMods: true,
+      supportsSteamWorkshop: true,
+      workshopAppId: '108600',
+      filterTags: [],
+      modInjection: 'file',
+      modListFilePath: 'Server/test.ini',
+      modListContent: 'iniKey',
+      modIdResolvers: [
+        { name: 'zomboid_mod', fileGlob: 'steamapps/workshop/content/{WORKSHOP_APP_ID}/{WORKSHOP_ID}/**/mod.info', format: 'iniKey', key: 'id', maxMatches: 32, fallback: 'skip' },
+      ],
+      modListTargets: [
+        { file: 'Server/{SERVER_NAME}.ini', key: 'Mods', valueSource: 'resolvedIds:missing_resolver', separator: ';' },
+      ],
+      postInstall: [
+        { operation: 'copy', source: 'workshop/{WORKSHOP_ID}/*.pak', target: 'Mods/{BASENAME}', purgeBefore: ['/abs/bad'], required: true },
+      ],
+    }
+
+    expect(validateBlueprintDraft(draft).map(issue => issue.key)).toEqual(expect.arrayContaining([
+      'blueprintBuilder.validation.envForbidden',
+      'blueprintBuilder.validation.targetSource',
+      'blueprintBuilder.validation.purgeBefore',
+    ]))
+
+    draft.runtime.env = { NODE_ENV: 'production' }
+    draft.mods.modListTargets![0].valueSource = 'resolvedIds:zomboid_mod'
+    draft.mods.postInstall[0].purgeBefore = ['Saved/ExtractedMods/{STEM}.pak']
+    expect(validateBlueprintDraft(draft)).toEqual([])
+  })
 })
