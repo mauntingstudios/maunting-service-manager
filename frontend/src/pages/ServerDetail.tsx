@@ -8,14 +8,17 @@ import {
   Database,
   Download,
   FileText,
+  Hammer,
   HardDrive,
   Menu,
   Network,
   Package,
   Play,
   RefreshCw,
+  Rocket,
   RotateCcw,
   Shield,
+  Sliders,
   Square,
   Terminal,
   Trash2,
@@ -51,11 +54,15 @@ import {
   Input,
   Kurzinfo,
   Spinner,
+  Switch,
   type ActionMenuItem,
   type DropdownOption,
 } from '@maunting/ui'
 import { DatabaseManager } from "@/components/server/DatabaseManager";
 import { OutgoingWebhooksPanel } from "@/components/server/OutgoingWebhooksPanel";
+import { DeploymentsPanel } from "@/components/frontend/DeploymentsPanel";
+import { FrontendSettingsPanel } from "@/components/frontend/FrontendSettingsPanel";
+import { frontendApi, type FrontendOverview } from "@/api/frontend";
 import { SwitchBlueprintDialog } from "@/components/server/SwitchBlueprintDialog";
 import { GuardianBadge } from "@/features/guardian/GuardianBadge";
 import { GuardianQuarantineBanner } from "@/features/guardian/GuardianQuarantineBanner";
@@ -66,6 +73,8 @@ import { mapBlueprintPorts } from "@/utils/portRoles";
 import { formatPortRoleLabel } from "@/lib/serverConnect";
 import { meldeErrungenschaft } from "@/lib/errungenschaft";
 type TabKey =
+  | "deployments"
+  | "frontend_settings"
   | "files"
   | "console"
   | "exec"
@@ -77,6 +86,8 @@ type TabKey =
   | "guardian";
 
 const VALID_TABS: TabKey[] = [
+  "deployments",
+  "frontend_settings",
   "files",
   "console",
   "exec",
@@ -336,8 +347,27 @@ export function ServerDetail() {
   const showServerFileUpdates = !!gameInfo?.supports_server_file_updates;
 
   const isDatabaseServer = server?.server_kind === "database";
+  const isFrontendServer = gameInfo?.category === "frontend";
+  const [frontendOverview, setFrontendOverview] = useState<FrontendOverview | null>(null);
+
+  const loadFrontendOverview = () => {
+    if (!isFrontendServer || !serverId) return;
+    frontendApi.getOverview(serverId).then(setFrontendOverview).catch(() => {});
+  };
+
+  useEffect(() => {
+    loadFrontendOverview();
+  }, [isFrontendServer, serverId]);
 
   const tabs = useMemo(() => {
+    if (isFrontendServer) {
+      return [
+        { key: "deployments" as TabKey, label: t("tabs.deployments"), icon: Rocket },
+        { key: "files" as TabKey, label: t("tabs.files"), icon: FileText },
+        { key: "backups" as TabKey, label: t("tabs.backups"), icon: HardDrive },
+        { key: "frontend_settings" as TabKey, label: t("tabs.frontendSettings"), icon: Sliders },
+      ];
+    }
     const list: ServerDetailTab<TabKey>[] = [
       // Beim Datenbankserver ist die Datenbank der Server: ihr Reiter steht vorn.
       ...(isDatabaseServer ? [{ key: "databases" as TabKey, label: t("tabs.databases"), icon: Database }] : []),
@@ -387,9 +417,9 @@ export function ServerDetail() {
       });
     }
     return list;
-  }, [t, showModTab, showMemoryTab, gameInfo?.enable_exec, server?.guardian_enabled, isDatabaseServer]);
+  }, [t, showModTab, showMemoryTab, gameInfo?.enable_exec, server?.guardian_enabled, isDatabaseServer, isFrontendServer]);
 
-  const defaultTab: TabKey = isDatabaseServer ? "databases" : "files";
+  const defaultTab: TabKey = isFrontendServer ? "deployments" : isDatabaseServer ? "databases" : "files";
   const rawTab = (searchParams.get("tab") || defaultTab) as TabKey;
   const activeTab: TabKey =
     VALID_TABS.includes(rawTab)
@@ -901,31 +931,73 @@ export function ServerDetail() {
             aria-label={t("serverDetail.serverActions")}
             className="flex flex-wrap items-center gap-2"
           >
-            {canShowStart && (
-              startHinweis ? (
-                <Kurzinfo text={startHinweis} seite="ende">{startKnopf}</Kurzinfo>
-              ) : startKnopf
+            {isFrontendServer ? (
+              <>
+                <div className="inline-flex min-h-[38px] items-center gap-2 rounded-lg border border-outline-variant/40 bg-surface-container-low px-3">
+                  <span className="text-sm font-medium text-on-surface">
+                    {frontendOverview?.online ?? true
+                      ? t("frontendDeployments.online")
+                      : t("frontendDeployments.offline")}
+                  </span>
+                  <Switch
+                    checked={frontendOverview?.online ?? true}
+                    onCheckedChange={async (checked) => {
+                      try {
+                        const res = await frontendApi.toggleOnline(serverId, checked);
+                        setFrontendOverview((prev) => (prev ? { ...prev, online: res.online } : prev));
+                        toast.success(res.online ? t("frontendDeployments.online") : t("frontendDeployments.offline"));
+                      } catch {
+                        toast.error(t("frontendDeployments.actionError"));
+                      }
+                    }}
+                  />
+                </div>
+                <Button
+                  size="sm"
+                  onClick={async () => {
+                    try {
+                      await frontendApi.triggerBuild(serverId);
+                      toast.success(t("frontendDeployments.buildQueued"));
+                      loadFrontendOverview();
+                    } catch {
+                      toast.error(t("frontendDeployments.buildError"));
+                    }
+                  }}
+                  className="inline-flex min-h-[44px] md:min-h-[38px] items-center gap-2"
+                >
+                  <Hammer className="w-4 h-4" />
+                  {t("frontendDeployments.buildNow")}
+                </Button>
+              </>
+            ) : (
+              <>
+                {canShowStart && (
+                  startHinweis ? (
+                    <Kurzinfo text={startHinweis} seite="ende">{startKnopf}</Kurzinfo>
+                  ) : startKnopf
+                )}
+                {effectiveStatus === "running" && (
+                  <Button
+                    variant="destructive"
+                    onClick={() => doAction("stop")}
+                    disabled={!!actionLoading || isNodeUnreachable}
+                    className="inline-flex min-h-[44px] md:min-h-[38px] items-center gap-2 disabled:opacity-50"
+                  >
+                    <Square className="w-4 h-4" />
+                    {actionLoading === "stop" ? t("common.loading") : t("servers.stop")}
+                  </Button>
+                )}
+                <Button
+                  variant="secondary"
+                  onClick={() => doAction("restart")}
+                  disabled={!!actionLoading || isNodeUnreachable || isTransientLifecycle}
+                  className="inline-flex min-h-[44px] md:min-h-[38px] items-center gap-2 disabled:opacity-50"
+                >
+                  <RefreshCw className="w-4 h-4" />
+                  {actionLoading === "restart" ? t("common.loading") : t("servers.restart")}
+                </Button>
+              </>
             )}
-            {effectiveStatus === "running" && (
-              <Button
-                variant="destructive"
-                onClick={() => doAction("stop")}
-                disabled={!!actionLoading || isNodeUnreachable}
-                className="inline-flex min-h-[44px] md:min-h-[38px] items-center gap-2 disabled:opacity-50"
-              >
-                <Square className="w-4 h-4" />
-                {actionLoading === "stop" ? t("common.loading") : t("servers.stop")}
-              </Button>
-            )}
-            <Button
-              variant="secondary"
-              onClick={() => doAction("restart")}
-              disabled={!!actionLoading || isNodeUnreachable || isTransientLifecycle}
-              className="inline-flex min-h-[44px] md:min-h-[38px] items-center gap-2 disabled:opacity-50"
-            >
-              <RefreshCw className="w-4 h-4" />
-              {actionLoading === "restart" ? t("common.loading") : t("servers.restart")}
-            </Button>
 
             <ActionMenu
               label={t("serverDetail.moreActions")}
@@ -1004,6 +1076,19 @@ export function ServerDetail() {
 
       {/* Vollflächiger Arbeitsbereich über die komplette Breite (Mods, Dateien, Konsole, ...) */}
       <div role="tabpanel" aria-label={activeTabLabel} className="w-full min-w-0">
+        {activeTab === "deployments" && isFrontendServer && (
+          <DeploymentsPanel
+            serverId={serverId}
+            overview={frontendOverview}
+            onRefreshOverview={loadFrontendOverview}
+          />
+        )}
+        {activeTab === "frontend_settings" && isFrontendServer && (
+          <FrontendSettingsPanel
+            serverId={serverId}
+            onUpdated={loadFrontendOverview}
+          />
+        )}
         {activeTab === "files" && <FileManager serverId={serverId} />}
         {activeTab === "console" && <ServerConsolePanel serverId={serverId} />}
         {activeTab === "exec" && gameInfo?.enable_exec && (
