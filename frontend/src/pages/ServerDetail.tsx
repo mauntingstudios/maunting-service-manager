@@ -262,6 +262,9 @@ export function ServerDetail() {
         fullRefreshTickRef.current = 0;
         const srv = await api<Server>(`/servers/${serverId}`);
         setServer(srv);
+        if (isFrontendServer) {
+          frontendApi.getOverview(serverId).then(setFrontendOverview).catch(() => {});
+        }
       }
     } catch {
       // silent
@@ -361,12 +364,41 @@ export function ServerDetail() {
 
   const tabs = useMemo(() => {
     if (isFrontendServer) {
-      return [
-        { key: "deployments" as TabKey, label: t("tabs.deployments"), icon: Rocket },
-        { key: "files" as TabKey, label: t("tabs.files"), icon: FileText },
-        { key: "backups" as TabKey, label: t("tabs.backups"), icon: HardDrive },
-        { key: "frontend_settings" as TabKey, label: t("tabs.frontendSettings"), icon: Sliders },
+      const frontendTabs: ServerDetailTab<TabKey>[] = [
+        { key: "deployments", label: t("tabs.deployments"), icon: Rocket },
+        { key: "files", label: t("tabs.files"), icon: FileText },
+        { key: "backups", label: t("tabs.backups"), icon: HardDrive },
+        { key: "frontend_settings", label: t("tabs.frontendSettings"), icon: Sliders },
+        { key: "console", label: t("tabs.console"), icon: Terminal, secondary: true },
+        {
+          key: "restarts",
+          label: t("tabs.restarts", { defaultValue: "Restarts" }),
+          icon: RotateCcw,
+          secondary: true,
+        },
+        {
+          key: "webhooks",
+          label: t("tabs.webhooks", { defaultValue: "Webhooks" }),
+          icon: Webhook,
+          secondary: true,
+        },
       ];
+      if (showMemoryTab) {
+        frontendTabs.push({
+          key: "memory",
+          label: t("tabs.memory", { defaultValue: "Wissen" }),
+          icon: Brain,
+          secondary: true,
+        });
+      }
+      if (server?.guardian_enabled) {
+        frontendTabs.push({
+          key: "guardian",
+          label: t("servers.guardian.tabTitle", { defaultValue: "Autopilot" }),
+          icon: Shield,
+        });
+      }
+      return frontendTabs;
     }
     const list: ServerDetailTab<TabKey>[] = [
       // Beim Datenbankserver ist die Datenbank der Server: ihr Reiter steht vorn.
@@ -631,14 +663,7 @@ export function ServerDetail() {
   }
 
   const effectiveStatus = optimisticStatus || server.status;
-  const displayStatus =
-    isFrontendServer && frontendOverview
-      ? frontendOverview.online
-        ? effectiveStatus === "stopped"
-          ? "running"
-          : effectiveStatus
-        : "stopped"
-      : effectiveStatus;
+  const displayStatus = effectiveStatus;
   // Phase 5: node heartbeat offline → keep server visible, block actions
   const isNodeUnreachable = effectiveStatus === "node_unreachable";
 
@@ -948,14 +973,19 @@ export function ServerDetail() {
                       : t("frontendDeployments.offline")}
                   </span>
                   <Switch
-                    checked={frontendOverview?.online ?? true}
+                    checked={frontendOverview ? frontendOverview.online : effectiveStatus === "running"}
                     onCheckedChange={async (checked) => {
+                      setOptimisticStatus(checked ? "starting" : "stopping");
                       try {
                         const res = await frontendApi.toggleOnline(serverId, checked);
                         setFrontendOverview((prev) => (prev ? { ...prev, online: res.online } : prev));
                         toast.success(res.online ? t("frontendDeployments.online") : t("frontendDeployments.offline"));
+                        await fetchAll();
+                        loadFrontendOverview();
                       } catch {
                         toast.error(t("frontendDeployments.actionError"));
+                      } finally {
+                        setOptimisticStatus(null);
                       }
                     }}
                   />

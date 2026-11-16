@@ -4131,7 +4131,11 @@
     "envProduction": "Production",
     "envPreview": "Previews",
     "addEnv": "Add variable",
-    "settingsSaved": "Frontend settings saved"
+    "settingsSaved": "Frontend settings saved",
+    "buildRunningTitle": "Build in progress",
+    "openLiveLog": "Open live log",
+    "liveBadge": "Live log",
+    "latestFailedTitle": "Latest build #{{id}} ({{branch}}) failed"
   },
   "files": {
     "upload": "Upload",

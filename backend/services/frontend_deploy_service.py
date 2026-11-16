@@ -47,6 +47,22 @@ logger = logging.getLogger(__name__)
 MAX_RETAINED_PRODUCTION_BUILDS = 10
 
 
+class _AgentStepError(RuntimeError):
+    """Fehler aus einem Container-Schritt inklusive des bisherigen Konsolen-Logs."""
+
+    def __init__(self, message: str, *, log_output: str = "") -> None:
+        super().__init__(message)
+        self.log_output = log_output
+
+
+def _tail_summary(combined: str, fallback: str = "") -> str:
+    text = (combined or fallback or "").strip()
+    lines = [line for line in text.splitlines() if line.strip()]
+    if lines:
+        return "\n".join(lines[-8:])[-800:]
+    return text[-800:]
+
+
 @dataclass(frozen=True)
 class BuildQuota:
     max_cpu_cores: int = 2
@@ -214,10 +230,21 @@ def _atomic_symlink(target: Path, link_path: Path) -> None:
     tmp_link = link_path.parent / f".tmp-{link_path.name}-{secrets.token_hex(4)}"
     if tmp_link.exists() or tmp_link.is_symlink():
         tmp_link.unlink()
+    old_dir: Path | None = None
     try:
         os.symlink(str(target), str(tmp_link), target_is_directory=True)
+        if link_path.exists() and not link_path.is_symlink() and link_path.is_dir():
+            old_dir = link_path.parent / f".old-{link_path.name}-{secrets.token_hex(4)}"
+            os.replace(str(link_path), str(old_dir))
         os.replace(str(tmp_link), str(link_path))
+        if old_dir is not None and old_dir.exists():
+            shutil.rmtree(old_dir, ignore_errors=True)
     except OSError:
+        if old_dir is not None and old_dir.exists() and not link_path.exists():
+            try:
+                os.replace(str(old_dir), str(link_path))
+            except OSError:
+                pass
         if tmp_link.exists() or tmp_link.is_symlink():
             tmp_link.unlink(missing_ok=True)
         if link_path.is_symlink():
@@ -281,6 +308,28 @@ def read_build_log(server: Server, dep: FrontendDeployment) -> str:
         return ""
 
 
+def _wrap_script_with_live_log(script_body: str, log_rel_path: str | None) -> str:
+    if not log_rel_path:
+        return script_body
+    clean_rel = log_rel_path.lstrip("/")
+    return (
+        f'LOG_FILE="/srv/{clean_rel}"\n'
+        'mkdir -p "$(dirname "$LOG_FILE")"\n'
+        'rm -f /tmp/msm.rc\n'
+        '(\n'
+        '  set +e\n'
+        '  (\n'
+        '    set -e\n'
+        f'{script_body}\n'
+        '  )\n'
+        '  printf "%s\\n" "$?" > /tmp/msm.rc\n'
+        ') 2>&1 | tee -a "$LOG_FILE"\n'
+        'RC=$(cat /tmp/msm.rc 2>/dev/null || echo 1)\n'
+        'rm -f /tmp/msm.rc\n'
+        'exit "$RC"\n'
+    )
+
+
 def _run_agent_clone(
     server: Server,
     *,
@@ -288,12 +337,13 @@ def _run_agent_clone(
     repo: str,
     branch: str,
     token: str | None,
+    log_rel_path: str | None = None,
 ) -> tuple[str, str]:
     from services.docker_service import VolumeBind
 
     clean_url = _clone_url(repo, token=None)
-    script = (
-        "set -e\n"
+    core_script = (
+        'printf "[MSM] === Git-Clone (Branch: %s) ===\\n" "$GIT_BRANCH"\n'
         f'DEST="/srv/_build_src/dep-{dep_id}"\n'
         'rm -rf "$DEST"\n'
         'mkdir -p /srv/_build_src\n'
@@ -303,9 +353,10 @@ def _run_agent_clone(
         "  export GIT_ASKPASS=/tmp/askpass.sh\n"
         "  export GIT_TERMINAL_PROMPT=0\n"
         "fi\n"
-        'git clone --depth 1 --branch "$GIT_BRANCH" "$GIT_REPO_URL" "$DEST"\n'
+        'git clone --progress --depth 1 --branch "$GIT_BRANCH" "$GIT_REPO_URL" "$DEST"\n'
         'printf "MSM_COMMIT_SHA=%s\\n" "$(git -C "$DEST" rev-parse HEAD)"\n'
     )
+    script = _wrap_script_with_live_log(core_script, log_rel_path)
     env = {"GIT_REPO_URL": clean_url, "GIT_BRANCH": branch}
     if token:
         env["GIT_TOKEN"] = token
@@ -320,7 +371,8 @@ def _run_agent_clone(
     )
     combined = (res.get("stdout") or "") + "\n" + (res.get("stderr") or "")
     if not res.get("ok"):
-        raise RuntimeError(f"Git-Clone fehlgeschlagen: {(combined or res.get('error') or '')[-500:]}")
+        summary = _tail_summary(combined, str(res.get("error") or ""))
+        raise _AgentStepError(f"Git-Clone fehlgeschlagen: {summary}", log_output=combined)
     sha = ""
     for line in combined.splitlines():
         if line.startswith("MSM_COMMIT_SHA="):
@@ -339,6 +391,9 @@ def _run_agent_node_build(
     output_dir: str | None,
     env_vars: dict[str, str],
     timeout_seconds: int,
+    log_rel_path: str | None = None,
+    nano_cpus: int | None = None,
+    mem_limit: str | None = None,
 ) -> str:
     import shlex
     from services.docker_service import VolumeBind
@@ -348,64 +403,113 @@ def _run_agent_node_build(
         proj = f"{proj}/{sub_path.strip('/')}"
 
     if install_command:
-        install_cmd = " ".join(shlex.quote(a) for a in install_command)
+        install_str = " ".join(shlex.quote(a) for a in install_command)
         if install_command[0] in ("pnpm", "yarn"):
-            install_cmd = f"corepack enable && {install_cmd}"
+            install_cmd = f"NODE_ENV=development corepack enable && NODE_ENV=development {install_str}"
+        else:
+            install_cmd = f"NODE_ENV=development {install_str}"
     else:
         install_cmd = (
-            'if [ -f pnpm-lock.yaml ]; then corepack enable && pnpm install --frozen-lockfile; '
-            'elif [ -f yarn.lock ]; then corepack enable && yarn install --frozen-lockfile; '
-            'elif [ -f package-lock.json ]; then npm ci; '
-            "else npm install; fi"
+            'if [ -f pnpm-lock.yaml ]; then NODE_ENV=development corepack enable && NODE_ENV=development pnpm install --frozen-lockfile; '
+            'elif [ -f yarn.lock ]; then NODE_ENV=development corepack enable && NODE_ENV=development yarn install --frozen-lockfile; '
+            'elif [ -f package-lock.json ]; then NODE_ENV=development npm ci --include=dev; '
+            'else PM_FIELD=$(node -e "try{const p=require(\'./package.json\');console.log(String(p.packageManager||\'\').split(\'@\')[0])}catch{}" 2>/dev/null || true); '
+            'if [ "$PM_FIELD" = "pnpm" ]; then NODE_ENV=development corepack enable && NODE_ENV=development pnpm install; '
+            'elif [ "$PM_FIELD" = "yarn" ]; then NODE_ENV=development corepack enable && NODE_ENV=development yarn install; '
+            'else NODE_ENV=development npm install --include=dev; fi; fi'
         )
 
-    build_argv = build_command or ["npm", "run", "build"]
-    build_cmd = " ".join(shlex.quote(a) for a in build_argv)
+    if build_command:
+        custom_build_str = " ".join(shlex.quote(a) for a in build_command)
+        build_block = f'echo "[MSM] === Anwendung bauen ==="\n{custom_build_str}\nHAS_BUILD_STEP=1'
+    else:
+        build_block = (
+            'HAS_BUILD_SCRIPT=$(node -e "try{const p=require(\'./package.json\');console.log(p.scripts&&p.scripts.build?\'1\':\'0\')}catch{console.log(\'0\')}" 2>/dev/null || echo 0)\n'
+            'if [ "$HAS_BUILD_SCRIPT" = "1" ]; then\n'
+            '  echo "[MSM] === Anwendung bauen (npm run build) ==="\n'
+            '  npm run build\n'
+            '  HAS_BUILD_STEP=1\n'
+            'else\n'
+            '  echo "[MSM] Kein build-Script in package.json — pruefe statische Ausgabe..."\n'
+            '  HAS_BUILD_STEP=0\n'
+            'fi'
+        )
 
     if output_dir:
         out_detect = f'OUT_DIR="{output_dir.strip("/")}"'
     else:
         out_detect = (
             'OUT_DIR=""\n'
-            "for d in dist build out .output/public; do\n"
+            'for d in dist build out .output/public _site; do\n'
             '  if [ -f "$d/index.html" ]; then OUT_DIR="$d"; break; fi\n'
-            "done\n"
+            'done\n'
+            'if [ -z "$OUT_DIR" ] && [ -d dist ]; then\n'
+            '  for d in dist/*/browser dist/*; do\n'
+            '    if [ -f "$d/index.html" ]; then OUT_DIR="$d"; break; fi\n'
+            '  done\n'
+            'fi\n'
+            'if [ -z "$OUT_DIR" ] && [ -f public/index.html ]; then OUT_DIR="public"; fi\n'
+            'if [ -z "$OUT_DIR" ] && [ "${HAS_BUILD_STEP:-0}" = "0" ] && [ -f index.html ]; then OUT_DIR="."; fi\n'
             'if [ -z "$OUT_DIR" ]; then\n'
-            "  for d in dist build out .output/public; do\n"
+            '  for d in dist build out .output/public _site; do\n'
             '    if [ -d "$d" ]; then OUT_DIR="$d"; break; fi\n'
-            "  done\n"
-            "fi"
+            '  done\n'
+            'fi'
         )
 
-    script = (
-        "set -e\n"
+    has_custom_cmds = "1" if (install_command or build_command) else "0"
+    core_script = (
         f'cd "{proj}"\n'
-        f"{install_cmd}\n"
-        f"{build_cmd}\n"
-        f"{out_detect}\n"
+        f'if [ -f package.json ] || [ "{has_custom_cmds}" = "1" ]; then\n'
+        '  echo "[MSM] === Dependencies installieren ==="\n'
+        f'  {install_cmd}\n'
+        f'  {build_block}\n'
+        'else\n'
+        '  echo "[MSM] Kein package.json gefunden — statische Bereitstellung erkannt."\n'
+        '  HAS_BUILD_STEP=0\n'
+        'fi\n'
+        f'{out_detect}\n'
         'if [ -z "$OUT_DIR" ] || [ ! -f "$OUT_DIR/index.html" ]; then\n'
         '  echo "index.html im Ausgabeordner nicht gefunden (OUT_DIR=$OUT_DIR)" >&2\n'
-        "  exit 1\n"
-        "fi\n"
+        '  exit 1\n'
+        'fi\n'
+        'echo "[MSM] === Ausgabe ($OUT_DIR) speichern ==="\n'
         f'REL_DIR="/srv/deployments/{dep_id}"\n'
         'rm -rf "$REL_DIR"\n'
-        "mkdir -p /srv/deployments\n"
-        'cp -r "$OUT_DIR" "$REL_DIR"\n'
+        'mkdir -p /srv/deployments\n'
+        'if [ "$OUT_DIR" = "." ]; then\n'
+        '  mkdir -p "$REL_DIR"\n'
+        '  tar cf - --exclude=.git --exclude=.github --exclude=node_modules --exclude=.env . | (cd "$REL_DIR" && tar xf -)\n'
+        'else\n'
+        '  cp -r "$OUT_DIR" "$REL_DIR"\n'
+        'fi\n'
         f'rm -rf "/srv/_build_src/dep-{dep_id}"\n'
     )
+    script = _wrap_script_with_live_log(core_script, log_rel_path)
+
+    build_env: dict[str, str] = {
+        "CI": "true",
+        "FORCE_COLOR": "0",
+        "NPM_CONFIG_LOGLEVEL": "info",
+    }
+    if env_vars:
+        build_env.update(env_vars)
 
     res = docker_service.run_ephemeral(
         image=f"node:{node_version}-bookworm-slim",
         command=["sh", "-c", script],
         workdir="/srv",
         volumes=[VolumeBind(host_path=server.install_dir, container_path="/srv", read_only=False)],
-        env=env_vars or None,
+        env=build_env,
         timeout=timeout_seconds,
+        nano_cpus=nano_cpus,
+        mem_limit=mem_limit,
         node=server.node,
     )
     combined = (res.get("stdout") or "") + "\n" + (res.get("stderr") or "")
     if not res.get("ok"):
-        raise RuntimeError(f"Build fehlgeschlagen: {(combined or res.get('error') or '')[-500:]}")
+        summary = _tail_summary(combined, str(res.get("error") or ""))
+        raise _AgentStepError(f"Build fehlgeschlagen: {summary}", log_output=combined)
     return combined
 
 
@@ -677,6 +781,7 @@ def run_build(
                 repo=bp.source.github.repo,
                 branch=dep.branch,
                 token=token,
+                log_rel_path=log_rel_path,
             )
         else:
             sha, clone_log = _clone_repo(
@@ -707,11 +812,25 @@ def run_build(
                 output_dir=bp.frontend.build.outputDir,
                 env_vars=merged_env,
                 timeout_seconds=timeout_sec,
+                log_rel_path=log_rel_path,
+                nano_cpus=quota.max_cpu_cores * 1_000_000_000,
+                mem_limit=f"{quota.max_memory_mb}m",
             )
             full_log += build_out
             release_dir = install_dir / "deployments" / str(dep.id)
         else:
             project_dir = work_src / bp.source.github.subPath if bp.source.github.subPath else work_src
+            streamed_chunks: list[str] = []
+
+            def _local_log_cb(chunk: str) -> None:
+                streamed_chunks.append(chunk)
+                try:
+                    log_file.parent.mkdir(parents=True, exist_ok=True)
+                    with log_file.open("a", encoding="utf-8") as fh:
+                        fh.write(_mask_secret_values(chunk, secrets_to_mask))
+                except OSError:
+                    pass
+
             build_res = run_node_frontend_build(
                 project_dir,
                 node_version=bp.frontend.build.nodeVersion,
@@ -720,9 +839,12 @@ def run_build(
                 output_dir=bp.frontend.build.outputDir,
                 env_vars=merged_env,
                 timeout_seconds=timeout_sec,
+                nano_cpus=quota.max_cpu_cores * 1_000_000_000,
+                mem_limit=f"{quota.max_memory_mb}m",
                 node=server.node,
+                log_callback=_local_log_cb,
             )
-            full_log += build_res.log_output
+            full_log += ("".join(streamed_chunks) if streamed_chunks else build_res.log_output)
 
             if not build_res.ok or build_res.output_dir is None:
                 raise RuntimeError("Build fehlgeschlagen oder index.html im Ausgabeordner nicht gefunden.")
@@ -733,6 +855,7 @@ def run_build(
             shutil.copytree(build_res.output_dir, release_dir)
 
         _activate_deployment(db, server, dep, release_dir, bp)
+        full_log += f"\n[MSM] Deployment #{dep.id} ist live.\n"
         dep.status = "ready"
         dep.finished_at = _now()
         prune(db, server)
@@ -740,6 +863,9 @@ def run_build(
         dep.status = "failed"
         dep.is_live = False
         dep.finished_at = _now()
+        step_log = getattr(exc, "log_output", "")
+        if step_log and step_log.strip() not in full_log:
+            full_log += step_log.rstrip() + "\n"
         summary = _mask_secret_values(str(exc), secrets_to_mask)
         dep.error_summary = summary[:1000]
         full_log += f"\n[FEHLER] {summary}\n"
@@ -763,6 +889,121 @@ def run_build(
                 pass
         db.flush()
     return dep
+
+
+def _agent_replace_symlink_script(target_rel: str, link_path: str) -> str:
+    tmp_path = f"{link_path}.tmp"
+    old_path = f"{link_path}.old"
+    return (
+        "set -e\n"
+        f'mkdir -p "$(dirname "{link_path}")"\n'
+        f'rm -f "{tmp_path}"\n'
+        f'ln -sfn "{target_rel}" "{tmp_path}"\n'
+        f'if [ -d "{link_path}" ] && [ ! -L "{link_path}" ]; then\n'
+        f'  rm -rf "{old_path}"\n'
+        f'  mv "{link_path}" "{old_path}"\n'
+        f'  mv -Tf "{tmp_path}" "{link_path}"\n'
+        f'  rm -rf "{old_path}"\n'
+        "else\n"
+        f'  mv -Tf "{tmp_path}" "{link_path}"\n'
+        "fi\n"
+    )
+
+
+def _sync_verified_domain_vhost(server: Server, fs: FrontendSettings, *, online: bool) -> None:
+    if not fs.domain or not fs.domain_verified:
+        return
+    try:
+        from services import caddy_service
+
+        if online:
+            vhost_cfg = caddy_service.generate_proxy_vhost(
+                server.id,
+                fs.domain,
+                _server_web_port(server),
+                server_name=server.name,
+            )
+            caddy_service.apply_vhost(server.id, vhost_cfg, node=server.node)
+        else:
+            caddy_service.remove_vhost(server.id, node=server.node)
+    except Exception as exc:
+        logger.debug("Caddy-VHost-Sync fuer Frontend %s uebersprungen: %s", server.id, exc)
+
+
+def _frontend_ports_tuples(db: Session, server: Server) -> list[tuple[int, str, str]]:
+    web_port = _server_web_port(server)
+    preview_ports = [
+        int(row.port)
+        for row in db.query(FrontendDeployment)
+        .filter(
+            FrontendDeployment.server_id == server.id,
+            FrontendDeployment.kind == "preview",
+            FrontendDeployment.is_live.is_(True),
+            FrontendDeployment.port.isnot(None),
+        )
+        .all()
+        if row.port is not None
+    ]
+    return [(web_port, "tcp", "web")] + [(p, "tcp", "preview") for p in preview_ports]
+
+
+def _ensure_frontend_online_runtime(db: Session, server: Server, fs: FrontendSettings) -> None:
+    if not fs.online:
+        return
+    try:
+        open_ports(
+            server.name,
+            _frontend_ports_tuples(db, server),
+            node=server.node,
+            db=db,
+            server_id=server.id,
+        )
+    except Exception as exc:
+        logger.debug("Firewall open_ports fuer Frontend %s uebersprungen: %s", server.id, exc)
+
+    _sync_verified_domain_vhost(server, fs, online=True)
+
+    has_runtime = getattr(server, "node_id", None) is not None or bool(getattr(server, "container_name", None))
+    if not has_runtime or not getattr(server, "public_bind_ip", None):
+        _reload_caddy_container(server)
+        return
+
+    container_running = False
+    if server.container_name:
+        try:
+            info = docker_service.inspect(server.container_name, node=server.node)
+            container_running = bool(
+                isinstance(info, dict)
+                and (info.get("State") or {}).get("Running")
+            )
+        except Exception:
+            container_running = server.status == "running"
+
+    if container_running:
+        _reload_caddy_container(server)
+        return
+
+    try:
+        from services.server_lifecycle_service import queue_lifecycle_operation
+
+        server.desired_power_state = "running"
+        db.flush()
+        queue_lifecycle_operation(db, server, "start")
+    except Exception as exc:
+        logger.debug("Auto-Start fuer Frontend %s uebersprungen: %s", server.id, exc)
+
+
+def sync_frontend_online_from_lifecycle(db: Session, server: Server, online: bool) -> None:
+    """Haelt FrontendSettings.online und verifizierte Domain-VHosts synchron zu Lifecycle-Aktionen."""
+    bp = _resolve_frontend_blueprint(server)
+    fs = db.get(FrontendSettings, server.id)
+    if bp is None and fs is None:
+        return
+    if fs is None:
+        fs = get_or_create_settings(db, server)
+    fs.online = bool(online)
+    db.flush()
+    _sync_verified_domain_vhost(server, fs, online=bool(online))
 
 
 def _activate_deployment(
@@ -790,7 +1031,7 @@ def _activate_deployment(
         if use_agent:
             _agent_symlink_command(
                 server,
-                f"ln -sfn deployments/{dep.id} /srv/current.tmp && mv -Tf /srv/current.tmp /srv/current",
+                _agent_replace_symlink_script(f"deployments/{dep.id}", "/srv/current"),
             )
         else:
             _atomic_symlink(release_dir, install_dir / "current")
@@ -811,26 +1052,18 @@ def _activate_deployment(
         if use_agent:
             _agent_symlink_command(
                 server,
-                f'mkdir -p /srv/previews && ln -sfn ../deployments/{dep.id} "/srv/previews/{dep.branch_slug}.tmp" && mv -Tf "/srv/previews/{dep.branch_slug}.tmp" "/srv/previews/{dep.branch_slug}"',
+                _agent_replace_symlink_script(
+                    f"../deployments/{dep.id}",
+                    f"/srv/previews/{dep.branch_slug}",
+                ),
             )
         else:
             _atomic_symlink(release_dir, install_dir / "previews" / dep.branch_slug)
 
     dep.is_live = True
     rewrite_caddyfile(db, server, bp)
-    _reload_caddy_container(server)
     fs = get_or_create_settings(db, server)
-    if fs.online and dep.kind == "preview" and dep.port is not None:
-        try:
-            open_ports(
-                server.name,
-                [(int(dep.port), "tcp", "preview")],
-                node=server.node,
-                db=db,
-                server_id=server.id,
-            )
-        except Exception as exc:
-            logger.debug("Firewall open_ports fuer Preview %s uebersprungen: %s", dep.port, exc)
+    _ensure_frontend_online_runtime(db, server, fs)
 
 
 def promote(db: Session, deployment_id: int) -> FrontendDeployment:
@@ -867,7 +1100,7 @@ def promote(db: Session, deployment_id: int) -> FrontendDeployment:
     if use_agent:
         _agent_symlink_command(
             server,
-            f'set -e\ntest -d "/srv/deployments/{dep.id}"\ncp -a "/srv/deployments/{dep.id}" "/srv/deployments/{promoted.id}"\n',
+            f'set -e\ntest -d "/srv/deployments/{dep.id}"\ncp -r "/srv/deployments/{dep.id}" "/srv/deployments/{promoted.id}"\n',
         )
     else:
         shutil.copytree(release_dir, promoted_dir)
@@ -990,22 +1223,7 @@ def set_online(db: Session, server: Server, online: bool) -> FrontendSettings:
     """Schaltet ein Frontend online/offline und oeffnet/schliesst Ports dynamisch."""
     fs = get_or_create_settings(db, server)
     fs.online = bool(online)
-    web_port = _server_web_port(server)
-    preview_ports = [
-        int(row.port)
-        for row in db.query(FrontendDeployment)
-        .filter(
-            FrontendDeployment.server_id == server.id,
-            FrontendDeployment.kind == "preview",
-            FrontendDeployment.is_live.is_(True),
-            FrontendDeployment.port.isnot(None),
-        )
-        .all()
-        if row.port is not None
-    ]
-    tuples: list[tuple[int, str, str]] = [(web_port, "tcp", "web")] + [
-        (p, "tcp", "preview") for p in preview_ports
-    ]
+    tuples = _frontend_ports_tuples(db, server)
     try:
         if fs.online:
             open_ports(server.name, tuples, node=server.node, db=db, server_id=server.id)
@@ -1013,9 +1231,10 @@ def set_online(db: Session, server: Server, online: bool) -> FrontendSettings:
             close_ports(tuples, node=server.node, name=server.name, db=db, server_id=server.id)
     except Exception as exc:
         logger.debug("Firewall-Umschaltung fuer Frontend %s uebersprungen: %s", server.id, exc)
+    _sync_verified_domain_vhost(server, fs, online=fs.online)
     server.desired_power_state = "running" if fs.online else "stopped"
     db.flush()
-    if getattr(server, "node_id", None) is not None:
+    if getattr(server, "node_id", None) is not None or getattr(server, "container_name", None):
         try:
             from services.server_lifecycle_service import queue_lifecycle_operation
 

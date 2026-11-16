@@ -311,3 +311,130 @@ def test_run_build_delegates_to_agent_when_node_fs_delegated(
     assert git_call["env"]["GIT_REPO_URL"].startswith("https://github.com/")
     assert any("node:" in c.get("image", "") for c in ephemeral_calls)
     assert read_back.startswith(f"[MSM] Build #{dep.id} gestartet")
+    node_call = next(c for c in ephemeral_calls if "node:" in c.get("image", ""))
+    assert "NODE_ENV=development" in " ".join(node_call["command"])
+    assert "tee -a" in " ".join(node_call["command"])
+    alpine_calls = [c for c in ephemeral_calls if c.get("image") == "alpine:3.20"]
+    assert alpine_calls
+    assert "-d \"/srv/current\" ] && [ ! -L \"/srv/current\"" in " ".join(alpine_calls[-1]["command"])
+
+
+def test_agent_build_preserves_full_log_on_failure_and_promotes_with_cp_r(
+    db: Session, tmp_path: Path, regular_user
+) -> None:
+    from unittest.mock import MagicMock
+
+    srv = _make_server(db, tmp_path / "agent_fail_and_promote")
+    dep = frontend_deploy_service.enqueue(db, srv, branch="main", source="manual")
+    db.commit()
+
+    written_files: dict[str, str] = {}
+    mock_client = MagicMock()
+    mock_client.files_write.side_effect = lambda key, rel, content: written_files.__setitem__(rel, content)
+    mock_client.files_read.side_effect = lambda key, rel: written_files.get(rel, "")
+
+    long_prefix = "VERBOSE_NPM_LINE_123456\n" * 60
+
+    def _fail_ephemeral(**kwargs):
+        if "alpine/git" in kwargs.get("image", ""):
+            return {"ok": True, "stdout": "MSM_COMMIT_SHA=cafe1234\n", "stderr": ""}
+        return {
+            "ok": False,
+            "stdout": long_prefix + "tsc failed on src/App.tsx\n",
+            "stderr": "ERR_BUILD_FAILED\n",
+        }
+
+    with patch("services.frontend_deploy_service._use_agent_fs", return_value=True), patch(
+        "services.node_client.NodeClient.from_node", return_value=mock_client
+    ), patch("services.docker_service.run_ephemeral", side_effect=_fail_ephemeral):
+        res = frontend_deploy_service.run_build(db, dep.id, actor_user_id=regular_user.id)
+        db.commit()
+        full_log = frontend_deploy_service.read_build_log(srv, res)
+
+    assert res.status == "failed"
+    assert res.is_live is False
+    assert "VERBOSE_NPM_LINE_123456" in full_log
+    assert "ERR_BUILD_FAILED" in full_log
+
+    # Promote muss cp -r statt cp -a verwenden (rootless ACLs)
+    prev_dep = frontend_deploy_service.enqueue(db, srv, branch="feat/ui", source="push")
+    prev_dep.status = "ready"
+    db.commit()
+
+    promote_scripts: list[str] = []
+
+    def _capture_alpine(**kwargs):
+        promote_scripts.append(" ".join(kwargs.get("command") or []))
+        return {"ok": True, "stdout": "", "stderr": ""}
+
+    with patch("services.frontend_deploy_service._use_agent_fs", return_value=True), patch(
+        "services.docker_service.run_ephemeral", side_effect=_capture_alpine
+    ), patch("services.frontend_deploy_service._write_server_text"):
+        promoted = frontend_deploy_service.promote(db, prev_dep.id)
+        db.commit()
+
+    assert promoted.is_live is True
+    assert any("cp -r " in s and "cp -a " not in s for s in promote_scripts)
+
+
+def test_atomic_symlink_replaces_existing_directory_and_provisioning_initializes_frontend(
+    db: Session, tmp_path: Path, regular_user
+) -> None:
+    from unittest.mock import MagicMock
+    from games import get_plugin
+    from services.server_provisioning_service import _initialize_and_start_frontend_server
+
+    srv = _make_server(db, tmp_path / "dir_replace")
+    current_dir = Path(srv.install_dir) / "current"
+    current_dir.mkdir(parents=True, exist_ok=True)
+    (current_dir / "index.html").write_text("placeholder", encoding="utf-8")
+
+    rel = Path(srv.install_dir) / "deployments" / "42"
+    rel.mkdir(parents=True, exist_ok=True)
+    (rel / "index.html").write_text("built", encoding="utf-8")
+
+    frontend_deploy_service._atomic_symlink(rel, current_dir)
+    assert (current_dir / "index.html").read_text(encoding="utf-8") == "built"
+
+    # Provisioning-Init darf keinen TypeError wegen falscher Signaturen werfen
+    bp = get_plugin("web_frontend_github").get_blueprint()
+    srv2 = _make_server(db, tmp_path / "prov_init")
+    with patch("services.server_lifecycle_service.queue_lifecycle_operation") as mock_q, patch(
+        "services.frontend_deploy_service.trigger_async_build"
+    ) as mock_build:
+        _initialize_and_start_frontend_server(db, srv2, bp, regular_user.id)
+
+    mock_q.assert_called_once()
+    mock_build.assert_called_once()
+
+
+def test_frontend_online_sync_with_lifecycle_and_static_repo_build(
+    db: Session, tmp_path: Path
+) -> None:
+    from services.frontend_build_runner import detect_output_dir, run_node_frontend_build
+
+    srv = _make_server(db, tmp_path / "sync_srv")
+    fs = frontend_deploy_service.get_or_create_settings(db, srv)
+    assert fs.online is True
+
+    frontend_deploy_service.sync_frontend_online_from_lifecycle(db, srv, False)
+    db.refresh(fs)
+    assert fs.online is False
+
+    frontend_deploy_service.sync_frontend_online_from_lifecycle(db, srv, True)
+    db.refresh(fs)
+    assert fs.online is True
+
+    # Reines Static-HTML-Repo ohne package.json baut ohne npm-Fehler
+    static_proj = tmp_path / "static_repo"
+    static_proj.mkdir()
+    (static_proj / "index.html").write_text("<h1>Hallo</h1>", encoding="utf-8")
+    res = run_node_frontend_build(static_proj)
+    assert res.ok is True
+    assert res.output_dir == static_proj
+
+    # Angular-Ausgabeordner dist/my-app/browser wird erkannt
+    ng_proj = tmp_path / "ng_repo"
+    (ng_proj / "dist" / "my-app" / "browser").mkdir(parents=True)
+    (ng_proj / "dist" / "my-app" / "browser" / "index.html").write_text("<h1>ng</h1>", encoding="utf-8")
+    assert detect_output_dir(ng_proj) == ng_proj / "dist" / "my-app" / "browser"

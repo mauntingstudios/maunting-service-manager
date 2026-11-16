@@ -4306,7 +4306,11 @@
     "envProduction": "Produktion",
     "envPreview": "Previews",
     "addEnv": "Variable hinzufügen",
-    "settingsSaved": "Frontend-Einstellungen gespeichert"
+    "settingsSaved": "Frontend-Einstellungen gespeichert",
+    "buildRunningTitle": "Build läuft gerade",
+    "openLiveLog": "Live-Log öffnen",
+    "liveBadge": "Live-Protokoll",
+    "latestFailedTitle": "Letzter Build #{{id}} ({{branch}}) fehlgeschlagen"
   },
   "restarts": {
     "subtitle": "Automatische Neustart-Zeitpläne für diesen Server konfigurieren.",

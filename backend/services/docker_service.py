@@ -1052,6 +1052,8 @@ def run_ephemeral(
     log_callback: Any | None = None,
     read_only_rootfs: bool = False,
     runtime: str | None = None,
+    nano_cpus: int | None = None,
+    mem_limit: str | None = None,
     node: Any | None = None,
 ) -> dict:
     """Fuehrt einen einmaligen Containerlauf aus und entfernt den Container danach.
@@ -1075,6 +1077,8 @@ def run_ephemeral(
             "entrypoint": entrypoint,
             "cap_add": cap_adds,
             "timeout": timeout,
+            "nano_cpus": nano_cpus,
+            "mem_limit": mem_limit,
         }
         try:
             result = NodeClient.from_node(node, timeout=float(timeout)).run_ephemeral_container(
@@ -1092,6 +1096,8 @@ def run_ephemeral(
     client, error = _client_or_error()
     if error:
         return error
+    eff_nano_cpus = int(nano_cpus) if nano_cpus and int(nano_cpus) > 0 else 2_000_000_000
+    eff_mem_limit = str(mem_limit) if mem_limit else "4096m"
     kwargs: dict[str, Any] = {
         "image": image,
         "command": command,
@@ -1107,9 +1113,9 @@ def run_ephemeral(
         "cap_add": cap_adds or None,
         "security_opt": _container_security_options(False),
         "pids_limit": 256,
-        "nano_cpus": 2_000_000_000,
-        "mem_limit": "4096m",
-        "memswap_limit": "4096m",
+        "nano_cpus": eff_nano_cpus,
+        "mem_limit": eff_mem_limit,
+        "memswap_limit": eff_mem_limit,
         "oom_score_adj": 500,
     }
     validated_rt = _validated_runtime(runtime)
@@ -1124,6 +1130,7 @@ def run_ephemeral(
         _ensure_image_available(client, image)
         container = client.containers.run(**kwargs)
 
+        log_thread: threading.Thread | None = None
         if log_callback is not None:
             # Live-Streaming: Logs zeilenweise in separatem Daemon-Thread lesen,
             # damit container.wait(timeout=...) auf dem Haupt-Thread blockieren kann.
@@ -1141,6 +1148,8 @@ def run_ephemeral(
             log_thread.start()
 
         wait_result = container.wait(timeout=timeout)
+        if log_thread is not None:
+            log_thread.join(timeout=2.0)
         if log_callback is None:
             # Kein Streaming — Output am Ende sammeln (alter Pfad)
             stdout = _decode(container.logs(stdout=True, stderr=False))

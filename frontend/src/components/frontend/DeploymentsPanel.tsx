@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   ArrowUpRight,
@@ -53,12 +53,14 @@ export function DeploymentsPanel({ serverId, overview: externalOverview, onRefre
     open: boolean
     deploymentId?: number
     title: string
+    status?: FrontendDeployment['status']
     log: string
   }>({
     open: false,
     title: '',
     log: '',
   })
+  const logPreRef = useRef<HTMLPreElement | null>(null)
 
   const loadAll = useCallback(async () => {
     try {
@@ -83,12 +85,19 @@ export function DeploymentsPanel({ serverId, overview: externalOverview, onRefre
     if (externalOverview) setOverview(externalOverview)
   }, [externalOverview])
 
-  const hasActiveBuild = deployments.some(
-    (d) => d.status === 'queued' || d.status === 'building',
+  const activeBuilds = useMemo(
+    () => deployments.filter((d) => d.status === 'queued' || d.status === 'building'),
+    [deployments],
   )
+  const hasActiveBuild = activeBuilds.length > 0
+  const logIsStreaming =
+    logDialog.open &&
+    Boolean(logDialog.deploymentId) &&
+    (logDialog.status === 'queued' || logDialog.status === 'building' || hasActiveBuild)
 
   useEffect(() => {
-    if (!hasActiveBuild) return
+    if (!hasActiveBuild && !logIsStreaming) return
+    const intervalMs = logIsStreaming ? 2000 : 3000
     const timer = window.setInterval(() => {
       void loadAll()
       if (logDialog.open && logDialog.deploymentId) {
@@ -97,15 +106,28 @@ export function DeploymentsPanel({ serverId, overview: externalOverview, onRefre
           .then((res) => {
             setLogDialog((prev) =>
               prev.open && prev.deploymentId === logDialog.deploymentId
-                ? { ...prev, log: res.log || prev.log }
+                ? {
+                    ...prev,
+                    status: (res.status as FrontendDeployment['status']) || prev.status,
+                    log: res.log || prev.log,
+                  }
                 : prev,
             )
+            if (res.status !== 'queued' && res.status !== 'building') {
+              onRefreshOverview?.()
+            }
           })
           .catch(() => {})
       }
-    }, 3000)
+    }, intervalMs)
     return () => window.clearInterval(timer)
-  }, [hasActiveBuild, loadAll, logDialog.open, logDialog.deploymentId, serverId])
+  }, [hasActiveBuild, logIsStreaming, loadAll, logDialog.open, logDialog.deploymentId, serverId, onRefreshOverview])
+
+  useEffect(() => {
+    if (logDialog.open && logPreRef.current) {
+      logPreRef.current.scrollTop = logPreRef.current.scrollHeight
+    }
+  }, [logDialog.open, logDialog.log])
 
   const branchOptions: DropdownOption[] = useMemo(() => {
     const names = Array.from(new Set(deployments.map((d) => d.branch)))
@@ -189,6 +211,7 @@ export function DeploymentsPanel({ serverId, overview: externalOverview, onRefre
         open: true,
         deploymentId: dep.id,
         title: `${dep.branch} (#${dep.id})`,
+        status: (res.status as FrontendDeployment['status']) || dep.status,
         log: res.log || t('frontendDeployments.emptyLog'),
       })
     } catch {
@@ -206,9 +229,55 @@ export function DeploymentsPanel({ serverId, overview: externalOverview, onRefre
 
   const prod = overview?.production_deployment
   const prodUrl = overview?.production_url
+  const latestDeployment = deployments[0]
+  const latestFailed = latestDeployment?.status === 'failed' ? latestDeployment : null
 
   return (
     <div className="space-y-6">
+      {activeBuilds.length > 0 && (
+        <section className="rounded-xl border border-status-warning/40 bg-status-warning/10 p-4 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <Spinner />
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-on-surface">
+                {t('frontendDeployments.buildRunningTitle', {
+                  defaultValue: 'Build wird ausgefuehrt',
+                })}
+              </p>
+              <p className="text-xs text-on-surface-variant truncate">
+                {activeBuilds.map((b) => `${b.branch} (#${b.id})`).join(', ')}
+              </p>
+            </div>
+          </div>
+          <Button variant="secondary" size="sm" onClick={() => void openLog(activeBuilds[0])}>
+            <FileText className="mr-1.5 h-3.5 w-3.5" />
+            {t('frontendDeployments.openLiveLog', { defaultValue: 'Live-Log oeffnen' })}
+          </Button>
+        </section>
+      )}
+
+      {latestFailed && (
+        <section className="rounded-xl border border-status-destructive/40 bg-status-destructive/5 p-4 flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0 space-y-1 flex-1">
+            <p className="text-sm font-semibold text-status-destructive">
+              {t('frontendDeployments.latestFailedTitle', {
+                branch: latestFailed.branch,
+                id: latestFailed.id,
+                defaultValue: `Letzter Build #${latestFailed.id} (${latestFailed.branch}) fehlgeschlagen`,
+              })}
+            </p>
+            {latestFailed.error_summary && (
+              <p className="text-xs font-mono text-on-surface-variant whitespace-pre-wrap break-words">
+                {latestFailed.error_summary}
+              </p>
+            )}
+          </div>
+          <Button variant="secondary" size="sm" onClick={() => void openLog(latestFailed)}>
+            <FileText className="mr-1.5 h-3.5 w-3.5" />
+            {t('frontendDeployments.log')}
+          </Button>
+        </section>
+      )}
       <section className="rounded-xl border border-outline-variant/40 bg-surface-container p-4 sm:p-5 space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -370,9 +439,21 @@ export function DeploymentsPanel({ serverId, overview: externalOverview, onRefre
       <Dialog open={logDialog.open} onOpenChange={(open) => setLogDialog((prev) => ({ ...prev, open }))}>
         <DialogContent className="max-w-3xl">
           <DialogHeader>
-            <DialogTitle>{logDialog.title}</DialogTitle>
+            <div className="flex flex-wrap items-center justify-between gap-2 pr-6">
+              <DialogTitle>{logDialog.title}</DialogTitle>
+              {logDialog.status && (
+                <Badge variant={statusVariant(logDialog.status)}>
+                  {logDialog.status === 'queued' || logDialog.status === 'building'
+                    ? t('frontendDeployments.liveBadge', { defaultValue: 'Live' })
+                    : logDialog.status}
+                </Badge>
+              )}
+            </div>
           </DialogHeader>
-          <pre className="max-h-[60vh] overflow-auto rounded-lg bg-surface-container-lowest p-3 text-xs font-mono text-on-surface whitespace-pre-wrap">
+          <pre
+            ref={logPreRef}
+            className="max-h-[60vh] overflow-auto rounded-lg bg-surface-container-lowest p-3 text-xs font-mono text-on-surface whitespace-pre-wrap break-words"
+          >
             {logDialog.log}
           </pre>
         </DialogContent>

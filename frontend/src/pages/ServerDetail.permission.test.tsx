@@ -601,5 +601,56 @@ describe('ServerDetail permission topology — VAL-UI-002 / VAL-UI-018', () => {
       )
       expect(isTabListAfterActions).toBe(true)
     })
+
+    it('renders Autopilot (guardian) tab for frontend server when guardian_enabled is true', async () => {
+      mockApi.mockImplementation(async (path: string) => {
+        if (path === `/servers/${SERVER_ID}`) {
+          return {
+            ...SYNTHETIC_SERVER,
+            game_type: 'web_frontend_github',
+            guardian_enabled: true,
+          } as any
+        }
+        if (path === `/servers/${SERVER_ID}/status`) {
+          return { status: 'running' } as any
+        }
+        if (path === '/system/games') {
+          return [
+            {
+              id: 'web_frontend_github',
+              name: 'Web-Frontend (GitHub)',
+              category: 'frontend',
+            } as GameInfo,
+          ] as any
+        }
+        if (path === `/servers/${SERVER_ID}/frontend`) {
+          return {
+            server_id: SERVER_ID,
+            production_branch: 'main',
+            auto_deploy: true,
+            previews_enabled: true,
+            online: true,
+            production_url: 'http://127.0.0.1:27015',
+            production_deployment: null,
+            previews: [],
+            domain: null,
+            domain_verified: false,
+            domain_verify_txt_host: null,
+            domain_verify_txt_value: null,
+            webhook_registered: false,
+            env_production: {},
+            env_preview: {},
+          } as any
+        }
+        return [] as any
+      })
+      setPermissions(OWNER_ME)
+      renderServerDetail()
+
+      await waitFor(() => {
+        expect(screen.getByRole('tab', { name: 'Autopilot' })).toBeInTheDocument()
+      })
+      expect(screen.getByRole('tab', { name: /deployments/i })).toBeInTheDocument()
+    })
   })
 })

@@ -184,16 +184,16 @@ def _initialize_and_start_frontend_server(
 
     db.refresh(server)
     try:
-        get_or_create_settings(db, server.id, blueprint)
+        get_or_create_settings(db, server)
         if blueprint.source.type == BlueprintSourceType.GITHUB and server.install_dir:
             if should_delegate_node_fs_to_agent(getattr(server, "node", None)):
                 NodeClient.from_node(server.node).files_mkdir(
                     agent_server_key(server.id, server.install_dir),
-                    "current",
+                    "deployments",
                 )
             else:
                 try:
-                    (Path(server.install_dir) / "current").mkdir(parents=True, exist_ok=True)
+                    (Path(server.install_dir) / "deployments").mkdir(parents=True, exist_ok=True)
                 except OSError:
                     pass
         rewrite_caddyfile(db, server, blueprint)
@@ -211,12 +211,10 @@ def _initialize_and_start_frontend_server(
         try:
             dep = enqueue(
                 db,
-                server=server,
+                server,
                 branch=blueprint.source.github.branch,
-                commit_sha="",
+                source="initial",
                 actor_user_id=actor_user_id,
-                kind="production",
-                force=True,
             )
             db.commit()
             trigger_async_build(dep.id, actor_user_id=actor_user_id)

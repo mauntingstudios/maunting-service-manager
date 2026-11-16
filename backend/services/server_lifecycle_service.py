@@ -613,6 +613,7 @@ def queue_lifecycle_operation(
         server.status_message = "Erzwungen beendet (Kill)"
         server.last_started_at = None
         _auto_resolve_stopped_server_incidents(db, server)
+        _sync_frontend_online_state(db, server, False)
         db.commit()
 
         from services.change_timeline_service import log_change_event
@@ -1151,10 +1152,20 @@ def _run_start(
     server.status = "running"
     server.status_message = None
     server.last_started_at = _utcnow()
+    _sync_frontend_online_state(db, server, True)
     db.commit()
     from services.change_timeline_service import log_change_event
     log_change_event(db, server.id, "start", "Server gestartet.")
     _datenbank_einrichtung_nachziehen(server)
+
+
+def _sync_frontend_online_state(db: Session, server: Server, online: bool) -> None:
+    try:
+        from services.frontend_deploy_service import sync_frontend_online_from_lifecycle
+
+        sync_frontend_online_from_lifecycle(db, server, online)
+    except Exception as exc:
+        logger.debug("Frontend-Online-Sync fuer Server %s uebersprungen: %s", server.id, exc)
 
 
 def _datenbank_einrichtung_nachziehen(server: Server) -> None:
@@ -1179,6 +1190,7 @@ def _run_stop(db: Session, server: Server, plugin) -> None:
     server.status_message = None
     server.last_started_at = None
     _auto_resolve_stopped_server_incidents(db, server)
+    _sync_frontend_online_state(db, server, False)
     db.commit()
     from services.change_timeline_service import log_change_event
     log_change_event(db, server.id, "stop", "Server gestoppt.")
@@ -1197,6 +1209,7 @@ def _run_kill(db: Session, server: Server) -> None:
     server.status_message = "Erzwungen beendet"
     server.last_started_at = None
     _auto_resolve_stopped_server_incidents(db, server)
+    _sync_frontend_online_state(db, server, False)
     db.commit()
     from services.change_timeline_service import log_change_event
     log_change_event(db, server.id, "stop", "Server erzwungen beendet.")
@@ -1312,6 +1325,7 @@ def _run_restart(
     server.status = "running"
     server.status_message = None
     server.last_started_at = _utcnow()
+    _sync_frontend_online_state(db, server, True)
     db.commit()
     from services.change_timeline_service import log_change_event
     log_change_event(db, server.id, "restart", "Server neugestartet.")

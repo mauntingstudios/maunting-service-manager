@@ -93,4 +93,72 @@ describe('DeploymentsPanel', () => {
     expect(screen.getByText('feature/cart')).toBeInTheDocument()
     expect(screen.getByText('https://feature-cart--shop.panel.de')).toBeInTheDocument()
   })
+
+  it('shows active build banner with live log action and failed build alert', async () => {
+    vi.mocked(frontendApi.getOverview).mockResolvedValue({
+      server_id: 7,
+      production_branch: 'main',
+      auto_deploy: true,
+      previews_enabled: false,
+      online: true,
+      production_url: 'https://shop.example.de',
+      production_deployment: null,
+      previews: [],
+      domain: null,
+      domain_verified: false,
+      domain_verify_txt_host: null,
+      domain_verify_txt_value: null,
+      webhook_registered: false,
+      env_production: {},
+      env_preview: {},
+    })
+    vi.mocked(frontendApi.listDeployments).mockResolvedValue([
+      {
+        id: 21,
+        server_id: 7,
+        kind: 'production',
+        branch: 'main',
+        branch_slug: 'main',
+        commit_sha: '1112223',
+        commit_message: null,
+        commit_author: null,
+        source: 'manual',
+        status: 'failed',
+        is_live: false,
+        port: 28080,
+        url: null,
+        error_summary: 'npm run build exited with code 1',
+        created_at: null,
+        started_at: null,
+        finished_at: null,
+      },
+      {
+        id: 22,
+        server_id: 7,
+        kind: 'production',
+        branch: 'main',
+        branch_slug: 'main',
+        commit_sha: '4445556',
+        commit_message: null,
+        commit_author: null,
+        source: 'manual',
+        status: 'building',
+        is_live: false,
+        port: 28080,
+        url: null,
+        error_summary: null,
+        created_at: null,
+        started_at: null,
+        finished_at: null,
+      },
+    ])
+
+    render(<DeploymentsPanel serverId={7} />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Build wird ausgefuehrt')).toBeInTheDocument()
+    })
+    expect(screen.getByText('Live-Log oeffnen')).toBeInTheDocument()
+    expect(screen.getByText('Letzter Build #21 (main) fehlgeschlagen')).toBeInTheDocument()
+  })
 })

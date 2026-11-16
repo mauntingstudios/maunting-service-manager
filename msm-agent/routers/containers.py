@@ -65,6 +65,8 @@ class EphemeralContainerRequest(BaseModel):
     entrypoint: str | None = None
     cap_add: list[str] | None = None
     timeout: int = Field(default=1800, ge=1, le=7200)
+    nano_cpus: int | None = Field(default=None, ge=100_000_000, le=16_000_000_000)
+    mem_limit: str | None = Field(default=None, max_length=32, pattern=r"^[1-9][0-9]*[kmgKMG]?$")
 
 
 class ResourceUpdateRequest(BaseModel):
@@ -143,6 +145,8 @@ def run_ephemeral(body: EphemeralContainerRequest) -> dict[str, Any]:
             entrypoint=body.entrypoint,
             cap_add=body.cap_add,
             timeout=body.timeout,
+            nano_cpus=body.nano_cpus,
+            mem_limit=body.mem_limit,
         )
     except Exception as exc:
         raise _map_docker_errors(exc) from exc
