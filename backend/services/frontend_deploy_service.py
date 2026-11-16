@@ -390,7 +390,7 @@ def _run_agent_node_build(
         f'REL_DIR="/srv/deployments/{dep_id}"\n'
         'rm -rf "$REL_DIR"\n'
         "mkdir -p /srv/deployments\n"
-        'cp -a "$OUT_DIR" "$REL_DIR"\n'
+        'cp -r "$OUT_DIR" "$REL_DIR"\n'
         f'rm -rf "/srv/_build_src/dep-{dep_id}"\n'
     )
 
@@ -1015,6 +1015,13 @@ def set_online(db: Session, server: Server, online: bool) -> FrontendSettings:
         logger.debug("Firewall-Umschaltung fuer Frontend %s uebersprungen: %s", server.id, exc)
     server.desired_power_state = "running" if fs.online else "stopped"
     db.flush()
+    if getattr(server, "node_id", None) is not None:
+        try:
+            from services.server_lifecycle_service import queue_lifecycle_operation
+
+            queue_lifecycle_operation(db, server, "start" if fs.online else "stop")
+        except Exception as exc:
+            logger.debug("Lifecycle-Umschaltung fuer Frontend %s uebersprungen: %s", server.id, exc)
     return fs
 
 

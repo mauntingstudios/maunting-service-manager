@@ -631,6 +631,14 @@ export function ServerDetail() {
   }
 
   const effectiveStatus = optimisticStatus || server.status;
+  const displayStatus =
+    isFrontendServer && frontendOverview
+      ? frontendOverview.online
+        ? effectiveStatus === "stopped"
+          ? "running"
+          : effectiveStatus
+        : "stopped"
+      : effectiveStatus;
   // Phase 5: node heartbeat offline → keep server visible, block actions
   const isNodeUnreachable = effectiveStatus === "node_unreachable";
 
@@ -906,8 +914,8 @@ export function ServerDetail() {
               </div>
             )}
 
-            <span className={`font-mono-sm text-mono-sm px-2.5 py-1 rounded-full border ${statusClasses(effectiveStatus)}`}>
-              {t(`servers.status.${effectiveStatus}`, { defaultValue: effectiveStatus })}
+            <span className={`font-mono-sm text-mono-sm px-2.5 py-1 rounded-full border ${statusClasses(displayStatus)}`}>
+              {t(`servers.status.${displayStatus}`, { defaultValue: displayStatus })}
             </span>
 
             <ServerConnectChip server={server} />
