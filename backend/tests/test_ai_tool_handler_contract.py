@@ -498,7 +498,9 @@ def test_the_tool_catalogue_stays_within_a_stated_budget(
         # Stand 08.11.2026: 89.263 Zeichen mit Singra Deploy-Pipeline,
         # Dev-Sandbox und Git-Workflows (Panel: 84.191). Grenze damals 91.000.
         # Stand 13.11.2026 siehe Docstring: 92.645 Zeichen im groessten Fall.
-        assert len(katalog) < 93_000, (
+        # Stand 16.11.2026: 94.788 Zeichen App (125 Werkzeuge), 89.716 Panel (119)
+        # mit Frontend-Deployments (`frontend_read`, `propose_frontend_action`, `propose_frontend_settings`).
+        assert len(katalog) < 95_500, (
             f"Der Werkzeugkatalog der Herkunft '{herkunft}' ist auf "
             f"{len(katalog)} Zeichen gewachsen. Er geht in jeder Runde mit und "
             "taucht in keiner Budgetrechnung auf. Wer die Grenze anhebt, misst "

@@ -82,6 +82,8 @@ export const SCHREIBWERKZEUGE = [
   'propose_blueprint_change',
   'propose_blueprint_delete',
   'propose_server_blueprint_switch',
+  'propose_frontend_action',
+  'propose_frontend_settings',
   'propose_hoster_integration',
   'propose_hoster_product',
   'propose_ai_tarif_role',

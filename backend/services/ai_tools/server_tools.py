@@ -45,6 +45,7 @@ from services.ai_tools.server_file_tools import (
     suche_dateien as _execute_file_search,
 )
 from services.ai_tools.document_tools import DEFINITIONEN as _DOCUMENT_DEFINITIONEN
+from services.ai_tools.frontend_tools import DEFINITIONEN as _FRONTEND_DEFINITIONEN
 from services.ai_tools.hoster_read_tools import DEFINITIONEN as _HOSTER_DEFINITIONEN
 from services.ai_tools.geo_tools import GEO_DEFINITIONEN as _GEO_DEFINITIONEN
 from services.ai_tools.cloudflare_read_tools import DEFINITIONEN as _CLOUDFLARE_DEFINITIONEN
@@ -318,6 +319,7 @@ def provider_tool_definitions() -> list[dict]:
         *_SEARCH_DEFINITIONEN,
         # ── Schreib-Tools: erzeugen ausschliesslich Vorschlaege ────────────
         *_SERVER_WRITE_DEFINITIONEN,
+        *_FRONTEND_DEFINITIONEN,
         *_SYSTEM_DEFINITIONEN,
     ]
 

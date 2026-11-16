@@ -88,7 +88,7 @@ def _ts_liste(pfad: Path, anfang: str, ende: str) -> set[str]:
 
 
 def test_katalog_und_registry_nennen_dieselben_werkzeuge(katalog: dict[str, dict]) -> None:
-    assert len(katalog) == len(registry.WERKZEUGE) == 125
+    assert len(katalog) == len(registry.WERKZEUGE) == 128
     assert set(katalog) == set(registry.WERKZEUGE)
 
 

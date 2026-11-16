@@ -418,6 +418,13 @@ def server_vorschlag(
     elif tool_name == "propose_database_change":
         payload, preview = _database_change_payload(db, user, server, rest)
         expected_revision = None
+    elif tool_name in {
+        "propose_frontend_action",
+        "propose_frontend_settings",
+    }:
+        payload = {"tool": tool_name, **rest}
+        preview = {"operation": tool_name, **rest}
+        expected_revision = None
     elif tool_name in SERVER_READ_TOOLS:
         _require_tool_permission(db, user, server.id, tool_name, rest)
         payload = dict(rest)
@@ -793,9 +800,65 @@ def execute_autonomously(
         db, proposal_id=proposal_id, user=user, confirmation_token=token
     )
 
+def _ausfuehren_frontend(db: Session, rahmen: _AusfuehrungsRahmen) -> _Ausgefuehrt:
+    from services import frontend_deploy_service, frontend_domain_service, github_hook_service
+
+    server = rahmen.server
+    if server is None:
+        raise AiActionValidationError("Server nicht gefunden")
+    p = rahmen.payload
+    tool = rahmen.tool_name
+
+    if tool == "propose_frontend_action":
+        action = str(p.get("action") or "").strip().lower()
+        if action == "redeploy":
+            fs = frontend_deploy_service.get_or_create_settings(db, server)
+            branch = str(p.get("branch") or fs.production_branch).strip()
+            dep = frontend_deploy_service.enqueue(
+                db, server, branch=branch, source="ai", actor_user_id=rahmen.user.id
+            )
+            db.flush()
+            frontend_deploy_service.trigger_async_build(dep.id, actor_user_id=rahmen.user.id)
+            return _Ausgefuehrt(result={"deployment_id": dep.id, "branch": dep.branch, "status": dep.status})
+        if action == "promote":
+            dep = frontend_deploy_service.promote(db, int(p["deployment_id"]))
+            return _Ausgefuehrt(result={"deployment_id": dep.id, "branch": dep.branch, "is_live": dep.is_live})
+        if action == "rollback":
+            dep = frontend_deploy_service.rollback(db, int(p["deployment_id"]))
+            return _Ausgefuehrt(result={"deployment_id": dep.id, "branch": dep.branch, "is_live": dep.is_live})
+        if action in ("online", "offline"):
+            fs = frontend_deploy_service.set_online(db, server, action == "online")
+            return _Ausgefuehrt(result={"online": fs.online})
+        raise AiActionValidationError(f"Unbekannte Frontend-Aktion: {action}")
+
+    if tool == "propose_frontend_settings":
+        fs = frontend_deploy_service.get_or_create_settings(db, server)
+        if p.get("production_branch"):
+            fs.production_branch = str(p["production_branch"]).strip()
+        if "auto_deploy" in p:
+            fs.auto_deploy = bool(p["auto_deploy"])
+        if "previews_enabled" in p:
+            fs.previews_enabled = bool(p["previews_enabled"])
+        if "domain" in p:
+            frontend_domain_service.set_custom_domain(db, server, p.get("domain"))
+        if p.get("auto_deploy") is True:
+            github_hook_service.register_webhook(db, server)
+        return _Ausgefuehrt(
+            result={
+                "production_branch": fs.production_branch,
+                "auto_deploy": fs.auto_deploy,
+                "previews_enabled": fs.previews_enabled,
+                "domain": fs.domain,
+            }
+        )
+    raise AiActionValidationError(f"Unbekanntes Frontend-Werkzeug: {tool}")
+
+
 #: Die Ausfuehrung der bestaetigten Schreib- und Lesewerkzeuge — Werkzeugname → Funktion.
 _AUSFUEHRUNGEN: dict[str, Callable[[Session, _AusfuehrungsRahmen], _Ausgefuehrt]] = {
     "propose_server_lifecycle": _ausfuehren_server_lifecycle,
+    "propose_frontend_action": _ausfuehren_frontend,
+    "propose_frontend_settings": _ausfuehren_frontend,
     "propose_backup": _ausfuehren_backup,
     "propose_backup_restore": _ausfuehren_backup_restore,
     "propose_server_blueprint_switch": _ausfuehren_server_blueprint_switch,

@@ -182,7 +182,7 @@ def toggle_online(
     user: User = Depends(get_current_user),
     _: None = Depends(verify_csrf),
 ) -> dict[str, Any]:
-    require_server_permission(user, server_id, db, "server.control")
+    require_server_permission(user, server_id, db, "server.restart")
     server = _get_frontend_server(server_id, db)
     fs = frontend_deploy_service.set_online(db, server, req.online)
     db.commit()
@@ -234,7 +234,7 @@ def trigger_deployment(
     user: User = Depends(get_current_user),
     _: None = Depends(verify_csrf),
 ) -> dict[str, Any]:
-    require_server_permission(user, server_id, db, "server.control")
+    require_server_permission(user, server_id, db, "server.restart")
     server = _get_frontend_server(server_id, db)
     fs = frontend_deploy_service.get_or_create_settings(db, server)
     branch = (req.branch or fs.production_branch).strip()
@@ -258,7 +258,7 @@ def promote_deployment(
     user: User = Depends(get_current_user),
     _: None = Depends(verify_csrf),
 ) -> dict[str, Any]:
-    require_server_permission(user, server_id, db, "server.control")
+    require_server_permission(user, server_id, db, "server.restart")
     dep = db.get(FrontendDeployment, dep_id)
     if dep is None or dep.server_id != server_id:
         raise HTTPException(status_code=404, detail="Deployment nicht gefunden")
@@ -275,7 +275,7 @@ def rollback_deployment(
     user: User = Depends(get_current_user),
     _: None = Depends(verify_csrf),
 ) -> dict[str, Any]:
-    require_server_permission(user, server_id, db, "server.control")
+    require_server_permission(user, server_id, db, "server.restart")
     dep = db.get(FrontendDeployment, dep_id)
     if dep is None or dep.server_id != server_id:
         raise HTTPException(status_code=404, detail="Deployment nicht gefunden")
@@ -292,7 +292,7 @@ def remove_preview(
     user: User = Depends(get_current_user),
     _: None = Depends(verify_csrf),
 ) -> dict[str, Any]:
-    require_server_permission(user, server_id, db, "server.control")
+    require_server_permission(user, server_id, db, "server.restart")
     server = _get_frontend_server(server_id, db)
     clean_slug = slugify_branch(branch_slug)
     row = (
