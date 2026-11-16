@@ -205,6 +205,39 @@ def generate_caddy_config(
 """
 
 
+def generate_proxy_vhost(
+    server_id: int,
+    domain: str,
+    target_port: int,
+    *,
+    server_name: str | None = None,
+    forward_auth_url: str | None = None,
+) -> str:
+    """Erzeugt einen Host-Caddy-Block (HTTPS) fuer einen isolierten Container-Port."""
+    clean_domain = (domain or "").strip()
+    name_comment = f" - {server_name}" if server_name else ""
+    log_posix = get_caddy_log_path(server_id).as_posix()
+    auth_block = ""
+    if forward_auth_url:
+        auth_block = (
+            f"    forward_auth {forward_auth_url} {{\n"
+            f"        uri /api/frontend-previews/authorize?server_id={int(server_id)}\n"
+            "        copy_headers X-MSM-Preview-User\n"
+            "    }\n"
+        )
+    return (
+        f"# Managed by MSM: Proxy #{server_id}{name_comment}\n"
+        f"{clean_domain} {{\n"
+        "    encode gzip\n"
+        "    log {\n"
+        f"        output file {log_posix}\n"
+        "    }\n"
+        f"{auth_block}"
+        f"    reverse_proxy 127.0.0.1:{int(target_port)}\n"
+        "}\n"
+    )
+
+
 def is_caddy_available() -> bool:
     """Prüft, ob Caddy auf dem lokalen Host als Befehl oder systemd-Dienst verfügbar ist."""
     return shutil.which("caddy") is not None

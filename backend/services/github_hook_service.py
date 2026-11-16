@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from blueprints.registry import get_registry
 from blueprints.schema import BlueprintCategory
-from config import is_local_origin, settings
+from config import is_localhost_origin, settings
 from models import KIND_GITHUB_TOKEN, Server
 from services import credential_service, frontend_deploy_service
 
@@ -49,7 +49,7 @@ def register_webhook(db: Session, server: Server) -> HookSyncResult:
         return HookSyncResult(False, reason="no_github_repo")
 
     panel_url = (getattr(settings, "panel_url", "") or "").strip().rstrip("/")
-    if not panel_url or is_local_origin(panel_url):
+    if not panel_url or is_localhost_origin(panel_url):
         return HookSyncResult(False, reason="panel_not_public")
 
     cred = credential_service.resolve_for_server(db, server.id, KIND_GITHUB_TOKEN)
