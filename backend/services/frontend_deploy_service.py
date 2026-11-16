@@ -291,7 +291,7 @@ def _run_agent_clone(
 ) -> tuple[str, str]:
     from services.docker_service import VolumeBind
 
-    clean_url = repo if repo.endswith(".git") else f"{repo}.git"
+    clean_url = _clone_url(repo, token=None)
     script = (
         "set -e\n"
         f'DEST="/srv/_build_src/dep-{dep_id}"\n'

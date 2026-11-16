@@ -307,5 +307,7 @@ def test_run_build_delegates_to_agent_when_node_fs_delegated(
     assert "Caddyfile" in written_files
     assert f"build-logs/deploy-{dep.id}.log" in written_files
     assert any("alpine/git" in c.get("image", "") for c in ephemeral_calls)
+    git_call = next(c for c in ephemeral_calls if "alpine/git" in c.get("image", ""))
+    assert git_call["env"]["GIT_REPO_URL"].startswith("https://github.com/")
     assert any("node:" in c.get("image", "") for c in ephemeral_calls)
     assert read_back.startswith(f"[MSM] Build #{dep.id} gestartet")
