@@ -535,7 +535,7 @@ _TABELLE: dict[str, Werkzeug] = {
 
 
 
-from services.ai_tools import audit_tools, cloudflare_read_tools, curseforge_read_tools, database_tools, document_tools, frontend_tools, geo_tools, global_write_tools, hoster_read_tools, panel_overview_tools, project_tools, personal_tools, server_history_tools, server_network_tools, server_file_tools, server_mod_tools, server_ops_tools, server_write_tools, system_tools, task_tools, user_tools  # noqa: E402,F401
+from services.ai_tools import audit_tools, cloudflare_read_tools, curseforge_read_tools, database_tools, document_tools, frontend_tools, geo_tools, global_write_tools, hoster_read_tools, panel_overview_tools, project_tools, personal_tools, server_history_tools, server_network_tools, server_file_tools, server_mod_tools, server_ops_tools, server_write_tools, system_tools, task_tools, team_tools, user_tools  # noqa: E402,F401
 
 _DEKLARIERT = {name: spec.werkzeug for name, spec in ALLE.items()}
 _DOPPELT = set(_TABELLE) & set(_DEKLARIERT)
@@ -696,6 +696,13 @@ RECHTE_SCHREIBEN = frozenset({
     "propose_role_set",
     "propose_user_roles",
     "propose_role_delete",
+    "propose_team_create",
+    "propose_team_role_set",
+    "propose_team_role_delete",
+    "propose_team_member_roles",
+    "propose_team_member_invite",
+    "propose_team_member_remove",
+    "propose_team_server_grants",
 })
 
 

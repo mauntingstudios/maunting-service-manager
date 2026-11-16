@@ -1148,6 +1148,92 @@ def set_server_grants(
     return sorted(desired)
 
 
+def set_server_grants_batch(
+    db: Session, *, team: Team, user: User, grants: list[dict],
+) -> dict[int, list[str]]:
+    """Aktualisiert Server-Grants mehrerer Server eines Teams atomar in einem Schritt."""
+    if not has_team_permission(db, team.id, user, "team.servers.manage"):
+        assert_team_owner(db, team, user)
+    if team.is_personal:
+        raise HTTPException(status_code=409, detail="Das persoenliche Team teilt keine Server")
+
+    founder = db.get(User, team.owner_user_id)
+    if founder is None:
+        raise HTTPException(status_code=409, detail="Teamgründer nicht gefunden")
+
+    normalized: dict[int, set[str]] = {}
+    for entry in grants:
+        server_id = int(entry.get("server_id") or 0)
+        if server_id <= 0:
+            raise HTTPException(status_code=422, detail="Ungültige Server-ID")
+        if not permission_service.direct_server_permission(db, user, server_id, "server.view"):
+            raise HTTPException(status_code=404, detail="Server nicht gefunden")
+        desired = {key for key in (entry.get("permission_keys") or []) if key in SERVER_KEYS}
+        if desired and "server.view" not in desired:
+            raise HTTPException(
+                status_code=422,
+                detail="Ohne \"server.view\" ergeben die uebrigen Rechte keinen Sinn",
+            )
+        for key in sorted(desired):
+            if not permission_service.direct_server_permission(db, user, server_id, key):
+                raise HTTPException(
+                    status_code=403,
+                    detail=(
+                        f"Du haelst \"{key}\" auf diesem Server nicht selbst und "
+                        "kannst es deshalb nicht an das Team weitergeben."
+                    ),
+                )
+            if founder.id != user.id and not permission_service.direct_server_permission(
+                db, founder, server_id, key
+            ):
+                raise HTTPException(
+                    status_code=403,
+                    detail=(
+                        f"Der Teamgründer hält \"{key}\" auf diesem Server nicht "
+                        "selbst und kann es deshalb nicht weitergeben."
+                    ),
+                )
+        normalized[server_id] = desired
+
+    existing_rows = (
+        db.query(TeamServerGrant)
+        .filter(
+            TeamServerGrant.team_id == team.id,
+            TeamServerGrant.server_id.in_(list(normalized)),
+        )
+        .all()
+    )
+    by_server: dict[int, dict[str, TeamServerGrant]] = {}
+    for row in existing_rows:
+        by_server.setdefault(row.server_id, {})[row.permission_key] = row
+
+    result: dict[int, list[str]] = {}
+    for server_id, desired in normalized.items():
+        current = by_server.get(server_id, {})
+        for key, row in current.items():
+            if key not in desired:
+                db.delete(row)
+        for key in desired:
+            if key not in current:
+                db.add(TeamServerGrant(
+                    team_id=team.id, server_id=server_id, permission_key=key,
+                    granted_by=user.id,
+                ))
+        result[server_id] = sorted(desired)
+
+    audit_service.record_privileged_action(
+        db,
+        user_id=user.id,
+        action="team.server.grants.batch_set",
+        target_type="team",
+        target_id=team.id,
+        details={"server_ids": sorted(normalized), "count": len(normalized)},
+        origin="direct",
+    )
+    db.commit()
+    return result
+
+
 def team_server_keys(db: Session, team_id: int, server_id: int) -> list[str]:
     rows = (
         db.query(TeamServerGrant.permission_key)

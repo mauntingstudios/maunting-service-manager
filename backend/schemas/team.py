@@ -90,6 +90,10 @@ class TeamServerGrantWrite(BaseModel):
     permission_keys: list[str] = Field(default_factory=list, max_length=64)
 
 
+class TeamServerGrantsBatchWrite(BaseModel):
+    grants: list[TeamServerGrantWrite] = Field(min_length=1, max_length=200)
+
+
 class TeamMemberResponse(BaseModel):
     user_id: int
     username: str

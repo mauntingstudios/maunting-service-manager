@@ -208,6 +208,11 @@ export const teamsApi = {
   }) => api<TeamDetail>(`/teams/${teamId}/servers`, {
     method: 'PUT', body: JSON.stringify(payload),
   }),
+  setServerGrantsBatch: (teamId: number, payload: {
+    grants: { server_id: number; permission_keys: string[] }[]
+  }) => api<TeamDetail>(`/teams/${teamId}/servers/batch`, {
+    method: 'PUT', body: JSON.stringify(payload),
+  }),
   setServerRolesActive: (teamId: number, active: boolean) =>
     api<TeamDetail>(`/teams/${teamId}/server-roles`, {
       method: 'PUT', body: JSON.stringify({ active }),

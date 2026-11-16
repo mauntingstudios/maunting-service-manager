@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { Check, CheckCircle2, Eye, Shield, ShieldCheck, Terminal, X } from 'lucide-react'
+import { Check, CheckCircle2, Copy, Eye, Shield, ShieldCheck, Terminal, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import type { TeamServer } from '@/api/teams'
 
@@ -9,6 +9,7 @@ export interface TeamServerCardProps {
   onChangeKeys: (keys: string[]) => void
   disabled?: boolean
   roleName?: string
+  onSyncToAllServers?: () => void
 }
 
 /**
@@ -24,6 +25,7 @@ export function TeamServerCard({
   onChangeKeys,
   disabled = false,
   roleName,
+  onSyncToAllServers,
 }: TeamServerCardProps) {
   const { t } = useTranslation()
 
@@ -186,6 +188,18 @@ export function TeamServerCard({
               <Check className="h-3.5 w-3.5" />
               <span>{t('teams.fullAccess', 'Vollzugriff')}</span>
             </button>
+
+            {onSyncToAllServers && (
+              <button
+                type="button"
+                disabled={disabled}
+                onClick={onSyncToAllServers}
+                className="inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-medium transition-all bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <Copy className="h-3.5 w-3.5" />
+                <span>{t('teams.syncToAllServers')}</span>
+              </button>
+            )}
           </div>
         </div>
 

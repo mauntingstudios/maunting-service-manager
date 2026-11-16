@@ -81,6 +81,17 @@ DOMAIN_PACKS: dict[str, frozenset[str]] = {
         "analyze_region",
         "control_region_camera",
     }),
+    "teams": frozenset({
+        "list_teams",
+        "read_team_overview",
+        "propose_team_create",
+        "propose_team_role_set",
+        "propose_team_role_delete",
+        "propose_team_member_roles",
+        "propose_team_member_invite",
+        "propose_team_member_remove",
+        "propose_team_server_grants",
+    }),
 }
 
 

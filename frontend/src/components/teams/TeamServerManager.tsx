@@ -1,7 +1,8 @@
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Info, Server } from 'lucide-react'
 import type { TeamDetail, TeamServer } from '@/api/teams'
-import { Dropdown, Switch } from '@maunting/ui'
+import { Button, Dropdown, Switch } from '@maunting/ui'
 import { TeamServerCard } from './TeamServerCard'
 
 export interface TeamServerManagerProps {
@@ -13,6 +14,8 @@ export interface TeamServerManagerProps {
   onRollenWahl: (serverId: number, roleId: number | null) => void
   onRoleKeys: (serverId: number, roleId: number, keys: string[]) => void
   onToggleServerRoles: (active: boolean) => void
+  onSyncRoleKeysToAll?: (sourceServerId: number, roleId: number, keys: string[]) => void
+  onSyncServerKeysToAll?: (sourceServerId: number, keys: string[]) => void
 }
 
 /**
@@ -30,9 +33,20 @@ export function TeamServerManager({
   onRollenWahl,
   onRoleKeys,
   onToggleServerRoles,
+  onSyncRoleKeysToAll,
+  onSyncServerKeysToAll,
 }: TeamServerManagerProps) {
   const { t } = useTranslation()
   const rollen = (team.roles || []).filter((r) => !r.is_admin)
+  const [bulkRoleId, setBulkRoleId] = useState<string | null>(null)
+
+  const handleBulkRoleSelect = () => {
+    if (!bulkRoleId) return
+    const id = Number(bulkRoleId)
+    for (const server of assignable) {
+      onRollenWahl(server.server_id, id)
+    }
+  }
 
   return (
     <section className="space-y-6 max-w-4xl" aria-labelledby="team-servers-heading">
@@ -86,6 +100,35 @@ export function TeamServerManager({
             </div>
           ) : (
             <div className="space-y-4">
+              {assignable.length > 1 && (
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-outline-variant/30 bg-surface-container-low/60 p-3.5 sm:px-4">
+                  <span className="text-xs sm:text-sm font-medium text-on-surface">
+                    {t('teams.bulkRoleLabel')}
+                  </span>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="w-56 max-w-full">
+                      <Dropdown
+                        value={bulkRoleId}
+                        onChange={(val) => setBulkRoleId(val)}
+                        options={rollen.map((r) => ({ value: String(r.id), label: r.name }))}
+                        placeholder={t('teams.rolleWaehlen')}
+                        disabled={busy}
+                        aria-label={t('teams.bulkRoleLabel')}
+                      />
+                    </div>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      disabled={busy || !bulkRoleId}
+                      onClick={handleBulkRoleSelect}
+                    >
+                      {t('teams.applyRoleToAllServers')}
+                    </Button>
+                  </div>
+                </div>
+              )}
+
               {assignable.map((server) => {
                 const gewaehlt = rollen.find((r) => r.id === rollenWahl[server.server_id]) ?? null
                 const grant = gewaehlt?.server_grants?.find((g) => g.server_id === server.server_id)
@@ -118,10 +161,15 @@ export function TeamServerManager({
                         onChangeKeys={(keys) => onRoleKeys(server.server_id, gewaehlt.id, keys)}
                         disabled={busy}
                         roleName={gewaehlt.name}
+                        onSyncToAllServers={
+                          assignable.length > 1 && onSyncRoleKeysToAll
+                            ? () => onSyncRoleKeysToAll(server.server_id, gewaehlt.id, grant?.permission_keys ?? [])
+                            : undefined
+                        }
                       />
                     ) : (
                       <div className="rounded-xl border border-dashed border-outline-variant/40 bg-surface-container-low/20 p-4 text-center text-xs text-on-surface-variant/70 italic">
-                        Wähle oben eine Rolle, um die Rechte für diesen Server zu bearbeiten.
+                        {t('teams.selectRoleToEditServer')}
                       </div>
                     )}
                   </div>
@@ -142,6 +190,11 @@ export function TeamServerManager({
                 assignedKeys={current?.permission_keys ?? []}
                 onChangeKeys={(keys) => onSetServerKeys(server.server_id, keys)}
                 disabled={busy}
+                onSyncToAllServers={
+                  assignable.length > 1 && onSyncServerKeysToAll
+                    ? () => onSyncServerKeysToAll(server.server_id, current?.permission_keys ?? [])
+                    : undefined
+                }
               />
             )
           })}

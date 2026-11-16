@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Crown, Server, Sparkles } from 'lucide-react'
+import { Copy, Crown, Server, Sparkles } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { SanitizedApiError } from '@/api/client'
@@ -12,6 +12,7 @@ import {
 import { Button, ColorPicker, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, IconPicker, Input, MultiSelect, RechteAbschnitte, renderRoleIcon, Switch, Textarea } from '@maunting/ui'
 import { toast } from '@/stores/toastStore'
 import {
+  mitServerSicht,
   TEAM_PERMISSION_ABSCHNITTE,
   TEAM_PERMISSION_DEFINITIONS,
 } from './teamPermissionsCatalog'
@@ -102,12 +103,30 @@ export function TeamRoleModal({
     setServerGrants((prev) => {
       const next = new Map(prev)
       if (giveAll) {
-        next.set(serverId, new Set(allKeys))
+        next.set(serverId, new Set(mitServerSicht(allKeys).keys))
       } else {
         next.delete(serverId)
       }
       return next
     })
+  }
+
+  const applyServerKeysToAll = (sourceServerId: number) => {
+    const sourceKeys = serverGrants.get(sourceServerId) ?? new Set<string>()
+    setServerGrants((prev) => {
+      const next = new Map(prev)
+      for (const target of teamServers) {
+        const filtered = Array.from(sourceKeys).filter((k) => target.permission_keys.includes(k))
+        const normalized = mitServerSicht(filtered).keys
+        if (normalized.length > 0) {
+          next.set(target.server_id, new Set(normalized))
+        } else {
+          next.delete(target.server_id)
+        }
+      }
+      return next
+    })
+    toast.success(t('teams.appliedToAllServers'))
   }
 
   const canSave = name.trim().length >= 2 && !busy
@@ -346,7 +365,20 @@ export function TeamRoleModal({
                               </span>
                             </div>
 
-                            <div className="flex items-center gap-1.5">
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              {teamServers.length > 1 && (
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  disabled={busy}
+                                  onClick={() => applyServerKeysToAll(server.server_id)}
+                                  className="text-xs h-7 px-2 text-primary"
+                                >
+                                  <Copy className="h-3.5 w-3.5 mr-1" aria-hidden="true" />
+                                  {t('teams.applyToAllServers')}
+                                </Button>
+                              )}
                               <Button
                                 type="button"
                                 variant="ghost"

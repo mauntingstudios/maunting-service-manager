@@ -175,6 +175,53 @@ def _require_tool_permission(
                 raise AiActionValidationError("AI-Aktion ist nicht erlaubt")
         return
 
+    if tool_name in {
+        "propose_team_role_set",
+        "propose_team_role_delete",
+        "propose_team_member_roles",
+        "propose_team_member_invite",
+        "propose_team_member_remove",
+        "propose_team_server_grants",
+    }:
+        from fastapi import HTTPException
+        from services import team_service
+
+        raw_team_id = payload.get("team_id")
+        if isinstance(raw_team_id, str) and raw_team_id.strip().isdigit():
+            raw_team_id = int(raw_team_id.strip())
+        if isinstance(raw_team_id, bool) or not isinstance(raw_team_id, int) or raw_team_id < 1:
+            raise AiActionValidationError("'team_id' fehlt oder ist keine gültige Kennung")
+        try:
+            team = team_service.get_team_for_member(db, raw_team_id, user)
+        except HTTPException:
+            raise AiActionValidationError("Team nicht gefunden") from None
+        if team.is_personal:
+            raise AiActionValidationError("Das persönliche Team unterstützt diese Aktion nicht.")
+
+        is_owner = bool(user.is_owner or team.owner_user_id == user.id)
+        if tool_name in {"propose_team_role_set", "propose_team_role_delete", "propose_team_member_roles"}:
+            allowed = is_owner or team_service.has_team_permission(db, team.id, user, "team.roles.manage")
+        elif tool_name == "propose_team_member_invite":
+            allowed = is_owner or team_service.has_team_permission(db, team.id, user, "team.members.invite")
+        elif tool_name == "propose_team_member_remove":
+            allowed = is_owner or team_service.has_team_permission(db, team.id, user, "team.members.kick")
+        else:
+            toggling_mode = payload.get("server_roles_active") is not None
+            has_grants = bool(
+                payload.get("all_servers")
+                or payload.get("server_id") is not None
+                or payload.get("permissions") is not None
+                or payload.get("grants")
+            )
+            allowed = (not toggling_mode or is_owner) and (
+                not has_grants
+                or is_owner
+                or team_service.has_team_permission(db, team.id, user, "team.servers.manage")
+            )
+        if not allowed:
+            raise AiActionValidationError("AI-Aktion ist nicht erlaubt")
+        return
+
     permissions = _permission_for(tool_name, payload)
     if not permissions:
         raise AiActionValidationError("AI-Aktion ist nicht erlaubt")

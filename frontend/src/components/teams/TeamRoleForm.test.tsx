@@ -102,4 +102,33 @@ describe('TeamRoleForm', () => {
       ),
     )
   })
+
+  it('übernimmt Serverrechte per Klick gefiltert auf alle anderen Server', async () => {
+    const rolle = { id: 12, name: 'Allrounder' } as TeamRole
+    vi.mocked(teamsApi.createRole).mockResolvedValue(rolle)
+    zeige()
+
+    fireEvent.change(screen.getByPlaceholderText('z. B. Moderator, Entwickler, Redakteur'), {
+      target: { value: 'Allrounder' },
+    })
+    fireEvent.click(screen.getByLabelText('Serverrechte für Valheim'))
+    fireEvent.click(await screen.findByRole('option', { name: 'Server starten' }))
+
+    const applyButtons = screen.getAllByRole('button', { name: i18n.t('teams.applyToAllServers') })
+    fireEvent.click(applyButtons[0])
+    fireEvent.click(screen.getByRole('button', { name: 'Rolle erstellen' }))
+
+    await waitFor(() =>
+      expect(teamsApi.createRole).toHaveBeenCalledWith(
+        2,
+        expect.objectContaining({
+          name: 'Allrounder',
+          server_grants: [
+            { server_id: 7, permission_keys: ['server.start', 'server.view'] },
+            { server_id: 8, permission_keys: ['server.view'] },
+          ],
+        }),
+      ),
+    )
+  })
 })

@@ -265,6 +265,8 @@ def angebotene_werkzeuge(
         "list_users",
         "read_user_permissions",
         "list_roles",
+        "list_teams",
+        "read_team_overview",
     }
     from services.tool_selection_port import HOTSET, pflichtwerkzeuge
     # Aus der App gehören Sehen, Zeigen und Programmstarten immer dazu

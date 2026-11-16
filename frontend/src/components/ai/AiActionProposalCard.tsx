@@ -1,4 +1,4 @@
-import { Activity, AlertTriangle, Blocks, Bot, CalendarClock, ChevronDown, Database, Eye, FilePenLine, FileX, Globe, HardDriveDownload, HardDriveUpload, Mail, Network, Package, Plug, Power, ServerCog, ShieldCheck, SlidersHorizontal, Trash2, Wrench } from 'lucide-react'
+import { Activity, AlertTriangle, Blocks, Bot, CalendarClock, ChevronDown, Database, Eye, FilePenLine, FileX, Globe, HardDriveDownload, HardDriveUpload, Mail, Network, Package, Plug, Power, ServerCog, ShieldCheck, SlidersHorizontal, Trash2, Users, Wrench } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -99,6 +99,10 @@ const TATSACHEN: readonly string[] = [
   // Bestaetigende zwei Listen im Kopf vergleichen, um zu sehen, dass er gerade
   // etwas entzieht.
   'target_user',
+  'team_name',
+  'role_name',
+  'server_grants_summary',
+  'servers_updated',
   'permissions_after',
   'permissions_added',
   'permissions_removed',
@@ -167,6 +171,8 @@ const UNUMKEHRBAR: readonly string[] = [
   // erst zum Loeschen zulaesst, schuetzt die laufenden Anlagen — den Blueprint
   // selbst holt danach niemand zurueck.
   'propose_blueprint_delete',
+  'propose_team_role_delete',
+  'propose_team_member_remove',
 ]
 
 export function AiActionProposalCard({
@@ -254,6 +260,13 @@ export function AiActionProposalCard({
     propose_role_set: ShieldCheck,
     propose_user_roles: ShieldCheck,
     propose_role_delete: Trash2,
+    propose_team_create: Users,
+    propose_team_role_set: ShieldCheck,
+    propose_team_role_delete: Trash2,
+    propose_team_member_roles: Users,
+    propose_team_member_invite: Users,
+    propose_team_member_remove: Trash2,
+    propose_team_server_grants: ShieldCheck,
   }
   const Icon = ICONS[proposal.tool_name] ?? Power
   // Eine autonom ausgefuehrte Aktion ist keine Anfrage. Sie bekommt deshalb

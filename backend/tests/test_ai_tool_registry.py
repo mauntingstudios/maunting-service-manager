@@ -205,6 +205,9 @@ def test_die_sperre_ist_ausgeschrieben() -> None:
         "propose_backup_restore",
         # Rollen
         "propose_role_delete",
+        # Teams (Loeschen und Entfernen fragen immer, auch im autonomen Modus)
+        "propose_team_role_delete",
+        "propose_team_member_remove",
         # Der Rahmen der KI
         "propose_hoster_integration",
         "propose_hoster_product",

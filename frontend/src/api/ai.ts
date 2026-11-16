@@ -110,6 +110,13 @@ export const SCHREIBWERKZEUGE = [
   'propose_role_set',
   'propose_user_roles',
   'propose_role_delete',
+  'propose_team_create',
+  'propose_team_role_set',
+  'propose_team_role_delete',
+  'propose_team_member_roles',
+  'propose_team_member_invite',
+  'propose_team_member_remove',
+  'propose_team_server_grants',
 ] as const
 
 export type AiWriteTool = (typeof SCHREIBWERKZEUGE)[number]

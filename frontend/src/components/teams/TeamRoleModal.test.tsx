@@ -155,4 +155,55 @@ describe('TeamRoleModal', () => {
     expect(await screen.findByText('Administrator-Rolle aktiviert')).toBeInTheDocument()
     expect(screen.queryByText('Funktionale Berechtigungen')).not.toBeInTheDocument()
   })
+
+  it('applies permissions of one server to all servers filtered by capability', async () => {
+    const multiServerTeam: TeamDetail = {
+      ...mockTeam,
+      servers: [
+        {
+          server_id: 5,
+          server_name: 'Prod-Server',
+          permission_keys: ['server.view', 'server.start'],
+        },
+        {
+          server_id: 6,
+          server_name: 'Stage-Server',
+          permission_keys: ['server.view', 'server.stop'],
+        },
+      ],
+    }
+    vi.mocked(teamsApi.createRole).mockResolvedValue({ ...mockRole, id: 100, name: 'Sync-Rolle' })
+
+    render(
+      <TeamRoleModal
+        open={true}
+        onOpenChange={vi.fn()}
+        team={multiServerTeam}
+        role={null}
+        onSaved={vi.fn()}
+      />,
+    )
+
+    fireEvent.change(screen.getByPlaceholderText('z. B. Moderator, Entwickler, Redakteur'), {
+      target: { value: 'Sync-Rolle' },
+    })
+
+    const allRightsButtons = screen.getAllByRole('button', { name: 'Alle Rechte' })
+    fireEvent.click(allRightsButtons[0])
+
+    const applyAllButtons = screen.getAllByRole('button', { name: 'Auf alle Server anwenden' })
+    fireEvent.click(applyAllButtons[0])
+
+    fireEvent.click(screen.getByRole('button', { name: 'Rolle erstellen' }))
+
+    await waitFor(() => {
+      expect(teamsApi.createRole).toHaveBeenCalledWith(10, expect.objectContaining({
+        name: 'Sync-Rolle',
+        server_grants: [
+          { server_id: 5, permission_keys: ['server.view', 'server.start'] },
+          { server_id: 6, permission_keys: ['server.view'] },
+        ],
+      }))
+    })
+  })
 })

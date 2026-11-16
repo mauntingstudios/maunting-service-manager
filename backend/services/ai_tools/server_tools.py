@@ -168,6 +168,11 @@ from services.ai_tools.user_tools import (
     DEFINITIONEN as _USER_DEFINITIONEN,
     execute_user_read_tool,
 )
+from services.ai_tools.team_tools import (
+    DEFINITIONEN as _TEAM_DEFINITIONEN,
+    TEAM_READ_TOOLS as _TEAM_READ_TOOLS,
+    TEAM_SCOPED_WRITE_TOOLS as _TEAM_SCOPED_WRITE_TOOLS,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -294,6 +299,7 @@ def _global_tool_definitions() -> list[dict]:
         *_PERSONAL_DEFINITIONEN,
         *_DOCUMENT_DEFINITIONEN,
         *_USER_DEFINITIONEN,
+        *_TEAM_DEFINITIONEN,
     ]
 
 def provider_tool_definitions() -> list[dict]:
@@ -366,6 +372,40 @@ def angebotene_werkzeuge(db: Session, user: User) -> frozenset[str]:
         verfuegbar -= CALENDAR_TOOLS
     if not permission_service.has_global_permission(db, user, "notes.use"):
         verfuegbar -= NOTES_TOOLS
+
+    from services import team_service
+    user_teams = team_service.list_user_teams(db, user)
+    echte_teams = [t for t in user_teams if not t.is_personal]
+    if not user_teams and "teams.create" not in gehalten:
+        verfuegbar -= _TEAM_READ_TOOLS
+    if not echte_teams:
+        verfuegbar -= _TEAM_SCOPED_WRITE_TOOLS
+    else:
+        can_roles = any(
+            user.is_owner or t.owner_user_id == user.id or team_service.has_team_permission(db, t.id, user, "team.roles.manage")
+            for t in echte_teams
+        )
+        can_servers = any(
+            user.is_owner or t.owner_user_id == user.id or team_service.has_team_permission(db, t.id, user, "team.servers.manage")
+            for t in echte_teams
+        )
+        can_invite = any(
+            user.is_owner or t.owner_user_id == user.id or team_service.has_team_permission(db, t.id, user, "team.members.invite")
+            for t in echte_teams
+        )
+        can_kick = any(
+            user.is_owner or t.owner_user_id == user.id or team_service.has_team_permission(db, t.id, user, "team.members.kick")
+            for t in echte_teams
+        )
+        if not can_roles:
+            verfuegbar -= {"propose_team_role_set", "propose_team_role_delete", "propose_team_member_roles"}
+        if not can_servers:
+            verfuegbar -= {"propose_team_server_grants"}
+        if not can_invite:
+            verfuegbar -= {"propose_team_member_invite"}
+        if not can_kick:
+            verfuegbar -= {"propose_team_member_remove"}
+
     return frozenset(verfuegbar)
 
 

@@ -54,13 +54,13 @@ MENGEN = {
         "desktop_steuern", "desktop_system", "email_read", "email_search",
         "execute_server_action", "forget_skill", "get_document_outline", "learn_skill",
         "learn_team_skill", "list_blueprints", "list_document_comments", "list_documents",
-        "list_my_servers", "list_roles", "list_tasks", "list_users", "notes_read",
+        "list_my_servers", "list_roles", "list_tasks", "list_teams", "list_users", "notes_read",
         "popups_read", "project_create", "project_workspace", "read_audit_summary",
         "read_blueprint", "read_chat_attachment", "read_docs", "read_document",
         "read_document_selection", "read_document_skill", "read_document_structure",
         "read_hoster_integration_guide", "read_hoster_setup", "read_node_capacity",
         "read_node_health", "read_skill", "read_team_calendar", "read_team_notes",
-        "read_user_permissions", "read_web_page", "search_audit_log",
+        "read_team_overview", "read_user_permissions", "read_web_page", "search_audit_log",
         "search_chat_attachments", "search_curseforge_modpacks", "search_curseforge_mods",
         "search_docs", "search_memory", "search_team_memory", "send_test_email",
         "wait_until", "web_search", "worker_antwort", "worker_cancel", "worker_frage",
@@ -74,7 +74,7 @@ MENGEN = {
         "desktop_system", "edit_document", "email_read", "email_search",
         "execute_server_action", "forget_skill", "frontend_read", "get_document_outline", "learn_skill",
         "learn_team_skill", "list_blueprints", "list_document_comments", "list_documents",
-        "list_my_servers", "list_roles", "list_server_files", "list_tasks", "list_users",
+        "list_my_servers", "list_roles", "list_server_files", "list_tasks", "list_teams", "list_users",
         "notes_read", "popups_read", "project_create", "project_workspace",
         "read_ai_action_history", "read_audit_summary", "read_blueprint", "read_chat_attachment", "read_config",
         "read_database", "read_docs", "read_document", "read_document_selection",
@@ -83,7 +83,7 @@ MENGEN = {
         "read_node_capacity", "read_node_health", "read_server_backups",
         "read_server_capacity", "read_server_logs", "read_server_mods",
         "read_server_network", "read_server_ports", "read_server_status", "read_skill",
-        "read_team_calendar", "read_team_notes", "read_user_permissions", "read_web_page",
+        "read_team_calendar", "read_team_notes", "read_team_overview", "read_user_permissions", "read_web_page",
         "search_audit_log", "search_chat_attachments", "search_curseforge_modpacks", "search_curseforge_mods",
         "search_docs", "search_memory", "search_server_files", "search_team_memory",
         "search_workshop_mods", "send_test_email", "undo_ai_edit", "update_document_title",
@@ -105,14 +105,18 @@ MENGEN = {
         "propose_popup_set", "propose_restart_schedule_set", "propose_role_delete",
         "propose_role_set", "propose_server_blueprint_switch", "propose_server_create",
         "propose_server_delete", "propose_server_lifecycle", "propose_server_repair",
-        "propose_task_delete", "propose_task_set", "propose_user_roles",
+        "propose_task_delete", "propose_task_set", "propose_team_create",
+        "propose_team_member_invite", "propose_team_member_remove",
+        "propose_team_member_roles", "propose_team_role_delete", "propose_team_role_set",
+        "propose_team_server_grants", "propose_user_roles",
         "propose_user_server_permission",
     ],
     "ALWAYS_CONFIRM_TOOLS": [
         "propose_ai_tarif_role", "propose_backup_restore", "propose_blueprint_delete",
         "propose_file_delete", "propose_hoster_integration", "propose_hoster_product",
         "propose_role_delete", "propose_secret_rotation", "propose_server_delete",
-        "propose_server_reinstall", "propose_server_wipe",
+        "propose_server_reinstall", "propose_server_wipe", "propose_team_member_remove",
+        "propose_team_role_delete",
     ],
     "ASK_TOOLS": ["ask_user", "worker_frage"],
     "DELEGATION_TOOLS": [
@@ -198,7 +202,10 @@ MENGEN = {
         "propose_note_delete", "propose_task_delete",
     ],
     "RECHTE_SCHREIBEN": [
-        "propose_role_delete", "propose_role_set", "propose_user_roles",
+        "propose_role_delete", "propose_role_set", "propose_team_create",
+        "propose_team_member_invite", "propose_team_member_remove",
+        "propose_team_member_roles", "propose_team_role_delete", "propose_team_role_set",
+        "propose_team_server_grants", "propose_user_roles",
         "propose_user_server_permission",
     ],
     "AUFGABEN_LESEN": [
@@ -221,14 +228,14 @@ MENGEN = {
 }
 
 KATALOG = [
-    (False, False, "off", 121, "3db933b3d460594e07f8c9911d5245c630233e780166c75f3aff43741c63b34f"),
-    (False, False, "review", 121, "a17b60ca51faeb95c7c1517f2f938aca477c04d0fe25735df92306f90d4b5fe7"),
-    (False, True, "off", 123, "fcf3511c7280f50cf8add5472a7fba0664641a2722f9118c85b9c547c0a43e76"),
-    (False, True, "review", 123, "26afbc3d62ff7e25f786963a91becafb12544b7d023328644ba290f6887d6132"),
-    (True, False, "off", 123, "f0045f174417bf467d820161b1c22e797d038bc732d7e11ff31b9a5f43107d9f"),
-    (True, False, "review", 123, "e920a83993f389cf3312db6f1b2fcd4de526ae6ef448eb3d232384a77eab5b2e"),
-    (True, True, "off", 125, "fa22481a0a60b6c9102c791f9873fd932bc5360118b122db5b9c0dad3a432282"),
-    (True, True, "review", 125, "89386c98500be73e8c911df9573b8d2a1468aebe22c38ba821b6fa27f3768795"),
+    (False, False, "off", 130, "65be54215e610d9d23d93b6fb5447f6dc5b8ecf940cfdf6f47e542d96e346f7f"),
+    (False, False, "review", 130, "a1701021129fcdef40ffb8c149d1ebdff3c1563532d19346bf963961f4080a33"),
+    (False, True, "off", 132, "94bbe91b65bf03c09f92c4d076599f3ed904c0ef916a5878fc8b80b7300fbc7c"),
+    (False, True, "review", 132, "7d9f4d2c8db975b7262b3a9e940102a1d6c4ab8b1061d02e5d2400e0b3e2a3eb"),
+    (True, False, "off", 132, "64381d45b8f68039e054b1f42ec3415264ee6996e69f14cc2b89838b38888240"),
+    (True, False, "review", 132, "6e1fdb4ae8f593ebf675a494e46fafc2f12c7cfdc45beffe8825406916c81c39"),
+    (True, True, "off", 134, "f55994cf8d7847d01966a33b07a889c1e51062ec8e4422420e1289a945173f0a"),
+    (True, True, "review", 134, "d31916a72520d547b620f64e9354d46648cf0e4cdebb1bbfe828c32ddc648cb6"),
 ]
 
 SPRACHE_KATALOG_HASH = "d616c67eee2793c462ef37b9540cffa53dc445688fbd8a890aa3e82bc41cf266"
@@ -338,4 +345,4 @@ def test_der_import_der_ki_schicht_bleibt_moeglich() -> None:
         "services.ai_tool_compat",
     ):
         importlib.import_module(modul)
-    assert len(registry.WERKZEUGE) == 128
+    assert len(registry.WERKZEUGE) == 137

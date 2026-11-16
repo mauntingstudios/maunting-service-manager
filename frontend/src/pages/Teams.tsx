@@ -384,6 +384,80 @@ export function Teams() {
     }, 'teams.serversSaved')
   }
 
+  const syncRoleServerKeysToAll = async (sourceServerId: number, roleId: number, keys: string[]) => {
+    if (!detail) return
+    const rolle = detail.roles?.find((r) => r.id === roleId)
+    if (!rolle || rolle.is_admin) return
+
+    const targetGrants = assignable.map((server) => ({
+      server_id: server.server_id,
+      permission_keys: mitServerSicht(keys.filter((k) => server.permission_keys.includes(k))).keys,
+    }))
+
+    const hasOverwrite = assignable.some((server) => {
+      if (server.server_id === sourceServerId) return false
+      const existing = rolle.server_grants?.find((g) => g.server_id === server.server_id)?.permission_keys ?? []
+      if (existing.length === 0) return false
+      const nextKeys = targetGrants.find((g) => g.server_id === server.server_id)?.permission_keys ?? []
+      const nextSet = new Set(nextKeys)
+      return existing.length !== nextKeys.length || existing.some((k) => !nextSet.has(k))
+    })
+
+    if (hasOverwrite) {
+      const ok = await confirm({
+        title: t('teams.syncPermissionsConfirmTitle'),
+        message: t('teams.syncPermissionsConfirmText'),
+        confirmText: t('teams.syncPermissionsConfirmAction'),
+      })
+      if (!ok) return
+    }
+
+    await run(async () => {
+      const assignableIds = new Set(assignable.map((s) => s.server_id))
+      const preserved = (rolle.server_grants || [])
+        .filter((g) => !assignableIds.has(g.server_id))
+        .map((g) => ({ server_id: g.server_id, permission_keys: g.permission_keys }))
+      const merged = [
+        ...preserved,
+        ...targetGrants.filter((g) => g.permission_keys.length > 0),
+      ]
+      const gespeichert = await teamsApi.updateRole(detail.id, roleId, {
+        name: rolle.name, server_grants: merged,
+      })
+      onRoleSaved(gespeichert)
+    }, 'teams.serversSynced')
+  }
+
+  const syncServerKeysToAll = async (sourceServerId: number, keys: string[]) => {
+    if (!detail) return
+    const targetGrants = assignable.map((server) => ({
+      server_id: server.server_id,
+      permission_keys: mitServerSicht(keys.filter((k) => server.permission_keys.includes(k))).keys,
+    }))
+
+    const hasOverwrite = assignable.some((server) => {
+      if (server.server_id === sourceServerId) return false
+      const existing = detail.servers.find((s) => s.server_id === server.server_id)?.permission_keys ?? []
+      if (existing.length === 0) return false
+      const nextKeys = targetGrants.find((g) => g.server_id === server.server_id)?.permission_keys ?? []
+      const nextSet = new Set(nextKeys)
+      return existing.length !== nextKeys.length || existing.some((k) => !nextSet.has(k))
+    })
+
+    if (hasOverwrite) {
+      const ok = await confirm({
+        title: t('teams.syncPermissionsConfirmTitle'),
+        message: t('teams.syncPermissionsConfirmText'),
+        confirmText: t('teams.syncPermissionsConfirmAction'),
+      })
+      if (!ok) return
+    }
+
+    await run(async () => {
+      setDetail(await teamsApi.setServerGrantsBatch(detail.id, { grants: targetGrants }))
+    }, 'teams.serversSynced')
+  }
+
   const setServerRolesActive = async (aktiv: boolean) => {
     if (!detail) return
     if (aktiv) {
@@ -801,6 +875,8 @@ export function Teams() {
                       onRollenWahl={(serverId, roleId) => setRollenWahl((prev) => ({ ...prev, [serverId]: roleId }))}
                       onRoleKeys={(serverId, roleId, keys) => void setRoleServerKeys(serverId, roleId, keys)}
                       onToggleServerRoles={(next) => void setServerRolesActive(next)}
+                      onSyncRoleKeysToAll={(serverId, roleId, keys) => void syncRoleServerKeysToAll(serverId, roleId, keys)}
+                      onSyncServerKeysToAll={(serverId, keys) => void syncServerKeysToAll(serverId, keys)}
                     />
                   )}
 

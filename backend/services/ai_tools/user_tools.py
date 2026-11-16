@@ -95,7 +95,7 @@ def _user_tool_definitions() -> list[dict]:
         ),
         _function(
             "list_roles",
-            "Alle Rollen mit Rechten, Tresorspeicher und Nutzerzahl, dazu der Rechtekatalog.",
+            "Alle globalen Panel-Rollen (nicht Team-Rollen) mit Rechten, Tresorspeicher und Nutzerzahl, dazu der Rechtekatalog.",
             {},
             [],
         ),
@@ -113,7 +113,7 @@ def _user_tool_definitions() -> list[dict]:
         ),
         _function(
             "propose_role_set",
-            "Rolle erstellen bzw. anlegen oder ändern (mit role_id), auch ihren Tresorspeicher (braucht panel.settings.write; nur Speicher geht auch an Systemrollen).",
+            "Globale Panel-Rolle (nicht Team-Rolle) erstellen oder ändern (mit role_id), auch ihren Tresorspeicher (braucht panel.settings.write; nur Speicher geht auch an Systemrollen).",
             {
                 "role_id": {"type": "integer", "minimum": 1},
                 "name": {"type": "string", "maxLength": 64},
@@ -126,7 +126,7 @@ def _user_tool_definitions() -> list[dict]:
         ),
         _function(
             "propose_user_roles",
-            "Einem Benutzer Rollen zuweisen oder entziehen.",
+            "Einem Benutzer globale Panel-Rollen (nicht Team-Rollen) zuweisen oder entziehen.",
             {
                 "user_id": {"type": "integer", "minimum": 1},
                 "role_ids": {
@@ -141,7 +141,7 @@ def _user_tool_definitions() -> list[dict]:
         ),
         _function(
             "propose_role_delete",
-            "Rolle löschen, die niemandem mehr zugewiesen ist.",
+            "Globale Panel-Rolle löschen, die niemandem mehr zugewiesen ist.",
             {"role_id": {"type": "integer", "minimum": 1}, **_RATIONALE_SCHEMA},
             ["role_id", *_RATIONALE_REQUIRED],
         ),

@@ -40,6 +40,7 @@ from schemas.team import (
     TeamRoleServerGrantResponse,
     TeamRoleWrite,
     TeamServerGrantWrite,
+    TeamServerGrantsBatchWrite,
     TeamServerRolesWrite,
     TeamServerResponse,
     TeamVaultKeyslotResponse,
@@ -575,6 +576,27 @@ def set_server_grants(
     team_service.set_server_grants(
         db, team=team, user=user, server_id=payload.server_id,
         keys=payload.permission_keys,
+    )
+    return _detail(db, team, user)
+
+
+@router.put("/{team_id}/servers/batch", response_model=TeamDetailResponse)
+def set_server_grants_batch(
+    team_id: int,
+    payload: TeamServerGrantsBatchWrite,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    _: None = Depends(verify_csrf),
+) -> TeamDetailResponse:
+    team = team_service.get_team_for_member(db, team_id, user)
+    team_service.set_server_grants_batch(
+        db,
+        team=team,
+        user=user,
+        grants=[
+            {"server_id": g.server_id, "permission_keys": g.permission_keys}
+            for g in payload.grants
+        ],
     )
     return _detail(db, team, user)
 

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Crown, Server, Sparkles, X } from 'lucide-react'
+import { Copy, Crown, Server, Sparkles, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { SanitizedApiError } from '@/api/client'
@@ -113,6 +113,24 @@ export function TeamRoleForm({
       }
       return next
     })
+  }
+
+  const applyServerKeysToAll = (sourceServerId: number) => {
+    const sourceKeys = serverGrants.get(sourceServerId) ?? new Set<string>()
+    setServerGrants((prev) => {
+      const next = new Map(prev)
+      for (const target of serverListe) {
+        const filtered = Array.from(sourceKeys).filter((k) => target.permission_keys.includes(k))
+        const normalized = mitServerSicht(filtered).keys
+        if (normalized.length > 0) {
+          next.set(target.server_id, new Set(normalized))
+        } else {
+          next.delete(target.server_id)
+        }
+      }
+      return next
+    })
+    toast.success(t('teams.appliedToAllServers'))
   }
 
   const canSave = name.trim().length >= 2 && !busy
@@ -383,7 +401,20 @@ export function TeamRoleForm({
                           </span>
                         </div>
 
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          {serverListe.length > 1 && (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              disabled={busy}
+                              onClick={() => applyServerKeysToAll(server.server_id)}
+                              className="text-xs h-7 px-2 text-primary"
+                            >
+                              <Copy className="h-3.5 w-3.5 mr-1" aria-hidden="true" />
+                              {t('teams.applyToAllServers')}
+                            </Button>
+                          )}
                           <Button
                             type="button"
                             variant="ghost"

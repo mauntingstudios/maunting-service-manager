@@ -128,6 +128,15 @@ from services.ai_proposals.user_proposals import (
     _ausfuehren_user_roles,
     _ausfuehren_user_server_permission,
 )
+from services.ai_proposals.team_proposals import (
+    _team_create_payload,
+    _team_member_invite_payload,
+    _team_member_remove_payload,
+    _team_member_roles_payload,
+    _team_role_delete_payload,
+    _team_role_set_payload,
+    _team_server_grants_payload,
+)
 from services.ai_proposals.database_proposals import (
     _database_change_payload,
     _ausfuehren_database_change,
@@ -230,6 +239,27 @@ _GLOBALE_PAYLOADS: dict = {
     ),
     "propose_cloudflare_dns_delete": lambda db, user, rest, arguments, guardian: (
         _cloudflare_dns_delete_payload(rest)
+    ),
+    "propose_team_create": lambda db, user, rest, arguments, guardian: (
+        _team_create_payload(db, user, rest)
+    ),
+    "propose_team_role_set": lambda db, user, rest, arguments, guardian: (
+        _team_role_set_payload(db, user, rest)
+    ),
+    "propose_team_role_delete": lambda db, user, rest, arguments, guardian: (
+        _team_role_delete_payload(db, user, rest)
+    ),
+    "propose_team_member_roles": lambda db, user, rest, arguments, guardian: (
+        _team_member_roles_payload(db, user, rest)
+    ),
+    "propose_team_member_invite": lambda db, user, rest, arguments, guardian: (
+        _team_member_invite_payload(db, user, rest)
+    ),
+    "propose_team_member_remove": lambda db, user, rest, arguments, guardian: (
+        _team_member_remove_payload(db, user, rest)
+    ),
+    "propose_team_server_grants": lambda db, user, rest, arguments, guardian: (
+        _team_server_grants_payload(db, user, rest)
     ),
 }
 

@@ -23,6 +23,7 @@ vi.mock('@/api/teams', () => ({
     updateMember: vi.fn(),
     removeMember: vi.fn(),
     setServerGrants: vi.fn(),
+    setServerGrantsBatch: vi.fn(),
     setServerRolesActive: vi.fn(),
     assignableServers: vi.fn(),
     invitations: vi.fn(),
@@ -688,6 +689,86 @@ describe('Teams', () => {
     await waitFor(() => expect(teamsApi.updateRole).toHaveBeenCalledWith(2, 11, {
       name: 'Mitglied',
       server_grants: [{ server_id: 7, permission_keys: ['server.start', 'server.view'] }],
+    }))
+  })
+
+  it('synchronisiert Serverrechte im Standard-Modus per Batch-API nach Rückfrage', async () => {
+    const zweiServer = [
+      { server_id: 7, server_name: 'Valheim', permission_keys: ['server.view', 'server.start'] },
+      { server_id: 8, server_name: 'Rust', permission_keys: ['server.view', 'server.stop'] },
+    ]
+    const mitZweiServern: TeamDetail = {
+      ...realDetail,
+      servers: [
+        { server_id: 7, server_name: 'Valheim', permission_keys: ['server.view', 'server.start'] },
+        { server_id: 8, server_name: 'Rust', permission_keys: ['server.view', 'server.stop'] },
+      ],
+    }
+    vi.mocked(teamsApi.assignableServers).mockResolvedValue(zweiServer)
+    vi.mocked(teamsApi.get).mockImplementation(async (id: number) =>
+      id === 1 ? personalDetail : mitZweiServern)
+    vi.mocked(teamsApi.setServerGrantsBatch).mockResolvedValue(mitZweiServern)
+
+    renderTeams()
+    await zuTeams()
+    await screen.findByRole('heading', { name: 'Betrieb' })
+
+    fireEvent.click(screen.getByRole('tab', { name: /^Server/ }))
+    const syncButtons = await screen.findAllByRole('button', { name: i18n.t('teams.syncToAllServers') })
+    fireEvent.click(syncButtons[0])
+
+    await waitFor(() => {
+      expect(confirm).toHaveBeenCalledWith(expect.objectContaining({
+        title: i18n.t('teams.syncPermissionsConfirmTitle'),
+      }))
+      expect(teamsApi.setServerGrantsBatch).toHaveBeenCalledWith(2, {
+        grants: [
+          { server_id: 7, permission_keys: ['server.view', 'server.start'] },
+          { server_id: 8, permission_keys: ['server.view'] },
+        ],
+      })
+    })
+  })
+
+  it('wählt eine Rolle für alle Server im Rollenmodus und synchronisiert Rollenrechte', async () => {
+    const mitglied = realDetail.roles.find((r) => r.name === 'Mitglied')!
+    const zweiServer = [
+      { server_id: 7, server_name: 'Valheim', permission_keys: ['server.view', 'server.start'] },
+      { server_id: 8, server_name: 'Rust', permission_keys: ['server.view', 'server.stop'] },
+    ]
+    const mitGrant: TeamDetail = {
+      ...realDetail,
+      server_roles_active: true,
+      roles: realDetail.roles.map((r) =>
+        r.id === 11
+          ? { ...r, server_grants: [{ server_id: 7, server_name: 'Valheim', permission_keys: ['server.view', 'server.start'] }] }
+          : r,
+      ),
+    }
+    vi.mocked(teamsApi.assignableServers).mockResolvedValue(zweiServer)
+    vi.mocked(teamsApi.get).mockImplementation(async (id: number) =>
+      id === 1 ? personalDetail : mitGrant)
+    vi.mocked(teamsApi.updateRole).mockResolvedValue(mitglied)
+
+    renderTeams()
+    await zuTeams()
+    await screen.findByRole('heading', { name: 'Betrieb' })
+
+    fireEvent.click(screen.getByRole('tab', { name: /^Server/ }))
+    fireEvent.click(await screen.findByRole('button', { name: i18n.t('teams.bulkRoleLabel') }))
+    fireEvent.click(screen.getByRole('option', { name: 'Mitglied' }))
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('teams.applyRoleToAllServers') }))
+
+    const syncButtons = await screen.findAllByRole('button', { name: i18n.t('teams.syncToAllServers') })
+    expect(syncButtons).toHaveLength(2)
+    fireEvent.click(syncButtons[0])
+
+    await waitFor(() => expect(teamsApi.updateRole).toHaveBeenCalledWith(2, 11, {
+      name: 'Mitglied',
+      server_grants: [
+        { server_id: 7, permission_keys: ['server.view', 'server.start'] },
+        { server_id: 8, permission_keys: ['server.view'] },
+      ],
     }))
   })
 })
