@@ -70,7 +70,7 @@ apply_shared_acl() {
     local target="$1"
     resolve_owners
     chown "$DOCKER_USER:$SERVERS_GROUP" "$target"
-    chmod 0770 "$target"
+    chmod g-s,u=rwx,g=rwx,o= "$target"
     if command -v setfacl >/dev/null 2>&1; then
         local acl_spec="u:${AGENT_USER}:rwX,u:${DOCKER_USER}:rwX,d:u:${AGENT_USER}:rwX,d:u:${DOCKER_USER}:rwX,m::rwx"
         if [ -e "${target}/pgdata" ] || [ -e "${target}/tls" ] || [ -e "${target}/.msm/postgres-data" ] || [ -e "${target}/lost+found" ]; then

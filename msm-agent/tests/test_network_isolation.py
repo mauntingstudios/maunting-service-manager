@@ -360,3 +360,46 @@ def test_build_isolation_plan_resolves_custom_db_port_and_serializes_reconcile(
     res = netiso.reconcile_network_isolation(fake_client)
     assert res["ok"] is True
     assert hasattr(netiso, "_RECONCILE_LOCK") and not netiso._RECONCILE_LOCK.locked()
+
+
+def test_reconcile_network_isolation_serializes_concurrent_threads(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import threading as _th
+    import time as _time
+
+    active = 0
+    max_active = 0
+    guard = _th.Lock()
+
+    def _fake_plan(_client):
+        nonlocal active, max_active
+        with guard:
+            active += 1
+            max_active = max(max_active, active)
+        _time.sleep(0.05)
+        with guard:
+            active -= 1
+        return {
+            "blocked_v4": [],
+            "blocked_v6": [],
+            "container_sources": [],
+            "dns_gateways": [],
+            "db_allows": [],
+            "icc_drop_bridges": [],
+        }
+
+    monkeypatch.setattr("services.network_isolation_service.build_isolation_plan", _fake_plan)
+    monkeypatch.setattr("services.network_isolation_service.sys", SimpleNamespace(platform="win32"))
+    monkeypatch.setattr(settings, "require_network_isolation", False, raising=False)
+
+    fake_client = SimpleNamespace(networks=SimpleNamespace(list=lambda: []))
+    t1 = _th.Thread(target=netiso.reconcile_network_isolation, args=(fake_client,))
+    t2 = _th.Thread(target=netiso.reconcile_network_isolation, args=(fake_client,))
+    t1.start()
+    t2.start()
+    t1.join(timeout=5)
+    t2.join(timeout=5)
+
+    assert max_active == 1
+    assert not netiso._RECONCILE_LOCK.locked()

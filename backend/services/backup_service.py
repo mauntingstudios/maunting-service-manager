@@ -42,6 +42,10 @@ _active_backups: dict[int, dict] = {}
 _last_backup_errors: dict[int, str] = {}
 
 
+def _backup_dir_for(server_id: int) -> str:
+    return f"/opt/msm/backups/{server_id}"
+
+
 def run_backup(
     server_id: int,
     db: Session,
@@ -90,7 +94,7 @@ def run_backup(
     last = db.query(Backup).filter(Backup.server_id == server_id).order_by(Backup.created_at.desc()).first()
     est = last.size_mb if last else None
 
-    backup_dir = f"/opt/msm/backups/{server_id}"
+    backup_dir = _backup_dir_for(server_id)
     os.makedirs(backup_dir, exist_ok=True)
 
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")

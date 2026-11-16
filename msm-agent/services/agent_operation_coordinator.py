@@ -122,10 +122,18 @@ def operation(server_id: int | str) -> Iterator[None]:
     try:
         yield
     finally:
-        _HELD_BY_CONTEXT.reset(token)
-        with new_lease.inner_lock:
-            new_lease.active = False
-        lock.release()
+        try:
+            try:
+                _HELD_BY_CONTEXT.reset(token)
+            except ValueError:
+                held = dict(_HELD_BY_CONTEXT.get())
+                if held.get(sid) is new_lease:
+                    held.pop(sid, None)
+                    _HELD_BY_CONTEXT.set(held)
+            with new_lease.inner_lock:
+                new_lease.active = False
+        finally:
+            lock.release()
 
 
 @asynccontextmanager
@@ -149,8 +157,14 @@ async def operation_async(server_id: int | str) -> AsyncIterator[None]:
     try:
         yield
     finally:
-        _HELD_BY_CONTEXT.reset(token)
         try:
+            try:
+                _HELD_BY_CONTEXT.reset(token)
+            except ValueError:
+                held = dict(_HELD_BY_CONTEXT.get())
+                if held.get(sid) is new_lease:
+                    held.pop(sid, None)
+                    _HELD_BY_CONTEXT.set(held)
             if not new_lease.inner_lock.acquire(blocking=False):
                 await asyncio.to_thread(new_lease.inner_lock.acquire)
             try:

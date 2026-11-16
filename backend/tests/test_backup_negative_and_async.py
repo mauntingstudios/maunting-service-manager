@@ -369,6 +369,45 @@ class TestBackgroundBackupAndStatus:
         finally:
             clear_active_backup_status(srv.id)
 
+    def test_sync_backup_returns_409_when_distributed_lock_held(
+        self, client: TestClient, owner_cookies: dict, csrf_token: str, db: Session, tmp_path: Path
+    ):
+        from services.backup_service import clear_active_backup_status
+
+        srv, _ = _make_local_server(db, tmp_path, "sync_lock_409")
+        clear_active_backup_status(srv.id)
+        with patch("services.redis_backplane.acquire_distributed_lock", return_value=None):
+            resp = client.post(
+                f"/api/backups/{srv.id}",
+                json={"name": "BlockedSync", "background": False},
+                cookies=owner_cookies,
+                headers={"X-CSRF-Token": csrf_token},
+            )
+        assert resp.status_code == 409
+
+    def test_local_encrypted_backup_tracks_encrypted_flag_on_success_and_dis_failure(
+        self, db: Session, tmp_path: Path
+    ):
+        from services.backup_service import run_backup
+
+        srv, _ = _make_local_server(db, tmp_path, "enc_flag_srv")
+        backups_root = tmp_path / "bkp" / str(srv.id)
+
+        def _fake_encrypt(_src: str, dst: str) -> None:
+            Path(dst).write_bytes(STREAM_MAGIC_V2 + b"encrypted-bytes")
+
+        with patch("services.backup_service._backup_dir_for", return_value=str(backups_root)), \
+             patch("services.backup_service._encrypt_local_backup", side_effect=_fake_encrypt):
+            b_enc = run_backup(srv.id, db, name="EncOk", encrypt_local=True, encrypted=True)
+        assert b_enc.encrypted is True
+        assert b_enc.filename.endswith(".enc")
+
+        with patch("services.backup_service._backup_dir_for", return_value=str(backups_root)), \
+             patch("services.backup_service._encrypt_local_backup", side_effect=RuntimeError("DIS down")):
+            b_plain = run_backup(srv.id, db, name="DisDown", encrypt_local=True, encrypted=True)
+        assert b_plain.encrypted is False
+        assert b_plain.filename.endswith(".tar.gz")
+
     def test_status_endpoint_is_exempt_from_global_rate_limit(
         self, client: TestClient, owner_cookies: dict, db: Session, tmp_path: Path
     ):

@@ -469,3 +469,117 @@ def test_iter_archive_tar_gz_uses_ziel_excludes_and_selective_manifest(servers_d
     assert manifest["scope"] == "selective"
     assert manifest["includePaths"] == ["cfg/app.ini"]
 
+
+def test_full_restore_mid_swap_failure_rolls_back_all_original_files(servers_dir: Path) -> None:
+    """Bricht das Verschieben mitten im Full-Restore-Swap ab (z. B. EDQUOT),
+    muessen alle Originaldateien samt pgdata/tls exakt wiederhergestellt sein."""
+    root = servers_dir / "92"
+    (root / "config").mkdir(parents=True)
+    (root / "world.dat").write_text("original-world", encoding="utf-8")
+    (root / "config" / "app.ini").write_text("port=7777", encoding="utf-8")
+    (root / "pgdata").mkdir()
+    (root / "pgdata" / "PG_VERSION").write_text("17", encoding="utf-8")
+    (root / "tls").mkdir()
+    (root / "tls" / "server.key").write_text("secret-key", encoding="utf-8")
+
+    new_tar = _make_targz_bytes(
+        [
+            ("world.dat", b"new-world", "file"),
+            ("extra_dir/added.txt", b"should-not-remain", "file"),
+        ]
+    )
+
+    orig_merge_move = file_service._merge_move_tree
+    calls = 0
+
+    def _fail_second_move(src: Path, dst: Path) -> None:
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise OSError(28, "No space left on device (EDQUOT)")
+        orig_merge_move(src, dst)
+
+    with patch.object(file_service, "_merge_move_tree", side_effect=_fail_second_move):
+        with pytest.raises(OSError, match="EDQUOT"):
+            file_service.restore_backup_archive("92", io.BytesIO(new_tar))
+
+    assert (root / "world.dat").read_text(encoding="utf-8") == "original-world"
+    assert (root / "config" / "app.ini").read_text(encoding="utf-8") == "port=7777"
+    assert (root / "pgdata" / "PG_VERSION").read_text(encoding="utf-8") == "17"
+    assert (root / "tls" / "server.key").read_text(encoding="utf-8") == "secret-key"
+    assert not (root / "extra_dir").exists()
+    assert not (root / ".msm-pre-restore").exists()
+    assert not list(root.glob(".msm-restore-stage-*"))
+
+
+def test_archive_endpoint_holds_operation_lock_during_stream_and_releases_on_error(
+    client, auth_headers: dict[str, str], servers_dir: Path
+) -> None:
+    import threading as _th
+    import time as _time
+    from services import agent_operation_coordinator as coord
+
+    srv = servers_dir / "srv_15"
+    srv.mkdir()
+    (srv / "data.txt").write_text("hello", encoding="utf-8")
+
+    in_stream = _th.Event()
+    release_stream = _th.Event()
+    lock_was_held_during_stream = False
+    concurrent_entered = False
+
+    def _slow_iter(*_args, **_kwargs):
+        in_stream.set()
+        release_stream.wait(timeout=5)
+        yield b"chunk-1"
+
+    def _other_op() -> None:
+        nonlocal lock_was_held_during_stream, concurrent_entered
+        in_stream.wait(timeout=5)
+        raw_lock = coord._lock_for(15)
+        acquired = raw_lock.acquire(blocking=False)
+        if acquired:
+            raw_lock.release()
+        lock_was_held_during_stream = not acquired
+        release_stream.set()
+        with coord.operation(15):
+            concurrent_entered = True
+
+    with patch.object(file_service, "iter_archive_tar_gz", side_effect=_slow_iter):
+        t = _th.Thread(target=_other_op)
+        t.start()
+        with client.stream("GET", "/files/archive?server_id=srv_15", headers=auth_headers) as resp:
+            assert resp.status_code == 200
+            body = b"".join(resp.iter_bytes())
+            assert body == b"chunk-1"
+        t.join(timeout=5)
+        assert lock_was_held_during_stream is True
+        assert concurrent_entered is True
+
+    # On exception mid-stream, lock must STILL be released (no deadlock)
+    with patch.object(file_service, "iter_archive_tar_gz", side_effect=RuntimeError("boom")):
+        with pytest.raises((RuntimeError, ExceptionGroup)):
+            with client.stream("POST", "/files/archive?server_id=srv_15", headers=auth_headers, json={}) as resp:
+                resp.read()
+    lock = coord._lock_for(15)
+    assert not lock.locked()
+
+
+def test_repair_permissions_endpoint_rejects_traversal_and_handles_missing_dir(
+    client, auth_headers: dict[str, str]
+) -> None:
+    bad = client.post(
+        "/files/repair-permissions?server_id=../escape",
+        headers=auth_headers,
+        json={},
+    )
+    assert bad.status_code in (400, 403)
+
+    missing = client.post(
+        "/files/repair-permissions?server_id=nonexistent_99",
+        headers=auth_headers,
+        json={},
+    )
+    assert missing.status_code == 200
+    assert missing.json()["ok"] is False
+

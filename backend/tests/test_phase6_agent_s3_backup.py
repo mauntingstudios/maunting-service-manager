@@ -339,3 +339,147 @@ def test_restore_prefers_local_file_before_s3_fallback(db, tmp_path):
     assert s3_fallback.call_args.kwargs.get("stop_container") is True
     audit_rec.assert_called_once()
     assert audit_rec.call_args.kwargs["action"] == "server.backups.restore"
+
+
+def test_local_node_backup_survives_s3_upload_failure_and_restores_locally(db, tmp_path):
+    import io as _io
+    import tarfile as _tf
+    from config import settings
+    from models import Node, Server, ServerPermission, User
+    from services.actor_context import ActorContext
+    from services.backup_orchestrator import create_server_backup
+    from services.backup_restore_service import restore_server_backup
+    from services.s3_service import S3OperationError
+
+    node = Node(
+        name="LocalDualFailS3",
+        host="https://127.0.0.1:9000",
+        auth_token_enc="enc",
+        tls_fingerprint="f" * 64,
+        is_local=True,
+        status="online",
+    )
+    db.add(node)
+    user = User(username="dualfail", email="df@example.invalid", password_hash="x", is_active=True)
+    db.add(user)
+    db.commit()
+    db.refresh(node)
+    db.refresh(user)
+
+    server = Server(
+        name="dual_fail_srv",
+        game_type="generic",
+        install_dir="/opt/msm/servers/dual_fail_7",
+        node_id=node.id,
+        status="stopped",
+    )
+    db.add(server)
+    db.commit()
+    db.refresh(server)
+    db.add(ServerPermission(user_id=user.id, server_id=server.id, permission_key="server.backups.restore"))
+    db.commit()
+
+    tar_buf = _io.BytesIO()
+    with _tf.open(fileobj=tar_buf, mode="w:gz") as tar:
+        data = b"world-state"
+        info = _tf.TarInfo("world.dat")
+        info.size = len(data)
+        tar.addfile(info, _io.BytesIO(data))
+    tar_bytes = tar_buf.getvalue()
+
+    fake_client = MagicMock()
+    fake_client.files_archive.return_value = iter([tar_bytes])
+
+    def fake_reconcile(_db, _server):
+        _server.guardian_agent_recovery_suspension_json = _server.guardian_recovery_suspension
+        return {
+            "payload_hash": "sha256:dummy",
+            "recovery_suspension": (
+                json.loads(_server.guardian_recovery_suspension)
+                if _server.guardian_recovery_suspension
+                else None
+            ),
+        }
+
+    backups_root = tmp_path / "backups" / str(server.id)
+    with patch.object(settings, "local_agent_required", True), \
+         patch("services.backup_service._backup_dir_for", return_value=str(backups_root)), \
+         patch("services.node_client.NodeClient.from_node", return_value=fake_client), \
+         patch("services.backup_config_service.BackupConfigService.is_backup_password_set", return_value=True), \
+         patch("services.backup_config_service.BackupConfigService.is_s3_configured", return_value=True), \
+         patch("services.backup_config_service.BackupConfigService.get_backup_password", return_value="pw"), \
+         patch("services.backup_config_service.BackupConfigService.get_backup_salt", return_value="c2FsdA=="), \
+         patch("services.backup_service._encrypt_local_backup", side_effect=RuntimeError("DIS unreachable")), \
+         patch("services.s3_service.S3Service.upload_stream", side_effect=S3OperationError("S3 down")), \
+         patch("services.guardian_sync_service.compile_and_sync_desired_state", side_effect=fake_reconcile):
+        backup = create_server_backup(server.id, db, name="DualSurvive")
+
+    assert backup.s3_key is None
+    assert backup.encrypted is False
+    assert backups_root.is_dir() and tmp_path.joinpath("backups", str(server.id), backup.filename.split("/")[-1].split("\\")[-1]).exists()
+
+    # Even with S3 down, local restore works directly via agent without S3 call
+    with patch.object(settings, "local_agent_required", True), \
+         patch("services.node_client.NodeClient.from_node", return_value=fake_client), \
+         patch("services.backup_orchestrator.restore_via_agent_s3") as s3_restore, \
+         patch("services.docker_service.is_running", return_value=False), \
+         patch("services.docker_service.remove"), \
+         patch("services.guardian_sync_service.compile_and_sync_desired_state", side_effect=fake_reconcile):
+        restore_server_backup(db, server_id=server.id, backup_id=backup.id, actor=ActorContext.for_user(user))
+
+    s3_restore.assert_not_called()
+    fake_client.files_restore_archive.assert_called_once()
+
+
+def test_remote_agent_s3_backup_enforces_retention_and_survives_cleanup_error(db):
+    from models import Node, Server
+
+    node = Node(
+        name="RemoteRet",
+        host="https://10.0.0.15:9000",
+        auth_token_enc="enc",
+        tls_fingerprint="1" * 64,
+        is_local=False,
+        status="online",
+    )
+    db.add(node)
+    db.commit()
+    db.refresh(node)
+    server = Server(
+        name="ret_srv",
+        game_type="test",
+        install_dir="/tmp/ret_srv",
+        node_id=node.id,
+        status="stopped",
+        backup_retention_count=3,
+    )
+    db.add(server)
+    db.commit()
+    db.refresh(server)
+
+    client = MagicMock()
+    client.backup_create_s3.return_value = {
+        "ok": True,
+        "s3_key": "msm-backups/servers/1/ret.enc",
+        "size_bytes": 2 * 1024 * 1024,
+        "sha256": "deadbeef",
+    }
+
+    with patch("services.node_service.ensure_node_online"), \
+         patch("services.backup_config_service.BackupConfigService.get_backup_password", return_value="pw"), \
+         patch("services.backup_config_service.BackupConfigService.get_backup_salt", return_value="c2FsdA=="), \
+         patch("services.backup_crypto_service.BackupCryptoService.derive_raw_key_b64", return_value="dGVzdGtleXRlc3RrZXl0ZXN0a2V5dGVzdGt5dA=="), \
+         patch("services.s3_service.S3Service.get_ephemeral_agent_s3_config", return_value={
+             "endpoint": "http://minio:9000",
+             "access_key": "ak",
+             "secret_key": "sk",
+             "bucket": "msm",
+             "region": "",
+         }), \
+         patch("services.s3_service.S3Service.object_size", return_value=2 * 1024 * 1024), \
+         patch("services.node_client.NodeClient.from_node", return_value=client), \
+         patch("services.backup_service.cleanup_old_backups", side_effect=RuntimeError("cleanup failed")) as cleanup_mock:
+        backup = _create_remote_agent_s3_backup(server.id, db, node, name="ret1")
+
+    assert backup.s3_key == "msm-backups/servers/1/ret.enc"
+    cleanup_mock.assert_called_once_with(server.id, db, keep=3)
