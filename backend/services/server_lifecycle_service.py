@@ -1,10 +1,14 @@
 import asyncio
+import json
 import logging
+import os
 import threading
+import time
 import uuid
 from contextlib import asynccontextmanager, contextmanager
 from datetime import datetime, timezone, timedelta
 from dataclasses import dataclass
+from pathlib import Path
 from typing import AsyncIterator
 
 from fastapi import HTTPException
@@ -223,6 +227,138 @@ def reconcile_orphaned_lifecycle_statuses(db: Session) -> int:
     if changed:
         db.commit()
     return changed
+
+
+DEFAULT_DOCKER_RESTART_SNAPSHOT_PATH = (
+    Path(__file__).resolve().parents[1] / ".update-restart-servers.json"
+)
+_DOCKER_RESTART_SNAPSHOT_MAX_AGE = timedelta(hours=24)
+
+
+def _parse_docker_restart_snapshot(raw: str) -> list[int]:
+    try:
+        payload = json.loads(raw)
+    except Exception as exc:
+        logger.warning("Docker-Restart-Snapshot konnte nicht geparst werden: %s", exc)
+        return []
+    if not isinstance(payload, dict):
+        return []
+    created_raw = payload.get("created_at")
+    if isinstance(created_raw, str) and created_raw.strip():
+        try:
+            created_at = datetime.fromisoformat(created_raw.strip().replace("Z", "+00:00"))
+            if created_at.tzinfo is None:
+                created_at = created_at.replace(tzinfo=timezone.utc)
+            if _utcnow() - created_at > _DOCKER_RESTART_SNAPSHOT_MAX_AGE:
+                logger.warning("Docker-Restart-Snapshot veraltet (%s), wird verworfen.", created_raw)
+                return []
+        except ValueError:
+            pass
+    raw_ids = payload.get("server_ids")
+    if not isinstance(raw_ids, list):
+        return []
+    ids: list[int] = []
+    seen: set[int] = set()
+    for item in raw_ids:
+        if isinstance(item, int) and not isinstance(item, bool) and item > 0 and item not in seen:
+            seen.add(item)
+            ids.append(item)
+    return ids
+
+
+def recover_servers_after_docker_restart(
+    db: Session,
+    *,
+    snapshot_path: Path | None = None,
+    stagger_seconds: float = 0.5,
+) -> list[int]:
+    """Startet zuvor laufende lokale Server nach einem unvermeidbaren Docker-Restart neu.
+
+    Liest den vor ``docker.service``-Neustart erzeugten Snapshot atomar (einmalig)
+    und nutzt den regulaeren MSM-Lifecycle (``queue_lifecycle_operation``), damit
+    Ports, ``DOCKER-USER``-iptables, Status und Guardian-Sync konsistent bleiben.
+    """
+    target = snapshot_path or DEFAULT_DOCKER_RESTART_SNAPSHOT_PATH
+    if not target.is_file():
+        return []
+
+    claimed = target.with_name(f"{target.name}.{os.getpid()}.claimed")
+    try:
+        os.replace(target, claimed)
+    except FileNotFoundError:
+        return []
+    except OSError as exc:
+        logger.warning("Docker-Restart-Snapshot konnte nicht uebernommen werden: %s", exc)
+        return []
+
+    try:
+        try:
+            raw = claimed.read_text(encoding="utf-8")
+        except OSError as exc:
+            logger.warning("Docker-Restart-Snapshot nicht lesbar: %s", exc)
+            return []
+    finally:
+        try:
+            claimed.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+    server_ids = _parse_docker_restart_snapshot(raw)
+    if not server_ids:
+        return []
+
+    started_ids: list[int] = []
+    for idx, server_id in enumerate(server_ids):
+        server = db.query(Server).filter(Server.id == server_id).first()
+        if server is None:
+            continue
+        node = getattr(server, "node", None)
+        if node is not None and not getattr(node, "is_local", False):
+            continue
+        if getattr(server, "desired_power_state", "stopped") != "running":
+            logger.info(
+                "Docker-Restart-Recovery ueberspringt Server %s (desired_power_state=%s)",
+                server.id,
+                getattr(server, "desired_power_state", None),
+            )
+            continue
+        plugin = get_plugin(server.game_type)
+        if plugin is None:
+            logger.warning(
+                "Docker-Restart-Recovery ueberspringt Server %s (unbekannter Typ %s)",
+                server.id,
+                server.game_type,
+            )
+            continue
+        try:
+            live_status = plugin.get_status(server)
+            if live_status.status == "running":
+                logger.info(
+                    "Docker-Restart-Recovery ueberspringt Server %s (bereits running)",
+                    server.id,
+                )
+                continue
+        except Exception as exc:
+            logger.debug("Live-Status-Pruefung vor Recovery fuer Server %s: %s", server.id, exc)
+
+        if is_lifecycle_job_active(server.id):
+            continue
+
+        try:
+            queue_lifecycle_operation(db, server, "start")
+            started_ids.append(server.id)
+        except Exception as exc:
+            logger.warning(
+                "Docker-Restart-Recovery konnte Server %s nicht starten: %s",
+                server.id,
+                exc,
+            )
+            continue
+
+        if stagger_seconds > 0 and idx < len(server_ids) - 1:
+            time.sleep(stagger_seconds)
+
+    return started_ids
 
 
 # Frisches Backup vor erneutem Start überspringen (verhindert doppelte 10GB+ tar.gz

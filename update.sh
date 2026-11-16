@@ -1037,8 +1037,40 @@ SYSCTLEOF
     sysctl --system >/dev/null 2>&1 || true
 fi
 
+# Hilfsfunktion: laufende MSM-Server-Container vor einem unvermeidbaren Docker-Neustart sichern
+_write_docker_restart_snapshot() {
+    local docker_user="$1"
+    local docker_uid="$2"
+    local out_file="$MSM_DIR/backend/.update-restart-servers.json"
+    local tmp_file="${out_file}.tmp"
+    mkdir -p "$MSM_DIR/backend" 2>/dev/null || return 0
+    su -s /bin/bash "$docker_user" -c \
+        "DOCKER_HOST=unix:///run/user/${docker_uid}/docker.sock docker ps --filter 'name=msm-srv-' --format '{{.Names}}'" 2>/dev/null \
+    | python3 -c '
+import json, re, sys
+from datetime import datetime, timezone
+ids = []
+for line in sys.stdin:
+    m = re.match(r"^msm-srv-(\d+)$", line.strip())
+    if m:
+        ids.append(int(m.group(1)))
+ids = sorted(set(ids))
+if ids:
+    print(json.dumps({"server_ids": ids, "created_at": datetime.now(timezone.utc).isoformat()}))
+' > "$tmp_file" 2>/dev/null || true
+    if [[ -s "$tmp_file" ]]; then
+        chown "$MSM_USER:$MSM_USER" "$tmp_file" 2>/dev/null || true
+        chmod 0600 "$tmp_file" 2>/dev/null || true
+        mv -f "$tmp_file" "$out_file"
+        log "Laufende Server vor Docker-Neustart vorgemerkt: $(cat "$out_file")"
+    else
+        rm -f "$tmp_file"
+    fi
+}
+
 # Rootless Docker Migration nach $MSM_DOCKER_USER (falls bisher unter $MSM_USER)
 DOCKER_HOST_ACTIVE="unix:///run/user/$(id -u "$MSM_DOCKER_USER")/docker.sock"
+DOCKER_RESTART_NEEDED=false
 if [[ -d "$MSM_DIR/msm-agent" ]]; then
     for f in /etc/subuid /etc/subgid; do
         if ! grep -qE "^${MSM_DOCKER_USER}:" "$f" 2>/dev/null; then
@@ -1050,6 +1082,8 @@ if [[ -d "$MSM_DIR/msm-agent" ]]; then
     if [[ -d "$MSM_DIR/.local/share/docker" ]] && [[ ! -d "$MSM_DOCKER_HOME/.local/share/docker" ]]; then
         log "Migriere Rootless Docker nach $MSM_DOCKER_USER..."
         MSM_UID_OLD=$(id -u "$MSM_USER" 2>/dev/null || echo 0)
+        _write_docker_restart_snapshot "$MSM_USER" "$MSM_UID_OLD"
+        DOCKER_RESTART_NEEDED=true
         systemctl stop msm-searxng msm-wetter msm-livekit msm-agent 2>/dev/null || true
         su -s /bin/bash "$MSM_USER" -c "export XDG_RUNTIME_DIR=/run/user/${MSM_UID_OLD}; systemctl --user stop docker.service" 2>/dev/null || true
         mkdir -p "$MSM_DOCKER_HOME/.local/share"
@@ -1058,14 +1092,36 @@ if [[ -d "$MSM_DIR/msm-agent" ]]; then
     fi
     if $SYSTEMD_AVAILABLE && command -v dockerd-rootless-setuptool.sh &>/dev/null; then
         modprobe br_netfilter 2>/dev/null || true
-        printf 'br_netfilter\n' > /etc/modules-load.d/msm-docker.conf
+        if [[ ! -f /etc/modules-load.d/msm-docker.conf ]] || ! grep -qxF 'br_netfilter' /etc/modules-load.d/msm-docker.conf 2>/dev/null; then
+            printf 'br_netfilter\n' > /etc/modules-load.d/msm-docker.conf
+            chmod 0644 /etc/modules-load.d/msm-docker.conf 2>/dev/null || true
+        fi
         mkdir -p /etc/systemd/system/user@.service.d "/etc/systemd/system/user@${MSM_DOCKER_UID}.service.d"
-        printf '[Service]\nDelegate=cpu cpuset io memory pids\n' > /etc/systemd/system/user@.service.d/delegate.conf
+        SYSTEMD_ROOT_RELOAD_NEEDED=false
+        TMP_DELEGATE_CONF=$(mktemp /tmp/msm-delegate-conf.XXXXXX)
+        printf '[Service]\nDelegate=cpu cpuset io memory pids\n' > "$TMP_DELEGATE_CONF"
+        if [[ ! -f /etc/systemd/system/user@.service.d/delegate.conf ]] || ! cmp -s "$TMP_DELEGATE_CONF" /etc/systemd/system/user@.service.d/delegate.conf; then
+            cp "$TMP_DELEGATE_CONF" /etc/systemd/system/user@.service.d/delegate.conf
+            chmod 0644 /etc/systemd/system/user@.service.d/delegate.conf 2>/dev/null || true
+            SYSTEMD_ROOT_RELOAD_NEEDED=true
+        fi
+        rm -f "$TMP_DELEGATE_CONF"
         # Keep user@UID.service in its default user-UID.slice so runc can detect OwnerUID from /proc/self/cgroup
-        printf '[Service]\nOOMScoreAdjust=500\n' > "/etc/systemd/system/user@${MSM_DOCKER_UID}.service.d/msm-workloads.conf"
-        systemctl daemon-reload
+        TMP_WORKLOADS_CONF=$(mktemp /tmp/msm-workloads-conf.XXXXXX)
+        printf '[Service]\nOOMScoreAdjust=500\n' > "$TMP_WORKLOADS_CONF"
+        if [[ ! -f "/etc/systemd/system/user@${MSM_DOCKER_UID}.service.d/msm-workloads.conf" ]] || ! cmp -s "$TMP_WORKLOADS_CONF" "/etc/systemd/system/user@${MSM_DOCKER_UID}.service.d/msm-workloads.conf"; then
+            cp "$TMP_WORKLOADS_CONF" "/etc/systemd/system/user@${MSM_DOCKER_UID}.service.d/msm-workloads.conf"
+            chmod 0644 "/etc/systemd/system/user@${MSM_DOCKER_UID}.service.d/msm-workloads.conf" 2>/dev/null || true
+            SYSTEMD_ROOT_RELOAD_NEEDED=true
+        fi
+        rm -f "$TMP_WORKLOADS_CONF"
+        if $SYSTEMD_ROOT_RELOAD_NEEDED; then
+            systemctl daemon-reload
+        fi
         loginctl enable-linger "$MSM_DOCKER_USER" 2>/dev/null || true
         if systemctl show -p ControlGroup --value "user@${MSM_DOCKER_UID}.service" 2>/dev/null | grep -q "msm-workloads.slice"; then
+            _write_docker_restart_snapshot "$MSM_DOCKER_USER" "$MSM_DOCKER_UID"
+            DOCKER_RESTART_NEEDED=true
             systemctl restart "user@${MSM_DOCKER_UID}.service" 2>/dev/null || true
         else
             systemctl start "user@${MSM_DOCKER_UID}.service" 2>/dev/null || true
@@ -1073,10 +1129,13 @@ if [[ -d "$MSM_DIR/msm-agent" ]]; then
         install -d -o "$MSM_DOCKER_USER" -g "$MSM_DOCKER_USER" -m 710 "/run/user/${MSM_DOCKER_UID}" 2>/dev/null || true
         if [[ ! -f "${MSM_DOCKER_HOME}/.config/systemd/user/docker.service" ]]; then
             su -s /bin/bash "$MSM_DOCKER_USER" -c "export XDG_RUNTIME_DIR=/run/user/${MSM_DOCKER_UID}; dockerd-rootless-setuptool.sh install" 2>/dev/null || true
+            DOCKER_RESTART_NEEDED=true
         fi
         install -d -o "$MSM_DOCKER_USER" -g "$MSM_DOCKER_USER" -m 700 "${MSM_DOCKER_HOME}/.config/docker"
-        if [[ ! -f "${MSM_DOCKER_HOME}/.config/docker/daemon.json" ]]; then
-            cat > "${MSM_DOCKER_HOME}/.config/docker/daemon.json" <<'EOF'
+        DAEMON_JSON="${MSM_DOCKER_HOME}/.config/docker/daemon.json"
+        TMP_DAEMON_JSON=$(mktemp /tmp/msm-daemon-json.XXXXXX)
+        if [[ ! -f "$DAEMON_JSON" ]]; then
+            cat > "$TMP_DAEMON_JSON" <<'EOF'
 {
   "icc": false,
   "no-new-privileges": true,
@@ -1089,28 +1148,75 @@ if [[ -d "$MSM_DIR/msm-agent" ]]; then
   }
 }
 EOF
-            chown "$MSM_DOCKER_USER:$MSM_DOCKER_USER" "${MSM_DOCKER_HOME}/.config/docker/daemon.json"
         else
-            python3 - "${MSM_DOCKER_HOME}/.config/docker/daemon.json" <<'PYEOF'
-import json, sys
-path = sys.argv[1]
+            python3 - "$DAEMON_JSON" "$TMP_DAEMON_JSON" <<'PYEOF'
+import json, shutil, sys
+src_path, dst_path = sys.argv[1], sys.argv[2]
 try:
-    with open(path, "r", encoding="utf-8") as fh:
+    with open(src_path, "r", encoding="utf-8") as fh:
         cfg = json.load(fh)
     if isinstance(cfg, dict):
         opts = [o for o in cfg.get("exec-opts", []) if not str(o).startswith("native.cgroupdriver=")]
         opts.append("native.cgroupdriver=systemd")
-        cfg["exec-opts"] = opts
-        with open(path, "w", encoding="utf-8") as fh:
-            json.dump(cfg, fh, indent=2)
-            fh.write("\n")
+        if cfg.get("exec-opts") == opts:
+            shutil.copyfile(src_path, dst_path)
+        else:
+            cfg["exec-opts"] = opts
+            with open(dst_path, "w", encoding="utf-8") as fh:
+                json.dump(cfg, fh, indent=2)
+                fh.write("\n")
+    else:
+        shutil.copyfile(src_path, dst_path)
 except Exception:
-    pass
+    shutil.copyfile(src_path, dst_path)
 PYEOF
-            chown "$MSM_DOCKER_USER:$MSM_DOCKER_USER" "${MSM_DOCKER_HOME}/.config/docker/daemon.json"
         fi
-        su -s /bin/bash "$MSM_DOCKER_USER" -c "mkdir -p ~/.config/systemd/user/docker.service.d && printf '[Service]\nEnvironment=\"DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/${MSM_DOCKER_UID}/bus\"\nEnvironment=\"DOCKERD_ROOTLESS_ROOTLESSKIT_PORT_DRIVER=slirp4netns\"\nEnvironment=\"DOCKERD_ROOTLESS_ROOTLESSKIT_DISABLE_HOST_LOOPBACK=true\"\n' > ~/.config/systemd/user/docker.service.d/override.conf" 2>/dev/null || true
-        su -s /bin/bash "$MSM_DOCKER_USER" -c "export XDG_RUNTIME_DIR=/run/user/${MSM_DOCKER_UID} DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/${MSM_DOCKER_UID}/bus; systemctl --user daemon-reload && systemctl --user enable docker.service && systemctl --user restart docker.service" 2>/dev/null || true
+        if [[ -s "$TMP_DAEMON_JSON" ]] && { [[ ! -f "$DAEMON_JSON" ]] || ! cmp -s "$TMP_DAEMON_JSON" "$DAEMON_JSON"; }; then
+            cp "$TMP_DAEMON_JSON" "$DAEMON_JSON"
+            chown "$MSM_DOCKER_USER:$MSM_DOCKER_USER" "$DAEMON_JSON"
+            chmod 0644 "$DAEMON_JSON" 2>/dev/null || true
+            DOCKER_RESTART_NEEDED=true
+        fi
+        rm -f "$TMP_DAEMON_JSON"
+
+        if ! command -v slirp4netns &>/dev/null; then
+            log "Installiere slirp4netns für UDP Source-IP Erhalt..."
+            apt-get install -y -qq slirp4netns 2>/dev/null || true
+        fi
+        MSM_OVERRIDE_CONF="${MSM_DOCKER_HOME}/.config/systemd/user/docker.service.d/override.conf"
+        TMP_OVERRIDE_CONF=$(mktemp /tmp/msm-docker-override.XXXXXX)
+        cat > "$TMP_OVERRIDE_CONF" <<EOF
+[Service]
+Environment="DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/${MSM_DOCKER_UID}/bus"
+Environment="DOCKERD_ROOTLESS_ROOTLESSKIT_PORT_DRIVER=slirp4netns"
+Environment="DOCKERD_ROOTLESS_ROOTLESSKIT_DISABLE_HOST_LOOPBACK=true"
+EOF
+        DOCKER_OVERRIDE_CHANGED=false
+        if [[ ! -f "$MSM_OVERRIDE_CONF" ]] || ! cmp -s "$TMP_OVERRIDE_CONF" "$MSM_OVERRIDE_CONF"; then
+            su -s /bin/bash "$MSM_DOCKER_USER" -c "mkdir -p ~/.config/systemd/user/docker.service.d" 2>/dev/null || true
+            cp "$TMP_OVERRIDE_CONF" "$MSM_OVERRIDE_CONF"
+            chown "$MSM_DOCKER_USER:$MSM_DOCKER_USER" "$MSM_OVERRIDE_CONF"
+            chmod 0644 "$MSM_OVERRIDE_CONF" 2>/dev/null || true
+            DOCKER_OVERRIDE_CHANGED=true
+            DOCKER_RESTART_NEEDED=true
+        fi
+        rm -f "$TMP_OVERRIDE_CONF"
+
+        if ! su -s /bin/bash "$MSM_DOCKER_USER" -c "export XDG_RUNTIME_DIR=/run/user/${MSM_DOCKER_UID} DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/${MSM_DOCKER_UID}/bus; systemctl --user is-active --quiet docker.service" 2>/dev/null; then
+            DOCKER_RESTART_NEEDED=true
+        fi
+
+        if $DOCKER_RESTART_NEEDED; then
+            _write_docker_restart_snapshot "$MSM_DOCKER_USER" "$MSM_DOCKER_UID"
+            log "Starte Rootless Docker für $MSM_DOCKER_USER aufgrund geänderter Konfiguration neu..."
+            su -s /bin/bash "$MSM_DOCKER_USER" -c "export XDG_RUNTIME_DIR=/run/user/${MSM_DOCKER_UID} DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/${MSM_DOCKER_UID}/bus; systemctl --user daemon-reload && systemctl --user enable docker.service && systemctl --user restart docker.service" 2>/dev/null || true
+        else
+            if $DOCKER_OVERRIDE_CHANGED; then
+                su -s /bin/bash "$MSM_DOCKER_USER" -c "export XDG_RUNTIME_DIR=/run/user/${MSM_DOCKER_UID} DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/${MSM_DOCKER_UID}/bus; systemctl --user daemon-reload" 2>/dev/null || true
+            fi
+            su -s /bin/bash "$MSM_DOCKER_USER" -c "export XDG_RUNTIME_DIR=/run/user/${MSM_DOCKER_UID} DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/${MSM_DOCKER_UID}/bus; systemctl --user is-enabled --quiet docker.service || systemctl --user enable docker.service" 2>/dev/null || true
+            log "Rootless-Docker-Konfiguration unverändert – Daemon bleibt ohne Unterbrechung aktiv."
+        fi
     fi
     cat > /usr/local/sbin/msm-docker-socket-acl <<ACLEOF
 #!/bin/sh
@@ -1995,25 +2101,40 @@ if [[ -f "$PANEL_UNIT" ]] && grep -q 'ProtectHome=true' "$PANEL_UNIT"; then
     ok "Panel-Service ProtectHome deaktiviert"
 fi
 
-# ── Rootless Docker reparieren: UDP Source-IP + Host-Loopback-Sperre ──
-if ! command -v slirp4netns &>/dev/null; then
-    log "Installiere slirp4netns für UDP Source-IP Erhalt..."
-    apt-get install -y -qq slirp4netns 2>/dev/null || true
-fi
-TARGET_DOCKER_USER="$(id "$MSM_DOCKER_USER" &>/dev/null && echo "$MSM_DOCKER_USER" || echo "$MSM_USER")"
-TARGET_DOCKER_HOME="$(getent passwd "$TARGET_DOCKER_USER" | cut -d: -f6 || echo "$MSM_DOCKER_HOME")"
-if id "$TARGET_DOCKER_USER" &>/dev/null; then
-    TARGET_DOCKER_UID=$(id -u "$TARGET_DOCKER_USER")
-    MSM_OVERRIDE_CONF="${TARGET_DOCKER_HOME}/.config/systemd/user/docker.service.d/override.conf"
-    if ! grep -q 'DOCKERD_ROOTLESS_ROOTLESSKIT_DISABLE_HOST_LOOPBACK=true' "$MSM_OVERRIDE_CONF" 2>/dev/null \
-       || ! grep -q 'DOCKERD_ROOTLESS_ROOTLESSKIT_PORT_DRIVER=slirp4netns' "$MSM_OVERRIDE_CONF" 2>/dev/null; then
-        log "Konfiguriere Rootless Docker für $TARGET_DOCKER_USER (slirp4netns + disable-host-loopback)..."
-        su -s /bin/bash "$TARGET_DOCKER_USER" -c "mkdir -p ~/.config/systemd/user/docker.service.d && printf '[Service]\nEnvironment=\"DOCKERD_ROOTLESS_ROOTLESSKIT_PORT_DRIVER=slirp4netns\"\nEnvironment=\"DOCKERD_ROOTLESS_ROOTLESSKIT_DISABLE_HOST_LOOPBACK=true\"\n' > ~/.config/systemd/user/docker.service.d/override.conf" 2>/dev/null || true
-        if $SYSTEMD_AVAILABLE; then
-            su -s /bin/bash "$TARGET_DOCKER_USER" -c "export XDG_RUNTIME_DIR=/run/user/${TARGET_DOCKER_UID}; systemctl --user daemon-reload && systemctl --user restart docker.service" 2>/dev/null || true
-            /usr/local/sbin/msm-docker-socket-acl 2>/dev/null || true
-            ok "Rootless Docker mit slirp4netns und Loopback-Isolation neugestartet"
+# ── Rootless Docker Konfiguration (Legacy-Fallback ohne $MSM_DIR/msm-agent) ──
+# Im Standard-Setup mit msm-agent erfolgt die idempotente Konfiguration inklusive
+# daemon.json, slirp4netns-override.conf und Snapshot-geschütztem Restart oben.
+if [[ ! -d "$MSM_DIR/msm-agent" ]]; then
+    if ! command -v slirp4netns &>/dev/null; then
+        log "Installiere slirp4netns für UDP Source-IP Erhalt..."
+        apt-get install -y -qq slirp4netns 2>/dev/null || true
+    fi
+    TARGET_DOCKER_USER="$(id "$MSM_DOCKER_USER" &>/dev/null && echo "$MSM_DOCKER_USER" || echo "$MSM_USER")"
+    TARGET_DOCKER_HOME="$(getent passwd "$TARGET_DOCKER_USER" | cut -d: -f6 || echo "$MSM_DOCKER_HOME")"
+    if id "$TARGET_DOCKER_USER" &>/dev/null; then
+        TARGET_DOCKER_UID=$(id -u "$TARGET_DOCKER_USER")
+        MSM_OVERRIDE_CONF="${TARGET_DOCKER_HOME}/.config/systemd/user/docker.service.d/override.conf"
+        TMP_OVERRIDE_CONF=$(mktemp /tmp/msm-docker-override-legacy.XXXXXX)
+        cat > "$TMP_OVERRIDE_CONF" <<EOF
+[Service]
+Environment="DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/${TARGET_DOCKER_UID}/bus"
+Environment="DOCKERD_ROOTLESS_ROOTLESSKIT_PORT_DRIVER=slirp4netns"
+Environment="DOCKERD_ROOTLESS_ROOTLESSKIT_DISABLE_HOST_LOOPBACK=true"
+EOF
+        if [[ ! -f "$MSM_OVERRIDE_CONF" ]] || ! cmp -s "$TMP_OVERRIDE_CONF" "$MSM_OVERRIDE_CONF"; then
+            log "Konfiguriere Rootless Docker für $TARGET_DOCKER_USER (slirp4netns + disable-host-loopback)..."
+            su -s /bin/bash "$TARGET_DOCKER_USER" -c "mkdir -p ~/.config/systemd/user/docker.service.d" 2>/dev/null || true
+            cp "$TMP_OVERRIDE_CONF" "$MSM_OVERRIDE_CONF"
+            chown "$TARGET_DOCKER_USER:$TARGET_DOCKER_USER" "$MSM_OVERRIDE_CONF"
+            chmod 0644 "$MSM_OVERRIDE_CONF" 2>/dev/null || true
+            if $SYSTEMD_AVAILABLE; then
+                _write_docker_restart_snapshot "$TARGET_DOCKER_USER" "$TARGET_DOCKER_UID"
+                su -s /bin/bash "$TARGET_DOCKER_USER" -c "export XDG_RUNTIME_DIR=/run/user/${TARGET_DOCKER_UID} DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/${TARGET_DOCKER_UID}/bus; systemctl --user daemon-reload && systemctl --user restart docker.service" 2>/dev/null || true
+                /usr/local/sbin/msm-docker-socket-acl 2>/dev/null || true
+                ok "Rootless Docker mit slirp4netns und Loopback-Isolation neugestartet"
+            fi
         fi
+        rm -f "$TMP_OVERRIDE_CONF"
     fi
 fi
 

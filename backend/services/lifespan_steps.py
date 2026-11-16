@@ -491,7 +491,10 @@ def recover_scheduler_and_cleanup_expired() -> None:
     from database import SessionLocal
     from services.operation_task_service import recover_interrupted_tasks
     from services.scheduler_service import init_server_schedules, start_scheduler
-    from services.server_lifecycle_service import reconcile_orphaned_lifecycle_statuses
+    from services.server_lifecycle_service import (
+        reconcile_orphaned_lifecycle_statuses,
+        recover_servers_after_docker_restart,
+    )
 
     start_scheduler()
     db = SessionLocal()
@@ -504,6 +507,13 @@ def recover_scheduler_and_cleanup_expired() -> None:
             logger.info(
                 "Lifecycle-Status für %d Server nach Panel-Start mit Docker abgeglichen.",
                 reconciled,
+            )
+        recovered_servers = recover_servers_after_docker_restart(db)
+        if recovered_servers:
+            logger.info(
+                "Wiederanlauf nach Docker-Daemon-Restart für %d Server gestartet: %s",
+                len(recovered_servers),
+                recovered_servers,
             )
         init_server_schedules(db)
     finally:
