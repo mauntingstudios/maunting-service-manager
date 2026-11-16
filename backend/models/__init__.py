@@ -3,6 +3,9 @@ from .user_role import UserRole
 from .role_ai_limit import RoleAiLimit
 from .role_ai_model_access import RoleAiModelAccess
 from .role_vault_quota import RoleVaultQuota
+from .role_frontend_quota import RoleFrontendBuildQuota
+from .frontend_deployment import FrontendDeployment
+from .frontend_settings import FrontendSettings
 from .ai_usage_event import AiUsageEvent
 from .operation_task import OperationTask
 from .ai_provider import AiProvider

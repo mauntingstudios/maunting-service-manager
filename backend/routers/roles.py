@@ -1,9 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from database import get_db
 from dependencies import get_current_user, require_global, verify_csrf
-from models import User
+from models import RoleFrontendBuildQuota, User
 from schemas import RoleCreate, RoleResponse, RoleUpdate
 from services import rechtevergabe_service, role_service
 
@@ -120,3 +121,56 @@ def delete_role(
         rechtevergabe_service.delete_role(db, actor, role_id)
     except rechtevergabe_service.RechteFehler as fehler:
         raise _http(fehler) from None
+
+
+class RoleFrontendQuotaPayload(BaseModel):
+    max_cpu_cores: int = Field(default=2, ge=1, le=16)
+    max_memory_mb: int = Field(default=2048, ge=256, le=32768)
+    build_timeout_seconds: int = Field(default=900, ge=60, le=3600)
+    max_concurrent_builds: int = Field(default=1, ge=1, le=8)
+    max_previews_per_server: int = Field(default=5, ge=0, le=50)
+
+
+@router.get("/{role_id}/frontend-quota", response_model=RoleFrontendQuotaPayload)
+def get_role_frontend_quota(
+    role_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+) -> RoleFrontendQuotaPayload:
+    role = role_service.get_role(db, role_id)
+    if not role:
+        raise HTTPException(status_code=404, detail="Rolle nicht gefunden")
+    row = db.get(RoleFrontendBuildQuota, role_id)
+    if row is None:
+        return RoleFrontendQuotaPayload()
+    return RoleFrontendQuotaPayload(
+        max_cpu_cores=row.max_cpu_cores,
+        max_memory_mb=row.max_memory_mb,
+        build_timeout_seconds=row.build_timeout_seconds,
+        max_concurrent_builds=row.max_concurrent_builds,
+        max_previews_per_server=row.max_previews_per_server,
+    )
+
+
+@router.put("/{role_id}/frontend-quota", response_model=RoleFrontendQuotaPayload)
+def set_role_frontend_quota(
+    role_id: int,
+    req: RoleFrontendQuotaPayload,
+    db: Session = Depends(get_db),
+    _actor: User = Depends(require_global("roles.manage")),
+    __: None = Depends(verify_csrf),
+) -> RoleFrontendQuotaPayload:
+    role = role_service.get_role(db, role_id)
+    if not role:
+        raise HTTPException(status_code=404, detail="Rolle nicht gefunden")
+    row = db.get(RoleFrontendBuildQuota, role_id)
+    if row is None:
+        row = RoleFrontendBuildQuota(role_id=role_id)
+        db.add(row)
+    row.max_cpu_cores = req.max_cpu_cores
+    row.max_memory_mb = req.max_memory_mb
+    row.build_timeout_seconds = req.build_timeout_seconds
+    row.max_concurrent_builds = req.max_concurrent_builds
+    row.max_previews_per_server = req.max_previews_per_server
+    db.commit()
+    return req

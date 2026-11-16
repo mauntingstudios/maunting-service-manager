@@ -110,6 +110,30 @@ def _get_server(server_id: int, db: Session) -> Server:
     return server
 
 
+_GITHUB_FRONTEND_READONLY_PREFIXES = ("current", "previews", "deployments", "build-logs", "Caddyfile")
+
+
+def _assert_frontend_writable(server: Server, *rel_paths: str) -> None:
+    """Schuetzt ausgelieferte Build-Ordner bei GitHub-Frontends vor manueller Ueberschreibung."""
+    from blueprints.registry import get_registry
+    from blueprints.schema import BlueprintCategory, BlueprintSourceType
+
+    entry = get_registry().get(server.game_type)
+    if entry is None:
+        return
+    bp = entry.blueprint
+    if bp.meta.category != BlueprintCategory.FRONTEND or bp.source.type != BlueprintSourceType.GITHUB:
+        return
+    for raw in rel_paths:
+        norm = (raw or "").replace("\\", "/").lstrip("./").strip("/")
+        top = norm.split("/", 1)[0] if norm else ""
+        if not top or top in _GITHUB_FRONTEND_READONLY_PREFIXES:
+            raise HTTPException(
+                status_code=403,
+                detail="Ausgelieferte Dateien eines GitHub-Frontends sind schreibgeschützt. Nutze einen Git-Push oder 'Jetzt bauen'.",
+            )
+
+
 def _agent_client(server: Server, db: Session) -> NodeClient | None:
     """Return NodeClient when file ops must hit the agent.
 
@@ -479,6 +503,7 @@ def write_file(
 ) -> dict:
     """Write/create a text file."""
     require_server_permission(user, server_id, db, "server.files.write")
+    _assert_frontend_writable(_get_server(server_id, db), path)
     result = write_server_text(
         db,
         user=user,
@@ -616,6 +641,7 @@ async def upload_file(
         server = _get_server(server_id, db)
         if not file.filename:
             raise HTTPException(status_code=400, detail="Kein Dateiname")
+        _assert_frontend_writable(server, os.path.join(path, file.filename).replace("\\", "/"))
         _ensure_allowed_extension(file.filename)
         return server, _agent_client(server, db)
 
@@ -997,6 +1023,7 @@ def make_directory(
     if "/" in body.name or "\\" in body.name or body.name in ("", ".", ".."):
         raise HTTPException(status_code=400, detail="Ungueltiger Ordnername")
     rel = os.path.join(path, body.name).replace("\\", "/")
+    _assert_frontend_writable(server, rel)
     agent = _agent_client(server, db)
     if agent is not None:
         try:
@@ -1201,6 +1228,7 @@ def extract_archive(
     """Extract a zip or tar archive in place."""
     require_server_permission(user, server_id, db, "server.files.write")
     server = _get_server(server_id, db)
+    _assert_frontend_writable(server, path)
     agent = _agent_client(server, db)
     if agent is not None:
         if not _is_archive(path):

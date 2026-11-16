@@ -115,98 +115,23 @@ def build_release(
     )
 
     if is_frontend:
+        from services.frontend_build_runner import run_node_frontend_build
+
         log("2. Baue Frontend in ephemerem Container...")
         target_fe_dir = (build_dir / "frontend") if (build_dir / "frontend" / "package.json").exists() else build_dir
-        has_lock = (target_fe_dir / "package-lock.json").exists()
-        npm_install_cmd = "npm ci" if has_lock else "npm install"
-
-        # Ephemerer Docker-Build falls Docker verfuegbar
-        docker_avail = docker_service.is_docker_available(node=node)
-        build_succeeded = False
-        build_output = ""
-
-        if docker_avail:
-            cmd = ["sh", "-c", f"{npm_install_cmd} && npm run build"]
-            volumes = [
-                VolumeBind(
-                    host_path=str(target_fe_dir.resolve()),
-                    container_path="/app",
-                    read_only=False,
-                )
-            ]
-            res = docker_service.run_ephemeral(
-                image="node:22-bookworm-slim",
-                command=cmd,
-                workdir="/app",
-                volumes=volumes,
-                timeout=600,
-                node=node,
-                log_callback=log_callback,
-            )
-            build_succeeded = bool(res.get("ok"))
-            build_output = (res.get("stdout") or "") + "\n" + (res.get("stderr") or "")
-        else:
-            # Lokaler Fallback fuer Umgebungen ohne Docker
-            log("Docker nicht verfügbar; verwende lokalen Node-Prozess fuer Build...")
-            try:
-                npm_bin = shutil.which("npm.cmd") or shutil.which("npm")
-                if npm_bin:
-                    p1 = subprocess.run(
-                        [npm_bin, "ci" if has_lock else "install"],
-                        cwd=str(target_fe_dir),
-                        capture_output=True,
-                        text=True,
-                        timeout=300,
-                    )
-                    p2 = subprocess.run(
-                        [npm_bin, "run", "build"],
-                        cwd=str(target_fe_dir),
-                        capture_output=True,
-                        text=True,
-                        timeout=300,
-                    )
-                    build_output = p1.stdout + p1.stderr + "\n" + p2.stdout + p2.stderr
-                    build_succeeded = (p1.returncode == 0 and p2.returncode == 0)
-                else:
-                    build_output = "Kein npm auf dem Host gefunden."
-            except Exception as exc:
-                build_output = f"Lokaler Build-Fehler: {exc}"
-
-        # Pruefe Artefakt dist/index.html
-        dist_index = target_fe_dir / "dist" / "index.html"
+        fe_res = run_node_frontend_build(
+            target_fe_dir,
+            node_version="22",
+            timeout_seconds=600,
+            node=node,
+            log_callback=log_callback,
+        )
+        dist_index = (fe_res.output_dir / "index.html") if fe_res.output_dir else (target_fe_dir / "dist" / "index.html")
         if not dist_index.exists() and (build_dir / "dist" / "index.html").exists():
             dist_index = build_dir / "dist" / "index.html"
 
-        # Falls dist/index.html fehlt, aber Vite-Dateien vorhanden sind: versuche automatischen Vite-Build
         if not dist_index.exists():
-            has_vite = any((target_fe_dir / marker).exists() for marker in ("vite.config.ts", "vite.config.js", "vite.config.mjs"))
-            if has_vite:
-                log("dist/index.html fehlt nach 'npm run build'; führe automatischen 'vite build' Fallback aus...")
-                if docker_avail:
-                    fallback_res = docker_service.run_ephemeral(
-                        image="node:22-bookworm-slim",
-                        command=["sh", "-c", "npx --no-install vite build || npx vite build || ./node_modules/.bin/vite build"],
-                        workdir="/app",
-                        volumes=volumes,
-                        timeout=300,
-                        node=node,
-                        log_callback=log_callback,
-                    )
-                    build_output += "\n" + (fallback_res.get("stdout") or "") + "\n" + (fallback_res.get("stderr") or "")
-                else:
-                    try:
-                        npx_bin = shutil.which("npx.cmd") or shutil.which("npx")
-                        if npx_bin:
-                            pf = subprocess.run([npx_bin, "vite", "build"], cwd=str(target_fe_dir), capture_output=True, text=True, timeout=300)
-                            build_output += "\n" + pf.stdout + pf.stderr
-                    except Exception as fallback_exc:
-                        build_output += f"\nVite-Fallback-Fehler: {fallback_exc}"
-
-            if not dist_index.exists() and (build_dir / "dist" / "index.html").exists():
-                dist_index = build_dir / "dist" / "index.html"
-
-        if not dist_index.exists():
-            tail = build_output.strip()[-500:] if build_output else "Keine Build-Ausgabe vorhanden."
+            tail = fe_res.log_output.strip()[-500:] if fe_res.log_output else "Keine Build-Ausgabe vorhanden."
             raise SingraBuildError(
                 f"Frontend-Build erzeugte kein dist/index.html:\n{tail}",
                 phase="build_frontend",
