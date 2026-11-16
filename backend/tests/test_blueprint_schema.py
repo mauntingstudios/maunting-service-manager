@@ -815,3 +815,52 @@ def test_blueprint_game_grouping_and_farming_simulator_editions() -> None:
         assert fs_bp.source.steam.requiresLogin is True
 
 
+def test_2026_linux_native_blueprints_validate() -> None:
+    expected = {
+        "runescape_dragonwilds": ("4019830", False, "ghcr.io/parkervcp/steamcmd:debian"),
+        "romestead": ("4763510", True, "ghcr.io/ptero-eggs/yolks:dotnet_8"),
+        "vein": ("2131400", False, "ghcr.io/parkervcp/steamcmd:debian"),
+        "soulmask": ("3017300", False, "ghcr.io/parkervcp/steamcmd:debian"),
+    }
+    for bid, (app_id, requires_login, image) in expected.items():
+        bp = load_blueprint_file(_NATIVE_DIR / f"{bid}.blueprint.json")
+        assert bp.runtime.image == image
+        assert bp.source.steam is not None
+        assert bp.source.steam.appId == app_id
+        assert bp.source.steam.platform.value == "linux"
+        assert bp.source.steam.compatibility.value == "native"
+        assert bp.source.steam.requiresLogin is requires_login
+
+
+def test_proton_wine_and_arma_blueprints_validate() -> None:
+    expected = {
+        "v_rising": ("1829350", "windows", "wine", "ghcr.io/parkervcp/yolks:wine_10"),
+        "windrose": ("4129620", "windows", "proton", "ghcr.io/mauntingstudios/msm-proton-runtime:ge-proton10-34-umu1.4.0"),
+        "myth_of_empires": ("1794810", "windows", "proton", "ghcr.io/mauntingstudios/msm-proton-runtime:ge-proton10-34-umu1.4.0"),
+        "abiotic_factor": ("2857200", "windows", "proton", "ghcr.io/mauntingstudios/msm-proton-runtime:ge-proton10-34-umu1.4.0"),
+        "lotr_return_to_moria": ("3349480", "windows", "proton", "ghcr.io/mauntingstudios/msm-proton-runtime:ge-proton10-34-umu1.4.0"),
+        "aska": ("3246670", "windows", "wine", "ghcr.io/parkervcp/yolks:wine_10"),
+        "arma_reforger": ("1874900", "linux", "native", "ghcr.io/parkervcp/steamcmd:debian"),
+        "arma_3": ("233780", "linux", "native", "ghcr.io/parkervcp/games:arma3"),
+        "nightingale": ("3796810", "linux", "native", "ghcr.io/parkervcp/steamcmd:debian"),
+    }
+    for bid, (app_id, platform, compat, image) in expected.items():
+        bp = load_blueprint_file(_NATIVE_DIR / f"{bid}.blueprint.json")
+        assert bp.runtime.image == image
+        assert bp.source.steam is not None
+        assert bp.source.steam.appId == app_id
+        assert bp.source.steam.platform.value == platform
+        assert bp.source.steam.compatibility.value == compat
+
+    arma_reforger = load_blueprint_file(_NATIVE_DIR / "arma_reforger.blueprint.json")
+    assert arma_reforger.meta.game == "Arma"
+    assert arma_reforger.meta.edition == "Reforger"
+
+    arma_3 = load_blueprint_file(_NATIVE_DIR / "arma_3.blueprint.json")
+    assert arma_3.meta.game == "Arma"
+    assert arma_3.meta.edition == "3"
+    assert arma_3.mods.supportsSteamWorkshop is True
+    assert arma_3.mods.workshopAppId == "107410"
+
+
+

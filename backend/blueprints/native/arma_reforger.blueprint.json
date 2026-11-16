@@ -1,0 +1,151 @@
+{
+  "version": 1,
+  "meta": {
+    "id": "arma_reforger",
+    "name": "Arma Reforger",
+    "game": "Arma",
+    "edition": "Reforger",
+    "category": "steam_game",
+    "author": "Maunting Studios",
+    "description": "Arma Reforger Dedicated Server (Steam App-ID 1874900, nativer Linux-Support). Läuft ohne Wine/Proton direkt unter Debian mit A2S-Query-Unterstützung über config.json."
+  },
+  "runtime": {
+    "image": "ghcr.io/parkervcp/steamcmd:debian",
+    "workdir": "/data",
+    "user": "1000:1000",
+    "env": {
+      "HOME": "/data",
+      "LD_LIBRARY_PATH": ".:./linux64:/usr/lib32:/usr/lib/x86_64-linux-gnu"
+    },
+    "startup": "./ArmaReforgerServer -gproj ./addons/data/ArmaReforger.gproj -config ./config.json -profile ./profile -backendlog -nothrow -maxFPS 120 -addonTempDir ./tmp",
+    "ensureDirs": [
+      "profile",
+      "tmp"
+    ],
+    "requiredFiles": [
+      "ArmaReforgerServer"
+    ],
+    "seedFiles": [
+      {
+        "file": "config.json",
+        "content": "{\n  \"bindAddress\": \"0.0.0.0\",\n  \"bindPort\": {GAME_PORT},\n  \"publicAddress\": \"\",\n  \"publicPort\": {GAME_PORT},\n  \"a2s\": {\n    \"address\": \"0.0.0.0\",\n    \"port\": {QUERY_PORT}\n  },\n  \"game\": {\n    \"name\": \"Arma Reforger Dedicated Server\",\n    \"password\": \"\",\n    \"passwordAdmin\": \"\",\n    \"scenarioId\": \"\\u007bECC61978EDCC2B5A\\u007dMissions/23_Campaign.conf\",\n    \"maxPlayers\": 32,\n    \"visible\": true,\n    \"crossPlatform\": false,\n    \"supportedPlatforms\": [\n      \"PLATFORM_PC\"\n    ],\n    \"gameProperties\": {\n      \"serverMaxViewDistance\": 1600,\n      \"serverMinGrassDistance\": 50,\n      \"networkViewDistance\": 1500,\n      \"disableThirdPerson\": false,\n      \"fastValidation\": true,\n      \"battlEye\": true\n    },\n    \"mods\": []\n  },\n  \"operating\": {\n    \"lobbyPlayerSynchronise\": true,\n    \"playerSaveTime\": 120,\n    \"aiLimit\": -1\n  }\n}\n"
+      }
+    ],
+    "configPatches": [
+      {
+        "type": "regex",
+        "file": "config.json",
+        "regex": "(\"bindPort\"\\s*:\\s*)\\d+",
+        "value": "\\g<1>{GAME_PORT}"
+      },
+      {
+        "type": "regex",
+        "file": "config.json",
+        "regex": "(\"publicPort\"\\s*:\\s*)\\d+",
+        "value": "\\g<1>{GAME_PORT}"
+      },
+      {
+        "type": "regex",
+        "file": "config.json",
+        "regex": "(\"port\"\\s*:\\s*)\\d+",
+        "value": "\\g<1>{QUERY_PORT}"
+      }
+    ],
+    "startupCheckSeconds": 60.0
+  },
+  "ports": [
+    {
+      "name": "game",
+      "protocol": "udp"
+    },
+    {
+      "name": "query",
+      "protocol": "udp"
+    }
+  ],
+  "source": {
+    "type": "steam",
+    "steam": {
+      "appId": "1874900",
+      "platform": "linux",
+      "compatibility": "native",
+      "requiresLogin": false,
+      "validate": false
+    },
+    "updateStrategy": "checkBased"
+  },
+  "mods": {
+    "supportsMods": false,
+    "supportsSteamWorkshop": false,
+    "workshopAppId": null,
+    "modInjection": "none",
+    "modStartupArgumentFormat": null,
+    "modListFilePath": null,
+    "modListContent": "workshopIds",
+    "postInstall": []
+  },
+  "health": {
+    "process": {},
+    "application": {
+      "type": "source-query",
+      "port": "{{QUERY_PORT}}",
+      "interval": "60s",
+      "failure_threshold": 3
+    },
+    "startup": {
+      "grace_period_seconds": 120,
+      "success_patterns": [
+        "Starting RPL server"
+      ],
+      "failure_patterns": [
+        "Address already in use",
+        "Could not bind"
+      ]
+    }
+  },
+  "logs": {
+    "sources": [
+      "stdout",
+      "profile/logs/*.log"
+    ],
+    "redact": [
+      "regex:password",
+      "regex:passwordAdmin"
+    ]
+  },
+  "diagnostics": {
+    "parsers": [
+      "linux-oom",
+      "port-conflict"
+    ]
+  },
+  "recovery": {
+    "policies": [
+      {
+        "match": "process_not_running",
+        "action": "restart"
+      },
+      {
+        "match": "source_query_failed",
+        "action": "restart"
+      },
+      {
+        "match": "port-conflict",
+        "action": "clear_declared_lock_files"
+      },
+      {
+        "match": "linux-oom",
+        "action": "graceful_restart"
+      }
+    ],
+    "attempt_window_seconds": 600,
+    "max_attempts": 3,
+    "cooldown_seconds": 60
+  },
+  "backup": {
+    "includePaths": [
+      "config.json",
+      "profile"
+    ]
+  }
+}

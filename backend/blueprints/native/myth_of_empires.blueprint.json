@@ -1,0 +1,135 @@
+{
+  "version": 1,
+  "meta": {
+    "id": "myth_of_empires",
+    "name": "Myth of Empires",
+    "category": "steam_game",
+    "author": "Maunting Studios",
+    "description": "Myth of Empires Dedicated Server (Steam App-ID 1794810). Läuft über GE-Proton + UMU (msm-proton-runtime) mit PROTON_USE_WINED3D=1 und PROTON_NO_ESYNC=1."
+  },
+  "runtime": {
+    "image": "ghcr.io/mauntingstudios/msm-proton-runtime:ge-proton10-34-umu1.4.0",
+    "workdir": "/home/container",
+    "user": "1000:1000",
+    "env": {
+      "GAMEID": "umu-1794810",
+      "WINEPREFIX": "/home/container/.proton-prefix",
+      "PROTON_USE_WINED3D": "1",
+      "PROTON_NO_ESYNC": "1",
+      "WINEESYNC": "0",
+      "MAP_NAME": "LargeTerrain_Central_Main",
+      "MAX_PLAYERS": "25"
+    },
+    "startup": "xvfb-run -a /opt/umu-launcher/umu-run ./MOE/Binaries/Win64/MOEServer.exe {ENV.MAP_NAME} -game -server -DataLocalFile -NotCheckServerSteamAuth -LOCALLOGTIMES -PrivateServer -MultiHome=0.0.0.0 -SessionName=\"{SERVER_NAME}\" -GameServerPVPType=1 -MaxPlayers={ENV.MAX_PLAYERS} -MapDifficultyRate=1 -UseACE -EnableVACBan=1 -ServerId=100 -ClusterId=1 -Port={GAME_PORT} -QueryPort={QUERY_PORT} -bStartShutDownServiceInPrivateServer=1 -ShutDownServiceIP=127.0.0.1 -ShutDownServicePort={RCON_PORT}",
+    "ensureDirs": [
+      ".local/share/umu",
+      "MOE/Saved/Logs",
+      "MOE/Saved/SaveGames"
+    ],
+    "requiredFiles": [
+      "MOE/Binaries/Win64/MOEServer.exe"
+    ],
+    "configPatches": [],
+    "stopGracePeriodSeconds": 60,
+    "startupCheckSeconds": 120.0,
+    "allowUnprivilegedUserNamespaces": true
+  },
+  "ports": [
+    {
+      "name": "game",
+      "protocol": "udp"
+    },
+    {
+      "name": "query",
+      "protocol": "udp"
+    },
+    {
+      "name": "rcon",
+      "protocol": "tcp"
+    }
+  ],
+  "source": {
+    "type": "steam",
+    "steam": {
+      "appId": "1794810",
+      "platform": "windows",
+      "compatibility": "proton",
+      "requiresLogin": false,
+      "validate": false
+    },
+    "updateStrategy": "checkBased"
+  },
+  "mods": {
+    "supportsMods": false,
+    "supportsSteamWorkshop": false,
+    "workshopAppId": null,
+    "modInjection": "none",
+    "modStartupArgumentFormat": null,
+    "modListFilePath": null,
+    "modListContent": "workshopIds",
+    "postInstall": []
+  },
+  "health": {
+    "process": {},
+    "application": {
+      "type": "source-query",
+      "port": "{{QUERY_PORT}}",
+      "interval": "60s",
+      "failure_threshold": 3
+    },
+    "startup": {
+      "grace_period_seconds": 150,
+      "success_patterns": [
+        "LogInit: Display: Starting Game."
+      ],
+      "failure_patterns": [
+        "Address already in use",
+        "Could not bind"
+      ]
+    }
+  },
+  "logs": {
+    "sources": [
+      "stdout",
+      "MOE/Saved/Logs/*.log"
+    ],
+    "redact": [
+      "regex:ShutDownServiceKey"
+    ]
+  },
+  "diagnostics": {
+    "parsers": [
+      "linux-oom",
+      "port-conflict"
+    ]
+  },
+  "recovery": {
+    "policies": [
+      {
+        "match": "process_not_running",
+        "action": "restart"
+      },
+      {
+        "match": "source_query_failed",
+        "action": "restart"
+      },
+      {
+        "match": "port-conflict",
+        "action": "clear_declared_lock_files"
+      },
+      {
+        "match": "linux-oom",
+        "action": "graceful_restart"
+      }
+    ],
+    "attempt_window_seconds": 600,
+    "max_attempts": 3,
+    "cooldown_seconds": 60
+  },
+  "backup": {
+    "includePaths": [
+      "MOE/Saved/SaveGames",
+      "MOE/Saved/Config"
+    ]
+  }
+}

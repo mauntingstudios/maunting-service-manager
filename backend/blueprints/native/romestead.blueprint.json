@@ -1,0 +1,132 @@
+{
+  "version": 1,
+  "meta": {
+    "id": "romestead",
+    "name": "Romestead",
+    "category": "steam_game",
+    "author": "Maunting Studios",
+    "description": "Romestead Dedicated Server (Steam App-ID 4763510, nativer Linux-/.NET-8-Server). Kooperatives Aufbauspiel (1-8 Spieler, Early Access Mai 2026). Benötigt für den SteamCMD-Download einen globalen Steam-Account mit gekaufter Romestead-Lizenz."
+  },
+  "runtime": {
+    "image": "ghcr.io/ptero-eggs/yolks:dotnet_8",
+    "workdir": "/home/container",
+    "user": "1000:1000",
+    "env": {
+      "HOME": "/home/container",
+      "XDG_DATA_HOME": "/home/container/.local/share",
+      "XDG_CONFIG_HOME": "/home/container/.config",
+      "LD_LIBRARY_PATH": ".:./linux64:/usr/lib/x86_64-linux-gnu"
+    },
+    "startup": "dotnet Server.dll",
+    "ensureDirs": [
+      "logs",
+      ".local/share",
+      ".config"
+    ],
+    "requiredFiles": [
+      "Server.dll"
+    ],
+    "seedFiles": [
+      {
+        "file": "config.json",
+        "content": "{\n  \"AutoStartWorldName\": \"Romestead World\",\n  \"AutoCreateAndLoadWorld\": true,\n  \"AutoCreateWorldSize\": 1,\n  \"AutoCreateWorldSeed\": null,\n  \"Password\": \"\",\n  \"Port\": {GAME_PORT},\n  \"MaxPlayers\": 8,\n  \"EnableCheats\": false,\n  \"SleepThresholdMs\": 10\n}\n"
+      }
+    ],
+    "configPatches": [
+      {
+        "type": "regex",
+        "file": "config.json",
+        "regex": "(\"Port\"\\s*:\\s*)\\d+",
+        "value": "\\g<1>{GAME_PORT}"
+      }
+    ],
+    "startupCheckSeconds": 90.0
+  },
+  "ports": [
+    {
+      "name": "game",
+      "protocol": "udp"
+    }
+  ],
+  "source": {
+    "type": "steam",
+    "steam": {
+      "appId": "4763510",
+      "platform": "linux",
+      "compatibility": "native",
+      "requiresLogin": true,
+      "validate": false
+    },
+    "updateStrategy": "checkBased"
+  },
+  "mods": {
+    "supportsMods": false,
+    "supportsSteamWorkshop": false,
+    "workshopAppId": null,
+    "modInjection": "none",
+    "modStartupArgumentFormat": null,
+    "modListFilePath": null,
+    "modListContent": "workshopIds",
+    "postInstall": []
+  },
+  "health": {
+    "process": {},
+    "port": {
+      "protocol": "udp",
+      "port": "{{SERVER_PORT}}",
+      "interval": "60s",
+      "failure_threshold": 3
+    },
+    "startup": {
+      "grace_period_seconds": 120,
+      "success_patterns": [
+        "Server ready"
+      ],
+      "failure_patterns": [
+        "Address already in use",
+        "Could not bind"
+      ]
+    }
+  },
+  "logs": {
+    "sources": [
+      "stdout",
+      "logs/latest.log"
+    ],
+    "redact": [
+      "regex:Password"
+    ]
+  },
+  "diagnostics": {
+    "parsers": [
+      "linux-oom",
+      "port-conflict"
+    ]
+  },
+  "recovery": {
+    "policies": [
+      {
+        "match": "process_not_running",
+        "action": "restart"
+      },
+      {
+        "match": "port-conflict",
+        "action": "clear_declared_lock_files"
+      },
+      {
+        "match": "linux-oom",
+        "action": "graceful_restart"
+      }
+    ],
+    "attempt_window_seconds": 600,
+    "max_attempts": 3,
+    "cooldown_seconds": 60
+  },
+  "backup": {
+    "includePaths": [
+      "config.json",
+      ".local/share",
+      ".config"
+    ]
+  }
+}

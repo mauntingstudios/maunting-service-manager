@@ -1,0 +1,124 @@
+{
+  "version": 1,
+  "meta": {
+    "id": "runescape_dragonwilds",
+    "name": "RuneScape: Dragonwilds",
+    "category": "steam_game",
+    "author": "Maunting Studios",
+    "description": "RuneScape: Dragonwilds Dedicated Server (Steam App-ID 4019830, nativer Linux-Support). Kooperatives Survival-RPG (1-6 Spieler). Vor dem Start muss die eigene Player-ID als OwnerId in RSDragonwilds/Saved/Config/LinuxServer/DedicatedServer.ini eingetragen werden."
+  },
+  "runtime": {
+    "image": "ghcr.io/parkervcp/steamcmd:debian",
+    "workdir": "/data",
+    "user": "1000:1000",
+    "env": {
+      "HOME": "/data",
+      "LD_LIBRARY_PATH": ".:./linux64:/usr/lib32:/usr/lib/x86_64-linux-gnu",
+      "MAX_PLAYERS": "6"
+    },
+    "startup": "./RSDragonwilds/Binaries/Linux/RSDragonwildsServer-Linux-Shipping -log -port={GAME_PORT} -ini:Game:[/Script/Engine.GameSession]:MaxPlayers={ENV.MAX_PLAYERS}",
+    "ensureDirs": [
+      "RSDragonwilds/Saved/Config/LinuxServer",
+      "RSDragonwilds/Saved/SaveGames",
+      "RSDragonwilds/Saved/Logs"
+    ],
+    "requiredFiles": [
+      "RSDragonwilds/Binaries/Linux/RSDragonwildsServer-Linux-Shipping"
+    ],
+    "seedFiles": [
+      {
+        "file": "RSDragonwilds/Saved/Config/LinuxServer/DedicatedServer.ini",
+        "content": "[/Script/Dominion.DedicatedServerSettings]\nOwnerId=\nServerName=Dragonwilds Server\nDefaultWorldName=Default World\nAdminPassword=\nWorldPassword=\n"
+      }
+    ],
+    "configPatches": [],
+    "startupCheckSeconds": 60.0
+  },
+  "ports": [
+    {
+      "name": "game",
+      "protocol": "udp"
+    }
+  ],
+  "source": {
+    "type": "steam",
+    "steam": {
+      "appId": "4019830",
+      "platform": "linux",
+      "compatibility": "native",
+      "requiresLogin": false,
+      "validate": false
+    },
+    "updateStrategy": "checkBased"
+  },
+  "mods": {
+    "supportsMods": false,
+    "supportsSteamWorkshop": false,
+    "workshopAppId": null,
+    "modInjection": "none",
+    "modStartupArgumentFormat": null,
+    "modListFilePath": null,
+    "modListContent": "workshopIds",
+    "postInstall": []
+  },
+  "health": {
+    "process": {},
+    "port": {
+      "protocol": "udp",
+      "port": "{{SERVER_PORT}}",
+      "interval": "60s",
+      "failure_threshold": 3
+    },
+    "startup": {
+      "grace_period_seconds": 120,
+      "success_patterns": [
+        "CREATE SESSION - Advertise"
+      ],
+      "failure_patterns": [
+        "Address already in use",
+        "Could not bind"
+      ]
+    }
+  },
+  "logs": {
+    "sources": [
+      "stdout",
+      "RSDragonwilds/Saved/Logs/*.log"
+    ],
+    "redact": [
+      "regex:AdminPassword",
+      "regex:WorldPassword"
+    ]
+  },
+  "diagnostics": {
+    "parsers": [
+      "linux-oom",
+      "port-conflict"
+    ]
+  },
+  "recovery": {
+    "policies": [
+      {
+        "match": "process_not_running",
+        "action": "restart"
+      },
+      {
+        "match": "port-conflict",
+        "action": "clear_declared_lock_files"
+      },
+      {
+        "match": "linux-oom",
+        "action": "graceful_restart"
+      }
+    ],
+    "attempt_window_seconds": 600,
+    "max_attempts": 3,
+    "cooldown_seconds": 60
+  },
+  "backup": {
+    "includePaths": [
+      "RSDragonwilds/Saved/SaveGames",
+      "RSDragonwilds/Saved/Config"
+    ]
+  }
+}

@@ -1,0 +1,47 @@
+name: Publish generic Proton runtime image
+
+on:
+  push:
+    branches: ["main", "refactor/v6.1-critical-cleanup"]
+    paths:
+      - "containers/proton-runtime/**"
+      - ".github/workflows/proton-runtime-image.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: proton-runtime-image
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/msm-proton-runtime
+  STABLE_TAG: ge-proton10-34-umu1.4.0
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push pinned Proton runtime
+        uses: docker/build-push-action@v6
+        with:
+          context: containers/proton-runtime
+          push: true
+          platforms: linux/amd64
+          provenance: true
+          sbom: true
+          tags: |
+            ${{ env.IMAGE }}:${{ env.STABLE_TAG }}
+            ${{ env.IMAGE }}:sha-${{ github.sha }}

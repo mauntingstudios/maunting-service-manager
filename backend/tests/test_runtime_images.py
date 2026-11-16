@@ -53,3 +53,31 @@ def test_space_engineers_runtime_prepares_dotnet48_prefix() -> None:
         )
     except FileNotFoundError:
         pass
+
+
+def test_proton_runtime_is_reproducibly_pinned() -> None:
+    dockerfile = (CONTAINERS_DIR / "proton-runtime" / "Dockerfile").read_text(encoding="utf-8")
+    entrypoint = (CONTAINERS_DIR / "proton-runtime" / "entrypoint.sh").read_text(encoding="utf-8")
+    workflow = (ROOT / ".github" / "workflows" / "proton-runtime-image.yml").read_text(encoding="utf-8")
+
+    assert "@sha256:" in dockerfile
+    assert "UMU_VERSION=1.4.0" in dockerfile
+    assert "GE-Proton10-34" in dockerfile
+    assert 'ENTRYPOINT ["/usr/bin/tini", "-g", "--", "/usr/local/bin/msm-proton-entrypoint"]' in dockerfile
+    assert '"${HOME}/.steam/sdk64/steamclient.so"' in entrypoint
+    assert "msm-proton-runtime" in workflow
+    assert "STABLE_TAG: ge-proton10-34-umu1.4.0" in workflow
+
+    for blueprint_id in ("windrose", "myth_of_empires", "abiotic_factor", "lotr_return_to_moria"):
+        bp = load_blueprint_file(NATIVE_BLUEPRINTS_DIR / f"{blueprint_id}.blueprint.json")
+        assert bp.runtime.image == "ghcr.io/mauntingstudios/msm-proton-runtime:ge-proton10-34-umu1.4.0"
+        assert bp.runtime.allowUnprivilegedUserNamespaces is True
+
+    try:
+        subprocess.run(
+            ["bash", "-n"],
+            input=entrypoint.replace("\r\n", "\n").encode("utf-8"),
+            check=True,
+        )
+    except FileNotFoundError:
+        pass

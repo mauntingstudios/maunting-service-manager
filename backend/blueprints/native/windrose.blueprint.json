@@ -1,0 +1,135 @@
+{
+  "version": 1,
+  "meta": {
+    "id": "windrose",
+    "name": "Windrose",
+    "category": "steam_game",
+    "author": "Maunting Studios",
+    "description": "Windrose Dedicated Server (Steam App-ID 4129620). Läuft über GE-Proton + UMU (msm-proton-runtime) im DirectConnection- oder InviteCode-Modus (R5/ServerDescription.json)."
+  },
+  "runtime": {
+    "image": "ghcr.io/mauntingstudios/msm-proton-runtime:ge-proton10-34-umu1.4.0",
+    "workdir": "/home/container",
+    "user": "1000:1000",
+    "env": {
+      "GAMEID": "umu-4129620",
+      "WINEPREFIX": "/home/container/.proton-prefix"
+    },
+    "startup": "xvfb-run -a /opt/umu-launcher/umu-run ./R5/Binaries/Win64/WindroseServer-Win64-Shipping.exe",
+    "ensureDirs": [
+      ".local/share/umu",
+      "R5/Saved/Logs",
+      "R5/Saved/SaveProfiles"
+    ],
+    "requiredFiles": [
+      "R5/Binaries/Win64/WindroseServer-Win64-Shipping.exe"
+    ],
+    "seedFiles": [
+      {
+        "file": "steam_appid.txt",
+        "content": "3041230\n"
+      },
+      {
+        "file": "R5/ServerDescription.json",
+        "content": "{\n  \"Version\": 1,\n  \"DeploymentId\": \"\",\n  \"ServerDescription_Persistent\": {\n    \"PersistentServerId\": \"\",\n    \"InviteCode\": \"server1\",\n    \"IsPasswordProtected\": false,\n    \"Password\": \"\",\n    \"ServerName\": \"Windrose Server\",\n    \"WorldIslandId\": \"\",\n    \"MaxPlayerCount\": 4,\n    \"UserSelectedRegion\": \"\",\n    \"P2pProxyAddress\": \"0.0.0.0\",\n    \"UseDirectConnection\": true,\n    \"DirectConnectionServerAddress\": \"\",\n    \"DirectConnectionServerPort\": {GAME_PORT},\n    \"DirectConnectionProxyAddress\": \"0.0.0.0\",\n    \"AutoLoadLatestBackupIfHasBroken\": true\n  }\n}\n"
+      }
+    ],
+    "configPatches": [
+      {
+        "type": "regex",
+        "file": "R5/ServerDescription.json",
+        "regex": "(\"DirectConnectionServerPort\"\\s*:\\s*)\\d+",
+        "value": "\\g<1>{GAME_PORT}"
+      }
+    ],
+    "stopGracePeriodSeconds": 60,
+    "startupCheckSeconds": 90.0,
+    "allowUnprivilegedUserNamespaces": true
+  },
+  "ports": [
+    {
+      "name": "game",
+      "protocol": "udp"
+    }
+  ],
+  "source": {
+    "type": "steam",
+    "steam": {
+      "appId": "4129620",
+      "platform": "windows",
+      "compatibility": "proton",
+      "requiresLogin": false,
+      "validate": false
+    },
+    "updateStrategy": "checkBased"
+  },
+  "mods": {
+    "supportsMods": false,
+    "supportsSteamWorkshop": false,
+    "workshopAppId": null,
+    "modInjection": "none",
+    "modStartupArgumentFormat": null,
+    "modListFilePath": null,
+    "modListContent": "workshopIds",
+    "postInstall": []
+  },
+  "health": {
+    "process": {},
+    "port": {
+      "protocol": "udp",
+      "port": "{{SERVER_PORT}}",
+      "interval": "60s",
+      "failure_threshold": 3
+    },
+    "startup": {
+      "grace_period_seconds": 120,
+      "success_patterns": [
+        "UEngine::LoadMap Load map complete"
+      ],
+      "failure_patterns": [
+        "Address already in use",
+        "Could not bind"
+      ]
+    }
+  },
+  "logs": {
+    "sources": [
+      "stdout",
+      "R5/Saved/Logs/R5.log"
+    ],
+    "redact": [
+      "regex:Password"
+    ]
+  },
+  "diagnostics": {
+    "parsers": [
+      "linux-oom",
+      "port-conflict"
+    ]
+  },
+  "recovery": {
+    "policies": [
+      {
+        "match": "process_not_running",
+        "action": "restart"
+      },
+      {
+        "match": "port-conflict",
+        "action": "clear_declared_lock_files"
+      },
+      {
+        "match": "linux-oom",
+        "action": "graceful_restart"
+      }
+    ],
+    "attempt_window_seconds": 600,
+    "max_attempts": 3,
+    "cooldown_seconds": 60
+  },
+  "backup": {
+    "includePaths": [
+      "R5/ServerDescription.json",
+      "R5/Saved/SaveProfiles"
+    ]
+  }
+}

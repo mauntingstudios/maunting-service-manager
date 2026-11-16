@@ -1,0 +1,143 @@
+{
+  "version": 1,
+  "meta": {
+    "id": "aska",
+    "name": "ASKA",
+    "category": "steam_game",
+    "author": "Maunting Studios",
+    "description": "ASKA Dedicated Server (Steam App-ID 3246670). Windows-Server-Binary läuft über Wine 10. Für eine öffentliche Listung muss ein Steam Game Server Login Token (App-ID 1898300) unter authentication token in der server properties.txt hinterlegt werden."
+  },
+  "runtime": {
+    "image": "ghcr.io/parkervcp/yolks:wine_10",
+    "workdir": "/home/container",
+    "user": "1000:1000",
+    "env": {
+      "WINEDEBUG": "-all",
+      "WINEESYNC": "1",
+      "WINEFSYNC": "1"
+    },
+    "startup": "xvfb-run -a wine ./AskaServer.exe -propertiesPath \"server properties.txt\"",
+    "ensureDirs": [
+      "logs"
+    ],
+    "requiredFiles": [
+      "AskaServer.exe"
+    ],
+    "seedFiles": [
+      {
+        "file": "steam_appid.txt",
+        "content": "1898300\n"
+      },
+      {
+        "file": "server properties.txt",
+        "content": "display name = ASKA Dedicated Server\nserver name = ASKA Dedicated Server\npassword = \nauthentication token = \nsteam game port = {GAME_PORT}\nsteam query port = {QUERY_PORT}\nregion = default\nsave id = \nseed = \nmode = normal\nkeep server world alive = false\n"
+      }
+    ],
+    "configPatches": [
+      {
+        "type": "regex",
+        "file": "server properties.txt",
+        "regex": "(steam game port\\s*=\\s*)\\d+",
+        "value": "\\g<1>{GAME_PORT}"
+      },
+      {
+        "type": "regex",
+        "file": "server properties.txt",
+        "regex": "(steam query port\\s*=\\s*)\\d+",
+        "value": "\\g<1>{QUERY_PORT}"
+      }
+    ],
+    "startupCheckSeconds": 90.0
+  },
+  "ports": [
+    {
+      "name": "game",
+      "protocol": "udp"
+    },
+    {
+      "name": "query",
+      "protocol": "udp"
+    }
+  ],
+  "source": {
+    "type": "steam",
+    "steam": {
+      "appId": "3246670",
+      "platform": "windows",
+      "compatibility": "wine",
+      "requiresLogin": false,
+      "validate": false
+    },
+    "updateStrategy": "checkBased"
+  },
+  "mods": {
+    "supportsMods": false,
+    "supportsSteamWorkshop": false,
+    "workshopAppId": null,
+    "modInjection": "none",
+    "modStartupArgumentFormat": null,
+    "modListFilePath": null,
+    "modListContent": "workshopIds",
+    "postInstall": []
+  },
+  "health": {
+    "process": {},
+    "application": {
+      "type": "source-query",
+      "port": "{{QUERY_PORT}}",
+      "interval": "60s",
+      "failure_threshold": 3
+    },
+    "startup": {
+      "grace_period_seconds": 120,
+      "failure_patterns": [
+        "Address already in use",
+        "Could not bind"
+      ]
+    }
+  },
+  "logs": {
+    "sources": [
+      "stdout",
+      "logs/*.log"
+    ],
+    "redact": [
+      "regex:password",
+      "regex:authentication token"
+    ]
+  },
+  "diagnostics": {
+    "parsers": [
+      "linux-oom",
+      "port-conflict"
+    ]
+  },
+  "recovery": {
+    "policies": [
+      {
+        "match": "process_not_running",
+        "action": "restart"
+      },
+      {
+        "match": "source_query_failed",
+        "action": "restart"
+      },
+      {
+        "match": "port-conflict",
+        "action": "clear_declared_lock_files"
+      },
+      {
+        "match": "linux-oom",
+        "action": "graceful_restart"
+      }
+    ],
+    "attempt_window_seconds": 600,
+    "max_attempts": 3,
+    "cooldown_seconds": 60
+  },
+  "backup": {
+    "includePaths": [
+      "server properties.txt"
+    ]
+  }
+}

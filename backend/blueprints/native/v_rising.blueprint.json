@@ -1,0 +1,142 @@
+{
+  "version": 1,
+  "meta": {
+    "id": "v_rising",
+    "name": "V Rising",
+    "category": "steam_game",
+    "author": "Maunting Studios",
+    "description": "V Rising Dedicated Server (Steam App-ID 1829350). Windows-Server-Binary läuft zuverlässig über Wine 10 mit persisitentDataPath save-data."
+  },
+  "runtime": {
+    "image": "ghcr.io/parkervcp/yolks:wine_10",
+    "workdir": "/home/container",
+    "user": "1000:1000",
+    "env": {
+      "WINEDEBUG": "-all",
+      "WINEESYNC": "1",
+      "WINEFSYNC": "1"
+    },
+    "startup": "xvfb-run -a wine ./VRisingServer.exe -address 0.0.0.0 -gamePort {GAME_PORT} -queryPort {QUERY_PORT} -serverName \"{SERVER_NAME}\" -persistentDataPath save-data",
+    "ensureDirs": [
+      "save-data/Settings",
+      "logs"
+    ],
+    "requiredFiles": [
+      "VRisingServer.exe"
+    ],
+    "seedFiles": [
+      {
+        "file": "save-data/Settings/ServerHostSettings.json",
+        "content": "{\n  \"Name\": \"V Rising Dedicated Server\",\n  \"Description\": \"\",\n  \"Port\": {GAME_PORT},\n  \"QueryPort\": {QUERY_PORT},\n  \"MaxConnectedUsers\": 40,\n  \"MaxConnectedAdmins\": 4,\n  \"ServerFps\": 30,\n  \"SaveName\": \"world1\",\n  \"Password\": \"\",\n  \"Secure\": true,\n  \"ListOnSteam\": true,\n  \"ListOnEOS\": true,\n  \"AutoSaveCount\": 20,\n  \"AutoSaveInterval\": 120,\n  \"CompressSaveFiles\": true,\n  \"Rcon\": {\n    \"Enabled\": false,\n    \"Port\": 25575,\n    \"Password\": \"\"\n  }\n}\n"
+      }
+    ],
+    "configPatches": [
+      {
+        "type": "regex",
+        "file": "save-data/Settings/ServerHostSettings.json",
+        "regex": "(\"Port\"\\s*:\\s*)\\d+",
+        "value": "\\g<1>{GAME_PORT}"
+      },
+      {
+        "type": "regex",
+        "file": "save-data/Settings/ServerHostSettings.json",
+        "regex": "(\"QueryPort\"\\s*:\\s*)\\d+",
+        "value": "\\g<1>{QUERY_PORT}"
+      }
+    ],
+    "startupCheckSeconds": 90.0
+  },
+  "ports": [
+    {
+      "name": "game",
+      "protocol": "udp"
+    },
+    {
+      "name": "query",
+      "protocol": "udp"
+    }
+  ],
+  "source": {
+    "type": "steam",
+    "steam": {
+      "appId": "1829350",
+      "platform": "windows",
+      "compatibility": "wine",
+      "requiresLogin": false,
+      "validate": false
+    },
+    "updateStrategy": "checkBased"
+  },
+  "mods": {
+    "supportsMods": false,
+    "supportsSteamWorkshop": false,
+    "workshopAppId": null,
+    "modInjection": "none",
+    "modStartupArgumentFormat": null,
+    "modListFilePath": null,
+    "modListContent": "workshopIds",
+    "postInstall": []
+  },
+  "health": {
+    "process": {},
+    "application": {
+      "type": "source-query",
+      "port": "{{QUERY_PORT}}",
+      "interval": "60s",
+      "failure_threshold": 3
+    },
+    "startup": {
+      "grace_period_seconds": 120,
+      "success_patterns": [
+        "[Server] Startup Completed"
+      ],
+      "failure_patterns": [
+        "Address already in use",
+        "Could not bind"
+      ]
+    }
+  },
+  "logs": {
+    "sources": [
+      "stdout",
+      "logs/*.log"
+    ],
+    "redact": [
+      "regex:Password"
+    ]
+  },
+  "diagnostics": {
+    "parsers": [
+      "linux-oom",
+      "port-conflict"
+    ]
+  },
+  "recovery": {
+    "policies": [
+      {
+        "match": "process_not_running",
+        "action": "restart"
+      },
+      {
+        "match": "source_query_failed",
+        "action": "restart"
+      },
+      {
+        "match": "port-conflict",
+        "action": "clear_declared_lock_files"
+      },
+      {
+        "match": "linux-oom",
+        "action": "graceful_restart"
+      }
+    ],
+    "attempt_window_seconds": 600,
+    "max_attempts": 3,
+    "cooldown_seconds": 60
+  },
+  "backup": {
+    "includePaths": [
+      "save-data"
+    ]
+  }
+}

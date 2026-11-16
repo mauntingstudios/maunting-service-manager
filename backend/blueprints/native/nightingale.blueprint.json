@@ -1,0 +1,116 @@
+{
+  "version": 1,
+  "meta": {
+    "id": "nightingale",
+    "name": "Nightingale",
+    "category": "steam_game",
+    "author": "Maunting Studios",
+    "description": "Nightingale Dedicated Server (Steam App-ID 3796810, nativer Linux-Support). Läuft nativ auf Unreal Engine 5 ohne Wine oder Proton."
+  },
+  "runtime": {
+    "image": "ghcr.io/parkervcp/steamcmd:debian",
+    "workdir": "/data",
+    "user": "1000:1000",
+    "env": {
+      "HOME": "/data",
+      "LD_LIBRARY_PATH": ".:./linux64:/usr/lib32:/usr/lib/x86_64-linux-gnu",
+      "MAX_PLAYERS": "6"
+    },
+    "startup": "./NWX/Binaries/Linux/NWXServer-Linux-Shipping -port={GAME_PORT} -multihome=0.0.0.0 -ini:Game:[/Script/Engine.GameSession]:MaxPlayers={ENV.MAX_PLAYERS}",
+    "ensureDirs": [
+      "NWX/Saved/Config/LinuxServer",
+      "NWX/Saved/Logs",
+      "NWX/Saved/SaveGames"
+    ],
+    "requiredFiles": [
+      "NWX/Binaries/Linux/NWXServer-Linux-Shipping"
+    ],
+    "seedFiles": [],
+    "configPatches": [],
+    "startupCheckSeconds": 90.0
+  },
+  "ports": [
+    {
+      "name": "game",
+      "protocol": "udp"
+    }
+  ],
+  "source": {
+    "type": "steam",
+    "steam": {
+      "appId": "3796810",
+      "platform": "linux",
+      "compatibility": "native",
+      "requiresLogin": false,
+      "validate": false
+    },
+    "updateStrategy": "checkBased"
+  },
+  "mods": {
+    "supportsMods": false,
+    "supportsSteamWorkshop": false,
+    "workshopAppId": null,
+    "modInjection": "none",
+    "modStartupArgumentFormat": null,
+    "modListFilePath": null,
+    "modListContent": "workshopIds",
+    "postInstall": []
+  },
+  "health": {
+    "process": {},
+    "port": {
+      "protocol": "udp",
+      "port": "{{SERVER_PORT}}",
+      "interval": "60s",
+      "failure_threshold": 3
+    },
+    "startup": {
+      "grace_period_seconds": 150,
+      "success_patterns": [
+        "LogNWXGameMode: GameModeAwaiter became ready."
+      ],
+      "failure_patterns": [
+        "Address already in use",
+        "Could not bind"
+      ]
+    }
+  },
+  "logs": {
+    "sources": [
+      "stdout",
+      "NWX/Saved/Logs/*.log"
+    ],
+    "redact": []
+  },
+  "diagnostics": {
+    "parsers": [
+      "linux-oom",
+      "port-conflict"
+    ]
+  },
+  "recovery": {
+    "policies": [
+      {
+        "match": "process_not_running",
+        "action": "restart"
+      },
+      {
+        "match": "port-conflict",
+        "action": "clear_declared_lock_files"
+      },
+      {
+        "match": "linux-oom",
+        "action": "graceful_restart"
+      }
+    ],
+    "attempt_window_seconds": 600,
+    "max_attempts": 3,
+    "cooldown_seconds": 60
+  },
+  "backup": {
+    "includePaths": [
+      "NWX/Saved/SaveGames",
+      "NWX/Saved/Config/LinuxServer"
+    ]
+  }
+}

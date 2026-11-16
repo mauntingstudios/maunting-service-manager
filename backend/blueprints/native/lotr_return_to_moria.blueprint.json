@@ -1,0 +1,137 @@
+{
+  "version": 1,
+  "meta": {
+    "id": "lotr_return_to_moria",
+    "name": "The Lord of the Rings: Return to Moria",
+    "category": "steam_game",
+    "author": "Maunting Studios",
+    "description": "The Lord of the Rings: Return to Moria Dedicated Server (Steam App-ID 3349480). Windows-Binary läuft über GE-Proton + UMU (msm-proton-runtime), konfiguriert über MoriaServerConfig.ini."
+  },
+  "runtime": {
+    "image": "ghcr.io/mauntingstudios/msm-proton-runtime:ge-proton10-34-umu1.4.0",
+    "workdir": "/home/container",
+    "user": "1000:1000",
+    "env": {
+      "GAMEID": "umu-3349480",
+      "WINEPREFIX": "/home/container/.proton-prefix"
+    },
+    "startup": "xvfb-run -a /opt/umu-launcher/umu-run ./Moria/Binaries/Win64/MoriaServer-Win64-Shipping.exe",
+    "ensureDirs": [
+      ".local/share/umu",
+      "Moria/Saved/Logs",
+      "Moria/Saved/SaveGamesDedicated"
+    ],
+    "requiredFiles": [
+      "Moria/Binaries/Win64/MoriaServer-Win64-Shipping.exe"
+    ],
+    "seedFiles": [
+      {
+        "file": "MoriaServerConfig.ini",
+        "content": "[Main]\nOptionalPassword=\n\n[World]\nName=\"Dedicated Server World\"\n\n[World.Create]\nType=campaign\nSeed=random\nDifficulty.Preset=normal\n\n[Host]\nListenAddress=\nListenPort={GAME_PORT}\nAdvertiseAddress=auto\nAdvertisePort=-1\nInitialConnectionRetryTime=60\nAfterDisconnectionRetryTime=600\n\n[Console]\nEnabled=false\n\n[Performance]\nServerFPS=60\n"
+      }
+    ],
+    "configPatches": [
+      {
+        "type": "ini",
+        "file": "MoriaServerConfig.ini",
+        "section": "Host",
+        "key": "ListenPort",
+        "value": "{GAME_PORT}"
+      }
+    ],
+    "stopGracePeriodSeconds": 60,
+    "startupCheckSeconds": 90.0,
+    "allowUnprivilegedUserNamespaces": true
+  },
+  "ports": [
+    {
+      "name": "game",
+      "protocol": "udp"
+    },
+    {
+      "name": "game",
+      "protocol": "tcp"
+    }
+  ],
+  "source": {
+    "type": "steam",
+    "steam": {
+      "appId": "3349480",
+      "platform": "windows",
+      "compatibility": "proton",
+      "requiresLogin": false,
+      "validate": false
+    },
+    "updateStrategy": "checkBased"
+  },
+  "mods": {
+    "supportsMods": false,
+    "supportsSteamWorkshop": false,
+    "workshopAppId": null,
+    "modInjection": "none",
+    "modStartupArgumentFormat": null,
+    "modListFilePath": null,
+    "modListContent": "workshopIds",
+    "postInstall": []
+  },
+  "health": {
+    "process": {},
+    "port": {
+      "protocol": "udp",
+      "port": "{{SERVER_PORT}}",
+      "interval": "60s",
+      "failure_threshold": 3
+    },
+    "startup": {
+      "grace_period_seconds": 120,
+      "success_patterns": [
+        "World loaded",
+        "LogOnline: Warning: OSS: Unable to AutoLogin user"
+      ],
+      "failure_patterns": [
+        "Address already in use",
+        "Could not bind"
+      ]
+    }
+  },
+  "logs": {
+    "sources": [
+      "stdout",
+      "Moria/Saved/Logs/Moria.log"
+    ],
+    "redact": [
+      "regex:OptionalPassword"
+    ]
+  },
+  "diagnostics": {
+    "parsers": [
+      "linux-oom",
+      "port-conflict"
+    ]
+  },
+  "recovery": {
+    "policies": [
+      {
+        "match": "process_not_running",
+        "action": "restart"
+      },
+      {
+        "match": "port-conflict",
+        "action": "clear_declared_lock_files"
+      },
+      {
+        "match": "linux-oom",
+        "action": "graceful_restart"
+      }
+    ],
+    "attempt_window_seconds": 600,
+    "max_attempts": 3,
+    "cooldown_seconds": 60
+  },
+  "backup": {
+    "includePaths": [
+      "MoriaServerConfig.ini",
+      "Moria/Saved/SaveGamesDedicated"
+    ]
+  }
+}

@@ -1,0 +1,157 @@
+{
+  "version": 1,
+  "meta": {
+    "id": "arma_3",
+    "name": "Arma 3",
+    "game": "Arma",
+    "edition": "3",
+    "category": "steam_game",
+    "author": "Maunting Studios",
+    "description": "Arma 3 Dedicated Server (Steam App-ID 233780, nativer Linux-Support über arma3server_x64). Steam Query belegt automatisch Game-Port + 1 (Standard 2303 UDP). Für Workshop-Mods (App-ID 107410) kann ein Steam-Account erforderlich sein."
+  },
+  "runtime": {
+    "image": "ghcr.io/parkervcp/games:arma3",
+    "workdir": "/home/container",
+    "user": "1000:1000",
+    "env": {
+      "HOME": "/home/container",
+      "LD_LIBRARY_PATH": ".:./linux64:/usr/lib32:/usr/lib/x86_64-linux-gnu"
+    },
+    "startup": "./arma3server_x64 -ip=0.0.0.0 -port={GAME_PORT} -cfg=basic.cfg -config=server.cfg -bepath=battleye/launch -autoinit {MOD_ARG}",
+    "ensureDirs": [
+      "battleye/launch",
+      "keys",
+      "profiles",
+      "mpmissions"
+    ],
+    "requiredFiles": [
+      "arma3server_x64"
+    ],
+    "seedFiles": [
+      {
+        "file": "server.cfg",
+        "content": "hostname = \"Arma 3 Dedicated Server\";\npassword = \"\";\npasswordAdmin = \"\";\nmaxPlayers = 32;\nBattlEye = 1;\nverifySignatures = 2;\nsteamProtocolMaxDataSize = 4096;\nallowedFilePatching = 0;\ndisableVoN = 0;\nvonCodecQuality = 10;\npersistent = 1;\n"
+      },
+      {
+        "file": "basic.cfg",
+        "content": "MinBandwidth = 131072;\nMaxBandwidth = 10000000;\nMaxMsgSend = 128;\nMaxSizeGuaranteed = 512;\nMaxSizeNonguaranteed = 256;\nMinErrorToSend = 0.001;\nMaxCustomFileSize = 160000;\n"
+      },
+      {
+        "file": "battleye/launch/beserver_x64.cfg",
+        "content": "RConPassword changeme\nRConPort {RCON_PORT}\nRestrictRCon 1\n"
+      }
+    ],
+    "configPatches": [
+      {
+        "type": "regex",
+        "file": "battleye/launch/beserver_x64.cfg",
+        "regex": "(RConPort\\s+)\\d+",
+        "value": "\\g<1>{RCON_PORT}"
+      }
+    ],
+    "startupCheckSeconds": 60.0
+  },
+  "ports": [
+    {
+      "name": "game",
+      "protocol": "udp"
+    },
+    {
+      "name": "query",
+      "protocol": "udp"
+    },
+    {
+      "name": "rcon",
+      "protocol": "udp"
+    }
+  ],
+  "source": {
+    "type": "steam",
+    "steam": {
+      "appId": "233780",
+      "platform": "linux",
+      "compatibility": "native",
+      "requiresLogin": false,
+      "validate": false
+    },
+    "updateStrategy": "checkBased"
+  },
+  "mods": {
+    "supportsMods": true,
+    "supportsSteamWorkshop": true,
+    "workshopAppId": "107410",
+    "modInjection": "startupArg",
+    "modStartupArgumentFormat": "-mod={mods}",
+    "modListFilePath": null,
+    "modListContent": "workshopIds",
+    "postInstall": []
+  },
+  "health": {
+    "process": {},
+    "application": {
+      "type": "source-query",
+      "port": "{{QUERY_PORT}}",
+      "interval": "60s",
+      "failure_threshold": 3
+    },
+    "startup": {
+      "grace_period_seconds": 120,
+      "success_patterns": [
+        "Host identity created."
+      ],
+      "failure_patterns": [
+        "Address already in use",
+        "Could not bind"
+      ]
+    }
+  },
+  "logs": {
+    "sources": [
+      "stdout",
+      "profiles/*.rpt"
+    ],
+    "redact": [
+      "regex:password",
+      "regex:passwordAdmin",
+      "regex:RConPassword"
+    ]
+  },
+  "diagnostics": {
+    "parsers": [
+      "linux-oom",
+      "port-conflict"
+    ]
+  },
+  "recovery": {
+    "policies": [
+      {
+        "match": "process_not_running",
+        "action": "restart"
+      },
+      {
+        "match": "source_query_failed",
+        "action": "restart"
+      },
+      {
+        "match": "port-conflict",
+        "action": "clear_declared_lock_files"
+      },
+      {
+        "match": "linux-oom",
+        "action": "graceful_restart"
+      }
+    ],
+    "attempt_window_seconds": 600,
+    "max_attempts": 3,
+    "cooldown_seconds": 60
+  },
+  "backup": {
+    "includePaths": [
+      "server.cfg",
+      "basic.cfg",
+      "mpmissions",
+      "profiles",
+      "battleye"
+    ]
+  }
+}

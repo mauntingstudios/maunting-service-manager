@@ -1,0 +1,142 @@
+{
+  "version": 1,
+  "meta": {
+    "id": "vein",
+    "name": "VEIN",
+    "category": "steam_game",
+    "author": "Maunting Studios",
+    "description": "VEIN Dedicated Server (Steam App-ID 2131400, Base-ID 1857950). Nativer Linux-Support (Unreal Engine), inklusive steam_appid.txt-Seed und Source-Query."
+  },
+  "runtime": {
+    "image": "ghcr.io/parkervcp/steamcmd:debian",
+    "workdir": "/data",
+    "user": "1000:1000",
+    "env": {
+      "HOME": "/data",
+      "LD_LIBRARY_PATH": ".:./linux64:/usr/lib32:/usr/lib/x86_64-linux-gnu"
+    },
+    "startup": "./Vein/Binaries/Linux/VeinServer-Linux-Test Vein -Port={GAME_PORT} -QueryPort={QUERY_PORT} -log",
+    "ensureDirs": [
+      "Vein/Saved/Config/LinuxServer",
+      "Vein/Saved/SaveGames",
+      "Vein/Saved/Logs"
+    ],
+    "requiredFiles": [
+      "Vein/Binaries/Linux/VeinServer-Linux-Test"
+    ],
+    "seedFiles": [
+      {
+        "file": "steam_appid.txt",
+        "content": "1857950\n"
+      },
+      {
+        "file": "Vein/Saved/Config/LinuxServer/Game.ini",
+        "content": "[/Script/Engine.GameSession]\nMaxPlayers=16\n\n[/Script/Vein.VeinGameSession]\nbPublic=True\nbAntiCheatProtected=False\nServerName=VEIN Server\nBindAddr=0.0.0.0\nHeartbeatInterval=30.0\nPassword=\n\n[OnlineSubsystemSteam]\nGameServerQueryPort={QUERY_PORT}\nbVACEnabled=0\n"
+      }
+    ],
+    "configPatches": [
+      {
+        "type": "ini",
+        "file": "Vein/Saved/Config/LinuxServer/Game.ini",
+        "section": "OnlineSubsystemSteam",
+        "key": "GameServerQueryPort",
+        "value": "{QUERY_PORT}"
+      }
+    ],
+    "startupCheckSeconds": 60.0
+  },
+  "ports": [
+    {
+      "name": "game",
+      "protocol": "udp"
+    },
+    {
+      "name": "query",
+      "protocol": "udp"
+    }
+  ],
+  "source": {
+    "type": "steam",
+    "steam": {
+      "appId": "2131400",
+      "platform": "linux",
+      "compatibility": "native",
+      "requiresLogin": false,
+      "validate": false
+    },
+    "updateStrategy": "checkBased"
+  },
+  "mods": {
+    "supportsMods": false,
+    "supportsSteamWorkshop": false,
+    "workshopAppId": null,
+    "modInjection": "none",
+    "modStartupArgumentFormat": null,
+    "modListFilePath": null,
+    "modListContent": "workshopIds",
+    "postInstall": []
+  },
+  "health": {
+    "process": {},
+    "application": {
+      "type": "source-query",
+      "port": "{{QUERY_PORT}}",
+      "interval": "60s",
+      "failure_threshold": 3
+    },
+    "startup": {
+      "grace_period_seconds": 120,
+      "success_patterns": [
+        "Created session GameSession."
+      ],
+      "failure_patterns": [
+        "Address already in use",
+        "Could not bind"
+      ]
+    }
+  },
+  "logs": {
+    "sources": [
+      "stdout",
+      "Vein/Saved/Logs/*.log"
+    ],
+    "redact": [
+      "regex:Password"
+    ]
+  },
+  "diagnostics": {
+    "parsers": [
+      "linux-oom",
+      "port-conflict"
+    ]
+  },
+  "recovery": {
+    "policies": [
+      {
+        "match": "process_not_running",
+        "action": "restart"
+      },
+      {
+        "match": "source_query_failed",
+        "action": "restart"
+      },
+      {
+        "match": "port-conflict",
+        "action": "clear_declared_lock_files"
+      },
+      {
+        "match": "linux-oom",
+        "action": "graceful_restart"
+      }
+    ],
+    "attempt_window_seconds": 600,
+    "max_attempts": 3,
+    "cooldown_seconds": 60
+  },
+  "backup": {
+    "includePaths": [
+      "Vein/Saved/SaveGames",
+      "Vein/Saved/Config"
+    ]
+  }
+}

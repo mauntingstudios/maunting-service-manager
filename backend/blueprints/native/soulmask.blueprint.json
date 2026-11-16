@@ -1,0 +1,133 @@
+{
+  "version": 1,
+  "meta": {
+    "id": "soulmask",
+    "name": "Soulmask",
+    "category": "steam_game",
+    "author": "Maunting Studios",
+    "description": "Soulmask Dedicated Server For Linux (Steam App-ID 3017300). Nativer Linux-Support via WSServer-Linux-Shipping, inkl. Game-, Query- und Echo-Port."
+  },
+  "runtime": {
+    "image": "ghcr.io/parkervcp/steamcmd:debian",
+    "workdir": "/data",
+    "user": "1000:1000",
+    "env": {
+      "HOME": "/data",
+      "LD_LIBRARY_PATH": ".:./linux64:/usr/lib32:/usr/lib/x86_64-linux-gnu",
+      "MAP": "Level01_Main",
+      "MAX_PLAYERS": "60",
+      "SAVE_TIME": "600",
+      "BACKUP_TIME": "960"
+    },
+    "startup": "./WS/Binaries/Linux/WSServer-Linux-Shipping WS {ENV.MAP} -server -SILENT -SteamServerName=\"{SERVER_NAME}\" -saving={ENV.SAVE_TIME} -Port={GAME_PORT} -QueryPort={QUERY_PORT} -EchoPort={CUSTOM_PORT_1} -forcepassthrough -MaxPlayers={ENV.MAX_PLAYERS} -backup={ENV.BACKUP_TIME} -log -UTF8Output -MULTIHOME=0.0.0.0 -online=Steam",
+    "ensureDirs": [
+      "WS/Saved/Config/LinuxServer",
+      "WS/Saved/Worlds",
+      "WS/Saved/Logs"
+    ],
+    "requiredFiles": [
+      "WS/Binaries/Linux/WSServer-Linux-Shipping"
+    ],
+    "configPatches": [],
+    "startupCheckSeconds": 90.0
+  },
+  "ports": [
+    {
+      "name": "game",
+      "protocol": "udp"
+    },
+    {
+      "name": "query",
+      "protocol": "udp"
+    },
+    {
+      "name": "custom",
+      "protocol": "tcp"
+    }
+  ],
+  "source": {
+    "type": "steam",
+    "steam": {
+      "appId": "3017300",
+      "platform": "linux",
+      "compatibility": "native",
+      "requiresLogin": false,
+      "validate": false
+    },
+    "updateStrategy": "checkBased"
+  },
+  "mods": {
+    "supportsMods": false,
+    "supportsSteamWorkshop": false,
+    "workshopAppId": null,
+    "modInjection": "none",
+    "modStartupArgumentFormat": null,
+    "modListFilePath": null,
+    "modListContent": "workshopIds",
+    "postInstall": []
+  },
+  "health": {
+    "process": {},
+    "application": {
+      "type": "source-query",
+      "port": "{{QUERY_PORT}}",
+      "interval": "60s",
+      "failure_threshold": 3
+    },
+    "startup": {
+      "grace_period_seconds": 120,
+      "success_patterns": [
+        "Create Dungeon Successed"
+      ],
+      "failure_patterns": [
+        "Address already in use",
+        "Could not bind"
+      ]
+    }
+  },
+  "logs": {
+    "sources": [
+      "stdout",
+      "WS/Saved/Logs/*.log"
+    ],
+    "redact": [
+      "regex:adminpsw",
+      "regex:PSW"
+    ]
+  },
+  "diagnostics": {
+    "parsers": [
+      "linux-oom",
+      "port-conflict"
+    ]
+  },
+  "recovery": {
+    "policies": [
+      {
+        "match": "process_not_running",
+        "action": "restart"
+      },
+      {
+        "match": "source_query_failed",
+        "action": "restart"
+      },
+      {
+        "match": "port-conflict",
+        "action": "clear_declared_lock_files"
+      },
+      {
+        "match": "linux-oom",
+        "action": "graceful_restart"
+      }
+    ],
+    "attempt_window_seconds": 600,
+    "max_attempts": 3,
+    "cooldown_seconds": 60
+  },
+  "backup": {
+    "includePaths": [
+      "WS/Saved/Worlds",
+      "WS/Saved/Config"
+    ]
+  }
+}
