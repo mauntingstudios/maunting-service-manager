@@ -7115,7 +7115,7 @@
     },
     "secretHints": {
       "steam_account": "Anmeldename und Passwort deines Steam-Kontos, nicht der Anzeigename. Verschlüsselt gespeichert; sichtbar bleiben nur die letzten 4 Zeichen.",
-      "github_token": "Klassisches Token (ghp_ …) mit 'repo'-Scope oder Fine-grained (github_pat_ …) mit 'Contents: read'. Verschlüsselt gespeichert; sichtbar bleiben nur die letzten 4 Zeichen."
+      "github_token": "Klassisches Token (ghp_ …) mit 'repo'-Scope oder Fine-grained (github_pat_ …) mit 'Contents: read'. Für automatische Frontend-Builds bei Push zusätzlich 'admin:repo_hook' bzw. 'Webhooks: Read and write'. Verschlüsselt gespeichert; sichtbar bleiben nur die letzten 4 Zeichen."
     },
     "saved": "Zugangsdaten gespeichert",
     "deleted": "Zugangsdaten entfernt",

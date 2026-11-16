@@ -22,8 +22,6 @@ from schemas.panel_settings import (
     CurseForgeApiKeyRequest,
     CloudflareApiTokenRequest,
     SteamAccountRequest,
-    GitHubTokenRequest,
-    GitHubTokenStatus,
     SingraWidgetInstallIdRequest,
     SingraWebhookSecretRequest,
     SEASON_WINDOW_DEFAULTS,
@@ -63,7 +61,6 @@ from services.cloudflare_api_key_service import (
     clear_panel_key as clear_cloudflare_panel_key,
     status as cloudflare_api_status,
 )
-from services.github_token_service import status as github_token_status, set_panel_token as set_github_panel_token, clear_panel_token as clear_github_panel_token
 from services import singra_webhook_secret_service as singra_secret
 from services import singra_widget_install_service as singra_install
 
@@ -211,7 +208,6 @@ def get_settings(db: Session = Depends(get_db), _=Depends(require_global("panel.
         "curseforge_api_source": cf_st.get("source", "none"),
         "steam_account_username": SteamAccountService.get_username(),
         "steam_account_configured": SteamAccountService.is_configured(),
-        **github_token_status_dict(),
         "time_format": all_db.get("time_format", "24h"),
         "support_widget_enabled": all_db.get("support_widget_enabled", "false") == "true",
         "support_widget_mode": all_db.get("support_widget_mode", "singra"),
@@ -301,15 +297,6 @@ def get_public_settings() -> dict:
                 "end": seasonal["season_christmas_end"],
             },
         },
-    }
-
-
-def github_token_status_dict() -> dict:
-    """Wird sowohl vom GET als auch standalone GET /github-token genutzt."""
-    st = github_token_status()
-    return {
-        "github_token_configured": bool(st["configured"]),
-        "github_token_source": st["source"],
     }
 
 
@@ -833,91 +820,6 @@ async def test_curseforge_key(
         return {"message": "CurseForge API-Key ist gültig", "valid": True}
     else:
         return {"message": f"CurseForge API-Key ist ungültig: {res.get('error')}", "valid": False}
-
-
-# ------------------------------------------------------------------
-# GitHub Personal Access Token (für source.type=github Blueprints)
-# ------------------------------------------------------------------
-
-
-@router.get("/github-token", response_model=GitHubTokenStatus)
-def get_github_token(
-    _=Depends(require_global("panel.settings.read")),
-) -> dict:
-    """Liefert nur Status (``configured``, ``source``) — niemals das Token selbst."""
-    return github_token_status()
-
-
-@router.post("/github-token", status_code=200)
-def set_github_token(
-    req: GitHubTokenRequest,
-    _=Depends(require_global("panel.settings.write")),
-    __=Depends(verify_csrf),
-) -> dict:
-    """Speichert ein GitHub-PAT in den Panel-Settings (DB).
-
-    Format-Hinweis (keine harte Validierung, GitHub-Forge entscheidet):
-    - Klassischer PAT: ``ghp_…`` oder ``gho_…`` mit ``repo``-Scope
-    - Fine-grained: ``github_pat_…`` mit ``Contents: read``
-
-    Liegt zusätzlich ``MSM_GITHUB_CLONE_TOKEN`` vor, gewinnt die ENV-Variable.
-    """
-    token = (req.github_token or "").strip()
-    if not token:
-        raise HTTPException(status_code=400, detail="Token darf nicht leer sein")
-    if any(c in token for c in ("\n", "\r", "\0")):
-        raise HTTPException(status_code=400, detail="Token enthält ungültige Zeichen")
-    if len(token) > 512:
-        raise HTTPException(status_code=400, detail="Token zu lang")
-    set_github_panel_token(token)
-    return {"message": "GitHub-Token gespeichert", **github_token_status_dict()}
-
-
-@router.delete("/github-token", status_code=200)
-def delete_github_token(
-    _=Depends(require_global("panel.settings.write")),
-    __=Depends(verify_csrf),
-) -> dict:
-    """Entfernt das panel-gesetzte PAT. ENV-Variablen bleiben unberührt."""
-    clear_github_panel_token()
-    return {"message": "GitHub-Token entfernt", **github_token_status_dict()}
-
-
-@router.post("/github-token/test", status_code=200)
-async def test_github_token(
-    _=Depends(require_global("panel.settings.read")),
-) -> dict:
-    """Prüft das aktive GitHub-PAT gegen die ``/user``-API.
-
-    Bei ungültigem/abgelaufenem Token antwortet GitHub mit 401.
-    """
-    import httpx
-
-    from services.github_token_service import resolve_token
-
-    token = resolve_token()
-    if not token:
-        raise HTTPException(status_code=400, detail="Kein GitHub-Token konfiguriert")
-
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(
-                "https://api.github.com/user",
-                headers={
-                    "Authorization": f"Bearer {token}",
-                    "Accept": "application/vnd.github+json",
-                    "X-GitHub-Api-Version": "2022-11-28",
-                    "User-Agent": "msm-panel",
-                },
-            )
-            if resp.status_code == 200:
-                login = (resp.json() or {}).get("login", "?")
-                return {"message": f"GitHub-Token ist gültig (login: {login})", "valid": True}
-            if resp.status_code == 401:
-                return {"message": "GitHub-Token ist ungültig oder abgelaufen", "valid": False}
-            return {"message": f"GitHub-API unerwartet: HTTP {resp.status_code}", "valid": False}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Test fehlgeschlagen: {e}")
 
 
 # ------------------------------------------------------------------

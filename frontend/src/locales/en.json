@@ -7115,7 +7115,7 @@
     },
     "secretHints": {
       "steam_account": "Login name and password of your Steam account, not the display name. Stored encrypted; only the last 4 characters remain visible.",
-      "github_token": "Classic token (ghp_ …) with 'repo' scope or fine-grained (github_pat_ …) with 'Contents: read'. Stored encrypted; only the last 4 characters remain visible."
+      "github_token": "Classic token (ghp_ …) with 'repo' scope or fine-grained (github_pat_ …) with 'Contents: read'. For automatic frontend builds on push, also grant 'admin:repo_hook' or 'Webhooks: Read and write'. Stored encrypted; only the last 4 characters remain visible."
     },
     "saved": "Credentials saved",
     "deleted": "Credentials removed",

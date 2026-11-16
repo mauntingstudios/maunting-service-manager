@@ -228,12 +228,9 @@ def test_server_binding_wins_over_the_panel_default(
     )
     db.commit()
 
-    with patch(
-        "services.github_token_service.resolve_token", return_value="panel-token-0000"
-    ):
-        resolved = credential_service.resolve_for_server(
-            db, server.id, KIND_GITHUB_TOKEN
-        )
+    resolved = credential_service.resolve_for_server(
+        db, server.id, KIND_GITHUB_TOKEN
+    )
 
     assert resolved is not None
     assert resolved.secret == "kunden-token-1111"
@@ -256,12 +253,9 @@ def test_operator_can_switch_off_the_central_fallback(db: Session) -> None:
     server = _server(db)
     credential_service.set_panel_fallback_allowed(False)
 
-    with patch(
-        "services.github_token_service.resolve_token", return_value="panel-token-0000"
-    ):
-        resolved = credential_service.resolve_for_server(
-            db, server.id, KIND_GITHUB_TOKEN
-        )
+    resolved = credential_service.resolve_for_server(
+        db, server.id, KIND_GITHUB_TOKEN
+    )
 
     assert resolved is None
 
@@ -323,8 +317,6 @@ def test_undecryptable_binding_never_falls_back_to_the_panel_account(
     with patch(
         "services.auth_service.AuthService.decrypt_secret",
         side_effect=DisDecryptionError("kaputt"),
-    ), patch(
-        "services.github_token_service.resolve_token", return_value="panel-token-0000"
     ):
         with pytest.raises(HTTPException) as excinfo:
             credential_service.resolve_for_server(db, server.id, KIND_GITHUB_TOKEN)

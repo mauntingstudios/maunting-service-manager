@@ -47,8 +47,6 @@ class PanelSettingsResponse(BaseModel):
     curseforge_api_source: str = "none"  # "env" | "panel" | "none"
     steam_account_username: str = ""
     steam_account_configured: bool = False
-    github_token_configured: bool = False
-    github_token_source: str = "none"  # "env" | "panel" | "none"
     time_format: str = "24h"
     support_widget_enabled: bool = False
     support_widget_mode: str = "singra"
@@ -175,20 +173,6 @@ class CloudflareApiTokenRequest(BaseModel):
 class SteamAccountRequest(BaseModel):
     username: str
     password: str
-
-
-class GitHubTokenRequest(BaseModel):
-    """GitHub Personal Access Token (klassisch mit ``repo``-Scope oder
-    fine-grained mit ``Contents: read``) für private Repos in
-    ``source.type=github``-Blueprints.
-    """
-
-    github_token: str
-
-
-class GitHubTokenStatus(BaseModel):
-    configured: bool
-    source: str  # "env" | "panel" | "none"
 
 
 class SingraWidgetInstallIdRequest(BaseModel):

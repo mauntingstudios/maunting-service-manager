@@ -22,8 +22,6 @@ export interface PanelSettings {
   curseforge_api_source: 'env' | 'panel' | 'none'
   steam_account_username: string
   steam_account_configured: boolean
-  github_token_configured: boolean
-  github_token_source: 'env' | 'panel' | 'none'
   time_format: '24h' | '12h'
   imprint_enabled: boolean
   imprint_url: string
@@ -103,8 +101,6 @@ export const EMPTY_PANEL_SETTINGS: PanelSettings = {
   curseforge_api_source: 'none',
   steam_account_username: '',
   steam_account_configured: false,
-  github_token_configured: false,
-  github_token_source: 'none',
   time_format: '24h',
   imprint_enabled: false,
   imprint_url: '',
