@@ -863,4 +863,59 @@ def test_proton_wine_and_arma_blueprints_validate() -> None:
     assert arma_3.mods.workshopAppId == "107410"
 
 
+def test_frontend_blueprints_and_branch_slashes_validate() -> None:
+    static_bp = load_blueprint_file(_NATIVE_DIR / "web_static.blueprint.json")
+    assert static_bp.meta.category.value == "frontend"
+    assert static_bp.runtime.image == "caddy:2-alpine"
+    assert static_bp.frontend is not None
+    assert static_bp.frontend.previewsAllowed is False
+
+    gh_bp = load_blueprint_file(_NATIVE_DIR / "web_frontend_github.blueprint.json")
+    assert gh_bp.meta.category.value == "frontend"
+    assert gh_bp.frontend is not None
+    assert gh_bp.frontend.previewsAllowed is True
+
+    raw = gh_bp.model_dump(mode="json")
+    raw["source"]["github"]["branch"] = "feature/login-v2"
+    raw["frontend"]["env"] = {"VITE_API_URL": "https://api.example.com"}
+    parsed = load_blueprint_dict(raw)
+    assert parsed.source.github is not None
+    assert parsed.source.github.branch == "feature/login-v2"
+
+
+def test_frontend_schema_rejects_misconfigurations() -> None:
+    gh_bp = load_blueprint_file(_NATIVE_DIR / "web_frontend_github.blueprint.json")
+
+    missing_block = gh_bp.model_dump(mode="json")
+    missing_block["frontend"] = None
+    with pytest.raises(BlueprintValidationError):
+        load_blueprint_dict(missing_block)
+
+    wrong_image = gh_bp.model_dump(mode="json")
+    wrong_image["runtime"]["image"] = "alpine:3.20"
+    with pytest.raises(BlueprintValidationError):
+        load_blueprint_dict(wrong_image)
+
+    bad_output = gh_bp.model_dump(mode="json")
+    bad_output["frontend"]["build"]["outputDir"] = "../etc"
+    with pytest.raises(BlueprintValidationError):
+        load_blueprint_dict(bad_output)
+
+    bad_cmd = gh_bp.model_dump(mode="json")
+    bad_cmd["frontend"]["build"]["buildCommand"] = ["npm", "run", "build;id"]
+    with pytest.raises(BlueprintValidationError):
+        load_blueprint_dict(bad_cmd)
+
+    bad_branch = gh_bp.model_dump(mode="json")
+    bad_branch["source"]["github"]["branch"] = "feature//bad"
+    with pytest.raises(BlueprintValidationError):
+        load_blueprint_dict(bad_branch)
+
+    static_bp = load_blueprint_file(_NATIVE_DIR / "web_static.blueprint.json")
+    bad_previews = static_bp.model_dump(mode="json")
+    bad_previews["frontend"]["previewsAllowed"] = True
+    with pytest.raises(BlueprintValidationError):
+        load_blueprint_dict(bad_previews)
+
+
 

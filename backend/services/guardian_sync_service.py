@@ -368,9 +368,9 @@ def reconcile_guardian_server(
     *,
     node_client: NodeClient | None = None,
 ) -> dict[str, Any]:
-    # Caddy-managed Web-Server laufen nicht als Docker-Container.
-    # Guardian prüft stattdessen HTTP-Erreichbarkeit (probe_url) und markiert nicht fälschlich 'stopped'.
-    if server.container_name == "caddy-managed" or server.game_type == "web_static":
+    # Legacy Singra Host-Caddy-Server (container_name == "caddy-managed") laufen nicht als Docker-Container.
+    # Eigenständige Frontend-Container (web_static / web_frontend_github) nutzen echte Docker-Container.
+    if server.container_name == "caddy-managed":
         import httpx
         from services import server_runtime_env
 
@@ -543,7 +543,7 @@ def reconcile_guardian_server_detached(
         server = db.query(Server).filter(Server.id == server_id).first()
         if not server:
             return {"status": "missing"}
-        is_caddy = server.container_name == "caddy-managed" or server.game_type == "web_static"
+        is_caddy = server.container_name == "caddy-managed"
         if is_caddy:
             return reconcile_guardian_server(db, server, node_client=node_client)
         node = server.node

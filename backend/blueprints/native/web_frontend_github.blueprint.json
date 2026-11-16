@@ -1,0 +1,66 @@
+{
+  "version": 1,
+  "meta": {
+    "id": "web_frontend_github",
+    "name": "Web-Frontend (GitHub)",
+    "category": "frontend",
+    "author": "Maunting Studios",
+    "description": "Vorlage für React-, Vite-, Vue- oder Astro-Frontends aus einem GitHub-Repository mit automatischen Builds und Branch-Previews."
+  },
+  "runtime": {
+    "image": "caddy:2-alpine",
+    "workdir": "/data",
+    "env": {},
+    "startup": "caddy run --config /data/Caddyfile --adapter caddyfile",
+    "ensureDirs": [
+      "current",
+      "previews",
+      "deployments"
+    ],
+    "seedFiles": [
+      {
+        "file": "current/index.html",
+        "content": "<!doctype html>\n<html lang=\"de\">\n<head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>Frontend wird gebaut</title></head>\n<body style=\"font-family:system-ui,sans-serif;padding:2rem\"><h1>Frontend eingerichtet</h1><p>Warte auf den ersten Build aus dem verknüpften GitHub-Repository.</p></body>\n</html>\n"
+      }
+    ],
+    "stopGracePeriodSeconds": 10,
+    "startupCheckSeconds": 2.0
+  },
+  "ports": [
+    {
+      "name": "web",
+      "protocol": "tcp"
+    }
+  ],
+  "source": {
+    "type": "github",
+    "github": {
+      "repo": "mauntingstudios/web-frontend-template",
+      "branch": "main"
+    }
+  },
+  "frontend": {
+    "build": {
+      "nodeVersion": "22",
+      "timeoutSeconds": 900
+    },
+    "spaFallback": true,
+    "previewsAllowed": true,
+    "maxPreviews": 5,
+    "env": {}
+  },
+  "mods": null,
+  "health": {
+    "port": {
+      "protocol": "tcp",
+      "port": "{{WEB_PORT}}",
+      "interval": "30s",
+      "failure_threshold": 3
+    }
+  },
+  "backup": {
+    "includePaths": [
+      "current"
+    ]
+  }
+}

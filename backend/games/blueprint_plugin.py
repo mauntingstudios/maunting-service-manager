@@ -770,6 +770,28 @@ class BlueprintPlugin(GamePlugin):
                 "value": value,
             })
             local_patches.append((patch, value))
+
+        if self._blueprint.frontend is not None and not any(
+            s["file"] == "Caddyfile" for s in resolved_seeds
+        ):
+            from blueprints.schema import BlueprintSourceType
+            from services.frontend_caddy_config import generate_container_caddyfile
+
+            web_port = int(values.get("WEB_PORT") or values.get("web") or 8080)
+            root_dir = (
+                "/data/current"
+                if self._blueprint.source.type == BlueprintSourceType.GITHUB
+                else "/data"
+            )
+            resolved_seeds.append({
+                "file": "Caddyfile",
+                "content": generate_container_caddyfile(
+                    port=web_port,
+                    root_dir=root_dir,
+                    spa_fallback=self._blueprint.frontend.spaFallback,
+                ),
+            })
+
         return resolved_seeds, resolved_patches, local_patches
 
     def _apply_local_runtime_files_and_patches(

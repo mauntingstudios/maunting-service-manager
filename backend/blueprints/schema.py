@@ -20,7 +20,7 @@ import json
 import re
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import (
     BaseModel,
@@ -727,7 +727,17 @@ class BlueprintGithubSource(BaseModel):
     @classmethod
     def _check_branch(cls, v: str) -> str:
         v = v.strip()
-        if not v or "\x00" in v or "/" in v or "\\" in v or v.startswith("-") or ".." in v:
+        if (
+            not v
+            or "\x00" in v
+            or "\\" in v
+            or "//" in v
+            or ".." in v
+            or "@{" in v
+            or v.startswith(("/", "-"))
+            or v.endswith(("/", ".", ".lock"))
+            or any(c.isspace() or c in "~^:?*[]" for c in v)
+        ):
             raise ValueError("source.github.branch: ungültiger Branch-Name.")
         return v
 
@@ -1686,6 +1696,95 @@ class BlueprintBackups(BaseModel):
         return cleaned
 
 
+def _validate_frontend_cmd_argv(
+    cmd: list[str] | None, *, field_name: str
+) -> list[str] | None:
+    if cmd is None:
+        return None
+    if not cmd or len(cmd) > 32:
+        raise ValueError(f"{field_name}: leere oder zu lange Befehlsliste.")
+    out: list[str] = []
+    for part in cmd:
+        if not isinstance(part, str) or not part.strip():
+            raise ValueError(f"{field_name}: leere Argumente verboten.")
+        if "\x00" in part or "\n" in part or "\r" in part:
+            raise ValueError(f"{field_name}: Steuerzeichen verboten.")
+        if any(ch in part for ch in (";", "&", "|", "$", "`")):
+            raise ValueError(f"{field_name}: Shell-Metazeichen verboten.")
+        out.append(part.strip())
+    return out
+
+
+class BlueprintFrontendBuild(BaseModel):
+    """Build-Konfiguration fuer ``meta.category='frontend'``."""
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    installCommand: list[str] | None = None
+    buildCommand: list[str] | None = None
+    outputDir: str | None = Field(default=None, max_length=256)
+    nodeVersion: Literal["20", "22", "24"] = "22"
+    timeoutSeconds: int = Field(default=900, ge=60, le=1800)
+
+    @field_validator("installCommand")
+    @classmethod
+    def _check_install_cmd(cls, v: list[str] | None) -> list[str] | None:
+        return _validate_frontend_cmd_argv(v, field_name="frontend.build.installCommand")
+
+    @field_validator("buildCommand")
+    @classmethod
+    def _check_build_cmd(cls, v: list[str] | None) -> list[str] | None:
+        return _validate_frontend_cmd_argv(v, field_name="frontend.build.buildCommand")
+
+    @field_validator("outputDir")
+    @classmethod
+    def _check_output_dir(cls, v: str | None) -> str | None:
+        if v is None or v == "":
+            return None
+        v = v.strip()
+        if not _is_safe_relative_path(v):
+            raise ValueError(
+                "frontend.build.outputDir muss ein sicherer relativer Pfad ohne '..' sein."
+            )
+        return v
+
+
+class BlueprintFrontend(BaseModel):
+    """Frontend-Konfiguration fuer statische und gebaute Web-Frontends."""
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    build: BlueprintFrontendBuild = Field(default_factory=BlueprintFrontendBuild)
+    spaFallback: bool = True
+    previewsAllowed: bool = True
+    maxPreviews: int = Field(default=5, ge=0, le=20)
+    env: dict[str, str] = Field(default_factory=dict)
+
+    @field_validator("env")
+    @classmethod
+    def _check_env(cls, v: dict[str, str]) -> dict[str, str]:
+        for key, value in v.items():
+            if not _ENV_KEY_RE.match(key):
+                raise ValueError(
+                    f"frontend.env-Key '{key}' ist ungueltig (erlaubt: ^[A-Z][A-Z0-9_]*$)."
+                )
+            if key in _FORBIDDEN_ENV_KEYS:
+                raise ValueError(
+                    f"frontend.env-Key '{key}' ist aus Sicherheitsgruenden verboten."
+                )
+            for seq in _FORBIDDEN_STARTUP_SEQ:
+                if seq in value:
+                    raise ValueError(
+                        f"frontend.env['{key}'] enthaelt verbotene Sequenz '{seq}'."
+                    )
+            for ch in _FORBIDDEN_STARTUP_CHARS:
+                if ch in value:
+                    raise ValueError(
+                        f"frontend.env['{key}'] enthaelt verbotenes Zeichen '{ch}'."
+                    )
+        return v
+
+
 class Blueprint(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
@@ -1694,6 +1793,7 @@ class Blueprint(BaseModel):
     runtime: BlueprintRuntime
     ports: list[BlueprintPort] = Field(min_length=0)
     source: BlueprintSource
+    frontend: BlueprintFrontend | None = None
     mods: BlueprintMods | None = None
     backup: BlueprintBackup | None = None
     health: BlueprintHealth | None = None
@@ -1730,6 +1830,38 @@ class Blueprint(BaseModel):
     def effective_mods(self) -> BlueprintMods:
         """Liefert ``self.mods`` oder ein neutrales Default-Objekt."""
         return self.mods or BlueprintMods()
+
+    @model_validator(mode="after")
+    def _check_frontend_contract(self) -> "Blueprint":
+        if self.meta.category == BlueprintCategory.FRONTEND:
+            if self.frontend is None:
+                raise ValueError(
+                    "Blueprints mit meta.category='frontend' benoetigen einen 'frontend'-Block."
+                )
+            if self.source.type not in (
+                BlueprintSourceType.GITHUB,
+                BlueprintSourceType.MANUAL_UPLOAD,
+                BlueprintSourceType.DOCKER_ONLY,
+            ):
+                raise ValueError(
+                    "Frontend-Blueprints erlauben nur source.type 'github', 'manualUpload' oder 'dockerOnly'."
+                )
+            if (
+                self.source.type != BlueprintSourceType.GITHUB
+                and self.frontend.previewsAllowed
+            ):
+                raise ValueError(
+                    "frontend.previewsAllowed ist nur mit source.type='github' moeglich."
+                )
+            if self.runtime.image != "caddy:2-alpine":
+                raise ValueError(
+                    "Frontend-Blueprints muessen runtime.image='caddy:2-alpine' verwenden."
+                )
+        elif self.frontend is not None:
+            raise ValueError(
+                "Der 'frontend'-Block ist nur bei meta.category='frontend' erlaubt."
+            )
+        return self
 
 
 # ── Loader ────────────────────────────────────────────────────────────────

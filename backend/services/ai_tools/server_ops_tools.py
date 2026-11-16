@@ -126,7 +126,7 @@ def lies_logs(db: Session, *, user: User, server: Server, arguments: dict) -> di
             "available": False,
             "reason": "node_unreachable",
         }
-    if server.container_name == "caddy-managed" or server.game_type == "web_static":
+    if server.container_name == "caddy-managed":
         ports = [f"{p.port}/{p.protocol}" for p in (server.ports or [])]
         port_str = ", ".join(ports) if ports else "kein Port"
         return {

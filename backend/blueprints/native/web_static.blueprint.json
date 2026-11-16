@@ -5,15 +5,21 @@
     "name": "Statisches Web-Frontend",
     "category": "frontend",
     "author": "Maunting Studios",
-    "description": "Statisches Web-Frontend (React, Vue, Vite, HTML/JS) ausgeliefert über Caddy mit automatischer SPA-Routenauflösung."
+    "description": "Statisches Web-Frontend (React, Vue, Vite, HTML/JS) im isolierten Caddy-Container mit SPA-Fallback für Client-seitiges Routing."
   },
   "runtime": {
-    "image": "alpine:3.20",
+    "image": "caddy:2-alpine",
     "workdir": "/data",
     "env": {},
-    "startup": "sleep 315360000",
+    "startup": "caddy run --config /data/Caddyfile --adapter caddyfile",
+    "seedFiles": [
+      {
+        "file": "index.html",
+        "content": "<!doctype html>\n<html lang=\"de\">\n<head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>MSM Web-Frontend</title></head>\n<body style=\"font-family:system-ui,sans-serif;padding:2rem\"><h1>Frontend bereit</h1><p>Lade deine gebauten Dateien (z. B. den Inhalt von <code>dist/</code>) über den Datei-Tab hoch.</p></body>\n</html>\n"
+      }
+    ],
     "stopGracePeriodSeconds": 10,
-    "startupCheckSeconds": 1.0
+    "startupCheckSeconds": 2.0
   },
   "ports": [
     {
@@ -26,6 +32,12 @@
     "steam": null,
     "http": null
   },
+  "frontend": {
+    "spaFallback": true,
+    "previewsAllowed": false,
+    "maxPreviews": 0,
+    "env": {}
+  },
   "mods": null,
   "health": {
     "port": {
@@ -35,5 +47,10 @@
       "failure_threshold": 3
     }
   },
-  "backup": null
+  "backup": {
+    "includePaths": [
+      "index.html",
+      "assets"
+    ]
+  }
 }
