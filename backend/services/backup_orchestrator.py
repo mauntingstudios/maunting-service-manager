@@ -43,12 +43,17 @@ _S3_KEY_PREFIX = "msm-backups/servers"
 _ENCRYPTION_ALGORITHM = "AES-256-GCM"
 
 
+class BackupConflictError(RuntimeError):
+    """Raised when another backup or restore operation already holds the server lock."""
+
+
 def create_server_backup(
     server_id: int,
     db: Session,
     *,
     name: str | None = None,
     timeout_seconds: int = 600,
+    _lock_held: bool = False,
 ) -> "Backup":
     """Erstellt lokales Backup + verschluesselten S3-Upload (wenn konfiguriert).
 
@@ -56,10 +61,12 @@ def create_server_backup(
     S3/DIS-Fehler werden NICHT propagiert (Best-Effort, Warning-Log) — ausser
     Phase-6 Remote-Agent-S3 (dann schlaegt der Remote-Pfad hart fehl).
 
-    Phase 6: Remote-Nodes mit S3+Passwort → Agent streamt tar→AES-GCM→S3 direkt
-    (kein Datenpfad ueber das Panel). S3-Credentials und Key nur im RAM.
+    Lokale Nodes (auch bei MSM_LOCAL_AGENT_REQUIRED=true) sichern immer zweigleisig:
+    zuerst lokal unter /opt/msm/backups/{server_id}, anschliessend nach S3.
+    Echte Remote-Nodes (is_local=False) nutzen mit S3+Passwort den Agent-S3-Pfad.
     """
     from models import Server
+    from services import redis_backplane
     from services.backup_config_service import BackupConfigService
     from services.backup_service import run_backup
     from services.server_lifecycle_service import guardian_recovery_suspension_lease
@@ -68,54 +75,66 @@ def create_server_backup(
     if not server:
         raise ValueError("Server nicht gefunden")
 
-    with guardian_recovery_suspension_lease(db, server, "lifecycle-backup"):
-        # Lokale Verschluesselung wenn Passwort gesetzt (unabhaengig von S3-Config).
-        password_set = BackupConfigService.is_backup_password_set()
-        s3_configured = BackupConfigService.is_s3_configured()
-        s3_eligible = s3_configured and password_set
-        encrypt_local = password_set  # VAL-FIX-001: local .enc when password set
-
-        node = getattr(server, "node", None) if server else None
-        from services.node_capacity import should_delegate_node_fs_to_agent
-
-        is_remote = should_delegate_node_fs_to_agent(node)
-
-        # Phase 6: remote + S3 + password → agent-direct (no panel data plane)
-        if is_remote and s3_eligible:
-            return _create_remote_agent_s3_backup(
-                server_id, db, node, name=name, timeout_seconds=timeout_seconds
-            )
-
-        if s3_configured and not password_set:
-            logger.warning(
-                "S3 konfiguriert aber kein Backup-Passwort gesetzt — Server %s: nur lokales Backup",
-                server_id,
-            )
-        if not password_set:
-            logger.warning(
-                "Kein Backup-Passwort gesetzt — Server %s: lokales Backup als plaintext (backward compat)",
-                server_id,
-            )
-
-        # 1. Lokales Backup erstellen (tar.gz oder .enc wenn encrypt_local).
-        # encrypted-Flag steuert das Manifest im tar.gz (true wenn verschluesselt).
-        # Remote without S3 eligibility still streams archive via agent (Phase 2 path).
-        backup = run_backup(
-            server_id,
-            db,
-            name=name,
-            timeout_seconds=timeout_seconds,
-            encrypted=encrypt_local,
-            encryption_algorithm=_ENCRYPTION_ALGORITHM if encrypt_local else None,
-            encrypt_local=encrypt_local,
+    lock_token: str | None = None
+    if not _lock_held:
+        lock_token = redis_backplane.acquire_distributed_lock(
+            f"backup-op:{server_id}", ttl_seconds=max(900, int(timeout_seconds) + 300)
         )
+        if lock_token is None:
+            raise BackupConflictError(
+                "Für diesen Server läuft bereits eine Sicherung oder Wiederherstellung."
+            )
 
-        # 2. S3-Upload (Best-Effort) — local/panel path.
-        if not s3_eligible:
+    try:
+        with guardian_recovery_suspension_lease(db, server, "lifecycle-backup"):
+            # Lokale Verschluesselung wenn Passwort gesetzt (unabhaengig von S3-Config).
+            password_set = BackupConfigService.is_backup_password_set()
+            s3_configured = BackupConfigService.is_s3_configured()
+            s3_eligible = s3_configured and password_set
+            encrypt_local = password_set  # VAL-FIX-001: local .enc when password set
+
+            node = getattr(server, "node", None) if server else None
+            is_truly_remote = node is not None and not bool(getattr(node, "is_local", False))
+
+            # Phase 6: echte Remote-Node + S3 + Passwort → Agent direkt (ohne Panel-Datenpfad)
+            # Lokale Nodes sichern immer lokal + zusaetzlich S3.
+            if is_truly_remote and s3_eligible:
+                return _create_remote_agent_s3_backup(
+                    server_id, db, node, name=name, timeout_seconds=timeout_seconds
+                )
+
+            if s3_configured and not password_set:
+                logger.warning(
+                    "S3 konfiguriert aber kein Backup-Passwort gesetzt — Server %s: nur lokales Backup",
+                    server_id,
+                )
+            if not password_set:
+                logger.warning(
+                    "Kein Backup-Passwort gesetzt — Server %s: lokales Backup als plaintext (backward compat)",
+                    server_id,
+                )
+
+            # 1. Lokales Backup erstellen (tar.gz oder .enc wenn encrypt_local).
+            # Bei lokalen Nodes mit aktivem Agenten streamt run_backup vom Agenten.
+            backup = run_backup(
+                server_id,
+                db,
+                name=name,
+                timeout_seconds=timeout_seconds,
+                encrypted=encrypt_local,
+                encryption_algorithm=_ENCRYPTION_ALGORITHM if encrypt_local else None,
+                encrypt_local=encrypt_local,
+            )
+
+            # 2. S3-Upload (Best-Effort) — local/panel path.
+            if not s3_eligible:
+                return backup
+
+            _upload_to_s3(backup, db, server_id)
             return backup
-
-        _upload_to_s3(backup, db, server_id)
-        return backup
+    finally:
+        if lock_token is not None:
+            redis_backplane.release_distributed_lock(f"backup-op:{server_id}", lock_token)
 
 
 
@@ -168,11 +187,18 @@ def _create_remote_agent_s3_backup(
         s3_cfg = S3Service.get_ephemeral_agent_s3_config()
         client = NodeClient.from_node(node, timeout=float(timeout_seconds))
         from models import Server
+        from services.backup_paths import backup_plan_for_server
         from services.node_capacity import agent_server_key
         from services.postgres_service import backup_context
 
         server = db.query(Server).filter(Server.id == server_id).first()
         resolved_key = agent_server_key(server_id, getattr(server, "install_dir", None))
+        plan = backup_plan_for_server(server) if server is not None else None
+        include_paths = (
+            list(plan.include_paths)
+            if plan is not None and plan.scope == "selective"
+            else None
+        )
         result = client.backup_create_s3(
             server_id,
             server_key=resolved_key,
@@ -181,6 +207,7 @@ def _create_remote_agent_s3_backup(
             s3_key=s3_key,
             timeout=float(timeout_seconds),
             postgres=backup_context(db, server_id),
+            include_paths=include_paths,
         )
         size_bytes = int(result.get("size_bytes") or 0)
         gemeldeter_key = str(result.get("s3_key") or s3_key)
@@ -214,6 +241,20 @@ def _create_remote_agent_s3_backup(
 
         db.commit()
         db.refresh(backup)
+        try:
+            from services.backup_service import cleanup_old_backups
+
+            cleanup_old_backups(
+                server_id,
+                db,
+                keep=getattr(server, "backup_retention_count", 5) if server is not None else 5,
+            )
+        except Exception:
+            logger.warning(
+                "Retention-Cleanup nach Agent-S3-Backup %s (Server %s) fehlgeschlagen",
+                backup.id,
+                server_id,
+            )
         logger.info(
             "Agent-S3-Backup ok (Server %s, Backup %s, bestaetigt=%s)",
             server_id,
@@ -361,12 +402,18 @@ def upload_backup_to_cloud(backup, db: Session, server_id: int) -> bool:
 
 
 def restore_via_agent_s3(
-    server, backup, db: Session | None = None, *, timeout_seconds: int = 600
+    server,
+    backup,
+    db: Session | None = None,
+    *,
+    timeout_seconds: int = 600,
+    stop_container: bool = False,
 ) -> None:
     """Phase 6: agent downloads S3 object, decrypts, extracts into server dir.
 
     Panel only sends ephemeral S3 config + raw AES key (never logged).
     """
+    from games.base import container_name_for
     from services.backup_config_service import BackupConfigService
     from services.backup_crypto_service import BackupCryptoService
     from services.node_client import NodeClient, NodeClientError
@@ -400,6 +447,7 @@ def restore_via_agent_s3(
             s3_key=backup.s3_key,
             timeout=float(timeout_seconds),
             postgres=backup_context(db, server.id) if db is not None else None,
+            container_name=container_name_for(server.id) if stop_container else None,
         )
     finally:
         key_b64 = None

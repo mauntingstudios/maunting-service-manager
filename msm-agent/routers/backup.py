@@ -32,6 +32,7 @@ class BackupCreateIn(BaseModel):
     encryption_key: str = Field(..., min_length=16, description="base64 AES-256 key")
     s3_key: str = Field(..., min_length=1, max_length=512)
     postgres: dict[str, Any] | None = None
+    include_paths: list[str] | None = None
 
 
 class BackupRestoreIn(BaseModel):
@@ -41,6 +42,7 @@ class BackupRestoreIn(BaseModel):
     encryption_key: str = Field(..., min_length=16)
     s3_key: str = Field(..., min_length=1, max_length=512)
     postgres: dict[str, Any] | None = None
+    container_name: str | None = Field(default=None, min_length=1, max_length=128)
 
 
 def _s3_dict(cfg: S3ConfigIn) -> dict[str, Any]:
@@ -64,6 +66,7 @@ def backup_create(body: BackupCreateIn) -> dict[str, Any]:
                 encryption_key_b64=body.encryption_key,
                 s3_object_key=body.s3_key,
                 postgres=body.postgres,
+                include_paths=body.include_paths,
             )
     except AgentBackupError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
@@ -80,6 +83,7 @@ def backup_restore(body: BackupRestoreIn) -> dict[str, Any]:
                 encryption_key_b64=body.encryption_key,
                 s3_object_key=body.s3_key,
                 postgres=body.postgres,
+                container_name=body.container_name,
             )
     except AgentBackupError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc

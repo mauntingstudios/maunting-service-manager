@@ -11,7 +11,7 @@ umask 077
 
 export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
-MSM_USER="msm"
+MSM_USER="msm-agent"
 MSM_DOCKER_USER="msm-docker"
 MSM_SERVERS_GROUP="msm-servers"
 MSM_DOCKER_HOME="/var/lib/msm-docker"
@@ -175,7 +175,7 @@ install_rootless_docker() {
   "icc": false,
   "no-new-privileges": true,
   "userland-proxy": false,
-  "exec-opts": ["native.cgroupdriver=systemd"],
+  "exec-opts": ["native.cgroupdriver=cgroupfs"],
   "log-driver": "json-file",
   "log-opts": {
     "max-size": "20m",
@@ -344,15 +344,16 @@ cp -f "$REPO_ROOT/backend/scripts/msm-quota" /usr/local/sbin/msm-quota
 chown root:root /usr/local/sbin/msm-quota
 chmod 0755 /usr/local/sbin/msm-quota
 
-cat > /etc/sudoers.d/msm-agent-firewall <<EOF
+cat > /etc/sudoers.d/msm-agent <<EOF
 Defaults:${MSM_USER} !authenticate
 ${MSM_USER} ALL=(root) NOPASSWD: ${FIREWALL_WRAPPER} *
 ${MSM_USER} ALL=(root) NOPASSWD: /usr/local/sbin/msm-iptables
 ${MSM_USER} ALL=(root) NOPASSWD: /usr/local/sbin/msm-quota
 ${MSM_USER} ALL=(root) NOPASSWD: /usr/bin/systemctl restart msm-agent.service, /bin/systemctl restart msm-agent.service
 EOF
-chmod 0440 /etc/sudoers.d/msm-agent-firewall
-visudo -cf /etc/sudoers.d/msm-agent-firewall >/dev/null || err "Ungueltige Firewall-sudoers-Regel"
+chmod 0440 /etc/sudoers.d/msm-agent
+visudo -cf /etc/sudoers.d/msm-agent >/dev/null || err "Ungueltige Agent-sudoers-Regel"
+rm -f /etc/sudoers.d/msm-agent-firewall
 ok "Node-Firewall-, Netfilter- & Quota-Wrapper installiert"
 
 # ── 10. systemd unit & slices ─────────────────────────────────

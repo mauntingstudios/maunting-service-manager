@@ -16,6 +16,7 @@ import os
 import shutil
 import subprocess
 import sys
+import threading
 from dataclasses import dataclass
 from typing import Any
 
@@ -24,6 +25,7 @@ from services.agent_operation_coordinator import server_id_from_container_name
 from services.network_interfaces_service import list_host_interfaces
 
 logger = logging.getLogger(__name__)
+_RECONCILE_LOCK = threading.Lock()
 
 # Dedicated /13 pools -> 65,536 disjoint /29 subnets each (6 usable IPs per bridge).
 SERVER_NETWORK_POOL = ipaddress.IPv4Network("10.200.0.0/13")
@@ -282,6 +284,67 @@ def _strip_prefix(ip_cidr: str) -> str:
     return str(ip_cidr).split("/", 1)[0].strip()
 
 
+def _resolve_container_db_port(client: Any, container_name: str, *, default: int = 5432) -> int:
+    """Resolve listening TCP DB port from container metadata/env/cmd, falling back to 5432."""
+    containers_api = getattr(client, "containers", None)
+    get_fn = getattr(containers_api, "get", None)
+    if not callable(get_fn):
+        return default
+    try:
+        container = get_fn(container_name)
+    except Exception:
+        return default
+    attrs = getattr(container, "attrs", None)
+    if not isinstance(attrs, dict):
+        return default
+
+    cfg = attrs.get("Config") or {}
+    if isinstance(cfg, dict):
+        env_list = cfg.get("Env") or []
+        if isinstance(env_list, list):
+            for item in env_list:
+                if isinstance(item, str) and item.startswith("PGPORT="):
+                    val = item.split("=", 1)[1].strip()
+                    if val.isdigit() and 1 <= int(val) <= 65535:
+                        return int(val)
+        cmd = cfg.get("Cmd") or []
+        if isinstance(cmd, list):
+            for idx, arg in enumerate(cmd):
+                text = str(arg)
+                if text.startswith("--port=") and text.split("=", 1)[1].isdigit():
+                    p = int(text.split("=", 1)[1])
+                    if 1 <= p <= 65535:
+                        return p
+                if text in {"--port", "-p"} and idx + 1 < len(cmd):
+                    nxt = str(cmd[idx + 1]).strip()
+                    if nxt.isdigit() and 1 <= int(nxt) <= 65535:
+                        return int(nxt)
+        exposed = cfg.get("ExposedPorts") or {}
+        if isinstance(exposed, dict):
+            ports = sorted(
+                int(k.split("/", 1)[0])
+                for k in exposed
+                if isinstance(k, str) and k.endswith("/tcp") and k.split("/", 1)[0].isdigit()
+            )
+            valid = [p for p in ports if 1 <= p <= 65535]
+            if valid:
+                return valid[0]
+
+    net_settings = attrs.get("NetworkSettings") or {}
+    if isinstance(net_settings, dict):
+        ports_map = net_settings.get("Ports") or {}
+        if isinstance(ports_map, dict):
+            ports = sorted(
+                int(k.split("/", 1)[0])
+                for k in ports_map
+                if isinstance(k, str) and k.endswith("/tcp") and k.split("/", 1)[0].isdigit()
+            )
+            valid = [p for p in ports if 1 <= p <= 65535]
+            if valid:
+                return valid[0]
+    return default
+
+
 def build_isolation_plan(client: Any) -> dict[str, Any]:
     """Build current L2/L3 firewall plan from Docker network topology."""
     cidrs = blocked_destination_cidrs(include_host_ips=True)
@@ -343,8 +406,9 @@ def build_isolation_plan(client: Any) -> dict[str, Any]:
                         else:
                             app_ips.append(ipv4)
                     if pg_ip:
+                        pg_port = _resolve_container_db_port(client, managed_pg_container, default=5432)
                         for app_ip in app_ips:
-                            db_allows.append({"src": f"{app_ip}/32", "dst": f"{pg_ip}/32", "port": 5432})
+                            db_allows.append({"src": f"{app_ip}/32", "dst": f"{pg_ip}/32", "port": pg_port})
 
                 elif net_name.startswith("msm-db-net-"):
                     try:
@@ -364,8 +428,9 @@ def build_isolation_plan(client: Any) -> dict[str, Any]:
                         elif server_id_from_container_name(cname, prefix) is not None:
                             client_ips.append(ipv4)
                     if db_ip:
+                        db_port = _resolve_container_db_port(client, db_container_name, default=5432)
                         for src_ip in client_ips:
-                            db_allows.append({"src": f"{src_ip}/32", "dst": f"{db_ip}/32", "port": 5432})
+                            db_allows.append({"src": f"{src_ip}/32", "dst": f"{db_ip}/32", "port": db_port})
             except Exception:
                 continue
 
@@ -488,51 +553,52 @@ def _exec_iptables_sequence(prefix: list[str], binary: str, plan: dict[str, Any]
 
 def reconcile_network_isolation(client: Any) -> dict[str, Any]:
     """Apply netfilter isolation rules inside RootlessKit netns and via host wrapper."""
-    plan = build_isolation_plan(client)
-    applied_netns = 0
-    applied_host = False
+    with _RECONCILE_LOCK:
+        plan = build_isolation_plan(client)
+        applied_netns = 0
+        applied_host = False
 
-    if not sys.platform.startswith("linux"):
-        if is_isolation_required():
-            raise RuntimeError("Linux netfilter required for strict network isolation")
-        return {"ok": True, "skipped": "non-linux", "applied_netns": 0, "applied_host": False, "plan": plan}
+        if not sys.platform.startswith("linux"):
+            if is_isolation_required():
+                raise RuntimeError("Linux netfilter required for strict network isolation")
+            return {"ok": True, "skipped": "non-linux", "applied_netns": 0, "applied_host": False, "plan": plan}
 
-    nsenter_bin = shutil.which("nsenter")
-    iptables_bin = shutil.which("iptables")
-    ip6tables_bin = shutil.which("ip6tables")
+        nsenter_bin = shutil.which("nsenter")
+        iptables_bin = shutil.which("iptables")
+        ip6tables_bin = shutil.which("ip6tables")
 
-    if nsenter_bin and iptables_bin:
-        for pid in _find_rootlesskit_child_pids():
-            ns_prefix = [nsenter_bin, "--user", "--net", "-t", str(pid)]
-            if _exec_iptables_sequence(ns_prefix, iptables_bin, plan, ipv6=False):
-                applied_netns += 1
+        if nsenter_bin and iptables_bin:
+            for pid in _find_rootlesskit_child_pids():
+                ns_prefix = [nsenter_bin, "--user", "--net", "-t", str(pid)]
+                if _exec_iptables_sequence(ns_prefix, iptables_bin, plan, ipv6=False):
+                    applied_netns += 1
+                if ip6tables_bin:
+                    _exec_iptables_sequence(ns_prefix, ip6tables_bin, plan, ipv6=True)
+
+        # Also apply host-level DOCKER-USER / uid-owner egress block if helper exists
+        if os.path.exists(IPTABLES_HELPER):
+            sudo_bin = shutil.which("sudo")
+            cmd = ([sudo_bin, "-n"] if sudo_bin and os.geteuid() != 0 else []) + [
+                IPTABLES_HELPER,
+                "apply-isolation",
+                json.dumps(plan, separators=(",", ":")),
+            ]
+            try:
+                res = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+                applied_host = res.returncode == 0
+            except (OSError, subprocess.SubprocessError) as exc:
+                logger.warning("Host msm-iptables isolation failed: %s", exc)
+        elif os.geteuid() == 0 and iptables_bin:
+            applied_host = _exec_iptables_sequence([], iptables_bin, plan, ipv6=False)
             if ip6tables_bin:
-                _exec_iptables_sequence(ns_prefix, ip6tables_bin, plan, ipv6=True)
+                _exec_iptables_sequence([], ip6tables_bin, plan, ipv6=True)
 
-    # Also apply host-level DOCKER-USER / uid-owner egress block if helper exists
-    if os.path.exists(IPTABLES_HELPER):
-        sudo_bin = shutil.which("sudo")
-        cmd = ([sudo_bin, "-n"] if sudo_bin and os.geteuid() != 0 else []) + [
-            IPTABLES_HELPER,
-            "apply-isolation",
-            json.dumps(plan, separators=(",", ":")),
-        ]
-        try:
-            res = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
-            applied_host = res.returncode == 0
-        except (OSError, subprocess.SubprocessError) as exc:
-            logger.warning("Host msm-iptables isolation failed: %s", exc)
-    elif os.geteuid() == 0 and iptables_bin:
-        applied_host = _exec_iptables_sequence([], iptables_bin, plan, ipv6=False)
-        if ip6tables_bin:
-            _exec_iptables_sequence([], ip6tables_bin, plan, ipv6=True)
+        if is_isolation_required() and applied_netns == 0 and not applied_host:
+            raise RuntimeError("Failed to apply container network isolation firewall rules")
 
-    if is_isolation_required() and applied_netns == 0 and not applied_host:
-        raise RuntimeError("Failed to apply container network isolation firewall rules")
-
-    return {
-        "ok": True,
-        "applied_netns": applied_netns,
-        "applied_host": applied_host,
-        "plan": plan,
-    }
+        return {
+            "ok": True,
+            "applied_netns": applied_netns,
+            "applied_host": applied_host,
+            "plan": plan,
+        }

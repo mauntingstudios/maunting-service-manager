@@ -91,10 +91,15 @@ class WorkshopFilesBody(BaseModel):
 
 class ArchiveBody(BaseModel):
     postgres: dict[str, Any] | None = None
+    include_paths: list[str] | None = None
 
 
 class QuotaBody(BaseModel):
     limit_gb: float = Field(..., ge=1, le=100_000)
+
+
+class RepairPermissionsBody(BaseModel):
+    owner_uid_gid: tuple[int, int] | None = None
 
 
 def _map_path_errors(exc: Exception) -> HTTPException:
@@ -461,6 +466,20 @@ def clear_config_cache(server_id: str = Query(...)) -> dict[str, bool]:
         raise _map_path_errors(exc) from exc
 
 
+def _guarded_archive_stream(
+    server_id: str,
+    *,
+    postgres: dict[str, Any] | None = None,
+    include_paths: list[str] | None = None,
+):
+    with _restore_operation_guard(server_id, "server_backup", lease_seconds=4 * 60 * 60):
+        yield from file_service.iter_archive_tar_gz(
+            server_id,
+            postgres=postgres,
+            include_paths=include_paths,
+        )
+
+
 @router.get("/archive")
 def archive_server(server_id: str = Query(...)):
     """Stream a tar.gz of the server directory (panel backup path, Phase 2)."""
@@ -472,7 +491,7 @@ def archive_server(server_id: str = Query(...)):
         if not root.is_dir():
             raise FileNotFoundError("Server directory not found")
         return StreamingResponse(
-            file_service.iter_archive_tar_gz(server_id),
+            _guarded_archive_stream(server_id),
             media_type="application/gzip",
             headers={
                 "Content-Disposition": f'attachment; filename="server_{server_id}.tar.gz"'
@@ -492,7 +511,11 @@ def archive_server_with_context(body: ArchiveBody, server_id: str = Query(...)):
         if not root.is_dir():
             raise FileNotFoundError("Server directory not found")
         return StreamingResponse(
-            file_service.iter_archive_tar_gz(server_id, postgres=body.postgres),
+            _guarded_archive_stream(
+                server_id,
+                postgres=body.postgres,
+                include_paths=body.include_paths,
+            ),
             media_type="application/gzip",
             headers={"Content-Disposition": f'attachment; filename="server_{server_id}.tar.gz"'},
         )
@@ -504,7 +527,7 @@ def _restore_operation_guard(server_key: str, reason: str, *, lease_seconds: int
     raw = str(server_key or "").strip()
     if raw.isdigit():
         return planned_operation(int(raw), reason, lease_seconds=lease_seconds)
-    match = re.search(r"_(\d+)$", raw)
+    match = re.search(r"[_-](\d+)$", raw)
     if match:
         return planned_operation(int(match.group(1)), reason, lease_seconds=lease_seconds)
     return contextlib.nullcontext()
@@ -560,5 +583,20 @@ def inspect_server_quota(server_id: str = Query(...)) -> dict[str, Any]:
 def remove_server_quota(server_id: str = Query(...)) -> dict[str, Any]:
     try:
         return quota_service.remove_quota(server_id)
+    except Exception as exc:
+        raise _map_path_errors(exc) from exc
+
+
+@router.post("/repair-permissions")
+def repair_server_permissions(
+    server_id: str = Query(...),
+    body: RepairPermissionsBody | None = None,
+) -> dict[str, Any]:
+    try:
+        from services import docker_service
+
+        root = file_service.server_root(server_id)
+        owner = body.owner_uid_gid if body is not None else None
+        return docker_service.repair_bind_mount_permissions(str(root), owner_uid_gid=owner)
     except Exception as exc:
         raise _map_path_errors(exc) from exc

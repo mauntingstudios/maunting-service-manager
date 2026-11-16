@@ -269,7 +269,13 @@ def _apply_live_resource_and_disk_updates(
         from services.node_capacity import sync_node_disk_quota
 
         try:
-            sync_node_disk_quota(server.node, server.id, server.disk_limit_gb, enforce=True)
+            sync_node_disk_quota(
+                server.node,
+                server.id,
+                server.disk_limit_gb,
+                enforce=True,
+                install_dir=server.install_dir,
+            )
         except Exception as exc:
             raise HTTPException(
                 status_code=503,

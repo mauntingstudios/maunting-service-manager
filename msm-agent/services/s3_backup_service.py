@@ -16,7 +16,16 @@ from pathlib import Path
 from typing import Any
 
 from config import settings
-from services.file_service import PathEscapeError, PathValidationError, server_root
+from services.file_service import (
+    _PRE_RESTORE_DIR,
+    PathEscapeError,
+    PathValidationError,
+    extract_validated_tar_in_place,
+    rollback_in_place_restore,
+    server_root,
+    validate_tar_archive_file,
+    write_server_backup_tar_gz,
+)
 from services.stream_crypto import (
     StreamCryptoError,
     decode_key_b64,
@@ -61,6 +70,7 @@ def create_encrypted_s3_backup(
     encryption_key_b64: str,
     s3_object_key: str,
     postgres: dict[str, Any] | None = None,
+    include_paths: list[str] | None = None,
 ) -> dict[str, Any]:
     """Tar server dir → encrypt (DIS-compatible) → multipart upload to S3.
 
@@ -88,42 +98,13 @@ def create_encrypted_s3_backup(
         except OSError:
             pass
 
-        postgres_dumps: dict[str, str] = {}
-        if postgres:
-            from services.postgres_service import dump_databases, ziel
-
-            with ziel(postgres.get("target")):
-                postgres_dumps = dump_databases(
-                    admin_password=str(postgres.get("admin_password") or ""),
-                    database_names=list(postgres.get("database_names") or []),
-                )
-
-        # Full tree plus node-local managed PostgreSQL dumps.
-        # Datenbankserver: das Datenverzeichnis ihrer laufenden Instanz waere als
-        # Dateikopie nicht konsistent. Es bleibt draussen; die Daten stecken im
-        # Dump daneben.
-        own_instance = bool(postgres and postgres.get("target"))
-
-        def backup_filter(info: tarfile.TarInfo) -> tarfile.TarInfo | None:
-            # Path("./pgdata").parts == ("pgdata",); ein ausgelassenes
-            # Verzeichnis nimmt seinen Inhalt mit.
-            if own_instance and Path(info.name).parts[:1] == (INSTANCE_DATA_DIR,):
-                return None
-            if info.issym() or info.islnk() or info.isdev() or info.isfifo():
-                return None
-            info.mode = info.mode & 0o777
-            return info
-
-        with tarfile.open(tar_path, "w:gz") as tar:
-            tar.add(str(root), arcname=".", filter=backup_filter)
-            for database_name, sql_text in postgres_dumps.items():
-                import io
-
-                payload = sql_text.encode("utf-8")
-                info = tarfile.TarInfo(name=f".msm/postgres/{database_name}.sql")
-                info.size = len(payload)
-                info.mode = 0o600
-                tar.addfile(info, io.BytesIO(payload))
+        write_server_backup_tar_gz(
+            root,
+            tar_path,
+            postgres=postgres,
+            include_paths=include_paths,
+            arcname_prefix="./",
+        )
         try:
             os.chmod(tar_path, 0o600)
         except OSError:
@@ -205,8 +186,9 @@ def restore_encrypted_s3_backup(
     encryption_key_b64: str,
     s3_object_key: str,
     postgres: dict[str, Any] | None = None,
+    container_name: str | None = None,
 ) -> dict[str, Any]:
-    """Download from S3 → decrypt → extract into server directory."""
+    """Download from S3 → decrypt → validate → stop container → extract into server dir."""
     try:
         root = server_root(server_id)
     except (PathValidationError, PathEscapeError) as exc:
@@ -222,24 +204,7 @@ def restore_encrypted_s3_backup(
     tmp_dir = tempfile.mkdtemp(prefix="msm-agent-rst-")
     enc_path = os.path.join(tmp_dir, "backup.enc")
     tar_path = os.path.join(tmp_dir, "backup.tar.gz")
-    backup_old = root.parent / f"{root.name}_pre_restore"
-
     own_instance = bool(postgres and postgres.get("target"))
-
-    def rollback_files() -> None:
-        if not backup_old.exists():
-            return
-        try:
-            # Das Datenverzeichnis wurde fuer den Restore nach vorn geholt; es
-            # muss zurueck, bevor der halbe neue Stand geloescht wird.
-            moved = root / INSTANCE_DATA_DIR
-            if own_instance and moved.is_dir() and not (backup_old / INSTANCE_DATA_DIR).exists():
-                shutil.move(str(moved), str(backup_old / INSTANCE_DATA_DIR))
-            if root.exists():
-                shutil.rmtree(root)
-            shutil.move(str(backup_old), str(root))
-        except OSError:
-            logger.error("agent restore filesystem rollback failed")
 
     try:
         try:
@@ -257,43 +222,31 @@ def restore_encrypted_s3_backup(
         except OSError:
             pass
 
-        # Replace server root contents
-        if root.exists():
-            # Move aside then extract (caller should stop containers first)
-            if backup_old.exists():
-                shutil.rmtree(backup_old, ignore_errors=True)
-            shutil.move(str(root), str(backup_old))
-        root.mkdir(parents=True, exist_ok=True)
+        # Verify archive safety BEFORE stopping any live container.
+        validate_tar_archive_file(root, tar_path)
 
-        if own_instance and (backup_old / INSTANCE_DATA_DIR).is_dir():
-            # Das Backup enthaelt kein Datenverzeichnis (siehe oben) — das
-            # vorhandene bleibt, sonst stuende die Instanz danach leer da.
-            shutil.move(str(backup_old / INSTANCE_DATA_DIR), str(root / INSTANCE_DATA_DIR))
+        if container_name:
+            from services import docker_service
 
-        max_members = max(1, int(getattr(settings, "max_archive_members", 50000)))
-        max_bytes = max(1, int(getattr(settings, "max_archive_extract_bytes", 10 * 1024 * 1024 * 1024)))
-        with tarfile.open(tar_path, "r:gz") as tar:
-            members = tar.getmembers()
-            if len(members) > max_members:
-                raise AgentBackupError("backup archive exceeds maximum entry count", 400)
-            total_size = 0
-            # Safe extract: refuse absolute paths, path escapes, links, devices, and bombs
-            for member in members:
-                name = member.name
-                if not name or "\x00" in name or name.startswith("/") or ".." in Path(name).parts:
-                    raise AgentBackupError("unsafe path in archive", 400)
-                if member.issym() or member.islnk() or member.isdev() or member.isfifo():
-                    raise AgentBackupError("unsafe link or device entry in archive", 400)
-                if member.size < 0:
-                    raise AgentBackupError("invalid member size in archive", 400)
-                total_size += int(member.size)
-                if total_size > max_bytes:
-                    raise AgentBackupError("backup archive exceeds maximum extracted size", 400)
-                member.mode = member.mode & 0o777
-            if hasattr(tarfile, "data_filter"):
-                tar.extractall(path=str(root), members=members, filter=tarfile.data_filter)
-            else:
-                tar.extractall(path=str(root), members=members)
+            try:
+                docker_service.stop_container(container_name, timeout=30)
+            except FileNotFoundError:
+                pass
+            except Exception:
+                logger.warning("Container stop before S3 restore ignored (%s)", container_name)
+            try:
+                docker_service.remove_container(container_name)
+            except FileNotFoundError:
+                pass
+            except Exception:
+                logger.warning("Container remove before S3 restore ignored (%s)", container_name)
+
+        extract_validated_tar_in_place(
+            root,
+            tar_path,
+            preserve_pg=own_instance,
+            cleanup_previous=False,
+        )
 
         # Eine eigene Instanz ist waehrend des Restores gestoppt: ihre Dumps
         # bleiben unter .msm/postgres/ liegen und werden im Studio eingespielt.
@@ -319,22 +272,19 @@ def restore_encrypted_s3_backup(
                     )
             shutil.rmtree(dump_dir, ignore_errors=True)
 
-        # cleanup pre_restore on success
-        if backup_old.exists():
-            shutil.rmtree(backup_old, ignore_errors=True)
-
-        from services.file_service import apply_shared_server_acl
-
-        apply_shared_server_acl(root)
+        # cleanup pre-restore on success
+        shutil.rmtree(root / _PRE_RESTORE_DIR, ignore_errors=True)
         return {"ok": True}
     except StreamCryptoError as exc:
         raise AgentBackupError("decryption failed", 400) from exc
+    except (PathValidationError, PathEscapeError, ValueError, tarfile.TarError) as exc:
+        raise AgentBackupError(str(exc), 400) from exc
     except AgentBackupError:
-        rollback_files()
+        rollback_in_place_restore(root, preserve_pg=own_instance)
         raise
     except Exception as exc:
         logger.warning("agent s3 restore failed: %s", type(exc).__name__)
-        rollback_files()
+        rollback_in_place_restore(root, preserve_pg=own_instance)
         raise AgentBackupError("restore from S3 failed", 502) from exc
     finally:
         key = b"\x00" * 32

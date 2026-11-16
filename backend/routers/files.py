@@ -157,13 +157,19 @@ def _ensure_allowed_extension(filename: str) -> None:
         raise HTTPException(status_code=400, detail=f"Dateityp {ext} ist nicht erlaubt")
 
 
-def _repair_install_permissions(install_dir: str) -> dict:
-    """Repariert Besitzer/Rechte im Server-Root via Rootless-Docker.
+def _repair_install_permissions(install_dir: str, *, node=None, server_id: int | None = None) -> dict:
+    """Repariert Besitzer/Rechte im Server-Root via Rootless-Docker oder Node-Agent.
 
     Wird nur nach konkretem PermissionError aufgerufen. Der Host-Pfad wird als
     einziges Volume nach /data gemountet; der Container arbeitet ohne Host-Sudo
     und ohne Symlink-Traversal.
     """
+    from services.node_capacity import should_delegate_node_fs_to_agent
+
+    if should_delegate_node_fs_to_agent(node):
+        return docker_service.repair_bind_mount_permissions(
+            install_dir, node=node, server_id=server_id
+        )
     return docker_service.repair_bind_mount_permissions(install_dir)
 
 
@@ -195,7 +201,9 @@ def _run_with_permission_repair(server: Server, action_name: str, action) -> Non
         action()
         return
     except PermissionError as first_error:
-        repair = _repair_install_permissions(server.install_dir)
+        repair = _repair_install_permissions(
+            server.install_dir, node=getattr(server, "node", None), server_id=server.id
+        )
         if not repair.get("ok"):
             err = repair.get("error") or "unbekannter Fehler"
             raise PermissionError(
@@ -320,7 +328,9 @@ def browse_directory(
     try:
         vorhanden = _existiert()
     except PermissionError:
-        reparatur = _repair_install_permissions(server.install_dir)
+        reparatur = _repair_install_permissions(
+            server.install_dir, node=getattr(server, "node", None), server_id=server.id
+        )
         if not reparatur.get("ok"):
             raise HTTPException(
                 status_code=403, detail="Keine Berechtigung für dieses Verzeichnis"

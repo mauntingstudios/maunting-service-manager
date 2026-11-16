@@ -192,3 +192,150 @@ def test_create_server_backup_routes_remote_to_agent(db):
         out = create_server_backup(server.id, db)
     assert out is fake
     remote.assert_called_once()
+
+
+def test_local_node_with_local_agent_creates_local_and_s3_backup(db, monkeypatch):
+    from config import settings
+    from models import Node, Server
+    from services.backup_orchestrator import create_server_backup
+
+    monkeypatch.setattr(settings, "local_agent_required", True)
+    node = Node(
+        name="Local",
+        host="https://127.0.0.1:9000",
+        auth_token_enc="enc",
+        tls_fingerprint="d" * 64,
+        is_local=True,
+        status="online",
+    )
+    db.add(node)
+    db.commit()
+    db.refresh(node)
+    server = Server(
+        name="local_dual",
+        game_type="test",
+        install_dir="/tmp/local_dual",
+        node_id=node.id,
+        status="stopped",
+    )
+    db.add(server)
+    db.commit()
+    db.refresh(server)
+
+    fake = MagicMock()
+    fake.id = 101
+
+    def fake_reconcile(_db, _server):
+        _server.guardian_agent_recovery_suspension_json = _server.guardian_recovery_suspension
+        return {
+            "payload_hash": "sha256:dummy",
+            "recovery_suspension": (
+                json.loads(_server.guardian_recovery_suspension)
+                if _server.guardian_recovery_suspension
+                else None
+            ),
+        }
+
+    with patch("services.backup_config_service.BackupConfigService.is_backup_password_set", return_value=True), \
+         patch("services.backup_config_service.BackupConfigService.is_s3_configured", return_value=True), \
+         patch("services.guardian_sync_service.compile_and_sync_desired_state", side_effect=fake_reconcile), \
+         patch("services.backup_service.run_backup", return_value=fake) as run_local, \
+         patch("services.backup_orchestrator._upload_to_s3") as upload_s3, \
+         patch("services.backup_orchestrator._create_remote_agent_s3_backup") as remote:
+        out = create_server_backup(server.id, db)
+
+    assert out is fake
+    remote.assert_not_called()
+    run_local.assert_called_once()
+    upload_s3.assert_called_once_with(fake, db, server.id)
+
+
+def test_restore_prefers_local_file_before_s3_fallback(db, tmp_path):
+    import tarfile as _tf
+    from models import Backup, Node, Server, ServerPermission, User
+    from services.actor_context import ActorContext
+    from services.backup_restore_service import restore_server_backup
+
+    node = Node(
+        name="LocalRestore",
+        host="https://127.0.0.1:9000",
+        auth_token_enc="enc",
+        tls_fingerprint="e" * 64,
+        is_local=True,
+        status="online",
+    )
+    db.add(node)
+    user = User(username="restorer", email="r@example.invalid", password_hash="x", is_active=True)
+    db.add(user)
+    db.commit()
+    db.refresh(node)
+    db.refresh(user)
+
+    server = Server(
+        name="r_dual",
+        game_type="test",
+        install_dir="/opt/msm/servers/r_dual_5",
+        node_id=node.id,
+        status="stopped",
+    )
+    db.add(server)
+    db.commit()
+    db.refresh(server)
+    db.add(ServerPermission(user_id=user.id, server_id=server.id, permission_key="server.backups.restore"))
+    db.commit()
+
+    local_tar = tmp_path / "local.tar.gz"
+    with _tf.open(local_tar, "w:gz") as tar:
+        pass
+    backup = Backup(
+        server_id=server.id,
+        filename=str(local_tar),
+        size_mb=1,
+        s3_key="msm-backups/servers/5/fallback.enc",
+        s3_bucket="msm",
+        encrypted=False,
+    )
+    db.add(backup)
+    db.commit()
+    db.refresh(backup)
+
+    fake_client = MagicMock()
+    from config import settings
+
+    def fake_reconcile(_db, _server):
+        _server.guardian_agent_recovery_suspension_json = _server.guardian_recovery_suspension
+        return {
+            "payload_hash": "sha256:dummy",
+            "recovery_suspension": (
+                json.loads(_server.guardian_recovery_suspension)
+                if _server.guardian_recovery_suspension
+                else None
+            ),
+        }
+
+    with patch.object(settings, "local_agent_required", True), \
+         patch("services.node_client.NodeClient.from_node", return_value=fake_client), \
+         patch("services.backup_orchestrator.restore_via_agent_s3") as s3_restore, \
+         patch("services.docker_service.is_running", return_value=False), \
+         patch("services.docker_service.remove"), \
+         patch("services.guardian_sync_service.compile_and_sync_desired_state", side_effect=fake_reconcile):
+        restore_server_backup(db, server_id=server.id, backup_id=backup.id, actor=ActorContext.for_user(user))
+
+    s3_restore.assert_not_called()
+    fake_client.files_restore_archive.assert_called_once_with("r_dual_5", str(local_tar))
+    fake_client.files_finalize_restore.assert_called_once_with("r_dual_5")
+
+    # Missing local file falls back to agent S3 without pre-stopping container
+    local_tar.unlink()
+    with patch.object(settings, "local_agent_required", True), \
+         patch("services.backup_orchestrator.restore_via_agent_s3") as s3_fallback, \
+         patch("services.docker_service.stop") as pre_stop, \
+         patch("services.audit_service.record_privileged_action") as audit_rec, \
+         patch("services.guardian_sync_service.compile_and_sync_desired_state", side_effect=fake_reconcile):
+        restore_server_backup(db, server_id=server.id, backup_id=backup.id, actor=ActorContext.for_user(user))
+
+    pre_stop.assert_not_called()
+    s3_fallback.assert_called_once()
+    assert s3_fallback.call_args.kwargs.get("stop_container") is True
+    audit_rec.assert_called_once()
+    assert audit_rec.call_args.kwargs["action"] == "server.backups.restore"

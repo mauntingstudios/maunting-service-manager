@@ -314,6 +314,7 @@ def sync_node_disk_quota(
     disk_limit_gb: int | None,
     *,
     enforce: bool = False,
+    install_dir: str | None = None,
 ) -> None:
     """Apply or remove physical OS quota on the node agent when agent-delegated."""
     if not should_delegate_node_fs_to_agent(node):
@@ -321,23 +322,30 @@ def sync_node_disk_quota(
     try:
         from services.node_client import NodeClient
 
+        target_key: int | str = agent_server_key(server_id, install_dir) if install_dir else server_id
         client = NodeClient.from_node(node)
         if disk_limit_gb is not None and int(disk_limit_gb) >= 1:
-            client.files_apply_quota(server_id, int(disk_limit_gb))
+            client.files_apply_quota(target_key, int(disk_limit_gb))
         else:
-            client.files_remove_quota(server_id)
+            client.files_remove_quota(target_key)
     except Exception:
         if enforce:
             raise
 
 
-def remove_node_disk_quota(node: Node | None, server_id: int) -> None:
+def remove_node_disk_quota(
+    node: Node | None,
+    server_id: int,
+    *,
+    install_dir: str | None = None,
+) -> None:
     """Best-effort cleanup of OS disk quota during server teardown or rollback."""
     if not should_delegate_node_fs_to_agent(node):
         return
     try:
         from services.node_client import NodeClient
 
-        NodeClient.from_node(node).files_remove_quota(server_id)
+        target_key: int | str = agent_server_key(server_id, install_dir) if install_dir else server_id
+        NodeClient.from_node(node).files_remove_quota(target_key)
     except Exception:
         pass

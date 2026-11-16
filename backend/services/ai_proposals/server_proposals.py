@@ -2292,15 +2292,15 @@ def _execute_server_repair(
         if aktion == "repair_permissions":
             if not server.install_dir:
                 raise AiActionStateError("AI_ACTION_TARGET_MISSING")
-            # `repair_bind_mount_permissions` kennt keinen `node`-Parameter und
-            # laeuft immer auf dem Panel-Host. Bei einem Server auf einem
-            # entfernten Node repariert sie also das falsche Verzeichnis — oder
-            # findet es nicht und meldet einen Fehlschlag, obwohl nichts kaputt
-            # ist. Denselben Schutz zieht `games/base.py` vor jedem Start.
+            from services.node_capacity import should_delegate_node_fs_to_agent
+
             node = getattr(server, "node", None)
-            if node is not None and not getattr(node, "is_local", False):
-                raise AiActionStateError("AI_ACTION_REPAIR_NOT_LOCAL")
-            ergebnis = docker_service.repair_bind_mount_permissions(server.install_dir)
+            if should_delegate_node_fs_to_agent(node):
+                ergebnis = docker_service.repair_bind_mount_permissions(
+                    server.install_dir, node=node, server_id=server.id
+                )
+            else:
+                ergebnis = docker_service.repair_bind_mount_permissions(server.install_dir)
             if not ergebnis.get("ok"):
                 raise AiActionStateError("AI_ACTION_EXECUTION_FAILED")
             return {"action": aktion, "repaired": True}

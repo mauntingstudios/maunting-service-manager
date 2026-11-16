@@ -150,7 +150,7 @@ def delete_server_completely(db: Session, *, server_id: int, actor: ActorContext
     )
 
     if should_delegate_node_fs_to_agent(node):
-        remove_node_disk_quota(node, server.id)
+        remove_node_disk_quota(node, server.id, install_dir=install_dir)
         try:
             from services.node_client import NodeClient
 
@@ -185,7 +185,7 @@ def delete_server_completely(db: Session, *, server_id: int, actor: ActorContext
             raise _fail("server_directory_delete_failed") from exc
 
     backups_removed = False
-    if is_local and os.path.exists(backup_dir):
+    if os.path.exists(backup_dir):
         try:
             shutil.rmtree(backup_dir)
             backups_removed = True

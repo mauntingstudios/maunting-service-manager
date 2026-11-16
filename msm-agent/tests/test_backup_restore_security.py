@@ -350,3 +350,122 @@ def test_apply_shared_server_acl_clears_setgid_and_adds_mapped_uid_gid(
     assert str(nested) not in cmd
     assert all(".msm" not in arg for arg in cmd)
 
+
+def test_apply_shared_server_acl_skips_pgdata_tls_and_handles_timeout(tmp_path: Path, monkeypatch) -> None:
+    import subprocess as _sp
+
+    root = tmp_path / "pg_tls_srv"
+    (root / "pgdata").mkdir(parents=True)
+    (root / "tls").mkdir(parents=True)
+    (root / "app").mkdir(parents=True)
+
+    fake_pwd = SimpleNamespace(
+        getpwnam=lambda _n: SimpleNamespace(pw_name="msm-docker"),
+        getpwuid=lambda _u: SimpleNamespace(pw_name="msm-agent"),
+    )
+    fake_grp = SimpleNamespace(getgrnam=lambda _n: SimpleNamespace(gr_gid=999))
+    seen: list[list[str]] = []
+
+    def _run_timeout(cmd, **_kw):
+        seen.append(cmd)
+        raise _sp.TimeoutExpired(cmd, timeout=60)
+
+    monkeypatch.setattr(file_service, "pwd", fake_pwd)
+    monkeypatch.setattr(file_service, "grp", fake_grp)
+    monkeypatch.setattr(file_service.os, "getuid", lambda: 1000, raising=False)
+    monkeypatch.setattr(file_service.os, "chown", lambda *_a, **_kw: None, raising=False)
+    monkeypatch.setattr(file_service.shutil, "which", lambda _c: "/usr/bin/setfacl")
+    monkeypatch.setattr(file_service.subprocess, "run", _run_timeout)
+
+    # Timeout must not fail restore or touch pgdata / tls
+    file_service.apply_shared_server_acl(root, recursive=True)
+    flat_args = [arg for cmd in seen for arg in cmd]
+    assert str(root) in flat_args
+    assert str(root / "app") in flat_args
+    assert str(root / "pgdata") not in flat_args
+    assert str(root / "tls") not in flat_args
+
+    seen.clear()
+    file_service.apply_shared_server_acl(root, recursive=False)
+    flat_args_nr = [arg for cmd in seen for arg in cmd]
+    assert str(root / "pgdata") not in flat_args_nr
+    assert str(root / "tls") not in flat_args_nr
+
+
+def test_restore_preserves_root_inode_and_supports_selective_scope(servers_dir: Path) -> None:
+    import json as _json
+
+    root = servers_dir / "88"
+    root.mkdir()
+    (root / "game.bin").write_text("keep-binary", encoding="utf-8")
+    (root / "world.dat").write_text("old-world", encoding="utf-8")
+    orig_ino = root.stat().st_ino
+
+    # Build a selective backup containing only world.dat + manifest
+    manifest = _json.dumps({"version": 1, "scope": "selective", "includePaths": ["world.dat"]}).encode("utf-8")
+    sel_tar = _make_targz_bytes(
+        [
+            (".msm/backup-manifest.json", manifest, "file"),
+            ("world.dat", b"new-world", "file"),
+        ]
+    )
+
+    with patch.object(Path, "rename", side_effect=OSError(16, "EBUSY")):
+        file_service.restore_backup_archive("88", io.BytesIO(sel_tar))
+
+    assert root.stat().st_ino == orig_ino
+    assert (root / "game.bin").read_text(encoding="utf-8") == "keep-binary"
+    assert (root / "world.dat").read_text(encoding="utf-8") == "new-world"
+
+    file_service.rollback_backup_restore("88")
+    assert (root / "world.dat").read_text(encoding="utf-8") == "old-world"
+    assert (root / "game.bin").read_text(encoding="utf-8") == "keep-binary"
+
+
+def test_iter_archive_tar_gz_uses_ziel_excludes_and_selective_manifest(servers_dir: Path) -> None:
+    import contextlib as _cl
+    import json as _json
+
+    root = servers_dir / "91"
+    (root / "pgdata").mkdir(parents=True)
+    (root / "pgdata" / "PG_VERSION").write_text("17", encoding="utf-8")
+    (root / "node_modules").mkdir()
+    (root / "node_modules" / "x.js").write_text("skip", encoding="utf-8")
+    (root / "cfg").mkdir()
+    (root / "cfg" / "app.ini").write_text("ok=1", encoding="utf-8")
+    (root / "cfg" / "debug.log").write_text("skip-log", encoding="utf-8")
+
+    ziel_events: list[tuple[str, object]] = []
+
+    @_cl.contextmanager
+    def _fake_ziel(target):
+        ziel_events.append(("enter", target))
+        try:
+            yield
+        finally:
+            ziel_events.append(("exit", target))
+
+    pg_ctx = {"admin_password": "pw", "database_names": ["app"], "target": {"host": "127.0.0.1"}}
+    with patch("services.postgres_service.ziel", _fake_ziel), \
+         patch("services.postgres_service.dump_databases", return_value={"app": "-- sql"}):
+        raw = b"".join(file_service.iter_archive_tar_gz("91", postgres=pg_ctx))
+
+    assert ziel_events == [("enter", pg_ctx["target"]), ("exit", pg_ctx["target"])]
+    with tarfile.open(fileobj=io.BytesIO(raw), mode="r:gz") as tar:
+        names = tar.getnames()
+    assert "cfg/app.ini" in names
+    assert ".msm/postgres/app.sql" in names
+    assert ".msm/backup-manifest.json" in names
+    assert all("pgdata/" not in n for n in names)
+    assert all("node_modules" not in n for n in names)
+    assert all("debug.log" not in n for n in names)
+
+    # Selective include_paths
+    sel_raw = b"".join(file_service.iter_archive_tar_gz("91", include_paths=["cfg/app.ini"]))
+    with tarfile.open(fileobj=io.BytesIO(sel_raw), mode="r:gz") as tar:
+        sel_names = tar.getnames()
+        manifest = _json.loads(tar.extractfile(".msm/backup-manifest.json").read().decode("utf-8"))
+    assert "cfg/app.ini" in sel_names
+    assert manifest["scope"] == "selective"
+    assert manifest["includePaths"] == ["cfg/app.ini"]
+

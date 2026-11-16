@@ -416,3 +416,20 @@ def test_create_container_and_run_ephemeral_enforce_isolation_limits(
     assert eph_kwargs["nano_cpus"] == DEFAULT_EPHEMERAL_NANO_CPUS
     assert eph_kwargs["mem_limit"] == DEFAULT_EPHEMERAL_MEM_LIMIT
     assert eph_kwargs["memswap_limit"] == DEFAULT_EPHEMERAL_MEM_LIMIT
+
+
+def test_permission_repair_prunes_pgdata_and_tls(monkeypatch, servers_dir: Path) -> None:
+    from services.docker_service import repair_bind_mount_permissions
+
+    target = servers_dir / "77"
+    (target / "pgdata").mkdir(parents=True)
+    (target / "tls").mkdir()
+    (target / "conf").mkdir()
+    run = MagicMock(return_value={"ok": True})
+    monkeypatch.setattr("services.docker_service.run_ephemeral", run)
+
+    repair_bind_mount_permissions(str(target))
+    script = run.call_args.kwargs["command"][1]
+    assert "/data/pgdata" in script and "-prune" in script
+    assert "/data/tls" in script
+    assert "chgrp -R" not in script

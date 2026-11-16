@@ -183,6 +183,8 @@ def decrypt_frames(source: BinaryIO | Iterator[bytes], aesgcm: AESGCM | None = N
 
     if buffer:
         raise StreamCryptoError("truncated ciphertext")
+    if version is None:
+        raise StreamCryptoError("empty ciphertext")
     if version == 2 and not saw_final:
         # The one manipulation a per-frame tag cannot notice on its own.
         raise StreamCryptoError("truncated ciphertext")

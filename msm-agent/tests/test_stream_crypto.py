@@ -171,3 +171,12 @@ def test_ueberlange_framelaenge_wird_sofort_abgewiesen(tmp_path):
     out = tmp_path / "o.bin"
     with pytest.raises(StreamCryptoError):
         decrypt_stream_to_file(io.BytesIO(bomb), key, str(out))
+
+
+def test_empty_stream_rejected(tmp_path):
+    """Eine 0-Byte-Eingabe darf nie stillschweigend als leerer Klartext durchgehen."""
+    key = b"e" * 32
+    out = tmp_path / "empty.bin"
+    with pytest.raises(StreamCryptoError, match="empty"):
+        decrypt_stream_to_file(io.BytesIO(b""), key, str(out))
+    assert not out.exists()

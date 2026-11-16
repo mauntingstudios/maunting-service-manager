@@ -582,6 +582,24 @@ class NodeClient:
         """Remove OS project or loopback filesystem disk quota for a server directory."""
         return self._request("DELETE", "/files/quota", params={"server_id": str(server_id)})
 
+    def files_repair_permissions(
+        self,
+        server_id: int | str,
+        *,
+        owner_uid_gid: tuple[int, int] | None = None,
+    ) -> dict[str, Any]:
+        """Delegate bind-mount permission normalization to the node agent."""
+        body: dict[str, Any] = {}
+        if owner_uid_gid is not None:
+            body["owner_uid_gid"] = [int(owner_uid_gid[0]), int(owner_uid_gid[1])]
+        return self._request(
+            "POST",
+            "/files/repair-permissions",
+            params={"server_id": str(server_id)},
+            json=body,
+            timeout=_LONG_TIMEOUT,
+        )
+
     def ports_available(self, ports: list[tuple[int, str, str]], bind_ip: str) -> dict[str, Any]:
         return self._request("POST", "/runtime/ports/check", json={
             "ports": [{"port": port, "protocol": protocol, "role": role} for port, protocol, role in ports],
@@ -686,16 +704,23 @@ class NodeClient:
         server_id: int | str,
         *,
         postgres: dict[str, Any] | None = None,
+        include_paths: list[str] | None = None,
     ) -> Iterator[bytes]:
         """Stream a tar.gz of the server directory from the agent."""
+        has_body = bool(postgres or include_paths)
+        body: dict[str, Any] = {}
+        if postgres:
+            body["postgres"] = postgres
+        if include_paths:
+            body["include_paths"] = list(include_paths)
         try:
             with self._httpx_client(_LONG_TIMEOUT) as client:
                 with client.stream(
-                    "POST" if postgres else "GET",
+                    "POST" if has_body else "GET",
                     self._url("/files/archive"),
                     headers=self._headers(),
                     params={"server_id": str(server_id)},
-                    json={"postgres": postgres} if postgres else None,
+                    json=body if has_body else None,
                 ) as resp:
                     if resp.status_code >= 400:
                         detail = resp.read().decode("utf-8", errors="replace")[:200]
@@ -746,6 +771,7 @@ class NodeClient:
         s3_key: str,
         timeout: float = _LONG_TIMEOUT,
         postgres: dict[str, Any] | None = None,
+        include_paths: list[str] | None = None,
     ) -> dict[str, Any]:
         """Trigger encrypted backup on agent ÔåÆ direct S3 upload (no panel data path)."""
         payload: dict[str, Any] = {
@@ -757,6 +783,8 @@ class NodeClient:
         }
         if server_key:
             payload["server_key"] = server_key
+        if include_paths:
+            payload["include_paths"] = list(include_paths)
         return self._request(
             "POST",
             "/backup/create",
@@ -774,6 +802,7 @@ class NodeClient:
         s3_key: str,
         timeout: float = _LONG_TIMEOUT,
         postgres: dict[str, Any] | None = None,
+        container_name: str | None = None,
     ) -> dict[str, Any]:
         """Trigger S3 download + decrypt + extract on agent."""
         payload: dict[str, Any] = {
@@ -785,6 +814,8 @@ class NodeClient:
         }
         if server_key:
             payload["server_key"] = server_key
+        if container_name:
+            payload["container_name"] = container_name
         return self._request(
             "POST",
             "/backup/restore",

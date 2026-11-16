@@ -277,6 +277,15 @@ def test_quota_service_applies_resizes_removes_and_fails_closed_when_required(
     assert res_remove["ok"] is True
     assert any("remove" in c and "12" in c for c in calls)
 
+    # Slug server directories (e.g. singra_backend_80) must also be accepted safely
+    calls.clear()
+    res_slug = quota_service.apply_quota("singra_backend_80", 5)
+    assert res_slug["enforced"] is True
+    assert any("singra_backend_80" in c for c in calls)
+    for bad_key in ("../etc", "0", "-5", "foo/bar"):
+        with pytest.raises(file_service.PathValidationError):
+            quota_service.apply_quota(bad_key, 5)
+
     # When helper is missing and MSM_REQUIRE_DISK_QUOTA=true -> must fail closed!
     monkeypatch.setattr("services.quota_service.Path.is_file", lambda _self: False)
     monkeypatch.setattr(settings, "require_disk_quota", True, raising=False)

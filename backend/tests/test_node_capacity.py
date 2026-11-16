@@ -369,6 +369,15 @@ def test_quota_delegation_respects_local_agent_required(monkeypatch):
     node_capacity.remove_node_disk_quota(remote_node, 42)
     assert calls == [("apply", 42, 30), ("remove", 42), ("remove", 42)]
 
+    calls.clear()
+    node_capacity.sync_node_disk_quota(
+        local_node, 80, 15, enforce=True, install_dir="/opt/msm/servers/singra_backend_80"
+    )
+    node_capacity.remove_node_disk_quota(
+        remote_node, 80, install_dir="/opt/msm/servers/singra_backend_80"
+    )
+    assert calls == [("apply", "singra_backend_80", 15), ("remove", "singra_backend_80")]
+
 
 def test_agent_server_key_and_disk_usage_slug_delegation(monkeypatch):
     from config import settings

@@ -328,3 +328,35 @@ def test_managed_postgres_requires_loopback_bind_and_isolated_hub(
     assert created_nets["msm-pg-hub"]["internal"] is True
     assert created_nets["msm-pg-hub"]["options"]["com.docker.network.bridge.enable_icc"] == "false"
     assert client.containers.run.call_args.kwargs["ports"] == {"5432/tcp": ("127.0.0.1", 15432)}
+
+
+def test_build_isolation_plan_resolves_custom_db_port_and_serializes_reconcile(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db_net = SimpleNamespace(
+        name="msm-db-net-9",
+        attrs={
+            "Name": "msm-db-net-9",
+            "Driver": "bridge",
+            "Options": {},
+            "IPAM": {"Config": [{"Subnet": "10.208.0.0/29"}]},
+            "Containers": {
+                "db": {"Name": "msm-srv-9", "IPv4Address": "10.208.0.2/29"},
+                "app": {"Name": "msm-srv-10", "IPv4Address": "10.208.0.3/29"},
+            },
+        },
+        reload=lambda: None,
+    )
+    db_container = SimpleNamespace(attrs={"Config": {"Env": ["PGPORT=5439"]}})
+    fake_client = SimpleNamespace(
+        networks=SimpleNamespace(list=lambda: [db_net], get=lambda _n: db_net),
+        containers=SimpleNamespace(get=lambda name: db_container if name == "msm-srv-9" else None),
+    )
+    plan = netiso.build_isolation_plan(fake_client)
+    assert {"src": "10.208.0.3/32", "dst": "10.208.0.2/32", "port": 5439} in plan["db_allows"]
+
+    # Lock acquisition prevents overlapping reconciles
+    monkeypatch.setattr("services.network_isolation_service.sys", SimpleNamespace(platform="win32"))
+    res = netiso.reconcile_network_isolation(fake_client)
+    assert res["ok"] is True
+    assert hasattr(netiso, "_RECONCILE_LOCK") and not netiso._RECONCILE_LOCK.locked()

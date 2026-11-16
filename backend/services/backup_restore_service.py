@@ -108,14 +108,23 @@ def restore_server_backup(
 
     is_remote = should_delegate_node_fs_to_agent(node)
     resolved_server_key = agent_server_key(server.id, getattr(server, "install_dir", None))
-    use_agent_s3_restore = is_remote and bool(backup.s3_key)
+    # Lokal-vor-S3: wenn die lokale Backup-Datei existiert, immer diese zuerst einspielen.
+    use_agent_s3_restore = is_remote and (not local_exists) and bool(backup.s3_key)
 
+    from services import redis_backplane
     from services.server_lifecycle_service import get_server_lifecycle_lock, guardian_recovery_suspension_lease
 
     lock = get_server_lifecycle_lock(server.id)
     # Non-blocking acquire: concurrent Restore / Lifecycle-Op → 409.
     if not lock.acquire(blocking=False):
         raise HTTPException(status_code=409, detail="Server ist belegt — eine andere Operation läuft")
+
+    backup_lock_token = redis_backplane.acquire_distributed_lock(
+        f"backup-op:{server.id}", ttl_seconds=1800
+    )
+    if backup_lock_token is None:
+        lock.release()
+        raise HTTPException(status_code=409, detail="Für diesen Server läuft bereits eine Sicherung oder Wiederherstellung.")
 
     # tar_path: Pfad zum tar.gz das extrahiert wird.
     # Bei .enc Backups: temp tar.gz nach DIS-Entschluesselung.
@@ -129,29 +138,19 @@ def restore_server_backup(
             db.refresh(server)
 
             if use_agent_s3_restore:
-                from games.base import container_name_for
-                from services import docker_service
+                from services import audit_service
                 from services.backup_orchestrator import restore_via_agent_s3
                 from services.backup_crypto_service import BackupDecryptionError, BackupCryptoError
                 from services.backup_service import set_active_backup_status, clear_active_backup_status
                 from services.node_client import NodeClientError
                 from services.s3_service import S3NotConfiguredError, S3OperationError
 
-                # Stop container on the remote node before agent extracts
-                container = container_name_for(server.id)
-                try:
-                    if docker_service.is_running(container, node=node):
-                        docker_service.stop(container, timeout=30, node=node)
-                    docker_service.remove(container, force=True, node=node)
-                except Exception:
-                    logger.warning(
-                        "Container-Stop vor Agent-Restore (Server %s) fehlgeschlagen — fortsetzen",
-                        server_id,
-                    )
-
+                # Agent laedt S3-Objekt, entschluesselt und prueft das Archiv
+                # VOR Container-Stop/Remove, sodass Fehler den laufenden Server
+                # nicht unterbrechen.
                 set_active_backup_status(server_id, "restoring", backup.size_mb)
                 try:
-                    restore_via_agent_s3(server, backup, db)
+                    restore_via_agent_s3(server, backup, db, stop_container=True)
                 except BackupDecryptionError:
                     raise HTTPException(
                         status_code=400,
@@ -184,6 +183,16 @@ def restore_server_backup(
                 server.status = "stopped"
                 server.status_message = "Wiederhergestellt (Remote-Node)"
                 db.commit()
+                audit_service.record_privileged_action(
+                    db,
+                    user_id=actor.user.id,
+                    action="server.backups.restore",
+                    target_type="server",
+                    target_id=server_id,
+                    origin=actor.origin,
+                    details={"backup_id": backup_id, "backup_name": backup.name, "source": "agent_s3"},
+                    commit=True,
+                )
                 return {"message": "Backup wiederhergestellt", "server_id": server_id, "backup_id": backup_id}
 
             # S3-Restore: Download (+ ggf. Decrypt) VOR Container-Stop.
@@ -391,6 +400,7 @@ def restore_server_backup(
             )
     finally:
         # Lock IMMER freigeben (Erfolg, Fehler, HTTPException) — kein Deadlock.
+        redis_backplane.release_distributed_lock(f"backup-op:{server.id}", backup_lock_token)
         lock.release()
         # Temp-dir der .enc-Entschluesselung immer aufraeumen (VAL-FIX-004).
         # Entfernt das temp tar.gz (Plaintext liegt nur temporaer vor).

@@ -120,13 +120,16 @@ def _run_background_backup_job(server_id: int, name: str | None, user_id: int) -
     from services import redis_backplane
 
     lock_token = redis_backplane.acquire_distributed_lock(f"backup-op:{server_id}", ttl_seconds=900)
+    if lock_token is None:
+        logger.warning("Hintergrund-Backup uebersprungen (Server %s): Operation bereits gesperrt", server_id)
+        return
     job_db = SessionLocal()
     server_name = f"Server #{server_id}"
     try:
         server = job_db.query(Server).filter(Server.id == server_id).first()
         if server:
             server_name = server.name
-        backup = create_server_backup(server_id, job_db, name=name, timeout_seconds=600)
+        backup = create_server_backup(server_id, job_db, name=name, timeout_seconds=600, _lock_held=True)
         audit_service.record_privileged_action(
             job_db,
             user_id=user_id,
@@ -203,9 +206,14 @@ def create_backup(
         )
 
     # Synchrone Ausfuehrung (Standard fuer direkte API-Aufrufe ohne background=true).
-    from services.backup_orchestrator import create_server_backup
+    from services.backup_orchestrator import BackupConflictError, create_server_backup
     try:
         backup = create_server_backup(server_id, db, name=backup_name, timeout_seconds=600)
+    except BackupConflictError:
+        raise HTTPException(
+            status_code=409,
+            detail="Für diesen Server läuft bereits eine Sicherung oder Wiederherstellung.",
+        )
     except FileNotFoundError:
         raise HTTPException(status_code=400, detail="Server-Verzeichnis existiert nicht. Ist der Server installiert?")
     except Exception:

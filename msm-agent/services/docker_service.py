@@ -1389,24 +1389,36 @@ def repair_bind_mount_permissions(
     except OSError:
         geteilte_gid = None
 
-    target = shlex.quote(container_path.rstrip("/") or "/data")
+    raw_target = container_path.rstrip("/") or "/data"
+    target = shlex.quote(raw_target)
+    prune_expr = (
+        f"\\( -path {shlex.quote(raw_target + '/pgdata')} "
+        f"-o -path {shlex.quote(raw_target + '/tls')} "
+        f"-o -path {shlex.quote(raw_target + '/lost+found')} \\) -prune -o"
+    )
     script_parts = []
     if geteilte_gid is not None:
         # Gruppe **vor** den Rechten: sonst traegt eine Datei kurz g+rw fuer
         # eine Gruppe, der sie gleich nicht mehr gehoert.
-        script_parts.append(f"chgrp -R {int(geteilte_gid)} {target} 2>/dev/null || true")
+        has_protected = any((base_path / d).exists() for d in ("pgdata", "tls", "lost+found"))
+        if has_protected:
+            script_parts.append(
+                f"find {target} {prune_expr} -exec chgrp {int(geteilte_gid)} {{}} + 2>/dev/null || true"
+            )
+        else:
+            script_parts.append(f"chgrp -R {int(geteilte_gid)} {target} 2>/dev/null || true")
     script_parts.extend([
-        f"find {target} -xdev -type d -exec chmod u+rwx,g+rwxs,o-rwx {{}} + 2>/dev/null || true",
-        f"find {target} -xdev -type f -exec chmod u-s,g-s,u+rw,g+rw,o-rwx {{}} + 2>/dev/null || true",
-        f"find {target} -xdev -type f -perm -u+x -exec chmod g+x {{}} + 2>/dev/null || true",
+        f"find {target} {prune_expr} -xdev -type d -exec chmod u+rwx,g+rwxs,o-rwx {{}} + 2>/dev/null || true",
+        f"find {target} {prune_expr} -xdev -type f -exec chmod u-s,g-s,u+rw,g+rw,o-rwx {{}} + 2>/dev/null || true",
+        f"find {target} {prune_expr} -xdev -type f -perm -u+x -exec chmod g+x {{}} + 2>/dev/null || true",
     ])
     if owner_uid_gid is not None:
         uid, gid = owner_uid_gid
         owner = f"{int(uid)}:{int(gid)}"
         script_parts.extend([
-            f"find {target} -xdev -type d -exec chown {owner} {{}} + 2>/dev/null || true",
-            f"find {target} -xdev -type f -exec chown {owner} {{}} + 2>/dev/null || true",
-            f"find {target} -xdev -type l -exec chown -h {owner} {{}} + 2>/dev/null || true",
+            f"find {target} {prune_expr} -xdev -type d -exec chown {owner} {{}} + 2>/dev/null || true",
+            f"find {target} {prune_expr} -xdev -type f -exec chown {owner} {{}} + 2>/dev/null || true",
+            f"find {target} {prune_expr} -xdev -type l -exec chown -h {owner} {{}} + 2>/dev/null || true",
         ])
     script = "; ".join(script_parts) + "; exit 0"
     res = run_ephemeral(

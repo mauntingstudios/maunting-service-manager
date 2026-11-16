@@ -1045,10 +1045,27 @@ def map_container_uid_gid_to_host(
     return host_uid, host_gid
 
 
+_PROTECTED_TOP_DIRS: frozenset[str] = frozenset({"pgdata", "tls", "lost+found"})
+
+
+def _run_setfacl(cmd: list[str], *, timeout: int) -> None:
+    try:
+        subprocess.run(
+            cmd,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except (subprocess.TimeoutExpired, OSError) as exc:
+        logger.warning("setfacl skipped/timed out (%s): %s", cmd[-1] if cmd else "?", type(exc).__name__)
+
+
 def _clear_setgid_on_owned_dirs(
     root: Path,
     *,
     skip_subpath: Path | None = None,
+    skip_subpaths: tuple[Path, ...] = (),
     recursive: bool = True,
 ) -> None:
     """Entfernt g+s auf eigenen Verzeichnissen, damit keine unmapped Host-GIDs vererbt werden."""
@@ -1056,6 +1073,9 @@ def _clear_setgid_on_owned_dirs(
     if not isgid:
         return
     my_uid = os.getuid() if hasattr(os, "getuid") else None
+    skipped = set(skip_subpaths)
+    if skip_subpath is not None:
+        skipped.add(skip_subpath)
 
     def _strip(dir_path: Path) -> None:
         try:
@@ -1073,7 +1093,7 @@ def _clear_setgid_on_owned_dirs(
     if not recursive:
         try:
             for candidate in root.iterdir():
-                if candidate.is_symlink() or (skip_subpath is not None and candidate == skip_subpath):
+                if candidate.is_symlink() or candidate in skipped or candidate.name in _PROTECTED_TOP_DIRS:
                     continue
                 _strip(candidate)
         except OSError:
@@ -1085,9 +1105,9 @@ def _clear_setgid_on_owned_dirs(
         kept: list[str] = []
         for d in dirs:
             candidate = current / d
-            if candidate.is_symlink():
+            if candidate.is_symlink() or candidate in skipped:
                 continue
-            if skip_subpath is not None and candidate == skip_subpath:
+            if current == root and d in _PROTECTED_TOP_DIRS:
                 continue
             kept.append(d)
             _strip(candidate)
@@ -1104,7 +1124,8 @@ def apply_shared_server_acl(
 
     Uses ``0o0770`` instead of ``0o2770`` (no setgid) so container-created subdirectories
     do not inherit the unmapped ``msm-servers`` host GID inside rootless user namespaces.
-    Preserves container user-namespace data directories under ``.msm/postgres-data``.
+    Preserves container user-namespace data directories under ``.msm/postgres-data``,
+    ``pgdata`` and ``tls`` (e.g. ``tls/server.key`` 0600).
     """
     if not root.exists() or not root.is_dir():
         return
@@ -1138,7 +1159,13 @@ def apply_shared_server_acl(
         except OSError:
             pass
     pg_data_dir = root / ".msm" / "postgres-data"
-    _clear_setgid_on_owned_dirs(root, skip_subpath=pg_data_dir, recursive=recursive)
+    pgdata_dir = root / "pgdata"
+    tls_dir = root / "tls"
+    _clear_setgid_on_owned_dirs(
+        root,
+        skip_subpaths=(pg_data_dir, pgdata_dir, tls_dir),
+        recursive=recursive,
+    )
 
     if not docker_user or not agent_user or not shutil.which("setfacl"):
         return
@@ -1173,62 +1200,34 @@ def apply_shared_server_acl(
         targets = [str(root)]
         try:
             for child in root.iterdir():
-                if child.name == ".msm" or child.is_symlink():
+                if child.name == ".msm" or child.name in _PROTECTED_TOP_DIRS or child.is_symlink():
                     continue
                 targets.append(str(child))
         except OSError:
             pass
-        subprocess.run(
-            ["setfacl", "-m", acl_spec, *targets],
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
+        _run_setfacl(["setfacl", "-m", acl_spec, *targets], timeout=30)
         return
-    if pg_data_dir.exists():
-        # PostgreSQL container data must keep its 0700 subUID/subGID permissions.
-        subprocess.run(
-            ["setfacl", "-m", acl_spec, str(root)],
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
+    has_protected = (
+        pg_data_dir.exists()
+        or pgdata_dir.exists()
+        or tls_dir.exists()
+        or (root / "lost+found").exists()
+    )
+    if has_protected:
+        # PostgreSQL container data & private TLS keys must keep strict subUID/0600 modes.
+        _run_setfacl(["setfacl", "-m", acl_spec, str(root)], timeout=30)
         for child in root.iterdir():
+            if child.is_symlink() or child.name in _PROTECTED_TOP_DIRS:
+                continue
             if child.name == ".msm":
-                subprocess.run(
-                    ["setfacl", "-m", acl_spec, str(child)],
-                    check=False,
-                    capture_output=True,
-                    text=True,
-                    timeout=30,
-                )
+                _run_setfacl(["setfacl", "-m", acl_spec, str(child)], timeout=30)
                 for sub in child.iterdir():
-                    if sub.name != "postgres-data":
-                        subprocess.run(
-                            ["setfacl", "-R", "-m", acl_spec, str(sub)],
-                            check=False,
-                            capture_output=True,
-                            text=True,
-                            timeout=60,
-                        )
+                    if sub.name != "postgres-data" and not sub.is_symlink():
+                        _run_setfacl(["setfacl", "-R", "-m", acl_spec, str(sub)], timeout=60)
             else:
-                subprocess.run(
-                    ["setfacl", "-R", "-m", acl_spec, str(child)],
-                    check=False,
-                    capture_output=True,
-                    text=True,
-                    timeout=60,
-                )
+                _run_setfacl(["setfacl", "-R", "-m", acl_spec, str(child)], timeout=60)
     else:
-        subprocess.run(
-            ["setfacl", "-R", "-m", acl_spec, str(root)],
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=60,
-        )
+        _run_setfacl(["setfacl", "-R", "-m", acl_spec, str(root)], timeout=60)
 
 
 def ensure_server_root(server_id: str | int) -> None:
@@ -1525,15 +1524,231 @@ def extract_archive(server_id: str | int, rel_path: str) -> None:
     raise PathValidationError("Unsupported archive type")
 
 
-def restore_backup_archive(server_id: str | int, source) -> None:
-    """Atomically replace one server root from a validated tar.gz stream."""
-    root = server_root(server_id)
-    parent = root.parent
-    staging = parent / f".{root.name}-restore-{uuid.uuid4().hex}"
-    previous = parent / f".{root.name}-pre-restore"
-    archive_path = parent / f".{root.name}-restore-{uuid.uuid4().hex}.tar.gz"
-    staging.mkdir(mode=0o750)
+_PRE_RESTORE_DIR = ".msm-pre-restore"
+_SELECTIVE_META_FILE = ".msm-selective-rollback.json"
+_RESTORE_PRESERVED_ALWAYS: frozenset[str] = frozenset({_PRE_RESTORE_DIR, "lost+found", ".msm-disk-quota"})
+_BACKUP_MANIFEST_ARCNAME = ".msm/backup-manifest.json"
+
+
+def _read_manifest_scope_from_tar(handle: tarfile.TarFile, members: list[tarfile.TarInfo]) -> str:
+    for candidate_name in (_BACKUP_MANIFEST_ARCNAME, f"./{_BACKUP_MANIFEST_ARCNAME}"):
+        for member in members:
+            if member.name == candidate_name and member.isfile():
+                extracted = handle.extractfile(member)
+                if extracted is None:
+                    return "full"
+                try:
+                    data = json.loads(extracted.read(65536).decode("utf-8"))
+                except (json.JSONDecodeError, UnicodeDecodeError, OSError):
+                    return "full"
+                scope = str(data.get("scope") or "full")
+                return scope if scope in ("full", "selective") else "full"
+    return "full"
+
+
+def _merge_move_tree(src: Path, dst: Path) -> None:
+    """Move src directory/file onto dst, merging subdirectories if dst already exists."""
+    if src.is_dir() and not src.is_symlink() and dst.is_dir() and not dst.is_symlink():
+        for entry in list(src.iterdir()):
+            _merge_move_tree(entry, dst / entry.name)
+        src.rmdir()
+        return
+    if dst.exists() or dst.is_symlink():
+        if dst.is_dir() and not dst.is_symlink():
+            shutil.rmtree(dst)
+        else:
+            dst.unlink()
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    shutil.move(str(src), str(dst))
+
+
+def _move_full_root_to_pre_restore(root: Path, previous: Path, *, ignore_names: set[str], preserve_pg: bool) -> None:
+    previous.mkdir(mode=0o700, exist_ok=True)
+    for child in list(root.iterdir()):
+        if child.name in ignore_names:
+            continue
+        if preserve_pg and child.name in {"pgdata", "tls"}:
+            continue
+        if child.name == ".msm" and (child / "postgres-data").exists():
+            prev_msm = previous / ".msm"
+            prev_msm.mkdir(mode=0o750, exist_ok=True)
+            for sub in list(child.iterdir()):
+                if sub.name == "postgres-data":
+                    continue
+                shutil.move(str(sub), str(prev_msm / sub.name))
+            continue
+        shutil.move(str(child), str(previous / child.name))
+
+
+def _clear_non_preserved_root(root: Path, *, ignore_names: set[str], preserve_pg: bool) -> None:
+    for child in list(root.iterdir()):
+        if child.name in ignore_names:
+            continue
+        if preserve_pg and child.name in {"pgdata", "tls"}:
+            continue
+        if child.name == ".msm" and (child / "postgres-data").exists():
+            for sub in list(child.iterdir()):
+                if sub.name == "postgres-data":
+                    continue
+                if sub.is_dir() and not sub.is_symlink():
+                    shutil.rmtree(sub)
+                else:
+                    sub.unlink(missing_ok=True)
+            continue
+        if child.is_dir() and not child.is_symlink():
+            shutil.rmtree(child)
+        else:
+            child.unlink(missing_ok=True)
+
+
+def rollback_in_place_restore(root: Path, *, preserve_pg: bool = False) -> None:
+    """Restore pre-restore state without ever renaming or removing ``root`` itself."""
+    previous = root / _PRE_RESTORE_DIR
+    if previous.exists():
+        meta_file = previous / _SELECTIVE_META_FILE
+        if meta_file.is_file():
+            try:
+                meta = json.loads(meta_file.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                meta = {}
+            for rel in meta.get("added_files", []):
+                try:
+                    target = _validated_archive_destination(root, rel)
+                    if target.is_file() or target.is_symlink():
+                        target.unlink(missing_ok=True)
+                except (PathValidationError, PathEscapeError, OSError):
+                    pass
+            meta_file.unlink(missing_ok=True)
+            for child in list(previous.iterdir()):
+                _merge_move_tree(child, root / child.name)
+            shutil.rmtree(previous, ignore_errors=True)
+            return
+
+        effective_preserve_pg = preserve_pg or (root / "pgdata").is_dir()
+        _clear_non_preserved_root(
+            root,
+            ignore_names=set(_RESTORE_PRESERVED_ALWAYS),
+            preserve_pg=effective_preserve_pg,
+        )
+        for child in list(previous.iterdir()):
+            _merge_move_tree(child, root / child.name)
+        shutil.rmtree(previous, ignore_errors=True)
+        return
+
+    legacy_previous = root.parent / f".{root.name}-pre-restore"
+    if legacy_previous.exists():
+        _clear_non_preserved_root(
+            root,
+            ignore_names=set(_RESTORE_PRESERVED_ALWAYS),
+            preserve_pg=preserve_pg,
+        )
+        for child in list(legacy_previous.iterdir()):
+            _merge_move_tree(child, root / child.name)
+        shutil.rmtree(legacy_previous, ignore_errors=True)
+
+
+def validate_tar_archive_file(root: Path, archive_path: str | Path) -> list[tarfile.TarInfo]:
+    """Validate tar.gz archive members against ``root`` without mutating disk."""
+    with tarfile.open(archive_path, "r:gz") as handle:
+        members = handle.getmembers()
+        _validate_tar_members(root, members)
+        return members
+
+
+def extract_validated_tar_in_place(
+    root: Path,
+    archive_path: str | Path,
+    *,
+    preserve_pg: bool = False,
+    cleanup_previous: bool = False,
+) -> str:
+    """Validate and apply a ``tar.gz`` archive in-place inside ``root``.
+
+    Preserves ``root``'s inode, mountpoint (loopback quotas) and project quota ID.
+    Returns ``"full"`` or ``"selective"``.
+    """
+    root.mkdir(parents=True, exist_ok=True)
+    preserve_pg_effective = preserve_pg or (root / "pgdata").is_dir()
+    stage_name = f".msm-restore-stage-{uuid.uuid4().hex}"
+    staging = root / stage_name
+    previous = root / _PRE_RESTORE_DIR
+    moved_to_previous = False
+
     try:
+        with tarfile.open(archive_path, "r:gz") as handle:
+            members = handle.getmembers()
+            _validate_tar_members(root, members)
+            scope = _read_manifest_scope_from_tar(handle, members)
+            extract_members = (
+                [m for m in members if Path(m.name).parts[:1] != ("pgdata",)]
+                if preserve_pg_effective
+                else members
+            )
+            staging.mkdir(mode=0o750)
+            _extract_tar_members_safe(handle, staging, extract_members)
+
+        if previous.exists():
+            shutil.rmtree(previous)
+
+        if scope == "selective":
+            previous.mkdir(mode=0o700, exist_ok=True)
+            moved_to_previous = True
+            added_files: list[str] = []
+            for path in sorted(staging.rglob("*"), key=lambda p: len(p.parts)):
+                if path.is_dir() and not path.is_symlink():
+                    rel_dir = path.relative_to(staging)
+                    (root / rel_dir).mkdir(parents=True, exist_ok=True)
+                    continue
+                rel = path.relative_to(staging)
+                rel_posix = rel.as_posix()
+                dest = root / rel
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                if dest.exists() or dest.is_symlink():
+                    backup_dest = previous / rel
+                    backup_dest.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.move(str(dest), str(backup_dest))
+                else:
+                    added_files.append(rel_posix)
+                shutil.move(str(path), str(dest))
+            (previous / _SELECTIVE_META_FILE).write_text(
+                json.dumps({"added_files": added_files}),
+                encoding="utf-8",
+            )
+            shutil.rmtree(staging, ignore_errors=True)
+        else:
+            ignore_names = set(_RESTORE_PRESERVED_ALWAYS) | {stage_name}
+            _move_full_root_to_pre_restore(
+                root,
+                previous,
+                ignore_names=ignore_names,
+                preserve_pg=preserve_pg_effective,
+            )
+            moved_to_previous = True
+            for entry in list(staging.iterdir()):
+                _merge_move_tree(entry, root / entry.name)
+            shutil.rmtree(staging, ignore_errors=True)
+
+        if cleanup_previous and previous.exists():
+            shutil.rmtree(previous, ignore_errors=True)
+
+        apply_shared_server_acl(root)
+        return scope
+    except Exception:
+        if moved_to_previous and previous.exists():
+            try:
+                rollback_in_place_restore(root, preserve_pg=preserve_pg_effective)
+            except OSError:
+                pass
+        raise
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
+
+
+def restore_backup_archive(server_id: str | int, source) -> None:
+    """Atomically replace or update server root contents from a validated tar.gz stream."""
+    root = server_root(server_id)
+    with tempfile.TemporaryDirectory(prefix="msm-agent-rst-") as tmp_dir:
+        archive_path = Path(tmp_dir) / "restore.tar.gz"
         written = 0
         with archive_path.open("wb") as output:
             while chunk := source.read(1024 * 1024):
@@ -1541,38 +1756,18 @@ def restore_backup_archive(server_id: str | int, source) -> None:
                 if written > MAX_CHUNKED_UPLOAD_SIZE:
                     raise ValueError("Restore archive exceeds maximum size")
                 output.write(chunk)
-        with tarfile.open(archive_path, "r:gz") as handle:
-            members = handle.getmembers()
-            _validate_tar_members(staging, members)
-            _extract_tar_members_safe(handle, staging, members)
-        if previous.exists():
-            shutil.rmtree(previous)
-        if root.exists():
-            root.rename(previous)
-        staging.rename(root)
-        apply_shared_server_acl(root)
-    except Exception:
-        if previous.exists() and not root.exists():
-            previous.rename(root)
-        raise
-    finally:
-        archive_path.unlink(missing_ok=True)
-        shutil.rmtree(staging, ignore_errors=True)
+        extract_validated_tar_in_place(root, archive_path)
 
 
 def finalize_backup_restore(server_id: str | int) -> None:
     root = server_root(server_id)
-    previous = root.parent / f".{root.name}-pre-restore"
-    shutil.rmtree(previous, ignore_errors=True)
+    shutil.rmtree(root / _PRE_RESTORE_DIR, ignore_errors=True)
+    shutil.rmtree(root.parent / f".{root.name}-pre-restore", ignore_errors=True)
 
 
 def rollback_backup_restore(server_id: str | int) -> None:
     root = server_root(server_id)
-    previous = root.parent / f".{root.name}-pre-restore"
-    if root.exists():
-        shutil.rmtree(root)
-    if previous.exists():
-        previous.rename(root)
+    rollback_in_place_restore(root)
 
 
 def _upload_paths(server_id: str | int, upload_id: str) -> tuple[Path, Path]:
@@ -1715,73 +1910,222 @@ def ensure_servers_dir() -> None:
         logger.warning("Could not create servers_dir: %s", exc)
 
 
+_BACKUP_EXCLUDE_DIRS: frozenset[str] = frozenset({
+    "node_modules",
+    "__pycache__",
+    ".cache",
+    ".npm",
+    ".git",
+    ".pytest_cache",
+    "dist",
+    "build",
+    "target",
+})
+_BACKUP_EXCLUDE_SUFFIXES: tuple[str, ...] = (".log", ".pyc")
+_BACKUP_INTERNAL_EXCLUDES: frozenset[str] = frozenset({
+    ".msm-uploads",
+    ".msm-config-cache",
+    _PRE_RESTORE_DIR,
+    "lost+found",
+    ".msm-disk-quota",
+})
+
+
+def _add_file_to_tar_safe(tar: tarfile.TarFile, full: Path, arcname: str) -> None:
+    try:
+        info = tar.gettarinfo(str(full), arcname=arcname)
+        if info.issym() or info.islnk() or info.isdev() or info.isfifo():
+            return
+        info.mode = info.mode & 0o777
+        fd = os.open(
+            str(full),
+            os.O_RDONLY
+            | getattr(os, "O_NOFOLLOW", 0)
+            | getattr(os, "O_NONBLOCK", 0)
+            | getattr(os, "O_BINARY", 0),
+        )
+        with os.fdopen(fd, "rb") as member_handle:
+            tar.addfile(info, member_handle)
+    except (OSError, ValueError):
+        return
+
+
+def _should_exclude_rel_parts(parts: tuple[str, ...], *, exclude_pgdata: bool) -> bool:
+    if not parts:
+        return False
+    top = parts[0]
+    if top in _BACKUP_INTERNAL_EXCLUDES or top.startswith(".msm-restore-stage-"):
+        return True
+    if exclude_pgdata and top == "pgdata":
+        return True
+    if parts[:2] == (".msm", "postgres-data"):
+        return True
+    if any(part in _BACKUP_EXCLUDE_DIRS for part in parts):
+        return True
+    return False
+
+
+def write_server_backup_tar_gz(
+    root: Path,
+    tar_dest: str | Path | Any,
+    *,
+    postgres: dict[str, Any] | None = None,
+    include_paths: list[str] | None = None,
+    arcname_prefix: str = "",
+) -> None:
+    """Create a validated backup ``tar.gz`` for ``root`` with Postgres freeze/dump support."""
+    import io
+    from datetime import datetime, timezone
+
+    if not root.is_dir():
+        raise FileNotFoundError("Server directory not found")
+
+    own_instance = bool(postgres and postgres.get("target"))
+    postgres_dumps: dict[str, str] = {}
+    if postgres:
+        from services.postgres_service import dump_databases, ziel
+
+        with ziel(postgres.get("target")):
+            postgres_dumps = dump_databases(
+                admin_password=str(postgres.get("admin_password") or ""),
+                database_names=list(postgres.get("database_names") or []),
+            )
+
+    clean_includes = [str(p).strip() for p in (include_paths or []) if str(p).strip()]
+    scope = "selective" if clean_includes else "full"
+    manifest: dict[str, Any] = {
+        "version": 1,
+        "scope": scope,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+    if scope == "selective":
+        manifest["includePaths"] = clean_includes
+    manifest_bytes = json.dumps(manifest, ensure_ascii=False).encode("utf-8")
+
+    open_kwargs: dict[str, Any] = {"mode": "w:gz"}
+    if isinstance(tar_dest, (str, Path)):
+        open_kwargs["name"] = str(tar_dest)
+    else:
+        open_kwargs["fileobj"] = tar_dest
+
+    with tarfile.open(**open_kwargs) as tar:
+        manifest_info = tarfile.TarInfo(name=_BACKUP_MANIFEST_ARCNAME)
+        manifest_info.size = len(manifest_bytes)
+        manifest_info.mode = 0o600
+        tar.addfile(manifest_info, io.BytesIO(manifest_bytes))
+
+        if clean_includes:
+            candidates: list[Path] = []
+            for pattern in clean_includes:
+                if any(ch in pattern for ch in "*?["):
+                    for match in glob.glob(str(root / pattern), recursive=True):
+                        candidates.append(Path(match))
+                else:
+                    candidates.append(_validated_archive_destination(root, pattern))
+
+            seen_files: set[Path] = set()
+            for candidate in candidates:
+                try:
+                    resolved = candidate.resolve(strict=False)
+                    rel = resolved.relative_to(root)
+                except (ValueError, OSError):
+                    continue
+                if candidate.is_symlink():
+                    continue
+                if candidate.is_dir():
+                    for dirpath, dirnames, filenames in os.walk(candidate, followlinks=False):
+                        current = Path(dirpath)
+                        cur_rel_parts = current.resolve(strict=False).relative_to(root).parts
+                        dirnames[:] = [
+                            name
+                            for name in dirnames
+                            if not (current / name).is_symlink()
+                            and not _should_exclude_rel_parts((*cur_rel_parts, name), exclude_pgdata=own_instance)
+                        ]
+                        for fname in filenames:
+                            full = current / fname
+                            if full.is_symlink() or full in seen_files:
+                                continue
+                            try:
+                                r = full.resolve(strict=False)
+                                r_rel = r.relative_to(root)
+                                st = full.lstat()
+                            except (ValueError, OSError):
+                                continue
+                            if not stat_module.S_ISREG(st.st_mode) or full.suffix in _BACKUP_EXCLUDE_SUFFIXES:
+                                continue
+                            if _should_exclude_rel_parts(r_rel.parts, exclude_pgdata=own_instance):
+                                continue
+                            seen_files.add(full)
+                            _add_file_to_tar_safe(tar, full, f"{arcname_prefix}{r_rel.as_posix()}")
+                elif candidate.is_file() and candidate not in seen_files:
+                    try:
+                        st = candidate.lstat()
+                    except OSError:
+                        continue
+                    if stat_module.S_ISREG(st.st_mode) and not _should_exclude_rel_parts(
+                        rel.parts, exclude_pgdata=own_instance
+                    ):
+                        seen_files.add(candidate)
+                        _add_file_to_tar_safe(tar, candidate, f"{arcname_prefix}{rel.as_posix()}")
+        else:
+            for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
+                current = Path(dirpath)
+                try:
+                    cur_rel_parts = current.resolve(strict=False).relative_to(root).parts
+                except (ValueError, OSError):
+                    dirnames[:] = []
+                    continue
+                dirnames[:] = [
+                    name
+                    for name in dirnames
+                    if not (current / name).is_symlink()
+                    and not _should_exclude_rel_parts((*cur_rel_parts, name), exclude_pgdata=own_instance)
+                ]
+                for name in filenames:
+                    full = current / name
+                    if full.is_symlink():
+                        continue
+                    try:
+                        resolved = full.resolve(strict=False)
+                        rel = resolved.relative_to(root)
+                        st = full.lstat()
+                    except (ValueError, OSError):
+                        continue
+                    if not stat_module.S_ISREG(st.st_mode):
+                        continue
+                    if rel.name.endswith(_BACKUP_EXCLUDE_SUFFIXES) and rel.parts[:1] != (".msm",):
+                        continue
+                    if _should_exclude_rel_parts(rel.parts, exclude_pgdata=own_instance):
+                        continue
+                    _add_file_to_tar_safe(tar, full, f"{arcname_prefix}{rel.as_posix()}")
+
+        for database_name, sql_text in postgres_dumps.items():
+            payload = sql_text.encode("utf-8")
+            info = tarfile.TarInfo(f".msm/postgres/{database_name}.sql")
+            info.size = len(payload)
+            info.mode = 0o600
+            tar.addfile(info, io.BytesIO(payload))
+
+
 def iter_archive_tar_gz(
     server_id: str | int,
     postgres: dict[str, Any] | None = None,
+    *,
+    include_paths: list[str] | None = None,
 ):
-    """Yield tar.gz chunks of the server root (for panel backup streaming).
-
-    Uses tarfile in streaming mode; path escape is prevented by walking only
-    under server_root after realpath checks.
-    """
-    import io
-    import tempfile
-
+    """Yield tar.gz chunks of the server root (for panel backup streaming)."""
     root = server_root(server_id)
     if not root.is_dir():
         raise FileNotFoundError("Server directory not found")
 
-    postgres_dumps: dict[str, str] = {}
-    if postgres:
-        from services.postgres_service import dump_databases
-
-        postgres_dumps = dump_databases(
-            admin_password=str(postgres.get("admin_password") or ""),
-            database_names=list(postgres.get("database_names") or []),
-        )
-
     with tempfile.TemporaryFile() as buf:
-        with tarfile.open(fileobj=buf, mode="w:gz") as tar:
-            for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
-                current = Path(dirpath)
-                dirnames[:] = [name for name in dirnames if not (current / name).is_symlink()]
-                for name in filenames:
-                    full = current / name
-                    try:
-                        resolved = full.resolve(strict=False)
-                        resolved.relative_to(root)
-                    except (ValueError, OSError):
-                        continue
-                    if full.is_symlink():
-                        continue
-                    try:
-                        st = full.lstat()
-                    except OSError:
-                        continue
-                    if not stat_module.S_ISREG(st.st_mode):
-                        continue
-                    arcname = resolved.relative_to(root).as_posix()
-                    try:
-                        info = tar.gettarinfo(str(full), arcname=arcname)
-                        if info.issym() or info.islnk() or info.isdev() or info.isfifo():
-                            continue
-                        fd = os.open(
-                            str(full),
-                            os.O_RDONLY
-                            | getattr(os, "O_NOFOLLOW", 0)
-                            | getattr(os, "O_NONBLOCK", 0)
-                            | getattr(os, "O_BINARY", 0),
-                        )
-                        with os.fdopen(fd, "rb") as member_handle:
-                            tar.addfile(info, member_handle)
-                    except OSError:
-                        continue
-            for database_name, sql_text in postgres_dumps.items():
-                payload = sql_text.encode("utf-8")
-                info = tarfile.TarInfo(f".msm/postgres/{database_name}.sql")
-                info.size = len(payload)
-                info.mode = 0o600
-                tar.addfile(info, io.BytesIO(payload))
+        write_server_backup_tar_gz(
+            root,
+            buf,
+            postgres=postgres,
+            include_paths=include_paths,
+        )
         buf.seek(0)
         while chunk := buf.read(64 * 1024):
             yield chunk

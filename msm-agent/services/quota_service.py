@@ -15,6 +15,7 @@ from __future__ import annotations
 import logging
 import os
 from pathlib import Path
+import re
 import subprocess
 from typing import Any
 
@@ -45,11 +46,17 @@ def _validated_limit_mb(limit_gb: int | float) -> int:
     return max(1024, int(round(gb * 1024)))
 
 
-def _numeric_server_id(server_id: str | int) -> str:
-    sid = str(server_id).strip()
-    if not sid.isdigit() or int(sid) <= 0:
-        raise PathValidationError("Quota requires a positive numeric server_id")
-    return sid
+_SAFE_DIR_KEY_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+
+
+def _validated_server_key(server_id: str | int) -> str:
+    key = str(server_id).strip()
+    if not key or ".." in key or not _SAFE_DIR_KEY_RE.fullmatch(key):
+        raise PathValidationError("Invalid server directory key for quota")
+    if key.isdigit() and int(key) <= 0:
+        raise PathValidationError("Quota requires a positive server_id")
+    # Ensure canonical resolution stays strictly inside servers root.
+    return server_root(key).name
 
 
 def _supports_prjquota(servers_base: Path) -> bool:
@@ -104,7 +111,7 @@ def _run_quota_wrapper(args: list[str], *, timeout: int = 30) -> subprocess.Comp
 
 def apply_quota(server_id: str | int, limit_gb: int | float) -> dict[str, Any]:
     """Ensure hard OS disk quota enforcement for ``server_id`` at ``limit_gb``."""
-    sid = _numeric_server_id(server_id)
+    sid = _validated_server_key(server_id)
     limit_mb = _validated_limit_mb(limit_gb)
     root = server_root(sid)
     root.mkdir(parents=True, exist_ok=True)
@@ -139,7 +146,7 @@ def apply_quota(server_id: str | int, limit_gb: int | float) -> dict[str, Any]:
 
 def remove_quota(server_id: str | int) -> dict[str, Any]:
     """Tear down any loopback mount or project quota for ``server_id`` before deletion."""
-    sid = _numeric_server_id(server_id)
+    sid = _validated_server_key(server_id)
     driver = resolve_quota_driver()
     if driver == "none" or not Path(_QUOTA_WRAPPER).is_file():
         return {"ok": True, "removed": False}
@@ -148,7 +155,7 @@ def remove_quota(server_id: str | int) -> dict[str, Any]:
 
 
 def inspect_quota(server_id: str | int) -> dict[str, Any]:
-    sid = _numeric_server_id(server_id)
+    sid = _validated_server_key(server_id)
     root = server_root(sid)
     marker = root / _META_FILENAME
     if not marker.is_file() or marker.is_symlink():

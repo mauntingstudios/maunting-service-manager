@@ -1617,6 +1617,8 @@ def repair_bind_mount_permissions(
     container_path: str = PERMISSION_REPAIR_CONTAINER_DIR,
     owner_uid_gid: tuple[int, int] | None = None,
     timeout: int = 600,
+    node: Any | None = None,
+    server_id: int | str | None = None,
 ) -> dict:
     """Normalisiert Owner/Rechte eines Server-Bind-Mounts im Container-Kontext.
 
@@ -1627,65 +1629,66 @@ def repair_bind_mount_permissions(
       Serververzeichnisses; ``setgid`` sorgt dafuer, dass neue Dateien sie
       erben.
     - Symlinks werden nicht verfolgt; nur der Link selbst wird gechowned.
-
-    **Hier stand einmal ``chmod a+rwX``**, und das ``a`` war das Problem: es
-    umfasst „andere“, machte also jede Serverdatei fuer jeden Prozess auf dem
-    Host beschreibbar. Das war der schnelle Weg dahin, dass Panel (uid 994)
-    und Spielprozess (gemappte uid aus /etc/subuid) dieselben Dateien
-    anfassen koennen — er oeffnete aber weiter als noetig, und er machte jedes
-    Aufraeumen wieder zunichte, sobald er einmal ansprang.
-
-    Der Weg dorthin fuehrt jetzt ueber die Gruppe des Serververzeichnisses:
-    ``scripts/fix-server-permissions.sh`` legt sie an und macht ``msm`` zum
-    Mitglied. Diese Funktion uebernimmt sie fuer alles darunter und setzt
-    ``g+s`` auf Verzeichnisse — damit erbt auch jede Datei, die der
-    Spielprozess spaeter selbst schreibt, dieselbe Gruppe. „Andere“ bleiben
-    aussen vor.
-
-    Der Zugriffsschutz haengt ohnehin eine Ebene hoeher: ``/opt/msm`` darf nur
-    ``msm`` betreten, und wer im Panel an die Dateien kommt, entscheidet
-    ``server.files.read``/``.write``.
+    - Bei Agent-delegierten Nodes erfolgt die Reparatur auf dem Ziel-Node.
     """
+    from services.node_capacity import agent_server_key, should_delegate_node_fs_to_agent
+
+    if should_delegate_node_fs_to_agent(node):
+        from services.node_client import NodeClient
+
+        resolved_key = agent_server_key(server_id or "", host_path)
+        return NodeClient.from_node(node).files_repair_permissions(
+            resolved_key, owner_uid_gid=owner_uid_gid
+        )
+
     base = os.path.realpath(host_path)
     if not os.path.isdir(base):
         return {"ok": False, "error": "Server-Verzeichnis existiert nicht", "stdout": "", "stderr": ""}
 
-    # Die Gruppe, die Panel und Spielprozess teilen: die des Serververzeichnisses.
-    # Sie steht schon dran, wenn `fix-server-permissions.sh` gelaufen ist; sonst
-    # ist es die Gruppe dessen, der das Verzeichnis angelegt hat, und dann ist
-    # das Ergebnis dasselbe wie zuvor — nur ohne Weltrechte.
     try:
         geteilte_gid = os.stat(base).st_gid
     except OSError:
         geteilte_gid = None
 
-    target = shlex.quote(container_path.rstrip("/") or PERMISSION_REPAIR_CONTAINER_DIR)
+    raw_target = container_path.rstrip("/") or PERMISSION_REPAIR_CONTAINER_DIR
+    target = shlex.quote(raw_target)
+    prune_expr = (
+        f"\\( -path {shlex.quote(raw_target + '/pgdata')} "
+        f"-o -path {shlex.quote(raw_target + '/tls')} "
+        f"-o -path {shlex.quote(raw_target + '/lost+found')} \\) -prune -o"
+    )
+    has_protected = any(os.path.exists(os.path.join(base, d)) for d in ("pgdata", "tls", "lost+found"))
     # Kein set -e: einzelne chmod/chown-Fehler (z. B. root-owned Dateien unter
     # Rootless Docker) duerfen den gesamten Start nicht abbrechen.
     script_parts = []
     if geteilte_gid is not None:
         # Gruppe **vor** den Rechten: sonst traegt eine Datei kurz g+rw fuer
         # eine Gruppe, der sie gleich nicht mehr gehoert.
-        script_parts.append(
-            f"chgrp -R {int(geteilte_gid)} {target} 2>/dev/null || true"
-        )
+        if has_protected:
+            script_parts.append(
+                f"find {target} {prune_expr} -exec chgrp {int(geteilte_gid)} {{}} + 2>/dev/null || true"
+            )
+        else:
+            script_parts.append(
+                f"chgrp -R {int(geteilte_gid)} {target} 2>/dev/null || true"
+            )
     script_parts.extend([
         # `g+s` auf Verzeichnissen ist der Teil, der das Ergebnis **haelt**:
         # ohne ihn traegt jede neu angelegte Datei wieder die Gruppe ihres
         # Erzeugers, und in ein paar Tagen passt nichts mehr zusammen.
-        f"find {target} -xdev -type d -exec chmod u+rwx,g+rwxs,o-rwx {{}} + 2>/dev/null || true",
-        f"find {target} -xdev -type f -exec chmod u-s,g-s,u+rw,g+rw,o-rwx {{}} + 2>/dev/null || true",
+        f"find {target} {prune_expr} -xdev -type d -exec chmod u+rwx,g+rwxs,o-rwx {{}} + 2>/dev/null || true",
+        f"find {target} {prune_expr} -xdev -type f -exec chmod u-s,g-s,u+rw,g+rw,o-rwx {{}} + 2>/dev/null || true",
         # Ausfuehrbare Dateien behalten ihr x fuer die Gruppe — Spielserver
         # starten sonst nicht, weil ihre Startskripte nicht mehr laufen.
-        f"find {target} -xdev -type f -perm -u+x -exec chmod g+x {{}} + 2>/dev/null || true",
+        f"find {target} {prune_expr} -xdev -type f -perm -u+x -exec chmod g+x {{}} + 2>/dev/null || true",
     ])
     if owner_uid_gid is not None:
         uid, gid = owner_uid_gid
         owner = f"{int(uid)}:{int(gid)}"
         script_parts.extend([
-            f"find {target} -xdev -type d -exec chown {owner} {{}} + 2>/dev/null || true",
-            f"find {target} -xdev -type f -exec chown {owner} {{}} + 2>/dev/null || true",
-            f"find {target} -xdev -type l -exec chown -h {owner} {{}} + 2>/dev/null || true",
+            f"find {target} {prune_expr} -xdev -type d -exec chown {owner} {{}} + 2>/dev/null || true",
+            f"find {target} {prune_expr} -xdev -type f -exec chown {owner} {{}} + 2>/dev/null || true",
+            f"find {target} {prune_expr} -xdev -type l -exec chown -h {owner} {{}} + 2>/dev/null || true",
         ])
     script = "; ".join(script_parts) + "; exit 0"
     return run_ephemeral(

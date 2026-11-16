@@ -161,6 +161,7 @@ def run_backup(
                     for chunk in client.files_archive(
                         agent_server_key(server.id, server.install_dir),
                         postgres=backup_context(db, server_id),
+                        include_paths=list(plan.include_paths) if plan.scope == "selective" else None,
                     ):
                         out.write(chunk)
             except NodeClientError as exc:
@@ -189,6 +190,7 @@ def run_backup(
                 encryption_algorithm=encryption_algorithm,
             )
 
+        locally_encrypted = False
         if encrypt_local:
             # 0600-Permissions auf Plaintext tar.gz im 0700 temp-dir
             try:
@@ -199,6 +201,7 @@ def run_backup(
             # Best-Effort: bei DIS-Fehler Fall back zu plaintext tar.gz (wie S3)
             try:
                 _encrypt_local_backup(tar_filepath, final_filepath)
+                locally_encrypted = True
                 # Plaintext tar.gz sicher loeschen (shutil.rmtree tmp_dir unten
                 # ist redundant, aber explicit os.remove fuer Defense-in-Depth)
                 try:
@@ -212,6 +215,7 @@ def run_backup(
                     "Lokale Verschluesselung fehlgeschlagen (%s) — Backup als plaintext (backward compat)",
                     type(enc_exc).__name__,
                 )
+                locally_encrypted = False
                 final_filepath = os.path.join(
                     backup_dir, f"server_{server_id}_{timestamp}.tar.gz"
                 )
@@ -256,6 +260,7 @@ def run_backup(
             filename=final_filepath,
             size_mb=size_mb,
             name=name or None,
+            encrypted=locally_encrypted,
             # Nachgemessen ist nachgemessen. Der Zeitpunkt wird hier gesetzt und
             # nicht spaeter durch den S3-Zweig ueberschrieben: der lokale
             # Nachweis steht fuer sich, auch wenn der Upload scheitert.

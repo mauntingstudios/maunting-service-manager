@@ -401,6 +401,7 @@ def provision_server(
                     server.id,
                     server.disk_limit_gb,
                     enforce=True,
+                    install_dir=server.install_dir,
                 )
             else:
                 os.makedirs(install_dir, exist_ok=False)
@@ -412,11 +413,13 @@ def provision_server(
         except Exception as exc:
             if created_install_dir and is_agent_fs:
                 try:
-                    from services.node_capacity import remove_node_disk_quota
+                    from services.node_capacity import agent_server_key, remove_node_disk_quota
                     from services.node_client import NodeClient
 
-                    remove_node_disk_quota(target_node, server.id)
-                    NodeClient.from_node(target_node).files_delete_server_root(server.id)
+                    remove_node_disk_quota(target_node, server.id, install_dir=server.install_dir)
+                    NodeClient.from_node(target_node).files_delete_server_root(
+                        agent_server_key(server.id, server.install_dir)
+                    )
                 except Exception:
                     pass
             db.delete(server)
@@ -615,7 +618,9 @@ def provision_server(
                     if should_delegate_node_fs_to_agent(target_node):
                         from services.node_client import NodeClient
 
-                        remove_node_disk_quota(target_node, failed_server_id)
+                        remove_node_disk_quota(
+                            target_node, failed_server_id, install_dir=failed_install_dir
+                        )
                         NodeClient.from_node(target_node).files_delete_server_root(failed_server_id)
                     elif failed_install_dir and os.path.exists(failed_install_dir):
                         shutil.rmtree(failed_install_dir)

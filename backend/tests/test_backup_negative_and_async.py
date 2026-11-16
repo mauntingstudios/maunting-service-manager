@@ -353,6 +353,22 @@ class TestBackgroundBackupAndStatus:
         assert st2.status_code == 200
         assert "last_error" not in st2.json()
 
+    def test_background_backup_aborts_if_distributed_lock_is_held(self, db: Session, tmp_path: Path):
+        from routers.backups import _run_background_backup_job
+        from services.backup_service import clear_active_backup_status, get_active_backup_status, set_active_backup_status
+
+        srv, _ = _make_local_server(db, tmp_path, "lock_skip")
+        set_active_backup_status(srv.id, "creating", 5)
+        try:
+            with patch("services.redis_backplane.acquire_distributed_lock", return_value=None), \
+                 patch("services.backup_orchestrator.create_server_backup") as create_mock:
+                _run_background_backup_job(srv.id, "Dup", 1)
+            create_mock.assert_not_called()
+            # Must NOT wipe the active status belonging to the live lock holder
+            assert get_active_backup_status(srv.id) is not None
+        finally:
+            clear_active_backup_status(srv.id)
+
     def test_status_endpoint_is_exempt_from_global_rate_limit(
         self, client: TestClient, owner_cookies: dict, db: Session, tmp_path: Path
     ):
