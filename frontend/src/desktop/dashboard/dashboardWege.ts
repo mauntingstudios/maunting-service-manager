@@ -24,7 +24,7 @@ export const DASHBOARD_SEITEN: DashboardSeite[] = [
   { to: '/users', labelKey: 'nav.users', gruppe: 'Administration' },
   { to: '/roles', labelKey: 'nav.roles', gruppe: 'Administration' },
   { to: '/admin/audit', labelKey: 'nav.audit', gruppe: 'Administration' },
-  // Nicht „Einstellungen“ wie in der Web-Seitenleiste: in der App heißen so
+  // Nicht „Einstellungen“ wie in der Web-Kopfleiste: in der App heißen so
   // schon die Geräteeinstellungen im Profilmenü. Die Seite bleibt dieselbe.
   { to: '/settings', labelKey: 'mss.dashboard.panelEinstellungen', gruppe: 'Panel' },
   { to: '/blueprints', labelKey: 'nav.blueprints', gruppe: 'Panel' },

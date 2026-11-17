@@ -2,9 +2,9 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Monitor, Smartphone } from 'lucide-react'
 import { api } from '@/api/client'
-import { SidebarDownloadBadge } from './SidebarDownloadBadge'
+import { DownloadKnopf, DownloadZeile } from './DownloadKnopf'
 
-export function DesktopAppDownloadBadge() {
+export function DesktopAppDownloadBadge({ variante = 'knopf' }: { variante?: 'knopf' | 'zeile' } = {}) {
   const { t } = useTranslation()
   const [enabled, setEnabled] = useState<boolean>(true)
 
@@ -40,11 +40,12 @@ export function DesktopAppDownloadBadge() {
     ? t('desktopBadge.androidTooltip')
     : t('desktopBadge.tooltip')
 
+  const Darstellung = variante === 'zeile' ? DownloadZeile : DownloadKnopf
   return (
-    <SidebarDownloadBadge
+    <Darstellung
       href={downloadUrl}
       icon={isAndroid ? <Smartphone className="w-4 h-4" /> : <Monitor className="w-4 h-4" />}
-      title={titleText}
+      titel={titleText}
       subtext={subtext}
       tooltip={tooltip}
     />

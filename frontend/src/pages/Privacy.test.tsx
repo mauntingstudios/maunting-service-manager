@@ -403,7 +403,7 @@ describe('Privacy page', () => {
   });
 
   /**
-   * Die Download-Hinweise in der Seitenleiste sind der einzige Ort, an dem das Panel auf
+   * Die Download-Hinweise in der Kopfleiste sind der einzige Ort, an dem das Panel auf
    * einen Fremdserver verweist, den der Betreiber nicht selbst eingetragen hat. Wer darauf
    * klickt, gibt GitHub seine IP-Adresse — das gehoert benannt, und zwar bevor jemand klickt.
    */

@@ -13,10 +13,10 @@ interface SprungleisteProps {
 /**
  * Klebende Leiste mit Sprungmarken zu den Abschnitten einer langen Seite.
  *
- * Sie klebt direkt unter der Kopfleiste: am Handy unter der 48-px-Topbar
- * (`top-12`), ab `lg` gibt es keine Topbar, also ganz oben (`top-0`). Bis
- * 27.09.2026 klebte sie bei `top-16` — auf dem Desktop scrollte der Inhalt
- * durch die 64-px-Lücke darüber und sah aus, als liefe er durch die Reiter.
+ * Sie klebt direkt unter der Kopfleiste: die Topbar ist auf allen Breiten
+ * 56 px hoch (`top-14`). Bis 27.09.2026 klebte sie bei `top-16` — auf dem
+ * Desktop scrollte der Inhalt durch die 64-px-Lücke darüber und sah aus, als
+ * liefe er durch die Reiter.
  *
  * Die Zielüberschriften brauchen `SPRUNGZIEL_ABSTAND`, sonst landen sie beim
  * Anspringen unter der Leiste.
@@ -25,7 +25,7 @@ export function Sprungleiste({ label, ziele }: SprungleisteProps) {
   return (
     <nav
       aria-label={label}
-      className="sticky top-12 z-20 -mx-1 mb-6 flex gap-2 overflow-x-auto border-b border-outline-variant bg-background/95 px-1 py-2 backdrop-blur-xl msm-ohne-rollbalken lg:top-0"
+      className="sticky top-14 z-20 -mx-1 mb-6 flex gap-2 overflow-x-auto border-b border-outline-variant bg-background/95 px-1 py-2 backdrop-blur-xl msm-ohne-rollbalken"
     >
       {ziele.map(ziel => (
         <a key={ziel.id} href={`#${ziel.id}`} className={buttonClasses('secondary', 'sm', 'shrink-0')}>
@@ -36,5 +36,5 @@ export function Sprungleiste({ label, ziele }: SprungleisteProps) {
   )
 }
 
-/** Topbar (48 px, nur unter `lg`) plus Leiste (49 px) plus etwas Luft. */
-export const SPRUNGZIEL_ABSTAND = 'scroll-mt-28 lg:scroll-mt-16'
+/** Topbar (56 px) plus Leiste (49 px) plus etwas Luft. */
+export const SPRUNGZIEL_ABSTAND = 'scroll-mt-28'

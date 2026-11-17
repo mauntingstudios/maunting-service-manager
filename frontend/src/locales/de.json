@@ -2403,12 +2403,8 @@
     }
   },
   "shell": {
-    "openNavigation": "Navigation öffnen",
     "closeNavigation": "Navigation schließen",
-    "collapseSidebar": "Seitenleiste einklappen",
-    "expandSidebar": "Seitenleiste einblenden",
-    "mainNavigation": "Hauptnavigation",
-    "areas": "Bereiche"
+    "mainNavigation": "Hauptnavigation"
   },
   "nodes": {
     "subtitle": "Lokale und entfernte Nodes verwalten, Systemauslastung überwachen und Agenten anbinden.",
@@ -4510,7 +4506,7 @@
     "updatesAutomatic": "Automatische Updates",
     "updatesAutomaticHint": "Panel und Remote-Nodes aktualisieren sich bei neuem GitHub-Commit automatisch.",
     "desktopDownloadPromo": "Desktop-App Download-Banner anzeigen",
-    "desktopDownloadPromoHint": "Zeigt in der Seitenleiste den MSS-Download für Windows.",
+    "desktopDownloadPromoHint": "Zeigt in der Kopfleiste den MSS-Download für Windows.",
     "calendarEnabled": "Integrierter Kalender",
     "calendarEnabledHint": "Schaltet Kalender und KI-Terminverwaltung ein.",
     "notesEnabled": "Integrierte Notizen",
@@ -4763,7 +4759,7 @@
     },
     "loadFailed": "Laden fehlgeschlagen",
     "browserPromo": "Maunting-Pontis-Hinweis anzeigen",
-    "browserPromoHint": "Blendet in der Seitenleiste über dem MSS-Download einen Hinweis auf Maunting Pontis ein.",
+    "browserPromoHint": "Blendet in der Kopfleiste neben dem MSS-Download einen Hinweis auf Maunting Pontis ein.",
     "docsEnabled": "Dokumente",
     "docsEnabledHint": "Rich-Text-Dokumente für Teams mit Echtzeit-Bearbeitung.",
     "seasonal": {
@@ -6396,7 +6392,7 @@
           "oauth": "OAuth: Account-Kennung, vom Anbieter freigegebene Profildaten und Anmeldemetadaten",
           "support": "Support-Widget: Verbindungsmetadaten und vom Nutzer eingegebene Inhalte; das Widget wartet auf die Bestätigung dieses Hinweises",
           "s3": "S3-kompatibler Speicher: verschlüsselte Backup-Objekte sowie technische Objekt-, Account-, Zeit- und Übertragungsmetadaten",
-          "downloads": "Download-Hinweise (GitHub): Der Betreiber kann in der Seitenleiste Hinweise auf die Maunting-Apps einblenden — das Maunting Smart System und Maunting Story Fable. Das sind gewöhnliche Links; solange Sie sie nicht anklicken, geht keine Anfrage hinaus. Klicken Sie einen an, lädt Ihr Browser die Datei direkt von GitHub, und GitHub erfährt dabei Ihre IP-Adresse, den Zeitpunkt und die angeforderte Datei. Das Panel ist daran nicht beteiligt und erfährt nicht, ob Sie geladen haben. Beide Hinweise lassen sich in den Panel-Einstellungen unter „Allgemein“ abschalten."
+          "downloads": "Download-Hinweise (GitHub): Der Betreiber kann in der Kopfleiste Hinweise auf die Maunting-Apps einblenden — das Maunting Smart System und Maunting Story Fable. Das sind gewöhnliche Links; solange Sie sie nicht anklicken, geht keine Anfrage hinaus. Klicken Sie einen an, lädt Ihr Browser die Datei direkt von GitHub, und GitHub erfährt dabei Ihre IP-Adresse, den Zeitpunkt und die angeforderte Datei. Das Panel ist daran nicht beteiligt und erfährt nicht, ob Sie geladen haben. Beide Hinweise lassen sich in den Panel-Einstellungen unter „Allgemein“ abschalten."
         }
       },
       "ai": {

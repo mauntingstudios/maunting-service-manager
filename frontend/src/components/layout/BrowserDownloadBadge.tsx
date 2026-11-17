@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { Globe, Smartphone } from 'lucide-react'
 import { api } from '@/api/client'
 import { geraeteArt } from '@/desktop/geraeteArt'
-import { SidebarDownloadBadge } from './SidebarDownloadBadge'
+import { DownloadKnopf, DownloadZeile } from './DownloadKnopf'
 
 /**
  * Hinweis auf Maunting Pontis fuer Windows und Android.
@@ -12,7 +12,7 @@ import { SidebarDownloadBadge } from './SidebarDownloadBadge'
  * Wer das Panel bereits im MSB benutzt (geraeteArt() === 'browser'), sieht den
  * Hinweis nicht — wer schon im Browser surft, muss ihn nicht nochmals laden.
  */
-export function BrowserDownloadBadge() {
+export function BrowserDownloadBadge({ variante = 'knopf' }: { variante?: 'knopf' | 'zeile' } = {}) {
   const { t } = useTranslation()
   const [enabled, setEnabled] = useState<boolean>(true)
 
@@ -48,11 +48,12 @@ export function BrowserDownloadBadge() {
     ? t('browserBadge.androidTooltip')
     : t('browserBadge.tooltip')
 
+  const Darstellung = variante === 'zeile' ? DownloadZeile : DownloadKnopf
   return (
-    <SidebarDownloadBadge
+    <Darstellung
       href={downloadUrl}
       icon={isAndroid ? <Smartphone className="w-4 h-4" /> : <Globe className="w-4 h-4" />}
-      title={titleText}
+      titel={titleText}
       subtext={subtext}
       tooltip={tooltip}
     />

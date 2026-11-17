@@ -28,7 +28,6 @@ const UEBERSCHRIFT = new Set([
   'SettingRow',
   'SettingsLayout',
   'SettingsSection',
-  'SidebarDownloadBadge',
   'SocialPostList',
   'iframe',
 ])

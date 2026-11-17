@@ -5,7 +5,7 @@
  * (`pages/Settings.tsx` ist dort eine andere Datei als die Geräteeinstellungen
  * der App). Ein Wechsel im Web wirkt damit sofort hier; es gibt keine Kopie.
  * Welche Seite sichtbar ist, entscheidet `usePanelNavigation` — dieselbe Quelle
- * wie die Seitenleiste im Web.
+ * wie die Kopfleiste im Web.
  */
 import { lazy, Suspense, useEffect, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useOutletContext } from 'react-router-dom'
+import type { ShellOutletKontext } from '@/components/layout/Shell'
 import { api } from '@/api/client'
 import { toast } from '@/stores/toastStore'
 import { confirm } from '@/stores/confirmStore'
@@ -51,6 +52,10 @@ function splitCidrs(text: string): string[] {
 }
 
 export function Servers({ ohneHintergrund = false }: { ohneHintergrund?: boolean }) {
+  const huelle = useOutletContext<ShellOutletKontext | null>()
+  // Die Hülle trägt das Bild auf Dashboard-Routen; die Prop bleibt für die
+  // MSS-App, die dieselbe Seite einbettet.
+  const ohneEigenenHintergrund = ohneHintergrund || huelle?.ohneHintergrund === true
   const { t } = useTranslation()
   const navigate = useNavigate()
   const canCreateServer = useHasPermission('servers.create')
@@ -411,7 +416,7 @@ export function Servers({ ohneHintergrund = false }: { ohneHintergrund?: boolean
 
   return (
     <div className="relative isolate flex flex-col h-full w-full min-h-0 overflow-y-auto text-on-surface scrollbar-thin">
-      {!ohneHintergrund && (
+      {!ohneEigenenHintergrund && (
         <TageszeitHintergrund
           motiv={headerMotiv}
           hoehe="h-[520px] sm:h-[580px] lg:h-[640px]"
@@ -420,7 +425,7 @@ export function Servers({ ohneHintergrund = false }: { ohneHintergrund?: boolean
         />
       )}
 
-      <main className={`relative z-10 mx-auto w-full max-w-7xl 2xl:max-w-[1600px] px-3.5 ${ohneHintergrund ? 'pt-2 sm:pt-3' : 'pt-4 sm:pt-6'} pb-12 sm:px-6 lg:px-8 space-y-6`}>
+      <main className={`relative z-10 mx-auto w-full max-w-7xl 2xl:max-w-[1600px] px-3.5 ${ohneEigenenHintergrund ? 'pt-2 sm:pt-3' : 'pt-4 sm:pt-6'} pb-12 sm:px-6 lg:px-8 space-y-6`}>
         {/* Freischwebender Server-Header ohne doppelten Gruß oder Banner-Kasten */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
           <div>
@@ -428,7 +433,7 @@ export function Servers({ ohneHintergrund = false }: { ohneHintergrund?: boolean
               <ServerIcon className="h-4 w-4" aria-hidden="true" />
               <span>{t('nav.servers')}</span>
             </div>
-            {!ohneHintergrund && (
+            {!ohneEigenenHintergrund && (
               <h1 className="mt-1 font-headline text-2xl sm:text-3xl font-extrabold tracking-tight text-on-surface">
                 {t('nav.servers')}
               </h1>

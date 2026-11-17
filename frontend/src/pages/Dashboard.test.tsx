@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, Outlet, Route, Routes } from 'react-router-dom'
 import * as client from '@/api/client'
 import i18n from '@/i18n'
 import { useServerPreferencesStore } from '@/stores/serverPreferencesStore'
@@ -240,5 +240,48 @@ describe('Dashboard — Ladefehler statt Leerzustand', () => {
       .getAllByTestId(/^dashboard-node-item-/)
       .map((el) => el.getAttribute('data-testid'))
     expect(nodeItemsOrder).toEqual(['dashboard-node-item-2', 'dashboard-node-item-1'])
+  })
+})
+
+/**
+ * Auf Dashboard-Routen trägt die Hülle das Bild ab der Oberkante; die Seite
+ * rendert keines, sonst läge die Reiterzeile auf flachem Grund und läse sich
+ * als dunkler Balken. Gesteuert über den Outlet-Kontext der Hülle.
+ */
+describe('Dashboard — Hintergrund der Hülle', () => {
+  beforeEach(async () => {
+    vi.mocked(client.api).mockReset()
+    vi.mocked(client.api).mockImplementation(async (path: string) => antwort(path))
+    vi.mocked(permissions.useHasPermission).mockReturnValue(false)
+    await i18n.changeLanguage('de')
+  })
+
+  function renderMitHuelle(ohneHintergrund: boolean) {
+    return render(
+      <MemoryRouter initialEntries={['/']}>
+        <Routes>
+          <Route element={<Outlet context={{ ohneHintergrund }} />}>
+            <Route index element={<Dashboard />} />
+          </Route>
+        </Routes>
+      </MemoryRouter>,
+    )
+  }
+
+  function eigenesBild(container: HTMLElement) {
+    return Array.from(container.querySelectorAll<HTMLElement>('[aria-hidden="true"]'))
+      .find((element) => element.style.backgroundImage.includes('/assets/'))
+  }
+
+  it('lässt das eigene Bild weg, wenn die Hülle es trägt', async () => {
+    const { container } = renderMitHuelle(true)
+    expect(await screen.findByText('Erstelle deinen ersten Server, um loszulegen.')).toBeInTheDocument()
+    expect(eigenesBild(container)).toBeUndefined()
+  })
+
+  it('rendert das eigene Bild, wenn die Hülle keines trägt', async () => {
+    const { container } = renderMitHuelle(false)
+    expect(await screen.findByText('Erstelle deinen ersten Server, um loszulegen.')).toBeInTheDocument()
+    expect(eigenesBild(container)).toBeDefined()
   })
 })

@@ -125,9 +125,11 @@ vi.mock('@/components/ai/AiRunNotice', () => ({
 // Der Ersatz muss selbst ein Hook sein: als blosse Funktion faellt nicht auf,
 // wenn die App ihn nur unter einer Bedingung aufruft. Genau das liess die
 // App bei jedem Netzwechsel abstuerzen, waehrend die Offline-Tests gruen waren.
-vi.mock('@/hooks/useHasPermission', async () => {
+vi.mock('@/hooks/useHasPermission', async (importOriginal) => {
   const { useRef } = await import('react')
+  const actual = await importOriginal<typeof import('@/hooks/useHasPermission')>()
   return {
+    ...actual,
     useHasPermission: () => {
       useRef(null)
       return true

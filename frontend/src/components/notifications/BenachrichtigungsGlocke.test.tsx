@@ -182,14 +182,14 @@ describe('BenachrichtigungsGlocke', () => {
     }
   })
 
-  it('klappt in der Seitenleiste oben nach unten, wenn darüber kein Platz ist', () => {
+  it('klappt oben nach unten, wenn darüber kein Platz ist', () => {
     const layout = fakeLayout({
       fenster: { breite: 1024, hoehe: 768 },
       anker: { left: 210, top: 10, width: 36, height: 36 },
       popover: { width: 320, height: 250 },
     })
     try {
-      render(<BenachrichtigungsGlocke placement="top" align="sidebar" />)
+      render(<BenachrichtigungsGlocke placement="top" align="left" />)
       fireEvent.click(screen.getByRole('button', { name: /benachrichtigungen/i }))
       const menu = screen.getByRole('menu')
       expect(menu.style.top).toBe(`${46 + 8}px`)

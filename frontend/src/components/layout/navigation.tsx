@@ -40,7 +40,7 @@ interface NavigationAccess {
 }
 
 /**
- * Baut die Sidebar-Navigation anhand von Labels und Permission-Flags.
+ * Baut die Panel-Navigation anhand von Labels und Permission-Flags.
  * Keine Secrets, keine Fachlogik — reine Sichtbarkeitsregeln.
  */
 export function buildNavigation(labels: Record<string, string>, access: NavigationAccess): NavigationItem[] {

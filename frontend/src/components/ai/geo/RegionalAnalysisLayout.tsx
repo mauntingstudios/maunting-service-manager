@@ -57,18 +57,6 @@ export function RegionalAnalysisLayout({
     }
   }, [data?.camera?.command_id])
 
-  // Blendet bei aktiver 3-Spalten-Kommandozentrale die Sidebar aus, um vollen Platz zu bieten
-  useEffect(() => {
-    if (active) {
-      window.dispatchEvent(new CustomEvent('msm:toggle-sidebar', { detail: { hidden: true } }))
-    } else {
-      window.dispatchEvent(new CustomEvent('msm:toggle-sidebar', { detail: { hidden: false } }))
-    }
-    return () => {
-      window.dispatchEvent(new CustomEvent('msm:toggle-sidebar', { detail: { hidden: false } }))
-    }
-  }, [active])
-
   if (!active) {
     return (
       <div className="flex h-full w-full min-h-0 flex-1 flex-col overflow-hidden">

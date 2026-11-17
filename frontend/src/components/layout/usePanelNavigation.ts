@@ -11,7 +11,7 @@ import { buildNavigation, type NavigationItem } from './navigation'
 /**
  * Die Navigation des Panels samt ihrer Sichtbarkeitsregeln.
  *
- * Die Seitenleiste im Web und das Dashboard in der App lesen dieselbe Quelle.
+ * Die Kopfleiste im Web und das Dashboard in der App lesen dieselbe Quelle.
  * Wer eine Route, ein Recht oder eine Gruppe ändert, ändert damit beide
  * Oberflächen — es gibt keinen zweiten Nachbau der Regeln.
  */

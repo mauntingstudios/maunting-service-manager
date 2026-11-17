@@ -170,24 +170,6 @@
            bg-primary/[0.06] p-3 font-body-md text-sm text-primary;
   }
 
-  /* ── Navigation: die Maunting-Rail ─────────────────────────────────── */
-
-  .msm-nav-link {
-    @apply relative mx-2 my-0.5 flex items-center gap-3 rounded-control px-3 py-2.5
-           font-label-md text-label-md text-on-surface-variant
-           transition-colors duration-150
-           hover:bg-surface-container-high/55 hover:text-on-surface;
-  }
-
-  .msm-nav-link-active {
-    @apply msm-nav-link bg-primary/10 font-semibold text-primary;
-  }
-
-  .msm-nav-link-active::before {
-    content: '';
-    @apply absolute left-0 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-full bg-primary;
-  }
-
   /* ── Einstellungen: Zeilen statt Kärtchen ──────────────────────────── */
 
   .mui-settings .msm-card {

@@ -125,7 +125,7 @@ export function Privacy({ zurueck, zurueckAktion }: { zurueck?: string; zurueckA
           t('privacyPolicy.sections.providers.items.oauth'),
           t('privacyPolicy.sections.providers.items.support'),
           t('privacyPolicy.sections.providers.items.s3'),
-          // Die Download-Hinweise in der Seitenleiste sind der einzige Ort, an dem das Panel
+          // Die Download-Hinweise in der Kopfleiste sind der einzige Ort, an dem das Panel
           // auf einen Fremdserver verweist, ohne dass der Betreiber ihn konfiguriert hat.
           t('privacyPolicy.sections.providers.items.downloads'),
         ],

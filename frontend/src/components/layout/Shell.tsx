@@ -1,10 +1,7 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
-import { useTranslation } from 'react-i18next'
-import { ChevronRight } from 'lucide-react'
-import { Kurzinfo } from '@maunting/ui'
-import { Sidebar } from './Sidebar'
 import { Topbar } from './Topbar'
+import { DashboardReiter } from './DashboardReiter'
 import { VersionFooter } from '@/components/VersionFooter'
 import { AiRunNotice } from '@/components/ai/AiRunNotice'
 import { ServerIncidentNotifier } from '@/components/notifications/ServerIncidentNotifier'
@@ -25,16 +22,19 @@ import { usePresenceAndActivity } from '@/hooks/usePresenceAndActivity'
 import { MessengerHintergrund } from '@/browser/MessengerHintergrund'
 import { chatIstOffen } from '@/lib/chatVollbild'
 import { SmartcardWalletModal } from '@/desktop/vault/SmartcardWalletModal'
+import { istDashboardRoute } from '@/desktop/dashboard/dashboardWege'
+
+/** Was die Hülle ihren Seiten über den Outlet-Kontext mitteilt. */
+export interface ShellOutletKontext {
+  /** Die Hülle trägt das Bild; die Seite rendert keines (Dashboard-Routen). */
+  ohneHintergrund: boolean
+}
 
 export function Shell() {
-  const { t } = useTranslation()
   useMessengerSperreBereitschaft()
 
-  const [mobileNavigationOpen, setMobileNavigationOpen] = useState(false)
-  const [sidebarHidden, setSidebarHidden] = useState(false)
   const [socialEnabled, setSocialEnabled] = useState(true)
   const [walletOpen, setWalletOpen] = useState(false)
-  const mobileNavigationTriggerRef = useRef<HTMLButtonElement>(null)
 
   const { status: presenceStatus, effectiveStatus: presenceEffektiv, changeStatus: handlePresenceChange } = usePresenceAndActivity(socialEnabled, true)
 
@@ -53,41 +53,6 @@ export function Shell() {
       })
       .catch(() => {})
   }, [])
-
-  useEffect(() => {
-    const handleToggle = (e: Event) => {
-      const custom = e as CustomEvent<{ hidden?: boolean }>
-      setSidebarHidden(
-        typeof custom.detail?.hidden === 'boolean'
-          ? custom.detail.hidden
-          : (prev) => !prev,
-      )
-    }
-    window.addEventListener('msm:toggle-sidebar', handleToggle)
-    return () => window.removeEventListener('msm:toggle-sidebar', handleToggle)
-  }, [])
-
-  useEffect(() => {
-    if (!mobileNavigationOpen) return
-    const previousOverflow = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        mobileNavigationTriggerRef.current?.focus()
-        setMobileNavigationOpen(false)
-      }
-    }
-    document.addEventListener('keydown', onKeyDown)
-    return () => {
-      document.removeEventListener('keydown', onKeyDown)
-      document.body.style.overflow = previousOverflow
-    }
-  }, [mobileNavigationOpen])
-
-  const closeMobileNavigation = () => {
-    mobileNavigationTriggerRef.current?.focus()
-    setMobileNavigationOpen(false)
-  }
 
   const location = useLocation()
   const isAiPage = location.pathname === '/ai' || location.pathname.startsWith('/ai')
@@ -126,10 +91,12 @@ export function Shell() {
   const istHilfeOderRecht = location.pathname === '/docs'
     || location.pathname.startsWith('/docs/')
     || location.pathname === '/privacy'
-  const zeigeSeitenhintergrund = !isFullHeightPage && !istHilfeOderRecht
+  const zeigeDashboardReiter = istDashboardRoute(location.pathname)
+  const zeigeSeitenhintergrund = !isFullHeightPage && !istHilfeOderRecht && !zeigeDashboardReiter
   const serverWallpaper = useServerWallpaperStore((s) => s.activeWallpaper)
   const tageszeitMotiv = useTageszeitMotiv()
   const seitenMotiv = serverWallpaper ?? tageszeitMotiv
+  const dashboardMotiv = useTageszeitMotiv('dashboard')
 
   return (
     // `overflow-x-clip` statt `overflow-x-hidden`: `hidden` auf einer Achse
@@ -144,82 +111,63 @@ export function Shell() {
     // größer als das, was man sieht. Im Messenger hieß das, dass die
     // Eingabeleiste unter den Bildschirmrand rutschte, sobald der Browser seine
     // Leiste einblendet — also genau beim Tippen. `dvh` folgt dem wirklich
-    // sichtbaren Bereich. Die mobile Navigation unten macht es schon so.
-    <div className={`bg-background text-on-surface flex relative overflow-x-clip ${isFullHeightPage ? 'h-[100dvh] max-h-[100dvh] overflow-hidden' : 'min-h-screen'}`}>
-      {/* Sidebar */}
-      {!sidebarHidden ? (
-        <Sidebar
-          onCollapse={() => setSidebarHidden(true)}
+    // sichtbaren Bereich.
+    //
+    // Die Höhen stehen nirgends als Zahl: Kopfleiste und Reiterzeile sind
+    // `shrink-0`-Geschwister, `main` nimmt den Rest (`flex-1`). So bricht keine
+    // `calc`-Höhe, wenn eine Zeile wächst oder ein Banner erscheint.
+    <div className={`bg-background text-on-surface flex flex-col relative isolate overflow-x-clip ${isFullHeightPage ? 'h-[100dvh] max-h-[100dvh] overflow-hidden' : 'min-h-screen'}`}>
+      {/*
+       * Das Bild der Server-Verwaltung ab der Oberkante, hinter Kopfleiste,
+       * Reitern und Inhalt — wie in der MSS-App. Ohne es läge die
+       * Reiterzeile auf flachem Grund und läse sich als dunkler Balken.
+       * `isolate` hält die `-z-10`-Ebenen in dieser Wurzel.
+       */}
+      {zeigeDashboardReiter && (
+        <TageszeitHintergrund
+          motiv={dashboardMotiv}
+          hoehe="h-[520px] sm:h-[580px] lg:h-[640px]"
+          deckkraft="opacity-55"
+          ebene="-z-10"
+        />
+      )}
+      {!chatVollbild && (
+        <Topbar
+          onOpenWallet={() => setWalletOpen(true)}
           presenceStatus={presenceStatus}
           effectiveStatus={presenceEffektiv}
           onPresenceChange={handlePresenceChange}
         />
-      ) : (
-        <Kurzinfo text={t('shell.expandSidebar')} seite="anfang" aussen="hidden lg:block fixed left-3 top-3 z-40">
-          <button
-            type="button"
-            onClick={() => setSidebarHidden(false)}
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-surface-container-high/85 hover:bg-surface-container-high text-on-surface hover:text-primary border border-outline-variant/30 backdrop-blur-md shadow-sm transition-all active:scale-95"
-            aria-label={t('shell.expandSidebar')}
-          >
-            <ChevronRight className="h-4 w-4" />
-          </button>
-        </Kurzinfo>
       )}
+      {!chatVollbild && zeigeDashboardReiter && <DashboardReiter />}
 
-      {mobileNavigationOpen && (
-        <div className="fixed inset-0 z-50 h-[100dvh] w-screen overflow-hidden lg:hidden" role="presentation" data-testid="mobile-navigation-layer">
-          <div
-            className="absolute inset-0 bg-black/70 backdrop-blur-sm"
-            aria-hidden="true"
-            onClick={closeMobileNavigation}
-          />
-          <Sidebar
-            mobile
-            onNavigate={closeMobileNavigation}
-            presenceStatus={presenceStatus}
-            effectiveStatus={presenceEffektiv}
-            onPresenceChange={handlePresenceChange}
-          />
-        </div>
-      )}
-
-      {/* Main Content Area */}
-      <div className={`flex-1 ${sidebarHidden ? 'ml-0' : 'lg:ml-60'} flex flex-col min-w-0 relative z-10 transition-all duration-300 ${isFullHeightPage ? 'h-[100dvh] max-h-[100dvh] overflow-hidden' : ''}`}>
-        {!chatVollbild && (
-          <Topbar
-            menuButtonRef={mobileNavigationTriggerRef}
-            onOpenNavigation={() => setMobileNavigationOpen(true)}
-            onOpenWallet={() => setWalletOpen(true)}
+      <OfflineBanner />
+      <RolePreviewBanner />
+      <CrossDeviceCallBanner />
+      {/* Ohne `overflow-auto`: `main` hat als `flex-1` in einer Spalte ohne
+          feste Höhe immer genau seine Inhaltshöhe, lief also nie über. Die
+          Klasse hat nur einen Scroll-Container erzeugt, an dem sich die
+          Klebeelemente der Seiten (Reiterleiste, Inhaltsverzeichnisse)
+          vergeblich ausgerichtet haben. Breite Inhalte bringen ihr eigenes
+          `overflow-x-auto` mit. Auf Vollhöhen-Seiten begrenzt `overflow-hidden`
+          den Raum, in dem die Seite selbst rollt. */}
+      <main className={`isolate relative flex flex-col flex-1 min-h-0 ${isFullHeightPage ? 'p-0 overflow-hidden' : 'p-margin-mobile md:p-margin-desktop'}`}>
+        {zeigeSeitenhintergrund && (
+          <TageszeitHintergrund
+            motiv={seitenMotiv}
+            hoehe="h-[420px] sm:h-[520px] lg:h-[600px]"
+            deckkraft="opacity-45"
+            ebene="-z-10"
           />
         )}
-        <OfflineBanner />
-        <RolePreviewBanner />
-        <CrossDeviceCallBanner />
-        {/* Ohne `overflow-auto`: `main` hat als `flex-1` in einer Spalte ohne
-            feste Höhe immer genau seine Inhaltshöhe, lief also nie über. Die
-            Klasse hat nur einen Scroll-Container erzeugt, an dem sich die
-            Klebeelemente der Seiten (Reiterleiste, Inhaltsverzeichnisse)
-            vergeblich ausgerichtet haben. Breite Inhalte bringen ihr eigenes
-            `overflow-x-auto` mit. */}
-        <main className={`isolate flex-1 relative flex flex-col min-h-0 ${isFullHeightPage ? `p-0 overflow-hidden ${chatVollbild ? '' : 'h-[calc(100dvh-3rem)] max-h-[calc(100dvh-3rem)] lg:h-[100dvh] lg:max-h-[100dvh]'}` : 'p-margin-mobile md:p-margin-desktop'}`}>
-          {zeigeSeitenhintergrund && (
-            <TageszeitHintergrund
-              motiv={seitenMotiv}
-              hoehe="h-[420px] sm:h-[520px] lg:h-[600px]"
-              deckkraft="opacity-45"
-              ebene="-z-10"
-            />
-          )}
-          <div className={`relative z-10 flex-1 w-full flex flex-col min-h-0 ${isFullHeightPage ? 'h-full overflow-hidden' : ''}`}>
-            <ErrorBoundary key={location.pathname} compact>
-              <Outlet />
-            </ErrorBoundary>
-          </div>
+        <div className={`relative z-10 flex-1 w-full flex flex-col min-h-0 ${isFullHeightPage ? 'h-full overflow-hidden' : ''}`}>
+          <ErrorBoundary key={location.pathname} compact>
+            <Outlet context={{ ohneHintergrund: zeigeDashboardReiter } satisfies ShellOutletKontext} />
+          </ErrorBoundary>
+        </div>
 
-          {!isFullHeightPage && <VersionFooter />}
-        </main>
-      </div>
+        {!isFullHeightPage && <VersionFooter />}
+      </main>
 
       {/* Meldet unten rechts, wenn ein KI-Auftrag fertig ist oder wartet —
           auf jeder Seite. Der Gegenwert dazu, dass die KI im Hintergrund

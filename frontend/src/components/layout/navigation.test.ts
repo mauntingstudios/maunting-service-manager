@@ -141,7 +141,7 @@ describe('buildNavigation', () => {
     ).toBe(false)
   })
 
-  it('hides calendar from sidebar when calendarEnabled is false', () => {
+  it('hides calendar from navigation when calendarEnabled is false', () => {
     const access = {
       owner: false,
       canManageUsers: false,
@@ -266,7 +266,7 @@ describe('buildNavigation', () => {
     expect(infra[0]).toBe('/ai')
   })
 
-  it('zeigt Social & Hub nicht mehr, sondern den neuen Chat in der primären Sidebar-Navigation', () => {
+  it('zeigt Social & Hub nicht mehr, sondern den neuen Chat in der primären Navigation', () => {
     const access = {
       owner: true,
       canManageUsers: true,
@@ -281,7 +281,7 @@ describe('buildNavigation', () => {
       socialEnabled: true,
     }
     const items = buildNavigation(labels, access)
-    // Social Hub ist aus der Haupt-Sidebar entfernt und in Profil/Dock verlegt
+    // Social Hub ist aus der Haupt-Navigation entfernt und in Profil/Dock verlegt
     expect(items.some((i) => i.to === '/social')).toBe(false)
     // /chat ersetzt die alte Route in der Navigation
     expect(items.some((i) => i.to === '/chat')).toBe(true)

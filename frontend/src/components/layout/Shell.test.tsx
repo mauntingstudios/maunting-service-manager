@@ -44,6 +44,7 @@ describe('Shell', () => {
         <Route path="/" element={<Shell />}>
           <Route index element={<div>Dashboard</div>} />
           <Route path="audit" element={<div>Audit</div>} />
+          <Route path="admin/audit" element={<div>Audit</div>} />
           <Route path="docs" element={<div>Hilfe</div>} />
           <Route path="docs/*" element={<div>Hilfe</div>} />
         </Route>
@@ -51,19 +52,41 @@ describe('Shell', () => {
     </MemoryRouter>,
   )
 
-  it('rückt den Inhalt um genau die Breite der Seitenleiste ein', () => {
-    // Bis 09.11.2026 war die Leiste 15rem breit (w-60), der Inhalt rückte
-    // aber um 16rem ein (lg:ml-64). Dazwischen blieb ein 16-px-Streifen der
-    // Hüllenfarbe, in dem das Szenenbild der Seite nicht lag.
+  it('zeigt statt der Seitenleiste die Kopfleiste und rückt nichts ein', () => {
+    // Die Seitenleiste ist ersatzlos entfallen; die Navigation wohnt in der
+    // Kopfleiste. Es darf kein Seitenstreifen mehr da sein, für den der Inhalt
+    // Platz ließe.
     renderShell()
-    const seite = document.querySelector<HTMLElement>('aside.msm-sidebar')
-    const inhalt = seite?.nextElementSibling as HTMLElement | null
-    expect(seite).not.toBeNull()
-    expect(inhalt).not.toBeNull()
-    const breite = seite?.className.match(/\bw-(\d+)\b/)?.[1]
-    const abstand = inhalt?.className.match(/\blg:ml-(\d+)\b/)?.[1]
-    expect(breite).toBeDefined()
-    expect(abstand).toBe(breite)
+    expect(document.querySelector('aside.msm-sidebar')).toBeNull()
+    expect(document.querySelector('header.msm-topbar')).not.toBeNull()
+    const haupt = screen.getByRole('main')
+    expect(haupt.className).not.toMatch(/lg:ml-\d+/)
+  })
+
+  it('zeigt auf Dashboard-Routen die Reiterzeile der Server-Verwaltung', () => {
+    renderShell('/')
+    expect(screen.getByRole('tablist', { name: i18n.t('mss.dashboard.bereiche') })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: i18n.t('nav.dashboard') })).toHaveAttribute('aria-selected', 'true')
+  })
+
+  it('legt auf Dashboard-Routen das Bild hinter Kopfleiste und Reiter', () => {
+    // Wie in der MSS-App beginnt die Szene an der Oberkante; läge die
+    // Reiterzeile auf flachem Grund, läse sie sich als dunkler Balken.
+    const { container } = renderShell('/')
+    const wurzel = container.firstElementChild as HTMLElement
+    const bild = Array.from(wurzel.querySelectorAll<HTMLElement>(':scope > [aria-hidden="true"]'))
+      .find((element) => element.style.backgroundImage.includes('/assets/'))
+    expect(bild).toBeDefined()
+  })
+
+  it('trägt auf Verwaltungsseiten genau ein Bild statt zweier', () => {
+    // Die Hülle trägt das Bild; ein zweites aus dem Seiten-Atlas läge als
+    // dunklere Doppelung darüber.
+    const { container } = renderShell('/admin/audit')
+    const bilder = Array.from(container.querySelectorAll<HTMLElement>('[aria-hidden="true"]'))
+      .filter((element) => element.style.backgroundImage.includes('/assets/'))
+    expect(bilder).toHaveLength(1)
+    expect(bilder[0].parentElement).toBe(container.firstElementChild)
   })
 
   it('renders the privacy footer link without an impressum link', () => {
@@ -139,39 +162,23 @@ describe('Shell', () => {
       )
 
     const mitChat = zeige('/chat?userId=7')
-    expect(screen.queryByRole('button', { name: i18n.t('shell.openNavigation') })).toBeNull()
+    expect(screen.queryByRole('banner')).toBeNull()
     mitChat.unmount()
 
     zeige('/chat')
-    expect(screen.getByRole('button', { name: i18n.t('shell.openNavigation') })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: i18n.t('mss.app.menueOeffnen') })).toBeInTheDocument()
   })
 
-  it('opens the mobile drawer, closes with Escape and returns focus', async () => {
+  it('öffnet das Menü-Blatt, schließt mit Escape und gibt den Fokus zurück', async () => {
     useAuthStore.setState({ user: { username: 'owner', email: 'owner@example.invalid', is_owner: true } as never })
     usePermissionsStore.setState({ me: { is_owner: true, role_id: null, role_name: null, global_keys: [], server_keys: {} }, isLoading: false, error: null })
     renderShell()
-    const trigger = screen.getByRole('button', { name: i18n.t('shell.openNavigation') })
+    const trigger = screen.getByRole('button', { name: i18n.t('mss.app.menueOeffnen') })
+    trigger.focus()
     fireEvent.click(trigger)
-    const navigation = screen.getByRole('dialog', { name: i18n.t('shell.mainNavigation') })
-    expect(navigation).toHaveClass('h-[100dvh]', 'w-full')
-    expect(screen.getByTestId('mobile-navigation-layer')).toHaveClass('h-[100dvh]', 'w-screen', 'overflow-hidden')
-    expect(document.body.style.overflow).toBe('hidden')
+    expect(screen.getByRole('dialog', { name: i18n.t('shell.mainNavigation') })).toBeInTheDocument()
     fireEvent.keyDown(document, { key: 'Escape' })
     await waitFor(() => expect(screen.queryByRole('dialog', { name: i18n.t('shell.mainNavigation') })).toBeNull())
     await waitFor(() => expect(trigger).toHaveFocus())
-    expect(document.body.style.overflow).toBe('')
-  })
-
-  it('lässt die Desktop-Seitenleiste einklappen und wieder einblenden', () => {
-    renderShell()
-    expect(document.querySelector('aside.msm-sidebar')).not.toBeNull()
-
-    const collapseBtn = screen.getByRole('button', { name: i18n.t('shell.collapseSidebar') })
-    fireEvent.click(collapseBtn)
-    expect(document.querySelector('aside.msm-sidebar')).toBeNull()
-
-    const expandBtn = screen.getByRole('button', { name: i18n.t('shell.expandSidebar') })
-    fireEvent.click(expandBtn)
-    expect(document.querySelector('aside.msm-sidebar')).not.toBeNull()
   })
 })

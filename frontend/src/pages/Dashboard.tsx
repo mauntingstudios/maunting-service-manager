@@ -1,6 +1,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Link } from 'react-router-dom'
+import { Link, useOutletContext } from 'react-router-dom'
+import type { ShellOutletKontext } from '@/components/layout/Shell'
 import { api } from '@/api/client'
 import { Server, GameInfo, NodeCapacitySummary } from '@/types'
 import { UpdateBanner } from '@/components/UpdateBanner'
@@ -325,6 +326,10 @@ function SystemStatusSection() {
 }
 
 export function Dashboard({ ohneHintergrund = false }: { ohneHintergrund?: boolean } = {}) {
+  const huelle = useOutletContext<ShellOutletKontext | null>()
+  // Die Hülle trägt das Bild auf Dashboard-Routen; die Prop bleibt für die
+  // MSS-App, die dieselbe Seite einbettet.
+  const ohneEigenenHintergrund = ohneHintergrund || huelle?.ohneHintergrund === true
   const { t } = useTranslation()
   const canCreateServer = useHasPermission('servers.create')
   const [servers, setServers] = useState<Server[]>([])
@@ -389,7 +394,7 @@ export function Dashboard({ ohneHintergrund = false }: { ohneHintergrund?: boole
 
   return (
     <div className="relative isolate flex flex-col h-full w-full min-h-0 overflow-y-auto text-on-surface scrollbar-thin">
-      {!ohneHintergrund && (
+      {!ohneEigenenHintergrund && (
         <TageszeitHintergrund
           motiv={headerMotiv}
           hoehe="h-[520px] sm:h-[580px] lg:h-[640px]"
@@ -400,7 +405,7 @@ export function Dashboard({ ohneHintergrund = false }: { ohneHintergrund?: boole
 
       <main
         className={`relative z-10 mx-auto w-full max-w-7xl 2xl:max-w-[1600px] px-3.5 ${
-          ohneHintergrund ? 'pt-2 sm:pt-3' : 'pt-4 sm:pt-6'
+          ohneEigenenHintergrund ? 'pt-2 sm:pt-3' : 'pt-4 sm:pt-6'
         } pb-12 sm:px-6 lg:px-8 space-y-6`}
       >
         <UpdateBanner />

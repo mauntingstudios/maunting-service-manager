@@ -358,6 +358,14 @@ const ABGELOESTE_SCHLUESSEL = [
   'browser.msmSuche.zusammenfassungDenkstufe',
   'browser.msmSuche.imChatWeiterfuehren',
   'browser.msmSuche.imChatWeiterKopiert',
+  // 11/2026: Die Seitenleiste des Web-Panels ist ersatzlos entfallen; die
+  // Navigation wohnt in der Kopfleiste. `openNavigation` heißt dort
+  // `mss.app.menueOeffnen`; Einklappen, Einblenden und die Gruppennamen
+  // (`areas`) haben keinen Nachfolger, weil es nichts mehr einzuklappen gibt.
+  'shell.openNavigation',
+  'shell.collapseSidebar',
+  'shell.expandSidebar',
+  'shell.areas',
 ]
 
 /** Die Nachfolger muss es geben — sonst wäre das Löschen ein Verlust. */
@@ -418,6 +426,8 @@ const NACHFOLGER = [
   'browser.msmSuche.nachrichtenZumThema',
   'browser.msmSuche.footerClaim',
   'browser.msmSuche.footerDatenschutz',
+  // Der Nachfolger des Menüknopfs nach dem Wegfall der Seitenleiste.
+  'mss.app.menueOeffnen',
 ]
 
 // Die beiden Panelsprachen — seit 09/2026 gibt es keine weiteren. Die neun

@@ -31,6 +31,7 @@ const ServerDetail = lazy(() => import('./pages/ServerDetail').then(module => ({
 const Users = lazy(() => import('./pages/Users').then(module => ({ default: module.Users })))
 const Roles = lazy(() => import('./pages/Roles').then(module => ({ default: module.Roles })))
 const Settings = lazy(() => import('./pages/Settings').then(module => ({ default: module.Settings })))
+const AiProviders = lazy(() => import('./pages/settings/AiTab').then(module => ({ default: module.AiTab })))
 const Profile = lazy(() => import('./pages/Profile').then(module => ({ default: module.Profile })))
 const Docs = lazy(() => import('./pages/Docs').then(module => ({ default: module.Docs })))
 const BlueprintsDocs = lazy(() => import('./pages/docs/BlueprintsDocs').then(module => ({ default: module.BlueprintsDocs })))
@@ -172,6 +173,14 @@ function App() {
             element={
               <RequirePermission routeKey="settings">
                 <Settings />
+              </RequirePermission>
+            }
+          />
+          <Route
+            path="admin/ai-providers"
+            element={
+              <RequirePermission routeKey="settings">
+                <AiProviders />
               </RequirePermission>
             }
           />

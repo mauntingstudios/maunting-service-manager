@@ -546,17 +546,6 @@ html[data-season] .msm-topbar::after {
   pointer-events: none;
 }
 
-html[data-season] .msm-nav-link-active {
-  color: hsl(var(--season-accent-strong));
-  background-color: hsl(var(--season-accent) / .10);
-  border-color: hsl(var(--season-accent) / .26);
-}
-
-html[data-season] .msm-nav-link:hover {
-  color: hsl(var(--season-accent-strong));
-  background-color: hsl(var(--season-accent) / .08);
-}
-
 html[data-season] .msm-btn-ghost:hover,
 html[data-season] .msm-btn-secondary:hover {
   color: hsl(var(--season-accent-strong));

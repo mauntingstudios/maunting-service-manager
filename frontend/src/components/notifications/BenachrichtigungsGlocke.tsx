@@ -209,17 +209,16 @@ export function BenachrichtigungenMenue() {
 
 interface BenachrichtigungsGlockeProps {
   className?: string
-  align?: 'left' | 'right' | 'sidebar'
+  align?: 'left' | 'right'
   placement?: 'top' | 'bottom'
 }
 
-export function BenachrichtigungsGlocke({ className = '', align = 'sidebar', placement = 'top' }: BenachrichtigungsGlockeProps) {
+export function BenachrichtigungsGlocke({ className = '', align = 'right', placement = 'top' }: BenachrichtigungsGlockeProps) {
   const { t } = useTranslation()
   const user = useAuthStore((s) => s.user)
   const [bellOpen, setBellOpen] = useState(false)
   const bellRef = useRef<HTMLDivElement>(null)
   const menueRef = useRef<HTMLDivElement>(null)
-  // `sidebar` hieß früher: links bündig, am Telefon rechts. Das entscheidet jetzt die Messung.
   const lage = useAnkerLage(bellOpen, bellRef, menueRef, {
     seite: placement === 'top' ? 'oben' : 'unten',
     ausrichtung: align === 'right' ? 'ende' : 'start',

@@ -5,6 +5,8 @@
  */
 import { useEffect, useState, useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useOutletContext } from 'react-router-dom'
+import type { ShellOutletKontext } from '@/components/layout/Shell'
 import {
   MoreHorizontal,
   Network,
@@ -102,6 +104,10 @@ function toNodeMetrics(node: Node): NodeResourceMetrics {
 }
 
 export function AdminNodes({ ohneHintergrund = false }: { ohneHintergrund?: boolean } = {}) {
+  const huelle = useOutletContext<ShellOutletKontext | null>()
+  // Die Hülle trägt das Bild auf Dashboard-Routen; die Prop bleibt für die
+  // MSS-App, die dieselbe Seite einbettet.
+  const ohneEigenenHintergrund = ohneHintergrund || huelle?.ohneHintergrund === true
   const { t } = useTranslation()
   const { nodes, total, loading, fetchNodes, createNode, updateNode, deleteNode, healthCheck } =
     useNodeStore()
@@ -312,7 +318,7 @@ export function AdminNodes({ ohneHintergrund = false }: { ohneHintergrund?: bool
 
   return (
     <div className="relative isolate flex flex-col h-full w-full min-h-0 overflow-y-auto text-on-surface scrollbar-thin">
-      {!ohneHintergrund && (
+      {!ohneEigenenHintergrund && (
         <TageszeitHintergrund
           motiv={headerMotiv}
           hoehe="h-[520px] sm:h-[580px] lg:h-[640px]"
@@ -323,7 +329,7 @@ export function AdminNodes({ ohneHintergrund = false }: { ohneHintergrund?: bool
 
       <main
         className={`relative z-10 mx-auto w-full max-w-7xl 2xl:max-w-[1600px] px-3.5 ${
-          ohneHintergrund ? 'pt-2 sm:pt-3' : 'pt-4 sm:pt-6'
+          ohneEigenenHintergrund ? 'pt-2 sm:pt-3' : 'pt-4 sm:pt-6'
         } pb-12 sm:px-6 lg:px-8 space-y-6`}
       >
         {/* Freischwebender Infrastruktur-Header im einheitlichen Stil */}
@@ -333,7 +339,7 @@ export function AdminNodes({ ohneHintergrund = false }: { ohneHintergrund?: bool
               <Network className="h-4 w-4" aria-hidden="true" />
               <span>{t('pageContext.infrastructure')}</span>
             </div>
-            {!ohneHintergrund && (
+            {!ohneEigenenHintergrund && (
               <h1 className="mt-1 font-headline text-2xl sm:text-3xl font-extrabold tracking-tight text-on-surface">
                 {t('nav.nodes')}
               </h1>

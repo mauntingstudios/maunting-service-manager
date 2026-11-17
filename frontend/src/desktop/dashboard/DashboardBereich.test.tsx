@@ -2,7 +2,7 @@
  * Die Server-Verwaltung der App.
  *
  * Sie zeigt die Seiten des Panels und liest ihre Sichtbarkeit aus derselben
- * Navigation wie die Web-Seitenleiste. Geprüft wird beides: welche Reiter aus
+ * Navigation wie die Web-Kopfleiste. Geprüft wird beides: welche Reiter aus
  * den Rechten folgen, und dass unter jedem Pfad die erwartete Panel-Seite
  * erscheint.
  */
@@ -18,9 +18,12 @@ import type { MePermissions } from '@/types/permissions'
 
 const { rechte } = vi.hoisted(() => ({ rechte: new Set<string>() }))
 
-vi.mock('@/hooks/useHasPermission', () => ({
-  useHasPermission: (key: string) => rechte.has(key),
-}))
+vi.mock('@/hooks/useHasPermission', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/hooks/useHasPermission')>()
+  // Nur die Schlüsselprüfung ist gestellt; useIsOwner und useEffectivePermissions
+  // lesen den echten Store, den rechteSetzen steuert.
+  return { ...actual, useHasPermission: (key: string) => rechte.has(key) }
+})
 
 vi.mock('@/pages/Dashboard', () => ({ Dashboard: () => <div data-testid="dashboard-seite" /> }))
 vi.mock('@/pages/Servers', () => ({ Servers: () => <div data-testid="server-seite" /> }))
@@ -90,7 +93,7 @@ describe('DashboardBereich', () => {
     expect(await screen.findByTestId('dashboard-seite')).toBeInTheDocument()
   })
 
-  it('blendet Reiter ohne Recht aus — dieselben Regeln wie die Web-Seitenleiste', () => {
+  it('blendet Reiter ohne Recht aus — dieselben Regeln wie die Web-Kopfleiste', () => {
     rechte.add('nodes.read')
     rechteSetzen({ global_keys: ['nodes.read'] })
     zeige('/')
