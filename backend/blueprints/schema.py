@@ -611,6 +611,11 @@ class BlueprintSteamSource(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
     appId: str
+    # Optionale Steam Game-ID fuer das offizielle Store-Artwork
+    # (library_hero.jpg). Nur noetig, wenn sie von der Server-Tool-appId
+    # abweicht (z. B. Project Zomboid: Server 380870, Spiel 108600).
+    # Gleich oder leer = Resolver nutzt die Fallback-Kette.
+    artworkAppId: str | None = Field(default=None, max_length=10)
     platform: BlueprintSteamPlatform
     compatibility: BlueprintSteamCompatibility | None = None
     requiresLogin: bool = False
@@ -633,6 +638,20 @@ class BlueprintSteamSource(BaseModel):
     def _check_app_id(cls, v: str) -> str:
         if not _NUMERIC_ID_RE.match(v):
             raise ValueError("source.steam.appId muss numerischer String sein (^\\\\d{1,10}$).")
+        return v
+
+    @field_validator("artworkAppId")
+    @classmethod
+    def _check_artwork_app_id(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        v = v.strip()
+        if not v:
+            return None
+        if not _NUMERIC_ID_RE.match(v):
+            raise ValueError(
+                "source.steam.artworkAppId muss numerischer String sein (^\\d{1,10}$)."
+            )
         return v
 
     @field_validator("branch")
@@ -1977,6 +1996,8 @@ COMMENTED_TEMPLATE_DE: str = """{
     /*
     "steam": {
       "appId": "2394010",
+      // Optionale Game-ID fuer das Store-Artwork (nur wenn abweichend von appId)
+      "artworkAppId": null,
       "platform": "linux",
       "compatibility": "native",
       "requiresLogin": false
@@ -2122,6 +2143,8 @@ COMMENTED_TEMPLATE_EN: str = """{
     /*
     "steam": {
       "appId": "2394010",
+      // Optional game ID for store artwork (only if different from appId)
+      "artworkAppId": null,
       "platform": "linux",
       "compatibility": "native",
       "requiresLogin": false

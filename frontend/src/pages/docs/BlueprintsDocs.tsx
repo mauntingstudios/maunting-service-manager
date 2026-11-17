@@ -475,6 +475,7 @@ export function BlueprintsDocs() {
             <h4 className="font-semibold text-on-surface-variant mt-3 mb-1 text-sm">{t('docs.reference.steamFieldsTitle')}</h4>
             <FieldTable>
               <FieldRow field="steam.branch" type="string" required={false}>{t('docs.reference.steamBranch')}</FieldRow>
+              <FieldRow field="steam.artworkAppId" type="string" required={false}>{t('docs.reference.steamArtworkAppId')}</FieldRow>
               <FieldRow field="steam.validate" type="boolean" required={false}>{t('docs.reference.steamValidate')}</FieldRow>
               <FieldRow field="steam.requiresLogin" type="boolean" required={false}>{t('docs.reference.steamRequiresLogin')}</FieldRow>
             </FieldTable>

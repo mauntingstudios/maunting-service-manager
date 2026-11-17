@@ -2646,6 +2646,7 @@
       "sourceSteam": "Steam-Dedicated-Server: appId, platform, compatibility, requiresLogin, validate, optional branch (Depot-Branch, Default public).",
       "steamFieldsTitle": "↳ source.steam — Felder",
       "steamBranch": "Optional. Steam-Depot-Branch für Install und Update-Check (z. B. conan-exiles-legacy). Weglassen = public. Workshop-Mods nutzen weiter mods.workshopAppId.",
+      "steamArtworkAppId": "Optional. Steam Game-ID für das Store-Titelbild (library_hero.jpg), z. B. Zomboid-Spiel 108600 bei Server 380870. Leer = Kette über Workshop-/Server-ID.",
       "steamValidate": "true (Default): SteamCMD +app_update … validate. false: schnelleres Update ohne validate (z. B. große Proton/Wine-Apps).",
       "steamRequiresLogin": "true wenn der globale Steam-Account im Panel für diese App nötig ist (Einstellungen → Steam).",
       "sourceHttp": "HTTPS-URL zum Server-Archiv (zip/tar).",
@@ -3717,6 +3718,10 @@
     "server_frontend_preview": {
       "title": "Frontend-Vorschau aufrufen",
       "desc": "Erlaubt das Öffnen geschützter Branch-Preview-URLs dieses Frontend-Servers, auch ohne Sichtbarkeit in der Serverliste."
+    },
+    "server_wallpaper_manage": {
+      "title": "Server-Titelbild verwalten",
+      "desc": "Titelbild für alle Server dieses Spiels hochladen, reaktivieren oder zurücksetzen."
     },
     "servers_create_database": {
       "title": "Datenbankserver erstellen",
@@ -5497,6 +5502,31 @@
       "nachtKurz": "Hallo {{name}}"
     }
   },
+  "serverWallpaper": {
+    "menuAction": "Titelbild anpassen",
+    "title": "Titelbild anpassen",
+    "subtitle": "Hintergrundbild für alle {{game}}-Server.",
+    "gameScopedHint": "gilt für alle Server dieses Spiels, nicht nur für diesen.",
+    "dropHint": "Bild hierher ziehen oder klicken zum Auswählen",
+    "formats": "JPG, PNG oder WebP, max. 10 MB",
+    "uploading": "Bild wird hochgeladen …",
+    "uploaded": "Titelbild gespeichert.",
+    "reset": "Auf Standard zurücksetzen",
+    "resetDone": "Titelbild zurückgesetzt.",
+    "reactivated": "Bild reaktiviert.",
+    "gallery": "Galerie",
+    "galleryEmpty": "Noch keine eigenen Bilder — lade oben das erste hoch.",
+    "active": "Aktiv",
+    "reactivateTitle": "Bild von {{by}} ({{date}}) reaktivieren",
+    "source": {
+      "custom": "Eigenes Bild aktiv —",
+      "steam": "Automatisch von Steam —",
+      "panorama": "Standard-Panorama —"
+    },
+    "errors": {
+      "format": "Nur JPG-, PNG- oder WebP-Dateien sind erlaubt."
+    }
+  },
   "serverDetail": {
     "showServerOverview": "Server-Übersicht",
     "hideServerOverview": "Übersicht schließen",
@@ -6809,6 +6839,10 @@
         "label": "Steam App-ID",
         "help": "Die Nummer des Dedicated Servers auf Steam."
       },
+      "artworkAppId": {
+        "label": "Steam Game-ID (Artwork, optional)",
+        "help": "Nur wenn das Spiel eine andere ID hat als der Server, z. B. Project Zomboid: Server 380870, Spiel 108600. Leer lassen, wenn beide gleich sind."
+      },
       "platform": {
         "label": "System",
         "help": "Für Windows-Server wird automatisch Proton oder Wine genutzt."
@@ -7124,6 +7158,7 @@
       "maxPorts": "Maximal 32 Ports erlaubt.",
       "duplicatePort": "Dieser Port-Zweck mit diesem Protokoll ist bereits vorhanden.",
       "steamAppId": "Bitte eine numerische Steam App-ID angeben.",
+      "steamArtworkAppId": "Bitte eine numerische Steam Game-ID angeben (oder leer lassen).",
       "windowsCompatibility": "Windows-Server benötigen Wine oder Proton.",
       "httpsUrl": "Nur sichere https://-Links sind erlaubt.",
       "githubRepo": "Bitte im Format besitzer/projekt angeben.",

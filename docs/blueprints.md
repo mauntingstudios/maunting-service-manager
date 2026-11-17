@@ -55,6 +55,26 @@ A blueprint defines an application or server archetype, not a single running ins
 - **`github`:** Pulls code repositories directly from Git/GitHub (ideal for Node.js, Python, or Discord bots) with branch selection and automatic pulling.
 - **`manualUpload`:** Clean container workspace where users supply required binary packages manually.
 
+### Steam Artwork (`source.steam.artworkAppId`, optional)
+
+`source.steam.appId` is the dedicated-server/tool ID (required for Steam).
+Many games use a **different game ID** for their store artwork
+(e.g. Project Zomboid: server `380870`, game `108600`). Set the optional
+`artworkAppId` to that game ID and the server detail page shows the official
+`library_hero.jpg` automatically. Leave it empty when both IDs are identical.
+
+Resolution order (backend, no extra lists to maintain):
+`artworkAppId` → `mods.workshopAppId` → `source.steam.appId` → time-of-day
+panorama. Custom uploads per game always win and never touch the blueprint
+(see `docs/plans/server_wallpapers_architecture_plan.md`).
+
+```json
+"source": {
+  "type": "steam",
+  "steam": { "appId": "380870", "artworkAppId": "108600" }
+}
+```
+
 ---
 
 ## Blueprint Example: Non-Steam Application via HTTPS (Hytale)

@@ -1,6 +1,6 @@
 from .auth import LoginRequest, LoginVerifyRequest, TokenResponse, RegistrationResponse, PasswordResetRequest, PasswordResetConfirm, ChangePasswordRequest, ChangeEmailRequest, ResendVerificationRequest, DeleteAccountRequest, DataExportRequest, NativeRefreshRequest, LogoutRequest
 from .user import UserCreate, UserResponse, UserUpdate, OwnerSetupRequest
-from .server import ServerCreate, ServerCreateResponse, ServerResponse, ServerUpdate, ServerStatusResponse
+from .server import ServerCreate, ServerCreateResponse, ServerResponse, ServerUpdate, ServerStatusResponse, WallpaperGalleryItem
 from .postgres import (
     PostgresBootstrapRequest,
     PostgresConfirmRequest,
@@ -33,7 +33,7 @@ from .calls import (
 __all__ = [
     "LoginRequest", "LoginVerifyRequest", "TokenResponse", "RegistrationResponse", "PasswordResetRequest", "PasswordResetConfirm", "ChangePasswordRequest", "ChangeEmailRequest", "ResendVerificationRequest", "DeleteAccountRequest", "DataExportRequest", "NativeRefreshRequest", "LogoutRequest",
     "UserCreate", "UserResponse", "UserUpdate", "OwnerSetupRequest",
-    "ServerCreate", "ServerResponse", "ServerUpdate", "ServerStatusResponse",
+    "ServerCreate", "ServerResponse", "ServerUpdate", "ServerStatusResponse", "WallpaperGalleryItem",
     "PermissionCatalogResponse", "PermissionDefResponse", "MePermissionsResponse",
     "RoleCreate", "RoleUpdate", "RoleResponse", "AssignRoleRequest",
     "ServerPermissionsRequest", "ServerPermissionsResponse",

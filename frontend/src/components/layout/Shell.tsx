@@ -18,6 +18,7 @@ import { OfflineBanner } from './OfflineBanner'
 import { RolePreviewBanner } from '@/components/RolePreviewBanner'
 import { TageszeitHintergrund } from './TageszeitHintergrund'
 import { useTageszeitMotiv } from '@/lib/tageszeit'
+import { useServerWallpaperStore } from '@/stores/serverWallpaperStore'
 import { api } from '@/api/client'
 import { useMessengerSperreBereitschaft } from '@/hooks/useMessengerSperre'
 import { usePresenceAndActivity } from '@/hooks/usePresenceAndActivity'
@@ -126,7 +127,9 @@ export function Shell() {
     || location.pathname.startsWith('/docs/')
     || location.pathname === '/privacy'
   const zeigeSeitenhintergrund = !isFullHeightPage && !istHilfeOderRecht
-  const seitenMotiv = useTageszeitMotiv()
+  const serverWallpaper = useServerWallpaperStore((s) => s.activeWallpaper)
+  const tageszeitMotiv = useTageszeitMotiv()
+  const seitenMotiv = serverWallpaper ?? tageszeitMotiv
 
   return (
     // `overflow-x-clip` statt `overflow-x-hidden`: `hidden` auf einer Achse

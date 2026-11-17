@@ -171,6 +171,28 @@ läuft vor Start/Restart `+app_update` (optional mit `validate`, siehe `validate
 
 **Workshop-Mods** nutzen weiterhin `mods.workshopAppId` — unabhängig vom Server-Branch.
 
+#### `source.steam.artworkAppId` (optional)
+
+`source.steam.appId` ist die Dedicated-Server-/Tool-ID (**Pflicht** bei Steam).
+Viele Spiele haben für ihr Store-Artwork eine **andere Game-ID**
+(z. B. Project Zomboid: Server `380870`, Spiel `108600`). Trage sie optional
+als `artworkAppId` ein — die Server-Detailseite zeigt dann automatisch das
+offizielle `library_hero.jpg`. Sind beide IDs gleich, bleibt das Feld leer.
+
+Auflösung (Backend, keine Zusatzlisten nötig):
+`artworkAppId` → `mods.workshopAppId` → `source.steam.appId` → Tageszeit-Panorama.
+Custom-Uploads pro Spiel gewinnen immer und ändern nie das Blueprint
+(siehe `docs/plans/server_wallpapers_architecture_plan.md`).
+
+```json
+"source": {
+  "type": "steam",
+  "steam": { "appId": "380870", "artworkAppId": "108600" }
+}
+```
+
+Prüfen: `cd backend && python scripts/check_artwork_app_ids.py --check-steam`.
+
 #### Server-Binaries vs. Workshop-Mods (Update-Verhalten)
 
 | Was | Erkennung | Wann installiert | Auto-Neustart |

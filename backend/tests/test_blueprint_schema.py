@@ -550,6 +550,43 @@ def test_steam_branch_rejects_invalid_chars() -> None:
         load_blueprint_dict(d)
 
 
+def test_steam_artwork_app_id_defaults_none() -> None:
+    bp = load_blueprint_dict(_minimal_valid_dict())
+    assert bp.source.steam is not None
+    assert bp.source.steam.artworkAppId is None
+
+
+def test_steam_artwork_app_id_accepts_numeric() -> None:
+    d = _minimal_valid_dict()
+    d["source"]["steam"]["artworkAppId"] = "108600"
+    bp = load_blueprint_dict(d)
+    assert bp.source.steam is not None
+    assert bp.source.steam.artworkAppId == "108600"
+
+
+def test_steam_artwork_app_id_allows_same_as_app_id() -> None:
+    d = _minimal_valid_dict()
+    d["source"]["steam"]["artworkAppId"] = d["source"]["steam"]["appId"]
+    bp = load_blueprint_dict(d)
+    assert bp.source.steam is not None
+    assert bp.source.steam.artworkAppId == bp.source.steam.appId
+
+
+def test_steam_artwork_app_id_empty_string_becomes_none() -> None:
+    d = _minimal_valid_dict()
+    d["source"]["steam"]["artworkAppId"] = "   "
+    bp = load_blueprint_dict(d)
+    assert bp.source.steam is not None
+    assert bp.source.steam.artworkAppId is None
+
+
+def test_steam_artwork_app_id_rejects_non_numeric() -> None:
+    d = _minimal_valid_dict()
+    d["source"]["steam"]["artworkAppId"] = "game-1"
+    with pytest.raises(BlueprintValidationError):
+        load_blueprint_dict(d)
+
+
 def test_allows_multiple_custom_ports_with_same_protocol() -> None:
     d = _minimal_valid_dict()
     d["ports"] = [

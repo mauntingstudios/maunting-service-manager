@@ -99,7 +99,7 @@ export interface BlueprintDraft {
   ports: Array<{ name: BlueprintPortName; protocol: 'tcp' | 'udp' }>
   source: {
     type: BlueprintSourceType; updateStrategy: BlueprintUpdateStrategy
-    steam?: { appId: string; platform: 'linux' | 'windows'; compatibility?: 'native' | 'wine' | 'proton'; requiresLogin: boolean; branch?: string; validate: boolean }
+    steam?: { appId: string; artworkAppId?: string; platform: 'linux' | 'windows'; compatibility?: 'native' | 'wine' | 'proton'; requiresLogin: boolean; branch?: string; validate: boolean }
     http?: { url: string; archiveType?: 'zip' | 'tar.gz' | 'tgz' | 'tar.xz' | 'txz' | 'tar.bz2' | 'tbz2' | '7z'; extractTo?: string; sha256?: string }
     github?: { repo: string; branch: string; subPath?: string; setupCommands: string[][] }
     manual?: { requiredFiles: string[]; instructions: string; instructionsUrl?: string }
@@ -313,6 +313,7 @@ export function validateBlueprintDraft(draft: BlueprintDraft): BlueprintValidati
     seenPorts.add(key)
   })
   if (draft.source.type === 'steam' && !/^\d{1,10}$/.test(draft.source.steam?.appId ?? '')) add('source.steam.appId', 'blueprintBuilder.validation.steamAppId')
+  if (draft.source.type === 'steam' && draft.source.steam?.artworkAppId && !/^\d{1,10}$/.test(draft.source.steam.artworkAppId)) add('source.steam.artworkAppId', 'blueprintBuilder.validation.steamArtworkAppId')
   if (draft.source.type === 'steam' && draft.source.steam?.platform === 'windows' && !['wine', 'proton'].includes(draft.source.steam.compatibility ?? '')) add('source.steam.compatibility', 'blueprintBuilder.validation.windowsCompatibility')
   if (draft.source.type === 'http' && !(draft.source.http?.url ?? '').startsWith('https://')) add('source.http.url', 'blueprintBuilder.validation.httpsUrl')
   if (draft.source.type === 'github' && !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(draft.source.github?.repo ?? '')) add('source.github.repo', 'blueprintBuilder.validation.githubRepo')
@@ -517,6 +518,7 @@ export function normalizeBlueprintDraft(draft: BlueprintDraft): BlueprintDraft {
   if (!clean.runtime.workdir) delete clean.runtime.workdir
   if (!clean.runtime.user) delete clean.runtime.user
   if (clean.source.steam && !clean.source.steam.branch) delete clean.source.steam.branch
+  if (clean.source.steam && !clean.source.steam.artworkAppId?.trim()) delete clean.source.steam.artworkAppId
   if (clean.source.http && !clean.source.http.archiveType) delete clean.source.http.archiveType
   if (clean.source.http && !clean.source.http.extractTo) delete clean.source.http.extractTo
   if (clean.source.http && !clean.source.http.sha256) delete clean.source.http.sha256

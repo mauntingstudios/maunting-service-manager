@@ -150,4 +150,24 @@ describe('Blueprint builder contract', () => {
     draft.mods.postInstall[0].purgeBefore = ['Saved/ExtractedMods/{STEM}.pak']
     expect(validateBlueprintDraft(draft)).toEqual([])
   })
+
+  it('round-trips the optional steam artworkAppId', () => {
+    const draft = createBlueprintDraft()
+    draft.source.steam!.appId = '380870'
+    draft.source.steam!.artworkAppId = '108600'
+    const paths = validateBlueprintDraft(draft).map(issue => issue.path)
+    expect(paths).not.toContain('source.steam.appId')
+    expect(paths).not.toContain('source.steam.artworkAppId')
+    expect(normalizeBlueprintDraft(draft).source.steam!.artworkAppId).toBe('108600')
+  })
+
+  it('rejects a non-numeric steam artworkAppId but allows empty', () => {
+    const draft = createBlueprintDraft()
+    draft.source.steam!.appId = '380870'
+    draft.source.steam!.artworkAppId = 'game-1'
+    expect(validateBlueprintDraft(draft).map(issue => issue.path)).toContain('source.steam.artworkAppId')
+    draft.source.steam!.artworkAppId = '   '
+    const normalized = normalizeBlueprintDraft(draft)
+    expect(normalized.source.steam).not.toHaveProperty('artworkAppId')
+  })
 })

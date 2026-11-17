@@ -220,6 +220,9 @@ SERVER_PERMISSIONS: tuple[PermissionDef, ...] = (
     # ausschliesslich um die Bindung an einen konkreten Server.
     PermissionDef("server.credentials.manage", "server", "Zugangsdaten für diesen Server zuweisen"),
     PermissionDef("server.frontend.preview", "server", "Frontend-Vorschau-URLs aufrufen"),
+    # Game-scoped: Wer das Bild eines Servers aendert, aendert es fuer alle
+    # Server desselben Spiels — daher eigener Key, kein server.config.write.
+    PermissionDef("server.wallpaper.manage", "server", "Server-Titelbild verwalten"),
 )
 
 

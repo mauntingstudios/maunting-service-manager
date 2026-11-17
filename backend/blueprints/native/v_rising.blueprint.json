@@ -60,6 +60,7 @@
     "type": "steam",
     "steam": {
       "appId": "1829350",
+      "artworkAppId": "1604030",
       "platform": "windows",
       "compatibility": "wine",
       "requiresLogin": false,

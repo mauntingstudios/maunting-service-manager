@@ -63,6 +63,7 @@
     "type": "steam",
     "steam": {
       "appId": "3246670",
+      "artworkAppId": "1898300",
       "platform": "windows",
       "compatibility": "wine",
       "requiresLogin": false,

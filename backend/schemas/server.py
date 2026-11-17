@@ -283,6 +283,10 @@ class ServerResponse(BaseModel):
     # an jeden mit server.view — auch nicht an den Kunden selbst.
     is_hoster_managed: bool = False
     active_frontend_build: FrontendBuildBadge | None = None
+    # Server-Wallpaper (Resolver-Deskriptor; befuellt wenn der Router db uebergibt).
+    has_custom_wallpaper: bool = False
+    wallpaper_url: str | None = None
+    wallpaper_source: str = "panorama"
 
     class Config:
         from_attributes = True
@@ -294,6 +298,14 @@ class FrontendBuildBadge(BaseModel):
     status: str
     kind: str
     started_at: datetime | None = None
+
+
+class WallpaperGalleryItem(BaseModel):
+    id: int
+    game_type: str
+    uploaded_by: str
+    created_at: datetime
+    is_active: bool
 
 
 ServerResponse.model_rebuild()

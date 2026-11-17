@@ -4,15 +4,16 @@ import threading
 import time
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, Header, HTTPException, WebSocket
+from fastapi import APIRouter, Depends, File, Header, HTTPException, UploadFile, WebSocket
 from fastapi.concurrency import run_in_threadpool
+from fastapi.responses import Response
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 
 from database import SessionLocal
 from database import get_db
 from models import Server, User
-from schemas import ServerCreate, ServerCreateResponse, ServerResponse, ServerUpdate, ServerStatusResponse
+from schemas import ServerCreate, ServerCreateResponse, ServerResponse, ServerUpdate, ServerStatusResponse, WallpaperGalleryItem
 from schemas.postgres import PostgresOneTimeCredential
 from dependencies import (
     get_current_user,
@@ -21,7 +22,7 @@ from dependencies import (
     verify_csrf,
     ws_origin_erlaubt,
 )
-from services import audit_service, permission_service, postgres_service
+from services import audit_service, permission_service, postgres_service, wallpaper_service
 from games import get_plugin
 from games.base import container_name_for, _console_log_path, _append_console_log
 from services import EmailService, docker_service
@@ -147,7 +148,7 @@ async def create_server(
             result.server.name,
         )
 
-    response = _server_response(result.server)
+    response = _server_response(result.server, db)
     create_resp = ServerCreateResponse.model_validate(response.model_dump())
     create_resp.postgres_credentials = [
         PostgresOneTimeCredential.model_validate(item)
@@ -170,11 +171,16 @@ def _is_guardian_enabled(server: Server) -> bool:
     return False
 
 
-def _server_response(server: Server) -> ServerResponse:
+def _server_response(server: Server, db: Session | None = None) -> ServerResponse:
     """Serialize server including safe node label (never auth tokens)."""
     from services.node_service import effective_server_runtime_status, is_node_offline
 
     data = ServerResponse.model_validate(server)
+    if db is not None:
+        desk = wallpaper_service.resolve_wallpaper(db, server)
+        data.has_custom_wallpaper = desk.source == "custom"
+        data.wallpaper_url = desk.url
+        data.wallpaper_source = desk.source
     data.guardian_enabled = _is_guardian_enabled(server)
     # The persisted clear intent remains pending across offline/unknown/stale
     # observations. Reconciliation removes it only after the Agent accepts the
@@ -207,7 +213,7 @@ def list_servers(db: Session = Depends(get_db), user: User = Depends(get_current
     active_builds = get_active_frontend_builds_map(db, [s.id for s in servers])
     responses = []
     for s in servers:
-        data = _server_response(s)
+        data = _server_response(s, db)
         data.is_hoster_managed = s.id in hoster_ids
         if s.id in active_builds:
             from schemas.server import FrontendBuildBadge
@@ -225,7 +231,7 @@ def get_server(server_id: int, db: Session = Depends(get_db), user: User = Depen
     server = db.query(Server).filter(Server.id == server_id).first()
     if not server:
         raise HTTPException(status_code=404, detail="Server nicht gefunden")
-    data = _server_response(server)
+    data = _server_response(server, db)
     data.is_hoster_managed = permission_service.is_hoster_customer_server(db, server_id)
     active_builds = get_active_frontend_builds_map(db, [server_id])
     if server_id in active_builds:
@@ -955,3 +961,159 @@ def switch_server_blueprint_endpoint(
 
     from services.server_lifecycle_service import switch_server_blueprint
     return switch_server_blueprint(db, server, body.new_blueprint_id, user_id=user.id)
+
+
+# ── Server-Wallpaper (Titelbild pro Spiel) ───────────────────────────────
+# Die Wirkung ist game-scoped: Wer hier hochlaedt, aendert das Bild fuer
+# alle Server desselben Spiels — daher der eigene Key server.wallpaper.manage.
+
+
+@router.get("/{server_id}/wallpaper")
+def get_server_wallpaper(
+    server_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)
+) -> Response:
+    """Liefert das aufgeloeste Titelbild (Custom oder Steam-Cache).
+
+    404 heisst "kein Bild" — das Frontend faellt dann aufs Panorama zurueck.
+    """
+    require_server_permission(user, server_id, db, "server.view")
+    server = db.query(Server).filter(Server.id == server_id).first()
+    if not server:
+        raise HTTPException(status_code=404, detail="Server nicht gefunden")
+    gefunden = wallpaper_service.wallpaper_bytes_for_server(db, server)
+    if gefunden is None:
+        raise HTTPException(status_code=404, detail="Kein Titelbild vorhanden")
+    bild, _quelle = gefunden
+    return Response(
+        content=bild,
+        media_type="image/webp",
+        headers={
+            "Cache-Control": "public, max-age=86400",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
+@router.post("/{server_id}/wallpaper")
+async def upload_server_wallpaper(
+    server_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    _: None = Depends(verify_csrf),
+) -> dict:
+    """Laedt ein Titelbild fuer das Spiel dieses Servers hoch (wird aktiv)."""
+    require_server_permission(user, server_id, db, "server.wallpaper.manage")
+    server = db.query(Server).filter(Server.id == server_id).first()
+    if not server:
+        raise HTTPException(status_code=404, detail="Server nicht gefunden")
+    roh = await file.read(wallpaper_service.MAX_WALLPAPER_BYTES + 1)
+    try:
+        webp = wallpaper_service.sanitize_and_compress_wallpaper(roh)
+    except wallpaper_service.WallpaperValidationError as exc:
+        raise HTTPException(status_code=400, detail=exc.message)
+    zeile = wallpaper_service.store_wallpaper(db, server.game_type, webp, user.username)
+    audit_service.record_privileged_action(
+        db,
+        user_id=user.id,
+        action="server.wallpaper.upload",
+        target_type="server",
+        target_id=server_id,
+        details={"game_type": server.game_type, "wallpaper_id": zeile.id},
+        commit=True,
+    )
+    return {"id": zeile.id, "game_type": zeile.game_type, "is_active": True}
+
+
+@router.delete("/{server_id}/wallpaper")
+def reset_server_wallpaper(
+    server_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user), _: None = Depends(verify_csrf)
+) -> dict:
+    """Setzt aufs Standardbild zurueck (Custom-Zeiger aufheben, Galerie bleibt)."""
+    require_server_permission(user, server_id, db, "server.wallpaper.manage")
+    server = db.query(Server).filter(Server.id == server_id).first()
+    if not server:
+        raise HTTPException(status_code=404, detail="Server nicht gefunden")
+    wallpaper_service.reset_wallpaper(db, server.game_type)
+    audit_service.record_privileged_action(
+        db,
+        user_id=user.id,
+        action="server.wallpaper.reset",
+        target_type="server",
+        target_id=server_id,
+        details={"game_type": server.game_type},
+        commit=True,
+    )
+    return {"reset": True}
+
+
+@router.get("/{server_id}/wallpaper/gallery", response_model=list[WallpaperGalleryItem])
+def get_wallpaper_gallery(
+    server_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)
+) -> list[WallpaperGalleryItem]:
+    """Galerie-Verlauf des Spiels (neueste zuerst)."""
+    require_server_permission(user, server_id, db, "server.view")
+    server = db.query(Server).filter(Server.id == server_id).first()
+    if not server:
+        raise HTTPException(status_code=404, detail="Server nicht gefunden")
+    return [
+        WallpaperGalleryItem(
+            id=z.id,
+            game_type=z.game_type,
+            uploaded_by=z.uploaded_by,
+            created_at=z.created_at,
+            is_active=z.is_active,
+        )
+        for z in wallpaper_service.get_gallery(db, server.game_type)
+    ]
+
+
+@router.get("/{server_id}/wallpaper/gallery/{wallpaper_id}/image")
+def get_wallpaper_gallery_image(
+    server_id: int,
+    wallpaper_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> Response:
+    """Einzelbild aus der Galerie (Miniatur im Dialog)."""
+    require_server_permission(user, server_id, db, "server.view")
+    server = db.query(Server).filter(Server.id == server_id).first()
+    if not server:
+        raise HTTPException(status_code=404, detail="Server nicht gefunden")
+    bild = wallpaper_service.gallery_image_bytes(db, server.game_type, wallpaper_id)
+    if bild is None:
+        raise HTTPException(status_code=404, detail="Bild nicht gefunden")
+    return Response(
+        content=bild,
+        media_type="image/webp",
+        headers={
+            "Cache-Control": "public, max-age=86400",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
+@router.post("/{server_id}/wallpaper/{wallpaper_id}/activate")
+def activate_server_wallpaper(
+    server_id: int,
+    wallpaper_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    _: None = Depends(verify_csrf),
+) -> dict:
+    """Reaktiviert ein Galeriebild des Spiels (wird aktiv)."""
+    require_server_permission(user, server_id, db, "server.wallpaper.manage")
+    server = db.query(Server).filter(Server.id == server_id).first()
+    if not server:
+        raise HTTPException(status_code=404, detail="Server nicht gefunden")
+    zeile = wallpaper_service.set_active_wallpaper(db, server.game_type, wallpaper_id)
+    audit_service.record_privileged_action(
+        db,
+        user_id=user.id,
+        action="server.wallpaper.reactivate",
+        target_type="server",
+        target_id=server_id,
+        details={"game_type": server.game_type, "wallpaper_id": zeile.id},
+        commit=True,
+    )
+    return {"id": zeile.id, "game_type": zeile.game_type, "is_active": True}

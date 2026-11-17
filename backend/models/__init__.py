@@ -136,6 +136,7 @@ from .chat_media import ChatMedia
 from .server_runtime_env import ServerRuntimeEnv
 from .singra_deployment import SingraDeployment
 from .singra_test_run import SingraTestRun
+from .game_wallpaper import GameWallpaper
 
 __all__ = [
     "User", "UserRole", "RoleAiLimit", "RoleAiModelAccess", "RoleVaultQuota", "AiUsageEvent", "OperationTask",
@@ -145,7 +146,7 @@ __all__ = [
     "AiAutonomyGrant", "AiToolResult", "AiRun", "AiGuardianNotice",
     "AiGuardianRepair", "AiTask", "AiActionApproval",
     "AiMailOutbox", "AiMeldung", "DesktopJob", "DevicePairing",
-    "Server", "ServerRuntimeEnv", "SingraDeployment", "SingraTestRun", "Node", "NodeEnrollment", "Role", "RolePermission", "ServerPermission",
+    "Server", "ServerRuntimeEnv", "SingraDeployment", "SingraTestRun", "GameWallpaper", "Node", "NodeEnrollment", "Role", "RolePermission", "ServerPermission",
     "Team", "TeamInvitation", "TeamMember", "TeamMemberRole", "TeamRole", "TeamRolePermission", "TeamRoleServerGrant", "TeamServerGrant",
     "Backup", "PanelBackup", "Mod", "AuditLog", "RefreshToken", "JwtBlacklist",
     "EmailVerification", "BackupCode", "UserPasskey", "PanelSetting", "ServerPort",

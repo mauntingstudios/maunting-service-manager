@@ -56,6 +56,7 @@
     "type": "steam",
     "steam": {
       "appId": "4129620",
+      "artworkAppId": "3041230",
       "platform": "windows",
       "compatibility": "proton",
       "requiresLogin": false,

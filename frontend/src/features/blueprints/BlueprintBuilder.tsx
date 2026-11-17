@@ -484,6 +484,16 @@ export function BlueprintBuilder({ mode, sourceId, entries, onClose, onSaved }: 
                 onChange={event => setDraft({ ...draft, source: { ...draft.source, steam: { ...draft.source.steam!, appId: event.target.value } } })}
               />
             </Field>
+            <Field id="bp-artworkappid" label={t('blueprintBuilder.fields.artworkAppId.label')} help={t('blueprintBuilder.fields.artworkAppId.help')} error={issueFor('source.steam.artworkAppId')}>
+              <Input
+                inputMode="numeric"
+                placeholder="108600"
+                className="font-mono text-base sm:text-xs"
+                value={draft.source.steam.artworkAppId ?? ''}
+                onBlur={() => markTouched('source.steam.artworkAppId')}
+                onChange={event => setDraft({ ...draft, source: { ...draft.source, steam: { ...draft.source.steam!, artworkAppId: event.target.value } } })}
+              />
+            </Field>
             <Field id="bp-platform" label={t('blueprintBuilder.fields.platform.label')} help={t('blueprintBuilder.fields.platform.help')}>
               <Dropdown
                 aria-label={t('blueprintBuilder.fields.platform.label')}

@@ -11,6 +11,7 @@ import {
   Hammer,
   HardDrive,
   History,
+  ImagePlus,
   Menu,
   Network,
   Package,
@@ -67,6 +68,8 @@ import { DatabaseManager } from "@/components/server/DatabaseManager";
 import { OutgoingWebhooksPanel } from "@/components/server/OutgoingWebhooksPanel";
 import { frontendApi, type FrontendOverview } from "@/api/frontend";
 import { SwitchBlueprintDialog } from "@/components/server/SwitchBlueprintDialog";
+import { ServerWallpaperDialog } from "@/components/server/ServerWallpaperDialog";
+import { useServerWallpaperStore, wallpaperMotiv } from "@/stores/serverWallpaperStore";
 
 const DeploymentsPanel = lazy(() =>
   import("@/components/frontend/DeploymentsPanel").then((m) => ({
@@ -193,6 +196,7 @@ export function ServerDetail() {
 
   const [showEditNetwork, setShowEditNetwork] = useState(false);
   const [showSwitchBlueprint, setShowSwitchBlueprint] = useState(false);
+  const [showWallpaper, setShowWallpaper] = useState(false);
   const [savingNetwork, setSavingNetwork] = useState(false);
   // Optimistic transient status for instant UI feedback (overwritten by next poll/fetch)
   const [optimisticStatus, setOptimisticStatus] = useState<string | null>(null);
@@ -252,6 +256,23 @@ export function ServerDetail() {
   const canReadBackupsInPreview = useHasPermission("server.backups.read", serverId);
   const canReadDatabasesInPreview = useHasPermission("server.databases.read", serverId);
   const canManageWebhooksInPreview = useHasPermission("server.update", serverId);
+  const canManageWallpaperInPreview = useHasPermission("server.wallpaper.manage", serverId);
+
+  // Titelbild: ServerDetail setzt das Shell-Motiv, Shell rendert es. Beim
+  // Verlassen der Seite (oder Serverwechsel ohne Bild) zurück zum Panorama.
+  // Muss hier oben stehen: weiter unten gibt es Early-Returns (loading, !server).
+  const wallpaperVersion = useServerWallpaperStore((s) => s.version);
+  useEffect(() => {
+    const setMotiv = useServerWallpaperStore.getState().setActiveWallpaper;
+    if (server?.wallpaper_url) {
+      setMotiv(wallpaperMotiv(server.id, server.wallpaper_url, wallpaperVersion));
+    } else {
+      setMotiv(null);
+    }
+  }, [server?.id, server?.wallpaper_url, wallpaperVersion]);
+  useEffect(() => {
+    return () => useServerWallpaperStore.getState().clear();
+  }, []);
   const permissionsLoading = usePermissionsStore((s) => s.isLoading);
   const showResourceEdit = !permissionsLoading && canManageResources;
   const showNetworkEdit = !permissionsLoading && canManageNetworkInPreview;
@@ -972,6 +993,7 @@ export function ServerDetail() {
   const showEditNetworkAction = showNetworkEdit;
   const showInstallAction = !isRolePreviewActive || canInstallInPreview;
   const showDeleteAction = !isRolePreviewActive || canDeleteInPreview;
+  const showWallpaperAction = !permissionsLoading && (!isRolePreviewActive || canManageWallpaperInPreview);
 
   const moreActionItems: ActionMenuItem[] = [
     ...(canKill && showKillAction
@@ -1023,6 +1045,17 @@ export function ServerDetail() {
             icon: <RefreshCw className={`h-4 w-4 ${serverUpdateCheckLoading ? "animate-spin" : ""}`} />,
             disabled: !!actionLoading || serverUpdateCheckLoading || isNodeUnreachable,
             onSelect: () => void checkServerFileUpdates(),
+          } satisfies ActionMenuItem,
+        ]
+      : []),
+    ...(showWallpaperAction
+      ? [
+          {
+            key: "wallpaper",
+            label: t("serverWallpaper.menuAction"),
+            icon: <ImagePlus className="h-4 w-4" />,
+            disabled: !!actionLoading,
+            onSelect: () => setShowWallpaper(true),
           } satisfies ActionMenuItem,
         ]
       : []),
@@ -1212,6 +1245,18 @@ export function ServerDetail() {
                   </Button>
                 )}
               </>
+            )}
+
+            {showWallpaperAction && (
+              <Button
+                variant="secondary"
+                type="button"
+                onClick={() => setShowWallpaper(true)}
+                aria-label={t("serverWallpaper.menuAction")}
+                className="inline-flex min-h-[44px] md:min-h-[38px] min-w-[44px] md:min-w-[38px] items-center justify-center px-2"
+              >
+                <ImagePlus className="h-[18px] w-[18px] md:h-4 md:w-4 shrink-0" aria-hidden="true" />
+              </Button>
             )}
 
             {moreActionItems.length > 0 && (
@@ -1531,6 +1576,18 @@ export function ServerDetail() {
           onClose={() => setShowSwitchBlueprint(false)}
           server={server}
           onSwitched={fetchAll}
+        />
+      )}
+
+      {server && (
+        <ServerWallpaperDialog
+          open={showWallpaper}
+          onClose={() => setShowWallpaper(false)}
+          server={server}
+          onChanged={() => {
+            useServerWallpaperStore.getState().bumpVersion();
+            void fetchAll();
+          }}
         />
       )}
     </div>

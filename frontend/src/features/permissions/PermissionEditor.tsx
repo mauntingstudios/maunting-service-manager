@@ -136,6 +136,7 @@ const SUBGROUPS = [
       'server.resources.manage',
       'server.credentials.manage',
       'server.frontend.preview',
+      'server.wallpaper.manage',
     ],
   },
   {

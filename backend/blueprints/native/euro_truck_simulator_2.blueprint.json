@@ -66,6 +66,7 @@
     "type": "steam",
     "steam": {
       "appId": "1948160",
+      "artworkAppId": "227300",
       "platform": "linux",
       "compatibility": "native",
       "requiresLogin": false,

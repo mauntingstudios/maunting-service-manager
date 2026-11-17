@@ -421,6 +421,6 @@ def execute_server_update(
 
         sync_desired_state_to_agent(db, server)
 
-    data = _srv._server_response(server)
+    data = _srv._server_response(server, db)
     data.is_hoster_managed = _srv.permission_service.is_hoster_customer_server(db, server_id)
     return data

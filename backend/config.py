@@ -124,6 +124,11 @@ class Settings(BaseSettings):
     # Chiffrat der Tresor-Cloud (nur verschluesselte Chunks, ohne Namen).
     # Gehoert ins Backup: ohne diese Dateien sind die Tresor-Eintraege Verweise ins Leere.
     vault_blob_dir: str = "/opt/msm/vault-blobs"
+    # Server-Wallpapers: Custom-Uploads pro Spiel (data/wallpapers/{game_type}/)
+    # und Cache des Steam-Store-Artworks. Dev/Test via MSM_WALLPAPER_DIR bzw.
+    # MSM_STEAM_WALLPAPER_CACHE_DIR ueberschreiben (z.B. auf tmp_path).
+    wallpaper_dir: str = "/opt/msm/wallpapers"
+    steam_wallpaper_cache_dir: str = "/opt/msm/cache/steam_wallpapers"
     local_agent_env_file: str = "/opt/msm/msm-agent/.env"
     # Direkter Enrollment-/Handshake-Token fuer den lokalen Agent (bei 3-User-Isolation
     # kann msm die msm-agent/.env nicht direkt lesen; install.sh setzt ihn hier).

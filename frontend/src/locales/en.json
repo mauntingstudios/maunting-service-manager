@@ -2646,6 +2646,7 @@
       "sourceSteam": "Steam dedicated server: appId, platform, compatibility, requiresLogin, validate, optional branch (depot branch, default public).",
       "steamFieldsTitle": "↳ source.steam — fields",
       "steamBranch": "Optional. Steam depot branch for install and update check (e.g. conan-exiles-legacy). Omit for public. Workshop mods still use mods.workshopAppId.",
+      "steamArtworkAppId": "Optional. Steam game ID for the store cover (library_hero.jpg), e.g. Zomboid game 108600 for server 380870. Empty = chain via workshop/server ID.",
       "steamValidate": "true (default): SteamCMD +app_update … validate. false: faster update without validate (e.g. large Proton/Wine apps).",
       "steamRequiresLogin": "true when the global Steam account in panel settings is required for this app.",
       "sourceHttp": "HTTPS URL to the server archive (zip/tar).",
@@ -3717,6 +3718,10 @@
     "server_frontend_preview": {
       "title": "Open frontend previews",
       "desc": "Allows opening protected branch preview URLs of this frontend server, even without access to the server list."
+    },
+    "server_wallpaper_manage": {
+      "title": "Manage server cover image",
+      "desc": "Upload, reactivate or reset the cover image for all servers of this game."
     },
     "servers_create_database": {
       "title": "Create database servers",
@@ -5497,6 +5502,31 @@
       "nachtKurz": "Hello {{name}}"
     }
   },
+  "serverWallpaper": {
+    "menuAction": "Customize cover image",
+    "title": "Customize cover image",
+    "subtitle": "Background image for all {{game}} servers.",
+    "gameScopedHint": "applies to all servers of this game, not just this one.",
+    "dropHint": "Drag an image here or click to choose",
+    "formats": "JPG, PNG or WebP, max. 10 MB",
+    "uploading": "Uploading image …",
+    "uploaded": "Cover image saved.",
+    "reset": "Reset to default",
+    "resetDone": "Cover image reset.",
+    "reactivated": "Image reactivated.",
+    "gallery": "Gallery",
+    "galleryEmpty": "No custom images yet — upload the first one above.",
+    "active": "Active",
+    "reactivateTitle": "Reactivate image by {{by}} ({{date}})",
+    "source": {
+      "custom": "Custom image active —",
+      "steam": "Automatic from Steam —",
+      "panorama": "Default panorama —"
+    },
+    "errors": {
+      "format": "Only JPG, PNG or WebP files are allowed."
+    }
+  },
   "serverDetail": {
     "showServerOverview": "Server overview",
     "hideServerOverview": "Hide overview",
@@ -6809,6 +6839,10 @@
         "label": "Steam app ID",
         "help": "Numeric ID of the dedicated server on Steam."
       },
+      "artworkAppId": {
+        "label": "Steam game ID (artwork, optional)",
+        "help": "Only if the game has a different ID than the server, e.g. Project Zomboid: server 380870, game 108600. Leave empty if both are the same."
+      },
       "platform": {
         "label": "System",
         "help": "Windows servers automatically use Proton or Wine."
@@ -7124,6 +7158,7 @@
       "maxPorts": "At most 32 ports are allowed.",
       "duplicatePort": "This port purpose and protocol already exist.",
       "steamAppId": "Enter a numeric Steam App ID.",
+      "steamArtworkAppId": "Enter a numeric Steam game ID (or leave empty).",
       "windowsCompatibility": "Windows servers require Wine or Proton.",
       "httpsUrl": "Only secure https:// links are allowed.",
       "githubRepo": "Enter in owner/project format.",

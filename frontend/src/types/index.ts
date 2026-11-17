@@ -98,6 +98,22 @@ export interface Server {
     kind: string
     started_at?: string | null
   } | null
+  /** Titelbild: true wenn ein Custom-Bild aktiv ist (sonst Steam/Panorama). */
+  has_custom_wallpaper?: boolean
+  /** Ausliefer-URL des aktiven Titelbilds (null = Panorama). */
+  wallpaper_url?: string | null
+  /** Aktive Wallpaper-Quelle: custom | steam | panorama. */
+  wallpaper_source?: WallpaperSource
+}
+
+export type WallpaperSource = 'custom' | 'steam' | 'panorama'
+
+export interface WallpaperGalleryItem {
+  id: number
+  game_type: string
+  uploaded_by: string
+  created_at: string
+  is_active: boolean
 }
 
 export interface GuardianAttempt {
