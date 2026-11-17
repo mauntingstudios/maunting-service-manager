@@ -142,6 +142,22 @@ def _assert_frontend_writable(server: Server, *rel_paths: str) -> None:
             )
 
 
+def _local_fs_readable(install_dir: str | None) -> bool:
+    """Darf der Datei-Tab das lokale Dateisystem nehmen?
+
+    Nur wenn das Panel das Verzeichnis auch LISTEN kann, nicht schon wenn
+    `stat()` gelingt: Bei Traverse-only-Eltern liefert `isdir()` True, und
+    `iterdir()` stirbt danach mit EACCES (403) — obwohl der Agent dieselben
+    Dateien liefern koennte. (`os.access` prueft reale IDs; das Panel
+    laeuft als `msm`.)
+    """
+    return bool(
+        install_dir
+        and os.path.isdir(install_dir)
+        and os.access(install_dir, os.R_OK | os.X_OK)
+    )
+
+
 def _agent_client(server: Server, db: Session) -> NodeClient | None:
     """Return NodeClient when file ops must hit the agent.
 
@@ -158,8 +174,9 @@ def _agent_client(server: Server, db: Session) -> NodeClient | None:
     if is_node_offline(node) and not getattr(node, "is_local", False):
         raise HTTPException(status_code=503, detail=NODE_OFFLINE_MSG)
     if getattr(node, "is_local", False):
-        # Local: prefer local FS when install_dir exists (dev/tests/single-host)
-        if server.install_dir and os.path.isdir(server.install_dir):
+        # Local: prefer local FS when the panel can actually read it
+        # (dev/tests/single-host). Unreadable dirs fall through to the agent.
+        if _local_fs_readable(server.install_dir):
             return None
     try:
         return NodeClient.from_node(node)

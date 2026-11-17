@@ -19,7 +19,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from models import Server, ServerPermission, User
+from models import Node, Server, ServerPermission, User
 
 
 @pytest.fixture
@@ -1175,3 +1175,83 @@ class TestReadAccessAudit:
             .count()
             == 0
         )
+
+
+class TestLocalVsAgent:
+    """Der Datei-Tab nimmt lokal nur lesbare Verzeichnisse, sonst den Agenten.
+
+    Regressionstest fuer Prod (Nov 2026): Bei Traverse-only-Eltern liefert
+    `isdir()` True, `iterdir()` stirbt danach mit EACCES (403) — obwohl der
+    Agent dieselben Dateien liefern koennte. Entscheidend ist Lesbarkeit.
+    """
+
+    def test_predicate_true_fuer_lesbares_verzeichnis(self, tmp_path: Path):
+        from routers.files import _local_fs_readable
+
+        ziel = tmp_path / "lesbar"
+        ziel.mkdir()
+        assert _local_fs_readable(str(ziel)) is True
+
+    def test_predicate_false_ohne_zugriff(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        from routers.files import _local_fs_readable
+
+        monkeypatch.setattr(os.path, "isdir", lambda p: True)
+        monkeypatch.setattr(os, "access", lambda p, m: False)
+        assert _local_fs_readable(str(tmp_path / "da")) is False
+
+    def test_predicate_ohne_stat_kein_access(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        from routers.files import _local_fs_readable
+
+        def fail_access(path, mode):
+            raise AssertionError("access darf bei fehlendem Pfad nicht laufen")
+
+        monkeypatch.setattr(os, "access", fail_access)
+        assert _local_fs_readable(str(tmp_path / "fehlt")) is False
+        assert _local_fs_readable("") is False
+        assert _local_fs_readable(None) is False
+
+    def test_browse_bleibt_lokal_wenn_lesbar(
+        self, client: TestClient, db: Session, owner_cookies: dict, server_with_dir: Server
+    ):
+        node = Node(name="Lokal", host="http://127.0.0.1:9000", auth_token_enc="x", is_local=True, status="online")
+        db.add(node)
+        db.commit()
+        db.refresh(node)
+        server_with_dir.node_id = node.id
+        db.commit()
+        (Path(server_with_dir.install_dir) / "a.txt").write_text("hi", encoding="utf-8")
+
+        def fail_from_node(n, **kwargs):
+            raise AssertionError("Agent darf bei lesbarem Pfad nicht gefragt werden")
+
+        with patch("routers.files.NodeClient.from_node", side_effect=fail_from_node):
+            res = client.get(f"/api/files/{server_with_dir.id}/browse?path=", cookies=owner_cookies)
+        assert res.status_code == 200
+        assert [e["name"] for e in res.json()["entries"]] == ["a.txt"]
+
+    def test_browse_weicht_auf_agent_aus_wenn_unlesbar(
+        self,
+        client: TestClient,
+        db: Session,
+        owner_cookies: dict,
+        server_with_dir: Server,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        from types import SimpleNamespace
+
+        node = Node(name="Lokal", host="http://127.0.0.1:9000", auth_token_enc="x", is_local=True, status="online")
+        db.add(node)
+        db.commit()
+        db.refresh(node)
+        server_with_dir.node_id = node.id
+        db.commit()
+
+        monkeypatch.setattr("routers.files._local_fs_readable", lambda p: False)
+        agent = SimpleNamespace(
+            files_list=lambda key, path: [{"name": "welt.dat", "is_dir": False, "size": 3, "modified": 0.0}]
+        )
+        with patch("routers.files.NodeClient.from_node", return_value=agent) as mock_agent:
+            res = client.get(f"/api/files/{server_with_dir.id}/browse?path=", cookies=owner_cookies)
+        assert res.status_code == 200
+        assert [e["name"] for e in res.json()["entries"]] == ["welt.dat"]
+        mock_agent.assert_called_once()
