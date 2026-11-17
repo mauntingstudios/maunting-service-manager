@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
-  ArrowLeft, Check, Crown, LogOut, Mail, Pencil, Plus, Server, Shield, ShieldCheck, Sparkles, Trash2, UserPlus, Users, UsersRound, X,
+  ArrowLeft, Check, Crown, Eye, LogOut, Mail, Pencil, Plus, Server, Shield, ShieldCheck, Sparkles, Trash2, UserPlus, Users, UsersRound, X,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
@@ -21,9 +21,10 @@ import { mitServerSicht } from '@/components/teams/teamPermissionsCatalog'
 import { TabBar, TabDef } from '@maunting/ui'
 import { TeamVaultView } from '@/desktop/vault/TeamVaultView'
 import { Avatar } from '@/components/app/Avatar'
-import { Button, Dropdown, MultiSelect, RoleBadge, Switch } from '@maunting/ui'
+import { Button, Dropdown, Kurzinfo, MultiSelect, RoleBadge, Switch } from '@maunting/ui'
 import { useHasPermission } from '@/hooks/useHasPermission'
 import { useAuthStore } from '@/stores/authStore'
+import { resolveTeamPreviewAccess, useRolePreviewStore, type TeamPreviewAccess } from '@/stores/rolePreviewStore'
 import { confirm } from '@/stores/confirmStore'
 import { toast } from '@/stores/toastStore'
 import { useTeamInvitationStore } from '@/stores/teamInvitationStore'
@@ -536,6 +537,14 @@ export function Teams() {
     }, 'common.saved')
   }
 
+  const team = detail && !detail.is_personal && detail.id === selectedId ? detail : null
+  const preview = useRolePreviewStore((s) => s.preview)
+  const startTeamRolePreview = useRolePreviewStore((s) => s.startTeamRolePreview)
+  const access = useMemo(
+    () => (team ? resolveTeamPreviewAccess(team, preview) : null),
+    [team, preview],
+  )
+
   if (loading) {
     return (
       <div className="flex h-full flex-1 items-center justify-center p-8" aria-label={t('common.loading')}>
@@ -559,21 +568,109 @@ export function Teams() {
   const meineBeitritte = einladungen.filter((row) => !meinTeam(row))
   const meineAnhebungen = einladungen.filter(meinTeam)
 
-  const team = detail && !detail.is_personal && detail.id === selectedId ? detail : null
   const inTauri = typeof window !== 'undefined' && ('__TAURI_INTERNALS__' in window || '__TAURI__' in window)
+  const activePreviewRoleId =
+    preview?.kind === 'team' && team && preview.teamId === team.id ? preview.roleId : null
+
+  const handlePreviewTeamRole = (role: TeamRole) => {
+    if (!team) return
+    startTeamRolePreview({ team, role, returnPath: '/teams' })
+    toast.success(t('rolePreview.started', { name: role.name }))
+  }
 
   const activeMeta = team ? getTeamMetadata(team.id, team.name) : null
   const activeCat = activeMeta ? TEAM_CATEGORIES[activeMeta.category] : null
 
   const teamReiter: TabDef<TeamReiter>[] = [
     { id: 'members', labelKey: 'teams.members', icon: Users, badge: team?.members.length },
-    ...(team?.is_owner
+    ...((access?.isFounder || access?.canManageServers) && team
       ? [{ id: 'servers' as const, labelKey: 'teams.tabServers', icon: Server, badge: team.servers.length }]
       : []),
     { id: 'roles' as const, labelKey: 'teams.roles', icon: Shield, badge: team?.roles?.length ?? 0 },
     ...(inTauri ? [{ id: 'vault' as const, labelKey: 'teams.vault', icon: ShieldCheck }] : []),
   ]
   const aktiverReiter: TeamReiter = teamReiter.some((row) => row.id === reiter) ? reiter : 'members'
+  const teamActionsNode = team && access ? (
+    <div className="flex items-center gap-1.5 sm:gap-2">
+      {access.isFounder ? (
+        <>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            disabled={busy}
+            onClick={() => setEditingTeam({ team, meta: activeMeta ?? getTeamMetadata(team.id, team.name) })}
+            aria-label={t('teams.editTeam', 'Team bearbeiten')}
+            className="h-9 w-9 p-0 rounded-full bg-surface-container-high/70 hover:bg-surface-container-high text-on-surface hover:text-primary border border-outline-variant/30 backdrop-blur-md shadow-sm transition-all active:scale-95"
+          >
+            <Pencil className="h-4 w-4" aria-hidden="true" />
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            disabled={busy}
+            onClick={() => void removeTeam(team)}
+            aria-label={t('teams.remove')}
+            className="h-9 w-9 p-0 rounded-full bg-surface-container-high/70 hover:bg-status-destructive/15 text-status-destructive border border-outline-variant/30 backdrop-blur-md shadow-sm transition-all active:scale-95"
+          >
+            <Trash2 className="h-4 w-4" aria-hidden="true" />
+          </Button>
+        </>
+      ) : (
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          disabled={busy}
+          onClick={() => void leaveTeam(team)}
+          aria-label={t('teams.leave')}
+          className="h-9 w-9 p-0 rounded-full bg-surface-container-high/70 hover:bg-status-destructive/15 text-status-destructive border border-outline-variant/30 backdrop-blur-md shadow-sm transition-all active:scale-95"
+        >
+          <LogOut className="h-4 w-4" aria-hidden="true" />
+        </Button>
+      )}
+    </div>
+  ) : null
+
+  const invitationsNode = (meineBeitritte.length > 0 || meineAnhebungen.length > 0) ? (
+    <div className="shrink-0 space-y-2 border-b border-outline-variant/40 bg-surface-container-low/40 p-3 sm:px-6">
+      <AngebotsBlock
+        kennung="team-my-invitations"
+        titel={t('teams.myInvitations')}
+        hinweis={t('teams.myInvitationsHint')}
+        einladungen={meineBeitritte}
+        busy={busy}
+        onAnnehmen={(invitation) => void acceptInvitation(invitation, false)}
+        onAblehnen={(invitation) => void declineInvitation(invitation, false)}
+      />
+      <AngebotsBlock
+        kennung="team-my-upgrades"
+        titel={t('teams.myUpgrades')}
+        hinweis={t('teams.myUpgradesHint')}
+        einladungen={meineAnhebungen}
+        busy={busy}
+        onAnnehmen={(invitation) => void acceptInvitation(invitation, true)}
+        onAblehnen={(invitation) => void declineInvitation(invitation, true)}
+      />
+    </div>
+  ) : null
+
+  const tabBarNode = (
+    <div className="mx-auto flex w-full max-w-4xl justify-center">
+      <TabBar
+        tabs={teamReiter}
+        active={aktiverReiter}
+        onChange={(nextTab) => {
+          setReiter(nextTab)
+          closeRoleForm()
+        }}
+        ariaLabel={t('teams.sections')}
+        embedded
+        className="w-full sm:w-auto flex flex-wrap justify-center gap-1 sm:gap-2 p-1 sm:p-1.5 rounded-2xl bg-surface-container-high/60 backdrop-blur-xl border border-outline-variant/30 shadow-sm"
+      />
+    </div>
+  )
 
   return (
     <div className="flex h-full w-full min-h-0 flex-1 flex-col overflow-hidden text-on-surface">
@@ -593,314 +690,285 @@ export function Teams() {
           onAcceptInvitation={acceptInvitation}
           onDeclineInvitation={declineInvitation}
         />
-      ) : (
+      ) : aktiverReiter === 'vault' ? (
         <>
-      {/* ── Executive Workspace Header & Centered Hero ─────────────────── */}
-      <header className="relative isolate shrink-0 overflow-hidden border-b border-outline-variant/30">
-        {/* Tageszeit-Hintergrund, der atmosphärisch hinter Profilbild und Buttons liegt und nach unten verwaschen ausläuft */}
-        <TageszeitHintergrund
-          motiv={headerMotiv}
-          hoehe="h-[520px] sm:h-[580px] lg:h-[640px]"
-          deckkraft="opacity-55"
-          ebene="-z-10"
-        />
-
-        {/* Frei schwebende Navigations- & Aktionsleiste ohne trennenden Glas-Balken */}
-        <div className="flex items-center justify-between gap-3 px-4 pt-3.5 sm:px-6 sm:pt-4">
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={() => setView('overview')}
-            aria-label={t('teams.backToOverview', 'Zurück zur Übersicht')}
-            className="gap-2 text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high/60 rounded-full px-3 py-1.5 transition-colors"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            <span className="text-xs sm:text-sm font-medium">{t('teams.backToOverview', 'Zurück zur Übersicht')}</span>
-          </Button>
-
-          {team && (
-            <div className="flex items-center gap-1.5 sm:gap-2">
-              {team.is_owner ? (
-                <>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    disabled={busy}
-                    onClick={() => setEditingTeam({ team, meta: activeMeta ?? getTeamMetadata(team.id, team.name) })}
-                    aria-label={t('teams.editTeam', 'Team bearbeiten')}
-                    className="h-9 w-9 p-0 rounded-full bg-surface-container-high/70 hover:bg-surface-container-high text-on-surface hover:text-primary border border-outline-variant/30 backdrop-blur-md shadow-sm transition-all active:scale-95"
-                  >
-                    <Pencil className="h-4 w-4" aria-hidden="true" />
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    disabled={busy}
-                    onClick={() => void removeTeam(team)}
-                    aria-label={t('teams.remove')}
-                    className="h-9 w-9 p-0 rounded-full bg-surface-container-high/70 hover:bg-status-destructive/15 text-status-destructive border border-outline-variant/30 backdrop-blur-md shadow-sm transition-all active:scale-95"
-                  >
-                    <Trash2 className="h-4 w-4" aria-hidden="true" />
-                  </Button>
-                </>
-              ) : (
+          <header className="shrink-0 border-b border-outline-variant/30 bg-surface/90 backdrop-blur-xl px-4 py-3 sm:px-6 space-y-3">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3 min-w-0">
                 <Button
                   type="button"
                   variant="ghost"
                   size="sm"
-                  disabled={busy}
-                  onClick={() => void leaveTeam(team)}
-                  aria-label={t('teams.leave')}
-                  className="h-9 w-9 p-0 rounded-full bg-surface-container-high/70 hover:bg-status-destructive/15 text-status-destructive border border-outline-variant/30 backdrop-blur-md shadow-sm transition-all active:scale-95"
+                  onClick={() => setView('overview')}
+                  aria-label={t('teams.backToOverview', 'Zurück zur Übersicht')}
+                  className="gap-2 text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high/60 rounded-full px-3 py-1.5 transition-colors shrink-0"
                 >
-                  <LogOut className="h-4 w-4" aria-hidden="true" />
+                  <ArrowLeft className="h-4 w-4" />
+                  <span className="hidden sm:inline text-xs sm:text-sm font-medium">{t('teams.backToOverview', 'Zurück zur Übersicht')}</span>
                 </Button>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Centered Atmospheric Hero Section (Mittig!) */}
-        <div className="relative px-3 pt-3 pb-5 text-center sm:px-6 sm:pt-4 sm:pb-6">
-          {/* Ambient Glow */}
-          <div
-            aria-hidden="true"
-            className="pointer-events-none absolute inset-x-0 -top-20 mx-auto h-48 w-80 sm:w-[420px] rounded-full blur-3xl opacity-25"
-            style={{
-              background: activeCat
-                ? `radial-gradient(circle, ${activeCat.colorHex} 0%, transparent 70%)`
-                : 'radial-gradient(circle, var(--color-primary) 0%, transparent 70%)',
-            }}
-          />
-
-          <div className="relative mx-auto flex max-w-2xl flex-col items-center">
-            {/* Großes zentriertes Titelbild / Profilbild */}
-            <div className="group relative h-20 w-20 sm:h-28 sm:w-28 overflow-hidden rounded-3xl border-2 border-outline-variant/40 bg-surface-container shadow-2xl transition-transform hover:scale-105">
-              {activeMeta?.coverImage ? (
-                <img
-                  src={activeMeta.coverImage}
-                  alt={team?.name ?? ''}
-                  className="h-full w-full object-cover"
-                />
-              ) : (
-                <div className="grid h-full w-full place-items-center bg-primary/10 text-primary">
-                  <UsersRound className="h-10 w-10 sm:h-12 sm:w-12" aria-hidden="true" />
-                </div>
-              )}
-              {team?.is_owner && (
-                <button
-                  type="button"
-                  onClick={() => setEditingTeam({ team, meta: activeMeta ?? getTeamMetadata(team.id, team.name) })}
-                  className="absolute inset-0 grid place-items-center bg-black/55 text-white opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100"
-                  aria-label={t('teams.editTeam', 'Team bearbeiten')}
-                >
-                  <Pencil className="h-5 w-5" />
-                </button>
-              )}
-            </div>
-
-            {/* Badges Reihe (Zentriert) */}
-            <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
-              {activeCat && (
-                <span
-                  style={{
-                    color: activeCat.colorHex,
-                    backgroundColor: activeCat.bgHex,
-                    borderColor: activeCat.borderHex,
-                  }}
-                  className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold border shadow-sm backdrop-blur-md"
-                >
-                  <activeCat.icon className="h-3.5 w-3.5" />
-                  <span>{activeCat.label}</span>
-                </span>
-              )}
-              {team?.is_owner && (
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/15 px-3 py-1 text-xs font-semibold text-primary border border-primary/25 shadow-sm backdrop-blur-md">
-                  <Crown className="h-3.5 w-3.5" />
-                  <span>{t('teams.founder')}</span>
-                </span>
-              )}
-            </div>
-
-            {/* Zentrierter Titel mit direktem Bearbeiten-Icon */}
-            <div className="mt-2.5 flex items-center justify-center gap-2">
-              <h1 className="font-headline text-2xl sm:text-3xl lg:text-4xl font-extrabold tracking-tight text-on-surface">
-                {team?.name ?? t('teams.title')}
-              </h1>
-              {team?.is_owner && (
-                <button
-                  type="button"
-                  onClick={() => setEditingTeam({ team, meta: activeMeta ?? getTeamMetadata(team.id, team.name) })}
-                  aria-label={t('teams.editTeam', 'Team bearbeiten')}
-                  className="grid h-8 w-8 place-items-center rounded-full text-on-surface-variant hover:text-primary hover:bg-surface-container-high/60 transition-colors"
-                >
-                  <Pencil className="h-4 w-4" aria-hidden="true" />
-                </button>
-              )}
-            </div>
-
-            {/* Zentrierte Beschreibung */}
-            {activeMeta?.description && (
-              <p className="mt-1 text-xs sm:text-sm text-on-surface-variant max-w-lg leading-relaxed">
-                {activeMeta.description}
-              </p>
-            )}
-
-            {/* 4 Stat Cards Strip (Zentriert wie im Referenzbild) */}
-            {team && (
-              <div className="mt-4 grid w-full max-w-xl grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-2.5">
-                <div className="flex items-center gap-2.5 rounded-2xl border border-outline-variant/30 bg-surface-container/80 p-2.5 backdrop-blur-md shadow-sm">
-                  <div className="grid h-8 w-8 sm:h-9 sm:w-9 shrink-0 place-items-center rounded-xl bg-primary/15 text-primary border border-primary/25">
-                    <Users className="h-4 w-4" />
+                {team && (
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="h-8 w-8 shrink-0 overflow-hidden rounded-xl border border-outline-variant/40 bg-surface-container">
+                      {activeMeta?.coverImage ? (
+                        <img src={activeMeta.coverImage} alt={team.name} className="h-full w-full object-cover" />
+                      ) : (
+                        <div className="grid h-full w-full place-items-center bg-primary/10 text-primary">
+                          <UsersRound className="h-4 w-4" aria-hidden="true" />
+                        </div>
+                      )}
+                    </div>
+                    <h1 className="font-headline text-base sm:text-lg font-bold truncate text-on-surface">
+                      {team.name}
+                    </h1>
                   </div>
-                  <div className="min-w-0 text-left">
-                    <div className="text-sm sm:text-base font-bold leading-none text-on-surface">{team.members.length}</div>
-                    <div className="mt-0.5 truncate text-xs text-on-surface-variant font-medium">{t('teams.members')}</div>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2.5 rounded-2xl border border-outline-variant/30 bg-surface-container/80 p-2.5 backdrop-blur-md shadow-sm">
-                  <div className="grid h-8 w-8 sm:h-9 sm:w-9 shrink-0 place-items-center rounded-xl bg-secondary/15 text-secondary border border-secondary/25">
-                    <Server className="h-4 w-4" />
-                  </div>
-                  <div className="min-w-0 text-left">
-                    <div className="text-sm sm:text-base font-bold leading-none text-on-surface">{team.servers.length}</div>
-                    <div className="mt-0.5 truncate text-xs text-on-surface-variant font-medium">{t('teams.tabServers')}</div>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2.5 rounded-2xl border border-outline-variant/30 bg-surface-container/80 p-2.5 backdrop-blur-md shadow-sm">
-                  <div className="grid h-8 w-8 sm:h-9 sm:w-9 shrink-0 place-items-center rounded-xl bg-primary/15 text-primary border border-primary/25">
-                    <ShieldCheck className="h-4 w-4" />
-                  </div>
-                  <div className="min-w-0 text-left">
-                    <div className="text-sm sm:text-base font-bold leading-none text-on-surface">{(team.roles || []).length}</div>
-                    <div className="mt-0.5 truncate text-xs text-on-surface-variant font-medium">{t('teams.roles')}</div>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2.5 rounded-2xl border border-outline-variant/30 bg-surface-container/80 p-2.5 backdrop-blur-md shadow-sm">
-                  <div className="grid h-8 w-8 sm:h-9 sm:w-9 shrink-0 place-items-center rounded-xl bg-status-warning/15 text-status-warning border border-status-warning/25">
-                    <ShieldCheck className="h-4 w-4" />
-                  </div>
-                  <div className="min-w-0 text-left">
-                    <div className="text-sm sm:text-base font-bold leading-none text-on-surface">{team.can_access_vault !== false ? 'Aktiv' : 'Gesperrt'}</div>
-                    <div className="mt-0.5 truncate text-xs text-on-surface-variant font-medium">{t('teams.vault')}</div>
-                  </div>
-                </div>
+                )}
               </div>
-            )}
+              {teamActionsNode}
+            </div>
+            {tabBarNode}
+          </header>
+
+          {invitationsNode}
+
+          <div className="flex flex-1 min-h-0 w-full overflow-hidden" data-testid="team-workspace">
+            <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
+              {team && (
+                <section className="flex-1 min-h-0 flex flex-col h-full w-full" aria-labelledby="team-vault">
+                  <TeamVaultView
+                    team={access ? { ...team, is_owner: access.isFounder, can_access_vault: access.canAccessVault } : team}
+                  />
+                </section>
+              )}
+            </main>
           </div>
-        </div>
-
-        {/* Tab-Leiste (Mittig vom Bildschirm, groß auf Desktop, umbruchsicher und wischfrei mobil) */}
-        <div className="border-t border-outline-variant/30 bg-surface/85 px-3 py-2.5 backdrop-blur-xl sm:px-6 sm:py-3.5">
-          <div className="mx-auto flex w-full max-w-4xl justify-center">
-            <TabBar
-              tabs={teamReiter}
-              active={aktiverReiter}
-              onChange={(nextTab) => {
-                setReiter(nextTab)
-                closeRoleForm()
-              }}
-              ariaLabel={t('teams.sections')}
-              embedded
-              className="w-full sm:w-auto flex flex-wrap justify-center gap-1 sm:gap-2 p-1 sm:p-1.5 rounded-2xl bg-surface-container-high/60 backdrop-blur-xl border border-outline-variant/30 shadow-sm"
-            />
-          </div>
-        </div>
-      </header>
-
-      {/* ── Sub-Header & Einladungs-Alerts ──────────────────────────────── */}
-      {(meineBeitritte.length > 0 || meineAnhebungen.length > 0) && (
-        <div className="shrink-0 space-y-2 border-b border-outline-variant/40 bg-surface-container-low/40 p-3 sm:px-6">
-          <AngebotsBlock
-            kennung="team-my-invitations"
-            titel={t('teams.myInvitations')}
-            hinweis={t('teams.myInvitationsHint')}
-            einladungen={meineBeitritte}
-            busy={busy}
-            onAnnehmen={(invitation) => void acceptInvitation(invitation, false)}
-            onAblehnen={(invitation) => void declineInvitation(invitation, false)}
+        </>
+      ) : (
+        <div className="relative isolate flex-1 min-h-0 overflow-y-auto scrollbar-thin">
+          {/* Tageszeit-Hintergrund hinter dem Team-Hero, der weich nach unten ausläuft */}
+          <TageszeitHintergrund
+            motiv={headerMotiv}
+            hoehe="h-[460px] sm:h-[520px] lg:h-[560px]"
+            deckkraft="opacity-55"
+            ebene="-z-10"
           />
-          <AngebotsBlock
-            kennung="team-my-upgrades"
-            titel={t('teams.myUpgrades')}
-            hinweis={t('teams.myUpgradesHint')}
-            einladungen={meineAnhebungen}
-            busy={busy}
-            onAnnehmen={(invitation) => void acceptInvitation(invitation, true)}
-            onAblehnen={(invitation) => void declineInvitation(invitation, true)}
-          />
-        </div>
-      )}
 
-      {/* ── Dashboard Canvas ───────────────────────────────────────────── */}
-      <div
-        className="flex flex-1 min-h-0 w-full overflow-hidden"
-        data-testid="team-workspace"
-      >
-          {/* ── Main Workspace: KPI Strip & Tabbed Canvas ──────────────── */}
-          <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
-            {team ? (
-              <div className={`flex-1 min-h-0 ${aktiverReiter === 'vault' ? 'p-0 overflow-hidden flex flex-col' : 'overflow-y-auto px-3 py-4 sm:px-6 sm:py-6'}`}>
-                <div className={aktiverReiter === 'vault' ? 'h-full flex flex-col' : 'mx-auto w-full max-w-5xl space-y-6'}>
-                  {aktiverReiter === 'members' && (
-                    <MitgliederReiter
-                      team={team}
-                      benutzerId={benutzerId}
-                      kandidaten={memberCandidates}
-                      newMemberId={newMemberId}
-                      busy={busy}
-                      offeneBeitritte={offeneBeitritte}
-                      offeneAnhebungen={offeneAnhebungen}
-                      onKandidat={setNewMemberId}
-                      onEinladen={() => void inviteMember()}
-                      onSchalter={(member, next) => void setMemberSwitches(member, next)}
-                      onSetMemberRoles={(member, roleIds) => void setMemberRoles(member, roleIds)}
-                      onEntfernen={(member) => void removeMember(member)}
+          {/* ── Executive Workspace Header & Centered Hero (scrollt mit, damit darunter voller Platz bleibt) ── */}
+          <header className="relative z-10">
+            <div className="flex items-center justify-between gap-3 px-4 pt-3.5 sm:px-6 sm:pt-4">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => setView('overview')}
+                aria-label={t('teams.backToOverview', 'Zurück zur Übersicht')}
+                className="gap-2 text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high/60 rounded-full px-3 py-1.5 transition-colors"
+              >
+                <ArrowLeft className="h-4 w-4" />
+                <span className="text-xs sm:text-sm font-medium">{t('teams.backToOverview', 'Zurück zur Übersicht')}</span>
+              </Button>
+
+              {teamActionsNode}
+            </div>
+
+            <div className="relative px-3 pt-2 pb-4 text-center sm:px-6 sm:pt-3 sm:pb-5">
+              <div
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-x-0 -top-20 mx-auto h-48 w-80 sm:w-[420px] rounded-full blur-3xl opacity-25"
+                style={{
+                  background: activeCat
+                    ? `radial-gradient(circle, ${activeCat.colorHex} 0%, transparent 70%)`
+                    : 'radial-gradient(circle, var(--color-primary) 0%, transparent 70%)',
+                }}
+              />
+
+              <div className="relative mx-auto flex max-w-2xl flex-col items-center">
+                {/* Großes zentriertes Titelbild / Profilbild */}
+                <div className="group relative h-20 w-20 sm:h-24 sm:w-24 overflow-hidden rounded-3xl border-2 border-outline-variant/40 bg-surface-container shadow-2xl transition-transform hover:scale-105">
+                  {activeMeta?.coverImage ? (
+                    <img
+                      src={activeMeta.coverImage}
+                      alt={team?.name ?? ''}
+                      className="h-full w-full object-cover"
                     />
+                  ) : (
+                    <div className="grid h-full w-full place-items-center bg-primary/10 text-primary">
+                      <UsersRound className="h-10 w-10 sm:h-11 sm:w-11" aria-hidden="true" />
+                    </div>
                   )}
-
-                  {aktiverReiter === 'servers' && (
-                    <TeamServerManager
-                      team={team}
-                      assignable={assignable}
-                      busy={busy}
-                      onSetServerKeys={(serverId, keys) => void setServerKeys(serverId, keys)}
-                      rollenWahl={rollenWahl}
-                      onRollenWahl={(serverId, roleId) => setRollenWahl((prev) => ({ ...prev, [serverId]: roleId }))}
-                      onRoleKeys={(serverId, roleId, keys) => void setRoleServerKeys(serverId, roleId, keys)}
-                      onToggleServerRoles={(next) => void setServerRolesActive(next)}
-                      onSyncRoleKeysToAll={(serverId, roleId, keys) => void syncRoleServerKeysToAll(serverId, roleId, keys)}
-                      onSyncServerKeysToAll={(serverId, keys) => void syncServerKeysToAll(serverId, keys)}
-                    />
-                  )}
-
-                  {aktiverReiter === 'roles' && (
-                    <RollenReiter
-                      team={team}
-                      assignable={assignable}
-                      busy={busy}
-                      isCreatingRole={isCreatingRole}
-                      editingRole={editingRole}
-                      onOpenCreateRole={openCreateRole}
-                      onOpenEditRole={openEditRole}
-                      onCloseRoleForm={closeRoleForm}
-                      onRoleSaved={onRoleSaved}
-                      onDeleteRole={(role) => void deleteRole(role)}
-                    />
-                  )}
-
-                  {aktiverReiter === 'vault' && (
-                    <section className="flex-1 min-h-0 flex flex-col h-full w-full" aria-labelledby="team-vault">
-                      <TeamVaultView team={team} />
-                    </section>
+                  {access?.isFounder && team && (
+                    <button
+                      type="button"
+                      onClick={() => setEditingTeam({ team, meta: activeMeta ?? getTeamMetadata(team.id, team.name) })}
+                      className="absolute inset-0 grid place-items-center bg-black/55 text-white opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100"
+                      aria-label={t('teams.editTeam', 'Team bearbeiten')}
+                    >
+                      <Pencil className="h-5 w-5" />
+                    </button>
                   )}
                 </div>
+
+                {/* Badges Reihe (Zentriert) */}
+                <div className="mt-2.5 flex flex-wrap items-center justify-center gap-2">
+                  {activeCat && (
+                    <span
+                      style={{
+                        color: activeCat.colorHex,
+                        backgroundColor: activeCat.bgHex,
+                        borderColor: activeCat.borderHex,
+                      }}
+                      className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold border shadow-sm backdrop-blur-md"
+                    >
+                      <activeCat.icon className="h-3.5 w-3.5" />
+                      <span>{activeCat.label}</span>
+                    </span>
+                  )}
+                  {access?.isFounder && (
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/15 px-3 py-1 text-xs font-semibold text-primary border border-primary/25 shadow-sm backdrop-blur-md">
+                      <Crown className="h-3.5 w-3.5" />
+                      <span>{t('teams.founder')}</span>
+                    </span>
+                  )}
+                </div>
+
+                {/* Zentrierter Titel mit direktem Bearbeiten-Icon */}
+                <div className="mt-2 flex items-center justify-center gap-2">
+                  <h1 className="font-headline text-2xl sm:text-3xl font-extrabold tracking-tight text-on-surface">
+                    {team?.name ?? t('teams.title')}
+                  </h1>
+                  {access?.isFounder && team && (
+                    <button
+                      type="button"
+                      onClick={() => setEditingTeam({ team, meta: activeMeta ?? getTeamMetadata(team.id, team.name) })}
+                      aria-label={t('teams.editTeam', 'Team bearbeiten')}
+                      className="grid h-8 w-8 place-items-center rounded-full text-on-surface-variant hover:text-primary hover:bg-surface-container-high/60 transition-colors"
+                    >
+                      <Pencil className="h-4 w-4" aria-hidden="true" />
+                    </button>
+                  )}
+                </div>
+
+                {/* Zentrierte Beschreibung */}
+                {activeMeta?.description && (
+                  <p className="mt-1 text-xs sm:text-sm text-on-surface-variant max-w-lg leading-relaxed">
+                    {activeMeta.description}
+                  </p>
+                )}
+
+                {/* 4 Stat Cards Strip */}
+                {team && (
+                  <div className="mt-3.5 grid w-full max-w-2xl grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-2.5">
+                    <div className="flex items-center gap-2.5 rounded-2xl border border-outline-variant/30 bg-surface-container/80 p-2.5 backdrop-blur-md shadow-sm">
+                      <div className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-primary/15 text-primary border border-primary/25">
+                        <Users className="h-4 w-4" />
+                      </div>
+                      <div className="min-w-0 text-left">
+                        <div className="text-sm sm:text-base font-bold leading-none text-on-surface">{team.members.length}</div>
+                        <div className="mt-0.5 truncate text-xs text-on-surface-variant font-medium">{t('teams.members')}</div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2.5 rounded-2xl border border-outline-variant/30 bg-surface-container/80 p-2.5 backdrop-blur-md shadow-sm">
+                      <div className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-secondary/15 text-secondary border border-secondary/25">
+                        <Server className="h-4 w-4" />
+                      </div>
+                      <div className="min-w-0 text-left">
+                        <div className="text-sm sm:text-base font-bold leading-none text-on-surface">{team.servers.length}</div>
+                        <div className="mt-0.5 truncate text-xs text-on-surface-variant font-medium">{t('teams.tabServers')}</div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2.5 rounded-2xl border border-outline-variant/30 bg-surface-container/80 p-2.5 backdrop-blur-md shadow-sm">
+                      <div className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-primary/15 text-primary border border-primary/25">
+                        <ShieldCheck className="h-4 w-4" />
+                      </div>
+                      <div className="min-w-0 text-left">
+                        <div className="text-sm sm:text-base font-bold leading-none text-on-surface">{(team.roles || []).length}</div>
+                        <div className="mt-0.5 truncate text-xs text-on-surface-variant font-medium">{t('teams.roles')}</div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2.5 rounded-2xl border border-outline-variant/30 bg-surface-container/80 p-2.5 backdrop-blur-md shadow-sm">
+                      <div className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-status-warning/15 text-status-warning border border-status-warning/25">
+                        <ShieldCheck className="h-4 w-4" />
+                      </div>
+                      <div className="min-w-0 text-left">
+                        <div className="text-sm sm:text-base font-bold leading-none text-on-surface">
+                          {access?.canAccessVault !== false ? 'Aktiv' : 'Gesperrt'}
+                        </div>
+                        <div className="mt-0.5 truncate text-xs text-on-surface-variant font-medium">{t('teams.vault')}</div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </header>
+
+          {/* Klebrige Tab-Leiste beim Runterscrollen */}
+          <div className="sticky top-0 z-20 border-y border-outline-variant/30 bg-surface/85 px-3 py-2.5 backdrop-blur-xl sm:px-6 sm:py-3">
+            {tabBarNode}
+          </div>
+
+          {invitationsNode}
+
+          {/* ── Geräumiger Arbeitsbereich mit voller Bildschirmbreite ───────── */}
+          <main
+            className="relative z-10 mx-auto w-full max-w-7xl px-3.5 py-5 sm:px-6 sm:py-6 lg:px-8 pb-12"
+            data-testid="team-workspace"
+          >
+            {team ? (
+              <div className="w-full space-y-6">
+                {aktiverReiter === 'members' && access && (
+                  <MitgliederReiter
+                    team={team}
+                    access={access}
+                    benutzerId={benutzerId}
+                    kandidaten={memberCandidates}
+                    newMemberId={newMemberId}
+                    busy={busy}
+                    offeneBeitritte={offeneBeitritte}
+                    offeneAnhebungen={offeneAnhebungen}
+                    onKandidat={setNewMemberId}
+                    onEinladen={() => void inviteMember()}
+                    onSchalter={(member, next) => void setMemberSwitches(member, next)}
+                    onSetMemberRoles={(member, roleIds) => void setMemberRoles(member, roleIds)}
+                    onEntfernen={(member) => void removeMember(member)}
+                  />
+                )}
+
+                {aktiverReiter === 'servers' && access && (
+                  <TeamServerManager
+                    team={team}
+                    assignable={assignable}
+                    busy={busy}
+                    canToggleServerRoles={access.isFounder}
+                    onSetServerKeys={(serverId, keys) => void setServerKeys(serverId, keys)}
+                    rollenWahl={rollenWahl}
+                    onRollenWahl={(serverId, roleId) => setRollenWahl((prev) => ({ ...prev, [serverId]: roleId }))}
+                    onRoleKeys={(serverId, roleId, keys) => void setRoleServerKeys(serverId, roleId, keys)}
+                    onToggleServerRoles={(next) => void setServerRolesActive(next)}
+                    onSyncRoleKeysToAll={(serverId, roleId, keys) => void syncRoleServerKeysToAll(serverId, roleId, keys)}
+                    onSyncServerKeysToAll={(serverId, keys) => void syncServerKeysToAll(serverId, keys)}
+                  />
+                )}
+
+                {aktiverReiter === 'roles' && access && (
+                  <RollenReiter
+                    team={team}
+                    assignable={assignable}
+                    busy={busy}
+                    canManageRoles={access.canManageRoles}
+                    activePreviewRoleId={activePreviewRoleId}
+                    isCreatingRole={isCreatingRole}
+                    editingRole={editingRole}
+                    onOpenCreateRole={openCreateRole}
+                    onOpenEditRole={openEditRole}
+                    onCloseRoleForm={closeRoleForm}
+                    onRoleSaved={onRoleSaved}
+                    onDeleteRole={(role) => void deleteRole(role)}
+                    onPreviewRole={handlePreviewTeamRole}
+                  />
+                )}
               </div>
             ) : (
               <div className="flex flex-1 flex-col items-center justify-center p-8 text-center text-sm text-on-surface-variant">
@@ -917,7 +985,6 @@ export function Teams() {
             )}
           </main>
         </div>
-        </>
       )}
 
       <TeamModal
@@ -952,10 +1019,11 @@ export function Teams() {
 
 
 function MitgliederReiter({
-  team, benutzerId, kandidaten, newMemberId, busy, offeneBeitritte, offeneAnhebungen,
+  team, access, benutzerId, kandidaten, newMemberId, busy, offeneBeitritte, offeneAnhebungen,
   onKandidat, onEinladen, onSchalter, onSetMemberRoles, onEntfernen,
 }: {
   team: TeamDetail
+  access: TeamPreviewAccess
   benutzerId: number | null
   kandidaten: UserOption[]
   newMemberId: string | null
@@ -973,7 +1041,7 @@ function MitgliederReiter({
   const spalten = 'md:grid-cols-[minmax(0,1.2fr)_12rem_7rem_7rem_7rem_2.75rem]'
 
   return (
-    <section className="space-y-6 max-w-6xl" aria-labelledby="team-members">
+    <section className="space-y-6 w-full" aria-labelledby="team-members">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h3 id="team-members" className="font-headline text-lg font-semibold text-on-surface">
@@ -984,7 +1052,7 @@ function MitgliederReiter({
           </p>
         </div>
 
-        {team.is_owner && kandidaten.length > 0 && (
+        {access.canInvite && kandidaten.length > 0 && (
           <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
             <div className="min-w-[12rem] flex-1 sm:w-60 sm:flex-none">
               <Dropdown
@@ -1078,7 +1146,7 @@ function MitgliederReiter({
                   </span>
                 </div>
                 <div className="flex justify-end md:order-last">
-                  {team.is_owner && !ich && member.role !== 'owner' && (
+                  {access.canKick && !ich && member.role !== 'owner' && (
                     <Button
                       type="button" variant="ghost" size="sm" disabled={busy}
                       onClick={() => onEntfernen(member)}
@@ -1092,7 +1160,7 @@ function MitgliederReiter({
                 {/* Rollen-Zuweisung */}
                 <div className="col-span-2 flex flex-col justify-center gap-1 md:col-span-1 min-w-[10rem]">
                   <span className="text-xs font-semibold text-on-surface-variant md:hidden">{t('teams.roles')}</span>
-                  {team.is_owner && member.role !== 'owner' ? (
+                  {access.canManageRoles && member.role !== 'owner' ? (
                     <MultiSelect
                       options={roleOptions}
                       values={memberRoleValues}
@@ -1124,7 +1192,7 @@ function MitgliederReiter({
                   <span className="text-xs text-on-surface-variant md:hidden">{t('teams.manageSkills')}</span>
                   <Switch
                     checked={member.can_manage_skills}
-                    disabled={!team.is_owner || busy}
+                    disabled={!access.isFounder || busy}
                     onCheckedChange={(next) => onSchalter(member, {
                       can_manage_skills: next, can_manage_memory: member.can_manage_memory,
                     })}
@@ -1135,7 +1203,7 @@ function MitgliederReiter({
                   <span className="text-xs text-on-surface-variant md:hidden">{t('teams.manageMemory')}</span>
                   <Switch
                     checked={member.can_manage_memory}
-                    disabled={!team.is_owner || busy}
+                    disabled={!access.isFounder || busy}
                     onCheckedChange={(next) => onSchalter(member, {
                       can_manage_skills: member.can_manage_skills, can_manage_memory: next, can_access_vault: member.can_access_vault,
                     })}
@@ -1146,7 +1214,7 @@ function MitgliederReiter({
                   <span className="text-xs text-on-surface-variant md:hidden">{t('teams.accessVault')}</span>
                   <Switch
                     checked={member.can_access_vault !== false}
-                    disabled={!team.is_owner || busy || member.role === 'owner'}
+                    disabled={!access.isFounder || busy || member.role === 'owner'}
                     onCheckedChange={(next) => onSchalter(member, {
                       can_manage_skills: member.can_manage_skills,
                       can_manage_memory: member.can_manage_memory,
@@ -1161,7 +1229,7 @@ function MitgliederReiter({
         </ul>
       </div>
 
-      {team.is_owner && (
+      {access.isFounder && (
         <div className="space-y-4 pt-2">
           <OffeneGruppe
             kennung="team-pending-invitations"
@@ -1187,6 +1255,8 @@ function RollenReiter({
   team,
   assignable,
   busy,
+  canManageRoles,
+  activePreviewRoleId,
   isCreatingRole,
   editingRole,
   onOpenCreateRole,
@@ -1194,10 +1264,13 @@ function RollenReiter({
   onCloseRoleForm,
   onRoleSaved,
   onDeleteRole,
+  onPreviewRole,
 }: {
   team: TeamDetail
   assignable: TeamServer[]
   busy: boolean
+  canManageRoles: boolean
+  activePreviewRoleId: number | null
   isCreatingRole: boolean
   editingRole: TeamRole | null
   onOpenCreateRole: () => void
@@ -1205,12 +1278,13 @@ function RollenReiter({
   onCloseRoleForm: () => void
   onRoleSaved: (role: TeamRole) => void
   onDeleteRole: (role: TeamRole) => void
+  onPreviewRole: (role: TeamRole) => void
 }) {
   const { t } = useTranslation()
   const roles = team.roles || []
 
   return (
-    <section className="space-y-6 max-w-6xl" aria-labelledby="team-roles">
+    <section className="space-y-6 w-full" aria-labelledby="team-roles">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h3 id="team-roles" className="font-headline text-lg font-semibold text-on-surface">
@@ -1221,7 +1295,7 @@ function RollenReiter({
           </p>
         </div>
 
-        {team.is_owner && !isCreatingRole && !editingRole && (
+        {canManageRoles && !isCreatingRole && !editingRole && (
           <Button type="button" size="sm" disabled={busy} onClick={onOpenCreateRole}>
             <Plus className="h-4 w-4 mr-1.5" aria-hidden="true" />
             {t('teams.createRole')}
@@ -1255,7 +1329,7 @@ function RollenReiter({
         <div className="rounded-xl border border-dashed border-outline-variant/40 bg-surface-container-low/30 p-8 text-center text-sm text-on-surface-variant">
           <Shield className="mx-auto h-8 w-8 text-on-surface-variant/60 mb-2" />
           <p className="font-medium">{t('teams.noRolesYet')}</p>
-          {team.is_owner && (
+          {canManageRoles && (
             <Button
               type="button"
               variant="secondary"
@@ -1270,25 +1344,47 @@ function RollenReiter({
           )}
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
           {roles.map((role) => {
             const hasServerGrants = (role.server_grants?.length ?? 0) > 0
+            const isPreviewActive = activePreviewRoleId === role.id
 
             return (
               <div
                 key={role.id}
-                className="flex flex-col justify-between rounded-xl border border-outline-variant/40 bg-surface p-4 shadow-sm transition-all hover:border-outline-variant"
+                className={`flex flex-col justify-between rounded-xl border bg-surface p-4 shadow-sm transition-all ${
+                  isPreviewActive
+                    ? 'border-primary/60 ring-1 ring-primary/30'
+                    : 'border-outline-variant/40 hover:border-outline-variant'
+                }`}
               >
                 <div className="space-y-3">
                   {/* Header: RoleBadge & Badges */}
                   <div className="flex items-start justify-between gap-3">
                     <h4 className="flex items-center gap-2.5 min-w-0">
-                      <RoleBadge
-                        name={role.name}
-                        color={role.color}
-                        icon={role.icon}
-                        size="md"
-                      />
+                      <Kurzinfo text={t('rolePreview.previewAction')} seite="anfang">
+                        <button
+                          type="button"
+                          onClick={() => onPreviewRole(role)}
+                          className="group inline-flex items-center gap-1.5 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                          aria-label={`${t('rolePreview.previewAction')}: ${role.name}`}
+                        >
+                          <RoleBadge
+                            name={role.name}
+                            color={role.color}
+                            icon={role.icon}
+                            size="md"
+                          />
+                          <Eye
+                            className={`h-3.5 w-3.5 text-on-surface-variant transition-opacity ${
+                              isPreviewActive
+                                ? 'opacity-100 text-primary'
+                                : 'opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100'
+                            }`}
+                            aria-hidden="true"
+                          />
+                        </button>
+                      </Kurzinfo>
                     </h4>
 
                     <div className="flex flex-wrap items-center gap-1.5 shrink-0">
@@ -1352,38 +1448,52 @@ function RollenReiter({
                 </div>
 
                 {/* Actions Footer */}
-                {team.is_owner && (
-                  <div className="flex items-center justify-end gap-1.5 pt-3 mt-3 border-t border-outline-variant/30">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      disabled={busy}
-                      onClick={() => onOpenEditRole(role)}
-                      className="text-xs h-7 px-2"
-                      aria-label={`${t('teams.editRole')}: ${role.name}`}
-                    >
-                      <Pencil className="h-3.5 w-3.5 mr-1" />
-                      {t('common.edit')}
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      disabled={busy || role.is_default}
-                      onClick={() => onDeleteRole(role)}
-                      className="text-xs h-7 px-2 text-status-destructive hover:bg-status-destructive/10"
-                      aria-label={
-                        role.is_default
-                          ? `${t('teams.deleteRoleTitle')}: ${role.name} — ${t('teams.defaultRoleCannotBeDeleted')}`
-                          : `${t('teams.deleteRoleTitle')}: ${role.name}`
-                      }
-                    >
-                      <Trash2 className="h-3.5 w-3.5 mr-1" />
-                      {t('common.delete')}
-                    </Button>
-                  </div>
-                )}
+                <div className="flex flex-wrap items-center justify-between gap-1.5 pt-3 mt-3 border-t border-outline-variant/30">
+                  <Button
+                    type="button"
+                    variant={isPreviewActive ? 'primary' : 'ghost'}
+                    size="sm"
+                    onClick={() => onPreviewRole(role)}
+                    className="text-xs h-7 px-2"
+                    aria-label={`${t('rolePreview.previewAction')} (${role.name})`}
+                  >
+                    <Eye className="h-3.5 w-3.5 mr-1" aria-hidden="true" />
+                    {isPreviewActive ? t('rolePreview.previewActive') : t('rolePreview.previewAction')}
+                  </Button>
+
+                  {canManageRoles && (
+                    <div className="flex items-center gap-1.5">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        disabled={busy}
+                        onClick={() => onOpenEditRole(role)}
+                        className="text-xs h-7 px-2"
+                        aria-label={`${t('teams.editRole')}: ${role.name}`}
+                      >
+                        <Pencil className="h-3.5 w-3.5 mr-1" />
+                        {t('common.edit')}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        disabled={busy || role.is_default}
+                        onClick={() => onDeleteRole(role)}
+                        className="text-xs h-7 px-2 text-status-destructive hover:bg-status-destructive/10"
+                        aria-label={
+                          role.is_default
+                            ? `${t('teams.deleteRoleTitle')}: ${role.name} — ${t('teams.defaultRoleCannotBeDeleted')}`
+                            : `${t('teams.deleteRoleTitle')}: ${role.name}`
+                        }
+                      >
+                        <Trash2 className="h-3.5 w-3.5 mr-1" />
+                        {t('common.delete')}
+                      </Button>
+                    </div>
+                  )}
+                </div>
               </div>
             )
           })}

@@ -1,24 +1,34 @@
+import { useMemo } from 'react'
 import { usePermissionsStore } from '@/stores/permissionsStore'
+import { resolveEffectivePermissions, useRolePreviewStore } from '@/stores/rolePreviewStore'
+import type { MePermissions } from '@/types/permissions'
 
-/** Prueft eine Permission im Frontend (nur UI \u2014 Backend prueft selbst).
+/** Liefert die effektiven Berechtigungen — unter Berücksichtigung einer aktiven Rollenvorschau. */
+export function useEffectivePermissions(): MePermissions | null {
+  const me = usePermissionsStore((s) => s.me)
+  const preview = useRolePreviewStore((s) => s.preview)
+  return useMemo(() => resolveEffectivePermissions(me, preview), [me, preview])
+}
+
+/** Prueft eine Permission im Frontend (nur UI — Backend prueft selbst).
  *
  * @param key Permission-Key aus dem Catalog (global oder server-scoped)
- * @param serverId Optional \u2014 wenn gesetzt, wird zusaetzlich nach
+ * @param serverId Optional — wenn gesetzt, wird zusaetzlich nach
  *                 server-spezifischer Delegation geschaut.
  */
 export function useHasPermission(key: string, serverId?: number): boolean {
-  const me = usePermissionsStore((s) => s.me)
-  if (!me) return false
-  if (me.is_owner) return true
-  if (me.global_keys.includes(key)) return true
+  const effective = useEffectivePermissions()
+  if (!effective) return false
+  if (effective.is_owner) return true
+  if (effective.global_keys.includes(key)) return true
   if (serverId !== undefined) {
-    const perServer = me.server_keys[String(serverId)] ?? []
+    const perServer = effective.server_keys[String(serverId)] ?? []
     if (perServer.includes(key)) return true
   }
   return false
 }
 
 export function useIsOwner(): boolean {
-  const me = usePermissionsStore((s) => s.me)
-  return !!me?.is_owner
+  const effective = useEffectivePermissions()
+  return !!effective?.is_owner
 }

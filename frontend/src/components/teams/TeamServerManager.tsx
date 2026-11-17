@@ -9,6 +9,7 @@ export interface TeamServerManagerProps {
   team: TeamDetail
   assignable: TeamServer[]
   busy: boolean
+  canToggleServerRoles?: boolean
   onSetServerKeys: (serverId: number, keys: string[]) => void
   rollenWahl: Record<number, number | null>
   onRollenWahl: (serverId: number, roleId: number | null) => void
@@ -28,6 +29,7 @@ export function TeamServerManager({
   team,
   assignable,
   busy,
+  canToggleServerRoles = team.is_owner,
   onSetServerKeys,
   rollenWahl,
   onRollenWahl,
@@ -48,22 +50,27 @@ export function TeamServerManager({
     }
   }
 
+  const serverGridClass =
+    assignable.length > 1
+      ? 'grid grid-cols-1 xl:grid-cols-2 gap-4 items-start'
+      : 'space-y-4'
+
   return (
-    <section className="space-y-6 max-w-4xl" aria-labelledby="team-servers-heading">
+    <section className="space-y-6 w-full" aria-labelledby="team-servers-heading">
       {/* Kopfbereich */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h3 id="team-servers-heading" className="font-headline text-lg sm:text-xl font-bold text-on-surface">
             {t('teams.servers')}
           </h3>
-          <p className="mt-1 text-xs sm:text-sm text-on-surface-variant max-w-xl">
+          <p className="mt-1 text-xs sm:text-sm text-on-surface-variant max-w-2xl">
             {t('teams.serversHint')}
           </p>
         </div>
       </div>
 
       {/* Rollenmodus Umschalter für Teambesitzer */}
-      {team.is_owner && (
+      {canToggleServerRoles && (
         <div className="flex items-start justify-between gap-4 rounded-2xl border border-outline-variant/30 bg-surface-container-low/60 p-4 sm:p-5 backdrop-blur-md shadow-sm">
           <div className="min-w-0">
             <p className="text-sm font-semibold text-on-surface">{t('teams.serverRolesTitle')}</p>
@@ -129,7 +136,8 @@ export function TeamServerManager({
                 </div>
               )}
 
-              {assignable.map((server) => {
+              <div className={serverGridClass}>
+                {assignable.map((server) => {
                 const gewaehlt = rollen.find((r) => r.id === rollenWahl[server.server_id]) ?? null
                 const grant = gewaehlt?.server_grants?.find((g) => g.server_id === server.server_id)
 
@@ -175,12 +183,13 @@ export function TeamServerManager({
                   </div>
                 )
               })}
+              </div>
             </div>
           )}
         </div>
       ) : (
         /* Standard-Modus: Teamweite Serverrechte */
-        <div className="space-y-4">
+        <div className={serverGridClass}>
           {assignable.map((server) => {
             const current = team.servers.find((item) => item.server_id === server.server_id)
             return (

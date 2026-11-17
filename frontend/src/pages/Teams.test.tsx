@@ -8,6 +8,7 @@ import i18n from '@/i18n'
 import { useAuthStore } from '@/stores/authStore'
 import { confirm } from '@/stores/confirmStore'
 import { usePermissionsStore } from '@/stores/permissionsStore'
+import { useRolePreviewStore } from '@/stores/rolePreviewStore'
 import { toast } from '@/stores/toastStore'
 import type { User } from '@/types'
 import { Teams } from './Teams'
@@ -220,6 +221,7 @@ async function oeffneAuswahl(label: string) {
 describe('Teams', () => {
   beforeEach(async () => {
     await i18n.changeLanguage('de')
+    useRolePreviewStore.getState().stopPreview()
     // Wer angemeldet ist, entscheidet über eine Zeile der Mitgliederliste:
     // die eigene trägt „Team verlassen" statt „Mitglied entfernen".
     useAuthStore.setState({
@@ -770,5 +772,29 @@ describe('Teams', () => {
         { server_id: 8, permission_keys: ['server.view'] },
       ],
     }))
+  })
+
+  it('startet beim Klick auf eine Team-Rolle die Vorschau und passt die Team-Oberfläche an', async () => {
+    renderTeams()
+    await zuTeams()
+    await screen.findByRole('heading', { name: 'Betrieb' })
+
+    // Als Gründer ist der Server-Reiter zunächst sichtbar
+    expect(screen.getByRole('tab', { name: /^Server/ })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('tab', { name: /Rollen/i }))
+    const previewBtn = await screen.findByRole('button', { name: 'Mit Rolle betrachten: Mitglied' })
+    fireEvent.click(previewBtn)
+
+    // In der Vorschau der Rolle „Mitglied“ (ohne team.servers.manage / team.roles.manage)
+    // verschwinden der Server-Reiter und die Rollen-Bearbeitungsknöpfe sofort
+    expect(screen.queryByRole('tab', { name: /^Server/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Rolle erstellen' })).not.toBeInTheDocument()
+    expect(useRolePreviewStore.getState().preview).toMatchObject({
+      kind: 'team',
+      teamId: 2,
+      roleId: 11,
+      roleName: 'Mitglied',
+    })
   })
 })

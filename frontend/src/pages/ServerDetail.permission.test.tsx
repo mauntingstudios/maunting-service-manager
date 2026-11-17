@@ -6,6 +6,7 @@ import * as client from '@/api/client'
 import i18n from '@/i18n'
 import { useToastStore } from '@/stores/toastStore'
 import { usePermissionsStore } from '@/stores/permissionsStore'
+import { useRolePreviewStore } from '@/stores/rolePreviewStore'
 import { useServerPreferencesStore } from '@/stores/serverPreferencesStore'
 import type { MePermissions } from '@/types/permissions'
 import type { Server, GameInfo } from '@/types'
@@ -222,6 +223,7 @@ describe('ServerDetail permission topology — VAL-UI-002 / VAL-UI-018', () => {
     mockApi.mockReset()
     mockApiImplementation()
     await i18n.changeLanguage('en')
+    useRolePreviewStore.getState().stopPreview()
     usePermissionsStore.setState({ me: null, isLoading: false, error: null })
     useToastStore.setState({ toasts: [] })
     Object.defineProperty(navigator, 'clipboard', {
@@ -232,6 +234,7 @@ describe('ServerDetail permission topology — VAL-UI-002 / VAL-UI-018', () => {
 
   afterEach(() => {
     vi.useRealTimers()
+    useRolePreviewStore.getState().stopPreview()
     usePermissionsStore.setState({ me: null, isLoading: false, error: null })
   })
 
@@ -366,6 +369,9 @@ describe('ServerDetail permission topology — VAL-UI-002 / VAL-UI-018', () => {
       expect(screen.getByText('Disk')).toBeInTheDocument()
       // No edit button
       expect(screen.queryByTestId('resource-edit-btn')).not.toBeInTheDocument()
+      // Netzwerk-Info oeffnen — ohne server.network.manage kein Bearbeiten-Knopf
+      fireEvent.click(screen.getByTestId('network-details-trigger'))
+      expect(screen.queryByTestId('network-edit-btn')).not.toBeInTheDocument()
     })
 
     it('user with permission only on another server sees no edit action', async () => {
@@ -733,6 +739,46 @@ describe('ServerDetail permission topology — VAL-UI-002 / VAL-UI-018', () => {
       expect(within(alphaAfterSwitch!).getByText('Zuletzt geöffnet')).toBeInTheDocument()
 
       expect(document.body.querySelectorAll('[title]')).toHaveLength(0)
+    })
+  })
+
+  describe('Rollenvorschau auf ServerDetail', () => {
+    it('sperrt ServerDetail fuer Owner wenn die Vorschau-Rolle kein server.view besitzt', async () => {
+      setPermissions(OWNER_ME)
+      useRolePreviewStore.getState().startPanelRolePreview({
+        id: 9,
+        name: 'nur-nutzer',
+        description: null,
+        is_system: false,
+        permissions: ['users.read'],
+        created_at: '2026-10-01T00:00:00Z',
+      })
+
+      renderServerDetail()
+      expect(await screen.findByText(i18n.t('rolePreview.serverAccessDeniedTitle'))).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /restart/i })).not.toBeInTheDocument()
+    })
+
+    it('blendet in der Rollenvorschau nicht erlaubte Reiter und Aktionen aus', async () => {
+      setPermissions(OWNER_ME)
+      useRolePreviewStore.getState().startPanelRolePreview({
+        id: 10,
+        name: 'konsole-nur-lesen',
+        description: null,
+        is_system: false,
+        permissions: ['server.view', 'server.console.read'],
+        created_at: '2026-10-01T00:00:00Z',
+      })
+
+      renderServerDetail()
+      await waitForServerToLoad()
+
+      expect(screen.getByRole('tab', { name: i18n.t('tabs.console') })).toBeInTheDocument()
+      expect(screen.queryByRole('tab', { name: i18n.t('tabs.files') })).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /restart/i })).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /start/i })).not.toBeInTheDocument()
+      fireEvent.click(screen.getByTestId('network-details-trigger'))
+      expect(screen.queryByTestId('network-edit-btn')).not.toBeInTheDocument()
     })
   })
 })

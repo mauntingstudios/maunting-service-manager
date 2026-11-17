@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useEffectivePermissions } from '@/hooks/useHasPermission'
 import { usePermissionsStore } from '@/stores/permissionsStore'
 import { Loader } from '@/components/app/Loader'
 import { resolveRouteAccessState } from '@/services/routeAccess'
@@ -16,7 +17,7 @@ export function RequirePermission({
   routeKey: string
   children?: React.ReactNode
 }) {
-  const me = usePermissionsStore((s) => s.me)
+  const me = useEffectivePermissions()
   const isLoading = usePermissionsStore((s) => s.isLoading)
   const error = usePermissionsStore((s) => s.error)
   const refresh = usePermissionsStore((s) => s.refresh)

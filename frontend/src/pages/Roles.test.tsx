@@ -18,9 +18,25 @@
  *   2. es beschreibt dieselbe Menge wie `backend/schemas/role.py`.
  */
 
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { MemoryRouter, Route, Routes } from 'react-router-dom'
 
-import { ROLLENNAME_MUSTER } from './Roles'
+import { ROLLENNAME_MUSTER, Roles } from './Roles'
+import { rbacApi } from '@/api/rbac'
+import { usePermissionsStore } from '@/stores/permissionsStore'
+import { useRolePreviewStore } from '@/stores/rolePreviewStore'
+import i18n from '@/i18n'
+
+vi.mock('@/api/rbac', () => ({
+  rbacApi: {
+    catalog: vi.fn(),
+    listRoles: vi.fn(),
+    createRole: vi.fn(),
+    updateRole: vi.fn(),
+    deleteRole: vi.fn(),
+  },
+}))
 
 // Woertlich aus `backend/schemas/role.py`. Bewusst kopiert und nicht
 // importiert — es ist die *fremde* Seite des Vertrags, und wenn sie sich
@@ -64,5 +80,58 @@ describe('Rollenname-Muster', () => {
     // Der konkrete Name aus der Meldung. Ohne den Fix kam er gar nicht erst
     // zur Pruefung, weil das Muster vorher zerbrach.
     expect(new RegExp(ROLLENNAME_MUSTER, 'v').test('KI-Nutzung')).toBe(true)
+  })
+})
+
+describe('Roles Vorschau-Modus', () => {
+  beforeEach(async () => {
+    await i18n.changeLanguage('de')
+    useRolePreviewStore.getState().stopPreview()
+    usePermissionsStore.setState({
+      me: { is_owner: true, role_id: 1, role_name: 'admin', global_keys: ['roles.manage'], server_keys: {} },
+      isLoading: false,
+      error: null,
+    })
+    vi.mocked(rbacApi.catalog).mockReset().mockResolvedValue({
+      global_permissions: [{ key: 'users.read', group: 'users', label: 'Benutzer lesen' }],
+      server_permissions: [{ key: 'server.view', group: 'server', label: 'Server sehen' }],
+    })
+    vi.mocked(rbacApi.listRoles).mockReset().mockResolvedValue([
+      {
+        id: 2,
+        name: 'user',
+        description: 'Standard',
+        color: '#64748b',
+        icon: null,
+        is_system: true,
+        permissions: ['server.view'],
+        created_at: '2026-10-01T00:00:00Z',
+      },
+    ])
+  })
+
+  it('startet beim Klick auf eine Panel-Rolle die Rollenvorschau und wechselt aufs Dashboard', async () => {
+    render(
+      <MemoryRouter initialEntries={['/roles']}>
+        <Routes>
+          <Route path="/roles" element={<Roles />} />
+          <Route path="/" element={<div>Dashboard-Ansicht</div>} />
+        </Routes>
+      </MemoryRouter>,
+    )
+
+    const roleButton = await screen.findByRole('button', { name: 'Mit Rolle betrachten: User' })
+    fireEvent.click(roleButton)
+
+    await waitFor(() => {
+      expect(screen.getByText('Dashboard-Ansicht')).toBeInTheDocument()
+    })
+    const preview = useRolePreviewStore.getState().preview
+    expect(preview).toMatchObject({
+      kind: 'panel',
+      roleId: 2,
+      roleName: 'user',
+      permissions: ['server.view'],
+    })
   })
 })

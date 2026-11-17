@@ -13,6 +13,7 @@ import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-
 
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { RequirePermission } from '@/components/RequirePermission'
+import { RolePreviewBanner } from '@/components/RolePreviewBanner'
 import { usePanelNavigation } from '@/components/layout/usePanelNavigation'
 import { Loader } from '@/components/app/Loader'
 import { TabBar, TabDef } from '@maunting/ui'
@@ -95,6 +96,8 @@ export function DashboardBereich() {
         deckkraft="opacity-55"
         ebene="-z-10"
       />
+
+      <RolePreviewBanner />
 
       {/* Freischwebende Menü-Reiter (Schwebe-Buttons) direkt über dem Hintergrund */}
       <div className="relative z-20 flex shrink-0 items-center justify-between gap-2 px-3.5 sm:px-6 lg:px-8 pt-3 sm:pt-3.5 pb-1 max-w-7xl 2xl:max-w-[1600px] w-full mx-auto">

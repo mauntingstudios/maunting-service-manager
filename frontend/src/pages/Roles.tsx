@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Plus, Trash2, Pencil, X } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import { Eye, Plus, Trash2, Pencil, X } from 'lucide-react'
 import { rbacApi } from '@/api/rbac'
 import { toast } from '@/stores/toastStore'
 import { confirm } from '@/stores/confirmStore'
 import { useHasPermission } from '@/hooks/useHasPermission'
+import { useRolePreviewStore } from '@/stores/rolePreviewStore'
 import type { PermissionCatalog, Role } from '@/types/permissions'
 import { PermissionEditor } from '@/features/permissions/PermissionEditor'
 import { PageHeader } from '@maunting/ui'
@@ -199,7 +201,9 @@ function RoleForm({ catalog, initial, onSubmit, onCancel }: RoleFormProps) {
 
 export function Roles() {
   const { t } = useTranslation()
+  const navigate = useNavigate()
   const canManage = useHasPermission('roles.manage')
+  const startPanelRolePreview = useRolePreviewStore((s) => s.startPanelRolePreview)
   const [catalog, setCatalog] = useState<PermissionCatalog | null>(null)
   const [roles, setRoles] = useState<Role[]>([])
   const [loading, setLoading] = useState(true)
@@ -279,6 +283,15 @@ export function Roles() {
     [roles],
   )
 
+  const handlePreviewRole = (role: Role) => {
+    const displayName = role.is_system
+      ? t(`roles.systemNames.${role.name}`, { defaultValue: role.name })
+      : role.name
+    startPanelRolePreview(role, '/roles')
+    toast.success(t('rolePreview.started', { name: displayName }))
+    navigate('/')
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -333,16 +346,30 @@ export function Roles() {
             </tr>
           </thead>
           <tbody>
-            {sortedRoles.map((role) => (
+            {sortedRoles.map((role) => {
+              const displayName = role.is_system
+                ? t(`roles.systemNames.${role.name}`, { defaultValue: role.name })
+                : role.name
+              return (
               <tr key={role.id} className="border-b border-outline-variant/30 hover:bg-surface-container-high/50 transition-colors">
                 <td className="p-4">
                   <div className="flex items-center gap-2">
-                    <RoleBadge
-                      name={role.is_system ? t(`roles.systemNames.${role.name}`, { defaultValue: role.name }) : role.name}
-                      color={role.color}
-                      icon={role.icon}
-                      size="sm"
-                    />
+                    <Kurzinfo text={t('rolePreview.previewAction')} seite="anfang">
+                      <button
+                        type="button"
+                        onClick={() => handlePreviewRole(role)}
+                        className="group inline-flex items-center gap-1.5 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                        aria-label={`${t('rolePreview.previewAction')}: ${displayName}`}
+                      >
+                        <RoleBadge
+                          name={displayName}
+                          color={role.color}
+                          icon={role.icon}
+                          size="sm"
+                        />
+                        <Eye className="h-3.5 w-3.5 text-on-surface-variant opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 transition-opacity" aria-hidden="true" />
+                      </button>
+                    </Kurzinfo>
                     {role.is_system ? (
                       <span className="text-xs px-1.5 py-0.5 rounded bg-status-warning/10 text-status-warning border border-status-warning/30">
                         {t('roles.system')}
@@ -361,9 +388,20 @@ export function Roles() {
                   {role.permissions.length}
                 </td>
                 <td className="p-4 text-right space-x-3">
+                  <Kurzinfo text={t('rolePreview.previewAction')} seite="ende">
+                    <button
+                      type="button"
+                      onClick={() => handlePreviewRole(role)}
+                      className="text-secondary hover:text-secondary/80 transition-colors inline-flex items-center"
+                      aria-label={`${t('rolePreview.previewAction')} (${displayName})`}
+                    >
+                      <Eye className="w-4 h-4" />
+                    </button>
+                  </Kurzinfo>
                   {canManage && (
                     <Kurzinfo text={t('common.edit')} seite="ende">
                       <button
+                        type="button"
                         onClick={() => {
                           setCreating(false)
                           setEditing(role)
@@ -378,6 +416,7 @@ export function Roles() {
                   {canManage && !role.is_system && (
                     <Kurzinfo text={t('common.delete')} seite="ende">
                       <button
+                        type="button"
                         onClick={() => handleDelete(role)}
                         className="text-status-destructive hover:text-status-destructive/80 transition-colors inline-flex items-center"
                         aria-label={t('common.delete')}
@@ -388,7 +427,8 @@ export function Roles() {
                   )}
                 </td>
               </tr>
-            ))}
+              )
+            })}
           </tbody>
         </table>
       </div>

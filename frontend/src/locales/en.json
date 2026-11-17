@@ -3348,6 +3348,20 @@
       "user": "User"
     }
   },
+  "rolePreview": {
+    "previewAction": "View as role",
+    "previewActive": "Preview active",
+    "bannerLabel": "Viewing the panel as this role:",
+    "teamContext": "Team: {{team}}",
+    "permissionsCount_one": "{{count}} permission",
+    "permissionsCount_other": "{{count}} permissions",
+    "teamSummary": "{{servers}} servers · {{permissions}} team permissions",
+    "exit": "Exit preview",
+    "backToSource": "Back & exit",
+    "started": "Role preview active: {{name}}",
+    "serverAccessDeniedTitle": "No server access for this role",
+    "noServerAccess": "The selected role does not have access to this server."
+  },
   "permissionEditor": {
     "searchPlaceholder": "Search permission …",
     "selectAll": "Select all",

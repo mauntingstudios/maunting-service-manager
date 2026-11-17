@@ -6,6 +6,7 @@ import { Server, GameInfo, NodeCapacitySummary } from '@/types'
 import { UpdateBanner } from '@/components/UpdateBanner'
 import { useHasPermission } from '@/hooks/useHasPermission'
 import { useAuthStore } from '@/stores/authStore'
+import { filterVisibleServersInPreview, useRolePreviewStore } from '@/stores/rolePreviewStore'
 import { sortServersByPriority, useServerPreferencesStore } from '@/stores/serverPreferencesStore'
 import { sortNodesByPriority, useNodePreferencesStore } from '@/stores/nodePreferencesStore'
 import { FavoriteButton, FAVORITE_CARD_HIGHLIGHT_CLASS } from '@/components/FavoriteButton'
@@ -358,12 +359,17 @@ export function Dashboard({ ohneHintergrund = false }: { ohneHintergrund?: boole
     ? t(begruessungSchluessel(stunde, false, tagesZaehler), { name: user.username })
     : t('common.begruessung.ohneName')
 
-  const runningCount = servers.filter((s) => s.status === 'running').length
-  const stoppedCount = Math.max(0, servers.length - runningCount)
+  const preview = useRolePreviewStore((s) => s.preview)
+  const visibleServers = useMemo(
+    () => filterVisibleServersInPreview(servers, preview),
+    [servers, preview],
+  )
+  const runningCount = visibleServers.filter((s) => s.status === 'running').length
+  const stoppedCount = Math.max(0, visibleServers.length - runningCount)
   const { favoriteIds, lastVisitedId } = useServerPreferencesStore()
   const sortedServers = useMemo(
-    () => sortServersByPriority(servers, favoriteIds, lastVisitedId),
-    [servers, favoriteIds, lastVisitedId],
+    () => sortServersByPriority(visibleServers, favoriteIds, lastVisitedId),
+    [visibleServers, favoriteIds, lastVisitedId],
   )
   const {
     visibleItems: visibleSortedServers,
@@ -455,7 +461,7 @@ export function Dashboard({ ohneHintergrund = false }: { ohneHintergrund?: boole
 
               <div className="flex flex-wrap items-baseline gap-2.5">
                 <span className="font-headline text-display-sm font-bold text-primary tabular-nums">
-                  {servers.length}
+                  {visibleServers.length}
                 </span>
                 <div className="flex flex-wrap items-center gap-1.5">
                   <span
@@ -472,7 +478,7 @@ export function Dashboard({ ohneHintergrund = false }: { ohneHintergrund?: boole
                     />
                     {runningCount} {t('dashboard.running')}
                   </span>
-                  {servers.length > 0 && stoppedCount > 0 && (
+                  {visibleServers.length > 0 && stoppedCount > 0 && (
                     <span className="font-body-md text-xs px-2.5 py-0.5 rounded-full border border-outline/70 bg-surface-container-highest/60 text-on-surface-variant">
                       {t('dashboard.stoppedCount', { count: stoppedCount })}
                     </span>
@@ -591,7 +597,7 @@ export function Dashboard({ ohneHintergrund = false }: { ohneHintergrund?: boole
         )}
 
         {/* Empty State */}
-        {!loadError && servers.length === 0 && (
+        {!loadError && visibleServers.length === 0 && (
           <div className="msm-card rounded-2xl border-dashed border-2 border-outline-variant bg-surface-container-low/80 backdrop-blur-xl p-12 text-center">
             <ServerIcon className="w-10 h-10 text-on-surface-variant mx-auto mb-4" aria-hidden="true" />
             <h3 className="font-headline text-body-lg text-on-surface mb-1">
@@ -609,7 +615,7 @@ export function Dashboard({ ohneHintergrund = false }: { ohneHintergrund?: boole
         )}
 
         {/* Server Cards */}
-        {servers.length > 0 && (
+        {visibleServers.length > 0 && (
           <section aria-label={t('dashboard.activeServersOverview')} className="space-y-3">
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-2 min-w-0">
@@ -617,7 +623,7 @@ export function Dashboard({ ohneHintergrund = false }: { ohneHintergrund?: boole
                   {t('dashboard.activeServersOverview')}
                 </h2>
                 <span className="rounded-full border border-outline-variant/40 bg-surface-container-high/60 px-2 py-0.5 text-xs font-medium text-on-surface-variant tabular-nums">
-                  {servers.length}
+                  {visibleServers.length}
                 </span>
               </div>
               <Link

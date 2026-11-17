@@ -3348,6 +3348,20 @@
       "user": "User"
     }
   },
+  "rolePreview": {
+    "previewAction": "Mit Rolle betrachten",
+    "previewActive": "Vorschau aktiv",
+    "bannerLabel": "Du betrachtest das Panel mit dieser Rolle:",
+    "teamContext": "Team: {{team}}",
+    "permissionsCount_one": "{{count}} Recht",
+    "permissionsCount_other": "{{count}} Rechte",
+    "teamSummary": "{{servers}} Server · {{permissions}} Team-Rechte",
+    "exit": "Vorschau beenden",
+    "backToSource": "Zurück & beenden",
+    "started": "Rollenvorschau aktiv: {{name}}",
+    "serverAccessDeniedTitle": "Kein Serverzugriff in dieser Rolle",
+    "noServerAccess": "Mit der gewählten Rolle hast du keinen Zugriff auf diesen Server."
+  },
   "permissionEditor": {
     "searchPlaceholder": "Berechtigung suchen …",
     "selectAll": "Alle auswählen",

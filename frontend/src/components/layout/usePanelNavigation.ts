@@ -1,9 +1,10 @@
 import { useTranslation } from 'react-i18next'
 
-import { useHasPermission } from '@/hooks/useHasPermission'
+import { useHasPermission, useIsOwner } from '@/hooks/useHasPermission'
 import { useIsOnline } from '@/hooks/useIsOnline'
 import { useAuthStore } from '@/stores/authStore'
 import { usePublicSettingsStore } from '@/stores/publicSettingsStore'
+import { useRolePreviewStore } from '@/stores/rolePreviewStore'
 import { useTeamInvitationStore } from '@/stores/teamInvitationStore'
 import { buildNavigation, type NavigationItem } from './navigation'
 
@@ -37,8 +38,11 @@ export function usePanelNavigation(): { items: NavigationItem[]; isOnline: boole
   const canCreateTeams = useHasPermission('teams.create')
   const canUseAi = canChatWithAi || canManageAiSkills
   const isOnline = useIsOnline()
+  const preview = useRolePreviewStore((s) => s.preview)
+  const isOwnerViaStore = useIsOwner()
   const teamInvitationCount = useTeamInvitationStore((s) => s.count)
   const publicSettings = usePublicSettingsStore()
+  const owner = preview ? false : Boolean(user?.is_owner) || isOwnerViaStore
 
   const items = buildNavigation(
     {
@@ -61,7 +65,7 @@ export function usePanelNavigation(): { items: NavigationItem[]; isOnline: boole
       ai: t('nav.ai'),
     },
     {
-      owner: Boolean(user?.is_owner),
+      owner,
       canManageUsers,
       canManageRoles,
       canViewAudit,
@@ -70,7 +74,7 @@ export function usePanelNavigation(): { items: NavigationItem[]; isOnline: boole
       canReadPanelDatabase,
       canViewNodes: canReadNodes || canManageNodes,
       canUseAi,
-      canUseSkills,
+      canUseSkills: canUseSkills || preview?.kind === 'team',
       canCreateTeams,
       teamInvitationCount,
       calendarEnabled: publicSettings.calendar_enabled,

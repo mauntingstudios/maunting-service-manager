@@ -4,6 +4,7 @@ import { isNetworkOrOfflineError, istZeitueberschreitung } from '@/lib/networkEr
 import { setzeAngemeldetesKonto } from '@/lib/angemeldetesKonto'
 import { gehoertDemKonto, leereOfflineAblage } from '@/lib/offlineAblage'
 import { usePermissionsStore } from '@/stores/permissionsStore'
+import { useRolePreviewStore } from '@/stores/rolePreviewStore'
 import { useNodeStore } from '@/stores/nodeStore'
 import { useToastStore } from '@/stores/toastStore'
 import { useConfirmStore } from '@/stores/confirmStore'
@@ -179,6 +180,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     // Abmelden. Auf einem geteilten Rechner läge er sonst im Browser des
     // nächsten Benutzers — deshalb fällt er hier zusammen mit dem CSRF-Speicher.
     clearSqlConsoleHistory()
+    useRolePreviewStore.getState().stopPreview()
     usePermissionsStore.getState().reset()
     // Tresor sperren und alle Klartext-Einträge sowie CryptoKeys aus dem RAM entfernen (SEC-05)
     useVaultStore.getState().lock()

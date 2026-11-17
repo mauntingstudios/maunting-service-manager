@@ -37,6 +37,7 @@ interface ServerTechnikPanelProps {
   ramUsageOfLimit: number | undefined
   diskUsageOfLimit: number | undefined
   showResourceEdit: boolean
+  showNetworkEdit?: boolean
   isLifecycleBusy: boolean
   actionLoading: string | null
   canManageCredentials: boolean
@@ -61,6 +62,7 @@ export function ServerTechnikPanel({
   ramUsageOfLimit,
   diskUsageOfLimit,
   showResourceEdit,
+  showNetworkEdit = false,
   isLifecycleBusy,
   actionLoading,
   canManageCredentials,
@@ -275,15 +277,17 @@ export function ServerTechnikPanel({
               </h3>
               <p className="text-xs text-on-surface-variant truncate">{gameLabel}</p>
             </div>
-            <div className="shrink-0">
-              {effectiveStatus === 'running' ? (
-                <Kurzinfo text={t('servers.networkEditRequiresStopped')} seite="ende">
-                  {networkEditButton}
-                </Kurzinfo>
-              ) : (
-                networkEditButton
-              )}
-            </div>
+            {showNetworkEdit && (
+              <div className="shrink-0">
+                {effectiveStatus === 'running' ? (
+                  <Kurzinfo text={t('servers.networkEditRequiresStopped')} seite="ende">
+                    {networkEditButton}
+                  </Kurzinfo>
+                ) : (
+                  networkEditButton
+                )}
+              </div>
+            )}
           </div>
 
           <dl className="grid grid-cols-2 gap-3 text-sm">

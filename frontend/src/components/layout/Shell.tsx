@@ -15,6 +15,7 @@ import { AnrufEbene } from '@/components/calling/AnrufEbene'
 import { CrossDeviceCallBanner } from '@/components/calling/CrossDeviceCallBanner'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { OfflineBanner } from './OfflineBanner'
+import { RolePreviewBanner } from '@/components/RolePreviewBanner'
 import { TageszeitHintergrund } from './TageszeitHintergrund'
 import { useTageszeitMotiv } from '@/lib/tageszeit'
 import { api } from '@/api/client'
@@ -190,6 +191,7 @@ export function Shell() {
           />
         )}
         <OfflineBanner />
+        <RolePreviewBanner />
         <CrossDeviceCallBanner />
         {/* Ohne `overflow-auto`: `main` hat als `flex-1` in einer Spalte ohne
             feste Höhe immer genau seine Inhaltshöhe, lief also nie über. Die

@@ -33,6 +33,7 @@ import { usePermissionsStore } from "@/stores/permissionsStore";
 import { sortServersByPriority, useServerPreferencesStore } from "@/stores/serverPreferencesStore";
 import { useHostInterfaces } from "@/hooks/useHostInterfaces";
 import { useHasPermission } from "@/hooks/useHasPermission";
+import { filterVisibleServersInPreview, useRolePreviewStore } from "@/stores/rolePreviewStore";
 import { ResourceEditorDialog } from "@/components/server/ResourceEditorDialog";
 import { FileManager } from "./FileManager";
 import { ModManager } from "./ModManager";
@@ -234,8 +235,26 @@ export function ServerDetail() {
   // jeder, der bis hierher gekommen ist.
   const canUseAiMemory = useHasPermission("ai.memory.use");
   const canWriteServerConfig = useHasPermission("server.config.write", serverId);
+  const preview = useRolePreviewStore((s) => s.preview);
+  const isRolePreviewActive = preview !== null;
+  const canViewInPreview = useHasPermission("server.view", serverId);
+  const canStartInPreview = useHasPermission("server.start", serverId);
+  const canStopInPreview = useHasPermission("server.stop", serverId);
+  const canRestartInPreview = useHasPermission("server.restart", serverId);
+  const canKillInPreview = useHasPermission("server.kill", serverId);
+  const canManageNetworkInPreview = useHasPermission("server.network.manage", serverId);
+  const canInstallInPreview = useHasPermission("server.install", serverId);
+  const canDeleteInPreview = useHasPermission("servers.delete");
+  const canReadFilesInPreview = useHasPermission("server.files.read", serverId);
+  const canReadConsoleInPreview = useHasPermission("server.console.read", serverId);
+  const canExecInPreview = useHasPermission("server.console.exec", serverId);
+  const canReadModsInPreview = useHasPermission("server.mods.read", serverId);
+  const canReadBackupsInPreview = useHasPermission("server.backups.read", serverId);
+  const canReadDatabasesInPreview = useHasPermission("server.databases.read", serverId);
+  const canManageWebhooksInPreview = useHasPermission("server.update", serverId);
   const permissionsLoading = usePermissionsStore((s) => s.isLoading);
   const showResourceEdit = !permissionsLoading && canManageResources;
+  const showNetworkEdit = !permissionsLoading && canManageNetworkInPreview;
   // Dasselbe Anti-Flacker-Muster wie eine Zeile darueber: waehrend die Rechte
   // laden, ist `canUseAiMemory` false. Ohne diese Bedingung erschiene der
   // Reiter kurz nach dem Laden und sprungen die uebrigen zur Seite.
@@ -377,6 +396,22 @@ export function ServerDetail() {
   }, [isFrontendServer, serverId]);
 
   const tabs = useMemo(() => {
+    const filterPreviewTabs = (candidate: ServerDetailTab<TabKey>[]) => {
+      if (!isRolePreviewActive) return candidate
+      const allowedByTab: Partial<Record<TabKey, boolean>> = {
+        files: canReadFilesInPreview,
+        console: canReadConsoleInPreview,
+        exec: canExecInPreview,
+        mods: canReadModsInPreview,
+        restarts: canWriteServerConfig,
+        backups: canReadBackupsInPreview,
+        databases: canReadDatabasesInPreview,
+        webhooks: canManageWebhooksInPreview,
+        frontend_settings: canWriteServerConfig,
+      }
+      return candidate.filter((tab) => allowedByTab[tab.key] ?? true)
+    }
+
     if (isFrontendServer) {
       const frontendTabs: ServerDetailTab<TabKey>[] = [
         { key: "deployments", label: t("tabs.deployments"), icon: Rocket },
@@ -412,7 +447,7 @@ export function ServerDetail() {
           icon: Shield,
         });
       }
-      return frontendTabs;
+      return filterPreviewTabs(frontendTabs);
     }
     const list: ServerDetailTab<TabKey>[] = [
       // Beim Datenbankserver ist die Datenbank der Server: ihr Reiter steht vorn.
@@ -462,12 +497,29 @@ export function ServerDetail() {
         icon: Shield,
       });
     }
-    return list;
-  }, [t, showModTab, showMemoryTab, gameInfo?.enable_exec, server?.guardian_enabled, isDatabaseServer, isFrontendServer]);
+    return filterPreviewTabs(list);
+  }, [
+    t,
+    showModTab,
+    showMemoryTab,
+    gameInfo?.enable_exec,
+    server?.guardian_enabled,
+    isDatabaseServer,
+    isFrontendServer,
+    isRolePreviewActive,
+    canReadFilesInPreview,
+    canReadConsoleInPreview,
+    canExecInPreview,
+    canReadModsInPreview,
+    canWriteServerConfig,
+    canReadBackupsInPreview,
+    canReadDatabasesInPreview,
+    canManageWebhooksInPreview,
+  ]);
 
   const defaultTab: TabKey = isFrontendServer ? "deployments" : isDatabaseServer ? "databases" : "files";
   const rawTab = (searchParams.get("tab") || defaultTab) as TabKey;
-  const activeTab: TabKey =
+  const candidateTab: TabKey =
     VALID_TABS.includes(rawTab)
       && (rawTab !== "mods" || showModTab)
       // Ein Aufruf mit ?tab=memory ohne das Recht faellt auf "files" zurueck
@@ -476,6 +528,10 @@ export function ServerDetail() {
       && (rawTab !== "memory" || showMemoryTab)
       ? rawTab
       : defaultTab;
+  const activeTab: TabKey =
+    tabs.length > 0 && !tabs.some((tab) => tab.key === candidateTab)
+      ? tabs[0].key
+      : candidateTab;
 
   const setActiveTab = (next: TabKey) => {
     const params = new URLSearchParams(searchParams);
@@ -676,6 +732,29 @@ export function ServerDetail() {
     );
   }
 
+  if (isRolePreviewActive && !canViewInPreview) {
+    return (
+      <div className="msm-page">
+        <section className="msm-card max-w-2xl p-6 space-y-4" role="status">
+          <h1 className="font-headline text-headline-sm text-primary">
+            {t("rolePreview.serverAccessDeniedTitle")}
+          </h1>
+          <p className="font-body-md text-body-md text-on-surface-variant">
+            {t("rolePreview.noServerAccess")}
+          </p>
+          <Button
+            variant="secondary"
+            className="inline-flex items-center gap-2"
+            onClick={() => navigate("/servers")}
+          >
+            <ArrowLeft className="w-4 h-4" />
+            {t("servers.backToList")}
+          </Button>
+        </section>
+      </div>
+    );
+  }
+
   const effectiveStatus = optimisticStatus || server.status;
   const displayStatus = effectiveStatus;
   // Phase 5: node heartbeat offline → keep server visible, block actions
@@ -813,9 +892,10 @@ export function ServerDetail() {
     </span>
   );
 
-  const mergedSwitcherServers = allServers.some((s) => s.id === server.id)
-    ? allServers.map((s) => (s.id === server.id ? { ...s, ...server, status: displayStatus } : s))
-    : [{ ...server, status: displayStatus }, ...allServers];
+  const visibleAllServers = filterVisibleServersInPreview(allServers, preview);
+  const mergedSwitcherServers = visibleAllServers.some((s) => s.id === server.id)
+    ? visibleAllServers.map((s) => (s.id === server.id ? { ...s, ...server, status: displayStatus } : s))
+    : [{ ...server, status: displayStatus }, ...visibleAllServers];
   const switcherServers = sortServersByPriority(
     mergedSwitcherServers,
     favoriteIds,
@@ -885,8 +965,16 @@ export function ServerDetail() {
   const canKill = ["starting", "running", "stopping", "restarting"].includes(effectiveStatus);
   const canInstallOrSwitch = effectiveStatus !== "installing" && effectiveStatus !== "queued";
 
+  const showStartAction = !isRolePreviewActive || canStartInPreview;
+  const showStopAction = !isRolePreviewActive || canStopInPreview;
+  const showRestartAction = !isRolePreviewActive || canRestartInPreview;
+  const showKillAction = !isRolePreviewActive || canKillInPreview;
+  const showEditNetworkAction = showNetworkEdit;
+  const showInstallAction = !isRolePreviewActive || canInstallInPreview;
+  const showDeleteAction = !isRolePreviewActive || canDeleteInPreview;
+
   const moreActionItems: ActionMenuItem[] = [
-    ...(canKill
+    ...(canKill && showKillAction
       ? [
           {
             key: "kill",
@@ -898,14 +986,18 @@ export function ServerDetail() {
           } satisfies ActionMenuItem,
         ]
       : []),
-    {
-      key: "edit-network",
-      label: t("servers.editNetworkTitle"),
-      icon: <Network className="h-4 w-4" />,
-      disabled: effectiveStatus === "running" || !!actionLoading,
-      onSelect: openNetworkEditor,
-    },
-    ...(canInstallOrSwitch
+    ...(showEditNetworkAction
+      ? [
+          {
+            key: "edit-network",
+            label: t("servers.editNetworkTitle"),
+            icon: <Network className="h-4 w-4" />,
+            disabled: effectiveStatus === "running" || !!actionLoading,
+            onSelect: openNetworkEditor,
+          } satisfies ActionMenuItem,
+        ]
+      : []),
+    ...(canInstallOrSwitch && showInstallAction
       ? [
           {
             key: "install",
@@ -923,7 +1015,7 @@ export function ServerDetail() {
           } satisfies ActionMenuItem,
         ]
       : []),
-    ...(hasServerFiles && showServerFileUpdates
+    ...(hasServerFiles && showServerFileUpdates && showInstallAction
       ? [
           {
             key: "check-updates",
@@ -934,15 +1026,19 @@ export function ServerDetail() {
           } satisfies ActionMenuItem,
         ]
       : []),
-    {
-      key: "delete",
-      label: t("common.delete"),
-      icon: <Trash2 className="h-4 w-4" />,
-      destructive: true,
-      separatorBefore: true,
-      disabled: !!actionLoading,
-      onSelect: () => void handleDelete(),
-    },
+    ...(showDeleteAction
+      ? [
+          {
+            key: "delete",
+            label: t("common.delete"),
+            icon: <Trash2 className="h-4 w-4" />,
+            destructive: true,
+            separatorBefore: true,
+            disabled: !!actionLoading,
+            onSelect: () => void handleDelete(),
+          } satisfies ActionMenuItem,
+        ]
+      : []),
   ];
 
   const activeTabLabel = tabs.find((tab) => tab.key === activeTab)?.label ?? server.name;
@@ -959,6 +1055,7 @@ export function ServerDetail() {
     ramUsageOfLimit: ramUsageOfLimit ?? undefined,
     diskUsageOfLimit: diskUsageOfLimit ?? undefined,
     showResourceEdit,
+    showNetworkEdit,
     isLifecycleBusy,
     actionLoading,
     canManageCredentials,
@@ -1087,12 +1184,12 @@ export function ServerDetail() {
               </>
             ) : (
               <>
-                {canShowStart && (
+                {canShowStart && showStartAction && (
                   startHinweis ? (
                     <Kurzinfo text={startHinweis} seite="ende">{startKnopf}</Kurzinfo>
                   ) : startKnopf
                 )}
-                {effectiveStatus === "running" && (
+                {effectiveStatus === "running" && showStopAction && (
                   <Button
                     variant="destructive"
                     onClick={() => doAction("stop")}
@@ -1103,28 +1200,32 @@ export function ServerDetail() {
                     {actionLoading === "stop" ? t("common.loading") : t("servers.stop")}
                   </Button>
                 )}
-                <Button
-                  variant="secondary"
-                  onClick={() => doAction("restart")}
-                  disabled={!!actionLoading || isNodeUnreachable || isTransientLifecycle}
-                  className="inline-flex min-h-[44px] md:min-h-[38px] items-center gap-2 disabled:opacity-50"
-                >
-                  <RefreshCw className="w-4 h-4" />
-                  {actionLoading === "restart" ? t("common.loading") : t("servers.restart")}
-                </Button>
+                {showRestartAction && (
+                  <Button
+                    variant="secondary"
+                    onClick={() => doAction("restart")}
+                    disabled={!!actionLoading || isNodeUnreachable || isTransientLifecycle}
+                    className="inline-flex min-h-[44px] md:min-h-[38px] items-center gap-2 disabled:opacity-50"
+                  >
+                    <RefreshCw className="w-4 h-4" />
+                    {actionLoading === "restart" ? t("common.loading") : t("servers.restart")}
+                  </Button>
+                )}
               </>
             )}
 
-            <ActionMenu
-              label={t("serverDetail.moreActions")}
-              ariaLabel={t("serverDetail.moreActions")}
-              icon={<Menu className="h-[18px] w-[18px] md:h-4 md:w-4 shrink-0" aria-hidden="true" />}
-              items={moreActionItems}
-              variant="secondary"
-              surface="dna"
-              align="end"
-              iconOnly
-            />
+            {moreActionItems.length > 0 && (
+              <ActionMenu
+                label={t("serverDetail.moreActions")}
+                ariaLabel={t("serverDetail.moreActions")}
+                icon={<Menu className="h-[18px] w-[18px] md:h-4 md:w-4 shrink-0" aria-hidden="true" />}
+                items={moreActionItems}
+                variant="secondary"
+                surface="dna"
+                align="end"
+                iconOnly
+              />
+            )}
           </div>
         </div>
 
@@ -1150,9 +1251,11 @@ export function ServerDetail() {
               {t("servers.bindIp.startBlockedBody")}
             </p>
           </div>
-          <Button size="sm" onClick={() => setShowEditNetwork(true)}>
-            {t("servers.bindIp.assignNow")}
-          </Button>
+          {showNetworkEdit && (
+            <Button size="sm" onClick={() => setShowEditNetwork(true)}>
+              {t("servers.bindIp.assignNow")}
+            </Button>
+          )}
         </div>
       )}
 
@@ -1182,76 +1285,80 @@ export function ServerDetail() {
       )}
 
       {/* Reiter-Navigation direkt unter dem Server-Deck */}
-      <ServerDetailTabs
-        tabs={tabs}
-        activeTab={activeTab}
-        onSelect={setActiveTab}
-        ariaLabel={server.name}
-        moreLabel={t("serverDetail.moreTabs")}
-      />
+      {tabs.length > 0 && (
+        <>
+          <ServerDetailTabs
+            tabs={tabs}
+            activeTab={activeTab}
+            onSelect={setActiveTab}
+            ariaLabel={server.name}
+            moreLabel={t("serverDetail.moreTabs")}
+          />
 
-      {/* Vollflächiger Arbeitsbereich über die komplette Breite (Mods, Dateien, Konsole, ...) */}
-      <div role="tabpanel" aria-label={activeTabLabel} className="w-full min-w-0">
-        {activeTab === "deployments" && isFrontendServer && (
-          <Suspense
-            fallback={
-              <div className="flex justify-center py-12">
-                <Spinner />
-              </div>
-            }
-          >
-            <DeploymentsPanel
-              serverId={serverId}
-              overview={frontendOverview}
-              onRefreshOverview={loadFrontendOverview}
-            />
-          </Suspense>
-        )}
-        {activeTab === "frontend_settings" && isFrontendServer && (
-          <Suspense
-            fallback={
-              <div className="flex justify-center py-12">
-                <Spinner />
-              </div>
-            }
-          >
-            <FrontendSettingsPanel
-              serverId={serverId}
-              onUpdated={loadFrontendOverview}
-            />
-          </Suspense>
-        )}
-        {activeTab === "files" && <FileManager serverId={serverId} />}
-        {activeTab === "console" && <ServerConsolePanel serverId={serverId} />}
-        {activeTab === "exec" && gameInfo?.enable_exec && (
-          <ServerConsolePanel serverId={serverId} mode="exec" />
-        )}
-        {activeTab === "mods" && showModTab && (
-          <ModManager serverId={serverId} gameInfo={gameInfo} />
-        )}
-        {activeTab === "restarts" && (
-          <ServerRestartPanel
-            server={server}
-            serverId={serverId}
-            onSaved={fetchAll}
-          />
-        )}
-        {activeTab === "backups" && <Backups serverId={serverId} />}
-        {activeTab === "databases" && <DatabaseManager serverId={serverId} dedicated={isDatabaseServer} />}
-        {activeTab === "webhooks" && <OutgoingWebhooksPanel serverId={serverId} />}
-        {activeTab === "memory" && showMemoryTab && (
-          <AiMemoryManager
-            scope={{
-              kind: "server_shared",
-              serverId,
-              canManage: canWriteServerConfig,
-            }}
-          />
-        )}
-        {activeTab === "guardian" && (
-          <GuardianTab server={server} onRefreshServer={fetchAll} />
-        )}
-      </div>
+          {/* Vollflächiger Arbeitsbereich über die komplette Breite (Mods, Dateien, Konsole, ...) */}
+          <div role="tabpanel" aria-label={activeTabLabel} className="w-full min-w-0">
+            {activeTab === "deployments" && isFrontendServer && (
+              <Suspense
+                fallback={
+                  <div className="flex justify-center py-12">
+                    <Spinner />
+                  </div>
+                }
+              >
+                <DeploymentsPanel
+                  serverId={serverId}
+                  overview={frontendOverview}
+                  onRefreshOverview={loadFrontendOverview}
+                />
+              </Suspense>
+            )}
+            {activeTab === "frontend_settings" && isFrontendServer && (
+              <Suspense
+                fallback={
+                  <div className="flex justify-center py-12">
+                    <Spinner />
+                  </div>
+                }
+              >
+                <FrontendSettingsPanel
+                  serverId={serverId}
+                  onUpdated={loadFrontendOverview}
+                />
+              </Suspense>
+            )}
+            {activeTab === "files" && <FileManager serverId={serverId} />}
+            {activeTab === "console" && <ServerConsolePanel serverId={serverId} />}
+            {activeTab === "exec" && gameInfo?.enable_exec && (
+              <ServerConsolePanel serverId={serverId} mode="exec" />
+            )}
+            {activeTab === "mods" && showModTab && (
+              <ModManager serverId={serverId} gameInfo={gameInfo} />
+            )}
+            {activeTab === "restarts" && (
+              <ServerRestartPanel
+                server={server}
+                serverId={serverId}
+                onSaved={fetchAll}
+              />
+            )}
+            {activeTab === "backups" && <Backups serverId={serverId} />}
+            {activeTab === "databases" && <DatabaseManager serverId={serverId} dedicated={isDatabaseServer} />}
+            {activeTab === "webhooks" && <OutgoingWebhooksPanel serverId={serverId} />}
+            {activeTab === "memory" && showMemoryTab && (
+              <AiMemoryManager
+                scope={{
+                  kind: "server_shared",
+                  serverId,
+                  canManage: canWriteServerConfig,
+                }}
+              />
+            )}
+            {activeTab === "guardian" && (
+              <GuardianTab server={server} onRefreshServer={fetchAll} />
+            )}
+          </div>
+        </>
+      )}
 
       {/* Netzwerk-Dialog mit Design-DNA Dialog & Input */}
       <Dialog open={showEditNetwork} onOpenChange={setShowEditNetwork}>

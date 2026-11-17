@@ -7,6 +7,7 @@ import { confirm } from '@/stores/confirmStore'
 import { useHostInterfaces } from '@/hooks/useHostInterfaces'
 import { useHasPermission } from '@/hooks/useHasPermission'
 import { sortServersByPriority, useServerPreferencesStore } from '@/stores/serverPreferencesStore'
+import { filterVisibleServersInPreview, useRolePreviewStore } from '@/stores/rolePreviewStore'
 import type { Server, GameInfo, PostgresCredential, ServerCreateResult, Node } from '@/types'
 import { labelRole, mapBlueprintPorts } from '@/utils/portRoles'
 import { groupByGame, resolveBlueprintEditionLabel } from '@/utils/blueprintGroups'
@@ -355,17 +356,23 @@ export function Servers({ ohneHintergrund = false }: { ohneHintergrund?: boolean
   )
   const gameName = (id: string) => (Array.isArray(games) ? games : []).find((g) => g.id === id)?.name || id
 
+  const preview = useRolePreviewStore((s) => s.preview)
+  const visibleServers = useMemo(
+    () => filterVisibleServersInPreview(servers, preview),
+    [servers, preview],
+  )
+
   // Datengetrieben statt rechtegetrieben: das Backend liefert Kundenserver nur
   // an Berechtigte — wer keine bekommt, sieht auch keine Tabs. Eine eigene
   // Permission-Abfrage hier waere eine zweite, driftende Wahrheit.
-  const ownServers = servers.filter((s) => !s.is_hoster_managed)
-  const customerServers = servers.filter((s) => s.is_hoster_managed)
+  const ownServers = visibleServers.filter((s) => !s.is_hoster_managed)
+  const customerServers = visibleServers.filter((s) => s.is_hoster_managed)
   const hasCustomerServers = customerServers.length > 0
   const baseShownServers = hasCustomerServers
     ? activeTab === 'customers'
       ? customerServers
       : ownServers
-    : servers
+    : visibleServers
   const { favoriteIds, lastVisitedId } = useServerPreferencesStore()
   const shownServers = useMemo(
     () => sortServersByPriority(baseShownServers, favoriteIds, lastVisitedId),
@@ -434,7 +441,7 @@ export function Servers({ ohneHintergrund = false }: { ohneHintergrund?: boolean
           <div className="flex items-center gap-2 shrink-0">
             <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border backdrop-blur-md shadow-sm bg-surface-container-high/80 border-outline-variant/30 text-on-surface-variant">
               <ServerIcon className="h-3.5 w-3.5 text-primary" />
-              {servers.length} {t('nav.servers')}
+              {visibleServers.length} {t('nav.servers')}
             </span>
             {canCreateServer && (
               <Button
@@ -461,7 +468,7 @@ export function Servers({ ohneHintergrund = false }: { ohneHintergrund?: boolean
         </div>
       )}
 
-      {!loadError && servers.length === 0 && (
+      {!loadError && visibleServers.length === 0 && (
         <div className="msm-card rounded-2xl border border-dashed border-outline bg-surface-container-low/80 backdrop-blur-xl p-12 text-center">
           <ServerIcon className="w-10 h-10 text-on-surface-variant mx-auto mb-4" />
           <h3 className="font-headline text-body-lg text-on-surface mb-1">
