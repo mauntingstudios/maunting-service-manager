@@ -988,7 +988,9 @@ def get_server_wallpaper(
         content=bild,
         media_type="image/webp",
         headers={
-            "Cache-Control": "public, max-age=86400",
+            # privat: Die Antwort ist authentifiziert und darf nicht in
+            # geteilten Caches landen (Browser-Cache genuegt).
+            "Cache-Control": "private, max-age=86400",
             "X-Content-Type-Options": "nosniff",
         },
     )
@@ -1087,7 +1089,8 @@ def get_wallpaper_gallery_image(
         content=bild,
         media_type="image/webp",
         headers={
-            "Cache-Control": "public, max-age=86400",
+            # privat: siehe get_server_wallpaper.
+            "Cache-Control": "private, max-age=86400",
             "X-Content-Type-Options": "nosniff",
         },
     )

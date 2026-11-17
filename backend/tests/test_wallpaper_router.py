@@ -62,6 +62,7 @@ class TestUpload:
         assert bild.status_code == 200
         assert bild.headers["content-type"] == "image/webp"
         assert bild.headers["x-content-type-options"] == "nosniff"
+        assert bild.headers["cache-control"] == "private, max-age=86400"
         assert bild.content.startswith(b"RIFF")
 
         detail = client.get(f"/api/servers/{test_server.id}", cookies=owner_cookies).json()

@@ -93,7 +93,7 @@ server.game_type (= Blueprint-ID)
 2. Magic-Bytes-Check (JPEG/PNG/WebP); SVG strikt verboten (XSS).
 3. Pillow `verify()` + Re-Encode auf RGB (killt EXIF, Polyglots, Schadcode).
 4. Lanczos auf max. 2560 px Breite, WebP Quality 85 / Method 6 (~180–300 KB).
-5. `Content-Type: image/webp`, `X-Content-Type-Options: nosniff`, `Cache-Control: public, max-age=86400`.
+5. `Content-Type: image/webp`, `X-Content-Type-Options: nosniff`, `Cache-Control: private, max-age=86400` (privat, weil authentifiziert — kein geteilter Cache).
 6. **Steam-Cache:** `data/cache/steam_wallpapers/{appId}.webp`, einmal fetchen (Timeout, kein Blockieren des Seitenaufbaus), danach lokal. Negatives Ergebnis mit TTL cachen (kein Endlos-Retry).
 7. **Kein Layout Shift:** Solange geladen wird, bleibt das Panorama; Crossfade `transition-opacity duration-700`.
 
