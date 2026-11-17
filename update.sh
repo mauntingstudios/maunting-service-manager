@@ -1368,10 +1368,29 @@ EOF
                 printf 'MSM_LOCAL_AGENT_TOKEN="%s"\n' "$AGENT_TOKEN" >> "$ENV_FILE"
             fi
         fi
-        for _kv in "MSM_LOCAL_AGENT_REQUIRED=true" "MSM_REQUIRE_NETWORK_ISOLATION=true" "MSM_ALLOW_LEGACY_BARE_METAL_SETUP=false"; do
+        for _kv in "MSM_LOCAL_AGENT_REQUIRED=true" "MSM_REQUIRE_NETWORK_ISOLATION=true" "MSM_ALLOW_LEGACY_BARE_METAL_SETUP=false" "MSM_CODING_SANDBOX_ALLOW_HOST_FALLBACK=false"; do
             _k="${_kv%%=*}"
             grep -qE "^${_k}=" "$ENV_FILE" || printf '%s\n' "$_kv" >> "$ENV_FILE"
         done
+    fi
+    if [[ -d "$MSM_DIR/containers/coding-sandbox" ]] && id "$MSM_DOCKER_USER" &>/dev/null; then
+        su -s /bin/bash "$MSM_DOCKER_USER" -c "export DOCKER_HOST='${DOCKER_HOST_ACTIVE}'; docker build -q -t msm-coding-sandbox:latest '$MSM_DIR/containers/coding-sandbox'" >/dev/null 2>&1 || \
+            warn "Coding-Sandbox-Image konnte beim Update nicht gebaut werden."
+    fi
+    if [[ -d /opt/msm/servers ]]; then
+        mkdir -p /opt/msm/servers/_ai_projects
+        chown "$MSM_USER:$MSM_SERVERS_GROUP" /opt/msm/servers/_ai_projects 2>/dev/null || true
+        chmod 2770 /opt/msm/servers/_ai_projects 2>/dev/null || true
+        if command -v setfacl >/dev/null 2>&1; then
+            _subuid_start=$(awk -F: -v u="$MSM_DOCKER_USER" '$1 == u {print $2; exit}' /etc/subuid 2>/dev/null || true)
+            _sandbox_acl="u:${MSM_USER}:rwX,u:${MSM_AGENT_USER}:rwX,u:${MSM_DOCKER_USER}:rwX,d:u:${MSM_USER}:rwX,d:u:${MSM_AGENT_USER}:rwX,d:u:${MSM_DOCKER_USER}:rwX,m::rwx"
+            if [[ "${_subuid_start:-}" =~ ^[0-9]+$ ]]; then
+                _sandbox_uid=$((_subuid_start + 999))
+                _sandbox_acl="${_sandbox_acl},u:${_sandbox_uid}:rwX,d:u:${_sandbox_uid}:rwX"
+            fi
+            setfacl -m "u:${MSM_USER}:x" /opt/msm/servers 2>/dev/null || true
+            setfacl -R -m "$_sandbox_acl" /opt/msm/servers/_ai_projects 2>/dev/null || true
+        fi
     fi
     for _pg_env in "$ENV_FILE" "$AGENT_ENV"; do
         if [[ -f "$_pg_env" ]] && grep -qE '^MSM_MANAGED_POSTGRES_NETWORK=["'\'']?msm-internal["'\'']?([[:space:]]*#.*)?$' "$_pg_env"; then

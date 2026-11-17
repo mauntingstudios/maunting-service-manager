@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
+from config import settings
 from services import docker_service
 from services.docker_service import VolumeBind
 from services.singra.start_sh import generate_start_sh
@@ -64,6 +65,19 @@ def materialize_files(
         manifest[clean_rel] = hashlib.sha256(content.encode("utf-8")).hexdigest()
 
     return manifest
+
+
+def _node_needs_install(be_node_dir: Path) -> bool:
+    if (be_node_dir / "package-lock.json").exists():
+        return True
+    try:
+        pkg = json.loads((be_node_dir / "package.json").read_text(encoding="utf-8", errors="replace"))
+        return any(
+            bool(pkg.get(section))
+            for section in ("dependencies", "devDependencies", "optionalDependencies", "peerDependencies")
+        )
+    except Exception:
+        return True
 
 
 def build_release(
@@ -140,8 +154,10 @@ def build_release(
         log("Frontend-Build erfolgreich (dist/index.html vorhanden).")
 
     # Pruefen, ob Node.js Backend vorhanden ist
+    pkg_net = "msm-ephemeral-net" if getattr(settings, "coding_sandbox_allow_package_network", True) else "none"
+    allow_host_fallback = bool(getattr(settings, "coding_sandbox_allow_host_fallback", False))
     be_node_dir = (build_dir / "backend") if (build_dir / "backend" / "package.json").exists() else (build_dir if (not is_frontend and (build_dir / "package.json").exists()) else None)
-    if be_node_dir is not None:
+    if be_node_dir is not None and _node_needs_install(be_node_dir):
         log("3. Installiere Node.js Backend-Abhängigkeiten...")
         has_lock = (be_node_dir / "package-lock.json").exists()
         npm_install_cmd = "npm ci" if has_lock else "npm install"
@@ -160,11 +176,15 @@ def build_release(
                 command=cmd,
                 workdir="/app",
                 volumes=volumes,
+                env={"HOME": "/tmp/sandbox_home", "npm_config_cache": "/tmp/npm_cache"},
+                read_only_rootfs=True,
+                tmpfs_paths=["/tmp"],
+                network=pkg_net,
                 timeout=600,
                 node=node,
                 log_callback=log_callback,
             )
-        else:
+        elif allow_host_fallback:
             npm_bin = shutil.which("npm.cmd") or shutil.which("npm")
             if npm_bin:
                 try:
@@ -177,6 +197,11 @@ def build_release(
                     )
                 except Exception as exc:
                     logger.warning("Lokaler Backend npm install Fehler: %s", exc)
+        else:
+            raise SingraBuildError(
+                "Node.js Backend-Abhängigkeiten erfordern eine aktive Container-Sandbox (msm-agent/Docker).",
+                phase="build_backend",
+            )
 
     # Pruefen, ob Python Backend vorhanden ist
     req_file = build_dir / "requirements.txt"
@@ -185,8 +210,32 @@ def build_release(
     if req_file.exists():
         log("4. Bereite Python Backend vor...")
         py_dir = req_file.parent
-        # Venv und pip install
-        if shutil.which("python3") or shutil.which("python"):
+        docker_avail = docker_service.is_docker_available(node=node)
+        if docker_avail:
+            docker_service.run_ephemeral(
+                image=str(getattr(settings, "coding_sandbox_image", "msm-coding-sandbox:latest")),
+                command=[
+                    "sh",
+                    "-c",
+                    f"python3 -m venv /app/.venv && /app/.venv/bin/pip install --no-cache-dir -r {req_file.name}",
+                ],
+                workdir="/app",
+                volumes=[
+                    VolumeBind(
+                        host_path=str(py_dir.resolve()),
+                        container_path="/app",
+                        read_only=False,
+                    )
+                ],
+                env={"HOME": "/tmp/sandbox_home", "PIP_CACHE_DIR": "/tmp/pip_cache"},
+                read_only_rootfs=True,
+                tmpfs_paths=["/tmp"],
+                network=pkg_net,
+                timeout=600,
+                node=node,
+                log_callback=log_callback,
+            )
+        elif allow_host_fallback and (shutil.which("python3") or shutil.which("python")):
             py_bin = shutil.which("python3") or shutil.which("python")
             try:
                 subprocess.run(
@@ -206,6 +255,11 @@ def build_release(
                     )
             except Exception as exc:
                 logger.warning("Venv/pip Vorbereitung mit Warnung beendet: %s", exc)
+        elif not allow_host_fallback:
+            raise SingraBuildError(
+                "Python Backend-Abhängigkeiten erfordern eine aktive Container-Sandbox (msm-agent/Docker).",
+                phase="build_backend",
+            )
 
     # 4. start.sh generieren
     log("4. Generiere ausführbare start.sh...")

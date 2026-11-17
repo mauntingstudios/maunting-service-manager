@@ -249,6 +249,15 @@ class Settings(BaseSettings):
     # explicitly opted-in for legacy single-binary dev environments.
     allow_legacy_bare_metal_setup: bool = False
 
+    # Isolated Docker coding sandbox for Singra AI projects (`project_workspace`).
+    coding_sandbox_image: str = "msm-coding-sandbox:latest"
+    coding_sandbox_runtime: str = ""
+    coding_sandbox_allow_package_network: bool = True
+    coding_sandbox_allow_host_fallback: bool = False
+    coding_sandbox_mem_limit: str = "1024m"
+    coding_sandbox_nano_cpus: int = 1_000_000_000
+    coding_sandbox_pids_limit: int = 128
+
     # Enforce strict node RAM/disk capacity ceilings on provisioning/update (409 on overbook)
     strict_resource_capacity_guard: bool = False
     default_container_disk_limit_gb: int = 20

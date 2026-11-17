@@ -634,6 +634,11 @@ PATHEOF
         su -s /bin/bash "$MSM_DOCKER_USER" -c "export DOCKER_HOST='${MSM_DOCKER_HOST}'; docker pull cm2network/steamcmd:root" 2>&1 | tee -a "$LOG_FILE" || \
             warn "Konnte SteamCMD-Image nicht vorziehen — wird beim ersten Server-Install nachgeholt."
         su -s /bin/bash "$MSM_DOCKER_USER" -c "export DOCKER_HOST='${MSM_DOCKER_HOST}'; docker pull alpine/git:latest" 2>/dev/null || true
+        if [[ -f "$MSM_DIR/containers/coding-sandbox/Dockerfile" ]]; then
+            log "Baue Coding-Sandbox-Image (msm-coding-sandbox:latest)..."
+            su -s /bin/bash "$MSM_DOCKER_USER" -c "export DOCKER_HOST='${MSM_DOCKER_HOST}'; docker build -t msm-coding-sandbox:latest '$MSM_DIR/containers/coding-sandbox'" 2>&1 | tee -a "$LOG_FILE" || \
+                warn "Konnte Coding-Sandbox-Image nicht vorab bauen."
+        fi
     else
         warn "systemd nicht verfügbar. Rootless Docker wird vorbereitet, aber der User-Service kann nicht aktiviert werden."
     fi
@@ -931,12 +936,24 @@ install -d -o "$MSM_DOCKER_USER" -g "$MSM_DOCKER_USER" -m 750 "$MSM_DOCKER_HOME"
 ok "System-User bereit ($MSM_USER, $MSM_AGENT_USER, $MSM_DOCKER_USER)"
 
 # ── Servers- und Backups-Verzeichnis anlegen ──
-mkdir -p /opt/msm/servers
+mkdir -p /opt/msm/servers /opt/msm/servers/_ai_projects
 if $INSTALL_LOCAL_AGENT; then
     chown "$MSM_AGENT_USER:$MSM_SERVERS_GROUP" /opt/msm/servers
     chmod 0710 /opt/msm/servers
+    chown "$MSM_USER:$MSM_SERVERS_GROUP" /opt/msm/servers/_ai_projects
+    chmod 2770 /opt/msm/servers/_ai_projects
+    if command -v setfacl >/dev/null 2>&1; then
+        _subuid_start=$(awk -F: -v u="$MSM_DOCKER_USER" '$1 == u {print $2; exit}' /etc/subuid 2>/dev/null || true)
+        _sandbox_acl="u:${MSM_USER}:rwX,u:${MSM_AGENT_USER}:rwX,u:${MSM_DOCKER_USER}:rwX,d:u:${MSM_USER}:rwX,d:u:${MSM_AGENT_USER}:rwX,d:u:${MSM_DOCKER_USER}:rwX,m::rwx"
+        if [[ "${_subuid_start:-}" =~ ^[0-9]+$ ]]; then
+            _sandbox_uid=$((_subuid_start + 999))
+            _sandbox_acl="${_sandbox_acl},u:${_sandbox_uid}:rwX,d:u:${_sandbox_uid}:rwX"
+        fi
+        setfacl -m "u:${MSM_USER}:x" /opt/msm/servers 2>/dev/null || true
+        setfacl -R -m "$_sandbox_acl" /opt/msm/servers/_ai_projects 2>/dev/null || true
+    fi
 else
-    chown "$MSM_USER:$MSM_USER" /opt/msm/servers
+    chown "$MSM_USER:$MSM_USER" /opt/msm/servers /opt/msm/servers/_ai_projects
 fi
 mkdir -p /opt/msm/backups
 chown "$MSM_USER:$MSM_USER" /opt/msm/backups

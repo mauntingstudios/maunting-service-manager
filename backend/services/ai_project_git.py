@@ -25,6 +25,34 @@ from services.ai_project_errors import AiProjectError
 
 logger = logging.getLogger(__name__)
 
+_SAFE_GIT_FLAGS = (
+    "-c", "core.hooksPath=/dev/null",
+    "-c", "protocol.file.allow=never",
+    "-c", "submodule.recurse=false",
+)
+
+
+def _run_git(
+    args: list[str],
+    *,
+    cwd: Path | None = None,
+    env: dict[str, str] | None = None,
+    text: bool = True,
+    timeout: int = 15,
+) -> subprocess.CompletedProcess:
+    """Fuehrt Git ohne Hooks, file://-Protokoll oder Submodul-Rekursion aus."""
+    run_env = env if env is not None else {**os.environ, "GIT_TERMINAL_PROMPT": "0"}
+    return subprocess.run(
+        ["git", *_SAFE_GIT_FLAGS, *args],
+        cwd=str(cwd) if cwd is not None else None,
+        capture_output=True,
+        text=text,
+        encoding="utf-8" if text else None,
+        errors="replace" if text else None,
+        env=run_env,
+        timeout=timeout,
+    )
+
 def _clean_git_remote_url(repo_url: str, provider: str | None) -> str:
     """Erzeugt eine sichere HTTPS-URL mit Benutzer-Präfix aber ohne Passwort/Token."""
     parsed = urlparse(repo_url)
@@ -108,42 +136,10 @@ def git_status(db: Session, user: User, project_id: str) -> dict[str, object]:
             "diff_stat": "",
         }
     try:
-        branch_res = subprocess.run(
-            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-            cwd=str(ws),
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=10,
-        )
-        status_res = subprocess.run(
-            ["git", "status", "--short"],
-            cwd=str(ws),
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=10,
-        )
-        diff_res = subprocess.run(
-            ["git", "diff", "--stat"],
-            cwd=str(ws),
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=10,
-        )
-        log_res = subprocess.run(
-            ["git", "log", "-1", "--format=%h %s (%cr)"],
-            cwd=str(ws),
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=10,
-        )
+        branch_res = _run_git(["rev-parse", "--abbrev-ref", "HEAD"], cwd=ws, timeout=10)
+        status_res = _run_git(["status", "--short"], cwd=ws, timeout=10)
+        diff_res = _run_git(["diff", "--stat"], cwd=ws, timeout=10)
+        log_res = _run_git(["log", "-1", "--format=%h %s (%cr)"], cwd=ws, timeout=10)
         changed_files = [line.strip() for line in (status_res.stdout or "").splitlines() if line.strip()]
         return {
             "initialized": True,
@@ -204,22 +200,14 @@ def git_clone_or_pull(
         # Klonen in ein temporäres Unterverzeichnis und Inhalt verschieben, falls ws bereits existiert
         tmp_clone = ws.parent / f"clone_{project.id}_{int(datetime.now(timezone.utc).timestamp())}"
         try:
-            res = subprocess.run(
-                ["git", "clone", "--depth", "50", "--branch", target_branch, clean_auth_url, str(tmp_clone)],
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
+            res = _run_git(
+                ["clone", "--depth", "50", "--branch", target_branch, clean_auth_url, str(tmp_clone)],
                 env=env,
                 timeout=45,
             )
             if res.returncode != 0:
-                res = subprocess.run(
-                    ["git", "clone", "--depth", "50", clean_auth_url, str(tmp_clone)],
-                    capture_output=True,
-                    text=True,
-                    encoding="utf-8",
-                    errors="replace",
+                res = _run_git(
+                    ["clone", "--depth", "50", clean_auth_url, str(tmp_clone)],
                     env=env,
                     timeout=45,
                 )
@@ -237,26 +225,12 @@ def git_clone_or_pull(
                         dest.unlink(missing_ok=True)
                 shutil.move(str(item), str(dest))
             # Remote-URL immer sauber ohne Authentifizierungsteile hinterlegen
-            subprocess.run(
-                ["git", "remote", "set-url", "origin", target_url],
-                cwd=str(ws),
-                capture_output=True,
-                timeout=10,
-            )
+            _run_git(["remote", "set-url", "origin", target_url], cwd=ws, text=False, timeout=10)
         finally:
             if tmp_clone.exists():
                 shutil.rmtree(tmp_clone, ignore_errors=True)
     else:
-        res = subprocess.run(
-            ["git", "pull", clean_auth_url, target_branch],
-            cwd=str(ws),
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            env=env,
-            timeout=45,
-        )
+        res = _run_git(["pull", clean_auth_url, target_branch], cwd=ws, env=env, timeout=45)
         if res.returncode != 0:
             stderr_clean = (res.stderr or "")
             if effective_token:
@@ -297,21 +271,12 @@ def git_commit_and_push(
     env, _ = _prepare_git_askpass_env(base_env, effective_token)
 
     if not git_dir.exists():
-        subprocess.run(["git", "init", "-b", project.git_branch or "main"], cwd=str(ws), capture_output=True, env=env, timeout=10)
+        _run_git(["init", "-b", project.git_branch or "main"], cwd=ws, env=env, text=False, timeout=10)
         if project.git_repo_url:
-            subprocess.run(["git", "remote", "add", "origin", project.git_repo_url], cwd=str(ws), capture_output=True, env=env, timeout=10)
+            _run_git(["remote", "add", "origin", project.git_repo_url], cwd=ws, env=env, text=False, timeout=10)
 
-    subprocess.run(["git", "add", "-A"], cwd=str(ws), capture_output=True, env=env, timeout=15)
-    commit_res = subprocess.run(
-        ["git", "commit", "-m", commit_msg],
-        cwd=str(ws),
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        env=env,
-        timeout=15,
-    )
+    _run_git(["add", "-A"], cwd=ws, env=env, text=False, timeout=15)
+    commit_res = _run_git(["commit", "-m", commit_msg], cwd=ws, env=env, timeout=15)
     push_output = ""
     if push and project.git_repo_url:
         clean_auth_url = _clean_git_remote_url(project.git_repo_url, project.git_provider) if effective_token else project.git_repo_url
@@ -320,16 +285,7 @@ def git_commit_and_push(
         if target_branch.lower() in ("main", "master"):
             raise AiProjectError("Direkter Push auf den main-Branch ist untersagt. Bitte erstelle einen Feature-Branch mit 'git_branch' und nutze einen Pull Request.")
 
-        push_res = subprocess.run(
-            ["git", "push", clean_auth_url, f"HEAD:{target_branch}"],
-            cwd=str(ws),
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            env=env,
-            timeout=45,
-        )
+        push_res = _run_git(["push", clean_auth_url, f"HEAD:{target_branch}"], cwd=ws, env=env, timeout=45)
         push_output = ((push_res.stdout or "") + "\n" + (push_res.stderr or "")).strip()
         if effective_token:
             push_output = push_output.replace(effective_token, "***")
@@ -368,9 +324,9 @@ def git_branch(
 
     git_dir = ws / ".git"
     if not git_dir.exists():
-        subprocess.run(["git", "init", "-b", target_branch], cwd=str(ws), capture_output=True, timeout=10)
+        _run_git(["init", "-b", target_branch], cwd=ws, text=False, timeout=10)
     else:
-        res = subprocess.run(["git", "checkout", "-B", target_branch], cwd=str(ws), capture_output=True, text=True, timeout=10)
+        res = _run_git(["checkout", "-B", target_branch], cwd=ws, timeout=10)
         if res.returncode != 0:
             raise AiProjectError(f"Branch konnte nicht erstellt/ausgecheckt werden: {res.stderr}")
 
@@ -480,13 +436,17 @@ def merge_to_main(
 
     logger.info("AUDIT: Benutzer #%s (%s) führt Branch %s von Projekt %s in main zusammen.", user.id, user.username, current_branch, project.id)
 
-    res_co = subprocess.run(["git", "checkout", "main"], cwd=str(ws), capture_output=True, text=True, timeout=15)
+    res_co = _run_git(["checkout", "main"], cwd=ws, timeout=15)
     if res_co.returncode != 0:
-        subprocess.run(["git", "checkout", "-b", "main"], cwd=str(ws), capture_output=True, timeout=10)
+        _run_git(["checkout", "-b", "main"], cwd=ws, text=False, timeout=10)
 
-    res_merge = subprocess.run(["git", "merge", current_branch, "--no-ff", "-m", f"Merge branch '{current_branch}' into main"], cwd=str(ws), capture_output=True, text=True, timeout=15)
+    res_merge = _run_git(
+        ["merge", current_branch, "--no-ff", "-m", f"Merge branch '{current_branch}' into main"],
+        cwd=ws,
+        timeout=15,
+    )
     if res_merge.returncode != 0:
-        subprocess.run(["git", "merge", "--abort"], cwd=str(ws), capture_output=True, timeout=10)
+        _run_git(["merge", "--abort"], cwd=ws, text=False, timeout=10)
         raise AiProjectError(f"Merge-Konflikt beim Zusammenführen in main: {res_merge.stderr[:400]}")
 
     project.git_branch = "main"
@@ -640,31 +600,13 @@ def git_create_remote_repository(
     target_branch = project.git_branch or "main"
 
     if not git_dir.exists():
-        subprocess.run(["git", "init", "-b", target_branch], cwd=str(ws), capture_output=True, env=env, timeout=10)
-    subprocess.run(["git", "remote", "remove", "origin"], cwd=str(ws), capture_output=True, env=env, timeout=10)
-    subprocess.run(["git", "remote", "add", "origin", clone_url], cwd=str(ws), capture_output=True, env=env, timeout=10)
-    subprocess.run(["git", "add", "-A"], cwd=str(ws), capture_output=True, env=env, timeout=15)
-    subprocess.run(
-        ["git", "commit", "-m", "Initial commit"],
-        cwd=str(ws),
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        env=env,
-        timeout=15,
-    )
+        _run_git(["init", "-b", target_branch], cwd=ws, env=env, text=False, timeout=10)
+    _run_git(["remote", "remove", "origin"], cwd=ws, env=env, text=False, timeout=10)
+    _run_git(["remote", "add", "origin", clone_url], cwd=ws, env=env, text=False, timeout=10)
+    _run_git(["add", "-A"], cwd=ws, env=env, text=False, timeout=15)
+    _run_git(["commit", "-m", "Initial commit"], cwd=ws, env=env, timeout=15)
     clean_auth_url = _clean_git_remote_url(clone_url, target_provider)
-    subprocess.run(
-        ["git", "push", "-u", clean_auth_url, f"HEAD:{target_branch}"],
-        cwd=str(ws),
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        env=env,
-        timeout=45,
-    )
+    _run_git(["push", "-u", clean_auth_url, f"HEAD:{target_branch}"], cwd=ws, env=env, timeout=45)
 
     status = git_status(db, user, project.id)
     status["repo_url"] = clone_url

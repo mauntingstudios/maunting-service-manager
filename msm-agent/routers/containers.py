@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
@@ -67,6 +67,11 @@ class EphemeralContainerRequest(BaseModel):
     timeout: int = Field(default=1800, ge=1, le=7200)
     nano_cpus: int | None = Field(default=None, ge=100_000_000, le=16_000_000_000)
     mem_limit: str | None = Field(default=None, max_length=32, pattern=r"^[1-9][0-9]*[kmgKMG]?$")
+    pids_limit: int | None = Field(default=None, ge=16, le=2048)
+    network: Literal["none", "msm-ephemeral-net"] | None = None
+    read_only_rootfs: bool = False
+    tmpfs_paths: list[str] | None = None
+    runtime: str | None = None
 
 
 class ResourceUpdateRequest(BaseModel):
@@ -147,6 +152,11 @@ def run_ephemeral(body: EphemeralContainerRequest) -> dict[str, Any]:
             timeout=body.timeout,
             nano_cpus=body.nano_cpus,
             mem_limit=body.mem_limit,
+            pids_limit=body.pids_limit,
+            network=body.network,
+            read_only_rootfs=body.read_only_rootfs,
+            tmpfs_paths=body.tmpfs_paths,
+            runtime=body.runtime,
         )
     except Exception as exc:
         raise _map_docker_errors(exc) from exc

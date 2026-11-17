@@ -1067,7 +1067,9 @@ registriere die Vorschau-Umgebung immer ueber `project_workspace` mit \
 - Echte Dev-Sandbox mit Auto-Pause (`dev_start`, `dev_stop`, `dev_status`): Alle Änderungen finden \
 zuerst isoliert in der echten Entwicklungsumgebung (`dev`, mit eigenem Dev-Backend, Dev-Frontend \
 und isoliertem PostgreSQL-Dev-Branch) statt. Nach 60 Minuten Inaktivität pausiert die Sandbox \
-automatisch und wacht bei der nächsten Interaktion oder im Preview in unter 3 Sekunden wieder auf.
+automatisch und wacht bei der nächsten Interaktion oder im Preview in unter 3 Sekunden wieder auf. \
+Paket-Installationen (`npm install`/`pip install`) und anschließende Code-/Testläufe (`pytest`, \
+`npm test`, `npm run build`) in `run_command` immer getrennt aufrufen, damit Code im Offline-Container läuft.
 - Playwright Browser-Tests & Negativ-Testing (`test_project`): Teste deine Web-App wie ein echter \
 Benutzer im Headless-Browser. Prüfe Smartphone- (375x667) und Desktop-Auflösung, stelle sicher, \
 dass kein horizontaler Überlauf (`overflow: true`) auftritt und keine Konsolenfehler geworfen werden. \

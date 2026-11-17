@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+import shlex
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
@@ -17,8 +18,11 @@ from uuid import uuid4
 
 from sqlalchemy.orm import Session
 
+from config import settings
 from models import User
+from services import docker_service
 from services.ai_project_errors import AiProjectError
+from services.docker_service import VolumeBind
 
 logger = logging.getLogger(__name__)
 
@@ -105,6 +109,50 @@ def _validate_project_command(cmd: str, ws: Path) -> None:
             raise AiProjectError(f"Das Programm '{binary_name}' ist in der Projekt-Sandbox nicht zugelassen")
 
 
+def _is_package_install_segment(seg: str) -> bool:
+    """Erkennt reine Paket-Installationsbefehle (`npm install`, `pip install` usw.)."""
+    try:
+        tokens = shlex.split(seg, posix=True)
+    except ValueError:
+        tokens = seg.split()
+    if not tokens:
+        return False
+    binary = Path(tokens[0]).name.replace(".exe", "").replace(".cmd", "").replace(".bat", "").lower()
+    if binary in ("npm", "pnpm", "yarn"):
+        sub = next((tok.lower() for tok in tokens[1:] if not tok.startswith("-")), "")
+        return sub in {"install", "i", "ci", "add", "update", "up"}
+    if binary in ("pip", "pip3"):
+        sub = next((tok.lower() for tok in tokens[1:] if not tok.startswith("-")), "")
+        return sub == "install"
+    if binary in ("python", "python3") and len(tokens) >= 4:
+        return tokens[1] == "-m" and tokens[2].lower() in ("pip", "pip3") and tokens[3].lower() == "install"
+    return False
+
+
+def _resolve_sandbox_network(cmd: str) -> str:
+    """Bestimmt das Sandbox-Netz: regulaerer Code laeuft immer komplett offline (`none`)."""
+    segments = _split_unquoted_command_segments(cmd)
+    install_flags = [_is_package_install_segment(seg) for seg in segments if seg.strip()]
+    install_count = sum(1 for flag in install_flags if flag)
+    if 0 < install_count < len(install_flags):
+        raise AiProjectError(
+            "Paket-Installation und Code-/Test-Ausführung aus Sicherheitsgründen getrennt ausführen, "
+            "damit Code im Offline-Container läuft."
+        )
+    if install_count > 0 and bool(getattr(settings, "coding_sandbox_allow_package_network", True)):
+        return "msm-ephemeral-net"
+    return "none"
+
+
+def _sandbox_runtime() -> str | None:
+    raw = (
+        getattr(settings, "coding_sandbox_runtime", "")
+        or getattr(settings, "default_untrusted_runtime", "")
+        or ""
+    ).strip()
+    return raw or None
+
+
 def run_project_command(
     db: Session,
     user: User,
@@ -113,7 +161,7 @@ def run_project_command(
     *,
     timeout_seconds: int = 25,
 ) -> dict[str, object]:
-    """Fuehrt einen Shell-Befehl isoliert und geprueft im Projekt-Arbeitsverzeichnis aus."""
+    """Fuehrt einen Shell-Befehl isoliert im gehaerteten Sandbox-Container aus."""
     from services.ai_project_service import (
         _materialize_db_files_to_workspace,
         _sync_workspace_files_to_db,
@@ -127,7 +175,65 @@ def run_project_command(
         raise AiProjectError("Befehl darf nicht leer sein")
     ws = ensure_project_workspace(project)
     _validate_project_command(cmd, ws)
+    target_network = _resolve_sandbox_network(cmd)
     _materialize_db_files_to_workspace(db, project, ws)
+
+    timeout = max(2, min(int(timeout_seconds or 25), 60))
+    has_container, sandbox_node = docker_service.resolve_sandbox_executor(db)
+    if has_container:
+        sandbox_env = {
+            "HOME": "/tmp/sandbox_home",
+            "npm_config_cache": "/tmp/npm_cache",
+            "PIP_CACHE_DIR": "/tmp/pip_cache",
+            "PYTHONDONTWRITEBYTECODE": "1",
+            "GIT_TERMINAL_PROMPT": "0",
+            "CI": "true",
+            "LANG": "C.UTF-8",
+            "LC_ALL": "C.UTF-8",
+        }
+        volumes = [VolumeBind(host_path=str(ws.resolve()), container_path="/workspace", read_only=False)]
+        res = docker_service.run_ephemeral(
+            image=str(getattr(settings, "coding_sandbox_image", "msm-coding-sandbox:latest")),
+            command=["/bin/sh", "-c", cmd],
+            volumes=volumes,
+            env=sandbox_env,
+            workdir="/workspace",
+            timeout=timeout,
+            read_only_rootfs=True,
+            tmpfs_paths=["/tmp"],
+            runtime=_sandbox_runtime(),
+            network=target_network,
+            nano_cpus=int(getattr(settings, "coding_sandbox_nano_cpus", 1_000_000_000)),
+            mem_limit=str(getattr(settings, "coding_sandbox_mem_limit", "1024m")),
+            pids_limit=int(getattr(settings, "coding_sandbox_pids_limit", 128)),
+            node=sandbox_node,
+        )
+        _sync_workspace_files_to_db(db, project, ws)
+        ok = bool(res.get("ok"))
+        stdout = str(res.get("stdout") or "")[:_MAX_CMD_OUTPUT_CHARS]
+        stderr = str(res.get("stderr") or "")[:_MAX_CMD_OUTPUT_CHARS]
+        err_msg = str(res.get("error") or "")
+        if not ok and not stderr and err_msg:
+            stderr = err_msg[:_MAX_CMD_OUTPUT_CHARS]
+        exit_code = 0 if ok else 1
+        match_exit = re.match(r"^exit\s+(\d+)$", err_msg.strip())
+        if match_exit:
+            exit_code = int(match_exit.group(1))
+        return {
+            "ok": ok,
+            "exit_code": exit_code,
+            "stdout": stdout,
+            "stderr": stderr,
+            "workspace": str(ws),
+            "network": target_network,
+            "sandbox": "container",
+        }
+
+    if not bool(getattr(settings, "coding_sandbox_allow_host_fallback", False)):
+        raise AiProjectError(
+            "Coding-Sandbox erfordert einen aktiven Container-Runner (msm-agent oder Docker); "
+            "Bare-Metal-Ausführung ist deaktiviert."
+        )
 
     safe_env = {
         "PATH": os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin"),
@@ -140,7 +246,6 @@ def run_project_command(
         if key in os.environ:
             safe_env[key] = os.environ[key]
 
-    timeout = max(2, min(int(timeout_seconds or 25), 60))
     try:
         completed = subprocess.run(
             cmd,
@@ -162,6 +267,8 @@ def run_project_command(
             "stdout": stdout,
             "stderr": stderr,
             "workspace": str(ws),
+            "network": "host-dev",
+            "sandbox": "host_fallback",
         }
     except subprocess.TimeoutExpired:
         return {
@@ -170,6 +277,8 @@ def run_project_command(
             "stdout": "",
             "stderr": f"Zeitüberschreitung nach {timeout} Sekunden.",
             "workspace": str(ws),
+            "network": "host-dev",
+            "sandbox": "host_fallback",
         }
     except OSError as exc:
         raise AiProjectError(f"Ausführung fehlgeschlagen: {exc}") from exc
@@ -210,6 +319,9 @@ def verify_project_sandbox(
     test_files_found: list[str] = []
     has_negative_tests = False
 
+    has_container, sandbox_node = docker_service.resolve_sandbox_executor(db)
+    allow_host_fallback = bool(getattr(settings, "coding_sandbox_allow_host_fallback", False))
+
     for f in files:
         path = f.path
         lower = path.lower()
@@ -246,24 +358,49 @@ def verify_project_sandbox(
             full_path = ws / path
             is_es_module = bool(re.search(r"^\s*(import|export)\s+", content, re.M))
             if full_path.is_file() and not is_es_module:
-                try:
-                    proc = subprocess.run(
-                        ["node", "--check", str(full_path)],
-                        cwd=str(ws),
-                        capture_output=True,
-                        text=True,
-                        encoding="utf-8",
-                        errors="replace",
-                        timeout=8,
+                if has_container:
+                    res = docker_service.run_ephemeral(
+                        image=str(getattr(settings, "coding_sandbox_image", "msm-coding-sandbox:latest")),
+                        command=["node", "--check", path.lstrip("/")],
+                        volumes=[VolumeBind(host_path=str(ws.resolve()), container_path="/workspace", read_only=True)],
+                        workdir="/workspace",
+                        timeout=10,
+                        read_only_rootfs=True,
+                        tmpfs_paths=["/tmp"],
+                        runtime=_sandbox_runtime(),
+                        network="none",
+                        nano_cpus=int(getattr(settings, "coding_sandbox_nano_cpus", 1_000_000_000)),
+                        mem_limit=str(getattr(settings, "coding_sandbox_mem_limit", "1024m")),
+                        pids_limit=int(getattr(settings, "coding_sandbox_pids_limit", 128)),
+                        node=sandbox_node,
                     )
-                    if proc.returncode == 0:
+                    if res.get("ok"):
                         checks.append({"file": path, "kind": "node_syntax", "ok": True})
                     else:
-                        err_detail = (proc.stderr or proc.stdout or "JS-Syntaxfehler").strip()
+                        err_detail = (res.get("stderr") or res.get("stdout") or res.get("error") or "JS-Syntaxfehler").strip()
                         errors.append(f"{path}: {err_detail[:240]}")
                         checks.append({"file": path, "kind": "node_syntax", "ok": False, "error": err_detail[:240]})
-                except Exception:
-                    checks.append({"file": path, "kind": "node_syntax", "ok": True, "note": "node --check übersprungen"})
+                elif allow_host_fallback:
+                    try:
+                        proc = subprocess.run(
+                            ["node", "--check", str(full_path)],
+                            cwd=str(ws),
+                            capture_output=True,
+                            text=True,
+                            encoding="utf-8",
+                            errors="replace",
+                            timeout=8,
+                        )
+                        if proc.returncode == 0:
+                            checks.append({"file": path, "kind": "node_syntax", "ok": True})
+                        else:
+                            err_detail = (proc.stderr or proc.stdout or "JS-Syntaxfehler").strip()
+                            errors.append(f"{path}: {err_detail[:240]}")
+                            checks.append({"file": path, "kind": "node_syntax", "ok": False, "error": err_detail[:240]})
+                    except Exception:
+                        checks.append({"file": path, "kind": "node_syntax", "ok": True, "note": "node --check übersprungen"})
+                else:
+                    checks.append({"file": path, "kind": "node_syntax", "ok": True, "note": "node --check übersprungen (keine Container-Sandbox)"})
             else:
                 checks.append({"file": path, "kind": "es_module_js", "ok": True})
 

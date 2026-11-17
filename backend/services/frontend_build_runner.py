@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
+from config import settings
 from services import docker_service
 from services.docker_service import VolumeBind
 
@@ -137,6 +138,13 @@ def run_node_frontend_build(
     image = f"node:{node_version}-bookworm-slim"
 
     docker_avail = docker_service.is_docker_available(node=node)
+    pkg_net = "msm-ephemeral-net" if getattr(settings, "coding_sandbox_allow_package_network", True) else "none"
+    allow_host_fallback = bool(getattr(settings, "coding_sandbox_allow_host_fallback", False))
+    sandbox_env = {
+        **(env_vars or {}),
+        "HOME": "/tmp/sandbox_home",
+        "npm_config_cache": "/tmp/npm_cache",
+    }
     build_output = ""
     build_succeeded = False
 
@@ -166,7 +174,10 @@ def run_node_frontend_build(
             command=["sh", "-c", container_script],
             workdir="/app",
             volumes=volumes,
-            env=env_vars or None,
+            env=sandbox_env,
+            read_only_rootfs=True,
+            tmpfs_paths=["/tmp"],
+            network=pkg_net,
             timeout=timeout_seconds,
             nano_cpus=nano_cpus,
             mem_limit=mem_limit,
@@ -175,6 +186,12 @@ def run_node_frontend_build(
         )
         build_succeeded = bool(res.get("ok"))
         build_output = (res.get("stdout") or "") + "\n" + (res.get("stderr") or "")
+    elif not allow_host_fallback:
+        msg = "Frontend-Build erfordert eine aktive Container-Sandbox (msm-agent/Docker).\n"
+        if log_callback:
+            log_callback(msg)
+        build_output = msg
+        build_succeeded = False
     else:
         if log_callback:
             log_callback("Docker nicht verfuegbar; verwende lokalen Node-Prozess fuer Build...\n")
@@ -253,7 +270,10 @@ def run_node_frontend_build(
                             read_only=False,
                         )
                     ],
-                    env=env_vars or None,
+                    env=sandbox_env,
+                    read_only_rootfs=True,
+                    tmpfs_paths=["/tmp"],
+                    network="none",
                     timeout=min(300, timeout_seconds),
                     node=node,
                     log_callback=log_callback,
@@ -264,7 +284,7 @@ def run_node_frontend_build(
                     + "\n"
                     + (fallback_res.get("stderr") or "")
                 )
-            else:
+            elif allow_host_fallback:
                 npx_bin = shutil.which("npx.cmd") or shutil.which("npx")
                 if npx_bin:
                     merged_env = dict(os.environ)

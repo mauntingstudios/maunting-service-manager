@@ -312,6 +312,28 @@ def is_docker_available(node: Any | None = None) -> bool:
     return _check_docker()
 
 
+def resolve_sandbox_executor(db: Any, *, node_id: int | None = None) -> tuple[bool, Any | None]:
+    """Findet einen erreichbaren Container-Executor (bevorzugt lokalen/Ziel-msm-agent, sonst lokales Docker)."""
+    from models import Node
+
+    candidates: list[Any] = []
+    if node_id:
+        explicit = db.get(Node, int(node_id))
+        if explicit is not None:
+            candidates.append(explicit)
+    local_node = db.query(Node).filter(Node.is_local.is_(True)).order_by(Node.id.asc()).first()
+    if local_node is not None and local_node not in candidates:
+        candidates.append(local_node)
+
+    for candidate in candidates:
+        if is_docker_available(node=candidate):
+            return True, candidate
+
+    if is_docker_available(node=None):
+        return True, None
+    return False, None
+
+
 def _client_or_error() -> tuple[Any | None, dict | None]:
     client, error = _get_client()
     if client is None:
@@ -1051,9 +1073,12 @@ def run_ephemeral(
     timeout: int = 1800,
     log_callback: Any | None = None,
     read_only_rootfs: bool = False,
+    tmpfs_paths: list[str] | None = None,
     runtime: str | None = None,
+    network: str | None = None,
     nano_cpus: int | None = None,
     mem_limit: str | None = None,
+    pids_limit: int | None = None,
     node: Any | None = None,
 ) -> dict:
     """Fuehrt einen einmaligen Containerlauf aus und entfernt den Container danach.
@@ -1079,6 +1104,11 @@ def run_ephemeral(
             "timeout": timeout,
             "nano_cpus": nano_cpus,
             "mem_limit": mem_limit,
+            "pids_limit": pids_limit,
+            "network": network,
+            "read_only_rootfs": read_only_rootfs,
+            "tmpfs_paths": tmpfs_paths,
+            "runtime": runtime,
         }
         try:
             result = NodeClient.from_node(node, timeout=float(timeout)).run_ephemeral_container(
@@ -1098,12 +1128,14 @@ def run_ephemeral(
         return error
     eff_nano_cpus = int(nano_cpus) if nano_cpus and int(nano_cpus) > 0 else 2_000_000_000
     eff_mem_limit = str(mem_limit) if mem_limit else "4096m"
+    eff_pids = min(max(16, int(pids_limit) if (pids_limit is not None and int(pids_limit) > 0) else 256), 2048)
     kwargs: dict[str, Any] = {
         "image": image,
         "command": command,
         "detach": True,
         "environment": env or None,
         "volumes": _volumes_dict(volumes),
+        "tmpfs": _tmpfs_dict(tmpfs_paths, allow_exec=False),
         "user": user,
         "working_dir": workdir,
         "entrypoint": entrypoint,
@@ -1112,12 +1144,16 @@ def run_ephemeral(
         "cap_drop": _HARDENING_CAP_DROP,
         "cap_add": cap_adds or None,
         "security_opt": _container_security_options(False),
-        "pids_limit": 256,
+        "pids_limit": eff_pids,
         "nano_cpus": eff_nano_cpus,
         "mem_limit": eff_mem_limit,
         "memswap_limit": eff_mem_limit,
         "oom_score_adj": 500,
     }
+    if network == "none":
+        kwargs["network_mode"] = "none"
+    elif network:
+        kwargs["network"] = network
     validated_rt = _validated_runtime(runtime)
     if validated_rt is not None:
         kwargs["runtime"] = validated_rt

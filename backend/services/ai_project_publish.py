@@ -23,6 +23,7 @@ from services.ai_project_errors import AiProjectError
 from services.ai_project_git import (
     _clean_git_remote_url,
     _prepare_git_askpass_env,
+    _run_git,
     git_commit_and_push,
     merge_to_main,
     resolve_git_token_for_user,
@@ -164,16 +165,7 @@ def publish_project_to_production(
                 "GIT_COMMITTER_EMAIL": user.email or "singra@mauntingstudios.de",
             }
             env, _ = _prepare_git_askpass_env(base_env, effective_token)
-            subprocess.run(
-                ["git", "push", clean_auth_url, "HEAD:main"],
-                cwd=str(ws),
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                env=env,
-                timeout=45,
-            )
+            _run_git(["push", clean_auth_url, "HEAD:main"], cwd=ws, env=env, timeout=45)
         except Exception as merge_err:
             logger.warning("Git-Push nach main fuer Projekt %s fehlgeschlagen: %s", project.id, merge_err)
 

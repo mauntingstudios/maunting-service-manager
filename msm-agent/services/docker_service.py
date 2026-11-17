@@ -214,6 +214,8 @@ DEFAULT_EPHEMERAL_MEM_LIMIT = "4096m"
 DEFAULT_CONTAINER_CPU_PERCENT = 200.0
 DEFAULT_CONTAINER_RAM_MB = 2048
 _EPHEMERAL_CONCURRENCY_LIMIT = threading.BoundedSemaphore(2)
+_EPHEMERAL_ALLOWED_NETWORKS = frozenset({"none", network_isolation_service.EPHEMERAL_NETWORK_NAME})
+_EPHEMERAL_ALLOWED_TMPFS = frozenset({"/tmp", "/run", "/var/tmp"})
 
 
 def _default_nofile_ulimits() -> list[Any] | None:
@@ -609,12 +611,24 @@ def run_ephemeral(
     network: str | None = None,
     runtime: str | None = None,
     read_only_rootfs: bool = False,
+    tmpfs_paths: list[str] | None = None,
 ) -> dict[str, Any]:
     """Run one hardened, resource-bounded tool container and remove it on every exit path."""
     allowed_caps = {"DAC_OVERRIDE", "DAC_READ_SEARCH", "CHOWN", "FOWNER", "SETUID", "SETGID"}
     requested_caps = {str(cap).upper() for cap in (cap_add or [])}
     if not requested_caps.issubset(allowed_caps):
         raise HardeningError("requested capability is not allowed")
+    if network is not None and network not in _EPHEMERAL_ALLOWED_NETWORKS:
+        raise HardeningError("requested network is not allowed for ephemeral containers")
+    validated_tmpfs: dict[str, str] | None = None
+    if tmpfs_paths:
+        for path in tmpfs_paths:
+            if path not in _EPHEMERAL_ALLOWED_TMPFS:
+                raise HardeningError(f"tmpfs path '{path}' is not allowed for ephemeral containers")
+        validated_tmpfs = {
+            path: "rw,noexec,nosuid,nodev,size=128m,mode=1777"
+            for path in tmpfs_paths
+        }
     validated_runtime = _validated_runtime(runtime)
     client = _get_client()
     container = None
@@ -635,6 +649,7 @@ def run_ephemeral(
                 "detach": True,
                 "environment": env or None,
                 "volumes": _validated_volumes(volumes),
+                "tmpfs": validated_tmpfs,
                 "user": user,
                 "working_dir": workdir,
                 "entrypoint": entrypoint,
@@ -649,9 +664,12 @@ def run_ephemeral(
                 "pids_limit": effective_pids,
                 "oom_score_adj": int(getattr(settings, "container_oom_score_adj", 500)),
             }
-            effective_eph_net = network or network_isolation_service.ensure_ephemeral_network(client)
-            if effective_eph_net:
-                run_kwargs["network"] = effective_eph_net
+            if network == "none":
+                run_kwargs["network_mode"] = "none"
+            else:
+                effective_eph_net = network or network_isolation_service.ensure_ephemeral_network(client)
+                if effective_eph_net:
+                    run_kwargs["network"] = effective_eph_net
             if validated_runtime is not None:
                 run_kwargs["runtime"] = validated_runtime
             run_kwargs.update(_default_blkio_kwargs())
