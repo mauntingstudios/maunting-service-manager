@@ -2607,6 +2607,10 @@
     },
     "reference": {
       "body": "Alle Felder werden beim Upload streng gegen das Pydantic-Schema des Backends validiert.",
+      "field": "Feld",
+      "type": "Typ",
+      "required": "Pflicht?",
+      "description": "Beschreibung",
       "yes": "Ja",
       "no": "Nein",
       "metaId": "Eindeutige technische ID. Großbuchstaben und Leerzeichen werden beim Speichern automatisch zu Kleinbuchstaben und Unterstrichen normalisiert. Darf nicht mit nativen Blueprints kollidieren.",
@@ -3357,6 +3361,7 @@
     "deleted": "Rolle gelöscht.",
     "confirmDelete": "Rolle wirklich löschen?",
     "adminLocked": "Die Admin-Rolle besitzt feste Vollberechtigung und kann nicht bearbeitet werden.",
+    "noRoles": "Keine Rollen vorhanden.",
     "systemNames": {
       "admin": "Admin",
       "user": "User"
@@ -6141,6 +6146,7 @@
   "docsOAuth": {
     "title": "OAuth & Social Login",
     "subtitle": "Externe Identitäts-Provider für die Anmeldung konfigurieren.",
+    "manageOAuth": "Zur OAuth-Verwaltung",
     "tocTitle": "Inhalt",
     "toc": {
       "intro": "Was ist OAuth im MSM?",
@@ -6267,7 +6273,7 @@
   },
   "privacyNotice": {
     "eyebrow": "Datenschutz-Hinweis",
-    "title": "Verstehe, wie diese Instanz Daten verarbeitet",
+    "title": "Erfahren Sie, wie diese Instanz Daten verarbeitet",
     "description": "MSM nutzt notwendige Browser-Speicherung für Anmeldung, Sicherheit und Einstellungen. Aktiviert der Betreiber ein Support-Widget eines Drittanbieters, lädt es erst nach Bestätigung dieses Hinweises und kann Verbindungs- und Nachrichtendaten nach den Regeln des Betreibers verarbeiten.",
     "readPolicy": "Datenschutzerklärung lesen",
     "confirm": "Bestätigen und fortfahren"
@@ -6315,25 +6321,25 @@
       },
       "messenger": {
         "heading": "Messenger und Ende-zu-Ende-Verschlüsselung",
-        "body": "Nachrichten im Messenger werden auf deinem Gerät verschlüsselt und erst auf dem Gerät der Gegenseite wieder geöffnet. Die Instanz leitet nur Chiffretext weiter.",
+        "body": "Nachrichten im Messenger werden auf Ihrem Gerät verschlüsselt und erst auf dem Gerät der Gegenseite wieder geöffnet. Die Instanz leitet nur Chiffretext weiter.",
         "items": {
           "envelopes": "Chat-Nachrichten liegen als eine Zeile je Nachricht in der Datenbank: Gesprächsart und -kennung, Absender, Zeitpunkt, Schlüsselversion, Größe des Chiffrats und eine Frist. Den Inhalt kann die Instanz nicht lesen. Normale Nachrichten und Anhänge bleiben, bis sie gelöscht werden; nur ausdrücklich befristete Nachrichten räumt der Server nach Ablauf weg. Kopien in Sicherungen können länger bestehen. Alte, mit dem früheren Verfahren verschlüsselte Zeilen bleiben bei der Umstellung als eingefrorenes Archiv in der Datenbank; sie sind über keine Funktion abrufbar und werden nicht ausgeliefert.",
           "deviceDelivery": "Eine Nachricht wird genau einmal abgelegt. Die Instanz sieht dabei, zu welchem Gespräch sie gehört, wer sie geschickt hat, wann, wie groß sie ist und welche Schlüsselversion sie trägt. Eine Zustellkennung je Gerät oder ein Idempotenzrest entsteht nicht mehr.",
-          "deviceKey": "Dein Konto besitzt ein Identitätsschlüsselpaar: RSA-OAEP zum Verpacken von Schlüsseln und ECDSA zum Unterschreiben. Der private Teil verlässt kein freigegebenes Gerät im Klartext; er liegt verschlüsselt in einem Schlüsselbund, den jedes freigegebene Gerät mit seinem eigenen Geräteschlüssel öffnet. Bei der Instanz stehen nur die öffentlichen Teile.",
+          "deviceKey": "Ihr Konto besitzt ein Identitätsschlüsselpaar: RSA-OAEP zum Verpacken von Schlüsseln und ECDSA zum Unterschreiben. Der private Teil verlässt kein freigegebenes Gerät im Klartext; er liegt verschlüsselt in einem Schlüsselbund, den jedes freigegebene Gerät mit seinem eigenen Geräteschlüssel öffnet. Bei der Instanz stehen nur die öffentlichen Teile.",
           "deviceFanout": "Jedes Gespräch hat einen symmetrischen Chat-Schlüssel. Eine Nachricht wird einmal damit verschlüsselt und vom Absender unterschrieben; die Instanz legt genau dieses eine Chiffrat ab und erfährt nicht, wie viele Geräte es lesen. Der Chat-Schlüssel liegt für jedes Mitglied verpackt gegen dessen Konto-Schlüssel vor. Ändert sich die Mitgliedschaft, entsteht eine neue Version.",
-          "deviceHistory": "Der Verlauf liegt verschlüsselt auf der Instanz. Ein neu freigegebenes Gerät erhält bei der Freigabe den Konto-Schlüsselbund und liest damit auch ältere Nachrichten; ein Verlauf wird nicht von Gerät zu Gerät übertragen. Die Freigabe unterschreibt ein freigegebenes Gerät, und die Geräte deiner Kontakte prüfen diese Unterschrift. Wer nur dein Passwort hat, liest nicht mit. Entfernst du ein Gerät, wird es abgemeldet und verliert den Zugang. Gehen dir alle freigegebenen Geräte verloren, kannst du mit deinem Passwort neu beginnen; der alte Verlauf bleibt unlesbar, weil der Schlüssel fort ist. In der Webversion kommt der Programmcode vom Server; gegen einen Betreiber, der ihn ändert, schützen nur Desktop- und Android-App.",
-          "devicePin": "Auf dem Gerät selbst liegt der Verlauf zunächst lesbar, damit er ein Neuladen übersteht. Richtest du unter Profil einen Messenger-PIN ein, werden Verlauf, Geräteschlüssel, Chat-Schlüssel und Entwürfe auf diesem Gerät versiegelt und nur nach Eingabe des PIN geöffnet; in der Desktop-App kann Windows Hello den PIN hinterlegen, in der Android-App der Fingerabdruck. Der PIN ist freiwillig, standardmäßig aus und jederzeit wieder abschaltbar. Ohne ihn kann jeder, der Zugriff auf dieses Gerät hat, den Verlauf lesen. Der PIN wird nirgends gespeichert und ist dem Betreiber nicht bekannt: Wer ihn vergisst, verliert den Verlauf dieses Geräts.",
+          "deviceHistory": "Der Verlauf liegt verschlüsselt auf der Instanz. Ein neu freigegebenes Gerät erhält bei der Freigabe den Konto-Schlüsselbund und liest damit auch ältere Nachrichten; ein Verlauf wird nicht von Gerät zu Gerät übertragen. Die Freigabe unterschreibt ein freigegebenes Gerät, und die Geräte Ihrer Kontakte prüfen diese Unterschrift. Wer nur Ihr Passwort hat, liest nicht mit. Entfernen Sie ein Gerät, wird es abgemeldet und verliert den Zugang. Gehen Ihnen alle freigegebenen Geräte verloren, können Sie mit Ihrem Passwort neu beginnen; der alte Verlauf bleibt unlesbar, weil der Schlüssel fort ist. In der Webversion kommt der Programmcode vom Server; gegen einen Betreiber, der ihn ändert, schützen nur Desktop- und Android-App.",
+          "devicePin": "Auf dem Gerät selbst liegt der Verlauf zunächst lesbar, damit er ein Neuladen übersteht. Richten Sie unter Profil eine Messenger-PIN ein, werden Verlauf, Geräteschlüssel, Chat-Schlüssel und Entwürfe auf diesem Gerät versiegelt und nur nach Eingabe der PIN geöffnet; in der Desktop-App kann Windows Hello die PIN hinterlegen, in der Android-App der Fingerabdruck. Die PIN ist freiwillig, standardmäßig aus und jederzeit wieder abschaltbar. Ohne sie kann jeder, der Zugriff auf dieses Gerät hat, den Verlauf lesen. Die PIN wird nirgends gespeichert und ist dem Betreiber nicht bekannt: Wer sie vergisst, verliert den Verlauf dieses Geräts.",
           "ratchet": "Einen Schlüssel je Nachricht gibt es nicht mehr. Alle Nachrichten einer Chat-Schlüsselversion teilen sich diesen Schlüssel, und wer ihn erbeutet, kann die Nachrichten dieser Version öffnen. Bei einem Mitgliederwechsel entsteht eine neue Version; ältere Nachrichten bleiben unter ihrer alten Version lesbar. Das ist der bewusste Verzicht auf die automatische Forward Secrecy eines Ratchets zugunsten eines kleineren, prüfbaren Wegs.",
           "groups": "In einer Gruppe teilen sich alle Mitglieder den Chat-Schlüssel derselben Version. Bei jeder Änderung der Mitgliedschaft entsteht eine neue Version, sodass ein ausgeschiedenes Mitglied neue Nachrichten nicht mehr liest; ältere Nachrichten seiner Version kann es weiterhin öffnen. Wer neu dazukommt, liest ab seinem Beitritt. Wird jemand entfernt, erneuert die Instanz den Einladungslink.",
           "mentions": "Ob aus einem @everyone eine Benachrichtigung wird, entscheidet nicht das sendende Gerät, sondern das empfangende: es prüft anhand der Gruppenrechte, ob der Absender alle wecken durfte, und lässt den Text sonst gewöhnlicher Text bleiben. Die Instanz kann das nicht prüfen, weil sie den Inhalt nicht liest. In einer stummgeschalteten Gruppe bleibt es bei einem Abzeichen in der Chatliste, ohne Ton. Dieselbe Prüfung gilt für die angeheftete Nachricht einer Gruppe: welche Nachricht das ist, merkt sich jedes Gerät für sich.",
           "attachments": "Bilder, Sprachnachrichten, Videonotizen und Dateien bekommen vor dem Hochladen einen eigenen Zufallsschlüssel. Er reist nur im verschlüsselten Nachrichtentext mit; die Instanz erhält den verschlüsselten Block, seine Größe und seinen Zeitpunkt, aber weder Dateiname noch Dateityp. Wird ein Block in ein anderes Gespräch kopiert, lässt er sich dort nicht öffnen. Anhänge bleiben wie die Nachricht; nur bei verschwindenden Nachrichten setzt der Client eine Frist, und der Server löscht den Block nach Ablauf.",
-          "stories": "Stories sind nicht Ende-zu-Ende-verschlüsselt. In der Datenbank stehen Text und Bild verschlüsselt, die Instanz selbst kann sie aber lesen: sie zeigt sie deinen Freunden, bei einem öffentlichen Profil allen angemeldeten Konten. Nach 24 Stunden verschwinden sie aus der Anzeige, spätestens eine Stunde danach löscht der Server sie.",
-          "deletion": "Löschst du eine Nachricht für alle, setzt der Server ihre Zeile auf gelöscht und leert den Inhalt; ein hochgeladener Anhang wird entfernt, und beide Geräte nehmen Text und Anhang aus dem örtlichen Verlauf. Stehen bleibt ein Platzhalter. Was ein Gerät vorher abgespeichert oder abfotografiert hat, erreicht diese Löschung nicht.",
-          "retention": "Verschwindende Nachrichten stellst du je Chat ein. Im Einzelchat darf nur die Seite die Frist ändern oder ausschalten, die sie eingeschaltet hat; in einer Gruppe zusätzlich der Eigentümer oder ein Admin mit dem passenden Recht. Die Instanz prüft diese Regel und merkt sich, wer eingeschaltet hat. Ist die Zeit um, löscht der Server die Nachricht und jedes Gerät nimmt sie aus seinem Verlauf. Ohne Frist bleibt eine Nachricht bestehen, bis sie gelöscht wird.",
-          "receipts": "Zustell- und Lesebestätigungen schickt dein Gerät über denselben verschlüsselten Chat. Sie tragen nur die Kennung der Nachricht. Lesebestätigungen sendet dein Gerät nur, wenn du sie in den Einstellungen eingeschaltet hast und der Chat sichtbar ist.",
-          "push": "Hast du Benachrichtigungen eingeschaltet und die Anwendung geschlossen, meldet dein Browser eine Zustelladresse bei dem Push-Dienst seines Herstellers an — je nach Browser Google, Mozilla oder Apple. Diese Adresse speichert die Instanz, um dich erreichen zu können. Was sie dorthin schickt, ist für deinen Browser verschlüsselt und enthält ohnehin keinen Inhalt: weder Text noch Absender, nur „Neue Nachricht“.",
-          "pushMetadata": "Der Push-Dienst sieht dabei, dass deine Zustelladresse zu diesem Zeitpunkt etwas bekommen hat. Das lässt sich auf diesem Weg nicht vermeiden, deshalb steht es hier. Schaltest du Benachrichtigungen im Profil ab oder meldest dich ab, wird die Adresse gelöscht und es geht nichts mehr hinaus. Dasselbe gilt, wenn du ein Gerät entfernst: dafür merkt sich die Instanz, mit welcher Anmeldung die Adresse hinterlegt wurde. Ist ein Fenster geöffnet, unterbleibt der Versand: dann meldet sich die Anwendung selbst.",
-          "calls": "Sprach-, Video- und Gruppenanrufe laufen über einen Medienserver. Ton und Bild werden auf deinem Gerät verschlüsselt und erst beim Gegenüber wieder geöffnet; der Medienserver leitet weiter, was er nicht öffnen kann. Standardmäßig läuft er auf dieser Instanz. Trägt der Betreiber einen externen Anbieter ein, laufen die verschlüsselten Ströme über dessen Server.",
+          "stories": "Stories sind nicht Ende-zu-Ende-verschlüsselt. In der Datenbank stehen Text und Bild verschlüsselt, die Instanz selbst kann sie aber lesen: sie zeigt sie Ihren Kontakten, bei einem öffentlichen Profil allen angemeldeten Konten. Nach 24 Stunden verschwinden sie aus der Anzeige, spätestens eine Stunde danach löscht der Server sie.",
+          "deletion": "Löschen Sie eine Nachricht für alle, setzt der Server ihre Zeile auf gelöscht und leert den Inhalt; ein hochgeladener Anhang wird entfernt, und beide Geräte nehmen Text und Anhang aus dem örtlichen Verlauf. Stehen bleibt ein Platzhalter. Was ein Gerät vorher abgespeichert oder abfotografiert hat, erreicht diese Löschung nicht.",
+          "retention": "Verschwindende Nachrichten stellen Sie je Chat ein. Im Einzelchat darf nur die Seite die Frist ändern oder ausschalten, die sie eingeschaltet hat; in einer Gruppe zusätzlich der Eigentümer oder ein Admin mit dem passenden Recht. Die Instanz prüft diese Regel und merkt sich, wer eingeschaltet hat. Ist die Zeit um, löscht der Server die Nachricht und jedes Gerät nimmt sie aus seinem Verlauf. Ohne Frist bleibt eine Nachricht bestehen, bis sie gelöscht wird.",
+          "receipts": "Zustell- und Lesebestätigungen schickt Ihr Gerät über denselben verschlüsselten Chat. Sie tragen nur die Kennung der Nachricht. Lesebestätigungen sendet Ihr Gerät nur, wenn Sie sie in den Einstellungen eingeschaltet haben und der Chat sichtbar ist.",
+          "push": "Haben Sie Benachrichtigungen eingeschaltet und die Anwendung geschlossen, meldet Ihr Browser eine Zustelladresse bei dem Push-Dienst seines Herstellers an — je nach Browser Google, Mozilla oder Apple. Diese Adresse speichert die Instanz, um Sie erreichen zu können. Was sie dorthin schickt, ist für Ihren Browser verschlüsselt und enthält ohnehin keinen Inhalt: weder Text noch Absender, nur „Neue Nachricht“.",
+          "pushMetadata": "Der Push-Dienst sieht dabei, dass Ihre Zustelladresse zu diesem Zeitpunkt etwas bekommen hat. Das lässt sich auf diesem Weg nicht vermeiden, deshalb steht es hier. Schalten Sie Benachrichtigungen im Profil ab oder melden Sie sich ab, wird die Adresse gelöscht und es geht nichts mehr hinaus. Dasselbe gilt, wenn Sie ein Gerät entfernen: dafür merkt sich die Instanz, mit welcher Anmeldung die Adresse hinterlegt wurde. Ist ein Fenster geöffnet, unterbleibt der Versand: dann meldet sich die Anwendung selbst.",
+          "calls": "Sprach-, Video- und Gruppenanrufe laufen über einen Medienserver. Ton und Bild werden auf Ihrem Gerät verschlüsselt und erst beim Gegenüber wieder geöffnet; der Medienserver leitet weiter, was er nicht öffnen kann. Standardmäßig läuft er auf dieser Instanz. Trägt der Betreiber einen externen Anbieter ein, laufen die verschlüsselten Ströme über dessen Server.",
           "callMetadata": "Der Medienserver sieht allerdings, welche Kontokennungen wann und wie lange in welchem Raum waren. Diese Angaben leben nur, solange der Anruf läuft: gespeichert werden sie nicht, es gibt keinen Anrufverlauf und keine Gesprächsdauer in der Datenbank. Bei einem externen Anbieter entstehen sie dort und unterliegen dessen Aufbewahrung.",
           "callModeration": "Schaltet ein Moderator jemanden im Gruppenanruf stumm oder entfernt ihn, wird das im Prüfprotokoll festgehalten: wer die Handlung ausgelöst hat, gegen wen sie ging und in welcher Gruppe. Der Raum und alles Gesprochene bleiben außen vor. Das ist die einzige Spur, die ein Anruf hinterlässt."
         }
@@ -6360,7 +6366,7 @@
           "oauth": "OAuth: Account-Kennung, vom Anbieter freigegebene Profildaten und Anmeldemetadaten",
           "support": "Support-Widget: Verbindungsmetadaten und vom Nutzer eingegebene Inhalte; das Widget wartet auf die Bestätigung dieses Hinweises",
           "s3": "S3-kompatibler Speicher: verschlüsselte Backup-Objekte sowie technische Objekt-, Account-, Zeit- und Übertragungsmetadaten",
-          "downloads": "Download-Hinweise (GitHub): Der Betreiber kann in der Seitenleiste Hinweise auf die Maunting-Apps einblenden — das Maunting Smart System und Maunting Story Fable. Das sind gewöhnliche Links; solange du sie nicht anklickst, geht keine Anfrage hinaus. Klickst du einen an, lädt dein Browser die Datei direkt von GitHub, und GitHub erfährt dabei deine IP-Adresse, den Zeitpunkt und die angeforderte Datei. Das Panel ist daran nicht beteiligt und erfährt nicht, ob du geladen hast. Beide Hinweise lassen sich in den Panel-Einstellungen unter „Allgemein“ abschalten."
+          "downloads": "Download-Hinweise (GitHub): Der Betreiber kann in der Seitenleiste Hinweise auf die Maunting-Apps einblenden — das Maunting Smart System und Maunting Story Fable. Das sind gewöhnliche Links; solange Sie sie nicht anklicken, geht keine Anfrage hinaus. Klicken Sie einen an, lädt Ihr Browser die Datei direkt von GitHub, und GitHub erfährt dabei Ihre IP-Adresse, den Zeitpunkt und die angeforderte Datei. Das Panel ist daran nicht beteiligt und erfährt nicht, ob Sie geladen haben. Beide Hinweise lassen sich in den Panel-Einstellungen unter „Allgemein“ abschalten."
         }
       },
       "ai": {
@@ -6472,12 +6478,12 @@
       },
       "credentials": {
         "heading": "Eigene Zugangsdaten",
-        "body": "Du kannst eigene Steam-Konten oder GitHub-Token hinterlegen, damit deine Server nicht die zentralen Zugänge des Betreibers mitbenutzen.",
+        "body": "Sie können eigene Steam-Konten oder GitHub-Token hinterlegen, damit Ihre Server nicht die zentralen Zugänge des Betreibers mitbenutzen.",
         "items": {
           "storage": "Speicherung: Der Wert wird ausschließlich verschlüsselt abgelegt und ist an genau diesen Eintrag gebunden. Es gibt keinen Weg, ihn im Panel oder über die API wieder im Klartext auszulesen.",
-          "visibility": "Sichtbarkeit: Angezeigt werden nur die von dir vergebene Bezeichnung, der Benutzername und die letzten vier Zeichen. Andere Benutzer sehen deine Einträge nicht, auch nicht mit Serverrechten.",
+          "visibility": "Sichtbarkeit: Angezeigt werden nur die von Ihnen vergebene Bezeichnung, der Benutzername und die letzten vier Zeichen. Andere Benutzer sehen Ihre Einträge nicht, auch nicht mit Serverrechten.",
           "usage": "Verwendung: Der Klartext wird nur an den ausführenden Vorgang übergeben (SteamCMD-Anmeldung, Git-Abruf) und erscheint weder in Protokollen noch in Fehlermeldungen.",
-          "deletion": "Löschung: Du kannst jeden Eintrag jederzeit entfernen, sobald ihn kein Server mehr verwendet. Mit deinem Konto werden alle Einträge mitgelöscht."
+          "deletion": "Löschung: Sie können jeden Eintrag jederzeit entfernen, sobald ihn kein Server mehr verwendet. Mit Ihrem Konto werden alle Einträge mitgelöscht."
         }
       }
     }
@@ -8840,7 +8846,7 @@
       },
       "rechtliches": {
         "slogan": "Maunting Studios — Sicherheit braucht Vertrauen",
-        "beschreibung": "Vollständige Transparenz, echte Datenhoheit und kein unbemerktes Handeln auf deinen Systemen.",
+        "beschreibung": "Vollständige Transparenz, echte Datenhoheit und kein unbemerktes Handeln auf Ihren Systemen.",
         "datenschutzTitel": "Datenschutzerklärung",
         "datenschutzVersion": "Version {{version}}",
         "datenschutzOeffnen": "Datenschutzerklärung öffnen",
@@ -12329,12 +12335,12 @@
     "drittanbieterHinweis": {
       "eyebrow": "Datenschutz-Hinweis",
       "titel": "Hinweis zur Datensicherheit bei Drittanbietern",
-      "beschreibung": "Du bist dabei, einen integrierten Drittanbieter-Messenger zu öffnen. Diese Einbindung dient deiner Bequemlichkeit. Beachte bitte die Unterschiede beim Datenschutz gegenüber unserem eigenen Ökosystem:",
+      "beschreibung": "Sie sind dabei, einen integrierten Drittanbieter-Messenger zu öffnen. Diese Einbindung dient Ihrem Komfort. Beachten Sie bitte die Unterschiede beim Datenschutz gegenüber unserem eigenen Ökosystem:",
       "telegram": "Telegram: Standard-Chats und Gruppen sind nicht Ende-zu-Ende verschlüsselt (nur optionale geheime 1:1-Chats auf Mobilgeräten).",
       "discord": "Discord: Nur Audio- und Videoanrufe sind Ende-zu-Ende verschlüsselt. Textnachrichten und Kanäle werden auf Servern von Discord verarbeitet.",
       "instagram": "Instagram: Direktnachrichten im Web sind standardmäßig nicht Ende-zu-Ende verschlüsselt und liegen auf Meta-Servern.",
       "whatsapp": "WhatsApp: Zwar standardmäßig mit dem Signal-Protokoll Ende-zu-Ende verschlüsselt, aber eine proprietäre Closed-Source-Anwendung auf der Infrastruktur von Meta.",
-      "fazit": "Gehe bewusst mit deinen Daten um. Für sensible Kommunikation empfehlen wir Messenger mit durchgehender Verschlüsselung auf überprüfbarer Infrastruktur.",
+      "fazit": "Gehen Sie bewusst mit Ihren Daten um. Für sensible Kommunikation empfehlen wir Messenger mit durchgehender Verschlüsselung auf überprüfbarer Infrastruktur.",
       "nichtMehrAnzeigen": "Diesen Hinweis nicht mehr anzeigen",
       "fortfahren": "Verstanden & fortfahren"
     }

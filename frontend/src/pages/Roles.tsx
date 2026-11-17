@@ -10,7 +10,7 @@ import { useRolePreviewStore } from '@/stores/rolePreviewStore'
 import type { PermissionCatalog, Role } from '@/types/permissions'
 import { PermissionEditor } from '@/features/permissions/PermissionEditor'
 import { PageHeader } from '@maunting/ui'
-import { Button, ColorPicker, IconPicker, Kurzinfo, RoleBadge, renderRoleIcon } from '@maunting/ui'
+import { Button, ColorPicker, IconPicker, Input, Kurzinfo, RoleBadge, renderRoleIcon } from '@maunting/ui'
 
 import { Spinner } from '@maunting/ui'
 /**
@@ -117,23 +117,18 @@ function RoleForm({ catalog, initial, onSubmit, onCancel }: RoleFormProps) {
         <div className="msm-alert-warning text-sm">{t('roles.adminLocked')}</div>
       )}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div>
-          <label className="block font-label-md text-label-md text-on-surface-variant mb-1.5 uppercase tracking-wider">
-            {t('common.name')}
-          </label>
-          <input
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder={t('roles.namePlaceholder')}
-            className="msm-input"
-            disabled={!!initial?.is_system}
-            required
-            minLength={2}
-            maxLength={64}
-            pattern={ROLLENNAME_MUSTER}
-          />
-        </div>
+        <Input
+          label={t('common.name')}
+          type="text"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder={t('roles.namePlaceholder')}
+          disabled={!!initial?.is_system}
+          required
+          minLength={2}
+          maxLength={64}
+          pattern={ROLLENNAME_MUSTER}
+        />
         <div>
           <label className="block font-label-md text-label-md text-on-surface-variant mb-1.5 uppercase tracking-wider">
             Farbe
@@ -157,19 +152,14 @@ function RoleForm({ catalog, initial, onSubmit, onCancel }: RoleFormProps) {
         />
       </div>
 
-      <div>
-        <label className="block font-label-md text-label-md text-on-surface-variant mb-1.5 uppercase tracking-wider">
-          {t('common.description')}
-        </label>
-        <input
-          type="text"
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          placeholder={t('roles.descriptionPlaceholder')}
-          className="msm-input"
-          maxLength={255}
-        />
-      </div>
+      <Input
+        label={t('common.description')}
+        type="text"
+        value={description}
+        onChange={(e) => setDescription(e.target.value)}
+        placeholder={t('roles.descriptionPlaceholder')}
+        maxLength={255}
+      />
 
       <div className="space-y-2">
         <span className="block font-label-md text-label-md text-on-surface-variant uppercase tracking-wider">
@@ -327,7 +317,7 @@ export function Roles() {
         />
       )}
 
-      <div className="msm-card overflow-hidden">
+      <div className="rounded-2xl border border-outline-variant/35 bg-surface-container-high/55 shadow-sm backdrop-blur-xl overflow-hidden">
         <table className="w-full">
           <thead>
             <tr className="border-b border-outline-variant/50">
@@ -346,7 +336,14 @@ export function Roles() {
             </tr>
           </thead>
           <tbody>
-            {sortedRoles.map((role) => {
+            {sortedRoles.length === 0 ? (
+              <tr>
+                <td colSpan={4} className="p-8 text-center text-sm text-on-surface-variant font-body-md">
+                  {t('roles.noRoles', { defaultValue: 'Keine Rollen vorhanden.' })}
+                </td>
+              </tr>
+            ) : (
+              sortedRoles.map((role) => {
               const displayName = role.is_system
                 ? t(`roles.systemNames.${role.name}`, { defaultValue: role.name })
                 : role.name
@@ -428,7 +425,8 @@ export function Roles() {
                 </td>
               </tr>
               )
-            })}
+            })
+          )}
           </tbody>
         </table>
       </div>

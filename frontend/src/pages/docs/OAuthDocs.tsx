@@ -7,7 +7,7 @@ import { buttonClasses } from '@maunting/ui'
 function Alert({ type = 'info', title, children }: { type?: 'info' | 'warning', title: string, children: React.ReactNode }) {
   const styles = {
     info: 'bg-primary/10 text-primary border-primary/20',
-    warning: 'bg-warning/10 text-warning border-warning/20',
+    warning: 'bg-status-warning/10 text-status-warning border-status-warning/20',
   }
   const icons = {
     info: <Info className="w-5 h-5 shrink-0" />,
@@ -51,7 +51,7 @@ export function OAuthDocs() {
           className={buttonClasses('secondary')}
         >
           <ExternalLink className="w-4 h-4" />
-          {t('docs.manageBlueprints').replace('Blueprints', 'OAuth')}
+          {t('docsOAuth.manageOAuth')}
         </Link>
       </div>
 

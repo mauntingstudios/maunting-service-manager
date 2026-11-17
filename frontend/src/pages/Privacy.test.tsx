@@ -195,7 +195,7 @@ describe('Privacy page', () => {
     expect(
       screen.getByText(i18n.t('privacyPolicy.sections.browser.items.mauntingSearchMedien')),
     ).toBeInTheDocument();
-    expect(i18n.t('privacyPolicy.sections.messenger.items.pushMetadata')).toMatch(/Gerät entfernst/);
+    expect(i18n.t('privacyPolicy.sections.messenger.items.pushMetadata')).toMatch(/Gerät entfernen/);
     // Die Zusage und ihre Grenze stehen zusammen: verschluesselt ist die
     // Datenbank, nicht der Weg durch das Panel.
     expect(i18n.t('privacyPolicy.sections.ai.items.messages')).toMatch(/nur verschlüsselt/);

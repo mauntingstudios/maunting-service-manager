@@ -452,7 +452,7 @@ export function DeploymentsPanel({
                 </span>
               )}
               {prod?.commit_message && (
-                <span className="truncate max-w-md" title={prod.commit_message}>
+                <span className="truncate max-w-md">
                   {prod.commit_message}
                 </span>
               )}

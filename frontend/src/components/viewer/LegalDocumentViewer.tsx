@@ -42,7 +42,7 @@ export function LegalDocumentViewer({
   updatedLabel,
 }: LegalDocumentViewerProps) {
   return (
-    <main className="min-h-screen bg-background text-on-surface relative overflow-hidden">
+    <div className="relative min-h-screen bg-background text-on-surface overflow-hidden">
       <div className="absolute inset-0 msm-deep-grid opacity-40" />
       <div className="relative z-10 mx-auto max-w-3xl px-4 py-10 md:py-14">
         <Link
@@ -114,6 +114,6 @@ export function LegalDocumentViewer({
           </CardContent>
         </Card>
       </div>
-    </main>
+    </div>
   )
 }

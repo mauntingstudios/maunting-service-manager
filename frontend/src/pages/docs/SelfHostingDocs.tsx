@@ -56,7 +56,7 @@ export function SelfHostingDocs() {
   ]
 
   return (
-    <main className="msm-page mx-auto max-w-6xl">
+    <div className="msm-page mx-auto max-w-6xl">
       <PageHeader
         eyebrow={t('docsSelfHosting.eyebrow')}
         title={t('docsSelfHosting.title')}
@@ -673,6 +673,6 @@ export function SelfHostingDocs() {
           {t('docsSelfHosting.navigation.docs')}
         </Link>
       </nav>
-    </main>
+    </div>
   )
 }

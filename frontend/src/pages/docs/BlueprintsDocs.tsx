@@ -44,7 +44,7 @@ function CodeBlock({ example }: CodeBlockProps) {
 function Alert({ type = 'info', title, children }: { type?: 'info' | 'warning', title: string, children: React.ReactNode }) {
   const styles = {
     info: 'bg-primary/10 text-primary border-primary/20',
-    warning: 'bg-warning/10 text-warning border-warning/20',
+    warning: 'bg-status-warning/10 text-status-warning border-status-warning/20',
   }
   const icons = {
     info: <Info className="w-5 h-5 shrink-0" />,
@@ -63,15 +63,16 @@ function Alert({ type = 'info', title, children }: { type?: 'info' | 'warning', 
 }
 
 function FieldTable({ children }: { children: React.ReactNode }) {
+  const { t } = useTranslation()
   return (
     <div className="overflow-x-auto my-4 border border-outline-variant/30 rounded-md">
       <table className="w-full text-left text-sm">
         <thead className="border-b border-outline-variant/30 bg-surface-container-lowest text-on-surface-variant">
           <tr>
-            <th className="px-4 py-2 font-medium">Feld</th>
-            <th className="px-4 py-2 font-medium">Typ</th>
-            <th className="px-4 py-2 font-medium">Pflicht?</th>
-            <th className="px-4 py-2 font-medium">Beschreibung</th>
+            <th className="px-4 py-2 font-medium">{t('docs.reference.field')}</th>
+            <th className="px-4 py-2 font-medium">{t('docs.reference.type')}</th>
+            <th className="px-4 py-2 font-medium">{t('docs.reference.required')}</th>
+            <th className="px-4 py-2 font-medium">{t('docs.reference.description')}</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-outline-variant/10">
@@ -90,7 +91,7 @@ function FieldRow({ field, type, required, children }: { field: string, type: st
       <td className="px-4 py-3 font-mono text-xs text-on-surface-variant">{type}</td>
       <td className="px-4 py-3 text-xs">
         {required ? (
-          <span className="text-warning font-bold">{t('docs.reference.yes')}</span>
+          <span className="text-status-warning font-bold">{t('docs.reference.yes')}</span>
         ) : (
           <span className="text-on-surface-variant">{t('docs.reference.no')}</span>
         )}
@@ -109,6 +110,7 @@ export function BlueprintsDocs() {
     { key: 'minimal', title: t('docs.toc.minimal') },
     { key: 'reference', title: t('docs.toc.reference') },
     { key: 'howto', title: t('docs.toc.howto') },
+    { key: 'exec', title: t('docs.toc.exec') },
     { key: 'updates', title: t('docs.toc.updates') },
     { key: 'backups', title: t('docs.toc.backups') },
     { key: 'troubleshooting', title: t('docs.toc.troubleshooting') },

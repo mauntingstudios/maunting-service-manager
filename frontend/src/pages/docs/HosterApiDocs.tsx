@@ -216,7 +216,7 @@ export function HosterApiDocs() {
   const { t } = useTranslation()
 
   return (
-    <main className="msm-page mx-auto max-w-6xl">
+    <div className="msm-page mx-auto max-w-6xl">
       <PageHeader
         eyebrow={t('docsHosterApi.eyebrow')}
         title={t('docsHosterApi.title')}
@@ -450,6 +450,6 @@ export function HosterApiDocs() {
           {t('docsHosterApi.operations.setupLink')}
         </Link>
       </section>
-    </main>
+    </div>
   )
 }

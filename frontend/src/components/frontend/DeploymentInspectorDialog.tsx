@@ -202,7 +202,7 @@ export function DeploymentInspectorDialog({
                 )}
               </div>
               {deployment.commit_message && (
-                <p className="truncate text-xs text-on-surface-variant" title={deployment.commit_message}>
+                <p className="truncate text-xs text-on-surface-variant">
                   {deployment.commit_message}
                 </p>
               )}
@@ -224,7 +224,7 @@ export function DeploymentInspectorDialog({
               </p>
               {reachableUrl ? (
                 <>
-                  <p className="truncate text-xs font-mono text-primary" title={reachableUrl}>
+                  <p className="truncate text-xs font-mono text-primary">
                     {reachableUrl}
                   </p>
                   <div className="flex flex-wrap gap-1.5">

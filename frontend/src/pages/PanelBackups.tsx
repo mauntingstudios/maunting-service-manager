@@ -4,10 +4,7 @@ import { Database, Plus, Trash2, Cloud, CloudOff, Save, Settings as SettingsIcon
 import { api } from '@/api/client'
 import { toast } from '@/stores/toastStore'
 import { confirm } from '@/stores/confirmStore'
-import { PageHeader } from '@maunting/ui'
-import { Dropdown } from '@maunting/ui'
-import { Button, Checkbox, Kurzinfo } from '@maunting/ui'
-import { Spinner } from '@maunting/ui'
+import { Button, Dropdown, Input, Kurzinfo, PageHeader, Spinner, Switch } from '@maunting/ui'
 /** Panel-Backup-List-Item (GET /api/panel-backups). */
 interface PanelBackupItem {
   id: number
@@ -236,24 +233,19 @@ export function PanelBackups() {
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             {/* Enabled toggle */}
-            <label className="flex items-center gap-2 cursor-pointer self-end pb-1">
-              <div
-                className={`relative w-10 h-6 rounded-full transition-colors ${settings.enabled ? 'bg-secondary' : 'bg-surface-container-highest'}`}
-              >
-                <Checkbox
-                  checked={settings.enabled}
-                  onCheckedChange={(gesetzt) =>
-                    setSettings({ ...settings, enabled: gesetzt })
-                  } className="sr-only"
-                />
-                <span
-                  className={`absolute top-1 left-1 w-4 h-4 rounded-full transition-transform ${settings.enabled ? 'translate-x-4 bg-on-secondary' : 'bg-on-surface'}`}
-                />
-              </div>
-              <span className="font-body-md text-sm text-on-surface-variant">
+            <div className="flex items-center gap-2.5 self-end pb-2">
+              <Switch
+                id="panel-backups-enabled"
+                checked={settings.enabled}
+                onCheckedChange={(gesetzt) =>
+                  setSettings({ ...settings, enabled: gesetzt })
+                }
+                aria-label={t('panelBackups.enabled')}
+              />
+              <label htmlFor="panel-backups-enabled" className="cursor-pointer font-body-md text-sm text-on-surface-variant">
                 {t('panelBackups.enabled')}
-              </span>
-            </label>
+              </label>
+            </div>
 
             {/* Interval */}
             <div>
@@ -278,10 +270,8 @@ export function PanelBackups() {
 
             {/* Retention */}
             <div>
-              <label className="block font-label-md text-label-md text-on-surface-variant mb-1.5 uppercase tracking-wider text-xs">
-                {t('panelBackups.retention')}
-              </label>
-              <input
+              <Input
+                label={t('panelBackups.retention')}
                 type="number"
                 min={1}
                 max={100}
@@ -292,7 +282,6 @@ export function PanelBackups() {
                     retention_count: Math.max(1, parseInt(e.target.value) || 1),
                   })
                 }
-                className="msm-input"
               />
               <p className="mt-1 text-xs text-on-surface-variant">
                 {t('panelBackups.retentionHint')}

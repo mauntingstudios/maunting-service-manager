@@ -2607,6 +2607,10 @@
     },
     "reference": {
       "body": "All fields are strictly validated against the backend Pydantic schema upon upload.",
+      "field": "Field",
+      "type": "Type",
+      "required": "Required?",
+      "description": "Description",
       "yes": "Yes",
       "no": "No",
       "metaId": "Unique technical ID. Uppercase letters and spaces are normalized to lowercase letters and underscores when saved. Cannot collide with native blueprints.",
@@ -3357,6 +3361,7 @@
     "deleted": "Role deleted.",
     "confirmDelete": "Really delete this role?",
     "adminLocked": "The admin role has fixed full permissions and cannot be edited.",
+    "noRoles": "No roles available.",
     "systemNames": {
       "admin": "Admin",
       "user": "User"
@@ -6141,6 +6146,7 @@
   "docsOAuth": {
     "title": "OAuth & social login",
     "subtitle": "Configure external identity providers for user authentication.",
+    "manageOAuth": "Manage OAuth",
     "tocTitle": "Contents",
     "toc": {
       "intro": "What is OAuth in MSM?",

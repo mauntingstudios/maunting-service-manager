@@ -92,13 +92,13 @@ function Kennzahl({
   const Icon = stil.icon
   const Pfeil = delta.startsWith('+') ? ArrowUpRight : delta.startsWith('-') ? ArrowDownRight : Minus
   return (
-    <div className="msm-card flex items-start gap-3 p-3.5 sm:p-4">
-      <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-lg border ${stil.flaeche}`} aria-hidden="true">
-        <Icon className="h-4 w-4" />
+    <div className="msm-card group flex items-start gap-3.5 rounded-2xl border border-outline-variant/30 bg-surface-container-high/65 p-4 backdrop-blur-xl shadow-sm transition-all duration-200 hover:border-outline-variant/50 hover:bg-surface-container-high/85">
+      <span className={`grid h-12 w-12 shrink-0 place-items-center rounded-2xl border text-xl shadow-inner transition-transform duration-200 group-hover:scale-105 ${stil.flaeche}`} aria-hidden="true">
+        <Icon className="h-5 w-5" />
       </span>
-      <div className="min-w-0">
+      <div className="min-w-0 flex-1">
         <p className="text-label-sm font-semibold uppercase tracking-[0.08em] text-on-surface-variant">{label}</p>
-        <p className="mt-0.5 font-headline text-title-lg font-semibold leading-none text-on-surface">
+        <p className="mt-0.5 font-headline text-2xl font-bold tracking-tight text-on-surface">
           {laden ? (
             <span className="inline-block h-6 w-14 animate-pulse rounded bg-surface-container-high" />
           ) : wert == null ? (
