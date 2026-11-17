@@ -3314,6 +3314,7 @@
   "users": {
     "subtitle": "Benutzerkonten, Rollen und Status verwalten.",
     "createUser": "User erstellen",
+    "createSubtitle": "Neues Benutzerkonto anlegen und Verifizierung oder Owner-Status festlegen.",
     "confirmDelete": "User wirklich löschen?",
     "isOwner": "Owner-Rechte",
     "autoVerify": "E-Mail direkt verifizieren",
@@ -3327,7 +3328,20 @@
     "roleSaved": "Rolle aktualisiert.",
     "registeredTitle": "Registrierte Benutzer",
     "registeredSubtitle": "Identitäten, Status und globale Panel-Rollen auf einen Blick.",
-    "currentUser": "Du"
+    "currentUser": "Du",
+    "searchLabel": "Benutzer suchen",
+    "searchPlaceholder": "Benutzername oder E-Mail suchen …",
+    "filterRole": "Nach Rolle filtern",
+    "filterAllRoles": "Alle Rollen",
+    "filterOwners": "Owner",
+    "filterNoRole": "Ohne Rolle",
+    "noMatchingUsers": "Keine passenden Benutzer gefunden.",
+    "stats": {
+      "total": "Konten gesamt",
+      "active": "Aktiv",
+      "verified": "Verifiziert",
+      "owners": "Owner"
+    }
   },
   "roles": {
     "title": "Rollen",
@@ -3770,7 +3784,19 @@
     "noServersFound": "Keine passenden Server gefunden.",
     "selectedServer": "Ausgewählter Server",
     "permissionCount_one": "{{count}} Berechtigung",
-    "permissionCount_other": "{{count}} Berechtigungen"
+    "permissionCount_other": "{{count}} Berechtigungen",
+    "initialAccess": "Start-Vorlage beim Hinzufügen",
+    "quickPresets": "Schnellvorlagen",
+    "presetViewOnly": "Nur ansehen",
+    "presetObserver": "Beobachter",
+    "presetOperator": "Operator",
+    "presetFullAccess": "Vollzugriff",
+    "fullAccessBadge": "Vollzugriff",
+    "viewOnlyBadge": "Nur Ansicht",
+    "activeFraction": "{{active}} von {{total}} aktiv",
+    "moreCount": "+{{count}} weitere",
+    "subUsersCount_one": "{{count}} Sub-User",
+    "subUsersCount_other": "{{count}} Sub-User"
   },
   "dashboard": {
     "title": "Dashboard",

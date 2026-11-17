@@ -207,4 +207,28 @@ describe('Users access workspace', () => {
       expect(rbacApi.assignRoles).toHaveBeenCalledWith(3, [8])
     })
   })
+
+  it('filters registered users by search query and role filter while showing role badges', async () => {
+    render(<Users />)
+
+    const directory = await screen.findByTestId('user-directory')
+    expect(within(directory).getByText('owner@example.invalid')).toBeInTheDocument()
+    expect(within(directory).getByText('current-user')).toBeInTheDocument()
+    expect(within(directory).getByText('delegated-user')).toBeInTheDocument()
+    expect(within(directory).getByText('User')).toBeInTheDocument()
+
+    const userSearch = screen.getByRole('searchbox', { name: 'Benutzer suchen' })
+    fireEvent.change(userSearch, { target: { value: 'delegated' } })
+
+    expect(within(directory).queryByText('owner@example.invalid')).not.toBeInTheDocument()
+    expect(within(directory).queryByText('current-user')).not.toBeInTheDocument()
+    expect(within(directory).getByText('delegated-user')).toBeInTheDocument()
+
+    fireEvent.change(userSearch, { target: { value: '' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Nach Rolle filtern' }))
+    fireEvent.click(screen.getByRole('option', { name: 'Owner' }))
+
+    expect(within(directory).getByText('owner@example.invalid')).toBeInTheDocument()
+    expect(within(directory).queryByText('delegated-user')).not.toBeInTheDocument()
+  })
 })

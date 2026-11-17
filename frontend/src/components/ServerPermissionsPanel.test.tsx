@@ -132,4 +132,22 @@ describe('ServerPermissionsPanel delegation wiring', () => {
     expect(screen.queryByText('delegated-user')).not.toBeInTheDocument()
     fehler.mockRestore()
   })
+
+  it('supports selecting a quick preset before adding and displays localized permission badges', async () => {
+    render(<ServerPermissionsPanel serverId={41} />)
+
+    await screen.findByText('delegated-user')
+    expect(screen.getByText('Server anzeigen')).toBeInTheDocument()
+    expect(screen.getByText('Server stoppen')).toBeInTheDocument()
+    expect(screen.queryByText('server.view · server.stop')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'User wählen' }))
+    fireEvent.click(await screen.findByRole('option', { name: 'candidate-user' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Vollzugriff' }))
+    fireEvent.click(screen.getByRole('button', { name: 'User hinzufügen' }))
+
+    await waitFor(() => {
+      expect(rbacApi.setServerPermissions).toHaveBeenCalledWith(3, 41, ['server.stop', 'server.view'])
+    })
+  })
 })

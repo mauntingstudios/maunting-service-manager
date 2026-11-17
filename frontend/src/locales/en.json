@@ -3314,6 +3314,7 @@
   "users": {
     "subtitle": "Manage user accounts, roles, and status.",
     "createUser": "Create user",
+    "createSubtitle": "Create a new user account with optional instant verification and owner status.",
     "confirmDelete": "Really delete this user?",
     "isOwner": "Owner rights",
     "autoVerify": "Verify email immediately",
@@ -3327,7 +3328,20 @@
     "roleSaved": "Role updated.",
     "registeredTitle": "Registered users",
     "registeredSubtitle": "Identities, status, and global panel roles at a glance.",
-    "currentUser": "You"
+    "currentUser": "You",
+    "searchLabel": "Search users",
+    "searchPlaceholder": "Search username or email …",
+    "filterRole": "Filter by role",
+    "filterAllRoles": "All roles",
+    "filterOwners": "Owner",
+    "filterNoRole": "No role",
+    "noMatchingUsers": "No matching users found.",
+    "stats": {
+      "total": "Total accounts",
+      "active": "Active",
+      "verified": "Verified",
+      "owners": "Owners"
+    }
   },
   "roles": {
     "title": "Roles",
@@ -3770,7 +3784,19 @@
     "noServersFound": "No matching servers found.",
     "selectedServer": "Selected server",
     "permissionCount_one": "{{count}} permission",
-    "permissionCount_other": "{{count}} permissions"
+    "permissionCount_other": "{{count}} permissions",
+    "initialAccess": "Initial preset when adding",
+    "quickPresets": "Quick presets",
+    "presetViewOnly": "View only",
+    "presetObserver": "Observer",
+    "presetOperator": "Operator",
+    "presetFullAccess": "Full access",
+    "fullAccessBadge": "Full access",
+    "viewOnlyBadge": "View only",
+    "activeFraction": "{{active}} of {{total}} active",
+    "moreCount": "+{{count}} more",
+    "subUsersCount_one": "{{count}} sub-user",
+    "subUsersCount_other": "{{count}} sub-users"
   },
   "dashboard": {
     "title": "Dashboard",
