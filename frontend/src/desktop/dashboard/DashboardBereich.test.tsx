@@ -13,6 +13,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import i18n from '@/i18n'
 import { useAuthStore } from '@/stores/authStore'
 import { usePermissionsStore } from '@/stores/permissionsStore'
+import { useServerWallpaperStore, wallpaperMotiv } from '@/stores/serverWallpaperStore'
 import type { User } from '@/types'
 import type { MePermissions } from '@/types/permissions'
 
@@ -73,6 +74,28 @@ describe('DashboardBereich', () => {
     rechte.clear()
     useAuthStore.setState({ user: MITGLIED, isAuthenticated: true, isLoading: false })
     rechteSetzen({})
+    useServerWallpaperStore.getState().clear()
+  })
+
+  it('zeigt das Server-Titelbild statt des Panoramas, wenn die Detailseite eines gesetzt hat', async () => {
+    useAuthStore.setState({ user: BETREIBER, isAuthenticated: true, isLoading: false })
+    rechteSetzen({ is_owner: true })
+    useServerWallpaperStore.setState({
+      activeWallpaper: wallpaperMotiv(7, '/api/servers/7/wallpaper'),
+    })
+    const { container } = zeige('/servers/7')
+    await screen.findByTestId('server-detail-seite')
+    const ebene = container.querySelector('div[style*="background-image"]')
+    expect(ebene?.getAttribute('style')).toContain('/api/servers/7/wallpaper')
+  })
+
+  it('fällt ohne Titelbild aufs Panorama zurück', async () => {
+    useAuthStore.setState({ user: BETREIBER, isAuthenticated: true, isLoading: false })
+    rechteSetzen({ is_owner: true })
+    const { container } = zeige('/servers/7')
+    await screen.findByTestId('server-detail-seite')
+    const ebene = container.querySelector('div[style*="background-image"]')
+    expect(ebene?.getAttribute('style')).not.toContain('/api/servers/7/wallpaper')
   })
 
   it('zeigt dem Betreiber die Reiter der Panel-Navigation und die Verwaltung im Mehr-Menü', async () => {

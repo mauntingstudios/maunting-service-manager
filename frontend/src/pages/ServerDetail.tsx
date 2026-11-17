@@ -258,18 +258,18 @@ export function ServerDetail() {
   const canManageWebhooksInPreview = useHasPermission("server.update", serverId);
   const canManageWallpaperInPreview = useHasPermission("server.wallpaper.manage", serverId);
 
-  // Titelbild: ServerDetail setzt das Shell-Motiv, Shell rendert es. Beim
-  // Verlassen der Seite (oder Serverwechsel ohne Bild) zurück zum Panorama.
-  // Muss hier oben stehen: weiter unten gibt es Early-Returns (loading, !server).
-  const wallpaperVersion = useServerWallpaperStore((s) => s.version);
+  // Titelbild: ServerDetail setzt das Motiv, Shell (Web) und DashboardBereich
+  // (MSS) rendern es. Beim Verlassen der Seite (oder Serverwechsel ohne Bild)
+  // zurück zum Panorama. Muss hier oben stehen: weiter unten gibt es
+  // Early-Returns (loading, !server).
   useEffect(() => {
     const setMotiv = useServerWallpaperStore.getState().setActiveWallpaper;
     if (server?.wallpaper_url) {
-      setMotiv(wallpaperMotiv(server.id, server.wallpaper_url, wallpaperVersion));
+      setMotiv(wallpaperMotiv(server.id, server.wallpaper_url));
     } else {
       setMotiv(null);
     }
-  }, [server?.id, server?.wallpaper_url, wallpaperVersion]);
+  }, [server?.id, server?.wallpaper_url]);
   useEffect(() => {
     return () => useServerWallpaperStore.getState().clear();
   }, []);
@@ -1247,18 +1247,6 @@ export function ServerDetail() {
               </>
             )}
 
-            {showWallpaperAction && (
-              <Button
-                variant="secondary"
-                type="button"
-                onClick={() => setShowWallpaper(true)}
-                aria-label={t("serverWallpaper.menuAction")}
-                className="inline-flex min-h-[44px] md:min-h-[38px] min-w-[44px] md:min-w-[38px] items-center justify-center px-2"
-              >
-                <ImagePlus className="h-[18px] w-[18px] md:h-4 md:w-4 shrink-0" aria-hidden="true" />
-              </Button>
-            )}
-
             {moreActionItems.length > 0 && (
               <ActionMenu
                 label={t("serverDetail.moreActions")}
@@ -1585,7 +1573,6 @@ export function ServerDetail() {
           onClose={() => setShowWallpaper(false)}
           server={server}
           onChanged={() => {
-            useServerWallpaperStore.getState().bumpVersion();
             void fetchAll();
           }}
         />

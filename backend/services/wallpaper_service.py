@@ -246,6 +246,30 @@ def gallery_image_bytes(
         return None
 
 
+def delete_wallpaper(db: Session, game_type: str, wallpaper_id: int) -> None:
+    """Loescht ein Galeriebild endgueltig (Zeile + Datei).
+
+    War es das aktive, faellt der Resolver automatisch auf Steam bzw. das
+    Panorama zurueck — es gibt keinen Aktiv-Zeiger umzuhaengen.
+    """
+    row = (
+        db.query(GameWallpaper)
+        .filter(
+            GameWallpaper.game_type == game_type,
+            GameWallpaper.id == wallpaper_id,
+        )
+        .first()
+    )
+    if row is None:
+        raise HTTPException(status_code=404, detail="Bild nicht gefunden")
+    try:
+        (_game_verzeichnis(game_type) / row.file_name).unlink(missing_ok=True)
+    except OSError:
+        pass
+    db.delete(row)
+    db.commit()
+
+
 def reset_wallpaper(db: Session, game_type: str) -> None:
     """Hebt nur den Aktiv-Zeiger auf — Dateien bleiben in der Galerie."""
     (
@@ -371,7 +395,13 @@ def resolve_wallpaper(db: Session, server: "Server") -> WallpaperDescriptor:
 def wallpaper_bytes_for_server(
     db: Session, server: "Server"
 ) -> tuple[bytes, str] | None:
-    """Liefert (Bild-Bytes, Quelle) fuers Ausliefern oder None (= Panorama)."""
+    """Liefert (Bild-Bytes, ETag) fuers Ausliefern oder None (= Panorama).
+
+    Der ETag identifiziert den Inhalt (Custom-Bild-ID bzw. Steam-App-ID).
+    Web und MSS schicken ihn bei jedem Aufruf mit und bekommen 304 ohne
+    Bytes, solange sich nichts geaendert hat — so bleibt kein Client auf
+    einem alten Bild sitzen.
+    """
     active = get_active_wallpaper(db, server.game_type)
     if active is not None:
         try:
@@ -379,7 +409,7 @@ def wallpaper_bytes_for_server(
         except OSError:
             data = b""
         if data:
-            return data, "custom"
+            return data, f'"custom-{active.id}"'
     try:
         from services.exec_service import load_blueprint_for_server
 
@@ -393,6 +423,6 @@ def wallpaper_bytes_for_server(
     if pfad is None:
         return None
     try:
-        return pfad.read_bytes(), "steam"
+        return pfad.read_bytes(), f'"steam-{app_id}"'
     except OSError:
         return None

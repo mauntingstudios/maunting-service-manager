@@ -8,7 +8,7 @@
  */
 import { useEffect, useRef, useState } from 'react'
 
-import { useBildquelle, vorladenBildquelle } from '@/components/ai/geo/Regionalbild'
+import { useBildquelle, vorladenBildquelle } from '@/hooks/useBildquelle'
 
 export interface SuchBildProps {
   url?: string | null

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { useServerWallpaperStore, wallpaperMotiv } from './serverWallpaperStore'
 
 beforeEach(() => {
-  useServerWallpaperStore.setState({ activeWallpaper: null, version: 0 })
+  useServerWallpaperStore.setState({ activeWallpaper: null })
 })
 
 describe('serverWallpaperStore', () => {
@@ -11,23 +11,19 @@ describe('serverWallpaperStore', () => {
   })
 
   it('sets and clears the active wallpaper', () => {
-    const motiv = wallpaperMotiv(7, '/api/servers/7/wallpaper', 0)
+    const motiv = wallpaperMotiv(7, '/api/servers/7/wallpaper')
     useServerWallpaperStore.getState().setActiveWallpaper(motiv)
     expect(useServerWallpaperStore.getState().activeWallpaper).toEqual(motiv)
     useServerWallpaperStore.getState().clear()
     expect(useServerWallpaperStore.getState().activeWallpaper).toBeNull()
   })
 
-  it('bumps the cache version', () => {
-    useServerWallpaperStore.getState().bumpVersion()
-    useServerWallpaperStore.getState().bumpVersion()
-    expect(useServerWallpaperStore.getState().version).toBe(2)
-  })
-
-  it('builds a cache-busted motiv with panorama geometry', () => {
-    const motiv = wallpaperMotiv(7, '/api/servers/7/wallpaper', 3)
+  it('builds a motiv with panorama geometry and a stable URL', () => {
+    // Stabil absichtlich: Frische garantiert der Server per ETag + no-cache,
+    // nicht ein angehängter Zähler (der sähe nur die eigenen Änderungen).
+    const motiv = wallpaperMotiv(7, '/api/servers/7/wallpaper')
     expect(motiv.id).toBe('server-wallpaper-7')
-    expect(motiv.pfad).toContain('/api/servers/7/wallpaper?v=3')
+    expect(motiv.pfad).toBe('/api/servers/7/wallpaper')
     expect(motiv.position).toBe('center 38%')
     expect(motiv.ueberlagerung).toBe('')
   })

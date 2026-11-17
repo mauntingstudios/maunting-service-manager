@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { AlertTriangle, ImagePlus, RotateCcw } from "lucide-react";
-import { api, apiUrl } from "@/api/client";
+import { AlertTriangle, ImagePlus, RotateCcw, Trash2 } from "lucide-react";
+import { api } from "@/api/client";
+import { confirm } from "@/stores/confirmStore";
 import { toast } from "@/stores/toastStore";
+import { useBildquelle } from "@/hooks/useBildquelle";
 import type { Server, WallpaperGalleryItem } from "@/types";
 import { Button } from '@maunting/ui'
 
@@ -17,6 +19,31 @@ interface ServerWallpaperDialogProps {
 
 const ANGENOMMEN = ["image/jpeg", "image/png", "image/webp"];
 
+/** Eine Galerie-Miniatur. Lädt über useBildquelle, weil ein `<img>` in der
+ * MSS-App kein Bearer-Token trägt — dort kommt das Bild als Blob. */
+function GalerieBild({ serverId, bild }: { serverId: number; bild: WallpaperGalleryItem }) {
+  const { quelle, bildFehler } = useBildquelle(
+    `/api/servers/${serverId}/wallpaper/gallery/${bild.id}/image`,
+  );
+  if (!quelle) {
+    return (
+      <span
+        aria-hidden="true"
+        className="block aspect-video w-full animate-pulse bg-surface-container-highest"
+      />
+    );
+  }
+  return (
+    <img
+      src={quelle}
+      alt=""
+      loading="lazy"
+      onError={bildFehler}
+      className="aspect-video w-full object-cover"
+    />
+  );
+}
+
 export function ServerWallpaperDialog({
   open,
   onClose,
@@ -28,6 +55,7 @@ export function ServerWallpaperDialog({
   const [laedt, setLaedt] = useState(false);
   const [laedtHoch, setLaedtHoch] = useState(false);
   const [setztZurueck, setSetztZurueck] = useState(false);
+  const [loeschId, setLoeschId] = useState<number | null>(null);
   const [fehler, setFehler] = useState<string | null>(null);
   const [dragAktiv, setDragAktiv] = useState(false);
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -72,7 +100,7 @@ export function ServerWallpaperDialog({
     if (!open) return;
     const beiTaste = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
-        if (laedtHoch || setztZurueck || e.defaultPrevented) return;
+        if (laedtHoch || setztZurueck || loeschId !== null || e.defaultPrevented) return;
         e.preventDefault();
         onClose();
         return;
@@ -100,7 +128,7 @@ export function ServerWallpaperDialog({
     };
     window.addEventListener("keydown", beiTaste);
     return () => window.removeEventListener("keydown", beiTaste);
-  }, [open, onClose, laedtHoch, setztZurueck]);
+  }, [open, onClose, laedtHoch, setztZurueck, loeschId]);
 
   if (!open) return null;
 
@@ -156,6 +184,30 @@ export function ServerWallpaperDialog({
     } catch (err: unknown) {
       const raw = err instanceof Error ? err.message : String(err);
       setFehler(t(raw, { defaultValue: raw }) || t("common.error"));
+    }
+  };
+
+  const loeschen = async (bild: WallpaperGalleryItem) => {
+    if (loeschId !== null) return;
+    // Endgültig, kein Papierkorb: vorher fragen, welches Bild mitgeht.
+    const ok = await confirm({
+      message: t("serverWallpaper.deleteConfirm", { by: bild.uploaded_by }),
+      danger: true,
+      confirmText: t("common.delete"),
+    });
+    if (!ok) return;
+    setFehler(null);
+    setLoeschId(bild.id);
+    try {
+      await api(`/servers/${server.id}/wallpaper/gallery/${bild.id}`, { method: "DELETE" });
+      toast.success(t("serverWallpaper.deleted"));
+      onChanged();
+      await galerieLaden();
+    } catch (err: unknown) {
+      const raw = err instanceof Error ? err.message : String(err);
+      setFehler(t(raw, { defaultValue: raw }) || t("common.error"));
+    } finally {
+      setLoeschId(null);
     }
   };
 
@@ -267,7 +319,7 @@ export function ServerWallpaperDialog({
         ) : (
           <ul className="grid grid-cols-2 sm:grid-cols-3 gap-2">
             {galerie.map((bild) => (
-              <li key={bild.id}>
+              <li key={bild.id} className="relative">
                 <button
                   type="button"
                   onClick={() => void reaktivieren(bild.id)}
@@ -283,12 +335,7 @@ export function ServerWallpaperDialog({
                       : "border-outline-variant/50 hover:border-primary/60"
                   }`}
                 >
-                  <img
-                    src={apiUrl(`/api/servers/${server.id}/wallpaper/gallery/${bild.id}/image`)}
-                    alt=""
-                    loading="lazy"
-                    className="aspect-video w-full object-cover"
-                  />
+                  <GalerieBild serverId={server.id} bild={bild} />
                   {bild.is_active && (
                     <span className="absolute left-1 top-1 rounded bg-primary px-1.5 py-0.5 text-label-sm font-semibold text-on-primary">
                       {t("serverWallpaper.active")}
@@ -298,6 +345,24 @@ export function ServerWallpaperDialog({
                     {bild.uploaded_by}
                   </span>
                 </button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="icon"
+                  onClick={() => void loeschen(bild)}
+                  disabled={loeschId !== null}
+                  aria-label={t("serverWallpaper.deleteTitle", {
+                    by: bild.uploaded_by,
+                    date: new Date(bild.created_at).toLocaleDateString(),
+                  })}
+                  className="absolute right-1 top-1 shadow-md"
+                >
+                  {loeschId === bild.id ? (
+                    <Spinner className="text-on-surface" />
+                  ) : (
+                    <Trash2 className="h-4 w-4" aria-hidden="true" />
+                  )}
+                </Button>
               </li>
             ))}
           </ul>

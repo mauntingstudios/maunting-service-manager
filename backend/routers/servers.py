@@ -970,7 +970,10 @@ def switch_server_blueprint_endpoint(
 
 @router.get("/{server_id}/wallpaper")
 def get_server_wallpaper(
-    server_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)
+    server_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    if_none_match: str | None = Header(default=None),
 ) -> Response:
     """Liefert das aufgeloeste Titelbild (Custom oder Steam-Cache).
 
@@ -983,14 +986,21 @@ def get_server_wallpaper(
     gefunden = wallpaper_service.wallpaper_bytes_for_server(db, server)
     if gefunden is None:
         raise HTTPException(status_code=404, detail="Kein Titelbild vorhanden")
-    bild, _quelle = gefunden
+    bild, etag = gefunden
+    if if_none_match in (etag, f"W/{etag}"):
+        return Response(status_code=304)
     return Response(
         content=bild,
         media_type="image/webp",
         headers={
             # privat: Die Antwort ist authentifiziert und darf nicht in
-            # geteilten Caches landen (Browser-Cache genuegt).
-            "Cache-Control": "private, max-age=86400",
+            # geteilten Caches landen. no-cache + ETag statt max-age: Web und
+            # MSS fragen bei jedem Aufruf an und bekommen 304 ohne Bytes,
+            # solange sich nichts geaendert hat. Ein max-age wuerde jeden
+            # Client, der die Aenderung nicht selbst gemacht hat, bis zu
+            # 24 h auf dem alten Bild sitzen lassen.
+            "Cache-Control": "private, no-cache",
+            "ETag": etag,
             "X-Content-Type-Options": "nosniff",
         },
     )
@@ -1120,3 +1130,29 @@ def activate_server_wallpaper(
         commit=True,
     )
     return {"id": zeile.id, "game_type": zeile.game_type, "is_active": True}
+
+
+@router.delete("/{server_id}/wallpaper/gallery/{wallpaper_id}")
+def delete_server_wallpaper(
+    server_id: int,
+    wallpaper_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    _: None = Depends(verify_csrf),
+) -> dict:
+    """Loescht ein Galeriebild des Spiels endgueltig (Datei + Zeile)."""
+    require_server_permission(user, server_id, db, "server.wallpaper.manage")
+    server = db.query(Server).filter(Server.id == server_id).first()
+    if not server:
+        raise HTTPException(status_code=404, detail="Server nicht gefunden")
+    wallpaper_service.delete_wallpaper(db, server.game_type, wallpaper_id)
+    audit_service.record_privileged_action(
+        db,
+        user_id=user.id,
+        action="server.wallpaper.delete",
+        target_type="server",
+        target_id=server_id,
+        details={"game_type": server.game_type, "wallpaper_id": wallpaper_id},
+        commit=True,
+    )
+    return {"deleted": True}

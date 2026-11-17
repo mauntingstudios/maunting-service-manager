@@ -1,7 +1,8 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import * as client from '@/api/client'
+import { useConfirmStore } from '@/stores/confirmStore'
 import type { Server, WallpaperGalleryItem } from '@/types'
 import { ServerWallpaperDialog } from './ServerWallpaperDialog'
 
@@ -35,16 +36,61 @@ describe('ServerWallpaperDialog', () => {
   beforeEach(() => {
     vi.mocked(client.api).mockReset()
     vi.mocked(client.api).mockResolvedValue([])
+    useConfirmStore.setState({ pending: null })
   })
 
   it('zeigt die Galerie aus der echten Antwortform (nacktes Array)', async () => {
     vi.mocked(client.api).mockResolvedValue(galerie)
     zeichnen()
     const dialog = await screen.findByRole('dialog')
-    // Dropzone + 2 Galerie-Miniaturen + Reset + Schließen, davon 1 aktiv:
-    expect(within(dialog).getAllByRole('button')).toHaveLength(5)
+    // Dropzone + 2 Galerie-Miniaturen + 2 Löschen-Knöpfe + Reset + Schließen, davon 1 aktiv:
+    expect(within(dialog).getAllByRole('button')).toHaveLength(7)
     expect(within(dialog).getAllByRole('button', { pressed: true })).toHaveLength(1)
     expect(vi.mocked(client.api)).toHaveBeenCalledWith('/servers/42/wallpaper/gallery')
+  })
+
+  it('löscht erst nach Bestätigung und meldet die Änderung', async () => {
+    vi.mocked(client.api).mockResolvedValue(galerie)
+    const onChanged = vi.fn()
+    render(
+      <ServerWallpaperDialog open onClose={() => {}} server={server} onChanged={onChanged} />,
+    )
+    const dialog = await screen.findByRole('dialog')
+    const entfernen = within(dialog).getAllByRole('button', { name: /löschen|Delete image by/ })
+    expect(entfernen).toHaveLength(2)
+    fireEvent.click(entfernen[0])
+    // Die Rückfrage nennt, welches Bild mitgeht:
+    await waitFor(() => expect(useConfirmStore.getState().pending).not.toBeNull())
+    expect(useConfirmStore.getState().pending?.message).toMatch(/anna/)
+    expect(useConfirmStore.getState().pending?.danger).toBe(true)
+    await act(async () => useConfirmStore.getState().resolve(true))
+    await waitFor(() => expect(vi.mocked(client.api)).toHaveBeenCalledWith(
+      '/servers/42/wallpaper/gallery/1',
+      { method: 'DELETE' },
+    ))
+    expect(onChanged).toHaveBeenCalled()
+  })
+
+  it('lädt die Miniaturen aus der Galerie des Servers', async () => {
+    vi.mocked(client.api).mockResolvedValue(galerie)
+    const { container } = zeichnen()
+    await screen.findByRole('dialog')
+    const bilder = container.querySelectorAll('img')
+    expect(bilder).toHaveLength(2)
+    expect(bilder[0].getAttribute('src')).toContain('/api/servers/42/wallpaper/gallery/1/image')
+    expect(bilder[1].getAttribute('src')).toContain('/api/servers/42/wallpaper/gallery/2/image')
+  })
+
+  it('lässt die API bei abgelehnter Rückfrage unberührt', async () => {
+    vi.mocked(client.api).mockResolvedValue(galerie)
+    zeichnen()
+    const dialog = await screen.findByRole('dialog')
+    fireEvent.click(within(dialog).getAllByRole('button', { name: /löschen|Delete image by/ })[0])
+    await waitFor(() => expect(useConfirmStore.getState().pending).not.toBeNull())
+    await act(async () => useConfirmStore.getState().resolve(false))
+    // Nur Galerie-GETs — kein DELETE:
+    await waitFor(() => expect(vi.mocked(client.api)).toHaveBeenCalled())
+    expect(vi.mocked(client.api).mock.calls.filter(([_, o]) => (o as { method?: string })?.method === 'DELETE')).toHaveLength(0)
   })
 
   it('weist falsche Dateiformate inline ab, ohne hochzuladen', async () => {

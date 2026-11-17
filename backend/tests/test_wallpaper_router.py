@@ -62,7 +62,8 @@ class TestUpload:
         assert bild.status_code == 200
         assert bild.headers["content-type"] == "image/webp"
         assert bild.headers["x-content-type-options"] == "nosniff"
-        assert bild.headers["cache-control"] == "private, max-age=86400"
+        assert bild.headers["cache-control"] == "private, no-cache"
+        assert bild.headers["etag"].startswith('"custom-')
         assert bild.content.startswith(b"RIFF")
 
         detail = client.get(f"/api/servers/{test_server.id}", cookies=owner_cookies).json()
@@ -252,3 +253,146 @@ class TestGalerieReset:
             cookies=owner_cookies,
         )
         assert fehlt.status_code == 404
+
+
+class TestETag:
+    """Web und MSS fragen bei jedem Aufruf an — 304 ohne Bytes, solange
+    sich nichts geaendert hat, frische Bytes bei neuem ETag."""
+
+    def _bild(self, client, server_id, cookies, etag=None):
+        headers = {"If-None-Match": etag} if etag else {}
+        return client.get(
+            f"/api/servers/{server_id}/wallpaper", cookies=cookies, headers=headers
+        )
+
+    def test_gleicher_etag_gibt_304_ohne_bytes(
+        self, client, owner_cookies, csrf_token, test_server, wallpaper_dirs
+    ):
+        _upload(client, test_server.id, owner_cookies, csrf_token)
+        erste = self._bild(client, test_server.id, owner_cookies)
+        assert erste.status_code == 200
+        etag = erste.headers["etag"]
+        zweite = self._bild(client, test_server.id, owner_cookies, etag)
+        assert zweite.status_code == 304
+        assert zweite.content == b""
+
+    def test_neuer_upload_wechselt_etag(
+        self, client, owner_cookies, csrf_token, test_server, wallpaper_dirs
+    ):
+        _upload(client, test_server.id, owner_cookies, csrf_token)
+        alt = self._bild(client, test_server.id, owner_cookies).headers["etag"]
+        _upload(client, test_server.id, owner_cookies, csrf_token)
+        neu = self._bild(client, test_server.id, owner_cookies).headers["etag"]
+        assert neu != alt
+        # Der alte ETag liefert wieder volle Bytes (kein 304):
+        assert self._bild(client, test_server.id, owner_cookies, alt).status_code == 200
+
+    def test_reaktivieren_wechselt_etag_zurueck(
+        self, client, owner_cookies, csrf_token, test_server, wallpaper_dirs
+    ):
+        erste = _upload(client, test_server.id, owner_cookies, csrf_token).json()["id"]
+        _upload(client, test_server.id, owner_cookies, csrf_token)
+        etag_erste = self._bild(client, test_server.id, owner_cookies).headers["etag"]
+        client.post(
+            f"/api/servers/{test_server.id}/wallpaper/{erste}/activate",
+            cookies=owner_cookies,
+            headers={"X-CSRF-Token": csrf_token},
+        )
+        etag_reaktiviert = self._bild(client, test_server.id, owner_cookies).headers["etag"]
+        assert etag_reaktiviert != etag_erste
+        assert etag_reaktiviert == f'"custom-{erste}"'
+
+    def test_steam_cache_hat_eigenen_etag(
+        self, client, db, owner_cookies, test_server, wallpaper_dirs
+    ):
+        desk = ws.resolve_wallpaper(db, test_server)
+        assert desk.source == "steam" and desk.app_id is not None
+        (wallpaper_dirs / "steam").mkdir(parents=True, exist_ok=True)
+        (wallpaper_dirs / "steam" / f"{desk.app_id}.webp").write_bytes(
+            ws.sanitize_and_compress_wallpaper(_jpeg_bytes())
+        )
+        erste = self._bild(client, test_server.id, owner_cookies)
+        assert erste.status_code == 200
+        assert erste.headers["etag"] == f'"steam-{desk.app_id}"'
+        assert (
+            self._bild(client, test_server.id, owner_cookies, erste.headers["etag"]).status_code
+            == 304
+        )
+
+
+def _loeschen(client: TestClient, server_id: int, bild_id: int, cookies: dict, csrf: str):
+    return client.delete(
+        f"/api/servers/{server_id}/wallpaper/gallery/{bild_id}",
+        cookies=cookies,
+        headers={"X-CSRF-Token": csrf},
+    )
+
+
+class TestGalerieLoeschen:
+    def test_loeschen_entfernt_zeile_und_datei(
+        self, client, owner_cookies, csrf_token, test_server, wallpaper_dirs
+    ):
+        erste = _upload(client, test_server.id, owner_cookies, csrf_token).json()["id"]
+        zweite = _upload(client, test_server.id, owner_cookies, csrf_token).json()["id"]
+        resp = _loeschen(client, test_server.id, erste, owner_cookies, csrf_token)
+        assert resp.status_code == 200
+        galerie = client.get(
+            f"/api/servers/{test_server.id}/wallpaper/gallery", cookies=owner_cookies
+        ).json()
+        assert [g["id"] for g in galerie] == [zweite]
+        assert galerie[0]["is_active"] is True
+        dateien = list((wallpaper_dirs / "wallpapers" / "dayz").glob("wallpaper_*.webp"))
+        assert [d.name for d in dateien] == [f"wallpaper_{zweite}.webp"]
+
+    def test_loeschen_des_aktiven_faellt_auf_steam_zurueck(
+        self, client, owner_cookies, csrf_token, test_server, wallpaper_dirs
+    ):
+        bild_id = _upload(client, test_server.id, owner_cookies, csrf_token).json()["id"]
+        resp = _loeschen(client, test_server.id, bild_id, owner_cookies, csrf_token)
+        assert resp.status_code == 200
+        detail = client.get(f"/api/servers/{test_server.id}", cookies=owner_cookies).json()
+        assert detail["has_custom_wallpaper"] is False
+        assert detail["wallpaper_source"] == "steam"
+        galerie = client.get(
+            f"/api/servers/{test_server.id}/wallpaper/gallery", cookies=owner_cookies
+        ).json()
+        assert galerie == []
+
+    def test_loeschen_fremder_id_404(
+        self, client, owner_cookies, csrf_token, test_server, wallpaper_dirs
+    ):
+        resp = _loeschen(client, test_server.id, 9999, owner_cookies, csrf_token)
+        assert resp.status_code == 404
+
+    def test_loeschen_braucht_manage_recht(
+        self, client, db, regular_user, user_cookies, user_csrf_token,
+        test_server, owner_cookies, csrf_token, wallpaper_dirs,
+    ):
+        bild_id = _upload(client, test_server.id, owner_cookies, csrf_token).json()["id"]
+        _nur_sehen(db, regular_user, test_server)
+        resp = _loeschen(client, test_server.id, bild_id, user_cookies, user_csrf_token)
+        assert resp.status_code == 403
+
+    def test_loeschen_ohne_csrf_403(
+        self, client, owner_cookies, csrf_token, test_server, wallpaper_dirs
+    ):
+        bild_id = _upload(client, test_server.id, owner_cookies, csrf_token).json()["id"]
+        resp = client.delete(
+            f"/api/servers/{test_server.id}/wallpaper/gallery/{bild_id}",
+            cookies=owner_cookies,
+        )
+        assert resp.status_code == 403
+
+    def test_loeschen_schreibt_audit(
+        self, client, db, owner_cookies, csrf_token, test_server, wallpaper_dirs
+    ):
+        bild_id = _upload(client, test_server.id, owner_cookies, csrf_token).json()["id"]
+        _loeschen(client, test_server.id, bild_id, owner_cookies, csrf_token)
+        eintrag = (
+            db.query(AuditLog)
+            .filter(AuditLog.action == "server.wallpaper.delete")
+            .order_by(AuditLog.id.desc())
+            .first()
+        )
+        assert eintrag is not None
+        assert eintrag.target_id == str(test_server.id)

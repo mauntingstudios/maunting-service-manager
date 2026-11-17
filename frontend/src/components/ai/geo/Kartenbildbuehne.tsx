@@ -14,7 +14,7 @@ import { ImageOff, Layers, Loader2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import type { AiRegionalAnalysis, AiSatelliteLayer } from '@/api/ai'
-import { useBildquelle } from './Regionalbild'
+import { useBildquelle } from '@/hooks/useBildquelle'
 import { bildformFuer, kameraAusschnitt, startAusschnitt, type Ausschnitt, type Bildform } from './kartenbildKamera'
 import { kartenbildPfad } from './regionalAnalysis'
 
