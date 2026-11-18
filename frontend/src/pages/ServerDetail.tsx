@@ -1286,6 +1286,11 @@ export function ServerDetail() {
                   </span>
                   <Switch
                     checked={frontendOverview ? frontendOverview.online : effectiveStatus === "running"}
+                    aria-label={
+                      frontendOverview?.online ?? true
+                        ? t("frontendDeployments.online")
+                        : t("frontendDeployments.offline")
+                    }
                     onCheckedChange={async (checked) => {
                       const aktionsId = serverId;
                       const nochAktuell = () => aktionsId === serverIdRef.current;

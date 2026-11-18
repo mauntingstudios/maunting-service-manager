@@ -1,7 +1,7 @@
 import { Copy } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { PostgresCredential } from "@/types";
-import { Button } from '@maunting/ui'
+import { Button, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@maunting/ui'
 
 interface Props {
   credentials: PostgresCredential[];
@@ -10,18 +10,19 @@ interface Props {
 
 export function PostgresCredentialsDialog({ credentials, onClose }: Props) {
   const { t } = useTranslation();
-  if (!credentials.length) return null;
 
   return (
-    <div className="msm-modal-overlay">
-      <div className="msm-card w-full max-w-2xl p-6">
-        <h2 className="font-headline text-headline-sm text-primary mb-2">
-          {t("servers.postgres.credentialsTitle")}
-        </h2>
-        <p className="font-body-md text-sm text-on-surface-variant mb-4">
-          {t("servers.postgres.credentialsHint")}
-        </p>
-        <div className="space-y-3">
+    <Dialog open={credentials.length > 0} onOpenChange={(next) => { if (!next) onClose(); }}>
+      <DialogContent className="w-full max-w-2xl p-6">
+        <DialogHeader className="p-0 pb-2">
+          <DialogTitle className="font-headline text-headline-sm text-primary">
+            {t("servers.postgres.credentialsTitle")}
+          </DialogTitle>
+          <DialogDescription className="text-sm mt-1">
+            {t("servers.postgres.credentialsHint")}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3 my-4 max-h-[60vh] overflow-y-auto">
           {credentials.map((cred) => {
             const dsn = `postgresql://${cred.username}:${cred.password}@${cred.host}:${cred.port}/${cred.database_name}`;
             return (
@@ -48,12 +49,12 @@ export function PostgresCredentialsDialog({ credentials, onClose }: Props) {
             );
           })}
         </div>
-        <div className="flex justify-end mt-5">
+        <DialogFooter variant="plain" className="p-0 flex justify-end">
           <Button type="button" onClick={onClose}>
             {t("common.close")}
           </Button>
-        </div>
-      </div>
-    </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

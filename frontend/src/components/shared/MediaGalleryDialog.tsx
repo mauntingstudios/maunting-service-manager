@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { AlertTriangle, ImagePlus, RotateCcw, Trash2 } from "lucide-react";
-import { Button, Spinner } from "@maunting/ui";
+import { Button, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, Spinner } from "@maunting/ui";
 import { useBildquelle } from "@/hooks/useBildquelle";
 import { confirm } from "@/stores/confirmStore";
 
@@ -118,55 +118,7 @@ export function MediaGalleryDialog({
 }: MediaGalleryDialogProps) {
   const { t } = useTranslation();
   const [dragActive, setDragActive] = useState(false);
-  const dialogRef = useRef<HTMLDivElement>(null);
-  const closeBtnRef = useRef<HTMLButtonElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const prevActive = document.activeElement as HTMLElement | null;
-    const timer = setTimeout(() => closeBtnRef.current?.focus(), 0);
-    return () => {
-      clearTimeout(timer);
-      prevActive?.focus();
-    };
-  }, [open]);
-
-  useEffect(() => {
-    if (!open) return;
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        if (uploading || resetting || deletingId !== null || e.defaultPrevented) return;
-        e.preventDefault();
-        onClose();
-        return;
-      }
-      if (e.key === "Tab") {
-        const focusables = dialogRef.current?.querySelectorAll<HTMLElement>(
-          'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
-        );
-        if (!focusables || focusables.length === 0) return;
-        const first = focusables[0];
-        const last = focusables[focusables.length - 1];
-        const inside = dialogRef.current?.contains(document.activeElement);
-        if (e.shiftKey) {
-          if (document.activeElement === first || !inside) {
-            e.preventDefault();
-            last.focus();
-          }
-        } else {
-          if (document.activeElement === last || !inside) {
-            e.preventDefault();
-            first.focus();
-          }
-        }
-      }
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [open, onClose, uploading, resetting, deletingId]);
-
-  if (!open) return null;
 
   const handleFile = async (file: File | undefined) => {
     if (!file || uploading) return;
@@ -190,27 +142,30 @@ export function MediaGalleryDialog({
   };
 
   return (
-    <div className="msm-modal-overlay">
-      <div
-        ref={dialogRef}
-        role="dialog"
-        aria-modal="true"
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next && !uploading && !resetting && deletingId === null) {
+          onClose();
+        }
+      }}
+    >
+      <DialogContent
         aria-labelledby={titleId}
-        className="msm-card max-w-lg w-full p-6 shadow-2xl border border-outline/30 animate-scale-in max-h-[90vh] overflow-y-auto"
+        showCloseButton={false}
+        className="max-w-lg w-full max-h-[90vh] overflow-y-auto p-6"
       >
-        <h2
-          id={titleId}
-          className="font-headline text-headline-sm text-on-surface mb-1 flex items-center gap-2"
-        >
-          <ImagePlus className="w-5 h-5 text-primary" />
-          {title}
-        </h2>
-
-        {subtitle && (
-          <p className="font-body-md text-sm text-on-surface-variant mb-4">
-            {subtitle}
-          </p>
-        )}
+        <DialogHeader className="p-0 pb-3">
+          <DialogTitle id={titleId} className="font-headline text-headline-sm text-on-surface flex items-center gap-2">
+            <ImagePlus className="w-5 h-5 text-primary" />
+            {title}
+          </DialogTitle>
+          {subtitle && (
+            <DialogDescription className="text-sm mt-1">
+              {subtitle}
+            </DialogDescription>
+          )}
+        </DialogHeader>
 
         {(hintLead || hintText) && (
           <div className="msm-card p-3 bg-surface-container-highest/40 border-outline/20 mb-4 flex items-start gap-2.5">
@@ -344,12 +299,12 @@ export function MediaGalleryDialog({
           </ul>
         )}
 
-        <div className="flex justify-end mt-6">
-          <Button ref={closeBtnRef} variant="secondary" onClick={onClose}>
+        <DialogFooter variant="plain" className="p-0 mt-6 flex justify-end">
+          <Button variant="secondary" onClick={onClose}>
             {t("common.close")}
           </Button>
-        </div>
-      </div>
-    </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

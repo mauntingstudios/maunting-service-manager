@@ -1,8 +1,8 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Check, Image as ImageIcon, Layers, RotateCcw, Sliders, Sparkles, Upload } from 'lucide-react'
 
-import { Button, Checkbox, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, Kurzinfo } from '@maunting/ui'
+import { Button, Checkbox, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, FileButton, Kurzinfo, Slider } from '@maunting/ui'
 import { confirm } from '@/stores/confirmStore'
 
 import { bildAlsHintergrund } from './bild'
@@ -106,7 +106,6 @@ function DialogInhalt({
   // Schlüssel, kein fertiger Satz — sonst bliebe die Meldung nach einem
   // Sprachwechsel in der alten Sprache stehen.
   const [fehler, setzeFehler] = useState<string | null>(null)
-  const dateiFeld = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     let abgebrochen = false
@@ -125,10 +124,8 @@ function DialogInhalt({
     }
   }, [scope, bereich])
 
-  const nimmDatei = async (ereignis: React.ChangeEvent<HTMLInputElement>) => {
+  const nimmDatei = async (datei: File) => {
     setzeFehler(null)
-    const datei = ereignis.target.files?.[0]
-    if (!datei) return
 
     if (!datei.type.startsWith('image/')) {
       setzeFehler('social.wallpaper.badType')
@@ -304,25 +301,17 @@ function DialogInhalt({
             )}
           </div>
 
-          <input
-            ref={dateiFeld}
-            type="file"
-            accept={ERLAUBTE_TYPEN}
-            onChange={nimmDatei}
-            className="hidden"
-          />
-
           <div className="flex items-center gap-2">
-            <Button
-              type="button"
+            <FileButton
               variant={gewaehlt === 'custom' ? 'primary' : 'secondary'}
               size="sm"
-              onClick={() => dateiFeld.current?.click()}
+              accept={ERLAUBTE_TYPEN}
+              onFile={(file) => void nimmDatei(file)}
               className="text-xs gap-1.5 h-8 flex-1"
             >
               <Upload className="w-3.5 h-3.5" />
               <span>{eigenesBild ? t('social.wallpaper.pickOther') : t('social.wallpaper.pickFirst')}</span>
-            </Button>
+            </FileButton>
 
             {eigenesBild && (
               <Button
@@ -360,15 +349,13 @@ function DialogInhalt({
             </span>
             <span className="font-mono text-label-sm text-primary">{blur}%</span>
           </div>
-          <input
-            type="range"
-            min="0"
-            max="100"
-            step="5"
+          <Slider
+            min={0}
+            max={100}
+            step={5}
             value={blur}
-            onChange={(ereignis) => setzeBlur(Number(ereignis.target.value))}
-            aria-label={t('social.wallpaper.blur', { defaultValue: 'Hintergrund-Unschärfe' })}
-            className="w-full accent-primary h-1.5 bg-surface-container-highest rounded-lg cursor-pointer"
+            onValueChange={setzeBlur}
+            ariaLabel={t('social.wallpaper.blur', { defaultValue: 'Hintergrund-Unschärfe' })}
           />
           <div className="flex justify-between text-label-sm text-on-surface-variant/60 font-mono">
             <span>0% (Scharf)</span>
@@ -386,15 +373,13 @@ function DialogInhalt({
             </span>
             <span className="font-mono text-label-sm text-primary">{abdunkeln}%</span>
           </div>
-          <input
-            type="range"
-            min="0"
-            max="75"
-            step="5"
+          <Slider
+            min={0}
+            max={75}
+            step={5}
             value={abdunkeln}
-            onChange={(ereignis) => setzeAbdunkeln(Number(ereignis.target.value))}
-            aria-label={t('social.wallpaper.dim')}
-            className="w-full accent-primary h-1.5 bg-surface-container-highest rounded-lg cursor-pointer"
+            onValueChange={setzeAbdunkeln}
+            ariaLabel={t('social.wallpaper.dim')}
           />
           <div className="flex justify-between text-label-sm text-on-surface-variant/60">
             <span>{t('social.wallpaper.dimLight')}</span>

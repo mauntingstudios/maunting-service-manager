@@ -138,12 +138,20 @@ export function FrontendSettingsPanel({ serverId, onUpdated }: FrontendSettingsP
 
         <div className="flex items-center justify-between gap-4">
           <span className="text-sm text-on-surface">{t('frontendDeployments.autoDeployLabel')}</span>
-          <Switch checked={autoDeploy} onCheckedChange={setAutoDeploy} />
+          <Switch
+            checked={autoDeploy}
+            onCheckedChange={setAutoDeploy}
+            aria-label={t('frontendDeployments.autoDeployLabel')}
+          />
         </div>
 
         <div className="flex items-center justify-between gap-4">
           <span className="text-sm text-on-surface">{t('frontendDeployments.previewsLabel')}</span>
-          <Switch checked={previewsEnabled} onCheckedChange={setPreviewsEnabled} />
+          <Switch
+            checked={previewsEnabled}
+            onCheckedChange={setPreviewsEnabled}
+            aria-label={t('frontendDeployments.previewsLabel')}
+          />
         </div>
       </section>
 

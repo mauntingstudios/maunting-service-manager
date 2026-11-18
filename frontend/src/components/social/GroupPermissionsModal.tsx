@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Dialog, DialogContent, Button, Badge, ColorPicker, Dropdown, IconPicker, Input, Textarea, Kurzinfo, RoleBadge, renderRoleIcon, DropdownOption, RechteAbschnitte, RechteAbschnittDefinition, RechteZeile } from '@maunting/ui'
+import { Dialog, DialogContent, Button, Badge, ColorPicker, Dropdown, FileButton, IconPicker, Input, Textarea, Kurzinfo, RoleBadge, renderRoleIcon, DropdownOption, RechteAbschnitte, RechteAbschnittDefinition, RechteZeile } from '@maunting/ui'
 import { Avatar } from '@/components/app/Avatar'
 import {
   Shield,
@@ -481,7 +481,6 @@ export function GroupPermissionsModal({
   const [infoLaedt, setInfoLaedt] = useState(false)
   const [infoSpeichert, setInfoSpeichert] = useState(false)
   const [infoSchmutzig, setInfoSchmutzig] = useState(false)
-  const infoLogoInput = useRef<HTMLInputElement>(null)
   /** Ob hier getippt wurde — dann überschreibt der Ladevorgang nichts. */
   const infoGetippt = useRef(false)
   const [hintergrundKontext, setHintergrundKontext] = useState<GruppenKontext | null>(null)
@@ -1265,27 +1264,17 @@ export function GroupPermissionsModal({
                     name={infoName || group?.name || t('social.groupRoles.groupFallback')}
                     size="xl"
                   />
-                  <input
-                    ref={infoLogoInput}
-                    type="file"
-                    accept="image/jpeg,image/png,image/webp,image/gif"
-                    className="hidden"
-                    onChange={(e) => {
-                      void handleInfoLogo(e.target.files?.[0])
-                      e.currentTarget.value = ''
-                    }}
-                  />
-                  <Button
-                    type="button"
+                  <FileButton
                     variant="secondary"
                     size="sm"
+                    accept="image/jpeg,image/png,image/webp,image/gif"
                     disabled={!kannInfoSchreiben}
-                    onClick={() => infoLogoInput.current?.click()}
+                    onFile={(file) => void handleInfoLogo(file)}
                     className="gap-1.5"
                   >
                     <ImagePlus className="w-4 h-4" />
                     {t('social.groupRoles.generalLogoChoose')}
-                  </Button>
+                  </FileButton>
                   {infoLogo && (
                     <Button
                       type="button"

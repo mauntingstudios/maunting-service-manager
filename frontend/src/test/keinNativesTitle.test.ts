@@ -21,6 +21,7 @@ const UEBERSCHRIFT = new Set([
   'FormDialog',
   'ListBlock',
   'MapStatus',
+  'MediaGalleryDialog',
   'PageHeader',
   'RegionalEmptyState',
   'Section',

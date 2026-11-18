@@ -1,11 +1,11 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Cpu, MemoryStick, HardDrive, Info } from 'lucide-react'
 import { api, SanitizedApiError } from '@/api/client'
 import { toast } from '@/stores/toastStore'
 import { confirm } from '@/stores/confirmStore'
 import type { Node } from '@/types'
-import { Button } from '@maunting/ui'
+import { Button, Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@maunting/ui'
 
 /**
  * Resource-Limit-Editor für Server-Detail (CPU / RAM / Disk).
@@ -68,58 +68,9 @@ export function ResourceEditorDialog({
   const [formError, setFormError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
 
-  const dialogRef = useRef<HTMLDivElement>(null)
   const cpuInputRef = useRef<HTMLInputElement>(null)
   const ramInputRef = useRef<HTMLInputElement>(null)
   const diskInputRef = useRef<HTMLInputElement>(null)
-
-  // Focus-Management: beim Oeffnen ersten Input fokussieren,
-  // beim Schliessen Focus auf den Ausloeser zurueckgeben.
-  // setTimeout(0) ist zuverlaessiger als requestAnimationFrame in echten
-  // Browsern, da es nach der aktuellen Task feuert und die DOM-Updates
-  // bereits verarbeitet sind (VAL-UI-020).
-  useEffect(() => {
-    const previousActive = document.activeElement as HTMLElement | null
-    const timeoutId = setTimeout(() => cpuInputRef.current?.focus(), 0)
-    return () => {
-      clearTimeout(timeoutId)
-      previousActive?.focus()
-    }
-  }, [])
-
-  // Keyboard-Handler auf Window-Ebene: Escape schliesst (wenn nicht saving),
-  // Tab/Shift+Tab bleiben innerhalb des Dialogs gefangen (VAL-UI-020).
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !saving) {
-        e.preventDefault()
-        onClose()
-        return
-      }
-      if (e.key === 'Tab') {
-        const focusable = dialogRef.current?.querySelectorAll<HTMLElement>(
-          'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
-        )
-        if (!focusable || focusable.length === 0) return
-        const first = focusable[0]
-        const last = focusable[focusable.length - 1]
-        const inside = dialogRef.current?.contains(document.activeElement)
-        if (e.shiftKey) {
-          if (document.activeElement === first || !inside) {
-            e.preventDefault()
-            last.focus()
-          }
-        } else {
-          if (document.activeElement === last || !inside) {
-            e.preventDefault()
-            first.focus()
-          }
-        }
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onClose, saving])
 
   const updateField = (field: keyof FormState, value: string) => {
     // Allow any typed text so invalid input remains visible long enough to
@@ -302,30 +253,28 @@ export function ResourceEditorDialog({
   )
 
   return (
-    <div
-      className="msm-modal-overlay overflow-y-auto"
-      onClick={() => !saving && onClose()}
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="resource-editor-title"
+    <Dialog
+      open={true}
+      onOpenChange={(next) => {
+        if (!next && !saving) onClose()
+      }}
     >
-      <div
-        ref={dialogRef}
-        className="msm-card w-full max-w-lg p-6 my-8"
-        onClick={(e) => e.stopPropagation()}
+      <DialogContent
+        aria-labelledby="resource-editor-title"
+        showCloseButton={false}
+        className="w-full max-w-lg p-6"
       >
-        <h2
-          id="resource-editor-title"
-          className="font-headline text-headline-md text-primary mb-1"
-        >
-          {t('serverDetail.resourceEditor.title')}
-        </h2>
-        <p className="font-body-md text-sm text-on-surface-variant mb-6">
-          {t('serverDetail.resourceEditor.description')}
-        </p>
+        <DialogHeader className="p-0 pb-2">
+          <DialogTitle id="resource-editor-title" className="font-headline text-headline-md text-primary">
+            {t('serverDetail.resourceEditor.title')}
+          </DialogTitle>
+          <DialogDescription className="text-sm mt-1">
+            {t('serverDetail.resourceEditor.description')}
+          </DialogDescription>
+        </DialogHeader>
 
         {lifecycleBusy && (
-          <div className="mb-4 p-3 rounded-md border border-status-warning/30 bg-status-warning/5 flex items-start gap-2">
+          <div className="my-4 p-3 rounded-md border border-status-warning/30 bg-status-warning/5 flex items-start gap-2">
             <Info className="w-4 h-4 text-status-warning shrink-0 mt-0.5" />
             <p className="font-body-md text-sm text-status-warning">
               {t('serverDetail.resourceEditor.lifecycleBusy')}
@@ -333,7 +282,7 @@ export function ResourceEditorDialog({
           </div>
         )}
 
-        <form onSubmit={handleSave} className="space-y-4">
+        <form onSubmit={handleSave} className="mt-4 space-y-4">
           {/* CPU */}
           <div>
             <label
@@ -345,6 +294,7 @@ export function ResourceEditorDialog({
             <input
               id="resource-cpu"
               ref={cpuInputRef}
+              autoFocus
               type="text"
               inputMode="numeric"
               className="msm-input"
@@ -465,7 +415,7 @@ export function ResourceEditorDialog({
             </Button>
           </div>
         </form>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   )
 }

@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useId, useRef, useState } from 'react'
-import { Check, Clipboard, Loader2, Server, Terminal, X } from 'lucide-react'
+import { useCallback, useEffect, useId, useState } from 'react'
+import { Check, Clipboard, Loader2, Server, Terminal } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { SanitizedApiError } from '@/api/client'
 import {
@@ -9,7 +9,7 @@ import {
   type PendingNodeEnrollment,
 } from '@/services/nodeEnrollmentService'
 import { toast } from '@/stores/toastStore'
-import { Button } from '@maunting/ui'
+import { Button, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@maunting/ui'
 
 interface NodeEnrollmentDialogProps {
   onClose: () => void
@@ -30,9 +30,6 @@ export function NodeEnrollmentDialog({
 }: NodeEnrollmentDialogProps) {
   const { t, i18n } = useTranslation()
   const titleId = useId()
-  const dialogRef = useRef<HTMLElement>(null)
-  const closeButtonRef = useRef<HTMLButtonElement>(null)
-  const onCloseRef = useRef(onClose)
   const [command, setCommand] = useState('')
   const [commandLoading, setCommandLoading] = useState(true)
   const [commandError, setCommandError] = useState<string | null>(null)
@@ -41,59 +38,6 @@ export function NodeEnrollmentDialog({
   const [pendingError, setPendingError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
   const [approvingId, setApprovingId] = useState<number | null>(null)
-
-  useEffect(() => {
-    onCloseRef.current = onClose
-  }, [onClose])
-
-  useEffect(() => {
-    const previousFocus = document.activeElement instanceof HTMLElement
-      ? document.activeElement
-      : null
-
-    closeButtonRef.current?.focus()
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.preventDefault()
-        onCloseRef.current()
-        return
-      }
-
-      if (event.key !== 'Tab') return
-
-      const dialog = dialogRef.current
-      if (!dialog) return
-
-      const focusable = Array.from(dialog.querySelectorAll<HTMLElement>(
-        'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
-      ))
-
-      if (focusable.length === 0) {
-        event.preventDefault()
-        dialog.focus()
-        return
-      }
-
-      const first = focusable[0]
-      const last = focusable[focusable.length - 1]
-      const active = document.activeElement
-
-      if (event.shiftKey && (active === first || !dialog.contains(active))) {
-        event.preventDefault()
-        last.focus()
-      } else if (!event.shiftKey && (active === last || !dialog.contains(active))) {
-        event.preventDefault()
-        first.focus()
-      }
-    }
-
-    document.addEventListener('keydown', handleKeyDown)
-    return () => {
-      document.removeEventListener('keydown', handleKeyDown)
-      if (previousFocus?.isConnected) previousFocus.focus()
-    }
-  }, [])
 
   const loadCommand = useCallback(async () => {
     setCommandLoading(true)
@@ -164,39 +108,19 @@ export function NodeEnrollmentDialog({
     }).format(new Date(value))
 
   return (
-    <div
-      className="msm-modal-overlay overflow-y-auto sm:p-6"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby={titleId}
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose()
-      }}
-    >
-      <section
-        ref={dialogRef}
-        className="msm-card my-auto w-full max-w-3xl overflow-hidden p-0 shadow-2xl"
-        tabIndex={-1}
+    <Dialog open={true} onOpenChange={(next) => { if (!next) onClose() }}>
+      <DialogContent
+        aria-labelledby={titleId}
+        className="w-full max-w-3xl overflow-hidden p-0"
       >
-        <header className="flex items-start justify-between gap-4 border-b border-outline-variant px-5 py-4 sm:px-6">
-          <div>
-            <h2 id={titleId} className="font-headline text-body-lg text-primary">
-              {t('nodes.enrollment.title')}
-            </h2>
-            <p className="mt-1 max-w-2xl text-sm text-on-surface-variant">
-              {t('nodes.enrollment.subtitle')}
-            </p>
-          </div>
-          <Button variant="secondary" size="icon"
-            ref={closeButtonRef}
-            type="button"
-            className="shrink-0"
-            aria-label={t('common.close')}
-            onClick={onClose}
-          >
-            <X className="h-4 w-4" />
-          </Button>
-        </header>
+        <DialogHeader className="border-b border-outline-variant px-5 py-4 pr-14 sm:px-6">
+          <DialogTitle id={titleId} className="font-headline text-body-lg text-primary">
+            {t('nodes.enrollment.title')}
+          </DialogTitle>
+          <DialogDescription className="mt-1 max-w-2xl text-sm">
+            {t('nodes.enrollment.subtitle')}
+          </DialogDescription>
+        </DialogHeader>
 
         <div className="max-h-[calc(100vh-9rem)] space-y-6 overflow-y-auto px-5 py-5 sm:px-6">
           <ol className="grid gap-3 text-sm sm:grid-cols-3">
@@ -311,13 +235,13 @@ export function NodeEnrollmentDialog({
           </section>
         </div>
 
-        <footer className="flex items-center justify-between gap-3 border-t border-outline-variant px-5 py-3 sm:px-6">
+        <DialogFooter className="flex items-center justify-between gap-3 border-t border-outline-variant px-5 py-3 sm:px-6">
           <p className="hidden text-xs text-on-surface-variant sm:block">{t('nodes.enrollment.manualHint')}</p>
           <Button variant="secondary" type="button" className="ml-auto" onClick={onManualSetup}>
             {t('nodes.enrollment.manual')}
           </Button>
-        </footer>
-      </section>
-    </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }

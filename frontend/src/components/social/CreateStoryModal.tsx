@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Dialog, DialogContent, Button, Input, Kurzinfo } from '@maunting/ui'
+import { Dialog, DialogContent, Button, FileButton, Input, Kurzinfo } from '@maunting/ui'
 import {
   Sparkles,
   Camera,
@@ -64,11 +64,7 @@ export function CreateStoryModal({
     }
   }, [open, initialMode, photoDataUrl, initialPhotoUrl])
 
-  const fileInputRef = React.useRef<HTMLInputElement>(null)
-
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
+  const handleFileSelected = async (file: File) => {
     const { dataUrl } = await compressImageFile(file)
     setPhotoDataUrl(dataUrl)
   }
@@ -181,24 +177,16 @@ export function CreateStoryModal({
                 <span>{t('common.camera')}</span>
               </Button>
 
-              <Button
-                type="button"
+              <FileButton
                 variant="secondary"
                 size="sm"
-                onClick={() => fileInputRef.current?.click()}
+                accept="image/*"
+                onFile={(file) => void handleFileSelected(file)}
                 className="h-9 text-xs gap-2 font-medium justify-center bg-surface-container hover:bg-surface-container-high border border-outline-variant/30"
               >
                 <Upload className="w-4 h-4 text-primary" />
                 <span>{t('social.story.pickImage')}</span>
-              </Button>
-
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={handleFileChange}
-              />
+              </FileButton>
             </div>
 
             {/* Content Input */}

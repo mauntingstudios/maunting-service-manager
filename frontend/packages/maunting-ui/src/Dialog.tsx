@@ -63,6 +63,11 @@ export function tabImRahmen(e: KeyboardEvent, rahmen: HTMLElement) {
   if (ziele.length === 0) return
   const erstes = ziele[0]
   const letztes = ziele[ziele.length - 1]
+  if (!rahmen.contains(document.activeElement)) {
+    e.preventDefault()
+    ;(e.shiftKey ? letztes : erstes).focus()
+    return
+  }
   if (e.shiftKey && document.activeElement === erstes) {
     e.preventDefault()
     letztes.focus()
@@ -127,9 +132,9 @@ export function DialogContent({
       el.querySelector<HTMLElement>(FOCUSSABLE)?.focus()
     }
 
-    document.addEventListener('keydown', onKeyDown)
+    window.addEventListener('keydown', onKeyDown)
     return () => {
-      document.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('keydown', onKeyDown)
       if (previousFocus.current && previousFocus.current.isConnected) {
         previousFocus.current.focus()
       }

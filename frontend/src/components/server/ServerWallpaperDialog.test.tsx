@@ -73,9 +73,9 @@ describe('ServerWallpaperDialog', () => {
 
   it('lädt die Miniaturen aus der Galerie des Servers', async () => {
     vi.mocked(client.api).mockResolvedValue(galerie)
-    const { container } = zeichnen()
-    await screen.findByRole('dialog')
-    const bilder = container.querySelectorAll('img')
+    zeichnen()
+    const dialog = await screen.findByRole('dialog')
+    const bilder = dialog.querySelectorAll('img')
     expect(bilder).toHaveLength(2)
     expect(bilder[0].getAttribute('src')).toContain('/api/servers/42/wallpaper/gallery/1/image')
     expect(bilder[1].getAttribute('src')).toContain('/api/servers/42/wallpaper/gallery/2/image')
@@ -94,9 +94,9 @@ describe('ServerWallpaperDialog', () => {
   })
 
   it('weist falsche Dateiformate inline ab, ohne hochzuladen', async () => {
-    const { container } = zeichnen()
-    await screen.findByRole('dialog')
-    const input = container.querySelector('input[type="file"]') as HTMLInputElement
+    zeichnen()
+    const dialog = await screen.findByRole('dialog')
+    const input = dialog.querySelector('input[type="file"]') as HTMLInputElement
     const text = new File(['kein bild'], 'notiz.txt', { type: 'text/plain' })
     fireEvent.change(input, { target: { files: [text] } })
     // Nur der Galerie-GET lief — kein POST:

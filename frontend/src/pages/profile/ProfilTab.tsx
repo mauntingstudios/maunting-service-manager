@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Camera, Loader2, Phone, Shield, Trash2, User } from 'lucide-react'
 
@@ -8,7 +8,7 @@ import { BenutzernameInline } from '@/components/BenutzernameInline'
 import { InfoKarte } from '@/components/social/InfoKarte'
 import { MauntingCard } from '@/desktop/vault/MauntingCardView'
 import { Avatar } from '@/components/app/Avatar'
-import { Button, Dropdown, DropdownOption } from '@maunting/ui'
+import { Button, Dropdown, DropdownOption, FileButton } from '@maunting/ui'
 import { useAuthStore } from '@/stores/authStore'
 import { toast } from '@/stores/toastStore'
 
@@ -23,7 +23,6 @@ export function ProfilTab({ social = true }: { social?: boolean }) {
   const { t } = useTranslation()
   const { user, updateUser } = useAuthStore()
 
-  const fileInputRef = useRef<HTMLInputElement>(null)
   const [uploadingAvatar, setUploadingAvatar] = useState(false)
 
   const handleAvatarChange = async (file?: File | null) => {
@@ -52,7 +51,6 @@ export function ProfilTab({ social = true }: { social?: boolean }) {
       toast.error(err?.detail || t('profile.avatarUpdateFailed'))
     } finally {
       setUploadingAvatar(false)
-      if (fileInputRef.current) fileInputRef.current.value = ''
     }
   }
 
@@ -138,25 +136,17 @@ export function ProfilTab({ social = true }: { social?: boolean }) {
             <BenutzernameInline className="font-label-md text-base text-on-surface font-semibold" />
 
             <div className="flex flex-wrap items-center gap-2.5 pt-1">
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/png,image/jpeg,image/webp,image/gif"
-                className="sr-only"
-                disabled={uploadingAvatar}
-                onChange={(e) => void handleAvatarChange(e.target.files?.[0])}
-              />
-              <Button
-                type="button"
+              <FileButton
                 variant="secondary"
                 size="sm"
+                accept="image/png,image/jpeg,image/webp,image/gif"
                 disabled={uploadingAvatar}
-                onClick={() => fileInputRef.current?.click()}
+                onFile={(file) => void handleAvatarChange(file)}
                 className="flex items-center gap-1.5"
               >
                 <Camera className="w-4 h-4 text-primary" aria-hidden="true" />
                 {user?.avatar_url ? t('profile.changeAvatar') : t('profile.uploadAvatar')}
-              </Button>
+              </FileButton>
 
               {user?.avatar_url && (
                 <Button

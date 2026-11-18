@@ -11,7 +11,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Check, ImagePlus, Layers, Sliders, Trash2 } from 'lucide-react'
 
-import { Button } from '@maunting/ui'
+import { Button, FileButton, Slider } from '@maunting/ui'
 import type { GruppenKontext } from '@/services/gruppenSchluessel'
 import { aendereGruppenHintergrund, ladeGruppenHintergrund } from '@/services/gruppenInfo'
 import { toast } from '@/stores/toastStore'
@@ -32,7 +32,6 @@ export function GruppenHintergrundFeld({ kontext, kannAendern }: Props) {
   const [dim, setDim] = useState(25)
   const [laedt, setLaedt] = useState(false)
   const [speichert, setSpeichert] = useState(false)
-  const dateiFeld = useRef<HTMLInputElement>(null)
   /** Ob schon jemand eine Vorlage gewählt hat — dann überschreibt der Ladevorgang nichts. */
   const gewaehlt = useRef(false)
   /** Ob der Mensch selbst etwas gewählt hat. */
@@ -228,27 +227,17 @@ export function GruppenHintergrundFeld({ kontext, kannAendern }: Props) {
           )}
         </div>
 
-        <input
-          ref={dateiFeld}
-          type="file"
-          accept="image/png,image/jpeg,image/webp"
-          className="hidden"
-          onChange={(e) => {
-            void nimmDatei(e.target.files?.[0])
-            e.currentTarget.value = ''
-          }}
-        />
-        <Button
-          type="button"
+        <FileButton
           variant={preset === 'custom' ? 'primary' : 'secondary'}
           size="sm"
+          accept="image/png,image/jpeg,image/webp"
           disabled={!kannAendern}
-          onClick={() => dateiFeld.current?.click()}
+          onFile={(file) => void nimmDatei(file)}
           className="gap-1.5"
         >
           <ImagePlus className="w-4 h-4" />
           {bild ? t('social.groupRoles.backgroundReplace') : t('social.groupRoles.backgroundChoose')}
-        </Button>
+        </FileButton>
 
         {bild && preset === 'custom' && (
           <div className="relative h-24 w-full rounded-xl overflow-hidden border border-outline-variant/40">
@@ -269,16 +258,14 @@ export function GruppenHintergrundFeld({ kontext, kannAendern }: Props) {
             </span>
             <span className="font-mono text-label-sm text-primary">{dim}%</span>
           </div>
-          <input
-            type="range"
-            min="0"
-            max="75"
-            step="5"
+          <Slider
+            min={0}
+            max={75}
+            step={5}
             value={dim}
             disabled={!kannAendern}
-            onChange={(e) => setDim(Number(e.target.value))}
-            aria-label={t('social.wallpaper.dim')}
-            className="w-full accent-primary h-1.5 bg-surface-container-highest rounded-lg cursor-pointer"
+            onValueChange={setDim}
+            ariaLabel={t('social.wallpaper.dim')}
           />
         </div>
 
