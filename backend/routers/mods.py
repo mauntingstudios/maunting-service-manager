@@ -888,32 +888,25 @@ def subscribe_mod(
     return mod
 
 
-@router.post("/{server_id}/batch")
-def subscribe_mods_batch(
+def queue_mods_batch(
+    db: Session,
+    *,
     server_id: int,
-    body: BatchModsInstallRequest,
-    background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-    _: None = Depends(verify_csrf),
-):
-    """Abonniert und installiert mehrere Mods gebündelt (z. B. aus einer Steam Collection oder Manifest)."""
-    require_server_permission(user, server_id, db, "server.mods.write")
-    server = db.query(Server).filter(Server.id == server_id).first()
-    if not server:
-        raise HTTPException(status_code=404, detail="Server nicht gefunden")
-    plugin = get_plugin(server.game_type)
-    if not plugin or not plugin.supports_mods:
-        raise HTTPException(status_code=400, detail="Spiel unterstützt keine Mods")
-
+    items: list[tuple[str, str | None]],
+    skip_existing: bool = True,
+    auto_update: bool = True,
+    enabled: bool = True,
+    user_id: int | None = None,
+) -> dict:
+    """Reiht mehrere Mods dedupliziert in die DB-Queue ein (ohne Hintergrund-Task zu starten)."""
     ordered_items: list[tuple[str, str | None]] = []
     seen_wids: set[str] = set()
-    for entry in body.items:
-        wid = _validate_workshop_id(entry.workshop_id)
+    for raw_wid, raw_name in items:
+        wid = _validate_workshop_id(raw_wid)
         if wid in seen_wids:
             continue
         seen_wids.add(wid)
-        clean_name = entry.name.strip()[:255] if entry.name else None
+        clean_name = raw_name.strip()[:255] if raw_name else None
         ordered_items.append((wid, clean_name or None))
 
     existing_rows = db.query(Mod).filter(Mod.server_id == server_id).all()
@@ -927,7 +920,7 @@ def subscribe_mods_batch(
         existing = existing_map.get(wid)
         if existing is not None:
             if existing.install_status in (INSTALL_RUNNING, "pending") or (
-                body.skip_existing and existing.install_status in (INSTALL_DONE, "success", "installed")
+                skip_existing and existing.install_status in (INSTALL_DONE, "success", "installed")
             ):
                 skipped_ids.append(wid)
                 continue
@@ -946,8 +939,8 @@ def subscribe_mods_batch(
                 workshop_id=wid,
                 name=clean_name,
                 load_order=next_order,
-                auto_update=body.auto_update,
-                enabled=body.enabled,
+                auto_update=auto_update,
+                enabled=enabled,
                 install_status="pending",
                 install_action="install",
                 install_progress=0,
@@ -959,9 +952,46 @@ def subscribe_mods_batch(
             existing_map[wid] = mod
             queued_ids.append(wid)
 
-    if queued_ids:
-        AchievementService.melde(db, user.id, "server_modpack_installer")
+    if queued_ids and user_id is not None:
+        AchievementService.melde(db, user_id, "server_modpack_installer")
     db.commit()
+
+    return {
+        "queued_ids": queued_ids,
+        "skipped_ids": skipped_ids,
+        "total_requested": len(ordered_items),
+    }
+
+
+@router.post("/{server_id}/batch")
+def subscribe_mods_batch(
+    server_id: int,
+    body: BatchModsInstallRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    _: None = Depends(verify_csrf),
+):
+    """Abonniert und installiert mehrere Mods gebündelt (z. B. aus einer Steam Collection oder Manifest)."""
+    require_server_permission(user, server_id, db, "server.mods.write")
+    server = db.query(Server).filter(Server.id == server_id).first()
+    if not server:
+        raise HTTPException(status_code=404, detail="Server nicht gefunden")
+    plugin = get_plugin(server.game_type)
+    if not plugin or not plugin.supports_mods:
+        raise HTTPException(status_code=400, detail="Spiel unterstützt keine Mods")
+
+    batch = queue_mods_batch(
+        db,
+        server_id=server_id,
+        items=[(entry.workshop_id, entry.name) for entry in body.items],
+        skip_existing=body.skip_existing,
+        auto_update=body.auto_update,
+        enabled=body.enabled,
+        user_id=user.id,
+    )
+    queued_ids = batch["queued_ids"]
+    skipped_ids = batch["skipped_ids"]
 
     if queued_ids:
         _enqueue_mod_task(background_tasks, server, install_mods_batch_bg, server.id, queued_ids)
@@ -972,7 +1002,7 @@ def subscribe_mods_batch(
         "skipped": len(skipped_ids),
         "queued_ids": queued_ids,
         "skipped_ids": skipped_ids,
-        "total_requested": len(ordered_items),
+        "total_requested": batch["total_requested"],
     }
 
 

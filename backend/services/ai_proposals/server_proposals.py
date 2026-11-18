@@ -1439,6 +1439,157 @@ def _mod_install_payload(db: Session, server: Server, arguments: dict) -> tuple[
     }
     return payload, preview
 
+
+def _run_coro_sync(coro_factory):
+    import asyncio
+    import concurrent.futures
+
+    try:
+        return asyncio.run(coro_factory())
+    except RuntimeError:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
+            return ex.submit(lambda: asyncio.run(coro_factory())).result(timeout=25)
+
+
+def _mod_batch_install_payload(db: Session, server: Server, arguments: dict) -> tuple[dict, dict]:
+    """Prueft eine Sammel-Mod-Installation (Steam-Kollektion oder Mod-Liste)."""
+    from games import get_plugin
+    from models import Mod
+    from services.mod_install_status_service import INSTALL_DONE, INSTALL_RUNNING
+    from services.steam_service import SteamApiUnavailable, SteamService, extract_steam_publishedfileid
+
+    allowed_keys = {"collection_id", "items", "skip_existing"}
+    if set(arguments) - allowed_keys:
+        raise AiActionValidationError("Mod-Batch-Tool hat ungueltige Argumente")
+
+    plugin = get_plugin(server.game_type)
+    if plugin is None or not getattr(plugin, "supports_mods", False):
+        raise AiActionValidationError("Dieses Spiel unterstuetzt keine Mods")
+
+    skip_existing = arguments.get("skip_existing", True)
+    if not isinstance(skip_existing, bool):
+        raise AiActionValidationError("`skip_existing` muss true oder false sein")
+
+    raw_col = arguments.get("collection_id")
+    raw_items = arguments.get("items")
+    if not raw_col and not raw_items:
+        raise AiActionValidationError("Entweder `collection_id` oder `items` ist erforderlich")
+
+    collection_title: str | None = None
+    collection_id_clean: str | None = None
+    resolved_items: list[dict[str, str]] = []
+    seen_wids: set[str] = set()
+
+    if raw_col is not None:
+        if not isinstance(raw_col, str) or not raw_col.strip():
+            raise AiActionValidationError("Ungueltige `collection_id`")
+        mod_support = plugin.get_mod_support() or {}
+        if mod_support.get("provider") == "curseforge" or mod_support.get("curseforge_game_id"):
+            raise AiActionValidationError(
+                "Dieses Spiel nutzt CurseForge — fuer ganze Pakete bitte propose_modpack_install nutzen"
+            )
+        appid = mod_support.get("workshop_id")
+        if not appid:
+            raise AiActionValidationError("Keine Steam-Workshop-App-ID fuer dieses Spiel konfiguriert")
+
+        clean_col = extract_steam_publishedfileid(raw_col.strip()) or (
+            raw_col.strip() if raw_col.strip().isdigit() else None
+        )
+        if not clean_col:
+            raise AiActionValidationError("Ungueltige Steam-Kollektions-ID oder URL")
+
+        async def _fetch():
+            svc = SteamService()
+            try:
+                return await svc.get_collection_details(str(appid), clean_col)
+            finally:
+                await svc.close()
+
+        try:
+            details = _run_coro_sync(_fetch)
+        except SteamApiUnavailable as exc:
+            raise AiActionValidationError(f"Steam-Kollektion nicht abrufbar: {exc.code}") from exc
+        if not details or not details.get("items"):
+            raise AiActionValidationError("Steam-Kollektion nicht gefunden oder enthaelt keine Mods")
+
+        collection_id_clean = clean_col
+        col_info = details["collection"]
+        collection_title = redact_sensitive_text(str(col_info.title or ""))[:128] or f"Kollektion {clean_col}"
+        for m in details["items"]:
+            wid = str(m.publishedfileid).strip()
+            if not wid.isdigit() or wid in seen_wids:
+                continue
+            seen_wids.add(wid)
+            title = redact_sensitive_text(str(m.title or ""))[:128]
+            entry: dict[str, str] = {"workshop_id": wid}
+            if title:
+                entry["name"] = title
+            resolved_items.append(entry)
+
+    if raw_items is not None:
+        if not isinstance(raw_items, list) or not raw_items:
+            raise AiActionValidationError("`items` muss eine nicht-leere Liste sein")
+        if len(raw_items) > 500:
+            raise AiActionValidationError("Hoechstens 500 Mods pro Sammel-Installation")
+        for idx, entry in enumerate(raw_items, start=1):
+            if not isinstance(entry, dict):
+                raise AiActionValidationError(f"Mod-Eintrag {idx} ist ungueltig")
+            if set(entry) - {"workshop_id", "name"}:
+                raise AiActionValidationError(f"Mod-Eintrag {idx} hat unbekannte Felder")
+            wid = str(entry.get("workshop_id") or "").strip()
+            if not wid.isdigit() or len(wid) > 20:
+                raise AiActionValidationError(f"Mod-Eintrag {idx} hat eine ungueltige workshop_id")
+            if wid in seen_wids:
+                continue
+            seen_wids.add(wid)
+            clean_entry: dict[str, str] = {"workshop_id": wid}
+            raw_name = entry.get("name")
+            if isinstance(raw_name, str) and raw_name.strip():
+                clean_entry["name"] = redact_sensitive_text(raw_name.strip())[:128]
+            resolved_items.append(clean_entry)
+
+    if not resolved_items:
+        raise AiActionValidationError("Keine installierbaren Mods gefunden")
+
+    existing_rows = db.query(Mod).filter(Mod.server_id == server.id).all()
+    existing_map = {m.workshop_id: m for m in existing_rows}
+    queued_count = 0
+    skipped_count = 0
+    for entry in resolved_items:
+        ex = existing_map.get(entry["workshop_id"])
+        if ex is not None and (
+            ex.install_status in (INSTALL_RUNNING, "pending")
+            or (skip_existing and ex.install_status in (INSTALL_DONE, "success", "installed"))
+        ):
+            skipped_count += 1
+        else:
+            queued_count += 1
+
+    payload: dict[str, Any] = {
+        "items": resolved_items,
+        "skip_existing": skip_existing,
+    }
+    if collection_id_clean:
+        payload["collection_id"] = collection_id_clean
+    if collection_title:
+        payload["collection_title"] = collection_title
+
+    sample_names = [e.get("name") or e["workshop_id"] for e in resolved_items[:5]]
+    label = collection_title or f"{len(resolved_items)} Mods"
+    preview = {
+        "operation": "mod_batch_install",
+        "path": label,
+        "server_name": server.name,
+        "collection_title": collection_title,
+        "mod_count": len(resolved_items),
+        "queued_count": queued_count,
+        "skipped_count": skipped_count,
+        "sample_mods": sample_names,
+        "current_status": server.status,
+        "restart_required": True,
+    }
+    return payload, preview
+
 def _mod_toggle_payload(db: Session, server: Server, arguments: dict) -> tuple[dict, dict]:
     """Erwartet die Argumente *ohne* Begruendung und ohne `server_id`.
 
@@ -2667,6 +2818,52 @@ def _ausfuehren_mod_install(db: Session, rahmen: _AusfuehrungsRahmen) -> _Ausgef
     # angestossen. Ihren Ausgang traegt die Mod-Zeile.
     result = _execute_mod_install(db, server_id=rahmen.server_id, payload=rahmen.payload)
     return _Ausgefuehrt(result=result)
+
+
+def _ausfuehren_mod_batch_install(db: Session, rahmen: _AusfuehrungsRahmen) -> _Ausgefuehrt:
+    """Reiht eine Sammel-Mod-Installation ueber den Panel-Batch-Pfad ein."""
+    import threading
+    from routers.mods import install_mods_batch_bg, queue_mods_batch
+
+    if rahmen.server_id is None:
+        raise AiActionStateError("AI_ACTION_INVALID")
+    server = db.get(Server, rahmen.server_id)
+    if server is None:
+        raise AiActionStateError("AI_ACTION_TARGET_MISSING")
+
+    raw_items = rahmen.payload.get("items") or []
+    items = [
+        (str(entry["workshop_id"]), entry.get("name"))
+        for entry in raw_items
+        if isinstance(entry, dict) and entry.get("workshop_id")
+    ]
+    skip_existing = bool(rahmen.payload.get("skip_existing", True))
+
+    batch = queue_mods_batch(
+        db,
+        server_id=rahmen.server_id,
+        items=items,
+        skip_existing=skip_existing,
+        user_id=rahmen.active_user.id if rahmen.active_user else None,
+    )
+    queued_ids = batch["queued_ids"]
+    if queued_ids:
+        threading.Thread(
+            target=install_mods_batch_bg,
+            args=(rahmen.server_id, queued_ids),
+            daemon=True,
+            name=f"ai-mod-batch-{rahmen.server_id}",
+        ).start()
+
+    return _Ausgefuehrt(
+        result={
+            "server_id": rahmen.server_id,
+            "queued": len(queued_ids),
+            "skipped": len(batch["skipped_ids"]),
+            "total_requested": batch["total_requested"],
+            "installation": "running" if queued_ids else "nothing_to_install",
+        }
+    )
 
 def _ausfuehren_mod_toggle(db: Session, rahmen: _AusfuehrungsRahmen) -> _Ausgefuehrt:
     result = _execute_mod_toggle(db, server_id=rahmen.server_id, payload=rahmen.payload)

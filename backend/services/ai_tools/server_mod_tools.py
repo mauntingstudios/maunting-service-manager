@@ -7,6 +7,9 @@ jetzt hier, damit jeder Weg sie mitnimmt.
 
 from __future__ import annotations
 
+import asyncio
+import logging
+
 from sqlalchemy.orm import Session
 
 from models import Server, User
@@ -15,6 +18,8 @@ from services.ai_action_errors import AiActionValidationError
 from services.ai_redaction import redact_sensitive_text
 from services.ai_tool_spec import werkzeug
 from services.ai_tools.base import MAX_LISTED_MODS, MAX_SEARCH_QUERY_CHARS, _require_no_arguments, _server_function
+
+logger = logging.getLogger(__name__)
 
 
 _MODS = _server_function(
@@ -27,17 +32,40 @@ _UPDATES = _server_function(
         )
 _SEARCH = _server_function(
             "search_workshop_mods",
-            "Sucht Mods im Steam Workshop oder bei CurseForge fuer das Spiel dieses Servers. "
-            "Liefert Kennung, Titel und Tags.",
+            "Sucht Mods, Sammlungen, Pakete oder Kollektionen im Steam Workshop oder bei CurseForge fuer das Spiel dieses Servers. "
+            "Liefert Kennung, Titel, Typ und Tags.",
             {
-                "query": {"type": "string"},
+                "query": {"type": "string", "description": "Suchbegriff, Thema oder Link/ID."},
+                "content_type": {
+                    "type": "string",
+                    "enum": ["mods", "collections"],
+                    "description": "mods = Einzelmods (Standard), collections = Steam-Kollektionen/Sammlungen/Pakete.",
+                },
+                "sort": {
+                    "type": "string",
+                    "enum": ["trending", "popular", "newest", "updated"],
+                    "description": "Optionale Sortierung, z. B. popular oder trending fuer 'beste/beliebteste Mods'.",
+                },
                 "page": {"type": "integer", "minimum": 1, "maximum": 50},
             },
             ["query"],
         )
+_COLLECTION = _server_function(
+            "read_steam_collection",
+            "Loest eine Steam-Workshop-Kollektion (Sammlung, Paket, Link oder ID) vollstaendig auf "
+            "und liefert Titel sowie alle enthaltenen Mods inklusive Unter-Kollektionen.",
+            {
+                "collection_id": {
+                    "type": "string",
+                    "maxLength": 256,
+                    "description": "Steam-Kollektions-ID oder Steam-Workshop-URL.",
+                },
+            },
+            ["collection_id"],
+        )
 
 MODS_DEFINITIONEN = [_MODS]
-SEARCH_DEFINITIONEN = [_UPDATES, _SEARCH]
+SEARCH_DEFINITIONEN = [_UPDATES, _SEARCH, _COLLECTION]
 
 
 def execute_mod_tool(
@@ -102,13 +130,84 @@ def execute_mod_tool(
             ],
         }
 
+    if tool_name == "read_steam_collection":
+        if set(arguments) != {"collection_id"} or not isinstance(arguments.get("collection_id"), str):
+            raise AiActionValidationError("Kollektions-Abfrage braucht genau 'collection_id'")
+        raw_col = arguments["collection_id"].strip()
+        if not raw_col:
+            raise AiActionValidationError("collection_id darf nicht leer sein")
+        mod_support = plugin.get_mod_support() or {}
+        if mod_support.get("provider") == "curseforge" or mod_support.get("curseforge_game_id"):
+            return {
+                "server_id": server.id,
+                "available": False,
+                "reason": "curseforge_uses_modpacks",
+                "hint": "Dieses Spiel nutzt CurseForge; nutze search_curseforge_modpacks und propose_modpack_install.",
+            }
+        appid = mod_support.get("workshop_id")
+        if not appid:
+            return {"server_id": server.id, "available": False, "reason": "workshop_id_missing"}
+        from services.steam_service import SteamApiUnavailable, SteamService, extract_steam_publishedfileid
+
+        clean_id = extract_steam_publishedfileid(raw_col) or (raw_col if raw_col.isdigit() else None)
+        if not clean_id:
+            raise AiActionValidationError("Ungueltige Steam-Kollektions-ID oder URL")
+
+        async def _fetch_col():
+            svc = SteamService()
+            try:
+                return await svc.get_collection_details(str(appid), clean_id)
+            finally:
+                await svc.close()
+
+        try:
+            details = asyncio.run(_fetch_col())
+        except SteamApiUnavailable as exc:
+            return {"server_id": server.id, "available": False, "reason": exc.code}
+        except Exception as exc:
+            logger.warning("Steam-Kollektionsabfrage fehlgeschlagen: %s", type(exc).__name__)
+            return {"server_id": server.id, "available": False, "reason": "steam_api_unavailable"}
+
+        if not details:
+            return {"server_id": server.id, "available": False, "reason": "collection_not_found"}
+
+        col_info = details["collection"]
+        items = details.get("items") or []
+        return {
+            "server_id": server.id,
+            "available": True,
+            "collection": {
+                "publishedfileid": col_info.publishedfileid,
+                "title": redact_sensitive_text(str(col_info.title or ""))[:128],
+                "creator": redact_sensitive_text(str(col_info.creator or ""))[:64],
+                "direct_url": col_info.direct_url,
+            },
+            "item_count": len(items),
+            "unavailable_ids": list(details.get("unavailable_ids") or [])[:50],
+            "items": [
+                {
+                    "workshop_id": m.publishedfileid,
+                    "title": redact_sensitive_text(str(m.title or ""))[:128],
+                    "file_size_mb": round((m.file_size or 0) / (1024 * 1024), 2),
+                }
+                for m in items[:MAX_LISTED_MODS]
+            ],
+            "truncated": len(items) > MAX_LISTED_MODS,
+        }
+
     if tool_name != "search_workshop_mods":
         raise AiActionValidationError(f"Kein Handler für Werkzeug: {tool_name}")
-    if set(arguments) - {"query", "page"} or not isinstance(arguments.get("query"), str):
+    if set(arguments) - {"query", "page", "content_type", "sort"} or not isinstance(arguments.get("query"), str):
         raise AiActionValidationError("Workshop-Suche hat ungültige Argumente")
     page = arguments.get("page", 1)
     if not isinstance(page, int) or isinstance(page, bool) or not 1 <= page <= 50:
         raise AiActionValidationError("Ungültige Seitenzahl")
+    content_type = str(arguments.get("content_type") or "mods").strip().lower()
+    if content_type not in ("mods", "collections"):
+        raise AiActionValidationError("content_type muss 'mods' oder 'collections' sein")
+    sort = arguments.get("sort")
+    if sort is not None and sort not in ("trending", "popular", "newest", "updated"):
+        raise AiActionValidationError("Ungueltige Sortierung")
     mod_support = plugin.get_mod_support() or {}
 
     # Die Anfrage geht an einen fremden Dienst (Steam oder CurseForge) und wird
@@ -134,11 +233,10 @@ def execute_mod_tool(
         cf_mod_loader = auto_loader
         cf_game_version = auto_ver
         cf_class_id = mod_support.get("curseforge_class_id") or auto_class
-        if "modpack" in sichere_anfrage.lower():
+        if content_type == "collections" or "modpack" in sichere_anfrage.lower():
             cf_class_id = "modpacks"
 
         try:
-            import asyncio
             from services.curseforge_service import get_curseforge_service, CurseForgeApiUnavailable
 
             async def _do_cf_search():
@@ -199,6 +297,52 @@ def execute_mod_tool(
     appid = mod_support.get("workshop_id")
     if not appid:
         return {"server_id": server.id, "available": False, "reason": "workshop_id_missing"}
+    if content_type == "collections" or sort is not None:
+        from services.steam_service import SteamApiUnavailable, SteamService
+
+        filetype = 1 if content_type == "collections" else 0
+        required_tags = None if filetype == 1 else (mod_support.get("required_tags") or None)
+
+        async def _search_steam():
+            svc = SteamService()
+            try:
+                return await svc.search_workshop_mods(
+                    appid=str(appid),
+                    query=sichere_anfrage,
+                    page=page,
+                    per_page=20,
+                    required_tags=required_tags,
+                    filetype=filetype,
+                    sort=sort,
+                )
+            finally:
+                await svc.close()
+
+        try:
+            steam_items = asyncio.run(_search_steam())
+        except SteamApiUnavailable as exc:
+            return {"server_id": server.id, "available": False, "reason": exc.code}
+        except Exception as exc:
+            logger.warning("Steam-Suche im Werkzeug fehlgeschlagen: %s", type(exc).__name__)
+            return {"server_id": server.id, "available": False, "reason": "steam_api_unavailable"}
+
+        results = [
+            {
+                "workshop_id": m.publishedfileid,
+                "title": redact_sensitive_text(str(m.title or ""))[:128],
+                "description": redact_sensitive_text(str(m.description or ""))[:256] if m.description else None,
+                "creator": redact_sensitive_text(str(m.creator or ""))[:64],
+                "subscriptions": m.subscriptions,
+                "favorites": m.favorites,
+                "item_type": m.item_type,
+                "children_count": m.children_count,
+                "direct_url": m.direct_url,
+                "tags": list(m.tags or [])[:5],
+            }
+            for m in steam_items
+        ]
+        return {"server_id": server.id, "available": True, "provider": "steam", "results": results}
+
     try:
         results = mod_update_service.search_workshop(
             appid=str(appid),
@@ -225,6 +369,10 @@ def suche_workshop(db, *, user, server, arguments):
     return execute_mod_tool(db, user=user, server=server, tool_name="search_workshop_mods", arguments=arguments)
 
 
+def lies_steam_kollektion(db, *, user, server, arguments):
+    return execute_mod_tool(db, user=user, server=server, tool_name="read_steam_collection", arguments=arguments)
+
+
 werkzeug(
     _MODS,
     art="server_read",
@@ -243,6 +391,13 @@ werkzeug(
     _SEARCH,
     art="server_read",
     gruppe="mods",
-    hinweis="Sucht Mods im Workshop oder bei CurseForge fuer dieses Spiel.",
+    hinweis="Sucht Mods, Sammlungen, Pakete oder Kollektionen im Workshop oder bei CurseForge fuer dieses Spiel.",
     handler=suche_workshop,
+)
+werkzeug(
+    _COLLECTION,
+    art="server_read",
+    gruppe="mods",
+    hinweis="Loest eine Steam-Kollektion (Sammlung, Paket oder Link) auf und listet alle enthaltenen Mods.",
+    handler=lies_steam_kollektion,
 )

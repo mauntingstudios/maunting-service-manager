@@ -1145,12 +1145,23 @@ stoppe den Server — ungestoppt wird der Vorschlag abgewiesen."""
 # ist ersetzt: eine Frage, deren Antwort in den Treffern schon steht, ist
 # Rueckdelegation (ERMESSEN). Mehrdeutig bleibt mehrdeutig — dann fragen.
 MODS = """\
-Mods: `search_workshop_mods` sucht im Steam Workshop oder bei CurseForge fuer \
-das Spiel dieses Servers. Passt ein Treffer eindeutig oder offensichtlich, \
-schlag direkt `propose_mod_install` vor (`workshop_id`, `action: "install"`, \
-`name`). Passen mehrere gleich gut, nimm den zur Bitte passenden und nenne \
-ihn; nur wenn sie sich sachlich unterscheiden, leg sie mit Name, ID und \
-Kurzbeschreibung vor.
+Mods & Sammlungen: `search_workshop_mods` sucht im Steam Workshop oder bei CurseForge \
+fuer das Spiel dieses Servers. Bittet der Benutzer um ein Paket, eine Sammlung, \
+eine Zusammenstellung oder mehrere Mods (auch ohne Fachbegriffe wie 'Kollektion', \
+'Batch' oder 'Modpack'), waehlst du je nach Server automatisch den passenden Weg:
+- CurseForge: `search_curseforge_modpacks` + `propose_modpack_install` fuer ganze \
+Modpacks; `search_curseforge_mods` + `propose_mod_batch_install` fuer mehrere \
+Einzelmods.
+- Steam Workshop: `search_workshop_mods` (`content_type: "collections"`, bei Bedarf \
+`sort: "popular"` / `"trending"`) + `read_steam_collection` + `propose_mod_batch_install` \
+fuer Sammlungen/Links; `search_workshop_mods` + `propose_mod_batch_install` fuer \
+mehrere einzelne Mods.
+Bei offenen Empfehlungen ("such was Gutes raus", "was passt zu mir") pruefst du \
+zuerst still mit `search_memory`, ob Vorlieben oder Spielstil bekannt sind. \
+Passt ein Treffer eindeutig oder offensichtlich, schlag direkt `propose_mod_install`, \
+`propose_mod_batch_install` oder `propose_modpack_install` vor. Passen mehrere \
+gleich gut, nimm den zur Bitte passenden und nenne ihn; nur wenn sie sich sachlich \
+unterscheiden, leg 2-3 Optionen mit Name, ID und Kurzbeschreibung vor und frag nach.
 `read_server_mods` zeigt installierte Mods mit `enabled`, Ladereihenfolge und \
 `install_error` — bei einer gescheiterten Installation erklaerst du daraus die \
 Ursache. An- und ausschalten ist `propose_mod_toggle`; installiert heisst \

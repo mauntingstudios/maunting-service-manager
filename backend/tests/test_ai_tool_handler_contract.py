@@ -502,7 +502,9 @@ def test_the_tool_catalogue_stays_within_a_stated_budget(
         # mit Frontend-Deployments (`frontend_read`, `propose_frontend_action`, `propose_frontend_settings`).
         # Stand 17.11.2026: 101.589 Zeichen App (137 Werkzeuge), 96.517 Panel (131)
         # mit den Team-Werkzeugen (`list_teams`, `read_team_overview`, `propose_team_*`).
-        assert len(katalog) < 102_500, (
+        # Stand 18.11.2026: 103.890 Zeichen App (139 Werkzeuge) mit
+        # `read_steam_collection`, `propose_mod_batch_install` und Kollektions-Suche.
+        assert len(katalog) < 105_000, (
             f"Der Werkzeugkatalog der Herkunft '{herkunft}' ist auf "
             f"{len(katalog)} Zeichen gewachsen. Er geht in jeder Runde mit und "
             "taucht in keiner Budgetrechnung auf. Wer die Grenze anhebt, misst "
@@ -551,6 +553,7 @@ def test_the_group_reaches_the_frontend() -> None:
 OHNE_RAUCHTEST = {
     "check_server_reachability": "öffnet eine TCP-Verbindung zum Server",
     "search_workshop_mods": "fragt die Steam-Workshop-Suche",
+    "read_steam_collection": "fragt die Steam-Kollektionsdetails ab",
 }
 
 

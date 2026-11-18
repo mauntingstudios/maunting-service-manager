@@ -45,7 +45,7 @@ MENGEN = {
         "read_config", "read_database", "read_guardian_incidents", "read_mod_updates",
         "read_server_backups", "read_server_capacity", "read_server_logs",
         "read_server_mods", "read_server_network", "read_server_ports",
-        "read_server_status", "search_server_files", "search_workshop_mods",
+        "read_server_status", "read_steam_collection", "search_server_files", "search_workshop_mods",
     ],
     "GLOBAL_READ_TOOLS": [
         "advise_node_placement", "analyze_region", "ask_user", "calendar_read",
@@ -83,7 +83,7 @@ MENGEN = {
         "read_node_capacity", "read_node_health", "read_server_backups",
         "read_server_capacity", "read_server_logs", "read_server_mods",
         "read_server_network", "read_server_ports", "read_server_status", "read_skill",
-        "read_team_calendar", "read_team_notes", "read_team_overview", "read_user_permissions", "read_web_page",
+        "read_steam_collection", "read_team_calendar", "read_team_notes", "read_team_overview", "read_user_permissions", "read_web_page",
         "search_audit_log", "search_chat_attachments", "search_curseforge_modpacks", "search_curseforge_mods",
         "search_docs", "search_memory", "search_server_files", "search_team_memory",
         "search_workshop_mods", "send_test_email", "undo_ai_edit", "update_document_title",
@@ -100,7 +100,7 @@ MENGEN = {
         "propose_database_change", "propose_email_send", "propose_file_delete",
         "propose_frontend_action", "propose_frontend_settings",
         "propose_guardian_tuning", "propose_hoster_integration", "propose_hoster_product",
-        "propose_mod_install", "propose_mod_toggle", "propose_modpack_install",
+        "propose_mod_batch_install", "propose_mod_install", "propose_mod_toggle", "propose_modpack_install",
         "propose_note_create", "propose_note_delete", "propose_note_update",
         "propose_popup_set", "propose_restart_schedule_set", "propose_role_delete",
         "propose_role_set", "propose_server_blueprint_switch", "propose_server_create",
@@ -228,14 +228,14 @@ MENGEN = {
 }
 
 KATALOG = [
-    (False, False, "off", 130, "2a20c9902a5bc448c0ea0c45b86afad379c788b6b929d8ac8d4ff33846d3ae0c"),
-    (False, False, "review", 130, "a42ee44857d26799ceaff988e6aaf4d2e9784593a6d18951976d50e3ad6768a5"),
-    (False, True, "off", 132, "cef5672112be537d3d32d1d308b75614ca1940b2911c307bc0268d5ea2bb01e8"),
-    (False, True, "review", 132, "edf91db523259950949bcc16d765810024f5038eeeff6c7fce15e191a6d85e92"),
-    (True, False, "off", 132, "e36be23a04ea087cfc47bc73678b46fab26582edf3b0abb011c45503112406ed"),
-    (True, False, "review", 132, "71613d413f137e01d9a2d1ea45bf8d69385ae333348574c201564c93fd70a762"),
-    (True, True, "off", 134, "5adfecdadfa4044e00e09d7c5c4d2d16535532d94b3af4788f4994592dbd9a31"),
-    (True, True, "review", 134, "fdf3692822b6e4648b1c0a674487b3f1fc839b5b280c62596fa9755e693a5b4d"),
+    (False, False, "off", 132, "1cefc9d9397e08ac446a3bc1ccc4e2040bbed8137ecd2b67a4e608f0813871bf"),
+    (False, False, "review", 132, "72d5e29d78d03e91b31de6c783a5d1f6a028890471781015c708bf2b6b334533"),
+    (False, True, "off", 134, "003ed19e3337dfb52962e847b23e6c636fb81d8fe41c97d9ef57d2fc74d62970"),
+    (False, True, "review", 134, "7ba2a81ddd22a9b79c077dd88de0bd9422f2ebdb24f98bb8c5dd160bfd1df0eb"),
+    (True, False, "off", 134, "667a6b38a73c9ae17b99581df1550ee45bb20eeb1f47437350ff4bc43d9aec4d"),
+    (True, False, "review", 134, "44828596fb1b3eeeff0f2568847af7218147faaa3a56beba115f29cf81b86bf5"),
+    (True, True, "off", 136, "886ec6b6642fe3cf8675e67a38d4a215f41ca5f3bf51864681d703c7b80f0c3e"),
+    (True, True, "review", 136, "9e8dd41c42ac546586b8bd54163c134b586c79e968e914296bf68a206ccacd0e"),
 ]
 
 SPRACHE_KATALOG_HASH = "d616c67eee2793c462ef37b9540cffa53dc445688fbd8a890aa3e82bc41cf266"
@@ -345,4 +345,4 @@ def test_der_import_der_ki_schicht_bleibt_moeglich() -> None:
         "services.ai_tool_compat",
     ):
         importlib.import_module(modul)
-    assert len(registry.WERKZEUGE) == 137
+    assert len(registry.WERKZEUGE) == 139

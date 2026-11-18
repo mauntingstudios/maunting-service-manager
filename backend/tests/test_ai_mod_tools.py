@@ -640,3 +640,227 @@ def test_eine_installation_meldet_den_schalterstand_mit(
     preview = json.loads(proposal.preview_json)
     assert preview["already_installed"] is True
     assert preview["currently_enabled"] is False
+
+
+def test_search_workshop_collections_uses_filetype_1(
+    db: Session, regular_user: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from datetime import datetime, timezone
+    from unittest.mock import AsyncMock
+    from services.steam_service import SteamModInfo, SteamService
+
+    server, _conversation = _setup(
+        db, regular_user, server_keys=("server.view", "server.mods.read")
+    )
+    fake_col = SteamModInfo(
+        publishedfileid="99887766",
+        title="RP Bau Sammlung",
+        description="Coole Bau-Mods",
+        creator="Admin",
+        file_size=0,
+        created=datetime.now(timezone.utc),
+        updated=datetime.now(timezone.utc),
+        subscriptions=120,
+        favorites=15,
+        tags=["Collection"],
+        direct_url="https://steamcommunity.com/sharedfiles/filedetails/?id=99887766",
+        item_type="collection",
+        children_count=12,
+    )
+    mock_search = AsyncMock(return_value=[fake_col])
+    monkeypatch.setattr(SteamService, "search_workshop_mods", mock_search)
+    monkeypatch.setattr(SteamService, "close", AsyncMock(return_value=None))
+
+    result = ai_action_service.execute_read_tool(
+        db,
+        user=regular_user,
+        tool_name="search_workshop_mods",
+        arguments={
+            "server_id": server.id,
+            "query": "Bau",
+            "content_type": "collections",
+            "sort": "popular",
+        },
+    )
+
+    assert result["available"] is True
+    assert result["provider"] == "steam"
+    assert result["results"][0]["workshop_id"] == "99887766"
+    assert result["results"][0]["item_type"] == "collection"
+    assert result["results"][0]["children_count"] == 12
+    assert mock_search.call_args.kwargs["filetype"] == 1
+    assert mock_search.call_args.kwargs["sort"] == "popular"
+
+
+def test_read_steam_collection_resolves_url_and_items(
+    db: Session, regular_user: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from datetime import datetime, timezone
+    from unittest.mock import AsyncMock
+    from services.steam_service import SteamModInfo, SteamService
+
+    server, _conversation = _setup(
+        db, regular_user, server_keys=("server.view", "server.mods.read")
+    )
+    col_info = SteamModInfo(
+        publishedfileid="555000111",
+        title="Mega Survival",
+        description="",
+        creator="Builder",
+        file_size=0,
+        created=datetime.now(timezone.utc),
+        updated=datetime.now(timezone.utc),
+        subscriptions=50,
+        favorites=5,
+        tags=[],
+        direct_url="https://steamcommunity.com/sharedfiles/filedetails/?id=555000111",
+        item_type="collection",
+    )
+    child = SteamModInfo(
+        publishedfileid="111222333",
+        title="Base Building Plus",
+        description="",
+        creator="Modder",
+        file_size=2 * 1024 * 1024,
+        created=datetime.now(timezone.utc),
+        updated=datetime.now(timezone.utc),
+        subscriptions=100,
+        favorites=10,
+        tags=[],
+    )
+    mock_details = AsyncMock(
+        return_value={
+            "collection": col_info,
+            "items": [child],
+            "unavailable_ids": ["404"],
+            "total_children": 2,
+        }
+    )
+    monkeypatch.setattr(SteamService, "get_collection_details", mock_details)
+    monkeypatch.setattr(SteamService, "close", AsyncMock(return_value=None))
+
+    result = ai_action_service.execute_read_tool(
+        db,
+        user=regular_user,
+        tool_name="read_steam_collection",
+        arguments={
+            "server_id": server.id,
+            "collection_id": "https://steamcommunity.com/sharedfiles/filedetails/?id=555000111",
+        },
+    )
+
+    assert result["available"] is True
+    assert result["collection"]["title"] == "Mega Survival"
+    assert result["item_count"] == 1
+    assert result["items"][0]["workshop_id"] == "111222333"
+    assert result["unavailable_ids"] == ["404"]
+
+
+def test_propose_mod_batch_install_from_collection_and_execute(
+    db: Session, regular_user: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import json
+    from datetime import datetime, timezone
+    from unittest.mock import AsyncMock, MagicMock
+    from services.steam_service import SteamModInfo, SteamService
+
+    server, conversation = _setup(
+        db, regular_user, server_keys=("server.view", "server.mods.read", "server.mods.write")
+    )
+    _installierte_mod(db, server.id, enabled=True)  # 1559212036 bereits installiert
+
+    col_info = SteamModInfo(
+        publishedfileid="777000111",
+        title="Weekend Pack",
+        description="",
+        creator="Admin",
+        file_size=0,
+        created=datetime.now(timezone.utc),
+        updated=datetime.now(timezone.utc),
+        subscriptions=10,
+        favorites=1,
+        tags=[],
+        item_type="collection",
+    )
+    mod_existing = SteamModInfo(
+        publishedfileid="1559212036",
+        title="CF",
+        description="",
+        creator="A",
+        file_size=1024,
+        created=datetime.now(timezone.utc),
+        updated=datetime.now(timezone.utc),
+        subscriptions=1,
+        favorites=0,
+        tags=[],
+    )
+    mod_new = SteamModInfo(
+        publishedfileid="222333444",
+        title="New Cool Mod",
+        description="",
+        creator="B",
+        file_size=1024,
+        created=datetime.now(timezone.utc),
+        updated=datetime.now(timezone.utc),
+        subscriptions=1,
+        favorites=0,
+        tags=[],
+    )
+    monkeypatch.setattr(
+        SteamService,
+        "get_collection_details",
+        AsyncMock(
+            return_value={
+                "collection": col_info,
+                "items": [mod_existing, mod_new],
+                "unavailable_ids": [],
+                "total_children": 2,
+            }
+        ),
+    )
+    monkeypatch.setattr(SteamService, "close", AsyncMock(return_value=None))
+
+    proposal = ai_proposal_service.create_proposal(
+        db,
+        user=regular_user,
+        conversation=conversation,
+        tool_name="propose_mod_batch_install",
+        arguments={
+            "server_id": server.id,
+            "collection_id": "777000111",
+            "reason": "Nutzer moechte das Weekend Pack installieren.",
+            "expected_effect": "Die fehlenden Mods der Sammlung werden installiert.",
+        },
+        correlation_id=str(uuid4()),
+    )
+    db.commit()
+
+    preview = json.loads(proposal.preview_json)
+    assert preview["operation"] == "mod_batch_install"
+    assert preview["collection_title"] == "Weekend Pack"
+    assert preview["mod_count"] == 2
+    assert preview["queued_count"] == 1
+    assert preview["skipped_count"] == 1
+
+    mock_bg = MagicMock()
+    monkeypatch.setattr("routers.mods.install_mods_batch_bg", mock_bg)
+    monkeypatch.setattr("threading.Thread", lambda target, args, **kw: MagicMock(start=lambda: target(*args)))
+
+    _, token = ai_proposal_service.confirm_proposal(
+        db, proposal_id=proposal.id, user=regular_user
+    )
+    executed, result = ai_proposal_service.execute_proposal(
+        db,
+        proposal_id=proposal.id,
+        user=regular_user,
+        confirmation_token=token,
+    )
+    assert executed.status == "succeeded"
+    assert result["queued"] == 1
+    assert result["skipped"] == 1
+    mock_bg.assert_called_once_with(server.id, ["222333444"])
+
+    new_row = db.query(Mod).filter(Mod.server_id == server.id, Mod.workshop_id == "222333444").first()
+    assert new_row is not None
+    assert new_row.name == "New Cool Mod"
+    assert new_row.install_status == "pending"

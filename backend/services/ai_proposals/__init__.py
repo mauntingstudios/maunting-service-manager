@@ -88,6 +88,7 @@ from services.ai_proposals.server_proposals import (
     _ausfuehren_config_set,
     _ausfuehren_bind_ip_update,
     _ausfuehren_mod_install,
+    _ausfuehren_mod_batch_install,
     _ausfuehren_mod_toggle,
     _ausfuehren_server_repair,
     _ausfuehren_guardian_tuning,

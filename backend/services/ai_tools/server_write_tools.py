@@ -288,6 +288,41 @@ _PROPOSE_MOD_INSTALL = _server_function(
             ["workshop_id", "action", *_RATIONALE_REQUIRED],
         )
 
+_PROPOSE_MOD_BATCH_INSTALL = _server_function(
+            "propose_mod_batch_install",
+            "Installiert mehrere Mods auf einmal oder eine komplette Steam-Kollektion "
+            "(Sammlung, Paket, Link oder eigene Zusammenstellung). Entweder `collection_id` "
+            "oder `items` angeben; bereits installierte Mods werden standardmaessig uebersprungen.",
+            {
+                "collection_id": {
+                    "type": "string",
+                    "maxLength": 256,
+                    "description": "Steam-Kollektions-ID oder Workshop-URL (loest alle enthaltenen Mods automatisch auf).",
+                },
+                "items": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 500,
+                    "description": "Liste einzelner Mods fuer eine Zusammenstellung (Steam oder CurseForge).",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "workshop_id": {"type": "string", "maxLength": 20},
+                            "name": {"type": "string", "maxLength": 256},
+                        },
+                        "required": ["workshop_id"],
+                        "additionalProperties": False,
+                    },
+                },
+                "skip_existing": {
+                    "type": "boolean",
+                    "description": "Bereits installierte Mods ueberspringen (Standard true).",
+                },
+                **_RATIONALE_SCHEMA,
+            },
+            list(_RATIONALE_REQUIRED),
+        )
+
 _PROPOSE_MOD_TOGGLE = _server_function(
             "propose_mod_toggle",
             "Schaltet eine installierte Mod an oder aus (Mod-Liste des Panels, "
@@ -421,6 +456,7 @@ SERVER_WRITE_DEFINITIONEN = [
     _PROPOSE_CONFIG_SET,
     _PROPOSE_BIND_IP_UPDATE,
     _PROPOSE_MOD_INSTALL,
+    _PROPOSE_MOD_BATCH_INSTALL,
     _PROPOSE_MOD_TOGGLE,
     _PROPOSE_SERVER_REPAIR,
     _PROPOSE_GUARDIAN_TUNING,
@@ -430,7 +466,7 @@ SERVER_WRITE_DEFINITIONEN = [
     _PROPOSE_DATABASE_CHANGE,
 ]
 
-DEFINITIONEN = [_PROPOSE_BACKUP, _PROPOSE_BACKUP_RESTORE, _PROPOSE_BACKUP_SCHEDULE_SET, _PROPOSE_BIND_IP_UPDATE, _PROPOSE_CONFIG_PATCH, _PROPOSE_CONFIG_SET, _PROPOSE_CONFIG_UPDATE, _PROPOSE_DATABASE_CHANGE, _PROPOSE_FILE_DELETE, _PROPOSE_GUARDIAN_TUNING, _PROPOSE_MOD_INSTALL, _PROPOSE_MOD_TOGGLE, _PROPOSE_MODPACK_INSTALL, _PROPOSE_RESTART_SCHEDULE_SET, _PROPOSE_SERVER_BLUEPRINT_SWITCH, _PROPOSE_SERVER_DELETE, _PROPOSE_SERVER_LIFECYCLE, _PROPOSE_SERVER_REPAIR]
+DEFINITIONEN = [_PROPOSE_BACKUP, _PROPOSE_BACKUP_RESTORE, _PROPOSE_BACKUP_SCHEDULE_SET, _PROPOSE_BIND_IP_UPDATE, _PROPOSE_CONFIG_PATCH, _PROPOSE_CONFIG_SET, _PROPOSE_CONFIG_UPDATE, _PROPOSE_DATABASE_CHANGE, _PROPOSE_FILE_DELETE, _PROPOSE_GUARDIAN_TUNING, _PROPOSE_MOD_BATCH_INSTALL, _PROPOSE_MOD_INSTALL, _PROPOSE_MOD_TOGGLE, _PROPOSE_MODPACK_INSTALL, _PROPOSE_RESTART_SCHEDULE_SET, _PROPOSE_SERVER_BLUEPRINT_SWITCH, _PROPOSE_SERVER_DELETE, _PROPOSE_SERVER_LIFECYCLE, _PROPOSE_SERVER_REPAIR]
 
 werkzeug(
     _PROPOSE_BACKUP,
@@ -529,6 +565,15 @@ werkzeug(
     hinweis="Installiert eine Mod auf dem Server.",
     vorschlag=vorschlag_server("propose_mod_install"),
     ausfuehren=ausfuehrung_aus_tabelle("propose_mod_install"),
+)
+
+werkzeug(
+    _PROPOSE_MOD_BATCH_INSTALL,
+    art="server_write",
+    recht="server.mods.write", gruppe="mods",
+    hinweis="Installiert mehrere Mods oder eine komplette Steam-Kollektion (Sammlung, Paket) auf dem Server.",
+    vorschlag=vorschlag_server("propose_mod_batch_install"),
+    ausfuehren=ausfuehrung_aus_tabelle("propose_mod_batch_install"),
 )
 
 werkzeug(

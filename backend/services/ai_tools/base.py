@@ -93,6 +93,7 @@ _MUTEX_TOOLS = {
     "propose_config_set",
     "propose_bind_ip_update",
     "propose_mod_install",
+    "propose_mod_batch_install",
     "propose_mod_toggle",
     "propose_server_repair",
 }
