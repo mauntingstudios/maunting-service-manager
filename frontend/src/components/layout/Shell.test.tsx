@@ -5,6 +5,7 @@ import i18n from '@/i18n'
 import { Shell } from './Shell'
 import { useAuthStore } from '@/stores/authStore'
 import { usePermissionsStore } from '@/stores/permissionsStore'
+import { useServerWallpaperStore, wallpaperMotiv } from '@/stores/serverWallpaperStore'
 import { PrivacyNoticeVisibilityContext } from '@/components/app/PrivacyNoticeVisibility'
 
 // Stabilize Shell.test.tsx timeout (VAL-REL-005):
@@ -180,5 +181,29 @@ describe('Shell', () => {
     fireEvent.keyDown(document, { key: 'Escape' })
     await waitFor(() => expect(screen.queryByRole('dialog', { name: i18n.t('shell.mainNavigation') })).toBeNull())
     await waitFor(() => expect(trigger).toHaveFocus())
+  })
+
+  it('rendert auf Server-Detailseiten das aktive Server-Titelbild statt des Panoramas', () => {
+    useServerWallpaperStore.setState({
+      activeWallpaper: wallpaperMotiv(42, '/api/servers/42/wallpaper', 'steam-1'),
+    })
+    try {
+      const { container } = render(
+        <MemoryRouter initialEntries={['/servers/42']}>
+          <Routes>
+            <Route path="/" element={<Shell />}>
+              <Route path="servers/:id" element={<div>ServerDetail</div>} />
+            </Route>
+          </Routes>
+        </MemoryRouter>,
+      )
+      const wurzel = container.firstElementChild as HTMLElement
+      const hintergrund = Array.from(wurzel.querySelectorAll<HTMLElement>(':scope > [aria-hidden="true"]'))
+        .find((element) => element.style.backgroundImage.includes('/api/servers/42/wallpaper'))
+      expect(hintergrund).toBeDefined()
+      expect(hintergrund?.style.backgroundImage).toContain('v=steam-1')
+    } finally {
+      useServerWallpaperStore.getState().clear()
+    }
   })
 })

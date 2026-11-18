@@ -52,13 +52,13 @@ describe('Topbar', () => {
     expect(screen.getByRole('heading', { name: i18n.t('nav.servers') })).toBeInTheDocument()
   })
 
-  it('trägt die helle Fläche wie die MSS-App, keinen dunklen Balken', () => {
+  it('trägt die deckende Fläche wie der Tauri-Fensterrahmen und die Seitenleisten', () => {
     zeige('/servers')
-    // Hell wie die Seitenflächen der App statt der dunklen Hintergrundtönung:
-    // sonst läge ein dunkler Balken über jeder Seite.
+    // Exakt `surface-2` (`bg-surface-container`) ohne Transparenz/Blur, damit
+    // kein helles Dashboard-Panorama durchscheint und Seitenleisten nahtlos anschließen.
     const klassen = screen.getByRole('banner').className
-    expect(klassen).toMatch(/bg-surface-container\/90/)
-    expect(klassen).not.toMatch(/bg-surface-container-low|bg-background/)
+    expect(klassen).toMatch(/\bbg-surface-container\b/)
+    expect(klassen).not.toMatch(/bg-surface-container\/|backdrop-blur|bg-surface-container-low|bg-background/)
   })
 
   it('navigiert beim Reiterklick in den Bereich', () => {

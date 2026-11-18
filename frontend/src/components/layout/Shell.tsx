@@ -15,7 +15,7 @@ import { OfflineBanner } from './OfflineBanner'
 import { RolePreviewBanner } from '@/components/RolePreviewBanner'
 import { TageszeitHintergrund } from './TageszeitHintergrund'
 import { useTageszeitMotiv } from '@/lib/tageszeit'
-import { useServerWallpaperStore } from '@/stores/serverWallpaperStore'
+import { useAufgeloestesServerWallpaper } from '@/stores/serverWallpaperStore'
 import { usePublicSettingsStore } from '@/stores/publicSettingsStore'
 import { useMessengerSperreBereitschaft } from '@/hooks/useMessengerSperre'
 import { usePresenceAndActivity } from '@/hooks/usePresenceAndActivity'
@@ -83,10 +83,11 @@ export function Shell() {
     || location.pathname === '/privacy'
   const zeigeDashboardReiter = istDashboardRoute(location.pathname)
   const zeigeSeitenhintergrund = !isFullHeightPage && !istHilfeOderRecht && !zeigeDashboardReiter
-  const serverWallpaper = useServerWallpaperStore((s) => s.activeWallpaper)
+  const aktivesServerMotiv = useAufgeloestesServerWallpaper()
   const tageszeitMotiv = useTageszeitMotiv()
-  const seitenMotiv = serverWallpaper ?? tageszeitMotiv
-  const dashboardMotiv = useTageszeitMotiv('dashboard')
+  const dashboardBasis = useTageszeitMotiv('dashboard')
+  const seitenMotiv = aktivesServerMotiv ?? tageszeitMotiv
+  const dashboardMotiv = aktivesServerMotiv ?? dashboardBasis
 
   return (
     // `overflow-x-clip` statt `overflow-x-hidden`: `hidden` auf einer Achse

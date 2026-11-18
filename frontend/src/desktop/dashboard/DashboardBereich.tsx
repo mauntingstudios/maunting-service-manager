@@ -18,9 +18,8 @@ import { Loader } from '@/components/app/Loader'
 import { useZurueckSchliesst } from '@maunting/ui'
 import { dashboardElternroute } from './dashboardWege'
 import { TageszeitHintergrund } from '@/components/layout/TageszeitHintergrund'
-import { useBildquelle } from '@/hooks/useBildquelle'
 import { useTageszeitMotiv } from '@/lib/tageszeit'
-import { useServerWallpaperStore } from '@/stores/serverWallpaperStore'
+import { useAufgeloestesServerWallpaper } from '@/stores/serverWallpaperStore'
 
 const Dashboard = lazy(() => import('@/pages/Dashboard').then((modul) => ({ default: modul.Dashboard })))
 const Servers = lazy(() => import('@/pages/Servers').then((modul) => ({ default: modul.Servers })))
@@ -42,14 +41,9 @@ export function DashboardBereich() {
 
   const headerMotiv = useTageszeitMotiv('dashboard')
   // Titelbild: ServerDetail legt das aktive Motiv in den Store — dieselbe
-  // Seite wie im Web, also dasselbe Bild. Die Quelle läuft über
-  // useBildquelle, weil ein CSS-`url()` in der App kein Bearer-Token trägt.
-  // Solange sie lädt oder fehlt, steht das Panorama dahinter.
-  const serverWallpaper = useServerWallpaperStore((s) => s.activeWallpaper)
-  const { quelle: wallpaperQuelle } = useBildquelle(serverWallpaper ? serverWallpaper.pfad : null)
-  const motiv = serverWallpaper && wallpaperQuelle
-    ? { ...serverWallpaper, pfad: wallpaperQuelle }
-    : headerMotiv
+  // Seite wie im Web, also dasselbe Bild. Solange es lädt oder fehlt, steht
+  // das Panorama dahinter.
+  const motiv = useAufgeloestesServerWallpaper() ?? headerMotiv
 
   const eltern = dashboardElternroute(location.pathname)
   // Unter Android beendet Zurück sonst die App: eine Unterseite bekommt einen

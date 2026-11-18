@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { apiUrl } from '@/config/api'
+import { useBildquelle } from '@/hooks/useBildquelle'
 import type { HeaderHintergrundVariante } from '@/lib/tageszeit'
 
 /** Schlanker Wallpaper-Zustand: ServerDetail setzt das aktive Motiv, Shell und
@@ -60,4 +61,17 @@ export function wallpaperNavigationsState(server: {
       version: server.wallpaper_version ?? null,
     },
   }
+}
+
+/**
+ * Löst das aktive Server-Titelbild für Web und Desktop über `useBildquelle`
+ * auf (Web direkt, Desktop/getrenntes Frontend als Blob). Gibt `null` zurück,
+ * solange kein Server-Titelbild aktiv oder geladen ist.
+ */
+export function useAufgeloestesServerWallpaper(): HeaderHintergrundVariante | null {
+  const serverWallpaper = useServerWallpaperStore((s) => s.activeWallpaper)
+  const { quelle: wallpaperQuelle } = useBildquelle(serverWallpaper ? serverWallpaper.pfad : null)
+  return serverWallpaper && wallpaperQuelle
+    ? { ...serverWallpaper, pfad: wallpaperQuelle }
+    : null
 }
