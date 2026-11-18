@@ -2,7 +2,7 @@
 
 ## Ziel & Leitprinzip
 
-In **Maunting Server Manager (MSM)** zeigt `/servers/:id` ein atmosphärisches Spiel-Titelbild statt nur des statischen Tageszeit-Panoramas. Visuell bleibt alles wie heute: gleicher CSS-Ablauf (`AUSLAUF`-Maske + `msm-tageszeit-verlauf`), keine Zusatzfilter (`frontend/src/components/layout/TageszeitHintergrund.tsx`, gespeist über `Shell.tsx` → `useTageszeitMotiv()` aus `frontend/src/lib/tageszeit.ts`).
+In **Maunting Service Manager (MSM)** zeigt `/servers/:id` ein atmosphärisches Spiel-Titelbild statt nur des statischen Tageszeit-Panoramas. Visuell bleibt alles wie heute: gleicher CSS-Ablauf (`AUSLAUF`-Maske + `msm-tageszeit-verlauf`), keine Zusatzfilter (`frontend/src/components/layout/TageszeitHintergrund.tsx`, gespeist über `Shell.tsx` → `useTageszeitMotiv()` aus `frontend/src/lib/tageszeit.ts`).
 
 **Leitprinzip (SSOT + KISS):** Das **Blueprint ist die einzige Wahrheit** für die Artwork-Quelle. Kein zweites Mapping, keine hartcodierte Tabelle, keine Pflege an zwei Stellen. Und: Es ist nur ein Wallpaper — minimaler Footprint (1 optionales Feld, 1 kleine Tabelle, 1 Dialog, 1 Berechtigungs-Key), kein neuer Service, keine Verschlüsselung.
 

@@ -16,7 +16,7 @@ describe('brandCatalog - Multi-Brand Vector Logo System', () => {
 
   it('resolves core requested ecosystem brands correctly', () => {
     const requested = [
-      { input: ['MSM', 'panel.mauntingstudios.de'], expectedAria: 'Maunting Server Manager (MSM)' },
+      { input: ['MSM', 'panel.mauntingstudios.de'], expectedAria: 'Maunting Service Manager (MSM)' },
       { input: ['NBM', 'nbm-modding.de'], expectedAria: 'NBM' },
       { input: ['nbm-js', 'https://nbmjs.org'], expectedAria: 'NBM' },
       { input: ['nbm', ''], expectedAria: 'NBM' },

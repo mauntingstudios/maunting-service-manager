@@ -175,7 +175,7 @@ self.addEventListener('push', (event) => {
         try {
           data = event.data.json();
         } catch {
-          data = { title: 'Maunting Server Manager', body: event.data.text() };
+          data = { title: 'Maunting Service Manager', body: event.data.text() };
         }
       }
 

@@ -2,7 +2,7 @@
 
 ## 1. Leitgedanke & Vision
 
-Der **Maunting Tresor** ist ein kryptografischer Zero-Knowledge-Datenspeicher mit Ende-zu-Ende-Verschlüsselung (E2EE), der fest in den Maunting Server Manager (MSM) integriert ist. Er führt zwei Systembereiche zusammen, die in der Softwareentwicklung bisher getrennt waren:
+Der **Maunting Tresor** ist ein kryptografischer Zero-Knowledge-Datenspeicher mit Ende-zu-Ende-Verschlüsselung (E2EE), der fest in den Maunting Service Manager (MSM) integriert ist. Er führt zwei Systembereiche zusammen, die in der Softwareentwicklung bisher getrennt waren:
 
 1. **Sichere Geheimnisverwaltung:** Schutz für Master-Passwörter, Server-Zugangsdaten, Datenbank-Kennwörter, API-Schlüssel, Wiederherstellungsschlüssel und vertrauliche Notizen.
 2. **Souveräne Medien-Galerie:** Eine visuelle Foto- und Video-Ablage mit dem Bedienkomfort von Google Fotos oder Apple Fotos, die vollständig auf eigener Infrastruktur läuft.

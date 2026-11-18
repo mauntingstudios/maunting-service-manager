@@ -144,7 +144,7 @@ const BRAND_META = {
 const NEW_BRANDS = [
   {
     slug: 'msm',
-    name: 'Maunting Server Manager (MSM)',
+    name: 'Maunting Service Manager (MSM)',
     color: '#00F0FF',
     keywords: ['msm', 'maunting', 'server-manager', 'servermanager', 'mauntingstudios', 'singra', 'panel.mauntingstudios.de'],
     path: 'M4 6.5C4 5.67 4.67 5 5.5 5h13c.83 0 1.5.67 1.5 1.5v3c0 .83-.67 1.5-1.5 1.5h-13C4.67 11 4 10.33 4 9.5v-3zm0 8c0-.83.67-1.5 1.5-1.5h13c.83 0 1.5.67 1.5 1.5v3c0 .83-.67 1.5-1.5 1.5h-13c-.83 0-1.5-.67-1.5-1.5v-3zM7 8a1 1 0 1 0 0-2 1 1 0 0 0 0 2zm0 8a1 1 0 1 0 0-2 1 1 0 0 0 0 2zm4-6.5l2-3 2 3h-4zm0 8l2-3 2 3h-4z',

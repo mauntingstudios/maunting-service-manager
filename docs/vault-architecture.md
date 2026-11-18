@@ -2,7 +2,7 @@
 
 ## 1. Executive Summary & Vision
 
-The **Maunting Vault** (*Tresor*) is a zero-knowledge, end-to-end encrypted (E2EE) data repository embedded in Maunting Server Manager (MSM). It bridges two paradigms that are historically kept separate in software architecture:
+The **Maunting Vault** (*Tresor*) is a zero-knowledge, end-to-end encrypted (E2EE) data repository embedded in Maunting Service Manager (MSM). It bridges two paradigms that are historically kept separate in software architecture:
 
 1. **Enterprise Secret Management:** Zero-knowledge cryptographic storage for master passwords, server credentials, database secrets, API tokens, and private notes.
 2. **Sovereign Personal Media Gallery:** A responsive, privacy-preserving photo and video hub reminiscent of Google Photos or Apple Photos, running 100% on self-hosted infrastructure.
@@ -16,7 +16,7 @@ The Maunting Vault eliminates this compromise. Built on top of the Defensive Int
 ## 2. History & Motivation: From Password Manager to Private Media Hub
 
 ### Phase 1: The Zero-Knowledge Password Vault
-The project began as an internal, self-hosted password manager. The original objective was focused: allow system administrators and teams operating Maunting Server Manager to store server credentials, database passwords, SSL certificates, and SSH access keys securely on their own nodes without reliance on external cloud services.
+The project began as an internal, self-hosted password manager. The original objective was focused: allow system administrators and teams operating Maunting Service Manager to store server credentials, database passwords, SSL certificates, and SSH access keys securely on their own nodes without reliance on external cloud services.
 
 Security requirements were strict from day one:
 * Passwords never reach the server in cleartext.

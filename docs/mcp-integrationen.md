@@ -1,6 +1,6 @@
 # MCP-Integrationen & Server-Katalog (Model Context Protocol)
 
-In Maunting Server Manager (Singra) können Betreiber, Teams und Benutzer externe Dienste nahtlos über das **Model Context Protocol (MCP)** anbinden. Dadurch erhält die KI Zugriff auf spezialisierte Werkzeuge (z. B. Deployments, Datenbankabfragen, Design-Assets, Shop-Bestellungen oder Ticketing), ohne dass Kernfunktionen der Anwendung modifiziert werden müssen.
+In Maunting Service Manager (Singra) können Betreiber, Teams und Benutzer externe Dienste nahtlos über das **Model Context Protocol (MCP)** anbinden. Dadurch erhält die KI Zugriff auf spezialisierte Werkzeuge (z. B. Deployments, Datenbankabfragen, Design-Assets, Shop-Bestellungen oder Ticketing), ohne dass Kernfunktionen der Anwendung modifiziert werden müssen.
 
 ---
 
@@ -20,7 +20,7 @@ In Maunting Server Manager (Singra) können Betreiber, Teams und Benutzer extern
    - Die KI erkennt dadurch in 90 % der Fälle selbstständig, wann ein angebundener Dienst für die Anfrage des Benutzers relevant ist.
 
 4. **Native E-Mail- und Kalender-Trennung:**
-   - E-Mails (IMAP/SMTP) und Termine (CalDAV) sind **nativ** in Maunting Server Manager integriert und erfordern keinen externen MCP-Server. Sie werden direkt unter *Einstellungen → Verbindungen* verwaltet.
+   - E-Mails (IMAP/SMTP) und Termine (CalDAV) sind **nativ** in Maunting Service Manager integriert und erfordern keinen externen MCP-Server. Sie werden direkt unter *Einstellungen → Verbindungen* verwaltet.
 
 ---
 

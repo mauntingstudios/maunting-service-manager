@@ -12,7 +12,7 @@ Moderne Webbrowser basieren nahezu ausnahmslos auf einem von zwei Architekturmus
 2. **Klassische Web-Wrapper (Electron):**  
    Sie bündeln für jede Anwendung eine eigene Node.js-Laufzeit und eine separate Chromium-Instanz. Das führt bereits im Leerlauf zu 300 bis 500 MB RAM-Last, erfordert manuelle Sicherheits-Updates bei V8-Schwachstellen und birgt durch unzureichende Prozess-Isolation strukturelle Angriffsflächen.
 
-**Maunting Pontis** (im Quellcode als [`maunting-secure-browser`](file:///e:/Github-Projekte/maunting-server-manager/browser/src-tauri/Cargo.toml#L1-L10), Version `5.8.0`, integriert in das Maunting Server Manager Ökosystem bis v5.9.1) wählt einen dritten Weg:
+**Maunting Pontis** (im Quellcode als [`maunting-secure-browser`](file:///e:/Github-Projekte/maunting-server-manager/browser/src-tauri/Cargo.toml#L1-L10), Version `5.8.0`, integriert in das Maunting Service Manager Ökosystem bis v5.9.1) wählt einen dritten Weg:
 Pontis ist ein Multi-Webview-Desktop- und Mobil-Browser auf Basis von **Tauri v2** und **Rust**. Er nutzt die im Betriebssystem bereits vorhandenen Rendering-Engines (unter Windows: Microsoft Edge WebView2 Evergreen via Win32-COM; unter Android: `android.webkit.WebView` via JNI-Brücke) und steuert diese über einen speichersicheren Rust-Sicherheitskern.
 
 ### Primäre Leitprinzipien

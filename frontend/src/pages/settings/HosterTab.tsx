@@ -987,7 +987,7 @@ function SimulatorSection({
   const panelOrigin = window.location.origin
   const exampleProductKey = products[0]?.external_product_key || 'mc-8gb'
 
-  const aiStripePrompt = `Hier sind die technischen Eckdaten meines MSM (Maunting Server Manager) Backends für meine Shop-Anbindung:
+  const aiStripePrompt = `Hier sind die technischen Eckdaten meines MSM (Maunting Service Manager) Backends für meine Shop-Anbindung:
 - Panel Host API: ${panelOrigin}/api/hoster/v1
 - Integration Slug: "${integration.slug}"
 - API-Key Header: X-MSM-Hoster-Key (im MSM-Panel generiert)

@@ -1,6 +1,6 @@
-# Maunting Server Manager & Singra KI — Dokumentations-Index
+# Maunting Service Manager & Singra KI — Dokumentations-Index
 
-Willkommen im Dokumentationsverzeichnis von **Maunting Server Manager** und dem **Singra KI-Agentenharnisch**, entwickelt von MauntingStudios.
+Willkommen im Dokumentationsverzeichnis von **Maunting Service Manager** und dem **Singra KI-Agentenharnisch**, entwickelt von MauntingStudios.
 
 ## Singra KI-Agentenharnisch Dokumentation
 

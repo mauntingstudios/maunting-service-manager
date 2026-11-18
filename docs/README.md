@@ -1,6 +1,6 @@
-# Maunting Server Manager & Singra AI — Documentation Index
+# Maunting Service Manager & Singra AI — Documentation Index
 
-Welcome to the technical documentation of **Maunting Server Manager** and the **Singra AI Agent Harness**, developed by MauntingStudios.
+Welcome to the technical documentation of **Maunting Service Manager** and the **Singra AI Agent Harness**, developed by MauntingStudios.
 
 ## Singra AI Agent Harness Documentation
 

@@ -78,7 +78,7 @@
 ## 1. Executive Summary & Core Identity
 
 ### 1.1 What is Singra?
-**Singra** is the unified, enterprise-grade artificial intelligence and autonomous agent harness developed by MauntingStudios. Deeply integrated into the core architecture of Maunting Server Manager (MSM), Singra functions as an operational intelligence rather than a cosmetic chatbot wrapper.
+**Singra** is the unified, enterprise-grade artificial intelligence and autonomous agent harness developed by MauntingStudios. Deeply integrated into the core architecture of Maunting Service Manager (MSM), Singra functions as an operational intelligence rather than a cosmetic chatbot wrapper.
 
 Singra bridges high-level semantic reasoning with direct, low-level execution: managing container lifecycles, diagnosing complex game server logs, provisioning PostgreSQL databases, running fullstack coding environments, maintaining end-to-end encrypted long-term memory, and executing real-time voice interactions.
 

@@ -78,7 +78,7 @@
 ## 1. Überblick und Systemidentität
 
 ### 1.1 Was ist Singra?
-**Singra** ist die native autonome Intelligenz und der Agentenharnisch von MauntingStudios, fest integriert in den Kern des Maunting Server Managers (MSM). Singra fungiert nicht als oberflächlicher Chatbot oder externer Bot-Wrapper, sondern als operatives Arbeitssystem.
+**Singra** ist die native autonome Intelligenz und der Agentenharnisch von MauntingStudios, fest integriert in den Kern des Maunting Service Managers (MSM). Singra fungiert nicht als oberflächlicher Chatbot oder externer Bot-Wrapper, sondern als operatives Arbeitssystem.
 
 Singra verbindet semantisches Sprachverständnis mit direkter Ausführung: Die KI verwaltet Container-Lebenszyklen, diagnostiziert Serverlogs, richtet PostgreSQL-Datenbanken ein, betreibt vollwertige Web-Entwicklungsumgebungen, pflegt ein kryptografisch versiegeltes Langzeitgedächtnis und steuert Echtzeit-Sprachinteraktionen.
 

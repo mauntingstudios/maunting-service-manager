@@ -59,7 +59,7 @@ class AiEthicsEvaluation(BaseModel):
     _ersatz: bool = PrivateAttr(default=False)
 
 
-ETHICS_SYSTEM_PROMPT = """Du bist die interne Ethics Advisory Engine von Maunting Server Manager (MSM).
+ETHICS_SYSTEM_PROMPT = """Du bist die interne Ethics Advisory Engine von Maunting Service Manager (MSM).
 Deine Aufgabe ist eine fundierte, ethisch-konstruktive und sicherheitsbewusste Beurteilung einer geplanten Systemhandlung.
 
 Prüfkriterien:

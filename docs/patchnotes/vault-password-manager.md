@@ -8,7 +8,7 @@
 
 ## 1. Übersicht
 
-Der Maunting Server Manager erhält einen integrierten, hochsicheren Passwort-Manager samt RFC-6238-konformem TOTP-Authenticator. 
+Der Maunting Service Manager erhält einen integrierten, hochsicheren Passwort-Manager samt RFC-6238-konformem TOTP-Authenticator. 
 
 Gemäß den Sicherheitsprinzipien von Maunting Studios („Schutz braucht Vertrauen“) ist das System so konzipiert, dass der Server-Betreiber oder Angreifer zu keinem Zeitpunkt Einsicht in Passwörter, Servicenamen, URLs oder Benutzernamen nehmen kann.
 

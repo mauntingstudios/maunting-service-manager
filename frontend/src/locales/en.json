@@ -4826,7 +4826,7 @@
         "noAccount": "No account signed in."
       },
       "readme": {
-        "title": "Data export from Maunting Server Manager",
+        "title": "Data export from Maunting Service Manager",
         "intro": "This archive contains your account data in plain text. Keep it as safe as a password.",
         "structure": "server/: one JSON file per table with everything the server stores. geraet/: readable only here (messenger history, conversations, drafts, kept attachments). tresor/: the vault, if unlocked in the app. dateien/: profile picture and AI attachments. manifest.json: all tables with row counts.",
         "secretsIncluded": "Stored credentials (GitHub, Steam, mailboxes, calendars) are in plain text under server/ (user_credentials.json, user_mailboxes.json, user_calendars.json).",

@@ -4826,7 +4826,7 @@
         "noAccount": "Kein Konto angemeldet."
       },
       "readme": {
-        "title": "Datenexport aus Maunting Server Manager",
+        "title": "Datenexport aus Maunting Service Manager",
         "intro": "Dieses Archiv enthält die Daten deines Kontos im Klartext. Bewahre es auf wie ein Passwort.",
         "structure": "server/: je Tabelle eine JSON-Datei mit allem, was der Server speichert. geraet/: nur hier lesbar (Messenger-Verlauf, Gespräche, Entwürfe, dauerhafte Anhänge). tresor/: der Tresor, falls in der App entsperrt. dateien/: Profilbild und KI-Anhänge. manifest.json: alle Tabellen mit Zeilenzahl.",
         "secretsIncluded": "Hinterlegte Zugangsdaten (GitHub, Steam, Postfächer, Kalender) stehen im Klartext unter server/ (user_credentials.json, user_mailboxes.json, user_calendars.json).",

@@ -26,7 +26,7 @@ interface Stufe {
 
 const STUFEN: Stufe[] = [
   { bild: firmenLogo, alt: 'MauntingStudios', untertitel: 'Ein Produkt von MauntingStudios' },
-  { bild: msmLogo, alt: 'Maunting Server Manager', untertitel: 'Maunting Smart System' },
+  { bild: msmLogo, alt: 'Maunting Service Manager', untertitel: 'Maunting Smart System' },
 ]
 
 /** Ein Logo soll stehen, nicht durchhuschen. */

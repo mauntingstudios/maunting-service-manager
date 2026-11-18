@@ -1,6 +1,6 @@
 /**
  * Unified Offline-First Local Storage & Real-Time SSE Synchronization
- * for Notes & Calendar in Maunting Server Manager (Web / APK / Desktop).
+ * for Notes & Calendar in Maunting Service Manager (Web / APK / Desktop).
  *
  * Adheres strictly to KISS and Data Minimization:
  * - Persistent local cache (localStorage) for Notes and Calendar entries.
