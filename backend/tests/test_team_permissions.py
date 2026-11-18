@@ -27,6 +27,7 @@ from models import (
     TeamInvitation,
     TeamMember,
     TeamRole,
+    TeamRolePermission,
     TeamRoleServerGrant,
     TeamServerGrant,
     User,
@@ -86,9 +87,23 @@ def _team_with_member(db: Session, owner: User, member: User) -> Team:
     """
     _grant_global(db, owner, "teams.create")
     team = team_service.create_team(db, user=owner, name=f"team-{owner.username}")
+    lernrolle = team_service.create_team_role(
+        db,
+        team=team,
+        user=owner,
+        name="Lernpartner",
+        permission_keys=[
+            "vault.read",
+            "vault.write",
+            "ai.memory.read",
+            "ai.memory.write",
+            "ai.skills.use",
+            "ai.skills.manage",
+            "ai.team_context.use",
+        ],
+    )
     team_service.invite_member(
-        db, team=team, user=owner, new_user_id=member.id,
-        can_manage_skills=True, can_manage_memory=True,
+        db, team=team, user=owner, new_user_id=member.id, team_role_id=lernrolle.id,
     )
     team_service.accept_invitation(db, user=member, team_id=team.id)
     return team
@@ -429,8 +444,8 @@ def test_personal_team_is_created_once_and_is_a_team_of_one(
     assert db.query(TeamMember).filter(TeamMember.team_id == first.id).count() == 1
     # Der Benutzer darf in seinem eigenen Team beides — sonst haette die KI
     # keinen Ort, an dem sie ohne Zutun lernen kann.
-    member = team_service.membership(db, first.id, regular_user.id)
-    assert member is not None and member.can_manage_skills and member.can_manage_memory
+    assert team_service.can_manage_team_skills(db, regular_user, first.id)
+    assert team_service.can_manage_team_memory(db, regular_user, first.id)
 
 
 def test_personal_team_refuses_members_and_deletion(
@@ -443,7 +458,6 @@ def test_personal_team_refuses_members_and_deletion(
     with pytest.raises(Exception) as add_exc:
         team_service.invite_member(
             db, team=personal, user=regular_user, new_user_id=colleague.id,
-            can_manage_skills=False, can_manage_memory=False,
         )
     assert getattr(add_exc.value, "status_code", None) == 409
 
@@ -504,7 +518,6 @@ def test_member_without_the_switch_is_no_learning_target(
     colleague = _user(db, "kollege")
     team_service.invite_member(
         db, team=team, user=regular_user, new_user_id=colleague.id,
-        can_manage_skills=False, can_manage_memory=False,
     )
     team_service.accept_invitation(db, user=colleague, team_id=team.id)
 
@@ -515,19 +528,17 @@ def test_member_without_the_switch_is_no_learning_target(
 
 
 def test_a_memory_target_follows_the_memory_switch(db: Session, regular_user: User) -> None:
-    """Welcher Schalter zaehlt, entscheidet die Art des Wissens.
-
-    `learning_team` fragte fest `can_manage_skills` ab, wurde aber von beiden
-    Erinnerungswerkzeugen benutzt. Ein Mitglied, das Teamwissen pflegen darf
-    aber keine Skills, bekam sein „merk dir fuers Team" still ins persoenliche
-    Gedaechtnis geschrieben — kein Fehler, keine Meldung, nur der falsche Ort.
-    """
+    """Welches Lernrecht zaehlt, entscheidet die Art des Wissens."""
     _grant_global(db, regular_user, "teams.create")
     team = team_service.create_team(db, user=regular_user, name="Nur Wissen")
+    wissen_rolle = team_service.create_team_role(
+        db, team=team, user=regular_user, name="Gedaechtnispflege",
+        permission_keys=["ai.memory.write"],
+    )
     colleague = _user(db, "kollege")
     team_service.invite_member(
         db, team=team, user=regular_user, new_user_id=colleague.id,
-        can_manage_skills=False, can_manage_memory=True,
+        team_role_id=wissen_rolle.id,
     )
     team_service.accept_invitation(db, user=colleague, team_id=team.id)
 
@@ -885,9 +896,23 @@ def test_assignable_servers_keeps_the_customers_own_delegation(
 def _lade_ein(db: Session, owner: User, target: User, *, name: str = "einladeteam") -> Team:
     _grant_global(db, owner, "teams.create")
     team = team_service.create_team(db, user=owner, name=name)
+    lernrolle = team_service.create_team_role(
+        db,
+        team=team,
+        user=owner,
+        name="Lernpartner",
+        permission_keys=[
+            "vault.read",
+            "vault.write",
+            "ai.memory.read",
+            "ai.memory.write",
+            "ai.skills.use",
+            "ai.skills.manage",
+            "ai.team_context.use",
+        ],
+    )
     team_service.invite_member(
-        db, team=team, user=owner, new_user_id=target.id,
-        can_manage_skills=True, can_manage_memory=True,
+        db, team=team, user=owner, new_user_id=target.id, team_role_id=lernrolle.id,
     )
     return team
 
@@ -957,7 +982,7 @@ def test_accepting_makes_the_membership_real(db: Session, regular_user: User) ->
 def test_the_switches_come_from_the_invitation_not_from_the_accepting_user(
     db: Session, regular_user: User
 ) -> None:
-    """Angenommen wird genau das, was angeboten wurde.
+    """Angenommen wird genau die Rolle, die angeboten wurde.
 
     Sonst wäre die Annahme eine Selbstbedienung: der Eingeladene träte mit
     mehr Rechten am gemeinsamen Wissen bei, als der Gründer vergeben hat.
@@ -967,13 +992,11 @@ def test_the_switches_come_from_the_invitation_not_from_the_accepting_user(
     team = team_service.create_team(db, user=regular_user, name="Nur lesen")
     team_service.invite_member(
         db, team=team, user=regular_user, new_user_id=kollege.id,
-        can_manage_skills=False, can_manage_memory=False,
     )
 
-    mitglied = team_service.accept_invitation(db, user=kollege, team_id=team.id)
+    team_service.accept_invitation(db, user=kollege, team_id=team.id)
 
-    assert not mitglied.can_manage_skills
-    assert not mitglied.can_manage_memory
+    assert not team_service.can_manage_team_skills(db, kollege, team.id)
     assert not team_service.can_manage_team_memory(db, kollege, team.id)
 
 
@@ -1016,12 +1039,12 @@ def test_a_second_invitation_replaces_the_offer_instead_of_stacking(
 
     team_service.invite_member(
         db, team=team, user=regular_user, new_user_id=kollege.id,
-        can_manage_skills=False, can_manage_memory=False,
     )
 
     assert len(team_service.team_invitations(db, team.id)) == 1
-    mitglied = team_service.accept_invitation(db, user=kollege, team_id=team.id)
-    assert not mitglied.can_manage_skills and not mitglied.can_manage_memory
+    team_service.accept_invitation(db, user=kollege, team_id=team.id)
+    assert not team_service.can_manage_team_skills(db, kollege, team.id)
+    assert not team_service.can_manage_team_memory(db, kollege, team.id)
 
 
 def test_an_existing_member_cannot_be_invited_again(
@@ -1033,13 +1056,12 @@ def test_an_existing_member_cannot_be_invited_again(
     with pytest.raises(Exception) as exc:
         team_service.invite_member(
             db, team=team, user=regular_user, new_user_id=kollege.id,
-            can_manage_skills=True, can_manage_memory=True,
         )
     assert getattr(exc.value, "status_code", None) == 409
 
 
 def test_only_the_founder_may_invite(db: Session, regular_user: User) -> None:
-    """Ein Mitglied ist kein Gründer — auch nicht mit beiden Schaltern."""
+    """Ein Mitglied ohne Einladerecht darf niemanden einladen."""
     mitglied = _user(db, "mitglied")
     fremder = _user(db, "fremder")
     team = _team_with_member(db, regular_user, mitglied)
@@ -1047,7 +1069,6 @@ def test_only_the_founder_may_invite(db: Session, regular_user: User) -> None:
     with pytest.raises(Exception) as exc:
         team_service.invite_member(
             db, team=team, user=mitglied, new_user_id=fremder.id,
-            can_manage_skills=True, can_manage_memory=True,
         )
     assert getattr(exc.value, "status_code", None) == 403
 
@@ -1086,7 +1107,6 @@ def test_leaving_alone_is_not_a_licence_to_remove_others(
     team = _team_with_member(db, regular_user, einer)
     team_service.invite_member(
         db, team=team, user=regular_user, new_user_id=anderer.id,
-        can_manage_skills=False, can_manage_memory=False,
     )
     team_service.accept_invitation(db, user=anderer, team_id=team.id)
 
@@ -1108,199 +1128,54 @@ def test_the_founder_cannot_leave_their_own_team(db: Session, regular_user: User
     assert getattr(exc.value, "status_code", None) == 409
 
 
-# ── Anheben braucht den Betroffenen ───────────────────────────────────
-#
-# Die Einladung sichert den Beitritt — und hielt genau bis zum nächsten
-# `update_member`. Dort prüfte nur `assert_team_owner`, der Gründer konnte den
-# Schalter eines Mitglieds also nachträglich einschalten. Damit war der
-# Ausgangsbefund mit einem Zwischenschritt wieder da: harmlos einladen (beide
-# Schalter aus), annehmen lassen, danach anheben.
+# ── Berechtigungen laufen ausschliesslich ueber Rollen ──────────────────
 
 
-def _stilles_mitglied(db: Session, owner: User, target: User, *, name: str) -> Team:
-    """Ein Mitglied, das beiden Schaltern nach nichts darf — der Ausgangspunkt."""
-    _grant_global(db, owner, "teams.create")
-    team = team_service.create_team(db, user=owner, name=name)
-    team_service.invite_member(
-        db, team=team, user=owner, new_user_id=target.id,
-        can_manage_skills=False, can_manage_memory=False,
+def test_legacy_member_switch_update_endpoint_is_removed(
+    db: Session, client, owner_user: User, owner_cookies: dict, csrf_token: str, regular_user: User
+) -> None:
+    """Direkte Mitgliederschalter und PUT /members/{user_id} wurden abgeschafft."""
+    team = _team_with_member(db, owner_user, regular_user)
+    res = client.put(
+        f"/api/teams/{team.id}/members/{regular_user.id}",
+        json={"can_manage_skills": True, "can_manage_memory": True},
+        cookies=owner_cookies,
+        headers={"X-CSRF-Token": csrf_token},
     )
-    team_service.accept_invitation(db, user=target, team_id=team.id)
-    return team
+    assert res.status_code in (404, 405)
 
 
-def test_the_founder_cannot_raise_a_switch_on_their_own(
+def test_member_permissions_depend_only_on_assigned_roles(
     db: Session, regular_user: User
 ) -> None:
-    """Der Kern: eingeschaltet wird nur, was der Betroffene annimmt.
-
-    Der Schaden hängt nicht an der Mitgliederliste, sondern am Lernziel. Hat
-    das Opfer kein eigenes verwaltbares Team, ist das fremde nach der Anhebung
-    der **einzige** Kandidat in `learning_team` — was seine KI „fürs Team“
-    merkt, landet ab dann im Team des Gründers und ist dort im Klartext lesbar.
-    """
-    opfer = _user(db, "opfer")
-    team = _stilles_mitglied(db, regular_user, opfer, name="Betrieb")
-
-    mitglied = team_service.update_member(
-        db, team=team, user=regular_user, member_user_id=opfer.id,
-        can_manage_skills=True, can_manage_memory=True,
-    )
-
-    assert not mitglied.can_manage_skills
-    assert not mitglied.can_manage_memory
-    assert not team_service.can_manage_team_memory(db, opfer, team.id)
-    # Und damit bleibt das fremde Team kein Lernziel.
-    ziel, frage = team_service.learning_team(db, opfer, schalter="memory")
-    db.commit()
-    assert frage is None
-    assert ziel is not None and ziel.is_personal
-
-
-def test_a_raised_switch_takes_effect_once_the_member_accepts(
-    db: Session, regular_user: User
-) -> None:
-    """Die Gegenprobe: der Weg ist nicht zu, er führt nur über den Betroffenen.
-
-    Ohne sie wäre der Test darüber auch dann grün, wenn `update_member`
-    überhaupt nichts mehr täte.
-    """
-    kollege = _user(db, "kollege")
-    team = _stilles_mitglied(db, regular_user, kollege, name="Betrieb")
-    team_service.update_member(
-        db, team=team, user=regular_user, member_user_id=kollege.id,
-        can_manage_skills=False, can_manage_memory=True,
-    )
-
-    # Der Betroffene sieht das Angebot dort, wo auch eine Einladung steht.
-    offen = team_service.open_invitations(db, kollege)
-    assert [zeile.team_id for zeile in offen] == [team.id]
-    assert offen[0].can_manage_memory and not offen[0].can_manage_skills
-
-    mitglied = team_service.accept_invitation(db, user=kollege, team_id=team.id)
-
-    assert mitglied.can_manage_memory
-    # Angenommen wird genau das Angebot — auch der Schalter, der aus bleibt.
-    assert not mitglied.can_manage_skills
-    assert team_service.can_manage_team_memory(db, kollege, team.id)
-    ziel, frage = team_service.learning_team(db, kollege, schalter="memory")
-    assert frage is None
-    assert ziel is not None and ziel.id == team.id
-    # Eine Mitgliedschaft, keine zweite daneben.
-    assert db.query(TeamMember).filter(
-        TeamMember.team_id == team.id, TeamMember.user_id == kollege.id
-    ).count() == 1
-    assert team_service.invitation(db, team.id, kollege.id) is None
-
-
-def test_declining_a_raise_leaves_the_member_where_they_were(
-    db: Session, regular_user: User
-) -> None:
-    """Ablehnen kostet die Mitgliedschaft nicht — es kostet nur das Angebot."""
-    kollege = _user(db, "kollege")
-    team = _stilles_mitglied(db, regular_user, kollege, name="Betrieb")
-    team_service.update_member(
-        db, team=team, user=regular_user, member_user_id=kollege.id,
-        can_manage_skills=True, can_manage_memory=True,
-    )
-
-    team_service.decline_invitation(db, user=kollege, team_id=team.id)
-
-    assert team_service.membership(db, team.id, kollege.id) is not None
-    assert not team_service.can_manage_team_memory(db, kollege, team.id)
-    assert team_service.invitation(db, team.id, kollege.id) is None
-
-
-def test_a_withdrawn_raise_cannot_be_accepted_later(
-    db: Session, regular_user: User
-) -> None:
-    """Der Gründer nimmt sein Angebot zurück, indem er etwas anderes will.
-
-    Ohne diese Zusage bliebe das alte Angebot liegen: der Gründer sagt „doch
-    nicht“, und das Mitglied nimmt Wochen später trotzdem an.
-    """
-    kollege = _user(db, "kollege")
-    team = _stilles_mitglied(db, regular_user, kollege, name="Betrieb")
-    team_service.update_member(
-        db, team=team, user=regular_user, member_user_id=kollege.id,
-        can_manage_skills=True, can_manage_memory=True,
-    )
-
-    team_service.update_member(
-        db, team=team, user=regular_user, member_user_id=kollege.id,
-        can_manage_skills=False, can_manage_memory=False,
-    )
-
-    assert team_service.open_invitations(db, kollege) == []
-    with pytest.raises(Exception) as exc:
-        team_service.accept_invitation(db, user=kollege, team_id=team.id)
-    assert getattr(exc.value, "status_code", None) == 404
-
-
-def test_lowering_a_switch_stays_the_founders_call(
-    db: Session, regular_user: User
-) -> None:
-    """Zurücknehmen braucht niemanden: der Gründer entzieht, was er gab."""
-    kollege = _user(db, "kollege")
-    team = _team_with_member(db, regular_user, kollege)
-
-    mitglied = team_service.update_member(
-        db, team=team, user=regular_user, member_user_id=kollege.id,
-        can_manage_skills=False, can_manage_memory=False,
-    )
-
-    assert not mitglied.can_manage_skills and not mitglied.can_manage_memory
-    assert not team_service.can_manage_team_memory(db, kollege, team.id)
-    # Kein Angebot, über das jemand entscheiden müsste.
-    assert team_service.open_invitations(db, kollege) == []
-
-
-def test_the_founder_decides_about_their_own_switches_at_once(
-    db: Session, regular_user: User
-) -> None:
-    """Wer über sich selbst entscheidet, hat damit zugestimmt.
-
-    Sonst müsste der Gründer sich selbst eine Einladung schicken und sie
-    annehmen, um an sein eigenes Teamwissen zu kommen.
-    """
+    """Rollenzuweisung erteilt und entzieht Wissens- und Lernrechte direkt."""
     _grant_global(db, regular_user, "teams.create")
-    team = team_service.create_team(db, user=regular_user, name="Allein")
-    team_service.update_member(
-        db, team=team, user=regular_user, member_user_id=regular_user.id,
-        can_manage_skills=False, can_manage_memory=False,
-    )
-
-    mitglied = team_service.update_member(
-        db, team=team, user=regular_user, member_user_id=regular_user.id,
-        can_manage_skills=True, can_manage_memory=True,
-    )
-
-    assert mitglied.can_manage_skills and mitglied.can_manage_memory
-    assert team_service.open_invitations(db, regular_user) == []
-
-
-def test_a_pending_raise_does_not_outlive_the_membership(
-    db: Session, regular_user: User
-) -> None:
-    """Sonst wäre die Annahme ein Wiedereintritt.
-
-    Der Gründer hätte jemanden entlassen und erführe nichts davon, dass der
-    über ein liegengebliebenes Angebot zurückkommt.
-    """
+    team = team_service.create_team(db, user=regular_user, name="Betrieb")
     kollege = _user(db, "kollege")
-    team = _stilles_mitglied(db, regular_user, kollege, name="Betrieb")
-    team_service.update_member(
-        db, team=team, user=regular_user, member_user_id=kollege.id,
-        can_manage_skills=True, can_manage_memory=True,
+    team_service.invite_member(
+        db, team=team, user=regular_user, new_user_id=kollege.id,
     )
+    team_service.accept_invitation(db, user=kollege, team_id=team.id)
 
-    team_service.remove_member(db, team=team, user=regular_user, member_user_id=kollege.id)
+    assert not team_service.can_manage_team_skills(db, kollege, team.id)
+    assert not team_service.can_manage_team_memory(db, kollege, team.id)
 
-    assert team_service.open_invitations(db, kollege) == []
-    with pytest.raises(Exception) as exc:
-        team_service.accept_invitation(db, user=kollege, team_id=team.id)
-    assert getattr(exc.value, "status_code", None) == 404
-    assert team_service.membership(db, team.id, kollege.id) is None
+    mem_rolle = team_service.create_team_role(
+        db, team=team, user=regular_user, name="Wissen",
+        permission_keys=["ai.memory.write"],
+    )
+    team_service.set_member_roles(
+        db, team=team, user=regular_user, member_user_id=kollege.id, role_ids=[mem_rolle.id],
+    )
+    assert team_service.can_manage_team_memory(db, kollege, team.id)
+    assert not team_service.can_manage_team_skills(db, kollege, team.id)
+    ziel, frage = team_service.learning_team(db, kollege, schalter="memory")
+    assert frage is None and ziel is not None and ziel.id == team.id
+
+    team_service.set_member_roles(
+        db, team=team, user=regular_user, member_user_id=kollege.id, role_ids=[],
+    )
+    assert not team_service.can_manage_team_memory(db, kollege, team.id)
 
 
 # ── Namen bleiben ansprechbar ─────────────────────────────────────────
@@ -1344,9 +1219,12 @@ def test_two_teams_of_the_same_name_stay_selectable(
     eins = team_service.create_team(db, user=regular_user, name="Alpha")
     zwei = team_service.create_team(db, user=zweiter, name="alpha")
     for team, owner in ((eins, regular_user), (zwei, zweiter)):
+        lernrolle = team_service.create_team_role(
+            db, team=team, user=owner, name="Lernpartner",
+            permission_keys=["ai.skills.manage", "ai.memory.write"],
+        )
         team_service.invite_member(
-            db, team=team, user=owner, new_user_id=kollege.id,
-            can_manage_skills=True, can_manage_memory=True,
+            db, team=team, user=owner, new_user_id=kollege.id, team_role_id=lernrolle.id,
         )
         team_service.accept_invitation(db, user=kollege, team_id=team.id)
 
@@ -1376,9 +1254,12 @@ def test_a_unique_name_keeps_its_plain_form(db: Session, regular_user: User) -> 
     _grant_global(db, zweiter, "teams.create")
     for owner, name in ((regular_user, "Alpha"), (zweiter, "Beta")):
         team = team_service.create_team(db, user=owner, name=name)
+        lernrolle = team_service.create_team_role(
+            db, team=team, user=owner, name="Lernpartner",
+            permission_keys=["ai.skills.manage", "ai.memory.write"],
+        )
         team_service.invite_member(
-            db, team=team, user=owner, new_user_id=kollege.id,
-            can_manage_skills=True, can_manage_memory=True,
+            db, team=team, user=owner, new_user_id=kollege.id, team_role_id=lernrolle.id,
         )
         team_service.accept_invitation(db, user=kollege, team_id=team.id)
 
@@ -1405,9 +1286,12 @@ def test_the_addressable_name_selects_the_team_it_named(
     eins = team_service.create_team(db, user=regular_user, name="Alpha")
     zwei = team_service.create_team(db, user=zweiter, name="Alpha")
     for team, owner in ((eins, regular_user), (zwei, zweiter)):
+        lernrolle = team_service.create_team_role(
+            db, team=team, user=owner, name="Lernpartner",
+            permission_keys=["ai.skills.manage", "ai.memory.write"],
+        )
         team_service.invite_member(
-            db, team=team, user=owner, new_user_id=kollege.id,
-            can_manage_skills=True, can_manage_memory=True,
+            db, team=team, user=owner, new_user_id=kollege.id, team_role_id=lernrolle.id,
         )
         team_service.accept_invitation(db, user=kollege, team_id=team.id)
 
@@ -1429,9 +1313,12 @@ def test_the_addressable_name_selects_the_team_it_named(
     # behält seinen blanken Namen — sonst müsste er Namen nennen, die er
     # nirgends in der Oberfläche sieht.
     allein = team_service.create_team(db, user=regular_user, name="Beta")
+    lernrolle = team_service.create_team_role(
+        db, team=allein, user=regular_user, name="Lernpartner",
+        permission_keys=["ai.skills.manage", "ai.memory.write"],
+    )
     team_service.invite_member(
-        db, team=allein, user=regular_user, new_user_id=kollege.id,
-        can_manage_skills=True, can_manage_memory=True,
+        db, team=allein, user=regular_user, new_user_id=kollege.id, team_role_id=lernrolle.id,
     )
     team_service.accept_invitation(db, user=kollege, team_id=allein.id)
     assert team_service.ansprechbarer_name(db, kollege, allein) == "Beta"
@@ -1472,7 +1359,6 @@ def test_the_invited_user_can_see_and_accept_over_http(
     team = team_service.create_team(db, user=owner_user, name="Fernteam")
     team_service.invite_member(
         db, team=team, user=owner_user, new_user_id=regular_user.id,
-        can_manage_skills=True, can_manage_memory=False,
     )
 
     offen = client.get("/api/teams/invitations", cookies=user_cookies)
@@ -1503,7 +1389,6 @@ def _verwalter(db: Session, team: Team, founder: User, member: User) -> User:
     rolle = team_service.create_team_role(
         db, team=team, user=founder, name="Verwalter",
         permission_keys=["team.roles.manage"],
-        can_access_vault=False, can_manage_skills=False, can_manage_memory=False,
     )
     team_service.set_member_roles(
         db, team=team, user=founder, member_user_id=member.id, role_ids=[rolle.id]
@@ -1546,16 +1431,14 @@ def test_nicht_gruender_vergibt_nur_gehaltene_rechte(db: Session, regular_user: 
         team_service.create_team_role(
             db, team=team, user=verwalter_nutzer, name="Rausschmeisser",
             permission_keys=["team.members.kick"],
-            can_access_vault=False, can_manage_skills=False, can_manage_memory=False,
         )
     assert exc.value.status_code == 403
     assert exc.value.detail["code"] == "TEAM_ROLE_GRANT_DENIED"
 
-    # Gehaltenes plus getragene Schalter gehen durch.
+    # Gehaltenes Recht geht durch.
     rolle = team_service.create_team_role(
         db, team=team, user=verwalter_nutzer, name="Rollenhelfer",
         permission_keys=["team.roles.manage"],
-        can_access_vault=False, can_manage_skills=False, can_manage_memory=False,
     )
     assert rolle.is_admin is False
 
@@ -1564,17 +1447,11 @@ def test_nicht_gruender_vergibt_nur_getragene_schalter(db: Session, regular_user
     verwalter_nutzer = _user(db, "verwalter")
     team = _team_with_member(db, regular_user, verwalter_nutzer)
     _verwalter(db, team, regular_user, verwalter_nutzer)
-    mitglied = team_service.membership(db, team.id, verwalter_nutzer.id)
-    assert mitglied is not None
-    mitglied.can_access_vault = False
-    mitglied.can_manage_skills = False
-    mitglied.can_manage_memory = False
-    db.commit()
 
     with pytest.raises(HTTPException) as exc:
         team_service.create_team_role(
-            db, team=team, user=verwalter_nutzer, name="Tresoröffner",
-            permission_keys=["team.roles.manage"], can_access_vault=True,
+            db, team=team, user=verwalter_nutzer, name="Tresoroeffner",
+            permission_keys=["team.roles.manage", "vault.read"],
         )
     assert exc.value.status_code == 403
     assert exc.value.detail["code"] == "TEAM_ROLE_GRANT_DENIED"
@@ -1588,7 +1465,6 @@ def test_nicht_gruender_kann_adminrolle_weder_zuteilen_noch_aufwerten(
     team = _team_with_member(db, regular_user, verwalter_nutzer)
     team_service.invite_member(
         db, team=team, user=regular_user, new_user_id=opfer.id,
-        can_manage_skills=False, can_manage_memory=False,
     )
     team_service.accept_invitation(db, user=opfer, team_id=team.id)
     _verwalter(db, team, regular_user, verwalter_nutzer)
@@ -1633,7 +1509,6 @@ def test_delegierter_legt_keine_ruhende_zuordnung_an(db: Session, regular_user: 
     rolle = team_service.create_team_role(
         db, team=team, user=regular_user, name="Serverwart",
         permission_keys=["team.servers.manage"],
-        can_access_vault=False, can_manage_skills=False, can_manage_memory=False,
     )
     team_service.set_member_roles(
         db, team=team, user=regular_user, member_user_id=delegate.id, role_ids=[rolle.id]
@@ -1671,7 +1546,6 @@ def test_rollen_serverrecht_ohne_gruenderrecht_ist_403(
     with pytest.raises(HTTPException) as exc:
         team_service.create_team_role(
             db, team=team, user=regular_user, name="Darf-starten",
-            can_access_vault=False, can_manage_skills=False, can_manage_memory=False,
             server_grants=[
                 {
                     "server_id": server.id,
@@ -1706,7 +1580,6 @@ def test_serverrechte_nach_rollen_schalter(db: Session, regular_user: User) -> N
     )
     team_service.create_team_role(
         db, team=team, user=regular_user, name="NurSicht",
-        can_access_vault=False, can_manage_skills=False, can_manage_memory=False,
         server_grants=[{"server_id": server.id, "permission_keys": ["server.view"]}],
     )
     assert team.server_roles_active is False
@@ -1746,18 +1619,16 @@ def test_einlader_vergibt_die_standardrolle_ohne_eigene_rechte(db: Session, regu
     rolle = team_service.create_team_role(
         db, team=team, user=regular_user, name="Einlader",
         permission_keys=["team.members.invite"],
-        can_access_vault=False, can_manage_skills=False, can_manage_memory=False,
     )
     team_service.set_member_roles(
         db, team=team, user=regular_user, member_user_id=einlader.id, role_ids=[rolle.id]
     )
     assert team_service.has_team_permission(db, team.id, einlader, "team.members.invite") is True
-    assert team_service.membership(db, team.id, einlader.id).can_access_vault is False
+    assert team_service.has_team_permission(db, team.id, einlader, "vault.read") is False
 
     gast = _user(db, "gast-standard")
     einladung = team_service.invite_member(
         db, team=team, user=einlader, new_user_id=gast.id,
-        can_manage_skills=False, can_manage_memory=False,
     )
     standard = (
         db.query(TeamRole)
@@ -1773,7 +1644,6 @@ def test_einlader_vergibt_keine_adminrolle_ausdruecklich(db: Session, regular_us
     rolle = team_service.create_team_role(
         db, team=team, user=regular_user, name="Einlader",
         permission_keys=["team.members.invite"],
-        can_access_vault=False, can_manage_skills=False, can_manage_memory=False,
     )
     team_service.set_member_roles(
         db, team=team, user=regular_user, member_user_id=einlader.id, role_ids=[rolle.id]
@@ -1784,7 +1654,6 @@ def test_einlader_vergibt_keine_adminrolle_ausdruecklich(db: Session, regular_us
     with pytest.raises(HTTPException) as exc:
         team_service.invite_member(
             db, team=team, user=einlader, new_user_id=gast.id,
-            can_manage_skills=False, can_manage_memory=False,
             team_role_id=admin.id,
         )
     assert exc.value.status_code == 403
@@ -1805,7 +1674,6 @@ def test_nicht_gruender_vergibt_keine_fremden_serverrechte(db: Session, regular_
         team_service.create_team_role(
             db, team=team, user=verwalter, name="Serverrolle",
             permission_keys=["team.roles.manage"],
-            can_access_vault=False, can_manage_skills=False, can_manage_memory=False,
             server_grants=[{"server_id": server.id, "permission_keys": ["server.view"]}],
         )
     assert exc.value.status_code == 403
@@ -1821,7 +1689,6 @@ def test_nicht_gruender_teilt_keine_fremde_serverrolle_zu(db: Session, regular_u
     _allow(db, regular_user, server, "server.view")
     rolle = team_service.create_team_role(
         db, team=team, user=regular_user, name="Nur-Server",
-        can_access_vault=False, can_manage_skills=False, can_manage_memory=False,
         server_grants=[{"server_id": server.id, "permission_keys": ["server.view"]}],
     )
     mitglied = team_service.membership(db, team.id, verwalter.id)
@@ -1847,7 +1714,6 @@ def test_einladung_mit_fremder_rolle_wird_abgelehnt(db: Session, regular_user: U
     with pytest.raises(HTTPException) as exc:
         team_service.invite_member(
             db, team=team, user=regular_user, new_user_id=gast.id,
-            can_manage_skills=False, can_manage_memory=False,
             team_role_id=fremde_rolle.id,
         )
     assert exc.value.status_code == 422
@@ -1906,75 +1772,61 @@ def test_role_ids_in_einladung_und_update_sind_422(
 
     einladung = client.post(
         f"/api/teams/{team.id}/members",
-        json={"user_id": gast.id, "can_manage_skills": False, "can_manage_memory": False, "role_ids": [1]},
+        json={"user_id": gast.id, "role_ids": [1]},
         cookies=owner_cookies, headers=kopf,
     )
     assert einladung.status_code == 422
     assert einladung.json()["detail"]["code"] == "TEAM_ROLE_IDS_UNGUELTIG"
 
-    update = client.put(
-        f"/api/teams/{team.id}/members/{regular_user.id}",
-        json={"can_manage_skills": False, "can_manage_memory": False, "role_ids": [1]},
-        cookies=owner_cookies, headers=kopf,
-    )
-    assert update.status_code == 422
-    assert update.json()["detail"]["code"] == "TEAM_ROLE_IDS_UNGUELTIG"
-
-
-def _schalter(db: Session, team: Team, user: User) -> TeamMember:
-    db.expire_all()
-    return team_service.membership(db, team.id, user.id)
-
 
 def test_rollenaenderung_rechnet_alle_traeger_neu(db: Session, regular_user: User) -> None:
-    """Befund 15: Rolle aendern senkt und erhoeht die Schalter aller Traeger."""
+    """Rolle aendern senkt und erhoeht die Berechtigungen aller Traeger."""
     kollege = _user(db, "kollege15")
     team = _team_with_member(db, regular_user, kollege)
     leser = team_service.create_team_role(
-        db, team=team, user=regular_user, name="Leser",
-        can_access_vault=False, can_manage_skills=False, can_manage_memory=False,
+        db, team=team, user=regular_user, name="Leser", permission_keys=[],
     )
     team_service.set_member_roles(
         db, team=team, user=regular_user, member_user_id=kollege.id, role_ids=[leser.id]
     )
-    assert _schalter(db, team, kollege).can_manage_skills is False
+    assert team_service.has_team_permission(db, team.id, kollege, "ai.skills.manage") is False
 
-    # Erhoehen: Die Rolle bekommt den Schalter — der Traeger folgt sofort.
+    # Erhoehen: Die Rolle bekommt das Recht — der Traeger folgt sofort.
     team_service.update_team_role(
         db, team=team, user=regular_user, role_id=leser.id, name="Leser",
-        can_access_vault=False, can_manage_skills=True, can_manage_memory=False,
+        permission_keys=["ai.skills.manage"],
     )
-    assert _schalter(db, team, kollege).can_manage_skills is True
+    assert team_service.has_team_permission(db, team.id, kollege, "ai.skills.manage") is True
 
-    # Senken: Die Rolle verliert ihn — der Traeger folgt sofort.
+    # Senken: Die Rolle verliert es — der Traeger folgt sofort.
     team_service.update_team_role(
         db, team=team, user=regular_user, role_id=leser.id, name="Leser",
-        can_access_vault=False, can_manage_skills=False, can_manage_memory=False,
+        permission_keys=[],
     )
-    assert _schalter(db, team, kollege).can_manage_skills is False
+    assert team_service.has_team_permission(db, team.id, kollege, "ai.skills.manage") is False
 
 
 def test_rollenloeschung_senkt_die_traeger(db: Session, regular_user: User) -> None:
-    """Befund 15: Wer die einzige Tresor-Rolle verliert, weil sie geloescht
+    """Wer die einzige Tresor-Rolle verliert, weil sie geloescht
     wird, verliert den Tresor — uebrige Rollen zaehlen weiter."""
     kollege = _user(db, "kollege15b")
     team = _team_with_member(db, regular_user, kollege)
     tresor = team_service.create_team_role(
         db, team=team, user=regular_user, name="Tresor",
-        can_access_vault=True, can_manage_skills=False, can_manage_memory=False,
+        permission_keys=["vault.read"],
     )
     leser = team_service.create_team_role(
         db, team=team, user=regular_user, name="Leser",
-        can_access_vault=False, can_manage_skills=False, can_manage_memory=False,
+        permission_keys=["ai.memory.read"],
     )
     team_service.set_member_roles(
         db, team=team, user=regular_user, member_user_id=kollege.id,
         role_ids=[tresor.id, leser.id],
     )
-    assert _schalter(db, team, kollege).can_access_vault is True
+    assert team_service.has_team_permission(db, team.id, kollege, "vault.read") is True
 
     team_service.delete_team_role(db, team=team, user=regular_user, role_id=tresor.id)
-    assert _schalter(db, team, kollege).can_access_vault is False
+    assert team_service.has_team_permission(db, team.id, kollege, "vault.read") is False
 
 
 def test_rollen_serverrechte_ohne_server_view_sind_422(db: Session, regular_user: User) -> None:
@@ -1986,7 +1838,6 @@ def test_rollen_serverrechte_ohne_server_view_sind_422(db: Session, regular_user
     with pytest.raises(HTTPException) as exc:
         team_service.create_team_role(
             db, team=team, user=regular_user, name="Ohne Sicht",
-            can_access_vault=False, can_manage_skills=False, can_manage_memory=False,
             server_grants=[
                 {"server_id": server.id, "permission_keys": ["server.console.read"]}
             ],
@@ -1995,25 +1846,27 @@ def test_rollen_serverrechte_ohne_server_view_sind_422(db: Session, regular_user
     assert exc.value.detail["code"] == "TEAM_ROLE_GRANT_DENIED"
 
 
-def test_update_member_without_vault_flag_preserves_existing_vault_access(
+def test_update_team_role_preserving_other_permissions_on_role(
     client, db: Session, owner_user: User, regular_user: User,
     owner_cookies: dict, csrf_token: str,
 ) -> None:
-    """Omitting can_access_vault when updating member skills must not re-enable vault access."""
+    """Rollenverwaltung ueber /roles/{id} bewahrt nicht geaenderte Rollenrechte sauber."""
     kollege = _user(db, "kollege-vault-preserve")
     team = _team_with_member(db, owner_user, kollege)
-    member = team_service.membership(db, team.id, kollege.id)
-    assert member is not None
-    member.can_access_vault = False
-    db.commit()
+    rolle = team_service.create_team_role(
+        db, team=team, user=owner_user, name="Sicht",
+        permission_keys=["ai.memory.read"],
+    )
+    team_service.set_member_roles(
+        db, team=team, user=owner_user, member_user_id=kollege.id, role_ids=[rolle.id]
+    )
 
     res = client.put(
-        f"/api/teams/{team.id}/members/{kollege.id}",
-        json={"can_manage_skills": True, "can_manage_memory": False},
+        f"/api/teams/{team.id}/roles/{rolle.id}",
+        json={"name": "Sicht", "permission_keys": ["ai.memory.read", "ai.skills.manage"]},
         cookies=owner_cookies,
         headers={"X-CSRF-Token": csrf_token},
     )
     assert res.status_code == 200
-    updated = _schalter(db, team, kollege)
-    assert updated.can_manage_skills is True
-    assert updated.can_access_vault is False
+    assert team_service.has_team_permission(db, team.id, kollege, "ai.skills.manage") is True
+    assert team_service.has_team_permission(db, team.id, kollege, "vault.read") is False

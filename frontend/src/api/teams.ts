@@ -13,9 +13,6 @@ export interface TeamMember {
   username: string
   avatar_url?: string | null
   role: 'owner' | 'member'
-  can_manage_skills: boolean
-  can_manage_memory: boolean
-  can_access_vault?: boolean
   team_role_id?: number | null
   role_ids?: number[]
   roles?: TeamRole[]
@@ -24,15 +21,6 @@ export interface TeamMember {
   presence?: Omit<PresenceItem, 'user_id' | 'username'> | null
 }
 
-/**
- * Eine ausgesprochene, noch nicht angenommene Einladung.
- *
- * Dieselbe Zeile aus zwei Blickwinkeln: der Gründer sieht in seiner Teamansicht,
- * wen er angeschrieben hat, der Eingeladene in seiner eigenen Liste, wer ihn
- * haben will und was ihm dabei angeboten wird. Ein Eingeladener ist **kein**
- * Mitglied — Wissen und Serverrechte des Teams erreichen ihn erst mit der
- * Annahme.
- */
 export interface TeamInvitation {
   team_id: number
   team_name: string
@@ -40,10 +28,8 @@ export interface TeamInvitation {
   username: string
   avatar_url?: string | null
   invited_by_username: string | null
-  can_manage_skills: boolean
-  can_manage_memory: boolean
-  can_access_vault?: boolean
   team_role_id?: number | null
+  team_role_name?: string | null
   invited_at: string
 }
 
@@ -53,6 +39,17 @@ export interface TeamServer {
   permission_keys: string[]
 }
 
+export type TeamMediaKind = 'avatar' | 'banner'
+
+export interface TeamMediaGalleryItem {
+  id: number
+  team_id: number
+  kind: TeamMediaKind
+  uploaded_by: string
+  created_at: string
+  is_active: boolean
+}
+
 export interface Team {
   id: number
   name: string
@@ -60,9 +57,21 @@ export interface Team {
   owner_user_id: number
   /** Ob der Abrufende dieses Team verwalten darf — spart eine zweite Abfrage. */
   is_owner: boolean
+  category?: string | null
+  description?: string | null
+  avatar_source?: 'custom' | 'preset'
+  avatar_preset?: string | null
+  avatar_url?: string | null
+  avatar_version?: string | null
+  banner_source?: 'custom' | 'preset' | 'panorama'
+  banner_preset?: string | null
+  banner_url?: string | null
+  banner_version?: string | null
   can_manage_skills: boolean
   can_manage_memory: boolean
   can_access_vault?: boolean
+  can_manage_avatar?: boolean
+  can_manage_banner?: boolean
   /** Ob Serverrechte nach Rollen gelten; Standard aus. */
   server_roles_active?: boolean
   member_count: number
@@ -82,9 +91,6 @@ export interface TeamRole {
   description?: string | null
   color: string
   icon?: string | null
-  can_access_vault: boolean
-  can_manage_skills: boolean
-  can_manage_memory: boolean
   is_default: boolean
   is_admin: boolean
   created_at: string
@@ -98,9 +104,6 @@ export interface TeamRoleWritePayload {
   description?: string | null
   color?: string
   icon?: string | null
-  can_access_vault?: boolean
-  can_manage_skills?: boolean
-  can_manage_memory?: boolean
   is_default?: boolean
   is_admin?: boolean
   permission_keys?: string[]
@@ -168,37 +171,62 @@ export interface TeamVaultSyncResult {
 export const teamsApi = {
   list: () => api<Team[]>('/teams'),
   get: (teamId: number) => api<TeamDetail>(`/teams/${teamId}`),
-  create: (name: string) => api<Team>('/teams', {
-    method: 'POST', body: JSON.stringify({ name }),
+  create: (payload: string | {
+    name: string
+    category?: string | null
+    description?: string | null
+    avatar_preset?: string | null
+    banner_preset?: string | null
+  }) => api<Team>('/teams', {
+    method: 'POST',
+    body: JSON.stringify(typeof payload === 'string' ? { name: payload } : payload),
   }),
-  rename: (teamId: number, name: string) => api<Team>(`/teams/${teamId}`, {
-    method: 'PUT', body: JSON.stringify({ name }),
+  rename: (teamId: number, payload: string | {
+    name: string
+    category?: string | null
+    description?: string | null
+    avatar_preset?: string | null
+    banner_preset?: string | null
+  }) => api<Team>(`/teams/${teamId}`, {
+    method: 'PUT',
+    body: JSON.stringify(typeof payload === 'string' ? { name: payload } : payload),
   }),
   remove: (teamId: number) => api(`/teams/${teamId}`, { method: 'DELETE' }),
+  getMediaGallery: (teamId: number, kind: TeamMediaKind) =>
+    api<TeamMediaGalleryItem[]>(`/teams/${teamId}/media/${kind}/gallery`),
+  uploadMedia: (teamId: number, kind: TeamMediaKind, file: File) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    return api<{ id: number; kind: TeamMediaKind; is_active: boolean; url: string; version: string }>(
+      `/teams/${teamId}/media/${kind}`,
+      { method: 'POST', body: formData },
+    )
+  },
+  activateMedia: (teamId: number, kind: TeamMediaKind, mediaId: number) =>
+    api<{ id: number; kind: TeamMediaKind; is_active: boolean; url: string; version: string }>(
+      `/teams/${teamId}/media/${kind}/${mediaId}/activate`,
+      { method: 'POST' },
+    ),
+  setMediaPreset: (teamId: number, kind: TeamMediaKind, preset: string | null) =>
+    api<{ kind: TeamMediaKind; preset: string | null }>(
+      `/teams/${teamId}/media/${kind}/preset`,
+      { method: 'PUT', body: JSON.stringify({ preset }) },
+    ),
+  resetMedia: (teamId: number, kind: TeamMediaKind) =>
+    api<{ reset: boolean }>(`/teams/${teamId}/media/${kind}`, { method: 'DELETE' }),
+  deleteMediaItem: (teamId: number, kind: TeamMediaKind, mediaId: number) =>
+    api<{ deleted: boolean }>(`/teams/${teamId}/media/${kind}/gallery/${mediaId}`, {
+      method: 'DELETE',
+    }),
   /**
    * Lädt einen Benutzer ein. Mitglied wird er erst, wenn er annimmt — die
    * Antwort führt ihn deshalb unter `invitations` und nicht unter `members`.
-   * Der Name sagt das absichtlich: bis eben hieß dieser Aufruf `addMember`,
-   * und die Oberfläche meldete danach eine Aufnahme, die nie stattfand.
    */
   inviteMember: (teamId: number, payload: {
     user_id: number
-    can_manage_skills: boolean
-    can_manage_memory: boolean
-    can_access_vault?: boolean
     team_role_id?: number | null
-    role_ids?: number[]
   }) => api<TeamDetail>(`/teams/${teamId}/members`, {
     method: 'POST', body: JSON.stringify(payload),
-  }),
-  updateMember: (teamId: number, userId: number, payload: {
-    can_manage_skills: boolean
-    can_manage_memory: boolean
-    can_access_vault?: boolean
-    team_role_id?: number | null
-    role_ids?: number[]
-  }) => api<TeamDetail>(`/teams/${teamId}/members/${userId}`, {
-    method: 'PUT', body: JSON.stringify(payload),
   }),
   removeMember: (teamId: number, userId: number) => api<TeamDetail>(
     `/teams/${teamId}/members/${userId}`, { method: 'DELETE' },

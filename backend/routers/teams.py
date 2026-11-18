@@ -6,7 +6,7 @@ Teams sehen — auch das persoenliche, das er nie selbst angelegt hat. Erst das
 `team_service.create_team`.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, File, Header, HTTPException, Query, Request, Response, UploadFile, status
 from fastapi.responses import FileResponse
 from starlette.concurrency import run_in_threadpool
 from sqlalchemy import func
@@ -30,9 +30,10 @@ from schemas.team import (
     TeamCreate,
     TeamDetailResponse,
     TeamInvitationResponse,
+    TeamMediaGalleryItem,
+    TeamMediaPresetWrite,
     TeamMemberResponse,
     TeamMemberRolesUpdate,
-    TeamMemberUpdate,
     TeamMemberWrite,
     TeamRename,
     TeamResponse,
@@ -63,11 +64,13 @@ from services import (
     audit_service,
     passkey_service,
     permission_service,
+    team_media_service,
     team_service,
     vault_blob_service,
     vault_service,
 )
 from services.auth_service import AuthService
+from services.media_gallery_service import MAX_MEDIA_BYTES, MediaValidationError, build_webp_response
 from services.social_service import SocialService
 
 
@@ -77,21 +80,67 @@ router = APIRouter(prefix="/api/teams", tags=["teams"])
 def _summary(db: Session, team: Team, user: User) -> TeamResponse:
     member = team_service.membership(db, team.id, user.id)
     count = db.query(TeamMember).filter(TeamMember.team_id == team.id).count()
-    return _zusammenfassung(team, user, member, count)
+    perms = team_service.effective_permissions_for_teams(db, [team.id], user).get(team.id, set())
+    avatar_item = team_media_service.get_active_media(db, team.id, "avatar")
+    banner_item = team_media_service.get_active_media(db, team.id, "banner")
+    return _zusammenfassung(
+        db,
+        team,
+        user,
+        member,
+        count,
+        perms=perms,
+        avatar_item=avatar_item,
+        banner_item=banner_item,
+        media_preloaded=True,
+    )
 
 
 def _zusammenfassung(
-    team: Team, user: User, member: TeamMember | None, count: int
+    db: Session,
+    team: Team,
+    user: User,
+    member: TeamMember | None,
+    count: int,
+    *,
+    perms: set[str] | None = None,
+    avatar_item=None,
+    banner_item=None,
+    media_preloaded: bool = False,
 ) -> TeamResponse:
+    eff = (
+        perms
+        if perms is not None
+        else team_service.effective_permissions_for_teams(db, [team.id], user).get(team.id, set())
+    )
+    is_owner = bool(user.is_owner or team.owner_user_id == user.id or (member is not None and member.role == "owner"))
+    avatar = team_media_service.resolve_team_media(
+        db, team, "avatar", active_item=avatar_item, active_provided=media_preloaded
+    )
+    banner = team_media_service.resolve_team_media(
+        db, team, "banner", active_item=banner_item, active_provided=media_preloaded
+    )
     return TeamResponse(
         id=team.id,
         name=team.name,
         is_personal=team.is_personal,
         owner_user_id=team.owner_user_id,
-        is_owner=user.is_owner or (member is not None and member.role == "owner"),
-        can_manage_skills=member is not None and member.can_manage_skills,
-        can_manage_memory=member is not None and member.can_manage_memory,
-        can_access_vault=user.is_owner or (member is not None and (member.role == "owner" or member.can_access_vault)),
+        is_owner=is_owner,
+        category=team.category,
+        description=team.description,
+        avatar_source=avatar.source,
+        avatar_preset=avatar.preset,
+        avatar_url=avatar.url,
+        avatar_version=avatar.version,
+        banner_source=banner.source,
+        banner_preset=banner.preset,
+        banner_url=banner.url,
+        banner_version=banner.version,
+        can_manage_skills=is_owner or ("ai.skills.manage" in eff),
+        can_manage_memory=is_owner or ("ai.memory.write" in eff),
+        can_access_vault=is_owner or ("vault.read" in eff),
+        can_manage_avatar=is_owner or ("team.avatar.manage" in eff),
+        can_manage_banner=is_owner or ("team.banner.manage" in eff),
         server_roles_active=team.server_roles_active,
         member_count=count,
         created_at=team.created_at,
@@ -103,6 +152,7 @@ def _invitation(db: Session, einladung: TeamInvitation, team: Team) -> TeamInvit
     einlader = (
         db.get(User, einladung.invited_by) if einladung.invited_by is not None else None
     )
+    role_row = db.get(TeamRole, einladung.team_role_id) if einladung.team_role_id is not None else None
     return TeamInvitationResponse(
         team_id=team.id,
         team_name=team.name,
@@ -110,10 +160,8 @@ def _invitation(db: Session, einladung: TeamInvitation, team: Team) -> TeamInvit
         username=eingeladener.username if eingeladener is not None else "",
         avatar_url=eingeladener.avatar_url if eingeladener is not None else None,
         invited_by_username=einlader.username if einlader is not None else None,
-        can_manage_skills=einladung.can_manage_skills,
-        can_manage_memory=einladung.can_manage_memory,
-        can_access_vault=einladung.can_access_vault,
         team_role_id=einladung.team_role_id,
+        team_role_name=role_row.name if role_row is not None else None,
         invited_at=einladung.created_at,
     )
 
@@ -157,9 +205,6 @@ def _role_response(db: Session, role: TeamRole) -> TeamRoleResponse:
         description=role.description,
         color=role.color,
         icon=role.icon,
-        can_access_vault=role.can_access_vault,
-        can_manage_skills=role.can_manage_skills,
-        can_manage_memory=role.can_manage_memory,
         is_default=role.is_default,
         is_admin=role.is_admin,
         created_at=role.created_at,
@@ -190,9 +235,6 @@ def _detail(db: Session, team: Team, user: User) -> TeamDetailResponse:
                 username=username,
                 avatar_url=avatar_url,
                 role=member.role,
-                can_manage_skills=member.can_manage_skills,
-                can_manage_memory=member.can_manage_memory,
-                can_access_vault=member.can_access_vault,
                 team_role_id=member.team_role_id,
                 role_ids=role_ids,
                 roles=m_roles,
@@ -210,14 +252,13 @@ def _detail(db: Session, team: Team, user: User) -> TeamDetailResponse:
             permission_keys=team_service.team_server_keys(db, team.id, server_id),
         ))
     base = _summary(db, team, user)
-    # Offene Einladungen sieht nur der Gruender. Wer eingeladen ist, hat sich
-    # noch zu nichts bekannt — das muss nicht die halbe Mitgliederliste wissen.
+    can_see_invitations = base.is_owner or team_service.has_team_permission(db, team.id, user, "team.members.invite")
     einladungen = (
         [
             _invitation(db, einladung, team)
             for einladung in team_service.team_invitations(db, team.id)
         ]
-        if base.is_owner
+        if can_see_invitations
         else []
     )
     return TeamDetailResponse(
@@ -263,8 +304,20 @@ def list_teams(
         .group_by(TeamMember.team_id)
         .all()
     )
+    perms_by_team = team_service.effective_permissions_for_teams(db, ids, user)
+    media_map = team_media_service.get_active_media_map(db, ids)
     return [
-        _zusammenfassung(team, user, eigene.get(team.id), zahlen.get(team.id, 0))
+        _zusammenfassung(
+            db,
+            team,
+            user,
+            eigene.get(team.id),
+            zahlen.get(team.id, 0),
+            perms=perms_by_team.get(team.id, set()),
+            avatar_item=media_map.get((team.id, "avatar")),
+            banner_item=media_map.get((team.id, "banner")),
+            media_preloaded=True,
+        )
         for team in teams
     ]
 
@@ -276,7 +329,15 @@ def create_team(
     user: User = Depends(get_current_user),
     _: None = Depends(verify_csrf),
 ) -> TeamResponse:
-    team = team_service.create_team(db, user=user, name=payload.name)
+    team = team_service.create_team(
+        db,
+        user=user,
+        name=payload.name,
+        category=payload.category,
+        description=payload.description,
+        avatar_preset=payload.avatar_preset,
+        banner_preset=payload.banner_preset,
+    )
     return _summary(db, team, user)
 
 
@@ -342,7 +403,18 @@ def rename_team(
     _: None = Depends(verify_csrf),
 ) -> TeamResponse:
     team = team_service.get_team_for_member(db, team_id, user)
-    return _summary(db, team_service.rename_team(db, team=team, user=user, name=payload.name), user)
+    updated = team_service.rename_team(
+        db,
+        team=team,
+        user=user,
+        name=payload.name,
+        category=payload.category,
+        description=payload.description,
+        avatar_preset=payload.avatar_preset,
+        banner_preset=payload.banner_preset,
+        fields_set=payload.model_fields_set,
+    )
+    return _summary(db, updated, user)
 
 
 @router.delete("/{team_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -356,6 +428,238 @@ def delete_team(
     team_service.delete_team(db, team=team, user=user)
 
 
+# ── Team-Medien (Profilbilder & Hintergrundbanner) ───────────────────────
+
+
+def _require_team_media_manage(db: Session, team: Team, user: User, kind: team_media_service.TeamMediaKind) -> None:
+    if team.is_personal:
+        raise HTTPException(status_code=409, detail="Das persoenliche Team bleibt wie es ist")
+    perm = "team.avatar.manage" if kind == "avatar" else "team.banner.manage"
+    if not team_service.has_team_permission(db, team.id, user, perm):
+        team_service.assert_team_owner(db, team, user)
+
+
+@router.get("/{team_id}/media/{kind}/image")
+def get_team_media_image(
+    team_id: int,
+    kind: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    if_none_match: str | None = Header(default=None),
+    v: str | None = Query(default=None),
+) -> Response:
+    media_kind = team_media_service.validate_kind(kind)
+    team = team_service.get_team_for_member(db, team_id, user)
+    try:
+        found = team_media_service.media_bytes_for_team(
+            db, team_id=team.id, kind=media_kind, version=v
+        )
+    except MediaValidationError as exc:
+        raise HTTPException(status_code=400, detail=exc.message)
+    if found is None:
+        raise HTTPException(status_code=404, detail="Bild nicht gefunden")
+    data, etag = found
+    return build_webp_response(
+        data=data, etag=etag, if_none_match=if_none_match, versioned=(v is not None)
+    )
+
+
+@router.get("/{team_id}/media/{kind}/gallery", response_model=list[TeamMediaGalleryItem])
+def get_team_media_gallery(
+    team_id: int,
+    kind: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> list[TeamMediaGalleryItem]:
+    media_kind = team_media_service.validate_kind(kind)
+    team = team_service.get_team_for_member(db, team_id, user)
+    return [
+        TeamMediaGalleryItem(
+            id=row.id,
+            team_id=row.team_id,
+            kind=row.kind,
+            uploaded_by=row.uploaded_by,
+            created_at=row.created_at,
+            is_active=row.is_active,
+        )
+        for row in team_media_service.get_gallery(db, team.id, media_kind)
+    ]
+
+
+@router.get("/{team_id}/media/{kind}/gallery/{media_id}/image")
+def get_team_media_gallery_image(
+    team_id: int,
+    kind: str,
+    media_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> Response:
+    media_kind = team_media_service.validate_kind(kind)
+    team = team_service.get_team_for_member(db, team_id, user)
+    data = team_media_service.gallery_image_bytes(
+        db, team_id=team.id, kind=media_kind, media_id=media_id
+    )
+    if data is None:
+        raise HTTPException(status_code=404, detail="Bild nicht gefunden")
+    return build_webp_response(data=data, gallery_thumb=True)
+
+
+@router.post("/{team_id}/media/{kind}")
+async def upload_team_media(
+    team_id: int,
+    kind: str,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    _: None = Depends(verify_csrf),
+) -> dict:
+    media_kind = team_media_service.validate_kind(kind)
+    team = team_service.get_team_for_member(db, team_id, user)
+    _require_team_media_manage(db, team, user, media_kind)
+    raw = await file.read(MAX_MEDIA_BYTES + 1)
+    try:
+        webp = team_media_service.sanitize_team_image(media_kind, raw)
+    except MediaValidationError as exc:
+        raise HTTPException(status_code=400, detail=exc.message)
+    row = team_media_service.store_team_media(
+        db, team_id=team.id, kind=media_kind, webp_bytes=webp, uploaded_by=user.username
+    )
+    audit_service.record_privileged_action(
+        db,
+        user_id=user.id,
+        action=f"team.{media_kind}.upload",
+        target_type="team",
+        target_id=team.id,
+        details={"kind": media_kind, "media_id": row.id},
+        commit=True,
+    )
+    team_service.publish_team_updated(team.id, scope=f"media:{media_kind}")
+    return {
+        "id": row.id,
+        "kind": media_kind,
+        "is_active": True,
+        "url": f"/api/teams/{team.id}/media/{media_kind}/image",
+        "version": f"custom-{row.id}",
+    }
+
+
+@router.post("/{team_id}/media/{kind}/{media_id}/activate")
+def activate_team_media(
+    team_id: int,
+    kind: str,
+    media_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    _: None = Depends(verify_csrf),
+) -> dict:
+    media_kind = team_media_service.validate_kind(kind)
+    team = team_service.get_team_for_member(db, team_id, user)
+    _require_team_media_manage(db, team, user, media_kind)
+    row = team_media_service.set_active_media(
+        db, team_id=team.id, kind=media_kind, media_id=media_id
+    )
+    audit_service.record_privileged_action(
+        db,
+        user_id=user.id,
+        action=f"team.{media_kind}.activate",
+        target_type="team",
+        target_id=team.id,
+        details={"kind": media_kind, "media_id": row.id},
+        commit=True,
+    )
+    team_service.publish_team_updated(team.id, scope=f"media:{media_kind}")
+    return {
+        "id": row.id,
+        "kind": media_kind,
+        "is_active": True,
+        "url": f"/api/teams/{team.id}/media/{media_kind}/image",
+        "version": f"custom-{row.id}",
+    }
+
+
+@router.put("/{team_id}/media/{kind}/preset")
+def set_team_media_preset(
+    team_id: int,
+    kind: str,
+    payload: TeamMediaPresetWrite,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    _: None = Depends(verify_csrf),
+) -> dict:
+    media_kind = team_media_service.validate_kind(kind)
+    team = team_service.get_team_for_member(db, team_id, user)
+    _require_team_media_manage(db, team, user, media_kind)
+    team = team_media_service.activate_preset(
+        db, team=team, kind=media_kind, preset_key=payload.preset
+    )
+    preset = team.avatar_preset if media_kind == "avatar" else team.banner_preset
+    audit_service.record_privileged_action(
+        db,
+        user_id=user.id,
+        action=f"team.{media_kind}.preset",
+        target_type="team",
+        target_id=team.id,
+        details={"kind": media_kind, "preset": preset},
+        commit=True,
+    )
+    team_service.publish_team_updated(team.id, scope=f"media:{media_kind}")
+    return {"kind": media_kind, "preset": preset}
+
+
+@router.delete("/{team_id}/media/{kind}")
+def reset_team_media(
+    team_id: int,
+    kind: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    _: None = Depends(verify_csrf),
+) -> dict:
+    media_kind = team_media_service.validate_kind(kind)
+    team = team_service.get_team_for_member(db, team_id, user)
+    _require_team_media_manage(db, team, user, media_kind)
+    team_media_service.reset_media(db, team=team, kind=media_kind)
+    audit_service.record_privileged_action(
+        db,
+        user_id=user.id,
+        action=f"team.{media_kind}.reset",
+        target_type="team",
+        target_id=team.id,
+        details={"kind": media_kind},
+        commit=True,
+    )
+    team_service.publish_team_updated(team.id, scope=f"media:{media_kind}")
+    return {"reset": True}
+
+
+@router.delete("/{team_id}/media/{kind}/gallery/{media_id}")
+def delete_team_media_item(
+    team_id: int,
+    kind: str,
+    media_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    _: None = Depends(verify_csrf),
+) -> dict:
+    media_kind = team_media_service.validate_kind(kind)
+    team = team_service.get_team_for_member(db, team_id, user)
+    _require_team_media_manage(db, team, user, media_kind)
+    was_active = team_media_service.delete_media(
+        db, team_id=team.id, kind=media_kind, media_id=media_id
+    )
+    audit_service.record_privileged_action(
+        db,
+        user_id=user.id,
+        action=f"team.{media_kind}.delete",
+        target_type="team",
+        target_id=team.id,
+        details={"kind": media_kind, "media_id": media_id},
+        commit=True,
+    )
+    if was_active:
+        team_service.publish_team_updated(team.id, scope=f"media:{media_kind}")
+    return {"deleted": True}
+
+
 @router.post("/{team_id}/members", response_model=TeamDetailResponse, status_code=status.HTTP_201_CREATED)
 def invite_member(
     team_id: int,
@@ -364,11 +668,7 @@ def invite_member(
     user: User = Depends(get_current_user),
     _: None = Depends(verify_csrf),
 ) -> TeamDetailResponse:
-    """Laedt einen Benutzer ein. Mitglied wird er erst, wenn er annimmt.
-
-    Die Antwort zeigt ihn deshalb unter `invitations` und nicht unter
-    `members`.
-    """
+    """Laedt einen Benutzer mit optionaler Rollenwahl ein."""
     if payload.role_ids:
         raise HTTPException(
             status_code=422,
@@ -380,37 +680,6 @@ def invite_member(
     team = team_service.get_team_for_member(db, team_id, user)
     team_service.invite_member(
         db, team=team, user=user, new_user_id=payload.user_id,
-        can_manage_skills=payload.can_manage_skills,
-        can_manage_memory=payload.can_manage_memory,
-        can_access_vault=payload.can_access_vault,
-        team_role_id=payload.team_role_id,
-    )
-    return _detail(db, team, user)
-
-
-@router.put("/{team_id}/members/{member_user_id}", response_model=TeamDetailResponse)
-def update_member(
-    team_id: int,
-    member_user_id: int,
-    payload: TeamMemberUpdate,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-    _: None = Depends(verify_csrf),
-) -> TeamDetailResponse:
-    if payload.role_ids:
-        raise HTTPException(
-            status_code=422,
-            detail={
-                "code": "TEAM_ROLE_IDS_UNGUELTIG",
-                "message": "Mehrere Rollen vergibt nur PUT /members/{id}/roles; hier zählt allein team_role_id.",
-            },
-        )
-    team = team_service.get_team_for_member(db, team_id, user)
-    team_service.update_member(
-        db, team=team, user=user, member_user_id=member_user_id,
-        can_manage_skills=payload.can_manage_skills,
-        can_manage_memory=payload.can_manage_memory,
-        can_access_vault=payload.can_access_vault,
         team_role_id=payload.team_role_id,
     )
     return _detail(db, team, user)
@@ -424,11 +693,7 @@ def remove_member(
     user: User = Depends(get_current_user),
     _: None = Depends(verify_csrf),
 ) -> TeamDetailResponse:
-    """Entlaesst ein Mitglied — oder laesst den Aufrufenden selbst gehen.
-
-    Der eigene Austritt braucht den Gruender nicht; die Antwort zeigt dann das
-    Team ohne den Ausgetretenen, also nichts, was er nicht eben noch sah.
-    """
+    """Entlaesst ein Mitglied — oder laesst den Aufrufenden selbst gehen."""
     team = team_service.get_team_for_member(db, team_id, user)
     team_service.remove_member(db, team=team, user=user, member_user_id=member_user_id)
     return _detail(db, team, user)
@@ -457,9 +722,6 @@ def set_member_roles(
         username=target_user.username if target_user else "",
         avatar_url=target_user.avatar_url if target_user else None,
         role=member.role,
-        can_manage_skills=member.can_manage_skills,
-        can_manage_memory=member.can_manage_memory,
-        can_access_vault=member.can_access_vault,
         team_role_id=member.team_role_id,
         role_ids=[r.id for r in valid_roles],
         roles=role_responses,
@@ -504,9 +766,6 @@ def create_team_role(
         icon=payload.icon,
         is_default=payload.is_default,
         is_admin=payload.is_admin,
-        can_access_vault=payload.can_access_vault,
-        can_manage_skills=payload.can_manage_skills,
-        can_manage_memory=payload.can_manage_memory,
         permission_keys=payload.permission_keys,
         server_grants=server_grants,
     )
@@ -538,9 +797,6 @@ def update_team_role(
         icon=payload.icon,
         is_default=payload.is_default,
         is_admin=payload.is_admin,
-        can_access_vault=payload.can_access_vault,
-        can_manage_skills=payload.can_manage_skills,
-        can_manage_memory=payload.can_manage_memory,
         permission_keys=payload.permission_keys,
         server_grants=server_grants,
     )
@@ -677,11 +933,7 @@ def get_team_vault_status(
     """Liefert Bucket-Kennung und Schluesselstand des Team-Tresors."""
     team = team_service.get_team_for_member(db, team_id, user)
     is_owner = bool(user.is_owner or team.owner_user_id == user.id)
-    can_access = True
-    if not is_owner:
-        m = team_service.membership(db, team_id, user.id)
-        if m is not None and not m.can_access_vault:
-            can_access = False
+    can_access = is_owner or team_service.has_team_permission(db, team.id, user, "vault.read")
 
     eingerichtet = team.vault_bucket_id is not None
     return TeamVaultStatusResponse(
@@ -752,13 +1004,11 @@ def get_own_team_vault_keyslot(
     """Liefert die eigene Schluesselhuelle zum aktiven Schluesselstand."""
     team = team_service.get_team_for_member(db, team_id, user)
     is_owner = bool(user.is_owner or team.owner_user_id == user.id)
-    if not is_owner:
-        m = team_service.membership(db, team_id, user.id)
-        if m is not None and not m.can_access_vault:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Zutritt zum Team-Tresor verweigert: Deine Team-Rolle hat keinen Tresor-Zugriff.",
-            )
+    if not is_owner and not team_service.has_team_permission(db, team.id, user, "vault.read"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Zutritt zum Team-Tresor verweigert: Deine Team-Rolle hat keinen Tresor-Zugriff.",
+        )
     zeile = vault_service.eigener_keyslot_team(db, team, user)
     return TeamVaultKeyslotResponse(key_version=zeile.key_version, wrapped_dek=zeile.wrapped_dek)
 
@@ -859,8 +1109,7 @@ def sync_team_vault(
     """Fuehrt Revisions-Sync fuer den Team-Tresor durch (alle Team-Mitglieder)."""
     team = team_service.get_team_for_member(db, team_id, user)
     if not user.is_owner and team.owner_user_id != user.id:
-        m = team_service.membership(db, team.id, user.id)
-        if m is not None and not m.can_access_vault:
+        if not team_service.has_team_permission(db, team.id, user, "vault.read"):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Zutritt zum Team-Tresor verweigert: Deine Team-Rolle hat keinen Tresor-Zugriff.",
@@ -919,8 +1168,7 @@ def _team_bucket(db: Session, team_id: int, user: User) -> tuple[Team, str]:
     if not team.vault_bucket_id:
         raise HTTPException(status_code=400, detail="Team-Tresor ist noch nicht eingerichtet.")
     if not user.is_owner and team.owner_user_id != user.id:
-        m = team_service.membership(db, team.id, user.id)
-        if m is not None and not m.can_access_vault:
+        if not team_service.has_team_permission(db, team.id, user, "vault.read"):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Zutritt zum Team-Tresor verweigert: Deine Team-Rolle hat keinen Tresor-Zugriff.",

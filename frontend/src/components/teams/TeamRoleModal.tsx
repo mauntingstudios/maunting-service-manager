@@ -152,9 +152,6 @@ export function TeamRoleModal({
         is_default: isDefault,
         permission_keys: Array.from(permissionKeys),
         server_grants: grantsPayload,
-        can_access_vault: permissionKeys.has('vault.read') || isAdmin,
-        can_manage_skills: permissionKeys.has('ai.skills.manage') || isAdmin,
-        can_manage_memory: permissionKeys.has('ai.memory.write') || isAdmin,
       }
 
       let saved: TeamRole

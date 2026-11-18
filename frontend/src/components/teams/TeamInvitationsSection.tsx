@@ -5,22 +5,12 @@ import { Button } from '@maunting/ui'
 import type { TeamInvitation } from '@/api/teams'
 import { Avatar } from '@/components/app/Avatar'
 
-function OfferedSwitches({ invitation }: { invitation: TeamInvitation }) {
-  const { t } = useTranslation()
-  if (!invitation.can_manage_skills && !invitation.can_manage_memory) return null
+function OfferedRoleBadge({ invitation }: { invitation: TeamInvitation }) {
+  if (!invitation.team_role_name) return null
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      {invitation.can_manage_skills && (
-        <span className="rounded-full bg-surface-container-high px-2.5 py-1 text-xs text-on-surface-variant">
-          {t('teams.manageSkills')}
-        </span>
-      )}
-      {invitation.can_manage_memory && (
-        <span className="rounded-full bg-surface-container-high px-2.5 py-1 text-xs text-on-surface-variant">
-          {t('teams.manageMemory')}
-        </span>
-      )}
-    </div>
+    <span className="rounded-full bg-surface-container-high px-2.5 py-1 text-xs font-medium text-on-surface-variant">
+      {invitation.team_role_name}
+    </span>
   )
 }
 
@@ -68,7 +58,7 @@ function InvitationsBlock({
                 </span>
               )}
             </span>
-            <OfferedSwitches invitation={invitation} />
+            <OfferedRoleBadge invitation={invitation} />
             <div className="flex items-center gap-2">
               <Button
                 type="button"
@@ -99,22 +89,20 @@ function InvitationsBlock({
   )
 }
 
-/** Banner mit eigenen Team-Einladungen und Schalter-Anhebungen oberhalb des Arbeitsbereichs. */
+/** Banner mit eigenen Team-Einladungen oberhalb des Arbeitsbereichs. */
 export function TeamInvitationsBanner({
   meineBeitritte,
-  meineAnhebungen,
   busy,
   onAcceptInvitation,
   onDeclineInvitation,
 }: {
   meineBeitritte: TeamInvitation[]
-  meineAnhebungen: TeamInvitation[]
   busy: boolean
-  onAcceptInvitation: (invitation: TeamInvitation, anhebung: boolean) => void
-  onDeclineInvitation: (invitation: TeamInvitation, anhebung: boolean) => void
+  onAcceptInvitation: (invitation: TeamInvitation) => void
+  onDeclineInvitation: (invitation: TeamInvitation) => void
 }) {
   const { t } = useTranslation()
-  if (meineBeitritte.length === 0 && meineAnhebungen.length === 0) return null
+  if (meineBeitritte.length === 0) return null
 
   return (
     <div className="shrink-0 space-y-2 border-b border-outline-variant/40 bg-surface-container-low/40 p-3 sm:px-6">
@@ -124,23 +112,14 @@ export function TeamInvitationsBanner({
         hinweis={t('teams.myInvitationsHint')}
         einladungen={meineBeitritte}
         busy={busy}
-        onAnnehmen={(invitation) => onAcceptInvitation(invitation, false)}
-        onAblehnen={(invitation) => onDeclineInvitation(invitation, false)}
-      />
-      <InvitationsBlock
-        kennung="team-my-upgrades"
-        titel={t('teams.myUpgrades')}
-        hinweis={t('teams.myUpgradesHint')}
-        einladungen={meineAnhebungen}
-        busy={busy}
-        onAnnehmen={(invitation) => onAcceptInvitation(invitation, true)}
-        onAblehnen={(invitation) => onDeclineInvitation(invitation, true)}
+        onAnnehmen={onAcceptInvitation}
+        onAblehnen={onDeclineInvitation}
       />
     </div>
   )
 }
 
-/** Liste ausstehender Einladungen bzw. Anhebungen für Gründer im Mitglieder-Reiter. */
+/** Liste ausstehender Einladungen für Berechtigte im Mitglieder-Reiter. */
 export function PendingInvitationsGroup({
   kennung,
   titel,
@@ -173,7 +152,7 @@ export function PendingInvitationsGroup({
                 {invitation.username}
               </span>
             </div>
-            <OfferedSwitches invitation={invitation} />
+            <OfferedRoleBadge invitation={invitation} />
             <span className="text-xs text-on-surface-variant font-medium">{status}</span>
           </li>
         ))}

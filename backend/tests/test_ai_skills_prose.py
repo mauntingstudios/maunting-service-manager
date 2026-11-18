@@ -51,10 +51,14 @@ def _allow(db: Session, user: User, *keys: str) -> None:
 def _team(db: Session, owner: User, *members: User) -> Team:
     _allow(db, owner, "teams.create", "ai.skills.use")
     team = team_service.create_team(db, user=owner, name=f"team-{owner.username}")
+    skill_role = team_service.create_team_role(
+        db, team=team, user=owner, name="SkillEditor",
+        permission_keys=["ai.skills.manage", "ai.skills.use", "ai.memory.write"],
+    )
     for member in members:
         team_service.invite_member(
             db, team=team, user=owner, new_user_id=member.id,
-            can_manage_skills=True, can_manage_memory=True,
+            team_role_id=skill_role.id,
         )
         team_service.accept_invitation(db, user=member, team_id=team.id)
     return team
@@ -271,7 +275,6 @@ def test_a_member_without_the_switch_cannot_write_team_skills(
     team = team_service.create_team(db, user=regular_user, name="Nur lesen")
     team_service.invite_member(
         db, team=team, user=regular_user, new_user_id=colleague.id,
-        can_manage_skills=False, can_manage_memory=False,
     )
     team_service.accept_invitation(db, user=colleague, team_id=team.id)
 

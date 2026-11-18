@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Info, Server } from 'lucide-react'
 import type { TeamDetail, TeamServer } from '@/api/teams'
-import { Button, Dropdown, Switch } from '@maunting/ui'
+import { Button, Dropdown, RoleBadge, Switch } from '@maunting/ui'
 import { TeamServerCard } from './TeamServerCard'
 
 export interface TeamServerManagerProps {
@@ -22,8 +22,8 @@ export interface TeamServerManagerProps {
 /**
  * Moderner Server- und Berechtigungsmanager für Teams.
  *
- * Unterstützt sowohl teamweite Serverrechte als auch den rollenbasierten Modus
- * mit interaktiven Karten, 1-Klick Presets und klickbaren Chips.
+ * Zeigt im rollenbasierten Modus für jeden Server direkt alle Rollen mit
+ * aktiven Rechten an und synchronisiert sich unmittelbar mit „Rollen & Rechte“.
  */
 export function TeamServerManager({
   team,
@@ -94,7 +94,7 @@ export function TeamServerManager({
           <p>{t('teams.noAssignableServers')}</p>
         </div>
       ) : team.server_roles_active ? (
-        /* Rollenbasierter Modus */
+        /* Rollenbasierter Modus: Direkte Rollenübersicht je Server + synchronisierte Bearbeitung */
         <div className="space-y-5">
           <div className="flex items-start gap-3 rounded-2xl border border-primary/25 bg-primary/5 p-4 text-xs sm:text-sm text-on-surface-variant">
             <Info className="h-5 w-5 text-primary shrink-0 mt-0.5" aria-hidden="true" />
@@ -138,75 +138,146 @@ export function TeamServerManager({
 
               <div className={serverGridClass}>
                 {assignable.map((server) => {
-                const gewaehlt = rollen.find((r) => r.id === rollenWahl[server.server_id]) ?? null
-                const grant = gewaehlt?.server_grants?.find((g) => g.server_id === server.server_id)
+                  // Alle nicht-Admin-Rollen mit aktiven Rechten auf diesem Server
+                  const activeRoleGrants = rollen
+                    .map((r) => ({
+                      role: r,
+                      keys: r.server_grants?.find((g) => g.server_id === server.server_id)?.permission_keys ?? [],
+                    }))
+                    .filter((entry) => entry.keys.length > 0)
 
-                return (
-                  <div key={server.server_id} className="space-y-3">
-                    <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-outline-variant/30 bg-surface-container-high/40 p-3 sm:px-4">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <Server className="h-4 w-4 text-primary shrink-0" aria-hidden="true" />
-                        <span className="font-semibold text-sm text-on-surface truncate">
-                          {server.server_name}
-                        </span>
+                  const selectedId = rollenWahl[server.server_id]
+                  const gewaehlt =
+                    (selectedId !== undefined ? rollen.find((r) => r.id === selectedId) : null) ??
+                    activeRoleGrants[0]?.role ??
+                    null
+                  const grant = gewaehlt?.server_grants?.find((g) => g.server_id === server.server_id)
+
+                  return (
+                    <div key={server.server_id} className="space-y-3">
+                      <div className="space-y-2.5 rounded-2xl border border-outline-variant/30 bg-surface-container-high/40 p-3 sm:px-4">
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <Server className="h-4 w-4 text-primary shrink-0" aria-hidden="true" />
+                            <span className="font-semibold text-sm text-on-surface truncate">
+                              {server.server_name}
+                            </span>
+                          </div>
+                          <div className="w-60 max-w-full">
+                            <Dropdown
+                              value={gewaehlt ? String(gewaehlt.id) : null}
+                              onChange={(val) => onRollenWahl(server.server_id, val ? Number(val) : null)}
+                              options={rollen.map((r) => {
+                                const count =
+                                  r.server_grants?.find((g) => g.server_id === server.server_id)?.permission_keys.length ?? 0
+                                return {
+                                  value: String(r.id),
+                                  label: count > 0 ? `${r.name} (${count})` : r.name,
+                                }
+                              })}
+                              placeholder={t('teams.rolleWaehlen')}
+                              disabled={busy}
+                              aria-label={`${t('teams.roles')}: ${server.server_name}`}
+                            />
+                          </div>
+                        </div>
+
+                        {/* Direkte Übersicht aller Rollen mit Rechten auf diesem Server */}
+                        <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-outline-variant/20">
+                          {activeRoleGrants.length > 0 ? (
+                            activeRoleGrants.map(({ role, keys }) => {
+                              const isCurrent = gewaehlt?.id === role.id
+                              return (
+                                <button
+                                  key={role.id}
+                                  type="button"
+                                  disabled={busy}
+                                  onClick={() => onRollenWahl(server.server_id, role.id)}
+                                  className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs transition-all border ${
+                                    isCurrent
+                                      ? 'border-primary bg-primary/15 text-primary font-semibold'
+                                      : 'border-outline-variant/35 bg-surface-container-low/70 text-on-surface-variant hover:border-primary/45 hover:text-on-surface'
+                                  }`}
+                                >
+                                  <RoleBadge
+                                    name={role.name}
+                                    color={role.color}
+                                    icon={role.icon}
+                                    size="sm"
+                                  />
+                                  <span className="text-label-sm opacity-80">
+                                    {t('teams.roleGrantCount', '{{count}} Rechte', { count: keys.length })}
+                                  </span>
+                                </button>
+                              )
+                            })
+                          ) : (
+                            <span className="text-xs text-on-surface-variant/75 italic">
+                              {t(
+                                'teams.noRoleGrantsForServer',
+                                'Noch keine Rolle mit Rechten für diesen Server — wähle oben eine Rolle zum Zuweisen.',
+                              )}
+                            </span>
+                          )}
+                        </div>
                       </div>
-                      <div className="w-60 max-w-full">
-                        <Dropdown
-                          value={gewaehlt ? String(gewaehlt.id) : null}
-                          onChange={(val) => onRollenWahl(server.server_id, val ? Number(val) : null)}
-                          options={rollen.map((r) => ({ value: String(r.id), label: r.name }))}
-                          placeholder={t('teams.rolleWaehlen')}
+
+                      {gewaehlt ? (
+                        <TeamServerCard
+                          server={server}
+                          assignedKeys={grant?.permission_keys ?? []}
+                          onChangeKeys={(keys) => onRoleKeys(server.server_id, gewaehlt.id, keys)}
                           disabled={busy}
-                          aria-label={`${t('teams.roles')}: ${server.server_name}`}
+                          roleName={gewaehlt.name}
+                          onSyncToAllServers={
+                            assignable.length > 1 && onSyncRoleKeysToAll
+                              ? () => onSyncRoleKeysToAll(server.server_id, gewaehlt.id, grant?.permission_keys ?? [])
+                              : undefined
+                          }
                         />
-                      </div>
+                      ) : (
+                        <div className="rounded-xl border border-dashed border-outline-variant/40 bg-surface-container-low/20 p-4 text-center text-xs text-on-surface-variant/70 italic">
+                          {t('teams.selectRoleToEditServer')}
+                        </div>
+                      )}
                     </div>
-
-                    {gewaehlt ? (
-                      <TeamServerCard
-                        server={server}
-                        assignedKeys={grant?.permission_keys ?? []}
-                        onChangeKeys={(keys) => onRoleKeys(server.server_id, gewaehlt.id, keys)}
-                        disabled={busy}
-                        roleName={gewaehlt.name}
-                        onSyncToAllServers={
-                          assignable.length > 1 && onSyncRoleKeysToAll
-                            ? () => onSyncRoleKeysToAll(server.server_id, gewaehlt.id, grant?.permission_keys ?? [])
-                            : undefined
-                        }
-                      />
-                    ) : (
-                      <div className="rounded-xl border border-dashed border-outline-variant/40 bg-surface-container-low/20 p-4 text-center text-xs text-on-surface-variant/70 italic">
-                        {t('teams.selectRoleToEditServer')}
-                      </div>
-                    )}
-                  </div>
-                )
-              })}
+                  )
+                })}
               </div>
             </div>
           )}
         </div>
       ) : (
-        /* Standard-Modus: Teamweite Serverrechte */
-        <div className={serverGridClass}>
-          {assignable.map((server) => {
-            const current = team.servers.find((item) => item.server_id === server.server_id)
-            return (
-              <TeamServerCard
-                key={server.server_id}
-                server={server}
-                assignedKeys={current?.permission_keys ?? []}
-                onChangeKeys={(keys) => onSetServerKeys(server.server_id, keys)}
-                disabled={busy}
-                onSyncToAllServers={
-                  assignable.length > 1 && onSyncServerKeysToAll
-                    ? () => onSyncServerKeysToAll(server.server_id, current?.permission_keys ?? [])
-                    : undefined
-                }
-              />
-            )
-          })}
+        /* Standard-Modus: Teamweite globale Serverrechte unabhängig von Rollen */
+        <div className="space-y-4">
+          <div className="flex items-start gap-3 rounded-2xl border border-outline-variant/30 bg-surface-container-low/50 p-3.5 text-xs text-on-surface-variant">
+            <Info className="h-4 w-4 text-on-surface-variant shrink-0 mt-0.5" aria-hidden="true" />
+            <p className="leading-relaxed">
+              {t(
+                'teams.globalServerGrantsNotice',
+                'Rollenbezogene Serverrechte sind ausgeschaltet: Alle Mitglieder erhalten dieselben unten festgelegten Server-Rechte unabhängig von ihrer Team-Rolle.',
+              )}
+            </p>
+          </div>
+          <div className={serverGridClass}>
+            {assignable.map((server) => {
+              const current = team.servers.find((item) => item.server_id === server.server_id)
+              return (
+                <TeamServerCard
+                  key={server.server_id}
+                  server={server}
+                  assignedKeys={current?.permission_keys ?? []}
+                  onChangeKeys={(keys) => onSetServerKeys(server.server_id, keys)}
+                  disabled={busy}
+                  onSyncToAllServers={
+                    assignable.length > 1 && onSyncServerKeysToAll
+                      ? () => onSyncServerKeysToAll(server.server_id, current?.permission_keys ?? [])
+                      : undefined
+                  }
+                />
+              )
+            })}
+          </div>
         </div>
       )}
     </section>

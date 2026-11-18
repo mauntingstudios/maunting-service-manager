@@ -5,7 +5,7 @@ from __future__ import annotations
 import secrets
 from sqlalchemy.orm import Session
 
-from models import Team, TeamMember, TeamVaultKey, User, VaultEntry, VaultUserSetting
+from models import Team, TeamMember, TeamMemberRole, TeamRole, TeamRolePermission, TeamVaultKey, User, VaultEntry, VaultUserSetting
 from models.vault_bucket_tombstone import VaultBucketTombstone
 from services import team_service
 
@@ -25,6 +25,28 @@ def _headers(cookies: dict) -> dict[str, str]:
     return {"X-CSRF-Token": token}
 
 
+def _mitglied_mit_tresor_anlegen(
+    db: Session, team_id: int, user_id: int, *, darf_tresor: bool
+) -> TeamRole:
+    rolle = TeamRole(
+        team_id=team_id,
+        name="Tresor" if darf_tresor else "Basis",
+        color="#3b82f6",
+        is_default=True,
+    )
+    db.add(rolle)
+    db.flush()
+    if darf_tresor:
+        db.add(TeamRolePermission(role_id=rolle.id, permission_key="vault.read"))
+    mitglied = TeamMember(
+        team_id=team_id, user_id=user_id, role="member", team_role_id=rolle.id
+    )
+    db.add(mitglied)
+    db.flush()
+    db.add(TeamMemberRole(team_member_id=mitglied.id, team_role_id=rolle.id))
+    return rolle
+
+
 def test_team_vault_lifecycle(
     db: Session,
     client,
@@ -38,7 +60,7 @@ def test_team_vault_lifecycle(
     db.add(team)
     db.flush()
     db.add(TeamMember(team_id=team.id, user_id=owner_user.id, role="owner"))
-    db.add(TeamMember(team_id=team.id, user_id=regular_user.id, role="member"))
+    _mitglied_mit_tresor_anlegen(db, team.id, regular_user.id, darf_tresor=True)
     db.commit()
 
     # 2. Status abrufen vor Setup (noch nicht eingerichtet)
@@ -243,7 +265,7 @@ def test_team_vault_keyslots_lifecycle(
     db.add(team)
     db.flush()
     db.add(TeamMember(team_id=team.id, user_id=owner_user.id, role="owner"))
-    db.add(TeamMember(team_id=team.id, user_id=regular_user.id, role="member"))
+    _mitglied_mit_tresor_anlegen(db, team.id, regular_user.id, darf_tresor=True)
     db.commit()
     bucket_id = _valid_bucket_id()
     assert client.post(
@@ -402,7 +424,6 @@ def test_beitritt_markiert_tresor_zur_rotation(
 
     team_service.invite_member(
         db, team=team, user=owner_user, new_user_id=regular_user.id,
-        can_manage_skills=False, can_manage_memory=False,
     )
     team_service.accept_invitation(db, user=regular_user, team_id=team.id)
     assert client.get(f"/api/teams/{team.id}/vault/status", cookies=owner_cookies).json()["needs_rotation"] is True
@@ -565,12 +586,16 @@ def test_team_vault_access_barrier_when_disabled(
     regular_user: User,
     user_cookies: dict,
 ) -> None:
-    # 1. Team anlegen, regular_user mit can_access_vault=False
+    # 1. Team anlegen, regular_user ohne Tresor-Berechtigung
     team = Team(name="Security Restricted Team", owner_user_id=owner_user.id)
     db.add(team)
     db.flush()
-    db.add(TeamMember(team_id=team.id, user_id=owner_user.id, role="owner", can_access_vault=True))
-    db.add(TeamMember(team_id=team.id, user_id=regular_user.id, role="member", can_access_vault=False))
+    db.add(TeamMember(team_id=team.id, user_id=owner_user.id, role="owner"))
+    _mitglied_mit_tresor_anlegen(db, team.id, regular_user.id, darf_tresor=False)
+    rolle_mit_tresor = TeamRole(team_id=team.id, name="Tresor-Voll", color="#10b981")
+    db.add(rolle_mit_tresor)
+    db.flush()
+    db.add(TeamRolePermission(role_id=rolle_mit_tresor.id, permission_key="vault.read"))
     db.commit()
 
     # 2. Owner richtet Tresor ein
@@ -625,10 +650,10 @@ def test_team_vault_access_barrier_when_disabled(
     resp_speicher = client.get(f"/api/teams/{team.id}/vault/speicher", cookies=user_cookies)
     assert resp_speicher.status_code == 403
 
-    # 7. Owner schaltet can_access_vault auf True um
+    # 7. Owner weist Rolle mit vault.read zu
     resp_update = client.put(
-        f"/api/teams/{team.id}/members/{regular_user.id}",
-        json={"can_manage_skills": False, "can_manage_memory": False, "can_access_vault": True},
+        f"/api/teams/{team.id}/members/{regular_user.id}/roles",
+        json={"role_ids": [rolle_mit_tresor.id]},
         cookies=owner_cookies,
         headers=_headers(owner_cookies),
     )
@@ -685,20 +710,18 @@ def test_rollenentzug_senkt_tresorzugriff(
     team = team_service.create_team(db, user=owner_user, name="Tresor-Team")
     team_service.invite_member(
         db, team=team, user=owner_user, new_user_id=regular_user.id,
-        can_manage_skills=False, can_manage_memory=False,
     )
     team_service.accept_invitation(db, user=regular_user, team_id=team.id)
 
     tresor_rolle = team_service.create_team_role(
-        db, team=team, user=owner_user, name="Tresor",
-        can_access_vault=True, can_manage_skills=False, can_manage_memory=False,
+        db, team=team, user=owner_user, name="Tresor", permission_keys=["vault.read"],
     )
     team_service.set_member_roles(
         db, team=team, user=owner_user,
         member_user_id=regular_user.id, role_ids=[tresor_rolle.id],
     )
     db.expire_all()
-    assert team_service.membership(db, team.id, regular_user.id).can_access_vault is True
+    assert team_service.has_team_permission(db, team.id, regular_user, "vault.read") is True
 
     bucket_id = _valid_bucket_id()
     assert client.post(
@@ -715,17 +738,16 @@ def test_rollenentzug_senkt_tresorzugriff(
     ).status_code == 200
     sync_payload = {"bucket_id": bucket_id, "since_revision": 0, "mutations": []}
 
-    # Entzug: Rolle ohne Tresor — Schalter und Huelle fallen, Sync sperrt.
+    # Entzug: Rolle ohne vault.read — Keyslot faellt, Sync sperrt.
     leser_rolle = team_service.create_team_role(
-        db, team=team, user=owner_user, name="Leser",
-        can_access_vault=False, can_manage_skills=False, can_manage_memory=False,
+        db, team=team, user=owner_user, name="Leser", permission_keys=["ai.memory.read"],
     )
     team_service.set_member_roles(
         db, team=team, user=owner_user,
         member_user_id=regular_user.id, role_ids=[leser_rolle.id],
     )
     db.expire_all()
-    assert team_service.membership(db, team.id, regular_user.id).can_access_vault is False
+    assert team_service.has_team_permission(db, team.id, regular_user, "vault.read") is False
     assert db.query(TeamVaultKey).filter_by(team_id=team.id, user_id=regular_user.id).count() == 0
     assert client.post(
         f"/api/teams/{team.id}/vault/sync",
@@ -734,13 +756,13 @@ def test_rollenentzug_senkt_tresorzugriff(
         headers=_headers(user_cookies),
     ).status_code == 403
 
-    # Rueckweg: Tresor-Rolle zurueck — Anheben geht weiter, Huelle fehlt noch.
+    # Rueckweg: Tresor-Rolle zurueck — Anheben geht weiter.
     team_service.set_member_roles(
         db, team=team, user=owner_user,
         member_user_id=regular_user.id, role_ids=[tresor_rolle.id],
     )
     db.expire_all()
-    assert team_service.membership(db, team.id, regular_user.id).can_access_vault is True
+    assert team_service.has_team_permission(db, team.id, regular_user, "vault.read") is True
     assert client.get(f"/api/teams/{team.id}/vault/keyslot", cookies=user_cookies).status_code == 404
     assert client.post(
         f"/api/teams/{team.id}/vault/sync",

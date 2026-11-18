@@ -23,9 +23,6 @@ export interface TeamRolePreview {
   color: string
   icon: string | null
   permissionKeys: string[]
-  canAccessVault: boolean
-  canManageSkills: boolean
-  canManageMemory: boolean
   serverRolesActive: boolean
   serverKeys: Record<string, string[]>
 }
@@ -38,6 +35,8 @@ export interface TeamPreviewAccess {
   canKick: boolean
   canManageRoles: boolean
   canManageServers: boolean
+  canManageAvatar: boolean
+  canManageBanner: boolean
   canAccessVault: boolean
   canManageSkills: boolean
   canManageMemory: boolean
@@ -163,6 +162,8 @@ export function resolveTeamPreviewAccess(
       canKick: team.is_owner,
       canManageRoles: team.is_owner,
       canManageServers: team.is_owner,
+      canManageAvatar: team.is_owner || Boolean(team.can_manage_avatar),
+      canManageBanner: team.is_owner || Boolean(team.can_manage_banner),
       canAccessVault: team.can_access_vault !== false,
       canManageSkills: team.can_manage_skills,
       canManageMemory: team.can_manage_memory,
@@ -177,6 +178,8 @@ export function resolveTeamPreviewAccess(
       canKick: false,
       canManageRoles: false,
       canManageServers: false,
+      canManageAvatar: false,
+      canManageBanner: false,
       canAccessVault: team.can_access_vault !== false,
       canManageSkills: team.can_manage_skills,
       canManageMemory: team.can_manage_memory,
@@ -191,6 +194,8 @@ export function resolveTeamPreviewAccess(
       canKick: false,
       canManageRoles: false,
       canManageServers: false,
+      canManageAvatar: false,
+      canManageBanner: false,
       canAccessVault: false,
       canManageSkills: false,
       canManageMemory: false,
@@ -206,9 +211,11 @@ export function resolveTeamPreviewAccess(
     canKick: has('team.members.kick'),
     canManageRoles: has('team.roles.manage'),
     canManageServers: has('team.servers.manage'),
-    canAccessVault: preview.isAdmin || preview.canAccessVault || preview.permissionKeys.includes('vault.read'),
-    canManageSkills: preview.isAdmin || preview.canManageSkills || preview.permissionKeys.includes('ai.skills.manage'),
-    canManageMemory: preview.isAdmin || preview.canManageMemory || preview.permissionKeys.includes('ai.memory.write'),
+    canManageAvatar: has('team.avatar.manage'),
+    canManageBanner: has('team.banner.manage'),
+    canAccessVault: has('vault.read'),
+    canManageSkills: has('ai.skills.manage'),
+    canManageMemory: has('ai.memory.write'),
     isPreviewingThisTeam: true,
   }
 }
@@ -244,9 +251,6 @@ export const useRolePreviewStore = create<RolePreviewState>((set) => ({
         color: role.color || '#3b82f6',
         icon: role.icon ?? null,
         permissionKeys: [...(role.permission_keys || [])],
-        canAccessVault: Boolean(role.can_access_vault),
-        canManageSkills: Boolean(role.can_manage_skills),
-        canManageMemory: Boolean(role.can_manage_memory),
         serverRolesActive: Boolean(team.server_roles_active),
         serverKeys: buildTeamRoleServerKeys(team, role),
       },

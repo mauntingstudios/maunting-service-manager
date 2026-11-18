@@ -248,9 +248,13 @@ def test_teamwissen_zahlt_der_gruender(db: Session, regular_user: User, monkeypa
     team = team_service.create_team(db, user=regular_user, name="Betrieb")
     kollege = _benutzer(db, "kollege")
     team_service.personal_team(db, kollege)
+    mem_role = team_service.create_team_role(
+        db, team=team, user=regular_user, name="MemWriter",
+        permission_keys=["ai.memory.write"],
+    )
     team_service.invite_member(
         db, team=team, user=regular_user, new_user_id=kollege.id,
-        can_manage_skills=False, can_manage_memory=True,
+        team_role_id=mem_role.id,
     )
     team_service.accept_invitation(db, user=kollege, team_id=team.id)
     # Geschrieben hat der Kollege; das Team gehört trotzdem nicht ihm.

@@ -47,6 +47,7 @@ from .team import (
     TeamServerGrant,
     TeamVaultKey,
 )
+from .team_media import TeamMedia
 from .backup import Backup
 from .panel_backup import PanelBackup
 from .mod import Mod

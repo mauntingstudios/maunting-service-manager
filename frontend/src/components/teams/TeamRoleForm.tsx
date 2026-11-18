@@ -175,9 +175,6 @@ export function TeamRoleForm({
         is_default: isDefault,
         permission_keys: Array.from(permissionKeys),
         server_grants: grantsPayload,
-        can_access_vault: permissionKeys.has('vault.read') || isAdmin,
-        can_manage_skills: permissionKeys.has('ai.skills.manage') || isAdmin,
-        can_manage_memory: permissionKeys.has('ai.memory.write') || isAdmin,
       }
 
       let saved: TeamRole
@@ -361,6 +358,17 @@ export function TeamRoleForm({
               </p>
               <p className="mt-1 text-xs text-on-surface-variant">
                 {t('teams.serverSichtAuto')}
+              </p>
+              <p className={`mt-1 text-xs font-medium ${team.server_roles_active ? 'text-primary' : 'text-on-surface-variant'}`}>
+                {team.server_roles_active
+                  ? t(
+                      'teams.roleServerGrantsActiveNotice',
+                      'Aktiv: Im Tab „Server“ ist „Serverrechte nach Rolle“ eingeschaltet — diese Zuordnungen greifen direkt und bleiben mit dem Server-Tab synchron.',
+                    )
+                  : t(
+                      'teams.roleServerGrantsInactiveNotice',
+                      'Vorgemerkt: Im Tab „Server“ gelten derzeit teamweite Rechte für alle Mitglieder. Aktiviere dort „Serverrechte nach Rolle“, damit diese Zuordnungen greifen.',
+                    )}
               </p>
               {entfallen && (
                 <p className="mt-1 text-xs text-status-warning">

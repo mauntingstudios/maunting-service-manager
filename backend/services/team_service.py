@@ -36,8 +36,9 @@ from models import (
     TeamVaultKey,
     User,
 )
-from services import audit_service, permission_service
+from services import audit_service, permission_service, team_media_service
 from services.permission_catalog import SERVER_KEYS, TEAM_KEYS, is_team_key
+from services.sync_event_service import SyncEventService
 
 
 MAX_TEAMS_PER_OWNER = 20
@@ -46,6 +47,20 @@ MAX_MEMBERS_PER_TEAM = 100
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def publish_team_updated(
+    team_id: int, *, scope: str = "all", user_ids: set[int] | None = None
+) -> None:
+    """Publiziert Team-Aenderungen best effort in den Echtzeit-Sync-Bus."""
+    try:
+        SyncEventService.publish(
+            {"type": "team_updated", "team_id": team_id, "scope": scope},
+            team_id=team_id,
+            user_ids=user_ids,
+        )
+    except Exception:
+        pass
 
 
 def personal_team(db: Session, user: User) -> Team:
@@ -82,8 +97,7 @@ def personal_team(db: Session, user: User) -> Team:
         return found
 
     db.add(TeamMember(
-        team_id=team.id, user_id=user.id, role="owner",
-        can_manage_skills=True, can_manage_memory=True, added_by=user.id,
+        team_id=team.id, user_id=user.id, role="owner", added_by=user.id,
     ))
     db.flush()
     return team
@@ -150,26 +164,6 @@ def get_member_role_ids(db: Session, member_id: int, fallback_role_id: int | Non
     return sorted(role_ids)
 
 
-def _mitglied_flags_neu(db: Session, member: TeamMember) -> None:
-    """Rechnet die drei Mitgliedsschalter aus allen zugewiesenen Rollen neu.
-
-    ODER ueber Mehrfach- plus Legacy-Rolle; ohne Rollen bleiben die Altflags
-    (Legacy-Mitglieder ausserhalb des Rollenmodells). Senken ist Absicht:
-    wer die Rolle verliert, verliert den Schalter (Befund 15). Committet nicht.
-
-    Der Zustimmungs-Tanz in `update_member` bleibt daneben bestehen: Er regelt
-    direkte Schalterwuensche ohne Rolle. Wer eine Rolle (um-)verteilt, regiert
-    sofort — auch erhoehend; das ist kein Tanz, sondern Rollenverwaltung.
-    """
-    rollen_ids = get_member_role_ids(db, member.id, member.team_role_id)
-    if not rollen_ids:
-        return
-    rollen = db.query(TeamRole).filter(TeamRole.id.in_(rollen_ids)).all()
-    member.can_access_vault = any(r.can_access_vault for r in rollen)
-    member.can_manage_skills = any(r.can_manage_skills for r in rollen)
-    member.can_manage_memory = any(r.can_manage_memory for r in rollen)
-
-
 def _rollen_traeger(db: Session, team_id: int, role_id: int) -> list[TeamMember]:
     """Alle Mitglieder, die diese Rolle halten — mehrfach oder als Legacy."""
     return (
@@ -189,8 +183,91 @@ def _rollen_traeger(db: Session, team_id: int, role_id: int) -> list[TeamMember]
     )
 
 
+def _member_effective_permissions(db: Session, member: TeamMember) -> set[str]:
+    """Effektive Team-Rechte einer Mitgliedszeile aus Owner-Status oder Rollen."""
+    if member.role == "owner":
+        return set(TEAM_KEYS)
+    role_ids = get_member_role_ids(db, member.id, member.team_role_id)
+    if not role_ids:
+        return set()
+    roles = db.query(TeamRole).filter(TeamRole.id.in_(role_ids)).all()
+    if any(r.is_admin for r in roles):
+        return set(TEAM_KEYS)
+    rows = (
+        db.query(TeamRolePermission.permission_key)
+        .filter(TeamRolePermission.role_id.in_(role_ids))
+        .all()
+    )
+    return {row[0] for row in rows}
+
+
+def effective_permissions_for_teams(
+    db: Session, team_ids: list[int], user: User
+) -> dict[int, set[str]]:
+    """Berechnet effektive Team-Rechte des Benutzers fuer mehrere Teams auf einmal."""
+    if not team_ids:
+        return {}
+    if user.is_owner:
+        all_keys = set(TEAM_KEYS)
+        return {tid: set(all_keys) for tid in team_ids}
+
+    members = (
+        db.query(TeamMember)
+        .filter(TeamMember.team_id.in_(team_ids), TeamMember.user_id == user.id)
+        .all()
+    )
+    result: dict[int, set[str]] = {tid: set() for tid in team_ids}
+    member_by_id = {m.id: m for m in members}
+    if not member_by_id:
+        return result
+
+    multi_rows = (
+        db.query(TeamMemberRole.team_member_id, TeamMemberRole.team_role_id)
+        .filter(TeamMemberRole.team_member_id.in_(list(member_by_id)))
+        .all()
+    )
+    roles_by_member: dict[int, set[int]] = {m.id: set() for m in members}
+    for mid, rid in multi_rows:
+        roles_by_member[mid].add(rid)
+    all_role_ids: set[int] = set()
+    for m in members:
+        if m.team_role_id is not None:
+            roles_by_member[m.id].add(m.team_role_id)
+        all_role_ids.update(roles_by_member[m.id])
+
+    admin_roles: set[int] = set()
+    perms_by_role: dict[int, set[str]] = {}
+    if all_role_ids:
+        admin_roles = {
+            r[0]
+            for r in db.query(TeamRole.id)
+            .filter(TeamRole.id.in_(all_role_ids), TeamRole.is_admin.is_(True))
+            .all()
+        }
+        for rid, key in (
+            db.query(TeamRolePermission.role_id, TeamRolePermission.permission_key)
+            .filter(TeamRolePermission.role_id.in_(all_role_ids))
+            .all()
+        ):
+            perms_by_role.setdefault(rid, set()).add(key)
+
+    for m in members:
+        if m.role == "owner":
+            result[m.team_id] = set(TEAM_KEYS)
+            continue
+        rids = roles_by_member[m.id]
+        if any(rid in admin_roles for rid in rids):
+            result[m.team_id] = set(TEAM_KEYS)
+            continue
+        keys: set[str] = set()
+        for rid in rids:
+            keys.update(perms_by_role.get(rid, ()))
+        result[m.team_id] = keys
+    return result
+
+
 def has_team_permission(db: Session, team_id: int, user: User, permission_key: str) -> bool:
-    """Prüft, ob der Benutzer im Team dieses Recht hält (Owner, Rolle oder Legacy-Schalter)."""
+    """Prüft, ob der Benutzer im Team dieses Recht hält (Owner oder zugewiesene Rolle)."""
     if user.is_owner:
         return True
     member = membership(db, team_id, user.id)
@@ -200,31 +277,20 @@ def has_team_permission(db: Session, team_id: int, user: User, permission_key: s
         return True
 
     role_ids = get_member_role_ids(db, member.id, member.team_role_id)
-    if role_ids:
-        roles = db.query(TeamRole).filter(TeamRole.id.in_(role_ids)).all()
-        for role in roles:
-            if role.is_admin:
-                return True
-        has_perm = (
-            db.query(TeamRolePermission.id)
-            .filter(
-                TeamRolePermission.role_id.in_(role_ids),
-                TeamRolePermission.permission_key == permission_key,
-            )
-            .first()
+    if not role_ids:
+        return False
+    roles = db.query(TeamRole).filter(TeamRole.id.in_(role_ids)).all()
+    if any(role.is_admin for role in roles):
+        return True
+    has_perm = (
+        db.query(TeamRolePermission.id)
+        .filter(
+            TeamRolePermission.role_id.in_(role_ids),
+            TeamRolePermission.permission_key == permission_key,
         )
-        if has_perm is not None:
-            return True
-
-    # Fallback auf Legacy-Schalter an TeamMember
-    if permission_key in ("ai.skills.manage",) and member.can_manage_skills:
-        return True
-    if permission_key in ("ai.memory.write",) and member.can_manage_memory:
-        return True
-    if permission_key in ("vault.read", "vault.write") and member.can_access_vault:
-        return True
-
-    return False
+        .first()
+    )
+    return has_perm is not None
 
 
 def assert_team_permission(db: Session, team: Team, user: User, permission_key: str) -> None:
@@ -251,18 +317,9 @@ def _pruefe_rollen_deckel(
     db: Session, team: Team, user: User, *,
     is_admin: bool,
     permission_keys: list[str] | None,
-    flags: dict[str, bool],
     server_grants: list[dict] | None = None,
 ) -> None:
-    """Der Deckel: wer nicht Gruender ist, vergibt nur, was er selbst haelt.
-
-    Bis 11/2026 legte jeder mit `team.roles.manage` Admin-Rollen an und teilte
-    sie zu — samt Rechten und Schaltern, die er selbst nicht hatte. Jetzt gilt:
-    `is_admin` nur durch den Gruender, jedes Recht nur gehalten
-    (`has_team_permission`), jeder Schalter nur getragen (Mitgliedszeile) und
-    jedes Serverrecht nur selbst gehalten (`direct_server_permission`, ohne
-    Teams). Der Gruender bleibt unbeschraenkt.
-    """
+    """Der Deckel: wer nicht Gruender ist, vergibt nur, was er selbst haelt."""
     if _ist_team_gruender(team, user):
         return
     if is_admin:
@@ -274,21 +331,6 @@ def _pruefe_rollen_deckel(
                 detail={
                     "code": "TEAM_ROLE_GRANT_DENIED",
                     "message": f'Das Recht "{key}" hältst du im Team nicht und kannst es nicht vergeben.',
-                },
-            )
-    eigen = membership(db, team.id, user.id)
-    getragen = {
-        "can_access_vault": bool(eigen is not None and eigen.can_access_vault),
-        "can_manage_skills": bool(eigen is not None and eigen.can_manage_skills),
-        "can_manage_memory": bool(eigen is not None and eigen.can_manage_memory),
-    }
-    for name, gesetzt in flags.items():
-        if gesetzt and not getragen.get(name, False):
-            raise HTTPException(
-                status_code=403,
-                detail={
-                    "code": "TEAM_ROLE_GRANT_DENIED",
-                    "message": "Diesen Teamschalter trägst du selbst nicht und kannst ihn nicht vergeben.",
                 },
             )
     from services.permission_catalog import SERVER_KEYS
@@ -393,11 +435,6 @@ def _pruefe_rollenzuteilung(db: Session, team: Team, user: User, rollen: list[Te
             db, team, user,
             is_admin=rolle.is_admin,
             permission_keys=keys_je_rolle[rolle.id],
-            flags={
-                "can_access_vault": rolle.can_access_vault,
-                "can_manage_skills": rolle.can_manage_skills,
-                "can_manage_memory": rolle.can_manage_memory,
-            },
             server_grants=[
                 {"server_id": server_id, "permission_keys": keys}
                 for server_id, keys in grants_je_rolle[rolle.id].items()
@@ -434,9 +471,6 @@ def ensure_default_team_roles(
         description="Voller Zugriff auf alle Funktionen des Teams",
         color="#ef4444",
         icon="crown",
-        can_access_vault=True,
-        can_manage_skills=True,
-        can_manage_memory=True,
         is_default=False,
         is_admin=True,
     )
@@ -452,9 +486,6 @@ def ensure_default_team_roles(
         description="Standardrolle für neue Teammitglieder",
         color="#10b981",
         icon="user-check",
-        can_access_vault=True,
-        can_manage_skills=False,
-        can_manage_memory=False,
         is_default=True,
         is_admin=False,
     )
@@ -470,9 +501,6 @@ def ensure_default_team_roles(
         description="Eingeschränkter Lesezugriff",
         color="#64748b",
         icon="eye",
-        can_access_vault=True,
-        can_manage_skills=False,
-        can_manage_memory=False,
         is_default=False,
         is_admin=False,
     )
@@ -521,12 +549,17 @@ def _assert_name_is_free(
             )
 
 
-def create_team(db: Session, *, user: User, name: str) -> Team:
-    """Legt ein echtes Team an. Der Gruender ist automatisch Mitglied.
-
-    Er bekommt beide Schalter: wer ein Team gruendet, soll dessen Wissen auch
-    pflegen koennen, ohne sich das erst selbst zu erlauben.
-    """
+def create_team(
+    db: Session,
+    *,
+    user: User,
+    name: str,
+    category: str | None = None,
+    description: str | None = None,
+    avatar_preset: str | None = None,
+    banner_preset: str | None = None,
+) -> Team:
+    """Legt ein echtes Team an. Der Gruender ist automatisch Mitglied."""
     if not permission_service.has_global_permission(db, user, "teams.create"):
         raise HTTPException(status_code=403, detail="Keine Berechtigung")
     safe_name = name.strip()
@@ -542,12 +575,19 @@ def create_team(db: Session, *, user: User, name: str) -> Team:
     if owned >= MAX_TEAMS_PER_OWNER:
         raise HTTPException(status_code=409, detail="Zu viele Teams")
 
-    team = Team(name=safe_name, owner_user_id=user.id, personal_for_user_id=None)
+    team = Team(
+        name=safe_name,
+        owner_user_id=user.id,
+        personal_for_user_id=None,
+        category=(category.strip()[:32] if category and category.strip() else None),
+        description=(description.strip()[:500] if description and description.strip() else None),
+        avatar_preset=team_media_service.validate_preset(avatar_preset),
+        banner_preset=team_media_service.validate_preset(banner_preset),
+    )
     db.add(team)
     db.flush()
     founder_member = TeamMember(
-        team_id=team.id, user_id=user.id, role="owner",
-        can_manage_skills=True, can_manage_memory=True, added_by=user.id,
+        team_id=team.id, user_id=user.id, role="owner", added_by=user.id,
     )
     db.add(founder_member)
     db.flush()
@@ -558,10 +598,22 @@ def create_team(db: Session, *, user: User, name: str) -> Team:
     )
     db.commit()
     db.refresh(team)
+    publish_team_updated(team.id, scope="created", user_ids={user.id})
     return team
 
 
-def rename_team(db: Session, *, team: Team, user: User, name: str) -> Team:
+def rename_team(
+    db: Session,
+    *,
+    team: Team,
+    user: User,
+    name: str,
+    category: str | None = None,
+    description: str | None = None,
+    avatar_preset: str | None = None,
+    banner_preset: str | None = None,
+    fields_set: set[str] | None = None,
+) -> Team:
     assert_team_owner(db, team, user)
     if team.is_personal:
         raise HTTPException(status_code=409, detail="Das persoenliche Team bleibt wie es ist")
@@ -572,22 +624,26 @@ def rename_team(db: Session, *, team: Team, user: User, name: str) -> Team:
         db, owner_user_id=team.owner_user_id, name=safe_name, team_id=team.id
     )
     team.name = safe_name
+    touched = fields_set if fields_set is not None else set()
+    if "category" in touched or category is not None:
+        team.category = category.strip()[:32] if category and category.strip() else None
+    if "description" in touched or description is not None:
+        team.description = description.strip()[:500] if description and description.strip() else None
+    if "avatar_preset" in touched:
+        team_media_service.activate_preset(db, team=team, kind="avatar", preset_key=avatar_preset)
+    if "banner_preset" in touched:
+        team_media_service.activate_preset(db, team=team, kind="banner", preset_key=banner_preset)
     team.updated_at = _now()
     db.commit()
     db.refresh(team)
+    publish_team_updated(team.id, scope="metadata")
     return team
 
 
 def set_server_roles_active(
     db: Session, *, team: Team, user: User, active: bool
 ) -> Team:
-    """Schaltet die rollenbezogenen Serverrechte eines Teams um.
-
-    Aus: die Team-Zuordnung gilt fuer alle Mitglieder. An: nur ausdrueckliche
-    Rollen-Grants zaehlen. Nur der Gruender entscheidet; bestehende Grants
-    bleiben beim Ausschalten erhalten und gelten beim erneuten Einschalten
-    wieder.
-    """
+    """Schaltet die rollenbezogenen Serverrechte eines Teams um."""
     assert_team_owner(db, team, user)
     if team.is_personal:
         raise HTTPException(status_code=409, detail="Das persoenliche Team kennt keine Rollen")
@@ -607,22 +663,22 @@ def set_server_roles_active(
     )
     db.commit()
     db.refresh(team)
+    publish_team_updated(team.id, scope="servers")
     return team
 
 
 def delete_team(db: Session, *, team: Team, user: User) -> None:
     assert_team_owner(db, team, user)
     if team.is_personal:
-        # Ohne persoenliches Team haette das Lernen keinen Ort mehr. Es ist
-        # kein Besitz, den man aufgeben kann, sondern Teil des Kontos.
         raise HTTPException(status_code=409, detail="Das persoenliche Team bleibt bestehen")
+    member_user_ids = {
+        uid for (uid,) in db.query(TeamMember.user_id).filter(TeamMember.team_id == team.id).all()
+    }
+    team_id = team.id
     audit_service.record_privileged_action(
         db, user_id=user.id, action="team.deleted", target_type="team",
         target_id=team.id, details={"name": team.name}, origin="direct",
     )
-    # Offene Dokumente best effort trennen, bevor die Kaskade den Zustand
-    # loescht. Der Sidecar haelt nur im RAM; ein Store nach dem Loeschen
-    # scheitert am Backend und wuerde die Verbindung ohnehin beenden.
     try:
         from models.doc import Document
         from services.docs_collab_service import DocsCollabService
@@ -633,6 +689,8 @@ def delete_team(db: Session, *, team: Team, user: User) -> None:
         pass
     db.delete(team)
     db.commit()
+    team_media_service.cleanup_team_media_files(team_id)
+    publish_team_updated(team_id, scope="deleted", user_ids=member_user_ids)
 
 
 def invitation(db: Session, team_id: int, user_id: int) -> TeamInvitation | None:
@@ -664,33 +722,12 @@ def team_invitations(db: Session, team_id: int) -> list[TeamInvitation]:
 
 def invite_member(
     db: Session, *, team: Team, user: User, new_user_id: int,
-    can_manage_skills: bool, can_manage_memory: bool,
-    can_access_vault: bool = True, team_role_id: int | None = None,
+    team_role_id: int | None = None,
 ) -> TeamInvitation:
-    """Spricht eine Einladung aus — und macht noch **niemanden** zum Mitglied.
-
-    Vorher trug diese Funktion den Benutzer direkt ein. Damit konnte jeder mit
-    `teams.create` einen beliebigen anderen still in sein Team ziehen, und das
-    oeffnete mehr als eine Mitgliederliste: das Team-Wissen des Gruenders
-    fliesst ab diesem Moment in jeden KI-Lauf des Hinzugefuegten, und was
-    dessen KI fuers Team lernt — die Anweisung dazu steht im Systemprompt —
-    landet im Team des Fremden und ist dort im Klartext lesbar. Wer jemanden
-    hineinzieht, liest also mit und schreibt mit.
-
-    Die Entscheidung darueber gehoert dem, dessen Daten sie oeffnet. Deshalb
-    entsteht hier nur eine Zeile in `team_invitations`; die Mitgliedschaft legt
-    `accept_invitation` an. Die KI verliert dadurch nichts: sie liest und
-    schreibt weiterhin in jedes Team, dem ihr Benutzer wirklich angehoert.
-
-    Eine bereits offene Einladung wird ueberschrieben statt abgelehnt: nur so
-    kann der Gruender ein zu grosszuegiges Angebot zuruecknehmen, ohne dass es
-    dafuer einen eigenen Weg braucht.
-    """
+    """Spricht eine Einladung mit optionaler Rollenwahl aus."""
     if not has_team_permission(db, team.id, user, "team.members.invite"):
         assert_team_owner(db, team, user)
     if team.is_personal:
-        # Das persoenliche Team ist per Definition eines. Wer teilen will,
-        # gruendet ein echtes — sonst waere "persoenlich" nur noch ein Name.
         raise HTTPException(status_code=409, detail="Das persoenliche Team bleibt allein")
     target = db.get(User, new_user_id)
     if target is None or not target.is_active:
@@ -698,7 +735,6 @@ def invite_member(
     if membership(db, team.id, new_user_id) is not None:
         raise HTTPException(status_code=409, detail="Benutzer ist bereits im Team")
 
-    # Eine Rolle aus einem fremden Team landet nie auf der Einladung.
     ausdrueckliche_rolle = (
         _rolle_im_team(db, team, team_role_id) if team_role_id is not None else None
     )
@@ -707,18 +743,11 @@ def invite_member(
         if default_role is not None:
             team_role_id = default_role[0]
 
-    # Der Deckel gilt der ausdruecklichen Rollenwahl. Die automatisch
-    # eingesetzte Standardrolle ist kein Vergabewille des Einladenden; sie ist
-    # die vom Gruender festgelegte Rolle (dieselbe Ausnahme wie in
-    # `accept_invitation`).
     if ausdrueckliche_rolle is not None:
         _pruefe_rollenzuteilung(db, team, user, [ausdrueckliche_rolle])
 
     offen = invitation(db, team.id, new_user_id)
     if offen is None:
-        # Offene Einladungen zaehlen mit: sonst griffe die Obergrenze erst beim
-        # Beitritt, und ein Team koennte beliebig viele Menschen gleichzeitig
-        # anschreiben.
         belegt = (
             db.query(TeamMember).filter(TeamMember.team_id == team.id).count()
             + db.query(TeamInvitation).filter(TeamInvitation.team_id == team.id).count()
@@ -728,53 +757,34 @@ def invite_member(
         offen = TeamInvitation(team_id=team.id, user_id=new_user_id)
         db.add(offen)
 
-    offen.can_manage_skills = can_manage_skills
-    offen.can_manage_memory = can_manage_memory
-    offen.can_access_vault = can_access_vault
     offen.team_role_id = team_role_id
     offen.invited_by = user.id
     audit_service.record_privileged_action(
         db, user_id=user.id, action="team.member.invited", target_type="team",
         target_id=team.id,
-        details={"member_user_id": new_user_id}, origin="direct",
+        details={"member_user_id": new_user_id, "team_role_id": team_role_id}, origin="direct",
     )
     try:
         db.commit()
     except IntegrityError as exc:
-        # Zwei gleichzeitige Einladungen an denselben Benutzer.
         db.rollback()
         raise HTTPException(status_code=409, detail="Einladung besteht bereits") from exc
     db.refresh(offen)
+    publish_team_updated(team.id, scope="members", user_ids={new_user_id})
     return offen
 
 
 def accept_invitation(db: Session, *, user: User, team_id: int) -> TeamMember:
-    """Der Eingeladene nimmt an — beitretend oder aufsteigend.
-
-    Die beiden Schalter kommen aus der Einladung und nicht aus dem Aufruf: was
-    angenommen wird, muss dasselbe sein, was angeboten wurde.
-
-    Ist der Annehmende schon Mitglied, war die Einladung ein Angebot aus
-    `update_member`: der Gruender wollte einen Schalter anheben, und genau das
-    kann nur der Betroffene selbst. Dann entsteht keine zweite Zeile — die
-    vorhandene traegt danach, was angeboten wurde.
-    """
+    """Der Eingeladene nimmt eine Teameinladung an."""
     einladung = invitation(db, team_id, user.id)
     if einladung is None:
         raise HTTPException(status_code=404, detail="Einladung nicht gefunden")
     team = db.get(Team, team_id)
     if team is None:
-        # Das Team ist zwischen Einladung und Annahme verschwunden. Die Zeile
-        # kann nur ohne Fremdschluesselpruefung ueberlebt haben; sie soll den
-        # Benutzer nicht weiter behelligen.
         db.delete(einladung)
         db.commit()
         raise HTTPException(status_code=404, detail="Einladung nicht gefunden")
 
-    # Die Rolle auf der Einladung gilt erst nach erneuter Pruefung: sie muss
-    # noch da sein und zum Team gehoeren — und eine Admin-Rolle traegt nur eine
-    # Einladung vom Gruender (Einladungen von vor dem Deckel eingeschlossen;
-    # ein Erstellerfeld hat die Rolle nicht, der Einlader steht auf der Einladung).
     if einladung.team_role_id is not None:
         rolle = _rolle_im_team(db, team, einladung.team_role_id)
         if rolle.is_admin:
@@ -784,13 +794,7 @@ def accept_invitation(db: Session, *, user: User, team_id: int) -> TeamMember:
 
     bestehend = membership(db, team_id, user.id)
     if bestehend is not None:
-        bestehend.can_manage_skills = einladung.can_manage_skills
-        bestehend.can_manage_memory = einladung.can_manage_memory
-        bestehend.can_access_vault = einladung.can_access_vault
         if einladung.team_role_id is not None:
-            # Das Angebot trug eine Rolle: Sie regiert wie in set_member_roles —
-            # auch senkend (Befund 15). Reine Schalterangebote ohne Rolle
-            # bleiben Wort: angenommen wird genau das Angebot.
             bestehend.team_role_id = einladung.team_role_id
             exists = db.query(TeamMemberRole.id).filter(
                 TeamMemberRole.team_member_id == bestehend.id,
@@ -798,36 +802,17 @@ def accept_invitation(db: Session, *, user: User, team_id: int) -> TeamMember:
             ).first()
             if exists is None:
                 db.add(TeamMemberRole(team_member_id=bestehend.id, team_role_id=einladung.team_role_id))
-            _mitglied_flags_neu(db, bestehend)
         db.delete(einladung)
-        # Kein "joined": beigetreten ist hier niemand. Dieselbe Aktion und
-        # dieselben Felder wie in `update_member` — nur steht als Handelnder
-        # der, dem die Schalter gehoeren.
-        audit_service.record_privileged_action(
-            db, user_id=user.id, action="team.member.updated", target_type="team",
-            target_id=team_id,
-            details={
-                "member_user_id": user.id,
-                "can_manage_skills": bestehend.can_manage_skills,
-                "can_manage_memory": bestehend.can_manage_memory,
-                "can_access_vault": bestehend.can_access_vault,
-            },
-            origin="direct",
-        )
         db.commit()
         db.refresh(bestehend)
+        publish_team_updated(team.id, scope="members", user_ids={user.id})
         return bestehend
 
-    # Die Obergrenze gilt nur dem Beitritt: eine Anhebung belegt keinen Platz,
-    # den das Mitglied nicht laengst haette.
     if db.query(TeamMember).filter(TeamMember.team_id == team_id).count() >= MAX_MEMBERS_PER_TEAM:
         raise HTTPException(status_code=409, detail="Team ist voll")
 
     member = TeamMember(
         team_id=team_id, user_id=user.id, role="member",
-        can_manage_skills=einladung.can_manage_skills,
-        can_manage_memory=einladung.can_manage_memory,
-        can_access_vault=einladung.can_access_vault,
         team_role_id=einladung.team_role_id,
         added_by=einladung.invited_by,
     )
@@ -835,22 +820,12 @@ def accept_invitation(db: Session, *, user: User, team_id: int) -> TeamMember:
     db.flush()
     if einladung.team_role_id is not None:
         db.add(TeamMemberRole(team_member_id=member.id, team_role_id=einladung.team_role_id))
-        standard = db.query(TeamRole.id).filter(TeamRole.team_id == team.id, TeamRole.is_default.is_(True)).first()
-        if standard is None or einladung.team_role_id != standard[0]:
-            # Ausdruecklich gewaehlte Rolle: Sie regiert wie in set_member_roles —
-            # auch senkend (Befund 15). Die automatisch substituierte
-            # Standardrolle ist kein Vergabewille: Sonst verlöre jede Einladung
-            # mit Schaltern ihre Schalter schon beim Beitritt.
-            _mitglied_flags_neu(db, member)
     elif not team.is_personal:
         default_role = db.query(TeamRole).filter(TeamRole.team_id == team.id, TeamRole.is_default.is_(True)).first()
         if default_role is not None:
             member.team_role_id = default_role.id
             db.add(TeamMemberRole(team_member_id=member.id, team_role_id=default_role.id))
     db.delete(einladung)
-    # Beitritt mit Tresor: Das neue Mitglied braucht eine Schluesselhuelle —
-    # die naechste Rotation (automatisch beim naechsten Oeffnen durch den
-    # Gruender) verpackt den neuen Schluesselstand auch fuer das neue Mitglied.
     if team.vault_bucket_id:
         team.vault_needs_rotation = True
     audit_service.record_privileged_action(
@@ -864,6 +839,7 @@ def accept_invitation(db: Session, *, user: User, team_id: int) -> TeamMember:
         db.rollback()
         raise HTTPException(status_code=409, detail="Benutzer ist bereits im Team") from exc
     db.refresh(member)
+    publish_team_updated(team.id, scope="members", user_ids={user.id})
     return member
 
 
@@ -873,14 +849,11 @@ def decline_invitation(db: Session, *, user: User, team_id: int) -> None:
         raise HTTPException(status_code=404, detail="Einladung nicht gefunden")
     db.delete(einladung)
     db.commit()
+    publish_team_updated(team_id, scope="members", user_ids={user.id})
 
 
 def _docs_verbindungen_trennen(db: Session, team_id: int, user_id: int) -> None:
-    """Trennt die Collab-Verbindungen eines Benutzers best effort.
-
-    Der Collab-Token lebt 30 Minuten; nach einer Rollenaenderung tippte der
-    Betroffene sonst mit der alten Rolle weiter (Befund 41).
-    """
+    """Trennt die Collab-Verbindungen eines Benutzers best effort."""
     try:
         from models.doc import Document
         from services.docs_collab_service import DocsCollabService
@@ -889,102 +862,6 @@ def _docs_verbindungen_trennen(db: Session, team_id: int, user_id: int) -> None:
             DocsCollabService.disconnect_user(doc_uid, user_id)
     except Exception:
         pass
-
-
-def update_member(
-    db: Session, *, team: Team, user: User, member_user_id: int,
-    can_manage_skills: bool, can_manage_memory: bool,
-    can_access_vault: bool | None = None, team_role_id: int | None = None,
-) -> TeamMember:
-    """Setzt die Schalter eines Mitglieds — herunter sofort, herauf als Angebot.
-
-    Zuruecknehmen darf der Gruender allein: er entzieht, was er selbst gegeben
-    hat. **Anheben darf er nicht allein.** Ein nachtraeglich eingeschalteter
-    Schalter macht sein Team zum Lernziel der KI des Betroffenen: hat der kein
-    eigenes verwaltbares Team, ist das fremde ab dann der einzige Kandidat in
-    `learning_team`, und was seine KI "fuers Team" merkt, landet dort und ist
-    dort im Klartext lesbar. Genau diese Tuer schliesst `invite_member` seit dem
-    23.08.2026 — hier stand sie mit einem Zwischenschritt wieder offen: harmlos
-    einladen (beide Schalter aus), annehmen lassen, danach den Schalter setzen.
-
-    Deshalb derselbe Weg wie beim Beitritt: die Anhebung wird zu einer
-    Einladung, die derselbe Mensch annimmt. Bis dahin bleibt die Zeile, wie sie
-    war; der Gruender sieht sein Angebot unter den offenen Einladungen. Ein
-    neuer Wunsch ueberholt das alte Angebot — auch dann, wenn er gar nichts
-    mehr anheben will, denn sonst bliebe eine zurueckgenommene Anhebung
-    annehmbar.
-
-    Wer ueber sich selbst entscheidet, hat damit zugestimmt; bis hierher kommt
-    ohnehin nur, wer das Team verwaltet.
-    """
-    assert_team_owner(db, team, user)
-    member = membership(db, team.id, member_user_id)
-    if member is None:
-        raise HTTPException(status_code=404, detail="Mitglied nicht gefunden")
-    if team_role_id is not None:
-        _pruefe_rollenzuteilung(db, team, user, [_rolle_im_team(db, team, team_role_id)])
-
-    # Das `and` ist die ganze Regel: was aus ist, bleibt aus; was an ist, darf
-    # aus werden.
-    neu_skills = member.can_manage_skills and can_manage_skills
-    neu_memory = member.can_manage_memory and can_manage_memory
-    if member_user_id == user.id:
-        neu_skills, neu_memory = can_manage_skills, can_manage_memory
-    angehoben = (
-        (can_manage_skills and not neu_skills) or (can_manage_memory and not neu_memory)
-    )
-    member.can_manage_skills = neu_skills
-    member.can_manage_memory = neu_memory
-    hatte_tresor = member.can_access_vault
-    ziel_tresor = member.can_access_vault if can_access_vault is None else can_access_vault
-    member.can_access_vault = ziel_tresor
-    if team_role_id is not None:
-        # Die Rolle ist vergeben wie in set_member_roles: ihre Schalter gelten
-        # sofort — auch senkend (Befund 15). Reine Schalterwuensche ohne Rolle
-        # laufen weiter ueber den Tanz oben und bleiben unangetastet.
-        member.team_role_id = team_role_id
-        _mitglied_flags_neu(db, member)
-    if hatte_tresor and not member.can_access_vault:
-        _tresor_schluessel_entziehen(db, team, member_user_id)
-
-    offen = invitation(db, team.id, member_user_id)
-    if angehoben:
-        if offen is None:
-            offen = TeamInvitation(team_id=team.id, user_id=member_user_id)
-            db.add(offen)
-        offen.can_manage_skills = can_manage_skills
-        offen.can_manage_memory = can_manage_memory
-        offen.can_access_vault = ziel_tresor
-        offen.team_role_id = team_role_id
-        offen.invited_by = user.id
-    elif offen is not None:
-        # Der Wunsch von jetzt ueberholt das Angebot von vorhin.
-        db.delete(offen)
-
-    audit_service.record_privileged_action(
-        db, user_id=user.id, action="team.member.updated", target_type="team",
-        target_id=team.id,
-        details={
-            "member_user_id": member_user_id,
-            # Was wirklich in der Zeile steht, nicht was verlangt wurde. Seit
-            # der Zustimmungspflicht sind das zwei verschiedene Dinge, und ein
-            # Protokoll, das den Wunsch als Tatsache fuehrt, waere genau dort
-            # falsch, wo jemand spaeter nachsieht, wer was durfte.
-            "can_manage_skills": member.can_manage_skills,
-            "can_manage_memory": member.can_manage_memory,
-        },
-        origin="direct",
-    )
-    if angehoben:
-        audit_service.record_privileged_action(
-            db, user_id=user.id, action="team.member.invited", target_type="team",
-            target_id=team.id,
-            details={"member_user_id": member_user_id}, origin="direct",
-        )
-    db.commit()
-    _docs_verbindungen_trennen(db, team.id, member_user_id)
-    db.refresh(member)
-    return member
 
 
 def _tresor_schluessel_entziehen(db: Session, team: Team, member_user_id: int) -> None:
@@ -1058,6 +935,7 @@ def remove_member(db: Session, *, team: Team, user: User, member_user_id: int) -
         ),
     ).delete(synchronize_session=False)
     db.commit()
+    publish_team_updated(team.id, scope="members", user_ids={member_user_id})
     # Offene Verbindungen dieses Benutzers best effort trennen. Der Collab-Token
     # lebt 30 Minuten; ohne diesen Schritt tippte ein Entlassenes weiter.
     try:
@@ -1146,6 +1024,7 @@ def set_server_grants(
         details={"server_id": server_id, "keys": sorted(desired)}, origin="direct",
     )
     db.commit()
+    publish_team_updated(team.id, scope="servers")
     return sorted(desired)
 
 
@@ -1232,6 +1111,7 @@ def set_server_grants_batch(
         origin="direct",
     )
     db.commit()
+    publish_team_updated(team.id, scope="servers")
     return result
 
 
@@ -1254,23 +1134,13 @@ def team_server_ids(db: Session, team_id: int) -> list[int]:
     return sorted(row[0] for row in rows)
 
 
-SCHALTER = {"skills": TeamMember.can_manage_skills, "memory": TeamMember.can_manage_memory}
+SCHALTER_KEYS = {"skills": "ai.skills.manage", "memory": "ai.memory.write"}
 
 
 def learning_teams(db: Session, user: User, *, schalter: str) -> list[Team]:
-    """Die echten Teams, in die dieser Benutzer schreiben darf — die Kandidaten.
-
-    ``schalter`` entscheidet, welcher der beiden Mitgliedsschalter gilt. Das war
-    vorher fest `can_manage_skills`, obwohl beide Erinnerungswerkzeuge dieselbe
-    Funktion benutzten: ein Mitglied mit `memory=True, skills=False` bekam sein
-    Teamwissen still ins persoenliche Gedaechtnis geschrieben, und umgekehrt
-    endete derselbe Satz in einem 403 aus `_assert_may_write`.
-
-    Das persoenliche Team steht bewusst nicht in der Liste. Es ist kein Ziel,
-    unter dem man waehlt, sondern der Rueckfall, wenn es keines gibt.
-    """
-    spalte = SCHALTER.get(schalter)
-    if spalte is None:
+    """Die echten Teams, in die dieser Benutzer schreiben darf (ueber Rollen/Owner)."""
+    perm_key = SCHALTER_KEYS.get(schalter)
+    if perm_key is None:
         raise ValueError(f"Unbekannter Schalter: {schalter}")
     rows = (
         db.query(Team)
@@ -1278,12 +1148,14 @@ def learning_teams(db: Session, user: User, *, schalter: str) -> list[Team]:
         .filter(
             TeamMember.user_id == user.id,
             Team.personal_for_user_id.is_(None),
-            spalte.is_(True),
         )
         .order_by(Team.name)
         .all()
     )
-    return rows
+    if not rows:
+        return []
+    perms_by_team = effective_permissions_for_teams(db, [t.id for t in rows], user)
+    return [t for t in rows if perm_key in perms_by_team.get(t.id, ())]
 
 
 def _mit_gruender(name: str, gruender: str) -> str:
@@ -1465,9 +1337,6 @@ def create_team_role(
     icon: str | None = None,
     is_default: bool = False,
     is_admin: bool = False,
-    can_access_vault: bool = True,
-    can_manage_skills: bool = False,
-    can_manage_memory: bool = False,
     permission_keys: list[str] | None = None,
     server_grants: list[dict] | None = None,
 ) -> TeamRole:
@@ -1479,11 +1348,6 @@ def create_team_role(
         db, team, user,
         is_admin=is_admin,
         permission_keys=permission_keys,
-        flags={
-            "can_access_vault": can_access_vault,
-            "can_manage_skills": can_manage_skills,
-            "can_manage_memory": can_manage_memory,
-        },
         server_grants=server_grants,
     )
 
@@ -1510,9 +1374,6 @@ def create_team_role(
         icon=icon,
         is_default=is_default,
         is_admin=is_admin,
-        can_access_vault=can_access_vault,
-        can_manage_skills=can_manage_skills,
-        can_manage_memory=can_manage_memory,
     )
     db.add(role)
     db.flush()
@@ -1544,6 +1405,7 @@ def create_team_role(
     )
     db.commit()
     db.refresh(role)
+    publish_team_updated(team.id, scope="roles")
     return role
 
 
@@ -1559,9 +1421,6 @@ def update_team_role(
     icon: str | None = None,
     is_default: bool = False,
     is_admin: bool = False,
-    can_access_vault: bool = True,
-    can_manage_skills: bool = False,
-    can_manage_memory: bool = False,
     permission_keys: list[str] | None = None,
     server_grants: list[dict] | None = None,
 ) -> TeamRole:
@@ -1575,11 +1434,6 @@ def update_team_role(
         db, team, user,
         is_admin=is_admin,
         permission_keys=permission_keys,
-        flags={
-            "can_access_vault": can_access_vault,
-            "can_manage_skills": can_manage_skills,
-            "can_manage_memory": can_manage_memory,
-        },
         server_grants=server_grants,
     )
     safe_name = name.strip()
@@ -1598,6 +1452,11 @@ def update_team_role(
     if existing_name is not None:
         raise HTTPException(status_code=409, detail="Eine Rolle mit diesem Namen existiert bereits im Team")
 
+    traeger = _rollen_traeger(db, team.id, role.id)
+    hatte_tresor_vorher = {
+        m.id: ("vault.read" in _member_effective_permissions(db, m)) for m in traeger
+    }
+
     if is_default and not role.is_default:
         db.query(TeamRole).filter(TeamRole.team_id == team.id).update({TeamRole.is_default: False})
 
@@ -1607,13 +1466,6 @@ def update_team_role(
     role.icon = icon
     role.is_default = is_default
     role.is_admin = is_admin
-    role.can_access_vault = can_access_vault
-    role.can_manage_skills = can_manage_skills
-    role.can_manage_memory = can_manage_memory
-    # Geaenderte Rolle, neue Schalter: alle Traeger rechnen sofort neu —
-    # senkend wie erhoehend (Befund 15).
-    for traeger in _rollen_traeger(db, team.id, role.id):
-        _mitglied_flags_neu(db, traeger)
 
     if permission_keys is not None:
         desired_keys = {k for k in permission_keys if is_team_key(k)}
@@ -1638,12 +1490,18 @@ def update_team_role(
                         )
                     db.add(TeamRoleServerGrant(role_id=role.id, server_id=server_id, permission_key=k))
 
+    db.flush()
+    for m in traeger:
+        if hatte_tresor_vorher.get(m.id) and "vault.read" not in _member_effective_permissions(db, m):
+            _tresor_schluessel_entziehen(db, team, m.user_id)
+
     audit_service.record_privileged_action(
         db, user_id=user.id, action="team.role.updated", target_type="team_role",
         target_id=role.id, details={"name": safe_name, "team_id": team.id}, origin="direct",
     )
     db.commit()
     db.refresh(role)
+    publish_team_updated(team.id, scope="roles")
     return role
 
 
@@ -1656,23 +1514,26 @@ def delete_team_role(db: Session, *, team: Team, user: User, role_id: int) -> No
     if role.is_default:
         raise HTTPException(status_code=409, detail="Die Standardrolle eines Teams kann nicht gelöscht werden")
 
+    traeger = _rollen_traeger(db, team.id, role.id)
+    hatte_tresor_vorher = {
+        m.id: ("vault.read" in _member_effective_permissions(db, m)) for m in traeger
+    }
+    traeger_ids = [m.id for m in traeger]
+
     audit_service.record_privileged_action(
         db, user_id=user.id, action="team.role.deleted", target_type="team_role",
         target_id=role.id, details={"name": role.name, "team_id": team.id}, origin="direct",
     )
-    traeger_ids = [m.id for m in _rollen_traeger(db, team.id, role.id)]
     db.delete(role)
-    # Erst flushen: Die Kaskaden (CASCADE auf Mehrfach-, SET NULL auf
-    # Legacy-Zuweisung) muessen wirken, bevor die Traeger neu rechnen.
     db.flush()
     for mitglied_id in traeger_ids:
-        traeger = db.get(TeamMember, mitglied_id)
-        if traeger is not None:
-            # SET NULL steht nur in der Datenbank; das Objekt im Speicher
-            # kennt es erst nach dem Verfall.
-            db.expire(traeger)
-            _mitglied_flags_neu(db, traeger)
+        traeger_row = db.get(TeamMember, mitglied_id)
+        if traeger_row is not None:
+            db.expire(traeger_row)
+            if hatte_tresor_vorher.get(mitglied_id) and "vault.read" not in _member_effective_permissions(db, traeger_row):
+                _tresor_schluessel_entziehen(db, team, traeger_row.user_id)
     db.commit()
+    publish_team_updated(team.id, scope="roles")
 
 
 def get_member_roles(db: Session, member_id: int) -> list[TeamRole]:
@@ -1703,10 +1564,9 @@ def set_member_roles(
         .all()
     ) if role_ids else []
 
-    # Der Deckel gilt der Zuteilung wie der Anlage: eine Admin-Rolle teilt nur
-    # der Gruender zu, fremde Rechte und Schalter niemand, der sie nicht haelt.
     _pruefe_rollenzuteilung(db, team, user, valid_roles)
 
+    hatte_tresor = "vault.read" in _member_effective_permissions(db, member)
     valid_role_ids = {r.id for r in valid_roles}
 
     db.query(TeamMemberRole).filter(TeamMemberRole.team_member_id == member.id).delete()
@@ -1714,12 +1574,9 @@ def set_member_roles(
         db.add(TeamMemberRole(team_member_id=member.id, team_role_id=rid))
 
     member.team_role_id = next(iter(valid_role_ids), None)
+    db.flush()
 
-    # Rollen-Flags auf Mitglied spiegeln (OR ueber Rollen) — auch senkend:
-    # Wer die Rolle verliert, verliert den Schalter (Befund 15).
-    hatte_tresor = member.can_access_vault
-    _mitglied_flags_neu(db, member)
-    if hatte_tresor and not member.can_access_vault:
+    if hatte_tresor and "vault.read" not in _member_effective_permissions(db, member):
         _tresor_schluessel_entziehen(db, team, member_user_id)
 
     audit_service.record_privileged_action(
@@ -1729,4 +1586,5 @@ def set_member_roles(
     )
     db.commit()
     _docs_verbindungen_trennen(db, team.id, member_user_id)
+    publish_team_updated(team.id, scope="members")
     return valid_roles

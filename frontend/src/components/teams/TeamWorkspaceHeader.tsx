@@ -1,10 +1,11 @@
-import { ArrowLeft, Crown, LogOut, Pencil, Server, ShieldCheck, Trash2, Users, UsersRound } from 'lucide-react'
+import { ArrowLeft, Crown, ImagePlus, LogOut, Pencil, Server, ShieldCheck, Trash2, Users, UsersRound } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button, TabBar, type TabDef } from '@maunting/ui'
 
-import type { TeamDetail } from '@/api/teams'
+import type { TeamDetail, TeamMediaKind } from '@/api/teams'
 import type { TeamPreviewAccess } from '@/stores/rolePreviewStore'
 import { TEAM_CATEGORIES, type TeamMetadata } from './teamMeta'
+import { TeamMediaImage } from './TeamMediaDialog'
 
 export type TeamWorkspaceTab = 'members' | 'servers' | 'roles' | 'vault'
 
@@ -13,6 +14,7 @@ function TeamActionsButtons({
   access,
   busy,
   onEditTeam,
+  onOpenMedia,
   onRemoveTeam,
   onLeaveTeam,
 }: {
@@ -20,6 +22,7 @@ function TeamActionsButtons({
   access: TeamPreviewAccess | null
   busy: boolean
   onEditTeam: () => void
+  onOpenMedia?: (kind: TeamMediaKind) => void
   onRemoveTeam: (team: TeamDetail) => void
   onLeaveTeam: (team: TeamDetail) => void
 }) {
@@ -28,6 +31,20 @@ function TeamActionsButtons({
 
   return (
     <div className="flex items-center gap-1.5 sm:gap-2">
+      {access.canManageBanner && onOpenMedia && (
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          disabled={busy}
+          onClick={() => onOpenMedia('banner')}
+          aria-label={t('teams.media.changeBanner', 'Hintergrundbanner ändern')}
+          title={t('teams.media.changeBanner', 'Hintergrundbanner ändern')}
+          className="h-9 w-9 p-0 rounded-full bg-surface-container-high/70 hover:bg-surface-container-high text-on-surface hover:text-primary border border-outline-variant/30 backdrop-blur-md shadow-sm transition-all active:scale-95"
+        >
+          <ImagePlus className="h-4 w-4" aria-hidden="true" />
+        </Button>
+      )}
       {access.isFounder ? (
         <>
           <Button
@@ -70,6 +87,10 @@ function TeamActionsButtons({
   )
 }
 
+/**
+ * Freischwebende Team-Tab-Leiste im selben Stil wie die 4 Dashboard-Reiter (`DashboardReiter.tsx`).
+ * Bewusst ohne eigenen Hintergrundbalken.
+ */
 function TeamTabStrip({
   tabs,
   activeTab,
@@ -81,14 +102,14 @@ function TeamTabStrip({
 }) {
   const { t } = useTranslation()
   return (
-    <div className="mx-auto flex w-full max-w-4xl justify-center">
+    <div className="relative z-20 mx-auto flex w-full max-w-7xl justify-center px-3.5 pt-2 pb-1 sm:px-6 lg:px-8">
       <TabBar
         tabs={tabs}
         active={activeTab}
         onChange={onSelectTab}
         ariaLabel={t('teams.sections')}
+        einzeilig
         embedded
-        className="w-full sm:w-auto flex flex-wrap justify-center gap-1 sm:gap-2 p-1 sm:p-1.5 rounded-2xl bg-surface-container-high/60 backdrop-blur-xl border border-outline-variant/30 shadow-sm"
       />
     </div>
   )
@@ -105,6 +126,7 @@ export function TeamVaultHeader({
   onBackToOverview,
   onSelectTab,
   onEditTeam,
+  onOpenMedia,
   onRemoveTeam,
   onLeaveTeam,
 }: {
@@ -117,13 +139,14 @@ export function TeamVaultHeader({
   onBackToOverview: () => void
   onSelectTab: (tab: TeamWorkspaceTab) => void
   onEditTeam: () => void
+  onOpenMedia?: (kind: TeamMediaKind) => void
   onRemoveTeam: (team: TeamDetail) => void
   onLeaveTeam: (team: TeamDetail) => void
 }) {
   const { t } = useTranslation()
 
   return (
-    <header className="shrink-0 border-b border-outline-variant/30 bg-surface/90 backdrop-blur-xl px-4 py-3 sm:px-6 space-y-3">
+    <header className="shrink-0 bg-transparent px-4 py-3 sm:px-6 space-y-2">
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-3 min-w-0">
           <Button
@@ -143,7 +166,7 @@ export function TeamVaultHeader({
             <div className="flex items-center gap-2.5 min-w-0">
               <div className="h-8 w-8 shrink-0 overflow-hidden rounded-xl border border-outline-variant/40 bg-surface-container">
                 {activeMeta?.coverImage ? (
-                  <img src={activeMeta.coverImage} alt={team.name} className="h-full w-full object-cover" />
+                  <TeamMediaImage src={activeMeta.coverImage} alt={team.name} />
                 ) : (
                   <div className="grid h-full w-full place-items-center bg-primary/10 text-primary">
                     <UsersRound className="h-4 w-4" aria-hidden="true" />
@@ -161,6 +184,7 @@ export function TeamVaultHeader({
           access={access}
           busy={busy}
           onEditTeam={onEditTeam}
+          onOpenMedia={onOpenMedia}
           onRemoveTeam={onRemoveTeam}
           onLeaveTeam={onLeaveTeam}
         />
@@ -170,7 +194,7 @@ export function TeamVaultHeader({
   )
 }
 
-/** Zentrierter Workspace-Hero inkl. klebriger Tab-Leiste für Mitglieder-, Server- und Rollen-Reiter. */
+/** Zentrierter Workspace-Hero inkl. freischwebender Tab-Leiste ohne trennenden Balken. */
 export function TeamWorkspaceHeroHeader({
   team,
   access,
@@ -181,6 +205,7 @@ export function TeamWorkspaceHeroHeader({
   onBackToOverview,
   onSelectTab,
   onEditTeam,
+  onOpenMedia,
   onRemoveTeam,
   onLeaveTeam,
 }: {
@@ -193,6 +218,7 @@ export function TeamWorkspaceHeroHeader({
   onBackToOverview: () => void
   onSelectTab: (tab: TeamWorkspaceTab) => void
   onEditTeam: () => void
+  onOpenMedia?: (kind: TeamMediaKind) => void
   onRemoveTeam: (team: TeamDetail) => void
   onLeaveTeam: (team: TeamDetail) => void
 }) {
@@ -201,7 +227,18 @@ export function TeamWorkspaceHeroHeader({
 
   return (
     <>
-      <header className="relative z-10">
+      <header className="relative z-10 overflow-hidden">
+        {activeMeta?.bannerImage && (
+          <div aria-hidden="true" className="pointer-events-none absolute inset-0 -z-10">
+            <TeamMediaImage
+              src={activeMeta.bannerImage}
+              ariaHidden
+              className="h-full w-full object-cover opacity-35"
+            />
+            <div className="absolute inset-0 bg-gradient-to-b from-surface/25 via-surface/65 to-surface" />
+          </div>
+        )}
+
         <div className="flex items-center justify-between gap-3 px-4 pt-3.5 sm:px-6 sm:pt-4">
           <Button
             type="button"
@@ -222,6 +259,7 @@ export function TeamWorkspaceHeroHeader({
             access={access}
             busy={busy}
             onEditTeam={onEditTeam}
+            onOpenMedia={onOpenMedia}
             onRemoveTeam={onRemoveTeam}
             onLeaveTeam={onLeaveTeam}
           />
@@ -241,22 +279,18 @@ export function TeamWorkspaceHeroHeader({
           <div className="relative mx-auto flex max-w-2xl flex-col items-center">
             <div className="group relative h-20 w-20 sm:h-24 sm:w-24 overflow-hidden rounded-3xl border-2 border-outline-variant/40 bg-surface-container shadow-2xl transition-transform hover:scale-105">
               {activeMeta?.coverImage ? (
-                <img
-                  src={activeMeta.coverImage}
-                  alt={team?.name ?? ''}
-                  className="h-full w-full object-cover"
-                />
+                <TeamMediaImage src={activeMeta.coverImage} alt={team?.name ?? ''} />
               ) : (
                 <div className="grid h-full w-full place-items-center bg-primary/10 text-primary">
                   <UsersRound className="h-10 w-10 sm:h-11 sm:w-11" aria-hidden="true" />
                 </div>
               )}
-              {access?.isFounder && team && (
+              {team && access?.canManageAvatar && (
                 <button
                   type="button"
-                  onClick={onEditTeam}
+                  onClick={() => (onOpenMedia ? onOpenMedia('avatar') : onEditTeam())}
                   className="absolute inset-0 grid place-items-center bg-black/55 text-white opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100"
-                  aria-label={t('teams.editTeam', 'Team bearbeiten')}
+                  aria-label={t('teams.media.changeAvatar', 'Profilbild ändern')}
                 >
                   <Pencil className="h-5 w-5" />
                 </button>
@@ -356,9 +390,7 @@ export function TeamWorkspaceHeroHeader({
         </div>
       </header>
 
-      <div className="sticky top-0 z-20 border-y border-outline-variant/30 bg-surface/85 px-3 py-2.5 backdrop-blur-xl sm:px-6 sm:py-3">
-        <TeamTabStrip tabs={tabs} activeTab={activeTab} onSelectTab={onSelectTab} />
-      </div>
+      <TeamTabStrip tabs={tabs} activeTab={activeTab} onSelectTab={onSelectTab} />
     </>
   )
 }

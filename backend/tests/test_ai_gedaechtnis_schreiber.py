@@ -899,9 +899,14 @@ def test_teamwissen_nur_mit_dem_gedaechtnisschalter(db: Session, regular_user: U
     for mitglied, gedaechtnis in ((darf, True), (darf_nicht, False)):
         _erlauben(db, mitglied, einwilligung=False)
         team_service.personal_team(db, mitglied)
+        rolle = team_service.create_team_role(
+            db, team=team, user=regular_user,
+            name="MemoryOnly" if gedaechtnis else "SkillsOnly",
+            permission_keys=["ai.memory.write"] if gedaechtnis else ["ai.skills.manage"],
+        )
         team_service.invite_member(
             db, team=team, user=regular_user, new_user_id=mitglied.id,
-            can_manage_skills=not gedaechtnis, can_manage_memory=gedaechtnis,
+            team_role_id=rolle.id,
         )
         team_service.accept_invitation(db, user=mitglied, team_id=team.id)
 
@@ -943,9 +948,13 @@ def test_gleichnamige_teams_heissen_im_angebot_verschieden(
     _erlauben(db, kollege, einwilligung=False)
     for gruender in (regular_user, zweiter):
         team = team_service.create_team(db, user=gruender, name="Alpha")
+        mem_rolle = team_service.create_team_role(
+            db, team=team, user=gruender, name="MemEditor",
+            permission_keys=["ai.memory.write"],
+        )
         team_service.invite_member(
             db, team=team, user=gruender, new_user_id=kollege.id,
-            can_manage_skills=False, can_manage_memory=True,
+            team_role_id=mem_rolle.id,
         )
         team_service.accept_invitation(db, user=kollege, team_id=team.id)
     gesehen = _modell(monkeypatch, {"aenderungen": []})

@@ -520,9 +520,8 @@ def test_rollenwechsel_trennt_collab_verbindung(db, monkeypatch):
     assert getrennt == [(daten["uid"], gast.id)]
 
     getrennt.clear()
-    team_dienst.update_member(
+    team_dienst.remove_member(
         db, team=team, user=chef, member_user_id=gast.id,
-        can_manage_skills=False, can_manage_memory=False,
     )
     assert getrennt == [(daten["uid"], gast.id)]
 

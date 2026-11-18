@@ -23,6 +23,7 @@ from dependencies import (
     ws_origin_erlaubt,
 )
 from services import audit_service, permission_service, postgres_service, wallpaper_service
+from services.media_gallery_service import build_webp_response
 from games import get_plugin
 from games.base import container_name_for, _console_log_path, _append_console_log
 from services import EmailService, docker_service
@@ -996,40 +997,15 @@ def get_server_wallpaper(
         if gefunden is None:
             raise HTTPException(status_code=404, detail="Bild nicht gefunden")
         bild, etag = gefunden
-        if if_none_match in (etag, f"W/{etag}"):
-            return Response(status_code=304)
-        return Response(
-            content=bild,
-            media_type="image/webp",
-            headers={
-                # privat + immutable: Die URL enthaelt die Inhalts-Version,
-                # neuer Inhalt bedeutet eine neue URL — diese Antwort kann nie
-                # veralten und malt ohne jede Anfrage aus dem Plattencache.
-                "Cache-Control": "private, max-age=31536000, immutable",
-                "ETag": etag,
-                "X-Content-Type-Options": "nosniff",
-            },
+        return build_webp_response(
+            data=bild, etag=etag, if_none_match=if_none_match, versioned=True
         )
     gefunden = wallpaper_service.wallpaper_bytes_for_server(db, server)
     if gefunden is None:
         raise HTTPException(status_code=404, detail="Kein Titelbild vorhanden")
     bild, etag = gefunden
-    if if_none_match in (etag, f"W/{etag}"):
-        return Response(status_code=304)
-    return Response(
-        content=bild,
-        media_type="image/webp",
-        headers={
-            # privat: Die Antwort ist authentifiziert und darf nicht in
-            # geteilten Caches landen. no-cache + ETag statt max-age: Web und
-            # MSS fragen bei jedem Aufruf an und bekommen 304 ohne Bytes,
-            # solange sich nichts geaendert hat. Ein max-age wuerde jeden
-            # Client, der die Aenderung nicht selbst gemacht hat, bis zu
-            # 24 h auf dem alten Bild sitzen lassen.
-            "Cache-Control": "private, no-cache",
-            "ETag": etag,
-            "X-Content-Type-Options": "nosniff",
-        },
+    return build_webp_response(
+        data=bild, etag=etag, if_none_match=if_none_match, versioned=False
     )
 
 
@@ -1122,15 +1098,7 @@ def get_wallpaper_gallery_image(
     bild = wallpaper_service.gallery_image_bytes(db, server.game_type, wallpaper_id)
     if bild is None:
         raise HTTPException(status_code=404, detail="Bild nicht gefunden")
-    return Response(
-        content=bild,
-        media_type="image/webp",
-        headers={
-            # privat: siehe get_server_wallpaper.
-            "Cache-Control": "private, max-age=86400",
-            "X-Content-Type-Options": "nosniff",
-        },
-    )
+    return build_webp_response(data=bild, gallery_thumb=True)
 
 
 @router.post("/{server_id}/wallpaper/{wallpaper_id}/activate")

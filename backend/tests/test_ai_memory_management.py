@@ -159,7 +159,6 @@ def test_ein_team_treffer_sagt_aus_welchem_team_er_stammt(
     ):
         team_service.invite_member(
             db, team=team, user=gruender, new_user_id=kollege.id,
-            can_manage_skills=False, can_manage_memory=False,
         )
         team_service.accept_invitation(db, user=kollege, team_id=team.id)
         ai_memory_service.erinnerung_anlegen(
@@ -214,9 +213,13 @@ def test_eine_volle_absage_benennt_das_gemeinte_team_eindeutig(
     eins = team_service.create_team(db, user=regular_user, name="Alpha")
     zwei = team_service.create_team(db, user=zweiter, name="Alpha")
     for team, owner in ((eins, regular_user), (zwei, zweiter)):
+        mem_role = team_service.create_team_role(
+            db, team=team, user=owner, name="Wissenspflege",
+            permission_keys=["ai.skills.manage", "ai.memory.write"],
+        )
         team_service.invite_member(
             db, team=team, user=owner, new_user_id=kollege.id,
-            can_manage_skills=True, can_manage_memory=True,
+            team_role_id=mem_role.id,
         )
         team_service.accept_invitation(db, user=kollege, team_id=team.id)
 

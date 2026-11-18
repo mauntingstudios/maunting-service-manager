@@ -273,13 +273,6 @@ def _team_role_set_payload(db: Session, user: User, rest: dict) -> tuple[dict, d
 
     if is_admin:
         nachher_team = set(TEAM_KEYS)
-        can_access_vault = True
-        can_manage_skills = True
-        can_manage_memory = True
-    else:
-        can_access_vault = "vault.read" in nachher_team
-        can_manage_skills = "ai.skills.manage" in nachher_team
-        can_manage_memory = "ai.memory.write" in nachher_team
 
     server_grants_payload = [
         {"server_id": sid, "permission_keys": sorted(keys)}
@@ -295,11 +288,6 @@ def _team_role_set_payload(db: Session, user: User, rest: dict) -> tuple[dict, d
             user,
             is_admin=is_admin,
             permission_keys=sorted(nachher_team),
-            flags={
-                "can_access_vault": can_access_vault,
-                "can_manage_skills": can_manage_skills,
-                "can_manage_memory": can_manage_memory,
-            },
             server_grants=server_grants_payload,
         )
     except HTTPException as exc:
@@ -341,9 +329,6 @@ def _team_role_set_payload(db: Session, user: User, rest: dict) -> tuple[dict, d
         "icon": icon,
         "is_default": is_default,
         "is_admin": is_admin,
-        "can_access_vault": can_access_vault,
-        "can_manage_skills": can_manage_skills,
-        "can_manage_memory": can_manage_memory,
         "permission_keys": sorted(nachher_team),
         "server_grants": server_grants_payload,
         "before": before_snapshot,
@@ -378,9 +363,6 @@ def _ausfuehren_team_role_set(db: Session, rahmen: _AusfuehrungsRahmen) -> _Ausg
                 icon=p.get("icon"),
                 is_default=bool(p.get("is_default", False)),
                 is_admin=bool(p.get("is_admin", False)),
-                can_access_vault=bool(p.get("can_access_vault", False)),
-                can_manage_skills=bool(p.get("can_manage_skills", False)),
-                can_manage_memory=bool(p.get("can_manage_memory", False)),
                 permission_keys=list(p.get("permission_keys") or []),
                 server_grants=list(p.get("server_grants") or []),
             )
@@ -410,9 +392,6 @@ def _ausfuehren_team_role_set(db: Session, rahmen: _AusfuehrungsRahmen) -> _Ausg
                 icon=p.get("icon"),
                 is_default=bool(p.get("is_default", False)),
                 is_admin=bool(p.get("is_admin", False)),
-                can_access_vault=bool(p.get("can_access_vault", False)),
-                can_manage_skills=bool(p.get("can_manage_skills", False)),
-                can_manage_memory=bool(p.get("can_manage_memory", False)),
                 permission_keys=list(p.get("permission_keys") or []),
                 server_grants=list(p.get("server_grants") or []),
             )
@@ -568,7 +547,7 @@ def _ausfuehren_team_member_roles(db: Session, rahmen: _AusfuehrungsRahmen) -> _
 
 
 def _team_member_invite_payload(db: Session, user: User, rest: dict) -> tuple[dict, dict]:
-    erlaubt = {"team_id", "user_id", "team_role_id", "can_access_vault", "can_manage_skills", "can_manage_memory"}
+    erlaubt = {"team_id", "user_id", "team_role_id"}
     if set(rest) - erlaubt:
         raise AiActionValidationError("propose_team_member_invite hat ungueltige Argumente")
     team = _team_laden(db, user, rest.get("team_id"))
@@ -590,16 +569,10 @@ def _team_member_invite_payload(db: Session, user: User, rest: dict) -> tuple[di
         except HTTPException as exc:
             raise _http_zu_validation(exc) from None
 
-    can_access_vault = bool(rest.get("can_access_vault", True))
-    can_manage_skills = bool(rest.get("can_manage_skills", False))
-    can_manage_memory = bool(rest.get("can_manage_memory", False))
     payload = {
         "team_id": team.id,
         "user_id": ziel.id,
         "team_role_id": team_role_id,
-        "can_access_vault": can_access_vault,
-        "can_manage_skills": can_manage_skills,
-        "can_manage_memory": can_manage_memory,
     }
     preview = {
         "operation": "team_member_invite",
@@ -619,9 +592,6 @@ def _ausfuehren_team_member_invite(db: Session, rahmen: _AusfuehrungsRahmen) -> 
             team=team,
             user=rahmen.active_user,
             new_user_id=int(p["user_id"]),
-            can_manage_skills=bool(p.get("can_manage_skills", False)),
-            can_manage_memory=bool(p.get("can_manage_memory", False)),
-            can_access_vault=bool(p.get("can_access_vault", True)),
             team_role_id=p.get("team_role_id"),
         )
     except HTTPException as exc:

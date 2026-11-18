@@ -48,10 +48,14 @@ def _allow(db: Session, user: User, *keys: str) -> None:
 
 def _team(db: Session, owner: User, *members: User) -> Team:
     team = team_service.create_team(db, user=owner, name=f"team-{owner.username}")
+    editor_role = team_service.create_team_role(
+        db, team=team, user=owner, name="SkillMemoryEditor",
+        permission_keys=["ai.skills.manage", "ai.memory.write", "ai.memory.read"],
+    )
     for member in members:
         team_service.invite_member(
             db, team=team, user=owner, new_user_id=member.id,
-            can_manage_skills=True, can_manage_memory=True,
+            team_role_id=editor_role.id,
         )
         team_service.accept_invitation(db, user=member, team_id=team.id)
     return team

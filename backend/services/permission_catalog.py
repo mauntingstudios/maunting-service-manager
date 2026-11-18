@@ -239,6 +239,8 @@ TEAM_PERMISSIONS: tuple[PermissionDef, ...] = (
     PermissionDef("team.members.kick",    "team",  "Mitglieder entfernen"),
     PermissionDef("team.roles.manage",    "team",  "Team-Rollen verwalten"),
     PermissionDef("team.servers.manage",  "team",  "Team-Server verwalten"),
+    PermissionDef("team.avatar.manage",   "team",  "Team-Profilbild ändern"),
+    PermissionDef("team.banner.manage",   "team",  "Team-Hintergrundbanner ändern"),
     PermissionDef("ai.memory.read",       "ai",    "Team-Gedächtnis einsehen"),
     PermissionDef("ai.memory.write",      "ai",    "Team-Gedächtnis bearbeiten"),
     PermissionDef("ai.skills.use",        "ai",    "Team-Skills ausführen"),

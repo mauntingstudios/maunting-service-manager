@@ -36,7 +36,6 @@ def _team(db, owner, name: str, *, manage_memory: bool = True):
     db.flush()
     db.add(TeamMember(
         team_id=team.id, user_id=owner.id, role="owner", added_by=owner.id,
-        can_manage_memory=manage_memory,
     ))
     db.commit()
     db.refresh(team)
@@ -76,16 +75,22 @@ def test_dokumentgedaechtnis_schreibt_nur_das_dokumentteam(db):
 
 
 def test_ohne_memory_schalter_kein_teambereich(db):
+    from models.team import TeamMemberRole, TeamRole, TeamRolePermission
+
     owner = _benutzer(db, "mem_doc_b")
     mitglied = _benutzer(db, "mem_doc_b2")
     team = _team(db, owner, "Ohne-Schalter")
-    # Der Schalter gilt fuer Mitglieder. Der Teamgruender darf immer
-    # (`has_team_permission`), deshalb traegt hier ein normales Mitglied die
-    # Einschraenkung.
-    db.add(TeamMember(
-        team_id=team.id, user_id=mitglied.id, role="member", added_by=owner.id,
-        can_manage_memory=True,
-    ))
+    role = TeamRole(team_id=team.id, name="MemEditor")
+    db.add(role)
+    db.flush()
+    perm = TeamRolePermission(role_id=role.id, permission_key="ai.memory.write")
+    db.add(perm)
+    m = TeamMember(
+        team_id=team.id, user_id=mitglied.id, role="member", added_by=owner.id, team_role_id=role.id,
+    )
+    db.add(m)
+    db.flush()
+    db.add(TeamMemberRole(team_member_id=m.id, team_role_id=role.id))
     db.commit()
     _doc, gespraech = _gespraech(db, mitglied, team)
 
@@ -94,12 +99,7 @@ def test_ohne_memory_schalter_kein_teambereich(db):
     assert gelesen is not None and gelesen.auftrag is not None
     assert schreiber._bereiche(db, mitglied, gelesen.auftrag, persoenlich=False) != []
 
-    eintrag = (
-        db.query(TeamMember)
-        .filter_by(team_id=team.id, user_id=mitglied.id)
-        .one()
-    )
-    eintrag.can_manage_memory = False
+    db.delete(perm)
     db.commit()
 
     assert schreiber._bereiche(db, mitglied, gelesen.auftrag, persoenlich=False) == []

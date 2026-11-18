@@ -129,6 +129,9 @@ class Settings(BaseSettings):
     # MSM_STEAM_WALLPAPER_CACHE_DIR ueberschreiben (z.B. auf tmp_path).
     wallpaper_dir: str = "/opt/msm/wallpapers"
     steam_wallpaper_cache_dir: str = "/opt/msm/cache/steam_wallpapers"
+    # Team-Medien (Profilbilder & Banner, streng von Server-Wallpapers getrennt):
+    # team_media_dir/{team_id}/{avatar|banner}/. Dev/Test via MSM_TEAM_MEDIA_DIR.
+    team_media_dir: str = "/opt/msm/team-media"
     local_agent_env_file: str = "/opt/msm/msm-agent/.env"
     # Direkter Enrollment-/Handshake-Token fuer den lokalen Agent (bei 3-User-Isolation
     # kann msm die msm-agent/.env nicht direkt lesen; install.sh setzt ihn hier).

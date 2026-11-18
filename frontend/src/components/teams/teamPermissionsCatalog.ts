@@ -42,6 +42,20 @@ export const TEAM_PERMISSION_DEFINITIONS: readonly RechteZeile[] = [
     beschreibung: 'Darf Server-Freigaben und Rechte des Teams anpassen.',
     kennung: 'team.servers.manage',
   },
+  {
+    key: 'team.avatar.manage',
+    kategorie: 'team',
+    titel: 'Team-Profilbild ändern',
+    beschreibung: 'Darf das Profilbild des Teams hochladen, wählen oder zurücksetzen.',
+    kennung: 'team.avatar.manage',
+  },
+  {
+    key: 'team.banner.manage',
+    kategorie: 'team',
+    titel: 'Team-Hintergrundbanner ändern',
+    beschreibung: 'Darf den Hintergrundbanner des Teams hochladen, wählen oder zurücksetzen.',
+    kennung: 'team.banner.manage',
+  },
   // KI & Wissen
   {
     key: 'ai.memory.read',

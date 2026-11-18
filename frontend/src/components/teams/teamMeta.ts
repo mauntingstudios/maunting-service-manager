@@ -107,7 +107,15 @@ export interface TeamMetadata {
   category: TeamCategoryKey
   description: string
   coverImage: string
+  avatarPreset?: string | null
+  bannerPreset?: string | null
+  bannerImage?: string | null
   archived?: boolean
+}
+
+export function presetUrlForId(presetId: string | null | undefined): string | null {
+  if (!presetId) return null
+  return TEAM_COVER_PRESETS.find((p) => p.id === presetId)?.url ?? null
 }
 
 const STORAGE_KEY = 'msm_teams_metadata_v1'
@@ -123,46 +131,71 @@ function getInitialStore(): Record<number, TeamMetadata> {
   return {}
 }
 
-export function getTeamMetadata(teamId: number, teamName: string): TeamMetadata {
+export function getTeamMetadata(
+  teamIdOrTeam: number | {
+    id: number
+    name: string
+    category?: string | null
+    description?: string | null
+    avatar_source?: string | null
+    avatar_preset?: string | null
+    avatar_url?: string | null
+    avatar_version?: string | null
+    banner_source?: string | null
+    banner_preset?: string | null
+    banner_url?: string | null
+    banner_version?: string | null
+  },
+  teamName?: string,
+): TeamMetadata {
+  const teamId = typeof teamIdOrTeam === 'number' ? teamIdOrTeam : teamIdOrTeam.id
+  const resolvedName = typeof teamIdOrTeam === 'number' ? (teamName ?? '') : teamIdOrTeam.name
+  const backendTeam = typeof teamIdOrTeam === 'number' ? null : teamIdOrTeam
   const store = getInitialStore()
-  if (store[teamId]) {
-    return store[teamId]
-  }
+  const local = store[teamId]
 
-  const lower = teamName.toLowerCase()
-  if (lower.includes('echofall')) {
-    return {
-      category: 'projekt',
-      description: 'Community, Server und Entwicklung.',
-      coverImage: '/assets/teams/team-cover-holiday.jpg',
+  const defaultCat: TeamCategoryKey = (() => {
+    const raw = backendTeam?.category
+    if (raw && raw in TEAM_CATEGORIES) return raw as TeamCategoryKey
+    if (local?.category && local.category in TEAM_CATEGORIES) return local.category
+    const lower = resolvedName.toLowerCase()
+    if (lower.includes('msm') || lower.includes('entwickl')) return 'entwicklung'
+    if (lower.includes('server') || lower.includes('infra')) return 'infrastruktur'
+    if (lower.includes('privat') || lower.includes('intern')) return 'intern'
+    return 'projekt'
+  })()
+
+  const defaultDesc = (() => {
+    if (backendTeam?.description !== undefined && backendTeam?.description !== null) {
+      return backendTeam.description
     }
-  }
-  if (lower.includes('msm') || lower.includes('entwickl')) {
-    return {
-      category: 'entwicklung',
-      description: 'Maunting Service Manager & System-Tools.',
-      coverImage: '/assets/teams/team-cover-msm.jpg',
-    }
-  }
-  if (lower.includes('server') || lower.includes('infra')) {
-    return {
-      category: 'infrastruktur',
-      description: 'Game-Server, Wartung und Monitoring.',
-      coverImage: '/assets/teams/team-cover-server.jpg',
-    }
-  }
-  if (lower.includes('privat') || lower.includes('intern')) {
-    return {
-      category: 'intern',
-      description: 'Notizen, Planung und gemeinsame Ideen.',
-      coverImage: '/assets/teams/team-cover-privat.jpg',
-    }
-  }
+    if (local?.description) return local.description
+    const lower = resolvedName.toLowerCase()
+    if (lower.includes('echofall')) return 'Community, Server und Entwicklung.'
+    if (lower.includes('msm') || lower.includes('entwickl')) return 'Maunting Service Manager & System-Tools.'
+    if (lower.includes('server') || lower.includes('infra')) return 'Game-Server, Wartung und Monitoring.'
+    if (lower.includes('privat') || lower.includes('intern')) return 'Notizen, Planung und gemeinsame Ideen.'
+    return 'Gemeinsame Projekte, Server und Wissensaustausch.'
+  })()
+
+  const avatarUrl =
+    backendTeam?.avatar_source === 'custom' && backendTeam.avatar_url
+      ? `${backendTeam.avatar_url}${backendTeam.avatar_version ? `?v=${backendTeam.avatar_version}` : ''}`
+      : (presetUrlForId(backendTeam?.avatar_preset) ?? local?.coverImage ?? TEAM_COVER_PRESETS[0].url)
+
+  const bannerUrl =
+    backendTeam?.banner_source === 'custom' && backendTeam.banner_url
+      ? `${backendTeam.banner_url}${backendTeam.banner_version ? `?v=${backendTeam.banner_version}` : ''}`
+      : presetUrlForId(backendTeam?.banner_preset)
 
   return {
-    category: 'projekt',
-    description: 'Gemeinsame Projekte, Server und Wissensaustausch.',
-    coverImage: '/assets/teams/team-cover-holiday.jpg',
+    category: defaultCat,
+    description: defaultDesc,
+    coverImage: avatarUrl,
+    avatarPreset: backendTeam?.avatar_preset ?? null,
+    bannerPreset: backendTeam?.banner_preset ?? null,
+    bannerImage: bannerUrl,
+    archived: local?.archived,
   }
 }
 

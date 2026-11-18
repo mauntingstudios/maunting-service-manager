@@ -35,8 +35,8 @@ export interface TeamsOverviewProps {
   onArchiveToggle: (team: Team) => void
   onDeleteTeam: (team: Team) => void
   onLeaveTeam: (team: Team) => void
-  onAcceptInvitation: (invitation: TeamInvitation, anhebung: boolean) => void
-  onDeclineInvitation: (invitation: TeamInvitation, anhebung: boolean) => void
+  onAcceptInvitation: (invitation: TeamInvitation) => void
+  onDeclineInvitation: (invitation: TeamInvitation) => void
   className?: string
 }
 
@@ -87,7 +87,7 @@ export function TeamsOverview({
   const teamMetaMap = useMemo(() => {
     const map = new Map<number, TeamMetadata>()
     for (const team of echteTeams) {
-      map.set(team.id, getTeamMetadata(team.id, team.name))
+      map.set(team.id, getTeamMetadata(team))
     }
     return map
   }, [echteTeams])
@@ -126,8 +126,7 @@ export function TeamsOverview({
   // Einladungen aufteilen
   const meinTeam = (inv: TeamInvitation) => teams.some((t) => t.id === inv.team_id)
   const meineBeitritte = invitations.filter((row) => !meinTeam(row))
-  const meineAnhebungen = invitations.filter(meinTeam)
-  const totalInvitationsCount = meineBeitritte.length + meineAnhebungen.length
+  const totalInvitationsCount = meineBeitritte.length
 
   // Filterung durch Suche
   const filterTeams = (list: Team[]) => {
@@ -415,7 +414,7 @@ export function TeamsOverview({
                               size="sm"
                               variant="primary"
                               disabled={busy}
-                              onClick={() => onAcceptInvitation(inv, false)}
+                              onClick={() => onAcceptInvitation(inv)}
                               aria-label={`${t('teams.acceptInvitation')}: ${inv.team_name}`}
                             >
                               <Check className="h-4 w-4 mr-1" />
@@ -426,59 +425,7 @@ export function TeamsOverview({
                               size="sm"
                               variant="ghost"
                               disabled={busy}
-                              onClick={() => onDeclineInvitation(inv, false)}
-                              aria-label={`${t('teams.declineInvitation')}: ${inv.team_name}`}
-                            >
-                              <X className="h-4 w-4 mr-1" />
-                              {t('teams.declineInvitation', 'Ablehnen')}
-                            </Button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {meineAnhebungen.length > 0 && (
-                  <div className="rounded-2xl border border-secondary/30 bg-surface-container-high/65 p-4 sm:p-5 backdrop-blur-xl">
-                    <div className="flex items-center gap-2 mb-3">
-                      <Mail className="h-4 w-4 text-secondary" />
-                      <h3 className="font-headline text-sm font-bold text-on-surface">
-                        {t('teams.myUpgrades', 'Rechteanfragen')}
-                      </h3>
-                    </div>
-                    <div className="space-y-2.5">
-                      {meineAnhebungen.map((inv) => (
-                        <div
-                          key={inv.team_id}
-                          className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-outline-variant/30 bg-surface-container p-3 sm:p-4"
-                        >
-                          <div className="space-y-0.5">
-                            <div className="font-headline text-sm font-bold text-on-surface">
-                              {inv.team_name}
-                            </div>
-                            <div className="text-xs text-on-surface-variant">
-                              {t('teams.myUpgradesHint', 'Dieses Team bietet dir erweiterte Rechte an.')}
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="primary"
-                              disabled={busy}
-                              onClick={() => onAcceptInvitation(inv, true)}
-                              aria-label={`${t('teams.acceptInvitation')}: ${inv.team_name}`}
-                            >
-                              <Check className="h-4 w-4 mr-1" />
-                              {t('teams.acceptInvitation', 'Annehmen')}
-                            </Button>
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="ghost"
-                              disabled={busy}
-                              onClick={() => onDeclineInvitation(inv, true)}
+                              onClick={() => onDeclineInvitation(inv)}
                               aria-label={`${t('teams.declineInvitation')}: ${inv.team_name}`}
                             >
                               <X className="h-4 w-4 mr-1" />

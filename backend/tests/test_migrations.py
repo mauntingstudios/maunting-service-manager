@@ -125,7 +125,7 @@ def test_dis_praefix_wird_nur_an_reines_chiffrat_gesetzt(pg_wegwerf):
     from pathlib import Path
 
     from alembic import command
-    from sqlalchemy import create_engine, text
+    from sqlalchemy import create_engine, inspect, text
 
     import models  # noqa: F401
     from config import settings
@@ -180,7 +180,7 @@ def test_email_praefix_und_namenswahl_fuer_den_altbestand(pg_wegwerf):
     from pathlib import Path
 
     from alembic import command
-    from sqlalchemy import create_engine, text
+    from sqlalchemy import create_engine, inspect, text
     from sqlalchemy.orm import Session
 
     import models  # noqa: F401
@@ -883,7 +883,7 @@ def test_team_schalter_backfill_hin_und_zurueck(pg_wegwerf):
     from pathlib import Path
 
     from alembic import command
-    from sqlalchemy import create_engine, text
+    from sqlalchemy import create_engine, inspect, text
     from sqlalchemy.orm import Session
 
     import models  # noqa: F401
@@ -899,10 +899,13 @@ def test_team_schalter_backfill_hin_und_zurueck(pg_wegwerf):
 
     def schalter():
         with Session(engine) as db:
-            return {
-                m.user_id: (m.can_access_vault, m.can_manage_skills, m.can_manage_memory)
-                for m in db.query(TeamMember).order_by(TeamMember.user_id).all()
-            }
+            rows = db.execute(
+                text(
+                    "SELECT user_id, can_access_vault, can_manage_skills, can_manage_memory "
+                    "FROM team_members ORDER BY user_id"
+                )
+            ).all()
+            return {row[0]: (bool(row[1]), bool(row[2]), bool(row[3])) for row in rows}
 
     try:
         Base.metadata.create_all(engine)
@@ -921,25 +924,25 @@ def test_team_schalter_backfill_hin_und_zurueck(pg_wegwerf):
                 "VALUES (1, 'T', :owner, false, now(), now())"
             ), {"owner": gr.id})
             db.flush()
-            team_id = 1
-            mit = TeamRole(team_id=team_id, name="Mit", can_access_vault=True,
-                           can_manage_skills=True, can_manage_memory=False)
-            ohne = TeamRole(team_id=team_id, name="Ohne", can_access_vault=False,
-                            can_manage_skills=False, can_manage_memory=False)
-            db.add_all([mit, ohne])
-            db.flush()
-            # A: haelt "Mit" mehrfach und "Ohne" als Legacy, Schalter verdorben.
-            ma = TeamMember(team_id=team_id, user_id=a.id, role="member",
-                            can_access_vault=False, can_manage_skills=False,
-                            can_manage_memory=True, team_role_id=ohne.id)
-            db.add(ma)
-            db.flush()
-            db.add(TeamMemberRole(team_member_id=ma.id, team_role_id=mit.id))
-            # B: ohne Rolle (Legacy) — der Backfill fasst ihn nicht an.
-            db.add(TeamMember(team_id=team_id, user_id=b.id, role="member",
-                              can_access_vault=False, can_manage_skills=True,
-                              can_manage_memory=True, team_role_id=None))
-            db.flush()
+            mit_id = db.execute(text(
+                "INSERT INTO team_roles (team_id, name, color, can_access_vault, can_manage_skills, can_manage_memory, is_default, is_admin, created_at) "
+                "VALUES (1, 'Mit', '#3b82f6', true, true, false, false, false, now()) RETURNING id"
+            )).scalar_one()
+            ohne_id = db.execute(text(
+                "INSERT INTO team_roles (team_id, name, color, can_access_vault, can_manage_skills, can_manage_memory, is_default, is_admin, created_at) "
+                "VALUES (1, 'Ohne', '#3b82f6', false, false, false, true, false, now()) RETURNING id"
+            )).scalar_one()
+            ma_id = db.execute(text(
+                "INSERT INTO team_members (team_id, user_id, role, can_access_vault, can_manage_skills, can_manage_memory, team_role_id, joined_at) "
+                "VALUES (1, :uid, 'member', false, false, true, :rid, now()) RETURNING id"
+            ), {"uid": a.id, "rid": ohne_id}).scalar_one()
+            db.execute(text(
+                "INSERT INTO team_member_roles (team_member_id, team_role_id, assigned_at) VALUES (:mid, :rid, now())"
+            ), {"mid": ma_id, "rid": mit_id})
+            db.execute(text(
+                "INSERT INTO team_members (team_id, user_id, role, can_access_vault, can_manage_skills, can_manage_memory, team_role_id, joined_at) "
+                "VALUES (1, :uid, 'member', false, true, true, NULL, now())"
+            ), {"uid": b.id})
             a_id, b_id = a.id, b.id
             db.commit()
 
@@ -952,7 +955,26 @@ def test_team_schalter_backfill_hin_und_zurueck(pg_wegwerf):
         assert schalter() == nachher
 
         command.upgrade(config, "head")
-        assert schalter() == nachher
+        # 20261118_01 hat die Rollen-Flags nach team_role_permissions ueberfuehrt,
+        # rollenlosen Mitgliedern die Standardrolle gegeben und die Schalterspalten entfernt.
+        inspector = inspect(engine)
+        assert "team_media" in inspector.get_table_names()
+        member_cols = {c["name"] for c in inspector.get_columns("team_members")}
+        assert not ({"can_access_vault", "can_manage_skills", "can_manage_memory"} & member_cols)
+        with Session(engine) as db:
+            mit_perms = {
+                row[0]
+                for row in db.execute(
+                    text("SELECT permission_key FROM team_role_permissions WHERE role_id = :rid"),
+                    {"rid": mit_id},
+                ).all()
+            }
+            assert {"vault.read", "ai.skills.manage"} <= mit_perms
+            b_role = db.execute(
+                text("SELECT team_role_id FROM team_members WHERE user_id = :uid"),
+                {"uid": b_id},
+            ).scalar_one()
+            assert b_role == ohne_id
     finally:
         engine.dispose()
         settings.database_url = vorher

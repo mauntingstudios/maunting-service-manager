@@ -75,6 +75,10 @@ class Team(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_now, onupdate=_now, nullable=False
     )
+    category: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    description: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    avatar_preset: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    banner_preset: Mapped[str | None] = mapped_column(String(64), nullable=True)
     vault_bucket_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     # Schlüsselstand des Team-Tresors. Seit 11/2026 gibt es kein geteiltes
     # Team-Passwort mehr: Ein zufälliger Team-Schlüssel (DEK) liegt pro
@@ -115,6 +119,9 @@ class Team(Base):
     )
     vault_keys: Mapped[list["TeamVaultKey"]] = relationship(
         "TeamVaultKey", back_populates="team", cascade="all, delete-orphan"
+    )
+    media_items: Mapped[list["TeamMedia"]] = relationship(
+        "TeamMedia", back_populates="team", cascade="all, delete-orphan"
     )
 
     @property
@@ -181,9 +188,6 @@ class TeamRole(Base):
     description: Mapped[str | None] = mapped_column(String(255), nullable=True)
     color: Mapped[str] = mapped_column(String(16), default="#3b82f6", nullable=False)
     icon: Mapped[str | None] = mapped_column(String(32), nullable=True)
-    can_access_vault: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    can_manage_skills: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    can_manage_memory: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_default: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
@@ -288,11 +292,6 @@ class TeamMember(Base):
         Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
     role: Mapped[str] = mapped_column(String(16), default="member", nullable=False)
-    # Darf Team-Skills anlegen und aendern — und erlaubt damit zugleich der KI,
-    # im Namen dieses Mitglieds fuer das Team zu lernen.
-    can_manage_skills: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    can_manage_memory: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    can_access_vault: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     team_role_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("team_roles.id", ondelete="SET NULL"), nullable=True
     )
@@ -341,9 +340,6 @@ class TeamInvitation(Base):
     user_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
-    can_manage_skills: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    can_manage_memory: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    can_access_vault: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     team_role_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("team_roles.id", ondelete="SET NULL"), nullable=True
     )

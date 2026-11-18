@@ -842,9 +842,11 @@ def test_teamwissen_haengt_am_gruender_nicht_am_schreiber(
     _memory_role(db, mitglied, "ai-memory-mitglied", 50)
 
     team = team_service.create_team(db, user=gruender, name="Betrieb")
+    mem_role = team_service.create_team_role(
+        db, team=team, user=gruender, name="MemEditor", permission_keys=["ai.memory.write"],
+    )
     team_service.invite_member(
-        db, team=team, user=gruender, new_user_id=mitglied.id,
-        can_manage_skills=False, can_manage_memory=True,
+        db, team=team, user=gruender, new_user_id=mitglied.id, team_role_id=mem_role.id,
     )
     team_service.accept_invitation(db, user=mitglied, team_id=team.id)
 
@@ -1013,9 +1015,11 @@ def test_die_null_absage_schiebt_es_nicht_auf_den_tarif_des_schreibenden(
     _memory_role(db, mitglied, "ai-memory-null-mitglied", 500)
 
     team = team_service.create_team(db, user=gruender, name="Nullbetrieb")
+    mem_role = team_service.create_team_role(
+        db, team=team, user=gruender, name="MemEditor", permission_keys=["ai.memory.write"],
+    )
     team_service.invite_member(
-        db, team=team, user=gruender, new_user_id=mitglied.id,
-        can_manage_skills=False, can_manage_memory=True,
+        db, team=team, user=gruender, new_user_id=mitglied.id, team_role_id=mem_role.id,
     )
     team_service.accept_invitation(db, user=mitglied, team_id=team.id)
 

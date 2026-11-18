@@ -1,7 +1,7 @@
 import { Crown, Trash2, UserPlus } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
-import { Button, Dropdown, MultiSelect, RoleBadge, Switch } from '@maunting/ui'
+import { Button, Dropdown, MultiSelect, RoleBadge } from '@maunting/ui'
 
 import type { TeamDetail, TeamInvitation, TeamMember } from '@/api/teams'
 import { Avatar } from '@/components/app/Avatar'
@@ -22,20 +22,15 @@ export interface TeamMembersTabProps {
   newMemberId: string | null
   busy: boolean
   offeneBeitritte: TeamInvitation[]
-  offeneAnhebungen: TeamInvitation[]
   onKandidat: (id: string | null) => void
   onEinladen: () => void
-  onSchalter: (
-    member: TeamMember,
-    next: { can_manage_skills: boolean; can_manage_memory: boolean; can_access_vault?: boolean },
-  ) => void
   onSetMemberRoles: (member: TeamMember, roleIds: number[]) => void
   onEntfernen: (member: TeamMember) => void
 }
 
 /**
- * Mitglieder-Reiter des Team-Arbeitsbereichs (Einladen, Rollenwahl, Schalter und
- * ausstehende Einladungen).
+ * Mitglieder-Reiter des Team-Arbeitsbereichs (Einladen, Rollenzuweisung und
+ * ausstehende Einladungen; Rechte laufen ausschließlich über Team-Rollen).
  */
 export function TeamMembersTab({
   team,
@@ -45,16 +40,14 @@ export function TeamMembersTab({
   newMemberId,
   busy,
   offeneBeitritte,
-  offeneAnhebungen,
   onKandidat,
   onEinladen,
-  onSchalter,
   onSetMemberRoles,
   onEntfernen,
 }: TeamMembersTabProps) {
   const { t } = useTranslation()
   const navigate = useNavigate()
-  const spalten = 'md:grid-cols-[minmax(0,1.2fr)_12rem_7rem_7rem_7rem_2.75rem]'
+  const spalten = 'md:grid-cols-[minmax(0,1.4fr)_minmax(14rem,1fr)_2.75rem]'
   const roleOptions = (team.roles || []).map((r) => ({ value: String(r.id), label: r.name }))
 
   return (
@@ -65,7 +58,10 @@ export function TeamMembersTab({
             {t('teams.members')}
           </h3>
           <p className="text-xs sm:text-sm text-on-surface-variant">
-            Lege fest, wer geteilte Skills, Erinnerungen und den Tresor dieses Teams nutzen und verwalten darf.
+            {t(
+              'teams.membersRoleDrivenHint',
+              'Berechtigungen für Skills, Gedächtnis, Tresor und Server vergibst du über Team-Rollen.',
+            )}
           </p>
         </div>
 
@@ -96,9 +92,6 @@ export function TeamMembersTab({
         >
           <span>{t('teams.member')}</span>
           <span>{t('teams.roles')}</span>
-          <span>{t('teams.manageSkills')}</span>
-          <span>{t('teams.manageMemory')}</span>
-          <span>{t('teams.accessVault')}</span>
           <span />
         </div>
         <ul className="divide-y divide-outline-variant/30">
@@ -153,7 +146,6 @@ export function TeamMembersTab({
                         </>
                       )}
                     </span>
-                    {/* Bei schreibgeschützten Zeilen stehen die RoleBadges direkt in der Rollenspalte; hier nur im Bearbeitungsmodus als schnelle Übersicht. */}
                     {canEditRoles && memberRoles.length > 0 && (
                       <span className="mt-1 flex flex-wrap gap-1">
                         {memberRoles.map((r) => (
@@ -215,53 +207,13 @@ export function TeamMembersTab({
                     </div>
                   )}
                 </div>
-
-                <label className="col-span-2 flex items-center justify-between gap-2 md:col-span-1 md:justify-start">
-                  <span className="text-xs text-on-surface-variant md:hidden">{t('teams.manageSkills')}</span>
-                  <Switch
-                    checked={member.can_manage_skills}
-                    disabled={!access.isFounder || busy}
-                    onCheckedChange={(next) => onSchalter(member, {
-                      can_manage_skills: next,
-                      can_manage_memory: member.can_manage_memory,
-                      ...(member.can_access_vault !== undefined ? { can_access_vault: member.can_access_vault } : {}),
-                    })}
-                    aria-label={`${t('teams.manageSkills')}: ${member.username}`}
-                  />
-                </label>
-                <label className="col-span-2 flex items-center justify-between gap-2 md:col-span-1 md:justify-start">
-                  <span className="text-xs text-on-surface-variant md:hidden">{t('teams.manageMemory')}</span>
-                  <Switch
-                    checked={member.can_manage_memory}
-                    disabled={!access.isFounder || busy}
-                    onCheckedChange={(next) => onSchalter(member, {
-                      can_manage_skills: member.can_manage_skills,
-                      can_manage_memory: next,
-                      ...(member.can_access_vault !== undefined ? { can_access_vault: member.can_access_vault } : {}),
-                    })}
-                    aria-label={`${t('teams.manageMemory')}: ${member.username}`}
-                  />
-                </label>
-                <label className="col-span-2 flex items-center justify-between gap-2 md:col-span-1 md:justify-start">
-                  <span className="text-xs text-on-surface-variant md:hidden">{t('teams.accessVault')}</span>
-                  <Switch
-                    checked={member.can_access_vault !== false}
-                    disabled={!access.isFounder || busy || member.role === 'owner'}
-                    onCheckedChange={(next) => onSchalter(member, {
-                      can_manage_skills: member.can_manage_skills,
-                      can_manage_memory: member.can_manage_memory,
-                      can_access_vault: next,
-                    })}
-                    aria-label={`${t('teams.accessVault')}: ${member.username}`}
-                  />
-                </label>
               </li>
             )
           })}
         </ul>
       </div>
 
-      {access.isFounder && (
+      {(access.isFounder || access.canInvite) && (
         <div className="space-y-4 pt-2">
           <PendingInvitationsGroup
             kennung="team-pending-invitations"
@@ -269,13 +221,6 @@ export function TeamMembersTab({
             status={t('teams.invitationPending')}
             hinweis={t('teams.pendingInvitationsHint')}
             einladungen={offeneBeitritte}
-          />
-          <PendingInvitationsGroup
-            kennung="team-pending-upgrades"
-            titel={t('teams.pendingUpgrades')}
-            status={t('teams.upgradePending')}
-            hinweis={t('teams.pendingUpgradesHint')}
-            einladungen={offeneAnhebungen}
           />
         </div>
       )}

@@ -39,6 +39,9 @@ from models import (
     Team,
     TeamInvitation,
     TeamMember,
+    TeamMemberRole,
+    TeamRole,
+    TeamRolePermission,
     TeamServerGrant,
     User,
     UserFriend,
@@ -315,17 +318,37 @@ def _team_rechte_delegiert(db: Session, user: User) -> bool:
 
 
 def _team_rollen(db: Session, user: User) -> bool:
-    # Teams kennen nur zwei Zusatzrechte; wer eines vergibt, verteilt Aufgaben.
-    # Das Angebot zählt schon — annehmen muss es das Mitglied.
+    # Prueft, ob der Gruender Mitgliedern oder Einladungen Rollen mit KI-/Verwaltungsrechten zugewiesen hat.
     eigene = _geteilte_teams(db).filter(Team.owner_user_id == user.id)
+    qualifizierte_rollen = (
+        db.query(TeamRole.id)
+        .filter(
+            TeamRole.team_id.in_(eigene),
+            or_(
+                TeamRole.is_admin.is_(True),
+                TeamRole.id.in_(
+                    db.query(TeamRolePermission.role_id).filter(
+                        TeamRolePermission.permission_key.in_(("ai.skills.manage", "ai.memory.write"))
+                    )
+                ),
+            ),
+        )
+    )
     mitglied = db.query(TeamMember.id).filter(
         TeamMember.team_id.in_(eigene),
         TeamMember.user_id != user.id,
-        or_(TeamMember.can_manage_skills.is_(True), TeamMember.can_manage_memory.is_(True)),
+        or_(
+            TeamMember.team_role_id.in_(qualifizierte_rollen),
+            TeamMember.id.in_(
+                db.query(TeamMemberRole.team_member_id).filter(
+                    TeamMemberRole.team_role_id.in_(qualifizierte_rollen)
+                )
+            ),
+        ),
     )
     angebot = db.query(TeamInvitation.id).filter(
         TeamInvitation.invited_by == user.id,
-        or_(TeamInvitation.can_manage_skills.is_(True), TeamInvitation.can_manage_memory.is_(True)),
+        TeamInvitation.team_role_id.in_(qualifizierte_rollen),
     )
     return _gibt(mitglied) or _gibt(angebot)
 

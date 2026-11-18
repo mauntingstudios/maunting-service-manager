@@ -20,8 +20,13 @@ vi.mock('@/api/teams', () => ({
     create: vi.fn(),
     rename: vi.fn(),
     remove: vi.fn(),
+    getMediaGallery: vi.fn().mockResolvedValue([]),
+    uploadMedia: vi.fn(),
+    activateMedia: vi.fn(),
+    setMediaPreset: vi.fn(),
+    resetMedia: vi.fn(),
+    deleteMediaItem: vi.fn(),
     inviteMember: vi.fn(),
-    updateMember: vi.fn(),
     removeMember: vi.fn(),
     setServerGrants: vi.fn(),
     setServerGrantsBatch: vi.fn(),
@@ -74,15 +79,15 @@ const personalDetail: TeamDetail = { ...personal, members: [], servers: [], invi
 /** Der offen Eingeladene: angeschrieben, aber kein Mitglied. */
 const offeneEinladung: TeamInvitation = {
   team_id: 2, team_name: 'Betrieb', user_id: 3, username: 'neuer',
-  invited_by_username: 'einmalmaik', can_manage_skills: false, can_manage_memory: false,
+  invited_by_username: 'einmalmaik', team_role_id: 11, team_role_name: 'Mitglied',
   invited_at: '2026-08-23T10:00:00Z',
 }
 
 const realDetail: TeamDetail = {
   ...real,
   members: [
-    { user_id: 1, username: 'einmalmaik', role: 'owner', can_manage_skills: true, can_manage_memory: true, joined_at: '2026-08-09T10:00:00Z' },
-    { user_id: 2, username: 'kollege', role: 'member', can_manage_skills: false, can_manage_memory: false, joined_at: '2026-08-09T10:00:00Z' },
+    { user_id: 1, username: 'einmalmaik', role: 'owner', joined_at: '2026-08-09T10:00:00Z' },
+    { user_id: 2, username: 'kollege', role: 'member', joined_at: '2026-08-09T10:00:00Z' },
   ],
   servers: [{ server_id: 7, server_name: 'Valheim', permission_keys: ['server.view'] }],
   invitations: [offeneEinladung],
@@ -93,9 +98,6 @@ const realDetail: TeamDetail = {
       name: 'Admin',
       description: 'Volle Rechte',
       color: '#3b82f6',
-      can_access_vault: true,
-      can_manage_skills: true,
-      can_manage_memory: true,
       is_default: false,
       is_admin: true,
       created_at: '2026-08-09T10:00:00Z',
@@ -109,9 +111,6 @@ const realDetail: TeamDetail = {
       name: 'Mitglied',
       description: 'Standard-Rechte',
       color: '#10b981',
-      can_access_vault: true,
-      can_manage_skills: false,
-      can_manage_memory: false,
       is_default: true,
       is_admin: false,
       created_at: '2026-08-09T10:00:00Z',
@@ -125,40 +124,8 @@ const realDetail: TeamDetail = {
 /** Eine Einladung an den angemeldeten Benutzer selbst — sein Weg ins Team. */
 const eigeneEinladung: TeamInvitation = {
   team_id: 5, team_name: 'Nachtschicht', user_id: 1, username: 'einmalmaik',
-  invited_by_username: 'chefin', can_manage_skills: true, can_manage_memory: false,
+  invited_by_username: 'chefin', team_role_id: 11, team_role_name: 'Mitglied',
   invited_at: '2026-08-23T11:00:00Z',
-}
-
-/**
- * Ein Angebot an ein **Mitglied**: „Betrieb" steht schon in seiner Teamliste,
- * beitreten muss er also nichts mehr. Angeboten wird nur der Schalter — das
- * Backend legt dafür seit dem 23.08.2026 dieselbe Zeile an wie für einen
- * Beitritt, und genau deshalb muss die Oberfläche beides auseinanderhalten.
- */
-const eigeneAnhebung: TeamInvitation = {
-  team_id: 2, team_name: 'Betrieb', user_id: 1, username: 'einmalmaik',
-  invited_by_username: 'chefin', can_manage_skills: true, can_manage_memory: false,
-  invited_at: '2026-08-23T12:00:00Z',
-}
-
-/**
- * Die Antwort auf eine angehobene Schalterstellung: das Backend hat **nichts**
- * gesetzt, sondern gefragt. „kollege" steht unverändert in der
- * Mitgliederliste und zusätzlich unter den Einladungen.
- */
-const anhebungDetail: TeamDetail = {
-  ...realDetail,
-  invitations: [{
-    team_id: 2, team_name: 'Betrieb', user_id: 2, username: 'kollege',
-    invited_by_username: 'einmalmaik', can_manage_skills: true, can_manage_memory: false,
-    invited_at: '2026-08-23T12:00:00Z',
-  }],
-}
-
-/** Beides nebeneinander: ein Beitritt („neuer") und eine Anhebung („kollege"). */
-const gemischtDetail: TeamDetail = {
-  ...realDetail,
-  invitations: [offeneEinladung, ...anhebungDetail.invitations],
 }
 
 /**
@@ -254,7 +221,7 @@ describe('Teams', () => {
     vi.mocked(teamsApi.assignableServers).mockReset().mockResolvedValue([
       { server_id: 7, server_name: 'Valheim', permission_keys: ['server.view', 'server.start'] },
     ])
-    vi.mocked(teamsApi.updateMember).mockReset().mockResolvedValue(realDetail)
+    vi.mocked(teamsApi.getMediaGallery).mockReset().mockResolvedValue([])
     vi.mocked(teamsApi.inviteMember).mockReset().mockResolvedValue(realDetail)
     vi.mocked(teamsApi.invitations).mockReset().mockResolvedValue([])
     vi.mocked(teamsApi.acceptInvitation).mockReset().mockResolvedValue(realDetail)
@@ -305,7 +272,10 @@ describe('Teams', () => {
     // Bis zum 27.09.2026 standen die Mitglieder als letzte Karte unter dem
     // ganzen KI-Wissen. Jetzt öffnet ein Team bei ihnen.
     expect(screen.getByRole('tab', { name: /Mitglieder/ })).toHaveAttribute('aria-selected', 'true')
-    expect(await screen.findByLabelText('Skills verwalten: kollege')).toBeInTheDocument()
+    expect(await screen.findByLabelText('Rollen & Rechte: kollege')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Skills verwalten: kollege')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Memory verwalten: einmalmaik')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Tresorzugriff: kollege')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Wissen dieses Teams')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Rechte: Valheim')).not.toBeInTheDocument()
   })
@@ -323,7 +293,7 @@ describe('Teams', () => {
     expect(screen.queryByRole('tab', { name: /^Server/ })).not.toBeInTheDocument()
   })
 
-  it('erlaubt das Bearbeiten von Team-Name und Details', async () => {
+  it('erlaubt das Bearbeiten von Team-Name und Details mit Galerie-Triggern für Profilbild und Banner', async () => {
     vi.mocked(teamsApi.rename).mockResolvedValue({ ...real, name: 'Betrieb Neu' })
     renderTeams()
     await zuTeams()
@@ -332,47 +302,27 @@ describe('Teams', () => {
     const editButtons = screen.getAllByLabelText('Team bearbeiten')
     fireEvent.click(editButtons[0])
     expect(await screen.findByDisplayValue('Betrieb')).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: 'Bild wählen' })).toHaveLength(2)
   })
 
-  it('meldet eine Anhebung als Anfrage — nicht als Speicherung', async () => {
-    // Das Backend nimmt eine Anhebung seit dem 23.08.2026 nicht mehr direkt
-    // an: es legt eine Einladung an, die der Betroffene annehmen muss. Der
-    // Schalter springt danach sichtbar auf aus zurück — „Gespeichert." wäre
-    // an dieser Stelle schlicht gelogen.
-    vi.mocked(teamsApi.updateMember).mockResolvedValue(anhebungDetail)
+  it('synchronisiert Teamdaten bei Echtzeit-Sync-Ereignis msm:sync-event', async () => {
     renderTeams()
     await zuTeams()
     await screen.findByRole('heading', { name: 'Betrieb' })
 
-    fireEvent.click(await screen.findByLabelText('Skills verwalten: kollege'))
-
-    await waitFor(() => expect(teamsApi.updateMember).toHaveBeenCalledWith(2, 2, {
-      can_manage_skills: true, can_manage_memory: false,
+    const listCallsBefore = vi.mocked(teamsApi.list).mock.calls.length
+    const getCallsBefore = vi.mocked(teamsApi.get).mock.calls.length
+    window.dispatchEvent(new CustomEvent('msm:sync-event', {
+      detail: { type: 'team_updated', team_id: 2, scope: 'media:avatar' },
     }))
-    await waitFor(() => expect(toast.success)
-      .toHaveBeenCalledWith('Zustimmung angefragt — kollege muss annehmen.'))
-    expect(toast.success).not.toHaveBeenCalledWith('Gespeichert.')
+
+    await waitFor(() => {
+      expect(vi.mocked(teamsApi.list).mock.calls.length).toBeGreaterThan(listCallsBefore)
+      expect(vi.mocked(teamsApi.get).mock.calls.length).toBeGreaterThan(getCallsBefore)
+    })
   })
 
-  it('meldet ein Zurücknehmen weiter als Speicherung', async () => {
-    // Die Gegenprobe: heruntersetzen darf der Gründer allein, das Backend tut
-    // es sofort und führt niemanden unter `invitations`. Ohne diesen Fall
-    // wäre die neue Meldung einfach die einzige.
-    renderTeams()
-    await zuTeams()
-    await screen.findByRole('heading', { name: 'Betrieb' })
-
-    fireEvent.click(await screen.findByLabelText('Memory verwalten: einmalmaik'))
-
-    await waitFor(() => expect(teamsApi.updateMember).toHaveBeenCalledWith(2, 1, {
-      can_manage_skills: true, can_manage_memory: false,
-    }))
-    await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Gespeichert.'))
-  })
-
-  it('lädt ein, statt aufzunehmen — und meldet auch nichts anderes', async () => {
-    // Für diesen Fall darf noch niemand eingeladen sein, sonst gäbe es keine
-    // Auswahl mehr.
+  it('lädt ein, statt aufzunehmen — ohne alte Mitgliederschalter', async () => {
     vi.mocked(teamsApi.get).mockImplementation(async (id: number) =>
       (id === 1 ? personalDetail : { ...realDetail, invitations: [] }))
     renderTeams()
@@ -386,11 +336,8 @@ describe('Teams', () => {
     fireEvent.click(absenden as HTMLElement)
 
     await waitFor(() => expect(teamsApi.inviteMember).toHaveBeenCalledWith(2, {
-      user_id: 3, can_manage_skills: false, can_manage_memory: false, can_access_vault: true,
+      user_id: 3,
     }))
-    // Das Backend legt seit dem 23.08.2026 nur eine Einladung an. Die Meldung
-    // „Mitglied aufgenommen." war danach schlicht falsch: aufgenommen wurde
-    // niemand.
     await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Benutzer eingeladen.'))
   })
 
@@ -420,51 +367,6 @@ describe('Teams', () => {
     // und man kann ihn auch nicht entfernen.
     expect(screen.queryByLabelText('Skills verwalten: neuer')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Mitglied entfernen: neuer')).not.toBeInTheDocument()
-  })
-
-  it('trennt offene Einladungen von offenen Rechteanfragen', async () => {
-    // `invitations` führt beides. Standen beide unter „Offene Einladungen",
-    // las der Gründer über „kollege" den Satz, Eingeladene seien noch keine
-    // Mitglieder — über jemanden, der seit Tagen im Team ist.
-    vi.mocked(teamsApi.get).mockImplementation(async (id: number) =>
-      (id === 1 ? personalDetail : gemischtDetail))
-    renderTeams()
-    await zuTeams()
-    await screen.findByRole('heading', { name: 'Betrieb' })
-
-    const einladungen = await screen.findByRole('list', { name: 'Offene Einladungen' })
-    expect(within(einladungen).getByText('neuer')).toBeInTheDocument()
-    expect(within(einladungen).queryByText('kollege')).not.toBeInTheDocument()
-
-    const anfragen = await screen.findByRole('list', { name: 'Offene Rechteanfragen' })
-    expect(within(anfragen).getByText('kollege')).toBeInTheDocument()
-    // Was angefragt ist, steht daneben — der Schalter in der Mitgliederzeile
-    // steht bis zur Zusage weiter auf aus und verrät es nicht.
-    expect(within(anfragen).getByText('Skills verwalten')).toBeInTheDocument()
-    expect(within(anfragen).getByText('wartet auf Zustimmung')).toBeInTheDocument()
-    expect(screen.getByText(/Diese Mitglieder sind längst im Team/)).toBeInTheDocument()
-  })
-
-  it('trennt die eigenen Beitritte von den eigenen Rechteanfragen', async () => {
-    // „Nachtschicht" gehört ihm noch nicht, „Betrieb" längst. Beides kam bis
-    // eben im selben Block mit demselben Hinweis — und eine angenommene
-    // Anhebung meldete „Team beigetreten.".
-    vi.mocked(teamsApi.invitations).mockResolvedValue([eigeneEinladung, eigeneAnhebung])
-    renderTeams()
-
-    const beitritte = await screen.findByRole('region', { name: 'Einladungen an dich' })
-    expect(within(beitritte).getByText('Nachtschicht')).toBeInTheDocument()
-    expect(within(beitritte).queryByText('Betrieb')).not.toBeInTheDocument()
-
-    const anfragen = await screen.findByRole('region', { name: 'Rechteanfragen an dich' })
-    expect(within(anfragen).getByText('Betrieb')).toBeInTheDocument()
-    expect(within(anfragen).getByText(/Diesen Teams gehörst du bereits an/)).toBeInTheDocument()
-
-    fireEvent.click(within(anfragen).getByLabelText('Annehmen: Betrieb'))
-
-    await waitFor(() => expect(teamsApi.acceptInvitation).toHaveBeenCalledWith(2))
-    await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Zustimmung erteilt.'))
-    expect(toast.success).not.toHaveBeenCalledWith('Team beigetreten.')
   })
 
   it('lässt ein Mitglied selbst gehen', async () => {
@@ -815,5 +717,27 @@ describe('Teams', () => {
     const ownerButton = await screen.findByRole('button', { name: 'einmalmaik' })
     const ownerRow = ownerButton.closest('li')!
     expect(within(ownerRow).getAllByText('Admin')).toHaveLength(1)
+  })
+
+  it('zeigt im Rollenmodus direkt zugewiesene Rollen am Server als klickbare Pills an', async () => {
+    vi.mocked(teamsApi.get).mockImplementation(async (id: number) =>
+      (id === 1 ? personalDetail : { ...realDetail, server_roles_active: true }))
+    renderTeams()
+    await zuTeams()
+    await screen.findByRole('heading', { name: 'Betrieb' })
+
+    fireEvent.click(screen.getByRole('tab', { name: /^Server/ }))
+
+    // Ohne manuelle Dropdown-Auswahl ist sofort sichtbar, welche Rolle auf Valheim Rechte hält
+    expect(await screen.findByText('1 Rechte')).toBeInTheDocument()
+    expect(screen.getAllByText('Mitglied').length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('rendert die Team-Tab-Leiste freischwebend ohne deckenden Trennbalken', async () => {
+    const { container } = renderTeams()
+    await zuTeams()
+    await screen.findByRole('heading', { name: 'Betrieb' })
+
+    expect(container.querySelector('.border-y.border-outline-variant\\/30.bg-surface\\/85')).toBeNull()
   })
 })

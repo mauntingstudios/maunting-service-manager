@@ -119,8 +119,6 @@ def test_team_read_tools_presence_and_fuzzy_resolution(db: Session) -> None:
         team=team,
         user=founder,
         new_user_id=member.id,
-        can_manage_skills=False,
-        can_manage_memory=False,
     )
     team_service.accept_invitation(db, user=member, team_id=team.id)
     SocialService.upsert_session(
@@ -193,7 +191,6 @@ def test_team_autonomous_create_role_all_servers_and_assign_member(db: Session) 
 
     team_service.invite_member(
         db, team=team, user=founder, new_user_id=mate.id,
-        can_manage_skills=False, can_manage_memory=False,
     )
     team_service.accept_invitation(db, user=mate, team_id=team.id)
 
@@ -268,7 +265,6 @@ def test_team_deletions_always_confirm_even_in_autonomous_mode(db: Session) -> N
     role = team_service.create_team_role(db, team=team, user=founder, name="TempRolle")
     team_service.invite_member(
         db, team=team, user=founder, new_user_id=mate.id,
-        can_manage_skills=False, can_manage_memory=False,
     )
     team_service.accept_invitation(db, user=mate, team_id=team.id)
 
@@ -380,7 +376,6 @@ def test_team_security_isolation_ceiling_and_revision_conflict(db: Session) -> N
     team = team_service.create_team(db, user=founder, name="GuardedTeam")
     team_service.invite_member(
         db, team=team, user=founder, new_user_id=plain_member.id,
-        can_manage_skills=False, can_manage_memory=False,
     )
     team_service.accept_invitation(db, user=plain_member, team_id=team.id)
 

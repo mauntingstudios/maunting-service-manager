@@ -12,6 +12,7 @@ import {
 import { useTranslation } from 'react-i18next'
 import { ActionMenu, type ActionMenuItem } from '@maunting/ui'
 import { AvatarGroup, type AvatarGroupItem } from './AvatarGroup'
+import { TeamMediaImage } from './TeamMediaDialog'
 import {
   TEAM_CATEGORIES,
   getTeamMetadata,
@@ -46,7 +47,7 @@ export function TeamCard({
   className = '',
 }: TeamCardProps) {
   const { t } = useTranslation()
-  const meta = getTeamMetadata(team.id, team.name)
+  const meta = getTeamMetadata(team)
   const categoryDef = TEAM_CATEGORIES[meta.category] ?? TEAM_CATEGORIES.projekt
   const CategoryIcon = categoryDef.icon
 
@@ -135,10 +136,9 @@ export function TeamCard({
       >
         <div className="flex min-w-0 items-center gap-3 sm:gap-4">
           <div className="relative h-14 w-14 sm:h-16 sm:w-16 shrink-0 overflow-hidden rounded-xl border border-outline-variant/30">
-            <img
+            <TeamMediaImage
               src={meta.coverImage}
-              alt=""
-              aria-hidden="true"
+              ariaHidden
               className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
             />
           </div>
@@ -209,10 +209,9 @@ export function TeamCard({
       <div className="flex gap-4">
         {/* Cover-Bild links */}
         <div className="relative h-28 w-24 sm:h-32 sm:w-28 shrink-0 overflow-hidden rounded-2xl border border-outline-variant/30 shadow-md">
-          <img
+          <TeamMediaImage
             src={meta.coverImage}
-            alt=""
-            aria-hidden="true"
+            ariaHidden
             className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
           />
           <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent pointer-events-none" />

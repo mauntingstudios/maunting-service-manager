@@ -9,6 +9,7 @@ import {
   type Team,
   type TeamDetail,
   type TeamInvitation,
+  type TeamMediaKind,
   type TeamMember,
   type TeamRole,
   type TeamServer,
@@ -24,7 +25,8 @@ import { useTeamInvitationStore } from '@/stores/teamInvitationStore'
 import { TageszeitHintergrund } from '@/components/layout/TageszeitHintergrund'
 import { useTageszeitMotiv } from '@/lib/tageszeit'
 import { TeamsOverview } from '@/components/teams/TeamsOverview'
-import { TeamModal } from '@/components/teams/TeamModal'
+import { TeamMediaDialog } from '@/components/teams/TeamMediaDialog'
+import { TeamModal, type TeamModalSubmitPayload } from '@/components/teams/TeamModal'
 import { TeamServerManager } from '@/components/teams/TeamServerManager'
 import { TeamInvitationsBanner } from '@/components/teams/TeamInvitationsSection'
 import { TeamMembersTab, type MemberCandidateOption } from '@/components/teams/TeamMembersTab'
@@ -36,10 +38,8 @@ import {
 } from '@/components/teams/TeamWorkspaceHeader'
 import {
   getTeamMetadata,
-  setTeamMetadata,
   toggleTeamArchived,
   type TeamMetadata,
-  type TeamCategoryKey,
 } from '@/components/teams/teamMeta'
 
 /**
@@ -116,6 +116,7 @@ export function Teams() {
 
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
   const [editingTeam, setEditingTeam] = useState<{ team: Team; meta: TeamMetadata } | null>(null)
+  const [headerMediaKind, setHeaderMediaKind] = useState<TeamMediaKind | null>(null)
   const [newMemberId, setNewMemberId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
@@ -163,6 +164,29 @@ export function Teams() {
       })
     return () => { active = false }
   }, [canReadUsers, t])
+
+  useEffect(() => {
+    const onSyncEvent = (evt: Event) => {
+      const payload = (evt as CustomEvent<{ type?: string; team_id?: number; scope?: string }>).detail
+      if (!payload || payload.type !== 'team_updated') return
+      void reloadTeams()
+      void teamsApi.invitations().then(setEinladungen).catch(() => undefined)
+      if (selectedId !== null && (!payload.team_id || payload.team_id === selectedId)) {
+        if (payload.scope === 'deleted') {
+          setDetail(null)
+        } else {
+          void teamsApi.get(selectedId).then((row) => {
+            setDetail(row)
+            setEditingTeam((prev) =>
+              prev && prev.team.id === row.id ? { team: row, meta: getTeamMetadata(row) } : prev,
+            )
+          }).catch(() => undefined)
+        }
+      }
+    }
+    window.addEventListener('msm:sync-event', onSyncEvent)
+    return () => window.removeEventListener('msm:sync-event', onSyncEvent)
+  }, [reloadTeams, selectedId])
 
   useEffect(() => {
     if (selectedId === null) {
@@ -221,47 +245,58 @@ export function Teams() {
     setView('workspace')
   }
 
-  const handleCreateTeamSubmit = async (payload: {
-    name: string
-    category: TeamCategoryKey
-    description: string
-    coverImage: string
-  }) => {
+  const handleCreateTeamSubmit = async (payload: TeamModalSubmitPayload) => {
     await run(async () => {
-      const created = await teamsApi.create(payload.name)
-      setTeamMetadata(created.id, {
+      const created = await teamsApi.create({
+        name: payload.name,
         category: payload.category,
-        description: payload.description,
-        coverImage: payload.coverImage,
+        description: payload.description || null,
+        avatar_preset: payload.stagedAvatarFile ? null : payload.avatarPreset,
+        banner_preset: payload.stagedBannerFile ? null : payload.bannerPreset,
       })
+      if (payload.stagedAvatarFile) {
+        await teamsApi.uploadMedia(created.id, 'avatar', payload.stagedAvatarFile)
+      }
+      if (payload.stagedBannerFile) {
+        await teamsApi.uploadMedia(created.id, 'banner', payload.stagedBannerFile)
+      }
       await reloadTeams()
       setSelectedId(created.id)
+      setDetail(await teamsApi.get(created.id))
       setView('workspace')
     }, 'teams.created')
   }
 
-  const handleEditTeamSubmit = async (payload: {
-    name: string
-    category: TeamCategoryKey
-    description: string
-    coverImage: string
-  }) => {
+  const handleEditTeamSubmit = async (payload: TeamModalSubmitPayload) => {
     if (!editingTeam) return
     await run(async () => {
-      const nextName = payload.name.trim()
-      if (nextName && nextName !== editingTeam.team.name) {
-        await teamsApi.rename(editingTeam.team.id, nextName)
-      }
-      setTeamMetadata(editingTeam.team.id, {
+      const nextName = payload.name.trim() || editingTeam.team.name
+      await teamsApi.rename(editingTeam.team.id, {
+        name: nextName,
         category: payload.category,
-        description: payload.description,
-        coverImage: payload.coverImage,
+        description: payload.description || null,
       })
       await reloadTeams()
       if (selectedId) {
         setDetail(await teamsApi.get(selectedId))
       }
     }, 'teams.saved')
+  }
+
+  const refreshAfterMediaChange = async () => {
+    const rows = await reloadTeams()
+    if (selectedId) {
+      const freshDetail = await teamsApi.get(selectedId)
+      setDetail(freshDetail)
+      setEditingTeam((prev) =>
+        prev && prev.team.id === freshDetail.id ? { team: freshDetail, meta: getTeamMetadata(freshDetail) } : prev,
+      )
+    } else if (editingTeam) {
+      const freshTeam = rows.find((r) => r.id === editingTeam.team.id)
+      if (freshTeam) {
+        setEditingTeam({ team: freshTeam, meta: getTeamMetadata(freshTeam) })
+      }
+    }
   }
 
   const handleArchiveToggle = (tm: Team) => {
@@ -279,15 +314,12 @@ export function Teams() {
     await run(async () => {
       setDetail(await teamsApi.inviteMember(detail.id, {
         user_id: Number(newMemberId),
-        can_manage_skills: false,
-        can_manage_memory: false,
-        can_access_vault: true,
       }))
       setNewMemberId(null)
     }, 'teams.memberInvited')
   }
 
-  const acceptInvitation = async (invitation: TeamInvitation, anhebung: boolean) => {
+  const acceptInvitation = async (invitation: TeamInvitation) => {
     await run(async () => {
       const aktualisiert = await teamsApi.acceptInvitation(invitation.team_id)
       setEinladungen((rows) => rows.filter((row) => row.team_id !== invitation.team_id))
@@ -295,30 +327,15 @@ export function Teams() {
       setSelectedId(invitation.team_id)
       setDetail(aktualisiert)
       void useTeamInvitationStore.getState().laden()
-    }, anhebung ? 'teams.upgradeAccepted' : 'teams.invitationAccepted')
+    }, 'teams.invitationAccepted')
   }
 
-  const declineInvitation = async (invitation: TeamInvitation, anhebung: boolean) => {
+  const declineInvitation = async (invitation: TeamInvitation) => {
     await run(async () => {
       await teamsApi.declineInvitation(invitation.team_id)
       setEinladungen((rows) => rows.filter((row) => row.team_id !== invitation.team_id))
       void useTeamInvitationStore.getState().laden()
-    }, anhebung ? 'teams.upgradeDeclined' : 'teams.invitationDeclined')
-  }
-
-  const setMemberSwitches = async (
-    member: TeamMember,
-    next: { can_manage_skills: boolean; can_manage_memory: boolean; can_access_vault?: boolean },
-  ) => {
-    if (!detail) return
-    await run(async () => {
-      const aktualisiert = await teamsApi.updateMember(detail.id, member.user_id, next)
-      setDetail(aktualisiert)
-      const angefragt = aktualisiert.invitations.some((row) => row.user_id === member.user_id)
-      toast.success(angefragt
-        ? t('teams.memberConsentPending', { name: member.username })
-        : t('common.saved'))
-    })
+    }, 'teams.invitationDeclined')
   }
 
   const removeMember = async (member: TeamMember) => {
@@ -540,15 +557,11 @@ export function Teams() {
       && !detail?.invitations.some((invitation) => invitation.user_id === user.id),
   )
 
-  const istMitglied = (invitation: TeamInvitation) =>
-    detail?.members.some((member) => member.user_id === invitation.user_id) ?? false
-  const offeneBeitritte = detail?.invitations.filter((row) => !istMitglied(row)) ?? []
-  const offeneAnhebungen = detail?.invitations.filter(istMitglied) ?? []
+  const offeneBeitritte = detail?.invitations ?? []
 
   const meinTeam = (invitation: TeamInvitation) =>
     teams.some((row) => row.id === invitation.team_id)
   const meineBeitritte = einladungen.filter((row) => !meinTeam(row))
-  const meineAnhebungen = einladungen.filter(meinTeam)
 
   const inTauri = typeof window !== 'undefined' && ('__TAURI_INTERNALS__' in window || '__TAURI__' in window)
   const activePreviewRoleId =
@@ -560,7 +573,7 @@ export function Teams() {
     toast.success(t('rolePreview.started', { name: role.name }))
   }
 
-  const activeMeta = team ? getTeamMetadata(team.id, team.name) : null
+  const activeMeta = team ? getTeamMetadata(team) : null
 
   const teamReiter: TabDef<TeamWorkspaceTab>[] = [
     { id: 'members', labelKey: 'teams.members', icon: Users, badge: team?.members.length },
@@ -574,7 +587,7 @@ export function Teams() {
 
   const openEditCurrentTeam = () => {
     if (!team) return
-    setEditingTeam({ team, meta: activeMeta ?? getTeamMetadata(team.id, team.name) })
+    setEditingTeam({ team, meta: activeMeta ?? getTeamMetadata(team) })
   }
 
   const handleSelectTab = (nextTab: TeamWorkspaceTab) => {
@@ -585,10 +598,9 @@ export function Teams() {
   const invitationsNode = (
     <TeamInvitationsBanner
       meineBeitritte={meineBeitritte}
-      meineAnhebungen={meineAnhebungen}
       busy={busy}
-      onAcceptInvitation={(inv, up) => void acceptInvitation(inv, up)}
-      onDeclineInvitation={(inv, up) => void declineInvitation(inv, up)}
+      onAcceptInvitation={(inv) => void acceptInvitation(inv)}
+      onDeclineInvitation={(inv) => void declineInvitation(inv)}
     />
   )
 
@@ -622,6 +634,7 @@ export function Teams() {
             onBackToOverview={() => setView('overview')}
             onSelectTab={handleSelectTab}
             onEditTeam={openEditCurrentTeam}
+            onOpenMedia={setHeaderMediaKind}
             onRemoveTeam={(tm) => void removeTeam(tm)}
             onLeaveTeam={(tm) => void leaveTeam(tm)}
           />
@@ -657,6 +670,7 @@ export function Teams() {
             onBackToOverview={() => setView('overview')}
             onSelectTab={handleSelectTab}
             onEditTeam={openEditCurrentTeam}
+            onOpenMedia={setHeaderMediaKind}
             onRemoveTeam={(tm) => void removeTeam(tm)}
             onLeaveTeam={(tm) => void leaveTeam(tm)}
           />
@@ -678,10 +692,8 @@ export function Teams() {
                     newMemberId={newMemberId}
                     busy={busy}
                     offeneBeitritte={offeneBeitritte}
-                    offeneAnhebungen={offeneAnhebungen}
                     onKandidat={setNewMemberId}
                     onEinladen={() => void inviteMember()}
-                    onSchalter={(member, next) => void setMemberSwitches(member, next)}
                     onSetMemberRoles={(member, roleIds) => void setMemberRoles(member, roleIds)}
                     onEntfernen={(member) => void removeMember(member)}
                   />
@@ -753,14 +765,32 @@ export function Teams() {
         <TeamModal
           isOpen={true}
           mode="edit"
+          team={editingTeam.team}
           initialName={editingTeam.team.name}
           initialMeta={editingTeam.meta}
           busy={busy}
           onClose={() => setEditingTeam(null)}
+          onMediaChanged={refreshAfterMediaChange}
           onSubmit={async (payload) => {
             await handleEditTeamSubmit(payload)
             setEditingTeam(null)
           }}
+        />
+      )}
+
+      {team && headerMediaKind && (
+        <TeamMediaDialog
+          open={true}
+          onClose={() => setHeaderMediaKind(null)}
+          teamId={team.id}
+          kind={headerMediaKind}
+          activePreset={headerMediaKind === 'avatar' ? team.avatar_preset : team.banner_preset}
+          hasCustomMedia={
+            headerMediaKind === 'avatar'
+              ? team.avatar_source === 'custom'
+              : team.banner_source === 'custom'
+          }
+          onChanged={refreshAfterMediaChange}
         />
       )}
     </div>

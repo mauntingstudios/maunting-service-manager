@@ -1,4 +1,4 @@
-"""API-Vertraege fuer Teams, Mitglieder und weitergegebene Serverrechte."""
+"""API-Vertraege fuer Teams, Medien, Mitglieder, Rollen und Serverrechte."""
 
 from datetime import datetime
 from typing import Literal
@@ -10,27 +10,24 @@ from schemas.social import PresenceInfo
 
 class TeamCreate(BaseModel):
     name: str = Field(min_length=2, max_length=64)
+    category: str | None = Field(default=None, max_length=32)
+    description: str | None = Field(default=None, max_length=500)
+    avatar_preset: str | None = Field(default=None, max_length=64)
+    banner_preset: str | None = Field(default=None, max_length=64)
 
 
 class TeamRename(BaseModel):
     name: str = Field(min_length=2, max_length=64)
+    category: str | None = Field(default=None, max_length=32)
+    description: str | None = Field(default=None, max_length=500)
+    avatar_preset: str | None = Field(default=None, max_length=64)
+    banner_preset: str | None = Field(default=None, max_length=64)
 
 
 class TeamMemberWrite(BaseModel):
     user_id: int = Field(ge=1)
-    can_manage_skills: bool = False
-    can_manage_memory: bool = False
-    can_access_vault: bool = True
     team_role_id: int | None = None
     role_ids: list[int] = Field(default_factory=list)
-
-
-class TeamMemberUpdate(BaseModel):
-    can_manage_skills: bool
-    can_manage_memory: bool
-    can_access_vault: bool | None = None
-    team_role_id: int | None = None
-    role_ids: list[int] | None = None
 
 
 class TeamMemberRolesUpdate(BaseModel):
@@ -53,9 +50,6 @@ class TeamRoleWrite(BaseModel):
     description: str | None = Field(default=None, max_length=255)
     color: str = Field(default="#3b82f6", max_length=16)
     icon: str | None = Field(default=None, max_length=32)
-    can_access_vault: bool = True
-    can_manage_skills: bool = False
-    can_manage_memory: bool = False
     is_default: bool = False
     is_admin: bool = False
     permission_keys: list[str] = Field(default_factory=list, max_length=64)
@@ -69,9 +63,6 @@ class TeamRoleResponse(BaseModel):
     description: str | None = None
     color: str
     icon: str | None = None
-    can_access_vault: bool
-    can_manage_skills: bool
-    can_manage_memory: bool
     is_default: bool
     is_admin: bool = False
     created_at: datetime
@@ -99,9 +90,6 @@ class TeamMemberResponse(BaseModel):
     username: str
     avatar_url: str | None = None
     role: Literal["owner", "member"]
-    can_manage_skills: bool
-    can_manage_memory: bool
-    can_access_vault: bool = True
     team_role_id: int | None = None
     role_ids: list[int] = Field(default_factory=list)
     roles: list[TeamRoleResponse] = Field(default_factory=list)
@@ -110,12 +98,7 @@ class TeamMemberResponse(BaseModel):
 
 
 class TeamInvitationResponse(BaseModel):
-    """Eine ausgesprochene, noch nicht angenommene Einladung.
-
-    Dieselbe Zeile aus beiden Blickwinkeln: der Gruender sieht in der
-    Teamansicht, wen er angeschrieben hat, der Eingeladene in seiner eigenen
-    Liste, wer ihn haben will und was ihm dabei angeboten wird.
-    """
+    """Eine ausgesprochene, noch nicht angenommene Einladung."""
 
     team_id: int
     team_name: str
@@ -123,10 +106,8 @@ class TeamInvitationResponse(BaseModel):
     username: str
     avatar_url: str | None = None
     invited_by_username: str | None
-    can_manage_skills: bool
-    can_manage_memory: bool
-    can_access_vault: bool = True
     team_role_id: int | None = None
+    team_role_name: str | None = None
     invited_at: datetime
 
 
@@ -136,17 +117,41 @@ class TeamServerResponse(BaseModel):
     permission_keys: list[str]
 
 
+class TeamMediaGalleryItem(BaseModel):
+    id: int
+    team_id: int
+    kind: Literal["avatar", "banner"]
+    uploaded_by: str
+    created_at: datetime
+    is_active: bool
+
+
+class TeamMediaPresetWrite(BaseModel):
+    preset: str | None = Field(default=None, max_length=64)
+
+
 class TeamResponse(BaseModel):
     id: int
     name: str
     is_personal: bool
     owner_user_id: int
-    # Ob der Abrufende dieses Team verwalten darf. Spart der Oberflaeche eine
-    # zweite Abfrage und haelt die Bedingung an einer Stelle.
     is_owner: bool
-    can_manage_skills: bool
-    can_manage_memory: bool
+    category: str | None = None
+    description: str | None = None
+    avatar_source: str = "preset"
+    avatar_preset: str | None = None
+    avatar_url: str | None = None
+    avatar_version: str | None = None
+    banner_source: str = "panorama"
+    banner_preset: str | None = None
+    banner_url: str | None = None
+    banner_version: str | None = None
+    # Abgeleitete effektive Rechte des Abrufenden (aus Rollen + Eigentuemer):
+    can_manage_skills: bool = False
+    can_manage_memory: bool = False
     can_access_vault: bool = True
+    can_manage_avatar: bool = False
+    can_manage_banner: bool = False
     server_roles_active: bool = False
     member_count: int
     created_at: datetime
@@ -155,8 +160,6 @@ class TeamResponse(BaseModel):
 class TeamDetailResponse(TeamResponse):
     members: list[TeamMemberResponse]
     servers: list[TeamServerResponse]
-    # Wer eingeladen ist, ist noch niemand im Team — steht aber hier, damit der
-    # Gruender nicht den Eindruck bekommt, seine Einladung sei verschwunden.
     invitations: list[TeamInvitationResponse] = []
     roles: list[TeamRoleResponse] = []
 
@@ -192,14 +195,6 @@ class TeamVaultKeyslotResponse(BaseModel):
 
 
 class TeamVaultRotationPrepareRequest(BaseModel):
-    """Rotation vorbereiten: nur die neue Bucket-Kennung.
-
-    Anders als privat braucht die Team-Rotation weder Salt (der DEK ist
-    zufaellig, kein KDF-Produkt) noch frischen Kontonachweis: Sie laeuft
-    automatisch nach Mitgliederwechsel, wo kein Nachweis vorliegt. Schranken
-    bleiben Gruenderrecht, CSRF und Rate-Limit; ein Missbrauch endet als
-    temporaere Stoerung mit Rollback-Pfad, nie als Schluesselverlust.
-    """
+    """Rotation vorbereiten: nur die neue Bucket-Kennung."""
 
     bucket_id: str = Field(min_length=64, max_length=64)
-

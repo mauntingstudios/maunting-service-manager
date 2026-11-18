@@ -145,9 +145,6 @@ def _team_tool_definitions() -> list[dict]:
                 "team_id": {"type": "integer", "minimum": 1},
                 "user_id": {"type": "integer", "minimum": 1},
                 "team_role_id": {"type": ["integer", "null"], "minimum": 1},
-                "can_access_vault": {"type": "boolean"},
-                "can_manage_skills": {"type": "boolean"},
-                "can_manage_memory": {"type": "boolean"},
                 **_RATIONALE_SCHEMA,
             },
             ["team_id", "user_id", *_RATIONALE_REQUIRED],
@@ -433,9 +430,6 @@ def _execute_read_team_overview(db: Session, user: User, arguments: dict) -> dic
             "description": redact_sensitive_text(str(role.description or ""))[:255] or None,
             "is_admin": bool(role.is_admin),
             "is_default": bool(role.is_default),
-            "can_access_vault": bool(role.can_access_vault),
-            "can_manage_skills": bool(role.can_manage_skills),
-            "can_manage_memory": bool(role.can_manage_memory),
             "permission_keys": sorted(p.permission_key for p in role.permissions),
             "server_grants": grant_list,
             "members_count": members_count,
@@ -472,9 +466,6 @@ def _execute_read_team_overview(db: Session, user: User, arguments: dict) -> dic
                 redact_sensitive_text(str(roles_by_id[rid].name))[:32]
                 for rid in role_ids if rid in roles_by_id
             ],
-            "can_access_vault": bool(member.can_access_vault),
-            "can_manage_skills": bool(member.can_manage_skills),
-            "can_manage_memory": bool(member.can_manage_memory),
             "joined_at": member.joined_at.isoformat() if member.joined_at else None,
             "presence": presence_dict,
         })

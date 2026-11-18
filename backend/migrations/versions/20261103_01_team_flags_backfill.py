@@ -20,6 +20,7 @@ tragen — oder vergibt sie nach dem Update erneut ueber die Rollen.
 from typing import Sequence, Union
 
 from alembic import op
+import sqlalchemy as sa
 
 
 revision: str = "20261103_01"
@@ -46,6 +47,13 @@ def _flag_sql(flag: str) -> str:
 
 
 def upgrade() -> None:
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    legacy_cols = {"can_access_vault", "can_manage_skills", "can_manage_memory"}
+    member_cols = {col["name"] for col in inspector.get_columns("team_members")}
+    role_cols = {col["name"] for col in inspector.get_columns("team_roles")}
+    if not (legacy_cols <= member_cols and legacy_cols <= role_cols):
+        return
     op.execute(
         "UPDATE team_members m SET "
         "can_access_vault = (" + _flag_sql("can_access_vault") + "), "

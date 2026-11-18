@@ -12,7 +12,6 @@ Custom-Bilder sind Laufzeitdaten pro Spiel, keine Blueprint-Aenderung.
 
 from __future__ import annotations
 
-import io
 import re
 import time
 from dataclasses import dataclass
@@ -21,22 +20,24 @@ from typing import TYPE_CHECKING, Any
 
 import httpx
 from fastapi import HTTPException
-from PIL import Image
 from sqlalchemy.orm import Session
 
 from config import settings
 from models.game_wallpaper import GameWallpaper
+from services.media_gallery_service import (
+    DEFAULT_MAX_WIDTH as MAX_WALLPAPER_WIDTH,
+    GALLERY_RETENTION as GALLERY_RETENTION_PER_GAME,
+    MAX_MEDIA_BYTES as MAX_WALLPAPER_BYTES,
+    MIN_MEDIA_BYTES as MIN_WALLPAPER_BYTES,
+    WEBP_QUALITY,
+    MediaValidationError as WallpaperValidationError,
+    apply_gallery_retention,
+    sanitize_and_compress_image,
+)
 
 if TYPE_CHECKING:
     from models.server import Server
 
-MAX_WALLPAPER_BYTES = 10 * 1024 * 1024  # 10 MB
-MIN_WALLPAPER_BYTES = 32
-MAX_WALLPAPER_WIDTH = 2560
-WEBP_QUALITY = 85
-# Galerie-Retention pro Spiel: darueber hinaus fliegen die aeltesten
-# inaktiven Bilder (Datei + Zeile) automatisch raus.
-GALLERY_RETENTION_PER_GAME = 10
 # Steam-Fetch: kurzes Timeout, kein Blockieren des Seitenaufbaus.
 STEAM_FETCH_TIMEOUT_SECONDS = 5.0
 # Negativ-Cache: Fehlschlaege nicht endlos erneut anfordern.
@@ -65,14 +66,6 @@ class WallpaperDescriptor:
     version: str | None = None
 
 
-class WallpaperValidationError(ValueError):
-    """Upload verletzt eine Bildregel — Router mappt auf HTTP 400."""
-
-    def __init__(self, message: str) -> None:
-        super().__init__(message)
-        self.message = message
-
-
 # ── Pfade ────────────────────────────────────────────────────────────────
 
 
@@ -90,52 +83,14 @@ def _game_verzeichnis(game_type: str) -> Path:
     return wallpaper_verzeichnis() / game_type
 
 
-# ── Sanitisierung (reine Funktion: Bytes rein, WebP-Bytes raus) ──────────
-
-
-def _magic_ok(raw: bytes) -> bool:
-    if raw.startswith(b"\xff\xd8\xff"):  # JPEG
-        return True
-    if raw.startswith(b"\x89PNG\r\n\x1a\n"):  # PNG
-        return True
-    # WebP: RIFF....WEBP (SVG hat keine Magic Bytes hier → verboten/XSS-safe)
-    return (
-        len(raw) >= 12 and raw.startswith(b"RIFF") and raw[8:12] == b"WEBP"
-    )
+# ── Sanitisierung (delegiert an zentrale Medien-Engine) ──────────────────
 
 
 def sanitize_and_compress_wallpaper(raw_bytes: bytes) -> bytes:
-    """Prueft, desinfiziert und komprimiert Upload-Bytes zu WebP.
-
-    1. Groessenlimit, 2. Magic-Bytes (kein SVG/XSS, keine MIME-Faelschung),
-    3. Pillow-Dekodierung (killt EXIF, Polyglots, Schadcode), 4. Lanczos auf
-    max. 2560 px Breite, 5. WebP-Neukodierung (~180–300 KB).
-    """
-    if len(raw_bytes) > MAX_WALLPAPER_BYTES or len(raw_bytes) < MIN_WALLPAPER_BYTES:
-        raise WallpaperValidationError("Ungueltige Dateigroesse (max. 10 MB).")
-    if not _magic_ok(raw_bytes):
-        raise WallpaperValidationError(
-            "Ungueltiges Bildformat. Nur JPEG, PNG und WebP erlaubt."
-        )
-    try:
-        with Image.open(io.BytesIO(raw_bytes)) as img:
-            img.verify()
-        with Image.open(io.BytesIO(raw_bytes)) as img:
-            rgb_img = img.convert("RGB")
-            if rgb_img.width > MAX_WALLPAPER_WIDTH:
-                new_height = max(
-                    1, int((MAX_WALLPAPER_WIDTH / rgb_img.width) * rgb_img.height)
-                )
-                rgb_img = rgb_img.resize(
-                    (MAX_WALLPAPER_WIDTH, new_height), Image.Resampling.LANCZOS
-                )
-            output = io.BytesIO()
-            rgb_img.save(output, format="WEBP", quality=WEBP_QUALITY, method=6)
-            return output.getvalue()
-    except WallpaperValidationError:
-        raise
-    except Exception:
-        raise WallpaperValidationError("Bilddatei beschaedigt oder nicht lesbar.")
+    """Prueft, desinfiziert und komprimiert Upload-Bytes zu WebP."""
+    return sanitize_and_compress_image(
+        raw_bytes, max_width=MAX_WALLPAPER_WIDTH, quality=WEBP_QUALITY
+    )
 
 
 # ── Galerie (pro Spiel) ──────────────────────────────────────────────────
@@ -163,22 +118,12 @@ def get_gallery(db: Session, game_type: str) -> list[GameWallpaper]:
 
 
 def _apply_retention(db: Session, game_type: str) -> None:
-    rows = get_gallery(db, game_type)
-    if len(rows) <= GALLERY_RETENTION_PER_GAME:
-        return
-    keep_active = next((r for r in rows if r.is_active), None)
-    # rows ist neueste-zuerst — Opfer vom Ende (aelteste) nehmen.
-    victims = [r for r in reversed(rows) if r is not keep_active][
-        : len(rows) - GALLERY_RETENTION_PER_GAME
-    ]
-    game_dir = _game_verzeichnis(game_type)
-    for row in victims:
-        try:
-            (game_dir / row.file_name).unlink(missing_ok=True)
-        except OSError:
-            pass
-        db.delete(row)
-    db.commit()
+    apply_gallery_retention(
+        db,
+        rows=get_gallery(db, game_type),
+        scope_dir=_game_verzeichnis(game_type),
+        retention=GALLERY_RETENTION_PER_GAME,
+    )
 
 
 def store_wallpaper(

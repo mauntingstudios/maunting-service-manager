@@ -30,7 +30,7 @@ from database import Base
 
 # Letzte Revision auf `main`. Alles danach ist neu in diesem Branch.
 BASE_REVISION = "20260731_01"
-HEAD_REVISION = "20261116_02"
+HEAD_REVISION = "20261118_01"
 
 BRANCH_TABLES = (
     "user_roles",
@@ -253,7 +253,7 @@ def test_team_roles_migration_repairs_create_all_columns_and_index(pg_wegwerf) -
             conn.execute(text("DROP INDEX IF EXISTS ix_team_roles_team_id"))
             for table in ("team_members", "team_invitations"):
                 conn.execute(text(f'ALTER TABLE "{table}" DROP COLUMN team_role_id'))
-                conn.execute(text(f'ALTER TABLE "{table}" DROP COLUMN can_access_vault'))
+                conn.execute(text(f'ALTER TABLE "{table}" DROP COLUMN IF EXISTS can_access_vault'))
         command.stamp(config, "20261102_01")
         command.upgrade(config, "20261102_02")
 

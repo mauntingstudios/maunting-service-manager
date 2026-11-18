@@ -8,7 +8,7 @@ import pytest
 
 from models.ai_skill import AiSkill
 from models.doc import DocMember, Document
-from models.team import Team, TeamMember
+from models.team import Team, TeamMember, TeamMemberRole, TeamRole, TeamRolePermission
 from services import ai_docs_chat_scope
 from services.ai_action_errors import AiActionValidationError
 from services.ai_tools import document_tools
@@ -32,7 +32,6 @@ def _team(db, owner, name: str):
     db.flush()
     db.add(TeamMember(
         team_id=team.id, user_id=owner.id, role="owner", added_by=owner.id,
-        can_manage_memory=True, can_manage_skills=True,
     ))
     db.commit()
     db.refresh(team)
@@ -40,10 +39,21 @@ def _team(db, owner, name: str):
 
 
 def _mitglied(db, team, user, *, memory=False, skills=False):
-    db.add(TeamMember(
+    m = TeamMember(
         team_id=team.id, user_id=user.id, role="member", added_by=team.owner_user_id,
-        can_manage_memory=memory, can_manage_skills=skills,
-    ))
+    )
+    db.add(m)
+    db.flush()
+    if memory or skills:
+        role = TeamRole(team_id=team.id, name=f"role-{user.id}")
+        db.add(role)
+        db.flush()
+        if memory:
+            db.add(TeamRolePermission(role_id=role.id, permission_key="ai.memory.write"))
+        if skills:
+            db.add(TeamRolePermission(role_id=role.id, permission_key="ai.skills.manage"))
+        m.team_role_id = role.id
+        db.add(TeamMemberRole(team_member_id=m.id, team_role_id=role.id))
     db.commit()
 
 
