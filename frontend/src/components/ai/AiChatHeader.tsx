@@ -1,4 +1,4 @@
-import { CalendarClock, ChevronLeft, ChevronRight, Menu, MoreHorizontal, Plus, RotateCw, ShieldAlert, Sparkles } from 'lucide-react'
+import { CalendarClock, ChevronRight, Menu, MoreHorizontal, Plus, RotateCw, ShieldAlert, Sparkles } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import type { AiProviderAvailable } from '@/api/ai'
@@ -104,15 +104,15 @@ export function AiChatHeader({
       }`}
     >
       <div className={`flex min-w-0 flex-1 items-center gap-2 py-0.5 ${singraShell ? 'pointer-events-auto' : ''}`}>
-        {singraShell && onToggleSidebar && (
-          <Kurzinfo text={isSidebarCollapsed ? 'Seitenleiste einblenden' : 'Seitenleiste einklappen'}>
+        {singraShell && onToggleSidebar && isSidebarCollapsed && (
+          <Kurzinfo text="Seitenleiste einblenden">
             <button
               type="button"
               onClick={onToggleSidebar}
               className="hidden lg:flex h-10 w-10 sm:h-9 sm:w-9 shrink-0 items-center justify-center rounded-full bg-surface-container-high/85 hover:bg-surface-container-high text-on-surface hover:text-primary border border-outline-variant/30 backdrop-blur-md shadow-sm transition-all active:scale-95"
-              aria-label={isSidebarCollapsed ? 'Seitenleiste einblenden' : 'Seitenleiste einklappen'}
+              aria-label="Seitenleiste einblenden"
             >
-              {isSidebarCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+              <ChevronRight className="h-4 w-4" />
             </button>
           </Kurzinfo>
         )}
@@ -130,24 +130,20 @@ export function AiChatHeader({
           </Kurzinfo>
         )}
 
-        <div
-          className={`flex items-center gap-2 min-w-0 ${
-            singraShell
-              ? 'rounded-full bg-surface-container-high/85 border border-outline-variant/30 backdrop-blur-md px-3 py-1 shadow-sm'
-              : ''
-          }`}
-        >
-          <span className="font-semibold text-xs sm:text-sm text-on-surface truncate">
-            {activeProjectName
-              ? `Projekt: ${activeProjectName}${currentConversationTitle && currentConversationTitle !== activeProjectName ? ` • ${currentConversationTitle}` : ''}`
-              : (currentConversationTitle || t('ai.chat.title'))}
-          </span>
-          {!singraShell && AI_IS_BETA && (
-            <span className="px-1.5 py-0.5 rounded bg-status-warning/15 text-status-warning border border-status-warning/30 text-label-sm font-bold uppercase tracking-wider shrink-0">
-              {t('ai.betaBadge', 'Beta')}
+        {!singraShell && (
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="font-semibold text-xs sm:text-sm text-on-surface truncate">
+              {activeProjectName
+                ? `Projekt: ${activeProjectName}${currentConversationTitle && currentConversationTitle !== activeProjectName ? ` • ${currentConversationTitle}` : ''}`
+                : (currentConversationTitle || t('ai.chat.title'))}
             </span>
-          )}
-        </div>
+            {AI_IS_BETA && (
+              <span className="px-1.5 py-0.5 rounded bg-status-warning/15 text-status-warning border border-status-warning/30 text-label-sm font-bold uppercase tracking-wider shrink-0">
+                {t('ai.betaBadge', 'Beta')}
+              </span>
+            )}
+          </div>
+        )}
 
         {!singraShell && availableProviders.length > 0 && (
           <div className="shrink-0 min-w-[7rem] max-w-[11rem]">

@@ -92,7 +92,7 @@ export function WorkerSplitLayout({ children, workerId, onClose }: WorkerSplitLa
         <div
           className={
             workerId
-              ? `min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-outline-variant/30 ${
+              ? `isolate min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-outline-variant/30 bg-surface-container-lowest ${
                   mobileTab === 'chat' ? 'flex' : 'hidden'
                 } lg:flex`
               : 'flex h-full min-h-0 flex-1 flex-col overflow-hidden'
@@ -103,7 +103,7 @@ export function WorkerSplitLayout({ children, workerId, onClose }: WorkerSplitLa
 
         {workerId && (
           <div
-            className={`min-h-0 shrink-0 flex-col overflow-hidden ${
+            className={`isolate min-h-0 shrink-0 flex-col overflow-hidden rounded-2xl ${
               mobileTab === 'worker' ? 'flex flex-1' : 'hidden'
             } lg:flex lg:w-[400px] xl:w-[460px]`}
           >

@@ -241,7 +241,7 @@ export function ChatHintergrund({
 
   return (
     <div
-      className={`pointer-events-none absolute inset-0 z-0 overflow-hidden ${className}`}
+      className={`pointer-events-none absolute inset-0 z-0 overflow-hidden rounded-[inherit] ${className}`}
       aria-hidden="true"
       data-chat-hintergrund={konfiguration.preset}
     >

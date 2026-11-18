@@ -924,7 +924,7 @@ export function AiChat({
         onClose={() => setSelectedWorkerId(null)}
       >
       <section
-        className={`relative flex min-h-0 flex-1 flex-col overflow-hidden ${eingebettet ? 'h-full' : ''}`}
+        className={`relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-[inherit] ${eingebettet ? 'h-full' : ''}`}
         aria-label={t('ai.chat.title')}
         onDragEnter={(event) => {
           if (!canAttach || busy) return

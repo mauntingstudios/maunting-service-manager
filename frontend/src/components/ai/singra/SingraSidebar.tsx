@@ -2,6 +2,7 @@ import { useState } from 'react'
 import {
   Bookmark,
   BookOpen,
+  ChevronLeft,
   Folder,
   FolderGit2,
   History,
@@ -52,6 +53,7 @@ export const SINGRA_MOBILE_TABS: SingraNavDef[] = [
 
 interface SingraSidebarProps {
   isCollapsed?: boolean
+  onToggleCollapse?: () => void
   activeSection: SingraSection
   onSelectSection: (section: SingraSection) => void
   conversations: AiConversationSummary[]
@@ -75,6 +77,7 @@ function SidebarContent({
   onRenameConversation,
   onTogglePinConversation,
   onDeleteConversation,
+  onToggleCollapse,
   onCloseMobile,
 }: {
   activeSection: SingraSection
@@ -86,6 +89,7 @@ function SidebarContent({
   onRenameConversation?: (conv: AiConversationSummary, newTitle: string) => Promise<void>
   onTogglePinConversation?: (conv: AiConversationSummary) => void
   onDeleteConversation?: (conv: AiConversationSummary) => void
+  onToggleCollapse?: () => void
   onCloseMobile?: () => void
 }) {
   const user = useAuthStore((s) => s.user)
@@ -127,6 +131,16 @@ function SidebarContent({
               <Plus className="h-3.5 w-3.5" aria-hidden="true" />
               <span>Neu</span>
             </button>
+            {onToggleCollapse && !onCloseMobile && (
+              <button
+                type="button"
+                onClick={onToggleCollapse}
+                className="hidden lg:flex h-8 w-8 items-center justify-center rounded-lg text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors"
+                aria-label="Seitenleiste einklappen"
+              >
+                <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+              </button>
+            )}
             {onCloseMobile && (
               <button
                 type="button"

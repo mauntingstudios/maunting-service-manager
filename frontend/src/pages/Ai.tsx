@@ -394,6 +394,7 @@ export function Ai({
         <div className="flex min-h-0 flex-1 overflow-hidden">
           <SingraSidebar
             isCollapsed={isSidebarCollapsed}
+            onToggleCollapse={() => setIsSidebarCollapsed(true)}
             activeSection={activeSection}
             onSelectSection={setActiveSection}
             conversations={conversations}

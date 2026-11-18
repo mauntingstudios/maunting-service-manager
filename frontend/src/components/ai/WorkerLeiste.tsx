@@ -126,10 +126,10 @@ export function WorkerLeiste({
       // `relative`: die Leiste steht im Chat über der Hintergrundschicht,
       // die dort absolut liegt (siehe `features/chatHintergrund`).
       className={[
-        'relative flex shrink-0 flex-wrap items-center gap-2 px-3 py-2 sm:px-4',
+        'relative flex shrink-0 flex-wrap items-center gap-2 px-3 sm:px-4',
         singraShell
-          ? 'border-b border-white/10 bg-surface-container/45 backdrop-blur-md'
-          : 'border-b border-outline-variant/40',
+          ? 'border-b border-white/10 bg-surface-container/55 backdrop-blur-md pt-14 pb-2.5'
+          : 'border-b border-outline-variant/40 py-2',
       ].join(' ')}
       aria-label={t('ai.worker.listLabel')}
     >
