@@ -8,6 +8,7 @@ import { useToastStore } from '@/stores/toastStore'
 import { usePermissionsStore } from '@/stores/permissionsStore'
 import { useRolePreviewStore } from '@/stores/rolePreviewStore'
 import { useServerPreferencesStore } from '@/stores/serverPreferencesStore'
+import { useServerWallpaperStore } from '@/stores/serverWallpaperStore'
 import type { MePermissions } from '@/types/permissions'
 import type { Server, GameInfo } from '@/types'
 
@@ -780,5 +781,69 @@ describe('ServerDetail permission topology — VAL-UI-002 / VAL-UI-018', () => {
       fireEvent.click(screen.getByTestId('network-details-trigger'))
       expect(screen.queryByTestId('network-edit-btn')).not.toBeInTheDocument()
     })
+  })
+})
+
+describe('ServerDetail Titelbild-Blitzstart', () => {
+  beforeEach(async () => {
+    mockApi.mockReset()
+    await i18n.changeLanguage('en')
+    useRolePreviewStore.getState().stopPreview()
+    usePermissionsStore.setState({ me: OWNER_ME, isLoading: false, error: null })
+    useToastStore.setState({ toasts: [] })
+    useServerWallpaperStore.getState().clear()
+  })
+
+  afterEach(() => {
+    useServerWallpaperStore.getState().clear()
+  })
+
+  function renderMitState(serverId: number, state: unknown) {
+    return render(
+      <MemoryRouter initialEntries={[{ pathname: `/servers/${serverId}`, state }]}>
+        <Routes>
+          <Route path="/servers/:id" element={<ServerDetail />} />
+        </Routes>
+      </MemoryRouter>,
+    )
+  }
+
+  it('malt das Titelbild aus dem Navigations-State, bevor fetchAll antwortet', async () => {
+    // Die API antwortet nie — der Seed muss trotzdem malen.
+    mockApi.mockImplementation(() => new Promise(() => {}) as any)
+    renderMitState(SERVER_ID, {
+      wallpaper: { serverId: SERVER_ID, url: `/api/servers/${SERVER_ID}/wallpaper`, version: 'custom-3' },
+    })
+    await waitFor(() => {
+      expect(useServerWallpaperStore.getState().activeWallpaper?.pfad).toContain('?v=custom-3')
+    })
+  })
+
+  it('ignoriert fremden Navigations-State', async () => {
+    mockApi.mockImplementation(() => new Promise(() => {}) as any)
+    renderMitState(SERVER_ID, {
+      wallpaper: { serverId: OTHER_SERVER_ID, url: `/api/servers/${OTHER_SERVER_ID}/wallpaper`, version: 'custom-9' },
+    })
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50))
+    })
+    expect(useServerWallpaperStore.getState().activeWallpaper).toBeNull()
+  })
+
+  it('wartet mit Seite und Titelbild nicht auf /status', async () => {
+    const mitBild = {
+      ...SYNTHETIC_SERVER,
+      wallpaper_url: `/api/servers/${SERVER_ID}/wallpaper`,
+      wallpaper_version: 'custom-5',
+    }
+    mockApi.mockImplementation(async (path: string) => {
+      if (path === `/servers/${SERVER_ID}`) return mitBild as any
+      if (path === '/system/games') return SYNTHETIC_GAMES as any
+      if (path === '/servers') return [] as any
+      return new Promise(() => {}) as any // /status hängt
+    })
+    renderMitState(SERVER_ID, undefined)
+    await waitForServerToLoad()
+    expect(useServerWallpaperStore.getState().activeWallpaper?.pfad).toContain('?v=custom-5')
   })
 })

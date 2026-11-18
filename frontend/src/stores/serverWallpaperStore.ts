@@ -5,11 +5,11 @@ import type { HeaderHintergrundVariante } from '@/lib/tageszeit'
 /** Schlanker Wallpaper-Zustand: ServerDetail setzt das aktive Motiv, Shell und
  * MSS-Dashboard rendern es.
  *
- * Kein ID-Mapping hier — die URL kommt aus der API (`wallpaper_url`).
- * Frische garantiert der Server per ETag + `no-cache`: Web und MSS fragen bei
- * jedem Aufruf an und bekommen 304, solange sich nichts geaendert hat. Ein
- * lokaler Versionszaehler saehe nur die eigenen Aenderungen und liesse jeden
- * anderen Client auf dem alten Bild sitzen.
+ * Kein ID-Mapping hier — URL und Inhalts-Version kommen aus der API
+ * (`wallpaper_url`, `wallpaper_version`). Neuer Inhalt bedeutet eine neue
+ * Version und damit eine neue URL; versionierte Antworten cached der Browser
+ * als immutable und malt sie ohne jede Anfrage. Unversionierte Anfragen
+ * sichern ETag + `no-cache` ab.
  */
 interface ServerWallpaperState {
   activeWallpaper: HeaderHintergrundVariante | null
@@ -23,12 +23,41 @@ export const useServerWallpaperStore = create<ServerWallpaperState>((set) => ({
   clear: () => set({ activeWallpaper: null }),
 }))
 
+/** Hängt die Inhalts-Version an die Bild-URL (`?v=`), wenn es eine gibt. */
+export function versionierteWallpaperUrl(url: string, version?: string | null): string {
+  if (!version) return apiUrl(url)
+  const trenner = url.includes('?') ? '&' : '?'
+  return apiUrl(`${url}${trenner}v=${version}`)
+}
+
 /** Baut das Shell-Motiv aus der API-URL (gleiche Maske/Hoehe wie das Panorama). */
-export function wallpaperMotiv(serverId: number, url: string): HeaderHintergrundVariante {
+export function wallpaperMotiv(serverId: number, url: string, version?: string | null): HeaderHintergrundVariante {
   return {
     id: `server-wallpaper-${serverId}`,
-    pfad: apiUrl(url),
+    pfad: versionierteWallpaperUrl(url, version),
     position: 'center 38%',
     ueberlagerung: '',
+  }
+}
+
+/** Was eine Serverkarte der Detailseite im Navigations-State mitgibt, damit
+ * der Kopf das Titelbild sofort aus dem Cache malt statt auf fetchAll zu warten. */
+export interface WallpaperNavigationsState {
+  wallpaper: { serverId: number; url: string; version: string | null }
+}
+
+/** Baut den Mitgabe-State — `undefined` ohne Titelbild (Panorama). */
+export function wallpaperNavigationsState(server: {
+  id: number
+  wallpaper_url?: string | null
+  wallpaper_version?: string | null
+}): WallpaperNavigationsState | undefined {
+  if (!server.wallpaper_url) return undefined
+  return {
+    wallpaper: {
+      serverId: server.id,
+      url: server.wallpaper_url,
+      version: server.wallpaper_version ?? null,
+    },
   }
 }

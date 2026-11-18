@@ -4,7 +4,7 @@ import threading
 import time
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, File, Header, HTTPException, UploadFile, WebSocket
+from fastapi import APIRouter, Depends, File, Header, HTTPException, Query, UploadFile, WebSocket
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import Response
 from pydantic import BaseModel, Field, field_validator
@@ -181,6 +181,7 @@ def _server_response(server: Server, db: Session | None = None) -> ServerRespons
         data.has_custom_wallpaper = desk.source == "custom"
         data.wallpaper_url = desk.url
         data.wallpaper_source = desk.source
+        data.wallpaper_version = desk.version
     data.guardian_enabled = _is_guardian_enabled(server)
     # The persisted clear intent remains pending across offline/unknown/stale
     # observations. Reconciliation removes it only after the Agent accepts the
@@ -974,15 +975,41 @@ def get_server_wallpaper(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
     if_none_match: str | None = Header(default=None),
+    v: str | None = Query(default=None),
 ) -> Response:
     """Liefert das aufgeloeste Titelbild (Custom oder Steam-Cache).
 
     404 heisst "kein Bild" — das Frontend faellt dann aufs Panorama zurueck.
+    Mit `?v=` (Inhalts-Version aus der Server-Antwort) wird inhaltsadressiert
+    aufgeloest und immutable gecacht: Die Antwort malt der Browser ohne jede
+    weitere Anfrage. Ohne `?v=` gilt no-cache + ETag wie bisher.
     """
     require_server_permission(user, server_id, db, "server.view")
     server = db.query(Server).filter(Server.id == server_id).first()
     if not server:
         raise HTTPException(status_code=404, detail="Server nicht gefunden")
+    if v is not None:
+        try:
+            gefunden = wallpaper_service.wallpaper_bytes_by_version(db, server, v)
+        except wallpaper_service.WallpaperValidationError as exc:
+            raise HTTPException(status_code=400, detail=exc.message)
+        if gefunden is None:
+            raise HTTPException(status_code=404, detail="Bild nicht gefunden")
+        bild, etag = gefunden
+        if if_none_match in (etag, f"W/{etag}"):
+            return Response(status_code=304)
+        return Response(
+            content=bild,
+            media_type="image/webp",
+            headers={
+                # privat + immutable: Die URL enthaelt die Inhalts-Version,
+                # neuer Inhalt bedeutet eine neue URL — diese Antwort kann nie
+                # veralten und malt ohne jede Anfrage aus dem Plattencache.
+                "Cache-Control": "private, max-age=31536000, immutable",
+                "ETag": etag,
+                "X-Content-Type-Options": "nosniff",
+            },
+        )
     gefunden = wallpaper_service.wallpaper_bytes_for_server(db, server)
     if gefunden is None:
         raise HTTPException(status_code=404, detail="Kein Titelbild vorhanden")

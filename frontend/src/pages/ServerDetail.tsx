@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -69,7 +69,7 @@ import { OutgoingWebhooksPanel } from "@/components/server/OutgoingWebhooksPanel
 import { frontendApi, type FrontendOverview } from "@/api/frontend";
 import { SwitchBlueprintDialog } from "@/components/server/SwitchBlueprintDialog";
 import { ServerWallpaperDialog } from "@/components/server/ServerWallpaperDialog";
-import { useServerWallpaperStore, wallpaperMotiv } from "@/stores/serverWallpaperStore";
+import { useServerWallpaperStore, wallpaperMotiv, wallpaperNavigationsState, type WallpaperNavigationsState } from "@/stores/serverWallpaperStore";
 
 const DeploymentsPanel = lazy(() =>
   import("@/components/frontend/DeploymentsPanel").then((m) => ({
@@ -265,14 +265,30 @@ export function ServerDetail() {
   useEffect(() => {
     const setMotiv = useServerWallpaperStore.getState().setActiveWallpaper;
     if (server?.wallpaper_url) {
-      setMotiv(wallpaperMotiv(server.id, server.wallpaper_url));
+      setMotiv(wallpaperMotiv(server.id, server.wallpaper_url, server.wallpaper_version));
     } else {
       setMotiv(null);
     }
-  }, [server?.id, server?.wallpaper_url]);
+  }, [server?.id, server?.wallpaper_url, server?.wallpaper_version]);
   useEffect(() => {
     return () => useServerWallpaperStore.getState().clear();
   }, []);
+  // Blitzstart: Die Karte kennt URL + Version schon aus der Liste und gibt sie
+  // im Navigations-State mit. Damit malt der Kopf das Bild sofort aus dem
+  // (immutable) Cache, statt erst auf fetchAll zu warten. fetchAll bestätigt
+  // kurz darauf — oder korrigiert, falls die Liste veraltet war.
+  // Muss hinter dem Motiv-Effekt stehen: Auf dem Mount setzt der erst null.
+  const location = useLocation();
+  useEffect(() => {
+    const mitgabe = (location.state as WallpaperNavigationsState | null)?.wallpaper;
+    if (mitgabe?.serverId === serverId && typeof mitgabe.url === "string" && mitgabe.url) {
+      useServerWallpaperStore.getState().setActiveWallpaper(
+        wallpaperMotiv(serverId, mitgabe.url, typeof mitgabe.version === "string" ? mitgabe.version : null),
+      );
+    }
+    // Nur beim Betreten der Seite auswerten, nicht bei jedem State-Wechsel.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [serverId]);
   const permissionsLoading = usePermissionsStore((s) => s.isLoading);
   const showResourceEdit = !permissionsLoading && canManageResources;
   const showNetworkEdit = !permissionsLoading && canManageNetworkInPreview;
@@ -287,12 +303,13 @@ export function ServerDetail() {
   const fetchAll = async () => {
     if (!serverId) return;
     try {
-      const [srv, st] = await Promise.all([
-        api<Server>(`/servers/${serverId}`),
-        api<ServerStatus>(`/servers/${serverId}/status`).catch(() => null),
-      ]);
-      setServer(srv);
-      setStatus(st);
+      // Beide Anfragen laufen parallel, aber Seite und Titelbild warten nicht
+      // auf den Status: Der fragt Docker bzw. den Node-Agenten und ist der
+      // langsame Teil. Kennzahlen trudeln nach, sobald sie da sind.
+      const statusVersprechen = api<ServerStatus>(`/servers/${serverId}/status`).catch(() => null);
+      setServer(await api<Server>(`/servers/${serverId}`));
+      setLoading(false);
+      setStatus(await statusVersprechen);
     } catch {
       // silent
     } finally {
@@ -1125,7 +1142,12 @@ export function ServerDetail() {
                   value={String(server.id)}
                   onChange={(value) => {
                     const nextId = Number(value);
-                    if (nextId && nextId !== server.id) navigate(`/servers/${nextId}`);
+                    if (nextId && nextId !== server.id) {
+                      const ziel = allServers.find((s) => s.id === nextId);
+                      navigate(`/servers/${nextId}`, {
+                        state: wallpaperNavigationsState(ziel ?? { id: nextId }),
+                      });
+                    }
                   }}
                   options={switcherOptions}
                   searchable={switcherOptions.length > 5}

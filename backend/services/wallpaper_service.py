@@ -59,6 +59,10 @@ class WallpaperDescriptor:
     source: str  # "custom" | "steam" | "panorama"
     url: str | None
     app_id: str | None = None
+    # Inhalts-Version fuer die Bild-URL (`custom-{id}` / `steam-{app_id}`).
+    # Neuer Inhalt = neue Version = neue URL — der Browser darf versionierte
+    # URLs deshalb als immutable cachen und malt sie ohne jede Anfrage.
+    version: str | None = None
 
 
 class WallpaperValidationError(ValueError):
@@ -378,8 +382,11 @@ def ensure_steam_cached(app_id: str) -> Path | None:
 def resolve_wallpaper(db: Session, server: "Server") -> WallpaperDescriptor:
     """Ermittelt das aktive Wallpaper eines Servers (einzige Autoritaet)."""
     base_url = f"/api/servers/{server.id}/wallpaper"
-    if get_active_wallpaper(db, server.game_type) is not None:
-        return WallpaperDescriptor(source="custom", url=base_url)
+    active = get_active_wallpaper(db, server.game_type)
+    if active is not None:
+        return WallpaperDescriptor(
+            source="custom", url=base_url, version=f"custom-{active.id}"
+        )
     try:
         from services.exec_service import load_blueprint_for_server
 
@@ -388,7 +395,9 @@ def resolve_wallpaper(db: Session, server: "Server") -> WallpaperDescriptor:
         blueprint = None
     app_id = artwork_app_id_for_blueprint(blueprint)
     if app_id is not None:
-        return WallpaperDescriptor(source="steam", url=base_url, app_id=app_id)
+        return WallpaperDescriptor(
+            source="steam", url=base_url, app_id=app_id, version=f"steam-{app_id}"
+        )
     return WallpaperDescriptor(source="panorama", url=None)
 
 
@@ -424,5 +433,47 @@ def wallpaper_bytes_for_server(
         return None
     try:
         return pfad.read_bytes(), f'"steam-{app_id}"'
+    except OSError:
+        return None
+
+
+_VERSION_RE = re.compile(r"^(custom|steam)-(\d{1,10})$")
+
+
+def wallpaper_bytes_by_version(
+    db: Session, server: "Server", version: str
+) -> tuple[bytes, str] | None:
+    """Loest eine versionierte Bild-URL inhaltsadressiert auf.
+
+    `custom-{id}` liefert immer genau dieses Galeriebild (404 wenn geloescht),
+    `steam-{app}` immer genau dieses Artwork — unabhaengig davon, was gerade
+    aktiv ist. Darum darf der Router versionierte Antworten als immutable
+    cachen: Die URL kann nie andere Bytes bekommen. Ungueltiges Format ist
+    ein 400 (`WallpaperValidationError`), fehlender Inhalt ein 404 (None).
+    """
+    match = _VERSION_RE.fullmatch(version or "")
+    if match is None:
+        raise WallpaperValidationError("Ungueltige Bildversion.")
+    art, kennung = match.group(1), match.group(2)
+    if art == "custom":
+        bild_id = int(kennung)
+        bild = gallery_image_bytes(db, server.game_type, bild_id)
+        if bild is None:
+            return None
+        return bild, f'"custom-{bild_id}"'
+    try:
+        from services.exec_service import load_blueprint_for_server
+
+        blueprint = load_blueprint_for_server(server)
+    except Exception:
+        blueprint = None
+    # Game-Scope: fremde App-IDs werden nicht ausgeliefert.
+    if artwork_app_id_for_blueprint(blueprint) != kennung:
+        return None
+    pfad = ensure_steam_cached(kennung)
+    if pfad is None:
+        return None
+    try:
+        return pfad.read_bytes(), f'"steam-{kennung}"'
     except OSError:
         return None

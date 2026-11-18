@@ -14,8 +14,8 @@ from models import AuditLog, Server, ServerPermission, User
 from services import wallpaper_service as ws
 
 
-def _jpeg_bytes() -> bytes:
-    img = Image.new("RGB", (64, 64), color=(10, 60, 120))
+def _jpeg_bytes(color: tuple[int, int, int] = (10, 60, 120)) -> bytes:
+    img = Image.new("RGB", (64, 64), color=color)
     buf = io.BytesIO()
     img.save(buf, format="JPEG")
     return buf.getvalue()
@@ -318,6 +318,114 @@ class TestETag:
             self._bild(client, test_server.id, owner_cookies, erste.headers["etag"]).status_code
             == 304
         )
+
+
+class TestVersionierteUrl:
+    """`?v=` adressiert Inhalt, nicht Stand: immutable, ohne jede Anfrage
+    aus dem Cache malbar — und eine alte Version liefert alte Bytes."""
+
+    def test_detail_und_liste_nennen_version(
+        self, client, owner_cookies, csrf_token, test_server, wallpaper_dirs
+    ):
+        bild_id = _upload(client, test_server.id, owner_cookies, csrf_token).json()["id"]
+        detail = client.get(f"/api/servers/{test_server.id}", cookies=owner_cookies).json()
+        assert detail["wallpaper_version"] == f"custom-{bild_id}"
+        liste = client.get("/api/servers", cookies=owner_cookies).json()
+        eintrag = next(s for s in liste if s["id"] == test_server.id)
+        assert eintrag["wallpaper_version"] == f"custom-{bild_id}"
+
+    def test_steam_und_panorama_version(
+        self, client, db, owner_cookies, test_server, wallpaper_dirs
+    ):
+        detail = client.get(f"/api/servers/{test_server.id}", cookies=owner_cookies).json()
+        assert detail["wallpaper_version"].startswith("steam-")
+        fremd = Server(name="Fremd", game_type="spiel_ohne_blueprint_xyz", install_dir="/tmp/f")
+        db.add(fremd)
+        db.commit()
+        db.refresh(fremd)
+        pano = client.get(f"/api/servers/{fremd.id}", cookies=owner_cookies).json()
+        assert pano["wallpaper_source"] == "panorama"
+        assert pano["wallpaper_url"] is None
+        assert pano["wallpaper_version"] is None
+
+    def test_versioniert_ist_immutable(
+        self, client, owner_cookies, csrf_token, test_server, wallpaper_dirs
+    ):
+        bild_id = _upload(client, test_server.id, owner_cookies, csrf_token).json()["id"]
+        resp = client.get(
+            f"/api/servers/{test_server.id}/wallpaper?v=custom-{bild_id}",
+            cookies=owner_cookies,
+        )
+        assert resp.status_code == 200
+        assert resp.headers["cache-control"] == "private, max-age=31536000, immutable"
+        assert resp.headers["etag"] == f'"custom-{bild_id}"'
+        assert resp.content.startswith(b"RIFF")
+
+    def test_alte_version_liefert_alte_bytes(
+        self, client, owner_cookies, csrf_token, test_server, wallpaper_dirs
+    ):
+        alt = _upload(
+            client, test_server.id, owner_cookies, csrf_token,
+            _jpeg_bytes((200, 30, 30)),
+        ).json()["id"]
+        neu = _upload(
+            client, test_server.id, owner_cookies, csrf_token,
+            _jpeg_bytes((30, 30, 200)),
+        ).json()["id"]
+        stale = client.get(
+            f"/api/servers/{test_server.id}/wallpaper?v=custom-{alt}",
+            cookies=owner_cookies,
+        )
+        assert stale.status_code == 200
+        assert stale.headers["etag"] == f'"custom-{alt}"'
+        galerie_alt = client.get(
+            f"/api/servers/{test_server.id}/wallpaper/gallery/{alt}/image",
+            cookies=owner_cookies,
+        ).content
+        galerie_neu = client.get(
+            f"/api/servers/{test_server.id}/wallpaper/gallery/{neu}/image",
+            cookies=owner_cookies,
+        ).content
+        assert galerie_alt != galerie_neu
+        assert stale.content == galerie_alt
+
+    def test_ungueltige_version_400_geloeschte_404(
+        self, client, owner_cookies, csrf_token, test_server, wallpaper_dirs
+    ):
+        for schlecht in ("quatsch", "custom-", "custom-abc", "steam-", "custom-1-2"):
+            resp = client.get(
+                f"/api/servers/{test_server.id}/wallpaper?v={schlecht}",
+                cookies=owner_cookies,
+            )
+            assert resp.status_code == 400
+        bild_id = _upload(client, test_server.id, owner_cookies, csrf_token).json()["id"]
+        _loeschen(client, test_server.id, bild_id, owner_cookies, csrf_token)
+        fehlt = client.get(
+            f"/api/servers/{test_server.id}/wallpaper?v=custom-{bild_id}",
+            cookies=owner_cookies,
+        )
+        assert fehlt.status_code == 404
+
+    def test_steam_version_nur_fuer_eigenes_spiel(
+        self, client, db, owner_cookies, test_server, wallpaper_dirs
+    ):
+        desk = ws.resolve_wallpaper(db, test_server)
+        assert desk.source == "steam" and desk.app_id is not None
+        (wallpaper_dirs / "steam").mkdir(parents=True, exist_ok=True)
+        (wallpaper_dirs / "steam" / f"{desk.app_id}.webp").write_bytes(
+            ws.sanitize_and_compress_wallpaper(_jpeg_bytes())
+        )
+        eigen = client.get(
+            f"/api/servers/{test_server.id}/wallpaper?v=steam-{desk.app_id}",
+            cookies=owner_cookies,
+        )
+        assert eigen.status_code == 200
+        assert "immutable" in eigen.headers["cache-control"]
+        fremd = client.get(
+            f"/api/servers/{test_server.id}/wallpaper?v=steam-123",
+            cookies=owner_cookies,
+        )
+        assert fremd.status_code == 404
 
 
 def _loeschen(client: TestClient, server_id: int, bild_id: int, cookies: dict, csrf: str):

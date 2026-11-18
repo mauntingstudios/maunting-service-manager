@@ -287,6 +287,8 @@ class ServerResponse(BaseModel):
     has_custom_wallpaper: bool = False
     wallpaper_url: str | None = None
     wallpaper_source: str = "panorama"
+    # Inhalts-Version fuer `?v=` (`custom-{id}` / `steam-{app_id}`, None = Panorama).
+    wallpaper_version: str | None = None
 
     class Config:
         from_attributes = True

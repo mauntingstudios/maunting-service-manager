@@ -6,8 +6,10 @@ import { FavoriteButton, FAVORITE_CARD_HIGHLIGHT_CLASS } from '@/components/Favo
 import { ServerConnectChip } from '@/components/server/ServerConnectChip'
 import { ServerStatusIcon } from '@/components/server/ServerStatusBlocks'
 import { UptimeDisplay } from '@/components/server/UptimeDisplay'
+import { vorladenBildquelle } from '@/hooks/useBildquelle'
 import { formatMb, resolveServerConnect, serverStatusClasses } from '@/lib/serverConnect'
 import { useServerPreferencesStore } from '@/stores/serverPreferencesStore'
+import { versionierteWallpaperUrl, wallpaperNavigationsState } from '@/stores/serverWallpaperStore'
 import type { Server } from '@/types'
 
 interface ServerCardProps {
@@ -28,11 +30,19 @@ export function ServerCard({ server, gameLabel, variant = 'list' }: ServerCardPr
   const isFavorite = favoriteIds.includes(server.id)
   const isLastVisited = lastVisitedId === server.id
   const hasConnectEndpoint = Boolean(resolveServerConnect(server).primary)
+  // Titelbild-Blitzstart: Beim Hovern schon mit niedriger Priorität laden —
+  // der Klick malt dann aus dem warmen Cache.
+  const vorladen = () => {
+    if (server.wallpaper_url) {
+      vorladenBildquelle(versionierteWallpaperUrl(server.wallpaper_url, server.wallpaper_version), 'low')
+    }
+  }
 
   return (
     <article
       data-testid={`server-card-${server.id}`}
       data-favorite={isFavorite ? 'true' : 'false'}
+      onMouseEnter={vorladen}
       className={`relative msm-card h-full flex flex-col rounded-2xl border bg-surface-container-low/80 backdrop-blur-xl px-4 py-3.5 sm:px-5 sm:py-4 hover:bg-surface-container-high/40 transition-all duration-200 group ${
         isFavorite ? FAVORITE_CARD_HIGHLIGHT_CLASS : 'border-outline hover:border-primary/40'
       }`}
@@ -49,7 +59,9 @@ export function ServerCard({ server, gameLabel, variant = 'list' }: ServerCardPr
           <h3 className="font-headline text-body-md font-semibold text-on-surface group-hover:text-primary transition-colors min-w-0 truncate">
             <Link
               to={`/servers/${server.id}`}
+              state={wallpaperNavigationsState(server)}
               onClick={() => setLastVisited(server.id)}
+              onFocus={vorladen}
               className="focus:outline-none after:absolute after:inset-0 after:content-['']"
             >
               {server.name}

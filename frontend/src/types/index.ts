@@ -104,6 +104,8 @@ export interface Server {
   wallpaper_url?: string | null
   /** Aktive Wallpaper-Quelle: custom | steam | panorama. */
   wallpaper_source?: WallpaperSource
+  /** Inhalts-Version für `?v=` (`custom-{id}` / `steam-{app_id}`, null = Panorama). */
+  wallpaper_version?: string | null
 }
 
 export type WallpaperSource = 'custom' | 'steam' | 'panorama'
