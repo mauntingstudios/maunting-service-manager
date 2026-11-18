@@ -1193,3 +1193,292 @@ def test_search_workshop_mods_includes_dependencies_count_and_direct_url(
     assert hit["direct_url"] == "https://steamcommunity.com/sharedfiles/filedetails/?id=2542661512"
     assert hit["dependencies_count"] == 1
     assert hit["required_dependency_ids"] == ["1559212036"]
+
+
+def _delete_arguments(server_id: int, **overrides) -> dict:
+    values = {
+        "server_id": server_id,
+        "workshop_id": "1559212036",
+        "reason": "Die Mod wird auf dem Server nicht mehr benoetigt.",
+        "expected_effect": "Mod, Dateien und Modliste werden bereinigt.",
+    }
+    values.update(overrides)
+    return values
+
+
+def test_mod_delete_requires_write_permission(db: Session, regular_user: User) -> None:
+    server, conversation = _setup(
+        db, regular_user, server_keys=("server.view", "server.mods.read", "server.mods.toggle")
+    )
+    _installierte_mod(db, server.id, enabled=True)
+
+    with pytest.raises(ai_action_errors.AiActionValidationError):
+        ai_proposal_service.create_proposal(
+            db,
+            user=regular_user,
+            conversation=conversation,
+            tool_name="propose_mod_delete",
+            arguments=_delete_arguments(server.id),
+            correlation_id=str(uuid4()),
+        )
+    assert db.query(AiActionProposal).count() == 0
+
+
+def test_mod_delete_validation_errors(db: Session, regular_user: User) -> None:
+    server, conversation = _setup(
+        db, regular_user, server_keys=("server.view", "server.mods.read", "server.mods.write")
+    )
+    installing = Mod(
+        server_id=server.id,
+        workshop_id="222333444",
+        name="Installing Mod",
+        enabled=True,
+        install_status="installing",
+        load_order=0,
+    )
+    db.add(installing)
+    db.commit()
+
+    # Neither workshop_id nor workshop_ids
+    with pytest.raises(ai_action_errors.AiActionValidationError):
+        ai_proposal_service.create_proposal(
+            db,
+            user=regular_user,
+            conversation=conversation,
+            tool_name="propose_mod_delete",
+            arguments={
+                "server_id": server.id,
+                "reason": "Test",
+                "expected_effect": "Test",
+            },
+            correlation_id=str(uuid4()),
+        )
+
+    # Unknown argument
+    with pytest.raises(ai_action_errors.AiActionValidationError):
+        ai_proposal_service.create_proposal(
+            db,
+            user=regular_user,
+            conversation=conversation,
+            tool_name="propose_mod_delete",
+            arguments=_delete_arguments(server.id, extra="x"),
+            correlation_id=str(uuid4()),
+        )
+
+    # Not installed
+    with pytest.raises(ai_action_errors.AiActionValidationError, match="nicht auf diesem Server installiert"):
+        ai_proposal_service.create_proposal(
+            db,
+            user=regular_user,
+            conversation=conversation,
+            tool_name="propose_mod_delete",
+            arguments=_delete_arguments(server.id, workshop_id="999999999"),
+            correlation_id=str(uuid4()),
+        )
+
+    # Currently installing
+    with pytest.raises(ai_action_errors.AiActionValidationError, match="Laufende Mod-Installation"):
+        ai_proposal_service.create_proposal(
+            db,
+            user=regular_user,
+            conversation=conversation,
+            tool_name="propose_mod_delete",
+            arguments=_delete_arguments(server.id, workshop_id="222333444"),
+            correlation_id=str(uuid4()),
+        )
+
+
+def test_mod_delete_single_non_autonomous_commits_before_update_modlist(
+    db: Session, regular_user: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import json
+    from types import SimpleNamespace
+    from database import SessionLocal
+
+    server, conversation = _setup(
+        db, regular_user, server_keys=("server.view", "server.mods.read", "server.mods.write")
+    )
+    _installierte_mod(db, server.id, enabled=True)
+
+    proposal = ai_proposal_service.create_proposal(
+        db,
+        user=regular_user,
+        conversation=conversation,
+        tool_name="propose_mod_delete",
+        arguments=_delete_arguments(server.id),
+        correlation_id=str(uuid4()),
+    )
+    db.commit()
+
+    assert proposal.requires_confirmation is True
+    assert proposal.autonomous is False
+    preview = json.loads(proposal.preview_json)
+    assert preview["operation"] == "mod_delete"
+    assert preview["path"] == "Moros Indominus"
+    assert preview["mod_count"] == 1
+    assert preview["restart_required"] is True
+
+    cleaned: list[str] = []
+    seen_remaining_inside_update_modlist: list[int] = []
+
+    def _cleanup_mod(_srv, wid: str) -> dict:
+        cleaned.append(wid)
+        return {"ok": True}
+
+    def _update_modlist(_srv) -> None:
+        fresh = SessionLocal()
+        try:
+            seen_remaining_inside_update_modlist.append(
+                fresh.query(Mod).filter(Mod.server_id == server.id).count()
+            )
+        finally:
+            fresh.close()
+
+    fake_plugin = SimpleNamespace(
+        supports_mods=True,
+        cleanup_mod=_cleanup_mod,
+        update_modlist=_update_modlist,
+    )
+    monkeypatch.setattr("games.get_plugin", lambda _gt: fake_plugin)
+
+    _, token = ai_proposal_service.confirm_proposal(db, proposal_id=proposal.id, user=regular_user)
+    executed, result = ai_proposal_service.execute_proposal(
+        db, proposal_id=proposal.id, user=regular_user, confirmation_token=token
+    )
+
+    assert executed.status == "succeeded"
+    assert cleaned == ["1559212036"]
+    assert seen_remaining_inside_update_modlist == [0]
+    assert result["removed_count"] == 1
+    assert result["modlist_synced"] is True
+    assert db.query(Mod).filter(Mod.server_id == server.id).count() == 0
+
+
+def test_mod_delete_multi_autonomous_without_confirmation(
+    db: Session, regular_user: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import json
+    from types import SimpleNamespace
+    from services import ai_autonomy_service
+
+    role = Role(name=f"auto-mods-{uuid4().hex[:6]}", description=None, is_system=False)
+    db.add(role)
+    db.flush()
+    for key in ("ai.chat.use", "ai.autonomous.use"):
+        db.add(RolePermission(role_id=role.id, permission_key=key))
+    db.commit()
+    set_user_roles(db, regular_user, [role.id])
+
+    server = Server(
+        name="Zomboid Auto",
+        game_type="project_zomboid",
+        install_dir="/tmp/pz-auto",
+        container_name="msm-pz-auto",
+        status="running",
+    )
+    db.add(server)
+    db.commit()
+    db.refresh(server)
+    for key in ("server.view", "server.mods.read", "server.mods.write"):
+        db.add(ServerPermission(user_id=regular_user.id, server_id=server.id, permission_key=key))
+    conversation = AiConversation(
+        id=str(uuid4()), user_id=regular_user.id, server_id=server.id, title="Mods Auto"
+    )
+    db.add(conversation)
+    db.add_all([
+        Mod(server_id=server.id, workshop_id="111", name="Project Viewpoint", enabled=True, install_status="installed", load_order=0),
+        Mod(server_id=server.id, workshop_id="222", name="Viewpoint-Minimap", enabled=True, install_status="installed", load_order=1),
+        Mod(server_id=server.id, workshop_id="333", name="Keep Me", enabled=True, install_status="installed", load_order=2),
+    ])
+    db.commit()
+
+    ai_autonomy_service.set_grant(
+        db,
+        user=regular_user,
+        server_id=server.id,
+        enabled=True,
+        max_actions_per_hour=20,
+        granted_by=regular_user.id,
+    )
+    db.commit()
+
+    proposal = ai_proposal_service.create_proposal(
+        db,
+        user=regular_user,
+        conversation=conversation,
+        tool_name="propose_mod_delete",
+        arguments={
+            "server_id": server.id,
+            "workshop_ids": ["111", "222"],
+            "reason": "Beide Viewpoint-Mods sollen entfernt werden.",
+            "expected_effect": "Panel-Modliste, Dateien und Server-INI sind bereinigt.",
+        },
+        correlation_id=str(uuid4()),
+    )
+    db.commit()
+
+    assert proposal.requires_confirmation is False
+    assert proposal.autonomous is True
+    preview = json.loads(proposal.preview_json)
+    assert preview["mod_count"] == 2
+    assert preview["mods"] == ["Project Viewpoint", "Viewpoint-Minimap"]
+
+    cleaned: list[str] = []
+    update_calls: list[int] = []
+    fake_plugin = SimpleNamespace(
+        supports_mods=True,
+        cleanup_mod=lambda _srv, wid: cleaned.append(wid) or {"ok": True},
+        update_modlist=lambda srv: update_calls.append(srv.id),
+    )
+    monkeypatch.setattr("games.get_plugin", lambda _gt: fake_plugin)
+
+    executed, result = ai_proposal_service.execute_autonomously(
+        db, proposal_id=proposal.id, user=regular_user
+    )
+
+    assert executed.status == "succeeded"
+    assert cleaned == ["111", "222"]
+    assert update_calls == [server.id]
+    assert result["removed_count"] == 2
+    assert result["modlist_synced"] is True
+    remaining = db.query(Mod).filter(Mod.server_id == server.id).all()
+    assert [m.workshop_id for m in remaining] == ["333"]
+
+
+def test_mod_delete_cleanup_failure_marks_failed_and_keeps_mod(
+    db: Session, regular_user: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from types import SimpleNamespace
+
+    server, conversation = _setup(
+        db, regular_user, server_keys=("server.view", "server.mods.read", "server.mods.write")
+    )
+    _installierte_mod(db, server.id, enabled=True)
+
+    proposal = ai_proposal_service.create_proposal(
+        db,
+        user=regular_user,
+        conversation=conversation,
+        tool_name="propose_mod_delete",
+        arguments=_delete_arguments(server.id),
+        correlation_id=str(uuid4()),
+    )
+    db.commit()
+
+    fake_plugin = SimpleNamespace(
+        supports_mods=True,
+        cleanup_mod=lambda _srv, _wid: {"ok": False},
+        update_modlist=lambda _srv: None,
+    )
+    monkeypatch.setattr("games.get_plugin", lambda _gt: fake_plugin)
+
+    _, token = ai_proposal_service.confirm_proposal(db, proposal_id=proposal.id, user=regular_user)
+    with pytest.raises(ai_action_errors.AiActionStateError) as exc_info:
+        ai_proposal_service.execute_proposal(
+            db, proposal_id=proposal.id, user=regular_user, confirmation_token=token
+        )
+    assert exc_info.value.code == "AI_ACTION_EXECUTION_FAILED"
+
+    db.refresh(proposal)
+    assert proposal.status == "failed"
+    assert db.query(Mod).filter(Mod.server_id == server.id).count() == 1

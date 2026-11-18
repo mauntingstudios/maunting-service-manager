@@ -18,6 +18,7 @@ GOLDEN = [
     ("Suche nach Mod ValheimPlus im Workshop", "search_workshop_mods"),
     ("Installiere Mod 12345", "propose_mod_install"),
     ("Schalte Mod 7 aus", "propose_mod_toggle"),
+    ("Entferne Mod 12345 vom Server", "propose_mod_delete"),
     ("Wie richte ich Auto-Backup ein?", "search_docs"),
     ("Suche aktuelle Valheim Ports im Netz", "web_search"),
     ("Was weisst du ueber meine Spielvorlieben?", "search_memory"),

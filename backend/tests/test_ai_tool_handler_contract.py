@@ -506,7 +506,9 @@ def test_the_tool_catalogue_stays_within_a_stated_budget(
         # `read_steam_collection`, `propose_mod_batch_install` und Kollektions-Suche.
         # Stand 18.11.2026 (Mod-Details): 104.489 Zeichen App (140 Werkzeuge),
         # 99.417 Zeichen Panel (134 Werkzeuge) mit `read_mod_details`.
-        assert len(katalog) < 105_000, (
+        # Stand 18.11.2026 (Mod-Entfernen): 105.542 Zeichen App (141 Werkzeuge),
+        # 100.470 Zeichen Panel (135 Werkzeuge) mit `propose_mod_delete`.
+        assert len(katalog) < 106_000, (
             f"Der Werkzeugkatalog der Herkunft '{herkunft}' ist auf "
             f"{len(katalog)} Zeichen gewachsen. Er geht in jeder Runde mit und "
             "taucht in keiner Budgetrechnung auf. Wer die Grenze anhebt, misst "

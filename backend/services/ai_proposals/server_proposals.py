@@ -1643,6 +1643,92 @@ def _mod_toggle_payload(db: Session, server: Server, arguments: dict) -> tuple[d
     }
     return payload, preview
 
+def _mod_delete_payload(db: Session, server: Server, arguments: dict) -> tuple[dict, dict]:
+    """Prueft das Entfernen einer oder mehrerer installierter Mods."""
+    from games import get_plugin
+    from models import Mod
+    from services.mod_install_status_service import INSTALL_RUNNING
+
+    allowed_keys = {"workshop_id", "workshop_ids"}
+    if set(arguments) - allowed_keys:
+        raise AiActionValidationError("Mod-Loeschwerkzeug hat ungueltige Argumente")
+
+    requested_ids: list[str] = []
+    seen_wids: set[str] = set()
+
+    def _add_wid(raw: object) -> None:
+        if not isinstance(raw, str):
+            raise AiActionValidationError("Ungueltige Workshop-Kennung")
+        wid = raw.strip()
+        if not wid.isdigit() or len(wid) > 20:
+            raise AiActionValidationError("Ungueltige Workshop-Kennung")
+        if wid not in seen_wids:
+            seen_wids.add(wid)
+            requested_ids.append(wid)
+
+    raw_single = arguments.get("workshop_id")
+    if raw_single is not None:
+        _add_wid(raw_single)
+
+    raw_multi = arguments.get("workshop_ids")
+    if raw_multi is not None:
+        if not isinstance(raw_multi, list) or not raw_multi:
+            raise AiActionValidationError("`workshop_ids` muss eine nicht-leere Liste sein")
+        if len(raw_multi) > 500:
+            raise AiActionValidationError("Hoechstens 500 Mods pro Loeschvorgang")
+        for item in raw_multi:
+            _add_wid(item)
+
+    if not requested_ids:
+        raise AiActionValidationError("Entweder `workshop_id` oder `workshop_ids` ist erforderlich")
+
+    plugin = get_plugin(server.game_type)
+    if plugin is None or not getattr(plugin, "supports_mods", False):
+        raise AiActionValidationError("Dieses Spiel unterstuetzt keine Mods")
+
+    existing_rows = (
+        db.query(Mod)
+        .filter(Mod.server_id == server.id, Mod.workshop_id.in_(requested_ids))
+        .order_by(Mod.load_order.asc(), Mod.id.asc())
+        .all()
+    )
+    by_wid = {str(m.workshop_id): m for m in existing_rows}
+    missing = [wid for wid in requested_ids if wid not in by_wid]
+    if missing:
+        raise AiActionValidationError(
+            f"Mod(s) nicht auf diesem Server installiert: {', '.join(missing[:10])}"
+        )
+
+    ordered_mods = [by_wid[wid] for wid in requested_ids]
+    if any(m.install_status == INSTALL_RUNNING for m in ordered_mods):
+        raise AiActionValidationError(
+            "Laufende Mod-Installation kann derzeit nicht entfernt werden"
+        )
+
+    mod_labels = [
+        redact_sensitive_text(str(m.name or ""))[:128] or str(m.workshop_id)
+        for m in ordered_mods
+    ]
+    if len(mod_labels) == 1:
+        path_label = mod_labels[0]
+    else:
+        path_label = ", ".join(mod_labels[:5])
+        if len(mod_labels) > 5:
+            path_label += f" (+{len(mod_labels) - 5})"
+
+    payload = {"workshop_ids": requested_ids}
+    preview = {
+        "operation": "mod_delete",
+        "workshop_ids": requested_ids,
+        "path": path_label,
+        "server_name": server.name,
+        "mod_count": len(ordered_mods),
+        "mods": mod_labels[:10],
+        "current_status": server.status,
+        "restart_required": True,
+    }
+    return payload, preview
+
 def _server_repair_payload(server: Server, arguments: dict) -> tuple[dict, dict]:
     """Nutzlast fuer `propose_server_repair` — eine Kennung, sonst nichts.
 
@@ -2368,6 +2454,102 @@ def _execute_mod_toggle(db: Session, *, server_id: int, payload: dict) -> dict:
         "restart_required": True,
     }
 
+def _execute_mod_delete(db: Session, *, server_id: int, payload: dict) -> dict:
+    """Entfernt eine oder mehrere Mods ueber den vorhandenen Panel-Pfad."""
+    from sqlalchemy.orm import joinedload
+
+    from games import get_plugin
+    from models import Mod, Server
+    from services.mod_install_status_service import INSTALL_RUNNING
+
+    raw_ids = payload.get("workshop_ids")
+    if isinstance(raw_ids, list) and raw_ids:
+        workshop_ids = [str(x).strip() for x in raw_ids if str(x).strip()]
+    elif payload.get("workshop_id"):
+        workshop_ids = [str(payload["workshop_id"]).strip()]
+    else:
+        workshop_ids = []
+
+    if not workshop_ids:
+        raise AiActionStateError("AI_ACTION_EXECUTION_FAILED")
+
+    server = (
+        db.query(Server)
+        .options(joinedload(Server.node))
+        .filter(Server.id == server_id)
+        .first()
+    )
+    if server is None:
+        raise AiActionStateError("AI_ACTION_EXECUTION_FAILED")
+
+    targets = (
+        db.query(Mod)
+        .filter(Mod.server_id == server_id, Mod.workshop_id.in_(workshop_ids))
+        .order_by(Mod.load_order.asc(), Mod.id.asc())
+        .all()
+    )
+    if not targets:
+        raise AiActionStateError("AI_ACTION_EXECUTION_FAILED")
+    if any(m.install_status == INSTALL_RUNNING for m in targets):
+        raise AiActionStateError("AI_ACTION_SERVER_BUSY")
+
+    plugin = get_plugin(server.game_type)
+    removed: list[dict[str, str | None]] = []
+
+    for mod in targets:
+        if plugin is not None and getattr(plugin, "supports_mods", False):
+            try:
+                cleanup_res = plugin.cleanup_mod(server, mod.workshop_id)
+                if isinstance(cleanup_res, dict) and cleanup_res.get("ok") is False:
+                    raise RuntimeError("cleanup_failed")
+            except Exception as exc:
+                logger.warning(
+                    "Mod-Cleanup fehlgeschlagen fuer Server %s, Mod %s error_type=%s",
+                    server_id,
+                    mod.workshop_id,
+                    type(exc).__name__,
+                )
+                if removed:
+                    db.commit()
+                    try:
+                        plugin.update_modlist(server)
+                    except Exception:
+                        logger.warning(
+                            "Modliste nach Teil-Loeschung nicht aktualisiert server_id=%s",
+                            server_id,
+                        )
+                raise AiActionStateError("AI_ACTION_EXECUTION_FAILED") from exc
+        db.delete(mod)
+        removed.append(
+            {
+                "workshop_id": mod.workshop_id,
+                "name": redact_sensitive_text(str(mod.name or ""))[:128] or None,
+            }
+        )
+
+    # Zuerst committen, damit `plugin.update_modlist(server)` in seiner eigenen
+    # `SessionLocal()`-Sitzung (PostgreSQL READ COMMITTED) den geloeschten Stand sieht.
+    db.commit()
+
+    modlist_synced = False
+    if plugin is not None and getattr(plugin, "supports_mods", False):
+        try:
+            plugin.update_modlist(server)
+            modlist_synced = True
+        except Exception:
+            logger.warning(
+                "Modliste nach dem Entfernen nicht aktualisiert server_id=%s",
+                server_id,
+            )
+
+    return {
+        "server_id": server_id,
+        "removed_count": len(removed),
+        "removed": removed,
+        "modlist_synced": modlist_synced,
+        "restart_required": True,
+    }
+
 def _execute_file_delete(
     db: Session, *, user: User, server_id: int, payload: dict,
     expected_revision: str | None,
@@ -2867,6 +3049,10 @@ def _ausfuehren_mod_batch_install(db: Session, rahmen: _AusfuehrungsRahmen) -> _
 
 def _ausfuehren_mod_toggle(db: Session, rahmen: _AusfuehrungsRahmen) -> _Ausgefuehrt:
     result = _execute_mod_toggle(db, server_id=rahmen.server_id, payload=rahmen.payload)
+    return _Ausgefuehrt(result=result)
+
+def _ausfuehren_mod_delete(db: Session, rahmen: _AusfuehrungsRahmen) -> _Ausgefuehrt:
+    result = _execute_mod_delete(db, server_id=rahmen.server_id, payload=rahmen.payload)
     return _Ausgefuehrt(result=result)
 
 def _ausfuehren_server_repair(db: Session, rahmen: _AusfuehrungsRahmen) -> _Ausgefuehrt:

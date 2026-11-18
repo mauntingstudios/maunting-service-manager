@@ -73,6 +73,7 @@ const TATSACHEN: readonly string[] = [
   'server_name',
   'collection_title',
   'mod_count',
+  'mods',
   'queued_count',
   'skipped_count',
   'zugriff',
@@ -216,6 +217,7 @@ export function AiActionProposalCard({
     propose_mod_install: Package,
     propose_mod_batch_install: Package,
     propose_mod_toggle: Package,
+    propose_mod_delete: Trash2,
     propose_server_create: ServerCog,
     propose_server_lifecycle: Power,
     // Fuenf Werkzeuge fielen bisher auf das Standardsymbol zurueck — ein

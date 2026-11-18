@@ -52,6 +52,7 @@ DOMAIN_PACKS: dict[str, frozenset[str]] = {
         "propose_mod_batch_install",
         "propose_modpack_install",
         "propose_mod_toggle",
+        "propose_mod_delete",
         "search_workshop_mods",
         "read_steam_collection",
         "read_mod_details",

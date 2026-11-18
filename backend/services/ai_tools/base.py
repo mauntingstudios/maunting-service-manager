@@ -95,6 +95,7 @@ _MUTEX_TOOLS = {
     "propose_mod_install",
     "propose_mod_batch_install",
     "propose_mod_toggle",
+    "propose_mod_delete",
     "propose_server_repair",
 }
 

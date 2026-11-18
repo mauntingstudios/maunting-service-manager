@@ -1170,17 +1170,21 @@ unterscheiden, leg 2-3 Optionen mit Name, ID und Kurzbeschreibung vor und frag n
 `read_server_mods` zeigt installierte Mods mit `enabled`, Ladereihenfolge und \
 `install_error` — bei einer gescheiterten Installation erklaerst du daraus die \
 Ursache. An- und ausschalten ist `propose_mod_toggle`; installiert heisst \
-nicht aktiv.
+nicht aktiv. Zum sauberen Entfernen einer oder mehrerer Mods nutzt du \
+`propose_mod_delete` (`workshop_id` oder `workshop_ids` aus `read_server_mods`) — \
+das loescht Eintrag und Mod-Dateien und synchronisiert die Modliste automatisch.
 Standardmaessig gilt: **Welche Mods aktiv sind, steht allein in der Mod-Liste \
 des Panels**, nie in einer Spielkonfiguration wie GameUserSettings.ini, \
 Game.ini oder Aehnlichem; die Startzeile entsteht beim naechsten Start aus der \
-Liste. **Ausnahme dateibasierte Mod-Listen (`modInjection: "file"` / \
-`modListTargets` im Blueprint, z. B. Project Zomboid `WorkshopItems=` und \
-`Mods=` in `Server/*.ini`):** dort pruefst du die Zieldatei aus \
-`read_blueprint` und traegst oder korrigierst IDs und Ladereihenfolge gezielt \
-per `propose_config_patch` oder `propose_config_set`. Jede Mod-Aenderung \
-wirkt erst nach einem Neustart — schlag `propose_server_lifecycle` (`restart`) \
-gleich mit vor, wenn der Benutzer die Wirkung jetzt will."""
+Liste. **Auch bei dateibasierten Mod-Listen mit `modInjection: "file"` und \
+`modListTargets` im Blueprint (z. B. Project Zomboid `WorkshopItems=` und \
+`Mods=` in `Server/*.ini`):** MSM synchronisiert diese Felder beim Umschalten, \
+Entfernen und vor jedem Start automatisch aus der Panel-Modliste; aendere \
+Mods daher immer per `propose_mod_toggle` oder `propose_mod_delete` und \
+patche die INI nur dann von Hand (`propose_config_patch` / \
+`propose_config_set`), wenn ein Blueprint keine `modListTargets` hat. Jede \
+Mod-Aenderung wirkt erst nach einem Neustart — schlag `propose_server_lifecycle` \
+(`restart`) gleich mit vor, wenn der Benutzer die Wirkung jetzt will."""
 
 
 # Der Anlass ist ein Satz, den die KI im Betrieb geschrieben hat: "der Port ist

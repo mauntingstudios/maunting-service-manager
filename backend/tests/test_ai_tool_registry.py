@@ -220,6 +220,7 @@ def test_die_sperre_ist_ausgeschrieben() -> None:
     }
     assert "propose_server_blueprint_switch" not in ai_tool_registry.ALWAYS_CONFIRM_TOOLS
     assert "propose_role_set" not in ai_tool_registry.ALWAYS_CONFIRM_TOOLS
+    assert "propose_mod_delete" not in ai_tool_registry.ALWAYS_CONFIRM_TOOLS
 
 
 def test_jedes_loeschwerkzeug_ist_entschieden() -> None:

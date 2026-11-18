@@ -69,6 +69,7 @@ from services.ai_proposals.server_proposals import (
     _mod_install_payload,
     _mod_batch_install_payload,
     _mod_toggle_payload,
+    _mod_delete_payload,
     _server_repair_payload,
     _guardian_tuning_payload,
     _restart_schedule_payload,
@@ -87,6 +88,7 @@ from services.ai_proposals.server_proposals import (
     _ausfuehren_mod_install,
     _ausfuehren_mod_batch_install,
     _ausfuehren_mod_toggle,
+    _ausfuehren_mod_delete,
     _ausfuehren_server_repair,
     _ausfuehren_guardian_tuning,
     _ausfuehren_file_delete,
@@ -416,6 +418,9 @@ def server_vorschlag(
         expected_revision = None
     elif tool_name == "propose_mod_toggle":
         payload, preview = _mod_toggle_payload(db, server, rest)
+        expected_revision = None
+    elif tool_name == "propose_mod_delete":
+        payload, preview = _mod_delete_payload(db, server, rest)
         expected_revision = None
     elif tool_name == "propose_config_patch":
         payload, preview, expected_revision = _config_patch_payload(db, server.id, rest)
@@ -905,6 +910,7 @@ _AUSFUEHRUNGEN: dict[str, Callable[[Session, _AusfuehrungsRahmen], _Ausgefuehrt]
     "propose_mod_install": _ausfuehren_mod_install,
     "propose_mod_batch_install": _ausfuehren_mod_batch_install,
     "propose_mod_toggle": _ausfuehren_mod_toggle,
+    "propose_mod_delete": _ausfuehren_mod_delete,
     "propose_server_repair": _ausfuehren_server_repair,
     "propose_guardian_tuning": _ausfuehren_guardian_tuning,
     "propose_restart_schedule_set": _ausfuehren_restart_schedule_set,

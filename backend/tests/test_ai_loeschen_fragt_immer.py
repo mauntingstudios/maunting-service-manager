@@ -99,7 +99,7 @@ def test_mit_freigabe_fragt_nur_das_gesperrte_loeschen(
     eigene = [n for n in LOESCHWERKZEUGE if n in ai_tool_registry.EIGENE_DATEN_LOESCHEN]
     # Sonst prüfen die Schleifen nichts.
     assert {"propose_file_delete", "propose_role_delete"} <= set(gesperrt)
-    assert {"forget_skill", "propose_note_delete"} <= set(eigene)
+    assert {"forget_skill", "propose_note_delete", "propose_mod_delete"} <= set(eigene)
 
     for name in gesperrt:
         assert not ai_autonomy_service.autonomy_allows(

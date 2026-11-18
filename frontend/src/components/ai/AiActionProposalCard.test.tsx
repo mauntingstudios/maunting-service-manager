@@ -279,4 +279,36 @@ describe('AiActionProposalCard', () => {
     expect(screen.getByText('Desktop-Artefakt (Software/Mod/Installer)')).toBeInTheDocument()
     expect(screen.getByText('Aktion: download')).toBeInTheDocument()
   })
+
+  it('renders propose_mod_delete with mod facts and executes directly without double confirmation', async () => {
+    const deleteModsProposal: AiActionProposal = {
+      ...proposal,
+      id: 'proposal-mod-del-1',
+      tool_name: 'propose_mod_delete',
+      preview: {
+        operation: 'mod_delete',
+        path: 'Project Viewpoint, Viewpoint-Minimap',
+        server_name: 'Zomboid RP',
+        mod_count: 2,
+        mods: ['Project Viewpoint', 'Viewpoint-Minimap'],
+      },
+    }
+    const onChange = vi.fn()
+    render(<AiActionProposalCard proposal={deleteModsProposal} onChange={onChange} />)
+
+    expect(screen.getByText('Mods entfernen')).toBeInTheDocument()
+    expect(screen.getByText('Zomboid RP')).toBeInTheDocument()
+    expect(screen.getByText('2')).toBeInTheDocument()
+    expect(screen.getByText('Project Viewpoint, Viewpoint-Minimap', { selector: 'dd' })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Jetzt ausführen' }))
+
+    await waitFor(() => expect(aiApi.confirmAction).toHaveBeenCalledWith('proposal-mod-del-1'))
+    await waitFor(() => expect(aiApi.executeAction).toHaveBeenCalledWith(
+      'proposal-mod-del-1',
+      'one-time-secret-token-value-123456789',
+    ))
+    expect(useConfirmStore.getState().pending).toBeNull()
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ status: 'succeeded' }))
+  })
 })

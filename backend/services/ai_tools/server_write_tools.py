@@ -335,6 +335,30 @@ _PROPOSE_MOD_TOGGLE = _server_function(
             ["workshop_id", "enabled", *_RATIONALE_REQUIRED],
         )
 
+_PROPOSE_MOD_DELETE = _server_function(
+            "propose_mod_delete",
+            "Entfernt eine oder mehrere installierte Mods aus der Panel-Modliste "
+            "(inkl. Mod-Dateien und Modlisten-Sync, z. B. INI). "
+            "Entweder `workshop_id` oder `workshop_ids` aus read_server_mods angeben. "
+            "Wirkt ab dem naechsten Neustart.",
+            {
+                "workshop_id": {
+                    "type": "string",
+                    "maxLength": 20,
+                    "description": "Einzelne Workshop-/CurseForge-ID aus read_server_mods.",
+                },
+                "workshop_ids": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 500,
+                    "items": {"type": "string", "maxLength": 20},
+                    "description": "Mehrere Workshop-/CurseForge-IDs aus read_server_mods.",
+                },
+                **_RATIONALE_SCHEMA,
+            },
+            list(_RATIONALE_REQUIRED),
+        )
+
 _PROPOSE_MODPACK_INSTALL = _function(
             "propose_modpack_install",
             "Installiert ein CurseForge-Modpack auf einem bestehenden Server.",
@@ -458,6 +482,7 @@ SERVER_WRITE_DEFINITIONEN = [
     _PROPOSE_MOD_INSTALL,
     _PROPOSE_MOD_BATCH_INSTALL,
     _PROPOSE_MOD_TOGGLE,
+    _PROPOSE_MOD_DELETE,
     _PROPOSE_SERVER_REPAIR,
     _PROPOSE_GUARDIAN_TUNING,
     _PROPOSE_RESTART_SCHEDULE_SET,
@@ -466,7 +491,7 @@ SERVER_WRITE_DEFINITIONEN = [
     _PROPOSE_DATABASE_CHANGE,
 ]
 
-DEFINITIONEN = [_PROPOSE_BACKUP, _PROPOSE_BACKUP_RESTORE, _PROPOSE_BACKUP_SCHEDULE_SET, _PROPOSE_BIND_IP_UPDATE, _PROPOSE_CONFIG_PATCH, _PROPOSE_CONFIG_SET, _PROPOSE_CONFIG_UPDATE, _PROPOSE_DATABASE_CHANGE, _PROPOSE_FILE_DELETE, _PROPOSE_GUARDIAN_TUNING, _PROPOSE_MOD_BATCH_INSTALL, _PROPOSE_MOD_INSTALL, _PROPOSE_MOD_TOGGLE, _PROPOSE_MODPACK_INSTALL, _PROPOSE_RESTART_SCHEDULE_SET, _PROPOSE_SERVER_BLUEPRINT_SWITCH, _PROPOSE_SERVER_DELETE, _PROPOSE_SERVER_LIFECYCLE, _PROPOSE_SERVER_REPAIR]
+DEFINITIONEN = [_PROPOSE_BACKUP, _PROPOSE_BACKUP_RESTORE, _PROPOSE_BACKUP_SCHEDULE_SET, _PROPOSE_BIND_IP_UPDATE, _PROPOSE_CONFIG_PATCH, _PROPOSE_CONFIG_SET, _PROPOSE_CONFIG_UPDATE, _PROPOSE_DATABASE_CHANGE, _PROPOSE_FILE_DELETE, _PROPOSE_GUARDIAN_TUNING, _PROPOSE_MOD_BATCH_INSTALL, _PROPOSE_MOD_DELETE, _PROPOSE_MOD_INSTALL, _PROPOSE_MOD_TOGGLE, _PROPOSE_MODPACK_INSTALL, _PROPOSE_RESTART_SCHEDULE_SET, _PROPOSE_SERVER_BLUEPRINT_SWITCH, _PROPOSE_SERVER_DELETE, _PROPOSE_SERVER_LIFECYCLE, _PROPOSE_SERVER_REPAIR]
 
 werkzeug(
     _PROPOSE_BACKUP,
@@ -583,6 +608,15 @@ werkzeug(
     hinweis="Schaltet eine installierte Mod an oder aus.",
     vorschlag=vorschlag_server("propose_mod_toggle"),
     ausfuehren=ausfuehrung_aus_tabelle("propose_mod_toggle"),
+)
+
+werkzeug(
+    _PROPOSE_MOD_DELETE,
+    art="server_write",
+    recht="server.mods.write", gruppe="mods",
+    hinweis="Entfernt eine oder mehrere installierte Mods aus der Panel-Modliste.",
+    vorschlag=vorschlag_server("propose_mod_delete"),
+    ausfuehren=ausfuehrung_aus_tabelle("propose_mod_delete"),
 )
 
 werkzeug(

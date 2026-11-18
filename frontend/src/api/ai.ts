@@ -77,6 +77,7 @@ export const SCHREIBWERKZEUGE = [
   'propose_mod_install',
   'propose_mod_batch_install',
   'propose_mod_toggle',
+  'propose_mod_delete',
   'propose_bind_ip_update',
   'propose_server_create',
   'propose_server_delete',

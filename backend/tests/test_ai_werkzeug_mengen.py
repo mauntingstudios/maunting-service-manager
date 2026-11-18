@@ -100,7 +100,7 @@ MENGEN = {
         "propose_database_change", "propose_email_send", "propose_file_delete",
         "propose_frontend_action", "propose_frontend_settings",
         "propose_guardian_tuning", "propose_hoster_integration", "propose_hoster_product",
-        "propose_mod_batch_install", "propose_mod_install", "propose_mod_toggle", "propose_modpack_install",
+        "propose_mod_batch_install", "propose_mod_delete", "propose_mod_install", "propose_mod_toggle", "propose_modpack_install",
         "propose_note_create", "propose_note_delete", "propose_note_update",
         "propose_popup_set", "propose_restart_schedule_set", "propose_role_delete",
         "propose_role_set", "propose_server_blueprint_switch", "propose_server_create",
@@ -199,7 +199,7 @@ MENGEN = {
     ],
     "EIGENE_DATEN_LOESCHEN": [
         "forget_skill", "propose_calendar_event_delete", "propose_cloudflare_dns_delete",
-        "propose_note_delete", "propose_task_delete",
+        "propose_mod_delete", "propose_note_delete", "propose_task_delete",
     ],
     "RECHTE_SCHREIBEN": [
         "propose_role_delete", "propose_role_set", "propose_team_create",
@@ -228,14 +228,14 @@ MENGEN = {
 }
 
 KATALOG = [
-    (False, False, "off", 133, "82c2570d650fe3ac7221268fddb416264126da3c6ffdb02f787bd26725107204"),
-    (False, False, "review", 133, "6e3bd6c13fbb52cd23f0d09d31651238e6a95be6584d2f8ee15dd1a1ecdad94c"),
-    (False, True, "off", 135, "a36589e07b505caef77da89525f8a13dba5031836d181643bc00fa4557dad69e"),
-    (False, True, "review", 135, "0da92fc3bb97e42f266728a3628ed6043e0a7e0f73df85d0a6ae318912df9602"),
-    (True, False, "off", 135, "d0d0a758538eb04ae5ed4c51267767e3723f27b2b6037a94e9a1593593a3cc47"),
-    (True, False, "review", 135, "ab220c8251a2f1a03f1ef6ce53856c808b97c9c8095cda7dbf80c99fb48bcb80"),
-    (True, True, "off", 137, "5c12d0652a85423256c0bd6e09711dcd96a01e70ed3c4715235c556b119f1952"),
-    (True, True, "review", 137, "5c6bcc52362b803d1df6d6a16c9ef1b8f4983c0d0023f2f397df2538cd514e9c"),
+    (False, False, "off", 134, "bdc0cceb760532b101d2fe95422f78988f67a2828db6709fdf5d80dba7475965"),
+    (False, False, "review", 134, "aed4707eb09e7358f2dcecffaf06fed358d879e0f21f2421e4be5c22db9d5ea0"),
+    (False, True, "off", 136, "e97b972ac99d0ecf422105eaaf4e172d131de972f7d1ffd256f3b423bdf17ffc"),
+    (False, True, "review", 136, "03cac50a816c43ef42faf9b4f5219425bcbef384e051028bb3ce4b5ef649ab3f"),
+    (True, False, "off", 136, "4b3826fbb1a1924504034bad6b4f5b9daefb16168f68a2c27378e3a5dfb6f623"),
+    (True, False, "review", 136, "5e81350d99a921046ca4094388f38c4f0e64b88c25c8fcacb76ec147a6df01eb"),
+    (True, True, "off", 138, "d5e262a5acb6d0d5c197085ecc29544d1c067f3aafc3b80146397f5b99ce73ca"),
+    (True, True, "review", 138, "3ec26cacbc71cf88ab1e969443d9afd45c9f615a525e52bab52762982ed25327"),
 ]
 
 SPRACHE_KATALOG_HASH = "d616c67eee2793c462ef37b9540cffa53dc445688fbd8a890aa3e82bc41cf266"
@@ -345,4 +345,4 @@ def test_der_import_der_ki_schicht_bleibt_moeglich() -> None:
         "services.ai_tool_compat",
     ):
         importlib.import_module(modul)
-    assert len(registry.WERKZEUGE) == 140
+    assert len(registry.WERKZEUGE) == 141

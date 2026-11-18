@@ -673,17 +673,21 @@ ALWAYS_CONFIRM_TOOLS = (
     | set(GEPLANT_IMMER_BESTAETIGEN)
 )
 
-#: Was loescht und trotzdem im autonomen Modus ohne Karte laeuft: nur die
-#: eigenen Daten des Benutzers (Vorgabe des Betreibers vom 25.09.2026). Eine
-#: ausdrueckliche Aufzaehlung, keine Regel — ein neues Loeschwerkzeug muss hier
-#: oder bei `immer_bestaetigen` stehen
-#: (`test_jedes_loeschwerkzeug_ist_entschieden`).
+#: Was loescht und trotzdem im autonomen Modus ohne Karte laeuft: die
+#: eigenen Daten des Benutzers (Vorgabe des Betreibers vom 25.09.2026) sowie
+#: das Entfernen einzelner oder mehrerer Mods (`propose_mod_delete`, Vorgabe
+#: vom 18.11.2026: Mods sind unkritisch und ueber Workshop/CurseForge wieder
+#: herstellbar; kritische Loeschvorgaenge wie Server, Dateien, Backups, Blueprints
+#: und Rollen bleiben in `ALWAYS_CONFIRM_TOOLS`). Eine ausdrueckliche
+#: Aufzaehlung, keine Regel — ein neues Loeschwerkzeug muss hier oder bei
+#: `immer_bestaetigen` stehen (`test_jedes_loeschwerkzeug_ist_entschieden`).
 EIGENE_DATEN_LOESCHEN = frozenset({
     "forget_skill",
     "propose_note_delete",
     "propose_calendar_event_delete",
     "propose_task_delete",
     "propose_cloudflare_dns_delete",
+    "propose_mod_delete",
 })
 
 #: Was die Rechte anderer Benutzer aendert. Nur ein Worker (oder ein Chat ohne

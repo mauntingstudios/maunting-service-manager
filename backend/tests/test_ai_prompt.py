@@ -888,6 +888,7 @@ def test_der_modblock_nennt_den_ort_der_wahrheit() -> None:
     assert "Welche Mods aktiv sind, steht allein in der Mod-Liste des Panels" in voll
     assert "GameUserSettings.ini" in voll
     assert "propose_mod_toggle" in voll
+    assert "propose_mod_delete" in voll
     # Und die Folge, die den Auftrag erst wirksam macht.
     assert "erst nach einem Neustart" in voll
 
