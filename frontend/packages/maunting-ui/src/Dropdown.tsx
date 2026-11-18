@@ -238,12 +238,12 @@ export const Dropdown = forwardRef<HTMLDivElement, DropdownProps>(
               buttonClassName,
             )}
           >
-            <span className={cx('min-w-0 flex-1 truncate', !selected && 'text-on-surface-variant')}>
+            <span className={cx('min-w-0 flex-1', selected ? 'flex items-center gap-2' : 'truncate text-on-surface-variant')}>
               {selected ? (
-                <span className="inline-flex min-w-0 max-w-full items-center gap-2">
+                <>
                   {selected.icon}
-                  <span className="truncate">{selected.label}</span>
-                </span>
+                  <span className="min-w-0 truncate">{selected.label}</span>
+                </>
               ) : (
                 placeholder ?? t('common.auswaehlen')
               )}

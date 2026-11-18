@@ -730,8 +730,8 @@ export function FileManager({ serverId }: FileManagerProps) {
   }
 
   return (
-    <div className="relative overflow-visible rounded-xl border border-outline-variant/80 bg-surface-container-lowest/65 shadow-panel">
-      <header className="flex min-h-14 flex-wrap items-center gap-2 border-b border-outline-variant bg-surface-container-low/80 px-3 py-2">
+    <div className="relative overflow-hidden rounded-xl border border-outline-variant/80 bg-surface-container-lowest/65 shadow-panel">
+      <header className="flex min-h-14 flex-wrap items-center gap-2 rounded-t-[11px] border-b border-outline-variant bg-surface-container-low/80 px-3 py-2">
         {isEditorView && (
           <Button
             variant="secondary"
