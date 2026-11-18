@@ -398,3 +398,68 @@ def test_offen_liefert_nur_die_karten_auf_die_jemand_wartet(
     # Ohne den Parameter bleibt der Verlauf, wie er war.
     alles = client.get("/api/ai/conversation/actions", cookies=user_cookies)
     assert {verlauf_karte.id, erledigt.id, stimme_alt.id} <= {k["id"] for k in alles.json()}
+
+
+def test_list_workers_liefert_herkunft_fuer_chat_und_projekt(
+    client: TestClient, db: Session, regular_user: User, user_cookies: dict
+) -> None:
+    """Worker-Liste liefert Eltern-Chat und Projekt für kontextbezogene Filter & Tools."""
+    from models import AiProject
+    from services import ai_chat_service
+
+    eltern_chat = AiConversation(
+        id=str(uuid4()),
+        user_id=regular_user.id,
+        kind="primary",
+        title="Haupt-Chat Analyse",
+    )
+    projekt = AiProject(
+        id=str(uuid4()),
+        user_id=regular_user.id,
+        name="Mein Projekt",
+        description="Test",
+    )
+    db.add_all([eltern_chat, projekt])
+    db.flush()
+
+    chat_worker = ai_chat_service.worker_unterhaltung_anlegen(
+        db,
+        regular_user,
+        "Log-Prüfung",
+        parent_conversation_id=eltern_chat.id,
+    )
+    proj_worker = ai_chat_service.worker_unterhaltung_anlegen(
+        db,
+        regular_user,
+        "Code-Build",
+        project_id=projekt.id,
+        parent_conversation_id=eltern_chat.id,
+    )
+    db.add_all([
+        AiRun(
+            id=str(uuid4()),
+            conversation_id=chat_worker.id,
+            user_id=regular_user.id,
+            status="running",
+        ),
+        AiRun(
+            id=str(uuid4()),
+            conversation_id=proj_worker.id,
+            user_id=regular_user.id,
+            status="running",
+        ),
+    ])
+    db.commit()
+
+    antwort = client.get("/api/ai/conversation/workers", cookies=user_cookies)
+    assert antwort.status_code == 200
+    eintraege = {e["conversation_id"]: e for e in antwort.json()}
+
+    assert eintraege[chat_worker.id]["parent_conversation_id"] == eltern_chat.id
+    assert eintraege[chat_worker.id]["parent_conversation_title"] == "Haupt-Chat Analyse"
+    assert eintraege[chat_worker.id]["project_id"] is None
+
+    assert eintraege[proj_worker.id]["project_id"] == projekt.id
+    assert eintraege[proj_worker.id]["project_name"] == "Mein Projekt"
+    assert eintraege[proj_worker.id]["parent_conversation_id"] == eltern_chat.id
+

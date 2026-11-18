@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Bot } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
@@ -22,20 +22,35 @@ const STATUS_TEXT: Record<string, string> = {
   waiting_wake: 'ai.worker.waitingWake',
 }
 
+export interface WorkerLeisteProps {
+  /** Im Projekt-Chat: zeigt ausschließlich Worker dieses Projekts. */
+  projectId?: string | null
+  /** Im normalen Chat: zeigt ausschließlich Worker aus genau diesem Chat. */
+  conversationId?: string | null
+  /** Aktuell im Split-View geöffneter Worker. */
+  activeWorkerId?: string | null
+  /** Öffnet/schließt den Split-View statt Seitennavigation. */
+  onSelectWorker?: (workerId: string) => void
+  /** Aktiviert das Glas-/Overlay-Styling der Singra-Oberfläche. */
+  singraShell?: boolean
+}
+
 /**
  * Die Worker-Leiste des Chats: je lebendem Hintergrund-Auftrag eine Pille.
  *
  * Einsehbar, nicht beschreibbar, räumt sich auf (docs/agentic-framework.md,
  * Frontend-Zeile): Die Liste zeigt nur, was das Backend als lebend meldet —
  * Endzustände fallen beim nächsten Blick von selbst heraus, gelöscht wird
- * nichts. Ein Klick führt in die lesende Worker-Ansicht
- * (`?ansicht=worker&id=<uuid>`; nur die Kennung in der Adresse, nie der Titel).
- *
- * Ohne Aufträge rendert die Leiste **nichts** — der Chat sieht dann aus wie
- * immer. Kein Store, kein Reducer: lokaler State reicht für eine Liste, die
- * dynamisch und ereignisgesteuert aus der Datenbank kommt (KISS).
+ * nichts. Ohne `onSelectWorker` führt ein Klick in die lesende Worker-Ansicht
+ * (`?ansicht=worker&id=<uuid>`), mit `onSelectWorker` öffnet sich der Split-View.
  */
-export function WorkerLeiste() {
+export function WorkerLeiste({
+  projectId,
+  conversationId,
+  activeWorkerId,
+  onSelectWorker,
+  singraShell = false,
+}: WorkerLeisteProps = {}) {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const [workers, setWorkers] = useState<AiWorkerInfo[]>([])
@@ -92,41 +107,82 @@ export function WorkerLeiste() {
     }
   }, [laden])
 
-  if (workers.length === 0) return null
+  const sichtbareWorker = useMemo(() => {
+    if (projectId !== undefined) {
+      if (!projectId) return []
+      return workers.filter((w) => w.project_id === projectId)
+    }
+    if (conversationId !== undefined) {
+      if (!conversationId) return []
+      return workers.filter((w) => !w.project_id && w.parent_conversation_id === conversationId)
+    }
+    return workers
+  }, [workers, projectId, conversationId])
+
+  if (sichtbareWorker.length === 0) return null
 
   return (
     <div
       // `relative`: die Leiste steht im Chat über der Hintergrundschicht,
       // die dort absolut liegt (siehe `features/chatHintergrund`).
-      className="relative flex shrink-0 flex-wrap items-center gap-2 border-b border-outline-variant/40 px-3 py-2 sm:px-4"
+      className={[
+        'relative flex shrink-0 flex-wrap items-center gap-2 px-3 py-2 sm:px-4',
+        singraShell
+          ? 'border-b border-white/10 bg-surface-container/45 backdrop-blur-md'
+          : 'border-b border-outline-variant/40',
+      ].join(' ')}
       aria-label={t('ai.worker.listLabel')}
     >
       <span className="inline-flex items-center gap-1.5 text-xs font-medium text-on-surface-variant">
-        <Bot className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+        <Bot className="h-3.5 w-3.5 shrink-0 text-primary" aria-hidden="true" />
         {t('ai.worker.listLabel')}
       </span>
-      {workers.map((worker) => (
-        <Kurzinfo key={worker.conversation_id} text={worker.title} aussen="min-w-0 max-w-[16rem]">
-        <button
-          type="button"
-          onClick={() => navigate(`/ai?ansicht=worker&id=${encodeURIComponent(worker.conversation_id)}`)}
-          className={[
-            'inline-flex max-w-[16rem] items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium',
-            'transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60',
-            worker.status === 'running'
-              ? 'border-primary/40 bg-primary/10 text-primary hover:bg-primary/15'
-              : worker.status === 'waiting_wake'
-                ? 'border-outline-variant/60 bg-surface-container-high text-on-surface-variant hover:text-on-surface'
-                : 'border-status-warning/40 bg-status-warning/10 text-status-warning hover:bg-status-warning/15',
-          ].join(' ')}
-        >
-          <span className="truncate">{worker.title}</span>
-          <span className="shrink-0 opacity-80">
-            · {t(STATUS_TEXT[worker.status] ?? 'ai.worker.running')}
-          </span>
-        </button>
-        </Kurzinfo>
-      ))}
+      {sichtbareWorker.map((worker) => {
+        const istAktiv = activeWorkerId === worker.conversation_id
+        const istRunning = worker.status === 'running'
+        const istWaitingWake = worker.status === 'waiting_wake'
+        return (
+          <Kurzinfo key={worker.conversation_id} text={worker.title} aussen="min-w-0 max-w-[16rem]">
+            <button
+              type="button"
+              aria-pressed={onSelectWorker ? istAktiv : undefined}
+              onClick={() => {
+                if (onSelectWorker) {
+                  onSelectWorker(worker.conversation_id)
+                } else {
+                  navigate(`/ai?ansicht=worker&id=${encodeURIComponent(worker.conversation_id)}`)
+                }
+              }}
+              className={[
+                'inline-flex max-w-[16rem] items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium',
+                'transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60',
+                istAktiv ? 'ring-2 ring-primary/55 shadow-sm' : '',
+                istRunning
+                  ? 'border-primary/40 bg-primary/12 text-primary hover:bg-primary/20'
+                  : istWaitingWake
+                    ? 'border-outline-variant/60 bg-surface-container-high/80 text-on-surface-variant hover:text-on-surface'
+                    : 'border-status-warning/40 bg-status-warning/12 text-status-warning hover:bg-status-warning/20',
+              ].join(' ')}
+            >
+              <span
+                className={[
+                  'h-1.5 w-1.5 shrink-0 rounded-full',
+                  istRunning
+                    ? 'bg-primary animate-pulse'
+                    : istWaitingWake
+                      ? 'bg-on-surface-variant/60'
+                      : 'bg-status-warning animate-pulse',
+                ].join(' ')}
+                aria-hidden="true"
+              />
+              <span className="truncate">{worker.title}</span>
+              <span className="shrink-0 opacity-80">
+                · {t(STATUS_TEXT[worker.status] ?? 'ai.worker.running')}
+              </span>
+            </button>
+          </Kurzinfo>
+        )
+      })}
     </div>
   )
 }

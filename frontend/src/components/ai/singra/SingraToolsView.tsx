@@ -8,8 +8,10 @@ import {
   ChevronUp,
   Cpu,
   ExternalLink,
+  Layers,
   LayoutGrid,
   Mail,
+  MessageSquare,
   Monitor,
   Plug,
   Plus,
@@ -51,8 +53,100 @@ import {
   Spinner,
   Switch,
 } from '@maunting/ui'
+import { AI_ZUSTELLUNG_EVENT } from '@/lib/aiZustellung'
 import { confirm } from '@/stores/confirmStore'
 import { toast } from '@/stores/toastStore'
+
+type WorkerGruppeKategorie = 'projekt' | 'chat' | 'aufgabe' | 'sonstige'
+
+export interface WorkerGruppe {
+  key: string
+  kategorie: WorkerGruppeKategorie
+  kategorieLabel: string
+  titel: string
+  workers: AiWorkerInfo[]
+}
+
+const KATEGORIE_RANG: Record<WorkerGruppeKategorie, number> = {
+  projekt: 0,
+  chat: 1,
+  aufgabe: 2,
+  sonstige: 3,
+}
+
+const WORKER_STATUS_META: Record<string, { label: string; badgeClass: string; dotClass: string }> = {
+  running: {
+    label: 'Läuft',
+    badgeClass: 'border-primary/35 bg-primary/10 text-primary',
+    dotClass: 'bg-primary animate-pulse',
+  },
+  waiting_confirmation: {
+    label: 'Wartet auf Freigabe',
+    badgeClass: 'border-status-warning/35 bg-status-warning/10 text-status-warning',
+    dotClass: 'bg-status-warning animate-pulse',
+  },
+  waiting_user: {
+    label: 'Rückfrage',
+    badgeClass: 'border-status-warning/35 bg-status-warning/10 text-status-warning',
+    dotClass: 'bg-status-warning animate-pulse',
+  },
+  waiting_wake: {
+    label: 'Pausiert',
+    badgeClass: 'border-outline-variant/40 bg-surface-container-high text-on-surface-variant',
+    dotClass: 'bg-on-surface-variant/60',
+  },
+}
+
+export function gruppiereWorker(workers: AiWorkerInfo[]): WorkerGruppe[] {
+  const gruppenMap = new Map<string, WorkerGruppe>()
+
+  for (const w of workers) {
+    let key: string
+    let kategorie: WorkerGruppeKategorie
+    let kategorieLabel: string
+    let titel: string
+
+    if (w.task_id) {
+      key = `aufgabe:${w.task_id}`
+      kategorie = 'aufgabe'
+      kategorieLabel = 'Geplante Aufgabe'
+      titel = w.task_title || 'Geplante Aufgabe'
+    } else if (w.project_id) {
+      key = `projekt:${w.project_id}`
+      kategorie = 'projekt'
+      kategorieLabel = 'Projekt'
+      titel = w.project_name || 'Projekt'
+    } else if (w.parent_conversation_id) {
+      key = `chat:${w.parent_conversation_id}`
+      kategorie = 'chat'
+      kategorieLabel = 'Chat'
+      titel = w.parent_conversation_title || 'Chat'
+    } else {
+      key = 'sonstige'
+      kategorie = 'sonstige'
+      kategorieLabel = 'Hintergrund'
+      titel = 'Weitere Aufträge'
+    }
+
+    const bestehend = gruppenMap.get(key)
+    if (bestehend) {
+      bestehend.workers.push(w)
+    } else {
+      gruppenMap.set(key, { key, kategorie, kategorieLabel, titel, workers: [w] })
+    }
+  }
+
+  const gruppen = Array.from(gruppenMap.values())
+  for (const gruppe of gruppen) {
+    gruppe.workers.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+  }
+  gruppen.sort((a, b) => {
+    const rangDiff = KATEGORIE_RANG[a.kategorie] - KATEGORIE_RANG[b.kategorie]
+    if (rangDiff !== 0) return rangDiff
+    return a.titel.localeCompare(b.titel, 'de')
+  })
+  return gruppen
+}
 
 type ToolSubTab = 'mcp' | 'tasks' | 'workers' | 'guardian'
 
@@ -172,6 +266,16 @@ export function SingraToolsView({
   useEffect(() => {
     void loadToolsData()
   }, [loadToolsData])
+
+  useEffect(() => {
+    const refreshWorkers = () => {
+      aiApi.listWorkers().then(setWorkers).catch(() => undefined)
+    }
+    window.addEventListener(AI_ZUSTELLUNG_EVENT, refreshWorkers)
+    return () => window.removeEventListener(AI_ZUSTELLUNG_EVENT, refreshWorkers)
+  }, [])
+
+  const gruppierteWorker = useMemo(() => gruppiereWorker(workers), [workers])
 
   const handleApplyPreset = (preset: SingraMcpPreset) => {
     setSelectedPreset(preset)
@@ -788,10 +892,12 @@ export function SingraToolsView({
                     Zurück zur Übersicht
                   </Button>
                 </div>
-                <div className="rounded-2xl border border-outline-variant/25 overflow-hidden min-h-[460px]">
+                <div className="h-[540px] flex flex-col">
                   <WorkerAnsicht
                     key={selectedWorkerId}
                     conversationId={selectedWorkerId}
+                    compact
+                    onClose={() => setSelectedWorkerId(null)}
                   />
                 </div>
               </div>
@@ -802,34 +908,76 @@ export function SingraToolsView({
                   Momentan laufen keine Aufträge im Hintergrund
                 </p>
                 <p className="mt-1 text-xs text-on-surface-variant max-w-md mx-auto">
-                  Wenn Singra größere Aufgaben für dich im Hintergrund abarbeitet, kannst du den Fortschritt hier live verfolgen.
+                  Wenn Singra größere Aufgaben für dich im Hintergrund abarbeitet, kannst du den Fortschritt direkt im jeweiligen Chat oder hier sortiert nach Projekt, Chat und Aufgabe verfolgen.
                 </p>
               </div>
             ) : (
-              <div className="space-y-2">
-                {workers.map((w) => (
-                  <div
-                    key={w.conversation_id}
-                    className="flex items-center justify-between rounded-2xl border border-outline-variant/25 bg-surface-container-low/40 px-4 py-3"
-                  >
-                    <div>
-                      <div className="text-sm font-medium text-on-surface">
-                        {w.title}
+              <div className="space-y-5">
+                {gruppierteWorker.map((gruppe) => {
+                  const GruppeIcon =
+                    gruppe.kategorie === 'projekt'
+                      ? Layers
+                      : gruppe.kategorie === 'chat'
+                        ? MessageSquare
+                        : gruppe.kategorie === 'aufgabe'
+                          ? CalendarClock
+                          : Cpu
+                  return (
+                    <section key={gruppe.key} className="space-y-2">
+                      <div className="flex items-center justify-between px-1">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <GruppeIcon className="h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
+                          <span className="text-xs font-semibold uppercase tracking-wider text-on-surface-variant shrink-0">
+                            {gruppe.kategorieLabel}:
+                          </span>
+                          <h3 className="truncate text-sm font-semibold text-on-surface">
+                            {gruppe.titel}
+                          </h3>
+                        </div>
+                        <span className="shrink-0 rounded-full bg-surface-container-high px-2 py-0.5 text-xs font-medium text-on-surface-variant">
+                          {gruppe.workers.length}
+                        </span>
                       </div>
-                      <div className="text-xs text-on-surface-variant">
-                        Gestartet um {new Date(w.created_at).toLocaleTimeString()}
+
+                      <div className="space-y-2">
+                        {gruppe.workers.map((w) => {
+                          const meta = WORKER_STATUS_META[w.status] ?? WORKER_STATUS_META.running
+                          return (
+                            <div
+                              key={w.conversation_id}
+                              className="flex items-center justify-between gap-3 rounded-2xl border border-outline-variant/25 bg-surface-container-low/45 px-4 py-3 transition-colors hover:border-outline-variant/45"
+                            >
+                              <div className="min-w-0 flex-1">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className="truncate text-sm font-medium text-on-surface">
+                                    {w.title}
+                                  </span>
+                                  <span
+                                    className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs font-medium ${meta.badgeClass}`}
+                                  >
+                                    <span className={`h-1.5 w-1.5 rounded-full ${meta.dotClass}`} aria-hidden="true" />
+                                    {meta.label}
+                                  </span>
+                                </div>
+                                <div className="mt-0.5 text-xs text-on-surface-variant">
+                                  Gestartet um {new Date(w.created_at).toLocaleTimeString()}
+                                </div>
+                              </div>
+                              <Button
+                                type="button"
+                                size="sm"
+                                className="shrink-0 rounded-full"
+                                onClick={() => setSelectedWorkerId(w.conversation_id)}
+                              >
+                                Ansehen
+                              </Button>
+                            </div>
+                          )
+                        })}
                       </div>
-                    </div>
-                    <Button
-                      type="button"
-                      size="sm"
-                      className="rounded-full"
-                      onClick={() => setSelectedWorkerId(w.conversation_id)}
-                    >
-                      Ansehen
-                    </Button>
-                  </div>
-                ))}
+                    </section>
+                  )
+                })}
               </div>
             )}
           </div>

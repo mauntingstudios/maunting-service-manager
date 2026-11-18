@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Bot, Sparkles } from 'lucide-react'
+import { Bot, RefreshCw, Sparkles, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { aiApi, type AiRunInfo } from '@/api/ai'
 import { SanitizedApiError } from '@/api/client'
-import { Button } from '@maunting/ui'
+import { Button, Kurzinfo } from '@maunting/ui'
 import { ChatHintergrund } from '@/features/chatHintergrund'
 import { AI_ZUSTELLUNG_EVENT } from '@/lib/aiZustellung'
 import { toast } from '@/stores/toastStore'
@@ -31,7 +31,15 @@ const NACHSEHEN_MS = 20_000
  * Worker mit Knöpfen. Der Klick dort weckt den geparkten Lauf, und dieses
  * Fenster hängt sich beim nächsten Nachsehen an.
  */
-export function WorkerAnsicht({ conversationId }: { conversationId: string }) {
+export interface WorkerAnsichtProps {
+  conversationId: string
+  /** Kompakte Darstellung für die Split-View-Seitenleiste im Chat. */
+  compact?: boolean
+  /** Optionaler Schließen-Callback (rendert einen Schließen-Knopf im Kopf). */
+  onClose?: () => void
+}
+
+export function WorkerAnsicht({ conversationId, compact = false, onClose }: WorkerAnsichtProps) {
   const { t } = useTranslation()
   const [laedt, setLaedt] = useState(true)
   const [titel, setTitel] = useState<string | null>(null)
@@ -164,29 +172,74 @@ export function WorkerAnsicht({ conversationId }: { conversationId: string }) {
   const leer = entries.length === 0
 
   return (
-    <section className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-outline-variant/40 bg-surface-container-lowest">
+    <section
+      className={[
+        'relative flex min-h-0 flex-1 flex-col overflow-hidden bg-surface-container-lowest',
+        compact
+          ? 'h-full rounded-2xl border border-outline-variant/35 shadow-sm'
+          : 'rounded-2xl border border-outline-variant/40',
+      ].join(' ')}
+    >
       {/* Derselbe Hintergrund wie im KI-Chat — eine Wahl für den Bereich. */}
       <ChatHintergrund bereich="ki" />
 
-      <header className="relative flex shrink-0 items-center gap-2 border-b border-outline-variant/40 px-4 py-3">
-        <Bot className="h-4 w-4 shrink-0 text-secondary" aria-hidden="true" />
-        <div className="min-w-0">
+      <header
+        className={[
+          'relative flex shrink-0 items-center gap-2 border-b border-outline-variant/40 bg-surface-container/75 backdrop-blur-md',
+          compact ? 'px-3 py-2.5' : 'px-4 py-3',
+        ].join(' ')}
+      >
+        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/12 text-primary">
+          <Bot className="h-4 w-4" aria-hidden="true" />
+        </div>
+        <div className="min-w-0 flex-1">
           <h2 className="truncate font-headline text-sm font-semibold text-on-surface">
             {titel ?? t('ai.worker.title')}
           </h2>
-          <p className="truncate text-xs text-on-surface-variant">
-            {t('ai.worker.subtitle')}
-          </p>
+          {!compact && (
+            <p className="truncate text-xs text-on-surface-variant">
+              {t('ai.worker.subtitle')}
+            </p>
+          )}
         </div>
-        <div className="ml-auto flex shrink-0 items-center gap-2">
+        <div className="ml-auto flex shrink-0 items-center gap-1.5">
           {!verschwunden && statusPille()}
           {!streaming && !verschwunden && (
-            <Button
-              type="button" variant="ghost" size="sm"
-              onClick={() => void laden().catch(() => undefined)}
-            >
-              {t('common.refresh')}
-            </Button>
+            compact ? (
+              <Kurzinfo text={t('common.refresh')} lage="unten">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 rounded-full text-on-surface-variant hover:text-on-surface"
+                  aria-label={t('common.refresh')}
+                  onClick={() => void laden().catch(() => undefined)}
+                >
+                  <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
+                </Button>
+              </Kurzinfo>
+            ) : (
+              <Button
+                type="button" variant="ghost" size="sm"
+                onClick={() => void laden().catch(() => undefined)}
+              >
+                {t('common.refresh')}
+              </Button>
+            )
+          )}
+          {onClose && (
+            <Kurzinfo text={t('common.close', 'Schließen')} lage="unten" seite="ende">
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 rounded-full text-on-surface-variant hover:bg-status-destructive/10 hover:text-status-destructive"
+                aria-label={t('common.close', 'Schließen')}
+                onClick={onClose}
+              >
+                <X className="h-4 w-4" aria-hidden="true" />
+              </Button>
+            </Kurzinfo>
           )}
         </div>
       </header>
@@ -200,7 +253,7 @@ export function WorkerAnsicht({ conversationId }: { conversationId: string }) {
           setAmEnde(scrollHeight - scrollTop - clientHeight < 50)
         }}
       >
-        <div className="mx-auto w-full max-w-3xl px-3 py-6 sm:px-4">
+        <div className={compact ? 'w-full px-3 py-4' : 'mx-auto w-full max-w-3xl px-3 py-6 sm:px-4'}>
           {verschwunden && !laedt && (
             <div className="py-16 text-center">
               <Sparkles className="mx-auto h-10 w-10 text-primary/70" aria-hidden="true" />

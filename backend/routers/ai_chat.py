@@ -379,19 +379,76 @@ def list_workers(
     Kein eigenes Recht: es sind die eigenen Auftraege dieses Benutzers, und
     gestartet werden sie nur, wenn seine Rolle `ai.background.use` traegt.
     """
+    from models import AiProject, AiTask
     from services import ai_worker_service
 
+    laeufe = ai_worker_service.aktive_worker(db, user_id=user.id)
+    if not laeufe:
+        return []
+
+    worker_conv_ids = [lauf.conversation_id for lauf in laeufe]
+    fenster_map = {
+        f.id: f
+        for f in db.query(AiConversation)
+        .filter(AiConversation.id.in_(worker_conv_ids))
+        .all()
+    }
+
+    project_ids = {f.project_id for f in fenster_map.values() if f.project_id}
+    project_names = (
+        {
+            p.id: str(p.name)
+            for p in db.query(AiProject).filter(AiProject.id.in_(project_ids)).all()
+        }
+        if project_ids
+        else {}
+    )
+
+    parent_ids = {
+        f.parent_conversation_id
+        for f in fenster_map.values()
+        if f.parent_conversation_id
+    }
+    parent_titles = (
+        {
+            c.id: c.title
+            for c in db.query(AiConversation)
+            .filter(AiConversation.id.in_(parent_ids))
+            .all()
+        }
+        if parent_ids
+        else {}
+    )
+
+    task_by_conv = {
+        t.conversation_id: t
+        for t in db.query(AiTask)
+        .filter(AiTask.conversation_id.in_(worker_conv_ids))
+        .all()
+    }
+
     eintraege: list[AiWorkerInfo] = []
-    for lauf in ai_worker_service.aktive_worker(db, user_id=user.id):
-        fenster = db.get(AiConversation, lauf.conversation_id)
+    for lauf in laeufe:
+        fenster = fenster_map.get(lauf.conversation_id)
         if fenster is None:
             continue
+        aufgabe = task_by_conv.get(fenster.id)
         eintraege.append(
             AiWorkerInfo(
                 conversation_id=fenster.id,
                 title=fenster.title,
                 status=lauf.status,
                 created_at=lauf.created_at,
+                project_id=fenster.project_id,
+                project_name=project_names.get(fenster.project_id) if fenster.project_id else None,
+                parent_conversation_id=fenster.parent_conversation_id,
+                parent_conversation_title=(
+                    parent_titles.get(fenster.parent_conversation_id)
+                    if fenster.parent_conversation_id
+                    else None
+                ),
+                task_id=aufgabe.id if aufgabe is not None else None,
+                task_title=aufgabe.title if aufgabe is not None else None,
             )
         )
     return eintraege

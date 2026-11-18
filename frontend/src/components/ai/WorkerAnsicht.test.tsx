@@ -228,4 +228,82 @@ describe('WorkerLeiste', () => {
         .toHaveTextContent('/ai?ansicht=worker&id=konv-worker-1')
     })
   })
+
+  it('filtert im Projekt-Chat strikt auf projectId und öffnet per onSelectWorker im Split-View', async () => {
+    const eintraege: AiWorkerInfo[] = [
+      {
+        conversation_id: 'w-proj-1',
+        title: 'Tests fixen',
+        status: 'running',
+        created_at: '2026-11-18T10:00:00Z',
+        project_id: 'proj-a',
+      },
+      {
+        conversation_id: 'w-proj-2',
+        title: 'Anderes Projekt',
+        status: 'running',
+        created_at: '2026-11-18T10:01:00Z',
+        project_id: 'proj-b',
+      },
+      {
+        conversation_id: 'w-chat-1',
+        title: 'Normaler Chat Worker',
+        status: 'running',
+        created_at: '2026-11-18T10:02:00Z',
+        parent_conversation_id: 'chat-1',
+      },
+    ]
+    vi.mocked(aiApi.listWorkers).mockReset().mockResolvedValue(eintraege)
+    const onSelectWorker = vi.fn()
+
+    render(
+      <MemoryRouter initialEntries={['/ai']}>
+        <WorkerLeiste
+          projectId="proj-a"
+          activeWorkerId="w-proj-1"
+          onSelectWorker={onSelectWorker}
+        />
+        <Standort />
+      </MemoryRouter>,
+    )
+
+    expect(await screen.findByText('Tests fixen')).toBeInTheDocument()
+    expect(screen.queryByText('Anderes Projekt')).not.toBeInTheDocument()
+    expect(screen.queryByText('Normaler Chat Worker')).not.toBeInTheDocument()
+
+    const btn = screen.getByRole('button', { name: /Tests fixen/i })
+    expect(btn).toHaveAttribute('aria-pressed', 'true')
+    fireEvent.click(btn)
+    expect(onSelectWorker).toHaveBeenCalledWith('w-proj-1')
+    expect(screen.getByTestId('standort')).toHaveTextContent('/ai')
+  })
+
+  it('filtert im normalen Chat strikt auf parent_conversation_id', async () => {
+    const eintraege: AiWorkerInfo[] = [
+      {
+        conversation_id: 'w-chat-1',
+        title: 'Loganalyse Chat 1',
+        status: 'running',
+        created_at: '2026-11-18T10:00:00Z',
+        parent_conversation_id: 'chat-1',
+      },
+      {
+        conversation_id: 'w-chat-2',
+        title: 'Loganalyse Chat 2',
+        status: 'running',
+        created_at: '2026-11-18T10:01:00Z',
+        parent_conversation_id: 'chat-2',
+      },
+    ]
+    vi.mocked(aiApi.listWorkers).mockReset().mockResolvedValue(eintraege)
+
+    render(
+      <MemoryRouter>
+        <WorkerLeiste conversationId="chat-1" />
+      </MemoryRouter>,
+    )
+
+    expect(await screen.findByText('Loganalyse Chat 1')).toBeInTheDocument()
+    expect(screen.queryByText('Loganalyse Chat 2')).not.toBeInTheDocument()
+  })
 })

@@ -132,6 +132,10 @@ class AiConversation(Base):
     project_id: Mapped[str | None] = mapped_column(
         String(36), ForeignKey("ai_projects.id", ondelete="SET NULL"), nullable=True, index=True
     )
+    # Optionale Verknüpfung zur auslösenden Chat-Unterhaltung (z. B. bei Workern).
+    parent_conversation_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("ai_conversations.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     pinned: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=false()
     )

@@ -414,7 +414,12 @@ def get_or_create_docs_conversation(
 
 
 def worker_unterhaltung_anlegen(
-    db: Session, user: User, titel: str, *, project_id: str | None = None
+    db: Session,
+    user: User,
+    titel: str,
+    *,
+    project_id: str | None = None,
+    parent_conversation_id: str | None = None,
 ) -> AiConversation:
     """Legt das Fenster eines neuen Worker-Auftrags an — immer eine neue Zeile.
 
@@ -437,6 +442,7 @@ def worker_unterhaltung_anlegen(
         # Der Auftrag arbeitet im selben Projekt wie der Lauf, der ihn
         # gestellt hat — sonst fehlten ihm Dateibaum, AGENTS.md und Git-Stand.
         project_id=project_id,
+        parent_conversation_id=parent_conversation_id,
         title=redact_sensitive_text(titel or "Auftrag").strip()[:160] or "Auftrag",
     )
     db.add(fenster)

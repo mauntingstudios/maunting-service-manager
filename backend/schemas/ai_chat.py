@@ -128,6 +128,12 @@ class AiWorkerInfo(BaseModel):
     #: so „räumt sie sich auf", ohne dass etwas gelöscht würde.
     status: str
     created_at: datetime
+    project_id: str | None = None
+    project_name: str | None = None
+    parent_conversation_id: str | None = None
+    parent_conversation_title: str | None = None
+    task_id: str | None = None
+    task_title: str | None = None
 
 
 class AiAppFaehigkeiten(BaseModel):

@@ -371,6 +371,12 @@ export interface AiWorkerInfo {
   /** `running` oder eine Parkstelle (`waiting_*`); Beendete stehen nie hier. */
   status: AiRunStatus
   created_at: string
+  project_id?: string | null
+  project_name?: string | null
+  parent_conversation_id?: string | null
+  parent_conversation_title?: string | null
+  task_id?: string | null
+  task_title?: string | null
 }
 
 /**

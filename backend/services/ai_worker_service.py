@@ -278,7 +278,11 @@ def worker_start(
     # das die Sperre schließen soll. Den einen Commit setzt `lauf_beginnen`
     # am Ende, und der schließt dann Fenster und Lauf gemeinsam ab.
     fenster = ai_chat_service.worker_unterhaltung_anlegen(
-        db, user, titel, project_id=project_id
+        db,
+        user,
+        titel,
+        project_id=project_id,
+        parent_conversation_id=conversation_id,
     )
     db.flush()
 

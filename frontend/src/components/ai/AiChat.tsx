@@ -36,6 +36,7 @@ import { useAnhangUpload } from './anhaenge/useAnhangUpload'
 import { AiSkillModal } from './AiSkillModal'
 import { mergeEntries } from './AiVerlauf'
 import { WorkerLeiste } from './WorkerLeiste'
+import { WorkerSplitLayout } from './WorkerSplitLayout'
 import { useAiLauf } from './useAiLauf'
 import { useAiDiktat } from './useAiDiktat'
 import { useAiGeoAnalyse } from './useAiGeoAnalyse'
@@ -182,6 +183,13 @@ export function AiChat({
   const [skills, setSkills] = useState<AiSkillSummary[]>([])
   const [reloading, setReloading] = useState(false)
   const [eingabeSchmal, setEingabeSchmal] = useState(false)
+  const [selectedWorkerId, setSelectedWorkerId] = useState<string | null>(null)
+
+  const currentScopeConvId = scope.kind === 'primary' ? (scope.conversationId ?? null) : null
+  const currentScopeProjectId = scope.kind === 'primary' ? (scope.projectId ?? null) : null
+  useEffect(() => {
+    setSelectedWorkerId(null)
+  }, [currentScopeConvId, currentScopeProjectId])
 
   const dragDepthRef = useRef(0)
   const letztesTippSignalRef = useRef(0)
@@ -911,6 +919,10 @@ export function AiChat({
         setTimeout(() => scrolleNachUnten(true), 350)
       }}
     >
+      <WorkerSplitLayout
+        workerId={geoOpen ? null : selectedWorkerId}
+        onClose={() => setSelectedWorkerId(null)}
+      >
       <section
         className={`relative flex min-h-0 flex-1 flex-col overflow-hidden ${eingebettet ? 'h-full' : ''}`}
         aria-label={t('ai.chat.title')}
@@ -990,7 +1002,22 @@ export function AiChat({
           hasGeoData={!!geoData}
         />
 
-        {showWorkers && !singraShell && <WorkerLeiste />}
+        {showWorkers && (
+          <WorkerLeiste
+            singraShell={singraShell}
+            projectId={scope.kind === 'primary' && scope.projectId ? scope.projectId : undefined}
+            conversationId={
+              scope.kind === 'primary' && !scope.projectId
+                ? (scope.conversationId ?? null)
+                : undefined
+            }
+            activeWorkerId={selectedWorkerId}
+            onSelectWorker={(id) => {
+              setGeoOpen(false)
+              setSelectedWorkerId((prev) => (prev === id ? null : id))
+            }}
+          />
+        )}
 
         {geoOpen && (
           <div className="relative hidden shrink-0 px-3 pt-2.5 lg:block">
@@ -1295,6 +1322,7 @@ export function AiChat({
         )}
         {dragging && <Ablageflaeche icon={<Paperclip className="h-4 w-4" />} text={t('ai.attachments.drop')} />}
       </section>
+      </WorkerSplitLayout>
 
       <AiSkillModal open={skillsModalOpen} onClose={() => setSkillsModalOpen(false)} />
       <ChatHintergrundDialog
