@@ -59,6 +59,9 @@ _SYSTEM_ENV = {
 _LOG_CONFIG = {"max-size": "10m", "max-file": "3"}
 _HARDENING_CAP_DROP = ["ALL"]
 _HARDENING_SECURITY_OPT = ["no-new-privileges"]
+_EPHEMERAL_NETWORK_NAME = "msm-ephemeral-net"
+_EPHEMERAL_ALLOWED_NETWORKS = frozenset({"none", _EPHEMERAL_NETWORK_NAME})
+_EPHEMERAL_ALLOWED_TMPFS = frozenset({"/tmp", "/run", "/var/tmp"})
 
 
 def _container_security_options(allow_unprivileged_user_namespaces: bool) -> list[str]:
@@ -452,6 +455,47 @@ def _tmpfs_dict(tmpfs_paths: list[str] | None, *, allow_exec: bool = False) -> d
         return None
     exec_flag = "exec" if allow_exec else "noexec"
     return {path: f"rw,{exec_flag},nosuid,nodev,size=128m,mode=1777" for path in tmpfs_paths}
+
+
+def _validate_ephemeral_options(
+    network: str | None,
+    tmpfs_paths: list[str] | None,
+) -> None:
+    """Erzwingt fuer ``run_ephemeral`` dieselben Netzwerk-/tmpfs-Allowlists wie im Agenten."""
+    if network is not None and network not in _EPHEMERAL_ALLOWED_NETWORKS:
+        raise ValueError(f"Netzwerk '{network}' ist fuer ephemere Container nicht erlaubt")
+    if tmpfs_paths:
+        for path in tmpfs_paths:
+            if path not in _EPHEMERAL_ALLOWED_TMPFS:
+                raise ValueError(f"tmpfs-Pfad '{path}' ist fuer ephemere Container nicht erlaubt")
+
+
+def _ensure_ephemeral_network(client: Any) -> str:
+    """Stellt das lokale ``msm-ephemeral-net`` mit ``enable_icc=false`` sicher."""
+    networks = getattr(client, "networks", None)
+    if networks is None:
+        return _EPHEMERAL_NETWORK_NAME
+    try:
+        networks.get(_EPHEMERAL_NETWORK_NAME)
+        return _EPHEMERAL_NETWORK_NAME
+    except NotFound:
+        pass
+    except (DockerException, OSError) as exc:
+        logger.warning("ephemeral network lookup failed: %s", _safe_error(exc))
+        return _EPHEMERAL_NETWORK_NAME
+    create_fn = getattr(networks, "create", None)
+    if callable(create_fn):
+        try:
+            create_fn(
+                _EPHEMERAL_NETWORK_NAME,
+                driver="bridge",
+                internal=False,
+                options={"com.docker.network.bridge.enable_icc": "false"},
+            )
+        except APIError as exc:
+            if "already exists" not in str(exc).lower():
+                raise
+    return _EPHEMERAL_NETWORK_NAME
 
 
 def _split_image_ref(image: str) -> tuple[str, str | None]:
@@ -1088,6 +1132,8 @@ def run_ephemeral(
     weitergeleitet. So sieht der User den Fortschritt live statt erst am Ende.
     Sicherheit: callback bekommt nur fertig dekodierte Zeilen, keine rohen bytes.
     """
+    _validate_ephemeral_options(network, tmpfs_paths)
+    validated_rt = _validated_runtime(runtime)
 
     if node is not None:
         from services.node_client import NodeClient, NodeClientError
@@ -1154,7 +1200,6 @@ def run_ephemeral(
         kwargs["network_mode"] = "none"
     elif network:
         kwargs["network"] = network
-    validated_rt = _validated_runtime(runtime)
     if validated_rt is not None:
         kwargs["runtime"] = validated_rt
     ulimits = _default_ulimits()
@@ -1163,6 +1208,8 @@ def run_ephemeral(
     kwargs = {key: value for key, value in kwargs.items() if value is not None}
     container = None
     try:
+        if network == _EPHEMERAL_NETWORK_NAME:
+            _ensure_ephemeral_network(client)
         _ensure_image_available(client, image)
         container = client.containers.run(**kwargs)
 

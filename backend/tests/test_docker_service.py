@@ -820,6 +820,66 @@ class TestEphemeralRun:
         assert kwargs["cap_drop"] == ["ALL"]
         assert kwargs["cap_add"] == ["DAC_OVERRIDE", "CHOWN", "FOWNER"]
 
+    @pytest.mark.parametrize("bad_network", ["host", "bridge", "msm-db-net-1", "custom"])
+    def test_ephemeral_rejects_disallowed_network_locally_and_on_node(self, bad_network):
+        with patch.object(docker_service, "_client_or_error") as mock_client, \
+             patch("services.node_client.NodeClient.from_node") as mock_node:
+            with pytest.raises(ValueError, match="nicht erlaubt"):
+                docker_service.run_ephemeral(
+                    image="img",
+                    command=["true"],
+                    network=bad_network,
+                )
+            with pytest.raises(ValueError, match="nicht erlaubt"):
+                docker_service.run_ephemeral(
+                    image="img",
+                    command=["true"],
+                    network=bad_network,
+                    node=SimpleNamespace(id=1),
+                )
+        mock_client.assert_not_called()
+        mock_node.assert_not_called()
+
+    @pytest.mark.parametrize("bad_tmpfs", ["/app", "/etc", "/workspace", "/"])
+    def test_ephemeral_rejects_disallowed_tmpfs_paths(self, bad_tmpfs):
+        with patch.object(docker_service, "_client_or_error") as mock_client:
+            with pytest.raises(ValueError, match="tmpfs"):
+                docker_service.run_ephemeral(
+                    image="img",
+                    command=["true"],
+                    tmpfs_paths=[bad_tmpfs],
+                )
+        mock_client.assert_not_called()
+
+    def test_ephemeral_ensures_local_isolated_ephemeral_network_when_missing(self):
+        client = MagicMock()
+        container = MagicMock()
+        container.wait.return_value = {"StatusCode": 0}
+        container.logs.side_effect = [b"ok\n", b""]
+        client.images.get.return_value = SimpleNamespace(id="local-image")
+        client.networks.get.side_effect = docker_service.NotFound("missing network")
+        client.containers.run.return_value = container
+
+        with patch.object(docker_service, "_client_or_error", return_value=(client, None)):
+            result = docker_service.run_ephemeral(
+                image="node:22-bookworm-slim",
+                command=["sh", "-c", "npm ci"],
+                network="msm-ephemeral-net",
+                tmpfs_paths=["/tmp", "/run", "/var/tmp"],
+            )
+
+        assert result["ok"] is True
+        client.networks.get.assert_called_once_with("msm-ephemeral-net")
+        client.networks.create.assert_called_once_with(
+            "msm-ephemeral-net",
+            driver="bridge",
+            internal=False,
+            options={"com.docker.network.bridge.enable_icc": "false"},
+        )
+        run_kwargs = client.containers.run.call_args.kwargs
+        assert run_kwargs["network"] == "msm-ephemeral-net"
+        assert set(run_kwargs["tmpfs"]) == {"/tmp", "/run", "/var/tmp"}
+
 
 class TestExecAndLogs:
     def test_send_stdin_uses_sdk_exec_without_logging_data(self):
