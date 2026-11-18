@@ -797,4 +797,23 @@ describe('Teams', () => {
       roleName: 'Mitglied',
     })
   })
+
+  it('rendert Rollen in schreibgeschützten Mitgliederzeilen einmalig als RoleBadge ohne Duplikate', async () => {
+    vi.mocked(teamsApi.get).mockResolvedValue({
+      ...realDetail,
+      members: [
+        {
+          ...realDetail.members[0],
+          roles: [realDetail.roles![0]],
+        },
+        realDetail.members[1],
+      ],
+    })
+    renderTeams()
+    await zuTeams()
+
+    const ownerButton = await screen.findByRole('button', { name: 'einmalmaik' })
+    const ownerRow = ownerButton.closest('li')!
+    expect(within(ownerRow).getAllByText('Admin')).toHaveLength(1)
+  })
 })
