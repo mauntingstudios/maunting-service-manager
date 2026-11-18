@@ -33,6 +33,8 @@ export interface WorkerLeisteProps {
   onSelectWorker?: (workerId: string) => void
   /** Aktiviert das Glas-/Overlay-Styling der Singra-Oberfläche. */
   singraShell?: boolean
+  /** Kompakte Inline-Darstellung direkt oben links im Chat-Header (ohne Balken). */
+  inline?: boolean
 }
 
 /**
@@ -50,6 +52,7 @@ export function WorkerLeiste({
   activeWorkerId,
   onSelectWorker,
   singraShell = false,
+  inline = false,
 }: WorkerLeisteProps = {}) {
   const { t } = useTranslation()
   const navigate = useNavigate()
@@ -123,26 +126,30 @@ export function WorkerLeiste({
 
   return (
     <div
-      // `relative`: die Leiste steht im Chat über der Hintergrundschicht,
-      // die dort absolut liegt (siehe `features/chatHintergrund`).
-      className={[
-        'relative flex shrink-0 flex-wrap items-center gap-2 px-3 sm:px-4',
-        singraShell
-          ? 'border-b border-white/10 bg-surface-container/55 backdrop-blur-md pt-14 pb-2.5'
-          : 'border-b border-outline-variant/40 py-2',
-      ].join(' ')}
+      className={
+        inline
+          ? 'flex min-w-0 flex-wrap items-center gap-1.5'
+          : [
+              'relative flex shrink-0 flex-wrap items-center gap-2 px-3 sm:px-4',
+              singraShell
+                ? 'border-b border-white/10 bg-surface-container/55 backdrop-blur-md pt-14 pb-2.5'
+                : 'border-b border-outline-variant/40 py-2',
+            ].join(' ')
+      }
       aria-label={t('ai.worker.listLabel')}
     >
-      <span className="inline-flex items-center gap-1.5 text-xs font-medium text-on-surface-variant">
-        <Bot className="h-3.5 w-3.5 shrink-0 text-primary" aria-hidden="true" />
-        {t('ai.worker.listLabel')}
-      </span>
+      {!inline && (
+        <span className="inline-flex items-center gap-1.5 text-xs font-medium text-on-surface-variant">
+          <Bot className="h-3.5 w-3.5 shrink-0 text-primary" aria-hidden="true" />
+          {t('ai.worker.listLabel')}
+        </span>
+      )}
       {sichtbareWorker.map((worker) => {
         const istAktiv = activeWorkerId === worker.conversation_id
         const istRunning = worker.status === 'running'
         const istWaitingWake = worker.status === 'waiting_wake'
         return (
-          <Kurzinfo key={worker.conversation_id} text={worker.title} aussen="min-w-0 max-w-[16rem]">
+          <Kurzinfo key={worker.conversation_id} text={worker.title} aussen="min-w-0 max-w-full sm:max-w-[16rem]">
             <button
               type="button"
               aria-pressed={onSelectWorker ? istAktiv : undefined}
@@ -154,16 +161,22 @@ export function WorkerLeiste({
                 }
               }}
               className={[
-                'inline-flex max-w-[16rem] items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium',
+                'inline-flex items-center gap-1.5 rounded-full border text-xs font-medium',
+                inline ? 'h-9 sm:h-8 max-w-[10rem] sm:max-w-[15rem] px-2.5 backdrop-blur-md shadow-sm' : 'max-w-[16rem] px-2.5 py-1',
                 'transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60',
                 istAktiv ? 'ring-2 ring-primary/55 shadow-sm' : '',
                 istRunning
-                  ? 'border-primary/40 bg-primary/12 text-primary hover:bg-primary/20'
+                  ? inline
+                    ? 'border-primary/40 bg-surface-container-high/85 text-primary hover:bg-surface-container-high'
+                    : 'border-primary/40 bg-primary/12 text-primary hover:bg-primary/20'
                   : istWaitingWake
-                    ? 'border-outline-variant/60 bg-surface-container-high/80 text-on-surface-variant hover:text-on-surface'
-                    : 'border-status-warning/40 bg-status-warning/12 text-status-warning hover:bg-status-warning/20',
+                    ? 'border-outline-variant/40 bg-surface-container-high/85 text-on-surface-variant hover:text-on-surface'
+                    : inline
+                      ? 'border-status-warning/40 bg-surface-container-high/85 text-status-warning hover:bg-surface-container-high'
+                      : 'border-status-warning/40 bg-status-warning/12 text-status-warning hover:bg-status-warning/20',
               ].join(' ')}
             >
+              {inline && <Bot className="h-3.5 w-3.5 shrink-0 opacity-85" aria-hidden="true" />}
               <span
                 className={[
                   'h-1.5 w-1.5 shrink-0 rounded-full',
@@ -176,7 +189,7 @@ export function WorkerLeiste({
                 aria-hidden="true"
               />
               <span className="truncate">{worker.title}</span>
-              <span className="shrink-0 opacity-80">
+              <span className={inline ? 'hidden sm:inline shrink-0 opacity-80' : 'shrink-0 opacity-80'}>
                 · {t(STATUS_TEXT[worker.status] ?? 'ai.worker.running')}
               </span>
             </button>

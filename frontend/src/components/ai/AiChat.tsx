@@ -1000,11 +1000,29 @@ export function AiChat({
           onClearHistory={() => void clearHistory()}
           geoOpen={geoOpen}
           hasGeoData={!!geoData}
+          workerLeiste={
+            showWorkers && singraShell ? (
+              <WorkerLeiste
+                singraShell
+                inline
+                projectId={scope.kind === 'primary' && scope.projectId ? scope.projectId : undefined}
+                conversationId={
+                  scope.kind === 'primary' && !scope.projectId
+                    ? (scope.conversationId ?? null)
+                    : undefined
+                }
+                activeWorkerId={selectedWorkerId}
+                onSelectWorker={(id) => {
+                  setGeoOpen(false)
+                  setSelectedWorkerId((prev) => (prev === id ? null : id))
+                }}
+              />
+            ) : undefined
+          }
         />
 
-        {showWorkers && (
+        {showWorkers && !singraShell && (
           <WorkerLeiste
-            singraShell={singraShell}
             projectId={scope.kind === 'primary' && scope.projectId ? scope.projectId : undefined}
             conversationId={
               scope.kind === 'primary' && !scope.projectId

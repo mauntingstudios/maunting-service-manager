@@ -176,7 +176,7 @@ export function WorkerAnsicht({ conversationId, compact = false, onClose }: Work
       className={[
         'relative flex min-h-0 flex-1 flex-col overflow-hidden bg-surface-container-lowest',
         compact
-          ? 'h-full rounded-2xl border border-outline-variant/35 shadow-sm'
+          ? 'h-full w-full'
           : 'rounded-2xl border border-outline-variant/40',
       ].join(' ')}
     >

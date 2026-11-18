@@ -31,15 +31,9 @@ export function WorkerSplitLayout({ children, workerId, onClose }: WorkerSplitLa
   }, [workerId])
 
   return (
-    <div
-      className={
-        workerId
-          ? 'flex h-full w-full min-h-0 flex-1 flex-col overflow-hidden p-1 sm:p-2'
-          : 'flex h-full w-full min-h-0 flex-1 flex-col overflow-hidden'
-      }
-    >
+    <div className="flex h-full w-full min-h-0 flex-1 flex-col overflow-hidden">
       {workerId && (
-        <div className="mb-2 flex shrink-0 items-center justify-between gap-2 rounded-xl border border-outline-variant/30 bg-surface-container-low/95 p-1 shadow-sm backdrop-blur-md lg:hidden">
+        <div className="flex shrink-0 items-center justify-between gap-2 border-b border-outline-variant/30 bg-surface-container px-2.5 py-1.5 lg:hidden">
           <div className="flex items-center gap-1">
             <button
               type="button"
@@ -82,34 +76,28 @@ export function WorkerSplitLayout({ children, workerId, onClose }: WorkerSplitLa
         </div>
       )}
 
-      <div
-        className={
-          workerId
-            ? 'flex h-full min-h-0 w-full flex-1 flex-col gap-3 overflow-hidden lg:flex-row'
-            : 'flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden'
-        }
-      >
+      <div className="flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden lg:flex-row">
         <div
-          className={
-            workerId
-              ? `isolate min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-outline-variant/30 bg-surface-container-lowest ${
-                  mobileTab === 'chat' ? 'flex' : 'hidden'
-                } lg:flex`
-              : 'flex h-full min-h-0 flex-1 flex-col overflow-hidden'
-          }
+          className={`min-h-0 min-w-0 flex-1 flex-col overflow-hidden transition-[width,flex] duration-300 ease-out ${
+            workerId && mobileTab !== 'chat' ? 'hidden lg:flex' : 'flex'
+          }`}
         >
           {children}
         </div>
 
-        {workerId && (
-          <div
-            className={`isolate min-h-0 shrink-0 flex-col overflow-hidden rounded-2xl ${
-              mobileTab === 'worker' ? 'flex flex-1' : 'hidden'
-            } lg:flex lg:w-[400px] xl:w-[460px]`}
-          >
+        <aside
+          aria-hidden={!workerId}
+          className={[
+            'min-h-0 shrink-0 flex-col overflow-hidden transition-[width,opacity] duration-300 ease-out',
+            workerId
+              ? `${mobileTab === 'worker' ? 'flex flex-1 lg:flex-none' : 'hidden'} lg:flex lg:w-[400px] xl:w-[460px] lg:border-l lg:border-outline-variant/30 opacity-100`
+              : 'hidden lg:flex lg:w-0 opacity-0 pointer-events-none border-l-0',
+          ].join(' ')}
+        >
+          {workerId && (
             <WorkerAnsicht key={workerId} conversationId={workerId} compact onClose={onClose} />
-          </div>
-        )}
+          )}
+        </aside>
       </div>
     </div>
   )

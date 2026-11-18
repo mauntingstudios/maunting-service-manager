@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { CalendarClock, ChevronRight, Menu, MoreHorizontal, Plus, RotateCw, ShieldAlert, Sparkles } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
@@ -51,6 +52,7 @@ interface AiChatHeaderProps {
   onClearHistory: () => void
   geoOpen: boolean
   hasGeoData: boolean
+  workerLeiste?: ReactNode
 }
 
 export function AiChatHeader({
@@ -90,6 +92,7 @@ export function AiChatHeader({
   onClearHistory,
   geoOpen,
   hasGeoData,
+  workerLeiste,
 }: AiChatHeaderProps) {
   const { t } = useTranslation()
 
@@ -129,6 +132,8 @@ export function AiChatHeader({
             </button>
           </Kurzinfo>
         )}
+
+        {singraShell && workerLeiste}
 
         {!singraShell && (
           <div className="flex items-center gap-2 min-w-0">
