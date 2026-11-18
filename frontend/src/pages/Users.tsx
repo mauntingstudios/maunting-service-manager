@@ -461,21 +461,6 @@ export function Users() {
                             </span>
                           )}
                         </div>
-                        {canEditRoles && assignedRoles.length > 0 && (
-                          <div className="mt-1 flex flex-wrap items-center gap-1">
-                            {assignedRoles.map((role) => (
-                              <RoleBadge
-                                key={role.id}
-                                name={formatRoleName(role)}
-                                color={role.color}
-                                icon={role.icon}
-                                isAdmin={role.name === 'admin'}
-                                variant="subtle"
-                                size="sm"
-                              />
-                            ))}
-                          </div>
-                        )}
                       </div>
                     </div>
 

@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next'
 
 import { aiApi } from '@/api/ai'
 import { SanitizedApiError } from '@/api/client'
-import { Button } from '@maunting/ui'
+import { Button, PasswordInput } from '@maunting/ui'
 import { confirm } from '@/stores/confirmStore'
 import { toast } from '@/stores/toastStore'
 
@@ -100,13 +100,9 @@ export function AiSatelliteSettings({ canWrite }: { canWrite: boolean }) {
             />
           </label>
 
-          <label className="min-w-[14rem] flex-1 space-y-1.5">
-            <span className="block text-xs font-semibold uppercase tracking-wider text-on-surface-variant">
-              {t('ai.satellite.clientSecret')}
-            </span>
-            <input
-              className="msm-input"
-              type="password"
+          <div className="min-w-[14rem] flex-1">
+            <PasswordInput
+              label={t('ai.satellite.clientSecret')}
               autoComplete="new-password"
               maxLength={512}
               value={clientSecret}
@@ -115,7 +111,7 @@ export function AiSatelliteSettings({ canWrite }: { canWrite: boolean }) {
               onChange={(event) => setClientSecret(event.target.value)}
               aria-label={t('ai.satellite.clientSecret')}
             />
-          </label>
+          </div>
         </div>
 
         {canWrite && (

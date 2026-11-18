@@ -16,11 +16,9 @@ import {
   type UserCredential,
 } from '@/api/credentials'
 import { SanitizedApiError } from '@/api/client'
-import { Button, Dropdown } from '@maunting/ui'
+import { Button, Dropdown, PasswordInput, Spinner } from '@maunting/ui'
 import { confirm } from '@/stores/confirmStore'
 import { toast } from '@/stores/toastStore'
-
-import { Spinner } from '@maunting/ui'
 const KINDS: CredentialKind[] = ['steam_account', 'github_token']
 
 export function CredentialsTab() {
@@ -203,19 +201,15 @@ export function CredentialsTab() {
               />
             </label>
           )}
-          <label className="space-y-1.5">
-            <span className="block text-xs font-semibold uppercase tracking-wider text-on-surface-variant">
-              {t(`credentials.secrets.${kind}`)}
-            </span>
-            <input
-              className="msm-input"
-              type="password"
+          <div className="space-y-1.5">
+            <PasswordInput
+              label={t(`credentials.secrets.${kind}`)}
               autoComplete="new-password"
               value={secret}
               onChange={(event) => setSecret(event.target.value)}
               maxLength={4096}
             />
-          </label>
+          </div>
         </div>
         <p className="text-xs text-on-surface-variant">{t(`credentials.secretHints.${kind}`)}</p>
         <div className="flex justify-end">

@@ -16,7 +16,7 @@ import {
 } from '@/api/ai'
 import { SanitizedApiError } from '@/api/client'
 import i18n from '@/i18n'
-import { Button, Dropdown, Input, Spinner, Switch } from '@maunting/ui'
+import { Button, Dropdown, Input, PasswordInput, Spinner, Switch } from '@maunting/ui'
 import { eingabeInMicroUsd, microUsdInEingabe } from '@/utils/geld'
 import { confirm } from '@/stores/confirmStore'
 import { toast } from '@/stores/toastStore'
@@ -1582,11 +1582,9 @@ function ProviderForm({
               </button>
             ) : null}
           </div>
-          <input
+          <PasswordInput
             id={keyId}
-            type="password"
             autoComplete="new-password"
-            className="msm-input w-full"
             disabled={disabled || draft.clear_operator_api_key}
             value={draft.operator_api_key ?? ''}
             placeholder={

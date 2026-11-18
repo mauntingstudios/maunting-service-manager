@@ -1,6 +1,6 @@
 import { ArrowLeft, Crown, ImagePlus, LogOut, Pencil, Server, ShieldCheck, Trash2, Users, UsersRound } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { Button, TabBar, type TabDef } from '@maunting/ui'
+import { Button, Kurzinfo, TabBar, type TabDef } from '@maunting/ui'
 
 import type { TeamDetail, TeamMediaKind } from '@/api/teams'
 import type { TeamPreviewAccess } from '@/stores/rolePreviewStore'
@@ -32,56 +32,63 @@ function TeamActionsButtons({
   return (
     <div className="flex items-center gap-1.5 sm:gap-2">
       {access.canManageBanner && onOpenMedia && (
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          disabled={busy}
-          onClick={() => onOpenMedia('banner')}
-          aria-label={t('teams.media.changeBanner', 'Hintergrundbanner ändern')}
-          title={t('teams.media.changeBanner', 'Hintergrundbanner ändern')}
-          className="h-9 w-9 p-0 rounded-full bg-surface-container-high/70 hover:bg-surface-container-high text-on-surface hover:text-primary border border-outline-variant/30 backdrop-blur-md shadow-sm transition-all active:scale-95"
-        >
-          <ImagePlus className="h-4 w-4" aria-hidden="true" />
-        </Button>
+        <Kurzinfo text={t('teams.media.changeBanner', 'Hintergrundbanner ändern')} seite="ende">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            disabled={busy}
+            onClick={() => onOpenMedia('banner')}
+            aria-label={t('teams.media.changeBanner', 'Hintergrundbanner ändern')}
+            className="rounded-full bg-surface-container-high/70 hover:bg-surface-container-high text-on-surface hover:text-primary border border-outline-variant/30 backdrop-blur-md shadow-sm transition-all active:scale-95"
+          >
+            <ImagePlus className="h-4 w-4" aria-hidden="true" />
+          </Button>
+        </Kurzinfo>
       )}
       {access.isFounder ? (
         <>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            disabled={busy}
-            onClick={onEditTeam}
-            aria-label={t('teams.editTeam', 'Team bearbeiten')}
-            className="h-9 w-9 p-0 rounded-full bg-surface-container-high/70 hover:bg-surface-container-high text-on-surface hover:text-primary border border-outline-variant/30 backdrop-blur-md shadow-sm transition-all active:scale-95"
-          >
-            <Pencil className="h-4 w-4" aria-hidden="true" />
-          </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            disabled={busy}
-            onClick={() => onRemoveTeam(team)}
-            aria-label={t('teams.remove')}
-            className="h-9 w-9 p-0 rounded-full bg-surface-container-high/70 hover:bg-status-destructive/15 text-status-destructive border border-outline-variant/30 backdrop-blur-md shadow-sm transition-all active:scale-95"
-          >
-            <Trash2 className="h-4 w-4" aria-hidden="true" />
-          </Button>
+          <Kurzinfo text={t('teams.editTeam', 'Team bearbeiten')} seite="ende">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              disabled={busy}
+              onClick={onEditTeam}
+              aria-label={t('teams.editTeam', 'Team bearbeiten')}
+              className="rounded-full bg-surface-container-high/70 hover:bg-surface-container-high text-on-surface hover:text-primary border border-outline-variant/30 backdrop-blur-md shadow-sm transition-all active:scale-95"
+            >
+              <Pencil className="h-4 w-4" aria-hidden="true" />
+            </Button>
+          </Kurzinfo>
+          <Kurzinfo text={t('teams.remove')} seite="ende">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              disabled={busy}
+              onClick={() => onRemoveTeam(team)}
+              aria-label={t('teams.remove')}
+              className="rounded-full bg-surface-container-high/70 hover:bg-status-destructive/15 text-status-destructive border border-outline-variant/30 backdrop-blur-md shadow-sm transition-all active:scale-95"
+            >
+              <Trash2 className="h-4 w-4" aria-hidden="true" />
+            </Button>
+          </Kurzinfo>
         </>
       ) : (
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          disabled={busy}
-          onClick={() => onLeaveTeam(team)}
-          aria-label={t('teams.leave')}
-          className="h-9 w-9 p-0 rounded-full bg-surface-container-high/70 hover:bg-status-destructive/15 text-status-destructive border border-outline-variant/30 backdrop-blur-md shadow-sm transition-all active:scale-95"
-        >
-          <LogOut className="h-4 w-4" aria-hidden="true" />
-        </Button>
+        <Kurzinfo text={t('teams.leave')} seite="ende">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            disabled={busy}
+            onClick={() => onLeaveTeam(team)}
+            aria-label={t('teams.leave')}
+            className="rounded-full bg-surface-container-high/70 hover:bg-status-destructive/15 text-status-destructive border border-outline-variant/30 backdrop-blur-md shadow-sm transition-all active:scale-95"
+          >
+            <LogOut className="h-4 w-4" aria-hidden="true" />
+          </Button>
+        </Kurzinfo>
       )}
     </div>
   )
@@ -319,20 +326,10 @@ export function TeamWorkspaceHeroHeader({
               )}
             </div>
 
-            <div className="mt-2 flex items-center justify-center gap-2">
+            <div className="mt-2 flex items-center justify-center">
               <h1 className="font-headline text-2xl sm:text-3xl font-extrabold tracking-tight text-on-surface">
                 {team?.name ?? t('teams.title')}
               </h1>
-              {access?.isFounder && team && (
-                <button
-                  type="button"
-                  onClick={onEditTeam}
-                  aria-label={t('teams.editTeam', 'Team bearbeiten')}
-                  className="grid h-8 w-8 place-items-center rounded-full text-on-surface-variant hover:text-primary hover:bg-surface-container-high/60 transition-colors"
-                >
-                  <Pencil className="h-4 w-4" aria-hidden="true" />
-                </button>
-              )}
             </div>
 
             {activeMeta?.description && (

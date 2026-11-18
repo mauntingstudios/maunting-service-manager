@@ -1,7 +1,17 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { ImagePlus, Sparkles, X } from 'lucide-react'
+import { ImagePlus, Sparkles } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { Button, Dropdown, Input, type DropdownOption } from '@maunting/ui'
+import {
+  Button,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  Dropdown,
+  Input,
+  type DropdownOption,
+} from '@maunting/ui'
 import type { Team, TeamMediaKind } from '@/api/teams'
 import {
   TEAM_CATEGORIES,
@@ -71,6 +81,9 @@ export function TeamModal({
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
+  // Nur beim Öffnen bzw. Teamwechsel initialisieren — ein Live-Upload über TeamMediaDialog
+  // aktualisiert `team` im Hintergrund und darf ungespeicherte Texteingaben nicht verwerfen.
+  const activeTeamId = team?.id ?? null
   useEffect(() => {
     if (!isOpen) return
     const nextMeta = team ? getTeamMetadata(team) : initialMeta
@@ -85,7 +98,8 @@ export function TeamModal({
     setStagedBannerPreview(null)
     setMediaDialogKind(null)
     setError(null)
-  }, [isOpen, team, initialName, initialMeta, mode])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, activeTeamId, mode])
 
   useEffect(() => {
     return () => {
@@ -165,46 +179,28 @@ export function TeamModal({
 
   return (
     <>
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="team-modal-title"
-        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-fade-in"
-        onClick={(e) => {
-          if (e.target === e.currentTarget && !isBusy && !mediaDialogKind) onClose()
+      <Dialog
+        open={isOpen}
+        onOpenChange={(open) => {
+          if (!open && !isBusy && !mediaDialogKind) onClose()
         }}
       >
-        <div
-          className="w-full max-w-xl max-h-[90vh] overflow-y-auto rounded-3xl border border-outline-variant/30 bg-surface-container-high/95 p-6 shadow-2xl backdrop-blur-2xl transition-all duration-300 text-on-surface"
-          onClick={(e) => e.stopPropagation()}
+        <DialogContent
+          aria-labelledby="team-modal-title"
+          className="max-w-xl max-h-[90vh] overflow-y-auto p-6"
         >
-          {/* Header */}
-          <div className="flex items-start justify-between gap-4 border-b border-outline-variant/25 pb-4">
-            <div className="min-w-0">
-              <h2
-                id="team-modal-title"
-                className="font-headline text-lg sm:text-xl font-bold tracking-tight text-on-surface"
-              >
-                {isEdit
-                  ? t('teams.editTeamTitle', 'Team bearbeiten')
-                  : t('teams.createTeamTitle', 'Neues Team erstellen')}
-              </h2>
-              <p className="mt-1 text-xs text-on-surface-variant">
-                {isEdit
-                  ? t('teams.editTeamSubtitle', 'Passe Metadaten, Kategorie, Profilbild und Banner dieses Teams an.')
-                  : t('teams.createTeamSubtitle', 'Gib deinem Team einen Namen, wähle eine Kategorie sowie Profilbild und Banner.')}
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={isBusy}
-              aria-label={t('common.close', 'Schließen')}
-              className="grid h-9 w-9 shrink-0 place-items-center rounded-full border border-outline-variant/30 bg-surface-container/60 text-on-surface-variant hover:text-on-surface hover:bg-surface-container-highest transition-colors active:scale-95"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
+          <DialogHeader className="p-0 pb-4 border-b border-outline-variant/25 pr-10">
+            <DialogTitle id="team-modal-title" className="font-headline text-lg sm:text-xl font-bold tracking-tight">
+              {isEdit
+                ? t('teams.editTeamTitle', 'Team bearbeiten')
+                : t('teams.createTeamTitle', 'Neues Team erstellen')}
+            </DialogTitle>
+            <DialogDescription className="mt-1 text-xs">
+              {isEdit
+                ? t('teams.editTeamSubtitle', 'Passe Metadaten, Kategorie, Profilbild und Banner dieses Teams an.')
+                : t('teams.createTeamSubtitle', 'Gib deinem Team einen Namen, wähle eine Kategorie sowie Profilbild und Banner.')}
+            </DialogDescription>
+          </DialogHeader>
 
           <form onSubmit={handleSubmit} className="mt-5 space-y-4">
             {error && (
@@ -357,8 +353,8 @@ export function TeamModal({
               </Button>
             </div>
           </form>
-        </div>
-      </div>
+        </DialogContent>
+      </Dialog>
 
       {mediaDialogKind && (
         <TeamMediaDialog

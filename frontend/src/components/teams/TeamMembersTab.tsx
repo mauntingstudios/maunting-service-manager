@@ -146,20 +146,6 @@ export function TeamMembersTab({
                         </>
                       )}
                     </span>
-                    {canEditRoles && memberRoles.length > 0 && (
-                      <span className="mt-1 flex flex-wrap gap-1">
-                        {memberRoles.map((r) => (
-                          <RoleBadge
-                            key={r.id}
-                            name={r.name}
-                            color={r.color}
-                            icon={r.icon}
-                            isAdmin={r.is_admin}
-                            size="sm"
-                          />
-                        ))}
-                      </span>
-                    )}
                   </span>
                 </div>
                 <div className="flex justify-end md:order-last">

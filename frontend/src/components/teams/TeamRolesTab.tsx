@@ -1,6 +1,6 @@
-import { Crown, Eye, Pencil, Plus, Server, Shield, Sparkles, Trash2, Users } from 'lucide-react'
+import { Eye, Pencil, Plus, Server, Shield, Sparkles, Trash2, Users } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { Button, Kurzinfo, RoleBadge } from '@maunting/ui'
+import { Button, RoleBadge } from '@maunting/ui'
 
 import type { TeamDetail, TeamRole, TeamServer } from '@/api/teams'
 import { TeamRoleForm } from './TeamRoleForm'
@@ -120,47 +120,24 @@ export function TeamRolesTab({
                 <div className="space-y-3">
                   {/* Header: RoleBadge & Badges */}
                   <div className="flex items-start justify-between gap-3">
-                    <h4 className="flex items-center gap-2.5 min-w-0">
-                      <Kurzinfo text={t('rolePreview.previewAction')} seite="anfang">
-                        <button
-                          type="button"
-                          onClick={() => onPreviewRole(role)}
-                          className="group inline-flex items-center gap-1.5 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-                          aria-label={`${t('rolePreview.previewAction')}: ${role.name}`}
-                        >
-                          <RoleBadge
-                            name={role.name}
-                            color={role.color}
-                            icon={role.icon}
-                            isAdmin={role.is_admin}
-                            size="md"
-                          />
-                          <Eye
-                            className={`h-3.5 w-3.5 text-on-surface-variant transition-opacity ${
-                              isPreviewActive
-                                ? 'opacity-100 text-primary'
-                                : 'opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100'
-                            }`}
-                            aria-hidden="true"
-                          />
-                        </button>
-                      </Kurzinfo>
+                    <h4 className="flex items-center gap-2 min-w-0">
+                      <RoleBadge
+                        name={role.name}
+                        color={role.color}
+                        icon={role.icon}
+                        isAdmin={role.is_admin}
+                        size="md"
+                      />
                     </h4>
 
-                    <div className="flex flex-wrap items-center gap-1.5 shrink-0">
-                      {role.is_admin && (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-status-warning/10 px-2 py-0.5 text-xs font-semibold text-status-warning border border-status-warning/20">
-                          <Crown className="h-3 w-3" />
-                          {t('teams.adminBadge')}
-                        </span>
-                      )}
-                      {role.is_default && (
+                    {role.is_default && (
+                      <div className="flex flex-wrap items-center gap-1.5 shrink-0">
                         <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary border border-primary/20">
                           <Sparkles className="h-3 w-3" />
                           {t('teams.defaultBadge')}
                         </span>
-                      )}
-                    </div>
+                      </div>
+                    )}
                   </div>
 
                   {/* Description */}
@@ -230,7 +207,7 @@ export function TeamRolesTab({
                     size="sm"
                     onClick={() => onPreviewRole(role)}
                     className="text-xs h-7 px-2"
-                    aria-label={`${t('rolePreview.previewAction')} (${role.name})`}
+                    aria-label={`${t('rolePreview.previewAction')}: ${role.name}`}
                   >
                     <Eye className="h-3.5 w-3.5 mr-1" aria-hidden="true" />
                     {isPreviewActive ? t('rolePreview.previewActive') : t('rolePreview.previewAction')}

@@ -66,13 +66,7 @@ export function TeamCard({
         }))
 
   const menuItems: ActionMenuItem[] = [
-    {
-      key: 'open',
-      label: t('teams.open', 'Öffnen'),
-      icon: <ArrowRight className="h-4 w-4" />,
-      onSelect: () => onOpen(team.id),
-    },
-    ...(onEdit
+    ...(team.is_owner && onEdit
       ? [
           {
             key: 'edit',

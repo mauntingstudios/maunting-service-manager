@@ -3,11 +3,9 @@ import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import { Calendar, Plus, Trash2, ShieldCheck, RefreshCw, Star, Info, X } from 'lucide-react'
 import { userIntegrationsApi, type CalendarItem, type CalendarCreateInput } from '@/api/userIntegrations'
-import { Button, Checkbox } from '@maunting/ui'
+import { Button, Checkbox, PasswordInput, Spinner } from '@maunting/ui'
 import { toast } from '@/stores/toastStore'
 import { confirm } from '@/stores/confirmStore'
-
-import { Spinner } from '@maunting/ui'
 export function ConnectedCalendarsSection() {
   const { t } = useTranslation()
   const [calendars, setCalendars] = useState<CalendarItem[]>([])
@@ -267,15 +265,12 @@ export function ConnectedCalendarsSection() {
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-on-surface mb-1">
-                      {t('profile.calendars.password')}
-                    </label>
-                    <input
-                      type="password"
+                    <PasswordInput
+                      label={t('profile.calendars.password')}
                       placeholder="••••••••••••"
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
-                      className="msm-input w-full text-sm font-mono"
+                      className="text-sm font-mono"
                     />
                   </div>
                 </div>

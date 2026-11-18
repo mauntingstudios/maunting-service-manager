@@ -118,15 +118,27 @@ export function presetUrlForId(presetId: string | null | undefined): string | nu
   return TEAM_COVER_PRESETS.find((p) => p.id === presetId)?.url ?? null
 }
 
-const STORAGE_KEY = 'msm_teams_metadata_v1'
+const STORAGE_KEY = 'msm_teams_archive_v1'
+const LEGACY_STORAGE_KEY = 'msm_teams_metadata_v1'
 
-function getInitialStore(): Record<number, TeamMetadata> {
+function getArchiveStore(): Record<number, boolean> {
   if (typeof window === 'undefined') return {}
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (raw) return JSON.parse(raw)
+    const legacy = localStorage.getItem(LEGACY_STORAGE_KEY)
+    if (legacy) {
+      const parsed = JSON.parse(legacy) as Record<string, { archived?: boolean }>
+      const migrated: Record<number, boolean> = {}
+      for (const [id, entry] of Object.entries(parsed)) {
+        if (entry?.archived) migrated[Number(id)] = true
+      }
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(migrated))
+      localStorage.removeItem(LEGACY_STORAGE_KEY)
+      return migrated
+    }
   } catch (err) {
-    still(err, 'teams.getInitialStore')
+    still(err, 'teams.getArchiveStore')
   }
   return {}
 }
@@ -146,42 +158,23 @@ export function getTeamMetadata(
     banner_url?: string | null
     banner_version?: string | null
   },
-  teamName?: string,
+  _teamName?: string,
 ): TeamMetadata {
   const teamId = typeof teamIdOrTeam === 'number' ? teamIdOrTeam : teamIdOrTeam.id
-  const resolvedName = typeof teamIdOrTeam === 'number' ? (teamName ?? '') : teamIdOrTeam.name
   const backendTeam = typeof teamIdOrTeam === 'number' ? null : teamIdOrTeam
-  const store = getInitialStore()
-  const local = store[teamId]
+  const archivedMap = getArchiveStore()
 
-  const defaultCat: TeamCategoryKey = (() => {
-    const raw = backendTeam?.category
-    if (raw && raw in TEAM_CATEGORIES) return raw as TeamCategoryKey
-    if (local?.category && local.category in TEAM_CATEGORIES) return local.category
-    const lower = resolvedName.toLowerCase()
-    if (lower.includes('msm') || lower.includes('entwickl')) return 'entwicklung'
-    if (lower.includes('server') || lower.includes('infra')) return 'infrastruktur'
-    if (lower.includes('privat') || lower.includes('intern')) return 'intern'
-    return 'projekt'
-  })()
+  const category: TeamCategoryKey =
+    backendTeam?.category && backendTeam.category in TEAM_CATEGORIES
+      ? (backendTeam.category as TeamCategoryKey)
+      : 'projekt'
 
-  const defaultDesc = (() => {
-    if (backendTeam?.description !== undefined && backendTeam?.description !== null) {
-      return backendTeam.description
-    }
-    if (local?.description) return local.description
-    const lower = resolvedName.toLowerCase()
-    if (lower.includes('echofall')) return 'Community, Server und Entwicklung.'
-    if (lower.includes('msm') || lower.includes('entwickl')) return 'Maunting Service Manager & System-Tools.'
-    if (lower.includes('server') || lower.includes('infra')) return 'Game-Server, Wartung und Monitoring.'
-    if (lower.includes('privat') || lower.includes('intern')) return 'Notizen, Planung und gemeinsame Ideen.'
-    return 'Gemeinsame Projekte, Server und Wissensaustausch.'
-  })()
+  const description = backendTeam?.description ?? ''
 
   const avatarUrl =
     backendTeam?.avatar_source === 'custom' && backendTeam.avatar_url
       ? `${backendTeam.avatar_url}${backendTeam.avatar_version ? `?v=${backendTeam.avatar_version}` : ''}`
-      : (presetUrlForId(backendTeam?.avatar_preset) ?? local?.coverImage ?? TEAM_COVER_PRESETS[0].url)
+      : (presetUrlForId(backendTeam?.avatar_preset) ?? TEAM_COVER_PRESETS[0].url)
 
   const bannerUrl =
     backendTeam?.banner_source === 'custom' && backendTeam.banner_url
@@ -189,36 +182,28 @@ export function getTeamMetadata(
       : presetUrlForId(backendTeam?.banner_preset)
 
   return {
-    category: defaultCat,
-    description: defaultDesc,
+    category,
+    description,
     coverImage: avatarUrl,
     avatarPreset: backendTeam?.avatar_preset ?? null,
     bannerPreset: backendTeam?.banner_preset ?? null,
     bannerImage: bannerUrl,
-    archived: local?.archived,
+    archived: Boolean(archivedMap[teamId]),
   }
 }
 
-export function setTeamMetadata(teamId: number, meta: Partial<TeamMetadata>): TeamMetadata {
-  const store = getInitialStore()
-  const existing = store[teamId] ?? {
-    category: 'projekt' as TeamCategoryKey,
-    description: '',
-    coverImage: '/assets/teams/team-cover-holiday.jpg',
+export function toggleTeamArchived(teamId: number, _teamName?: string): boolean {
+  const archivedMap = getArchiveStore()
+  const nextArchived = !archivedMap[teamId]
+  if (nextArchived) {
+    archivedMap[teamId] = true
+  } else {
+    delete archivedMap[teamId]
   }
-  const updated: TeamMetadata = { ...existing, ...meta }
-  store[teamId] = updated
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(store))
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(archivedMap))
   } catch (err) {
-    still(err, 'teams.setTeamMetadata')
+    still(err, 'teams.toggleTeamArchived')
   }
-  return updated
-}
-
-export function toggleTeamArchived(teamId: number, teamName: string): boolean {
-  const meta = getTeamMetadata(teamId, teamName)
-  const nextArchived = !meta.archived
-  setTeamMetadata(teamId, { archived: nextArchived })
   return nextArchived
 }

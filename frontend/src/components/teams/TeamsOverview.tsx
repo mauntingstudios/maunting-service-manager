@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Check,
   FolderPlus,
@@ -69,6 +69,19 @@ export function TeamsOverview({
   const [activeTab, setActiveTab] = useState<OverviewTab>('my-teams')
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
   const [searchQuery, setSearchQuery] = useState('')
+  const searchInputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        searchInputRef.current?.focus()
+        searchInputRef.current?.select()
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
 
   // Tageszeitabhängiges Motiv & Begrüßung für nahtlosen Header-Auslauf (wie im Tresor)
   const stunde = useMemo(() => new Date().getHours(), [])
@@ -113,14 +126,10 @@ export function TeamsOverview({
     return echteTeams.reduce((sum, team) => sum + (team.member_count || 1), 0)
   }, [echteTeams])
 
-  const totalProjectsCount = useMemo(() => {
-    // Falls Teams Server/Projekte haben, sonst mindestens 1 je Team
-    return Math.max(3, Math.floor(echteTeams.length * 1.2))
-  }, [echteTeams])
+  const totalProjectsCount = echteTeams.length
 
   const totalVaultsCount = useMemo(() => {
-    const vaults = echteTeams.filter((t) => t.can_access_vault).length
-    return Math.max(2, vaults || 2)
+    return echteTeams.filter((t) => Boolean(t.can_access_vault)).length
   }, [echteTeams])
 
   // Einladungen aufteilen
@@ -174,6 +183,7 @@ export function TeamsOverview({
           <div className="relative w-full sm:w-64 lg:w-72 shrink-0">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-on-surface-variant pointer-events-none" />
             <input
+              ref={searchInputRef}
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}

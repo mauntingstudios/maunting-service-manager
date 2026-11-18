@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next'
 
 import { aiApi } from '@/api/ai'
 import { SanitizedApiError } from '@/api/client'
-import { Button } from '@maunting/ui'
+import { Button, PasswordInput } from '@maunting/ui'
 import { confirm } from '@/stores/confirmStore'
 import { toast } from '@/stores/toastStore'
 
@@ -99,13 +99,9 @@ export function AiTomTomSettings({ canWrite }: { canWrite: boolean }) {
       </div>
       <p className="max-w-3xl text-sm text-on-surface-variant">{t('ai.tomtom.description')}</p>
       <form className="space-y-3" onSubmit={save}>
-        <label className="block max-w-2xl space-y-1.5">
-          <span className="block text-xs font-semibold uppercase tracking-wider text-on-surface-variant">
-            {t('ai.tomtom.apiKey')}
-          </span>
-          <input
-            className="msm-input"
-            type="password"
+        <div className="max-w-2xl">
+          <PasswordInput
+            label={t('ai.tomtom.apiKey')}
             autoComplete="new-password"
             maxLength={512}
             value={apiKey}
@@ -114,7 +110,7 @@ export function AiTomTomSettings({ canWrite }: { canWrite: boolean }) {
             onChange={(event) => setApiKey(event.target.value)}
             aria-label={t('ai.tomtom.apiKey')}
           />
-        </label>
+        </div>
         {canWrite && (
           <div className="flex items-center gap-2 pt-1">
             <Button type="submit" disabled={busy || !apiKey.trim()}>
