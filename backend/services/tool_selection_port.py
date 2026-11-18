@@ -104,11 +104,23 @@ _DESKTOP_ABSICHT = (
     "öffne", "oeffne", "starte", "installiere", "programm",
 )
 
+_AUFGABEN_ABSICHT = (
+    "benachrichtig", "erinner", "sobald", "auf dem laufenden",
+    "bescheid", "überwach", "ueberwach", "informier", "alarm",
+    "geplante aufgabe", "stehenden auftrag", "stehender auftrag",
+)
+
 
 def desktop_absicht(query: str) -> bool:
     """Nennt die Frage ausdruecklich den Rechner oder eine Eingabe?"""
     text = (query or "").lower()
     return any(wort in text for wort in _DESKTOP_ABSICHT)
+
+
+def aufgaben_absicht(query: str) -> bool:
+    """Nennt die Anfrage eine Erinnerung, Ueberwachung oder geplante Aufgabe?"""
+    text = (query or "").lower()
+    return any(wort in text for wort in _AUFGABEN_ABSICHT)
 
 
 def desktop_erlaubt(
@@ -164,8 +176,13 @@ def pflichtwerkzeuge(
     Das gilt ausdruecklich auch fuer ``desktop_launch_app``: „oeffne das Bild“
     ist ein Rechnerauftrag, „was steht auf dem Bild?“ nicht.
     """
+    aufgaben_pflicht = (
+        frozenset({"list_tasks", "propose_task_set", "propose_task_delete"}) & erlaubt
+        if aufgaben_absicht(query)
+        else frozenset()
+    )
     if herkunft != "desktop":
-        return frozenset()
+        return aufgaben_pflicht
     from services.ai_tool_registry import DESKTOP_TOOLS, GEHIRN_DESKTOP
 
     pflicht = GEHIRN_DESKTOP & erlaubt
@@ -175,4 +192,4 @@ def pflichtwerkzeuge(
         # `desktop_launch_app` blieb hier frueher stehen und war genau der
         # Weg, auf dem ein hochgeladenes Bild als Rechnerauftrag endete.
         pflicht = pflicht - DESKTOP_TOOLS
-    return pflicht
+    return pflicht | aufgaben_pflicht

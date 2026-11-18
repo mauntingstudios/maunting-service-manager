@@ -213,8 +213,12 @@ export function AiRunNotice() {
         if (jetzt.has(kennung)) continue
         delete workerRef.current[kennung]
         zustellung = true
-        if (offenesFenster !== 'primary') {
-          setMeldung({ status: 'completed', kind: 'worker', ziel: '/ai' })
+        if (offenesFenster !== 'primary' && !(offenesFenster === 'worker' && offeneWorkerId === kennung)) {
+          setMeldung({
+            status: 'completed',
+            kind: 'worker',
+            ziel: `/ai?ansicht=worker&id=${encodeURIComponent(kennung)}`,
+          })
         }
       }
       for (const worker of workers) {

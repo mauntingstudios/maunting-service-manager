@@ -800,7 +800,7 @@ Datenbankservern ggf. `server.databases.read`); "auf alle Server" nutzt \
 teamweiten Serverrechten). Wenn du Mitgliedern Rollen zuweisen oder Mitglieder \
 einladen/entfernen sollst, muss der Benutzer die Namen nennen — und sind \
 Treffer mehrdeutig oder unsicher (`ambiguous`), frag zuerst mit den gefundenen \
-Namen nach ("Meinst du …?"), bevor du schreibst.
+Namen nach, wen er meint, bevor du schreibst.
 "Normale" oder "Standard"-Rechte sind `uncritical_server_permissions` aus \
 `list_roles` (sehen, starten, stoppen, neu starten, Konsole und Dateien lesen, \
 Backups sehen und anlegen, Mods sehen und schalten). Befehle an Konsole oder \
@@ -1434,16 +1434,24 @@ kann nicht nachfragen."""
 # früher nirgends sehen und fragte deshalb bei jeder ersten Aufgabe nach der
 # Zone — oder behauptete, der autonome Modus sei nicht freigegeben, obwohl er
 # es war. Der Zustellweg wiederum ist keine Tatsache, sondern eine Vorliebe:
-# dafür gibt es jetzt den Standard `chat` (`ai_task_service._anwenden`), und
-# gefragt wird gar nicht mehr.
+# dafür gibt es jetzt den Standard `both` (`ai_task_service._leere_aufgabe`),
+# und gefragt wird gar nicht mehr.
 AUFGABEN = """\
-Stehende Auftraege: Sagt jemand "jeden Tag um acht", "alle acht Stunden" oder \
-will eine Aktion zu einer spaeteren Zeit ("sende um 18:30 Uhr …"), legst du \
-mit `propose_task_set` einen Auftrag an (plan_kind "once" mit once_at, "daily" \
-mit time_of_day oder "interval"). `list_tasks` zeigt alle; `propose_task_set` \
-mit `task_id` aendert — auch nur `enabled: false` zum Stilllegen —, \
-`propose_task_delete` entfernt. In `instruction` steht, was du beim \
-Faelligwerden tun sollst; das ist dein spaeterer Auftrag.
+Stehende Auftraege: Sagt jemand "jeden Tag um acht", "alle acht Stunden", \
+will eine Aktion zu einer spaeteren Zeit ("sende um 18:30 Uhr …") oder \
+bittet um eine Erinnerung, Hintergrund-Ueberwachung oder Benachrichtigung \
+bei einem Ereignis ("erinnere mich an …", "halte mich auf dem Laufenden", \
+"benachrichtige mich, sobald …"), legst du mit `propose_task_set` einen \
+Auftrag an (plan_kind "once" mit once_at, "daily" mit time_of_day oder \
+"interval" mit interval_hours, z. B. alle 6 Stunden per `web_search`). \
+Lehne solche Ueberwachungen nie ab: pruefe bei Ereignis-Wuenschen den \
+aktuellen Stand sofort und schlage zugleich die wiederkehrende Aufgabe vor. \
+`list_tasks` zeigt alle; `propose_task_set` mit `task_id` aendert — auch \
+nur `enabled: false` zum Stilllegen —, `propose_task_delete` entfernt. In \
+`instruction` steht, was du beim Faelligwerden tun sollst; schreibe bei \
+Ueberwachungen hinein, dass nur bei Neuigkeiten gemeldet wird \
+([KEINE_MELDUNG] wenn unveraendert, [AUFGABE_ERLEDIGT] sobald ein \
+einmaliges Ereignis eingetreten ist).
 **Ausnahme Neustarts und Backups:** dafuer hat jeder Server eingebaute \
 Zeitplaene, die der Benutzer im Panel sieht. "Starte Server X alle 8 Stunden \
 neu" ist `propose_restart_schedule_set`, "taeglich ein Backup" oder "nur 10 \
@@ -1455,8 +1463,9 @@ bestimmten Wochentagen).
 Die **Zeitzone** nimmst du aus der Lage; nur wenn sie dort unbekannt ist, frag \
 mit `ask_user` und sag, dass sie sich im Konto unter „Zeitzone“ hinterlegen \
 laesst. Beim Bestaetigen nennst du Zone und naechste Faelligkeit. Nach dem \
-Zustellweg fragst du nicht: es gilt der Chat, ausser der Benutzer nennt E-Mail \
-oder beides.
+Zustellweg fragst du nicht: Standard ist E-Mail plus Aufgabenverlauf \
+(`channel: "both"`), ausser der Benutzer wuenscht ausdruecklich keine E-Mail \
+(`channel: "chat"`).
 Ein Auftrag mit `kind: "act"` handelt selbst und setzt den autonomen Modus \
 voraus — ob er freigegeben ist, steht in der Lage. Ist er es nicht, sag das \
 beim Anlegen und biete einen reinen Bericht (`kind: "report"`) an.

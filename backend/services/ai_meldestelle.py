@@ -519,6 +519,12 @@ def lauf_beendet(db: Session, *, run, zustand: dict) -> None:
     from models import User as UserModell
     from services.ai_task_report import abschlusstext, sicherheitsstopp_vermerken
 
+    if isinstance(zustand.get("aufgabe"), dict):
+        # Geplante Aufgaben (ai_tasks) protokollieren in ihrem eigenen
+        # Aufgabenfenster und berichten per E-Mail (ai_task_report) — sie
+        # werden nie ueber die Meldestelle in den Dauerchat injiziert.
+        return
+
     rahmen = zustand.get("worker") or {}
     if str(run.stop_reason or "") in OHNE_MELDUNG:
         return

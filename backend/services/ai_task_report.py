@@ -194,6 +194,56 @@ def sicherheitsstopp_vermerken(run: AiRun, bericht: str) -> str:
     )
 
 
+#: Marker am Beginn einer Schlussantwort: es gab bei dieser Pruefung nichts
+#: Neues zu melden — der E-Mail-Bericht unterbleibt bei Erfolg.
+KEINE_MELDUNG_MARKE = "[KEINE_MELDUNG]"
+
+#: Marker am Ende einer Schlussantwort: ein einmaliger Ueberwachungsauftrag
+#: hat sein Ziel erreicht — E-Mail schicken und Aufgabe danach abschalten.
+AUFGABE_ERLEDIGT_MARKE = "[AUFGABE_ERLEDIGT]"
+
+
+def ist_stille_pruefung(run: AiRun, bericht: str) -> bool:
+    """Darf der E-Mail-Bericht unterbleiben, weil es nichts Neues gibt?
+
+    Nur bei einem regulaer abgeschlossenen Lauf ohne Sicherheitsstopp.
+    Ein fehlgeschlagener oder abgebrochener Lauf darf niemals still
+    verschluckt werden.
+    """
+    from services.openai_compatible_adapter import SICHERHEITSSTOPP
+
+    if run.status not in ERFOLG:
+        return False
+    if str(run.stop_reason or "") == SICHERHEITSSTOPP:
+        return False
+    text = (bericht or "").upper()
+    return KEINE_MELDUNG_MARKE in text and AUFGABE_ERLEDIGT_MARKE not in text
+
+
+def hat_aufgabe_erledigt(run: AiRun, bericht: str) -> bool:
+    """Meldet ein erfolgreicher Einmal-Waechter, dass sein Ereignis eintrat?"""
+    from services.openai_compatible_adapter import SICHERHEITSSTOPP
+
+    if run.status not in ERFOLG:
+        return False
+    if str(run.stop_reason or "") == SICHERHEITSSTOPP:
+        return False
+    return AUFGABE_ERLEDIGT_MARKE in (bericht or "").upper()
+
+
+def marken_bereinigen(bericht: str) -> str:
+    """Entfernt die Steuermarken aus dem sichtbaren Berichtstext."""
+    import re
+
+    bereinigt = re.sub(
+        r"\[(?:KEINE_MELDUNG|AUFGABE_ERLEDIGT)\]",
+        "",
+        bericht or "",
+        flags=re.IGNORECASE,
+    )
+    return bereinigt.strip()
+
+
 def bericht_versenden(db: Session, *, run: AiRun, zustand: dict) -> None:
     """Stellt den Bericht dieses Aufgabenlaufs zu.
 
@@ -208,19 +258,31 @@ def bericht_versenden(db: Session, *, run: AiRun, zustand: dict) -> None:
     Modell einen Namen genannt hat.
     """
     from services import ai_mail
-    from services.ai_task_service import plan_text
+    from services.ai_task_service import _stilllegen, plan_text
 
     rahmen = zustand.get("aufgabe") or {}
     task_id = rahmen.get("task_id")
     if not task_id:
         return
+
+    aufgabe = db.get(AiTask, str(task_id))
+    roh_bericht = abschlusstext(db, run, zustand)
+
+    # Ein einmaliger Ueberwachungsauftrag ("sobald X passiert") schaltet sich
+    # bei Erfolg selbst ab — auch bei `channel="chat"`.
+    if aufgabe is not None and aufgabe.enabled and hat_aufgabe_erledigt(run, roh_bericht):
+        _stilllegen(db, aufgabe, grund="bedingung_erfuellt")
+
     if rahmen.get("channel") == "chat":
+        return
+
+    if ist_stille_pruefung(run, roh_bericht):
+        logger.info("Aufgabenbericht unterdrueckt: keine Neuigkeit (task_id=%s)", task_id)
         return
 
     user = db.get(User, run.user_id)
     if user is None:
         return
-    aufgabe = db.get(AiTask, str(task_id))
 
     adresse = ai_mail.empfaenger(db, user)
     if adresse is None:
@@ -234,7 +296,7 @@ def bericht_versenden(db: Session, *, run: AiRun, zustand: dict) -> None:
     titel = str((aufgabe.title if aufgabe is not None else rahmen.get("title")) or "")
     plan = plan_text(aufgabe) if aufgabe is not None else "einmalig"
 
-    bericht = abschlusstext(db, run, zustand)
+    bericht = marken_bereinigen(roh_bericht)
     if not bericht:
         bericht = (
             "Singra hat keine Zusammenfassung hinterlassen. "

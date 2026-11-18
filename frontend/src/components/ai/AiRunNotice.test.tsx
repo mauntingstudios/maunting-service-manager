@@ -350,6 +350,11 @@ describe('AiRunNotice', () => {
         expect(screen.getByRole('status')).toHaveTextContent('Ein Worker hat berichtet.')
       })
       expect(zugestellt).toHaveBeenCalled()
+      fireEvent.click(screen.getByRole('button', { name: 'Zu Singra' }))
+      await waitFor(() => {
+        expect(screen.getByTestId('standort'))
+          .toHaveTextContent('/ai?ansicht=worker&id=konv-worker-1')
+      })
     } finally {
       window.removeEventListener(AI_ZUSTELLUNG_EVENT, zugestellt)
     }

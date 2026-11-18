@@ -55,12 +55,12 @@ def _aufgaben_tool_definitions() -> list[dict]:
         # Modell nirgends sonst; ein fehlendes kostet eine ganze Runde.
         _function(
             "propose_task_set",
-            "Legt einen stehenden Auftrag an oder aendert einen vorhandenen.\n"
-            "**Ohne `task_id` wird angelegt**; dann sind `title`, "
-            "`instruction`, `kind`, `plan_kind` und `timezone` "
-            "noetig. **Mit `task_id` (aus `list_tasks`) wird geaendert**, und "
-            "nur genannte Felder werden angefasst. Aenderst du den Plan, gib "
-            "`plan_kind` und dessen Felder zusammen an.",
+            "Geplante Aufgabe, Erinnerung oder Hintergrund-Ueberwachung "
+            "(benachrichtigen sobald etwas passiert, informieren, erinnern, "
+            "regelmaessig pruefen, stehender Auftrag) anlegen oder aendern.\n"
+            "Ohne `task_id`: legt neu an (`title`, `instruction`, `kind`, "
+            "`plan_kind`, `timezone` noetig). Mit `task_id` (aus `list_tasks`): "
+            "aendert genannte Felder.",
             {
                 "task_id": {
                     "type": "string",

@@ -433,6 +433,8 @@ async def test_der_auftragstext_nennt_den_plan_und_dass_niemand_davorsitzt(
     assert "Sag mir wie das Wetter wird." in text
     assert "08:00" in text and "Europe/Berlin" in text
     assert "Niemand sitzt gerade davor" in text
+    assert "[KEINE_MELDUNG]" in text
+    assert "[AUFGABE_ERLEDIGT]" in text
     # Der Kanal steht im Text, weil das Modell wissen muss, wie sein
     # Abschlusstext gelesen wird — als Chatblase oder als Brief.
     assert "E-Mail" in text
@@ -903,18 +905,16 @@ async def test_der_lauf_bekommt_ein_eigenes_fenster_und_verwendet_es_wieder(
 
 
 @pytest.mark.asyncio
-async def test_das_ergebnis_geht_als_meldung_an_die_meldestelle(
+async def test_das_ergebnis_bleibt_im_aufgabenfenster_und_erzeugt_keine_dauerchat_meldung(
     db: Session, monkeypatch
 ) -> None:
-    """Der Weg des Ergebnisses in den Dauerchat — ohne je hineinzugraetschen.
+    """Geplante Aufgaben protokollieren im eigenen Fenster, nie im Dauerchat.
 
-    Der Lauf traegt neben dem Aufgabenrahmen den Worker-Rahmen; ueber ihn
-    reicht `_lauf_nachbereiten` den Abschluss bei der Meldestelle ein, und die
-    stellt zu, sobald das Gespraech Ruhe hat. `kanal` ist dabei fest "chat":
-    die E-Mail des Zustellwegs verschickt der Aufgabenbericht — sonst kaemen
-    zwei Mails zu einem Lauf.
+    Auch bei channel="both" laeuft der Auftrag im eigenen Worker-Fenster und
+    berichtet per E-Mail (`ai_task_report`), drängt sich aber nicht ueber die
+    Meldestelle in das laufende Gespraech des Dauerchats.
     """
-    from models import AiMeldung
+    from models import AiMeldung, AiMessage
 
     user = _benutzer(db, "meldestelle")
     _anbieter(db)
@@ -926,10 +926,13 @@ async def test_das_ergebnis_geht_als_meldung_an_die_meldestelle(
     await _lauf_fahren(db, run)
 
     meldungen = db.query(AiMeldung).filter(AiMeldung.user_id == user.id).all()
-    assert len(meldungen) == 1
-    assert meldungen[0].worker_id == run.conversation_id
-    assert meldungen[0].kanal == "chat"
-    assert (meldungen[0].text or "").strip()
+    assert meldungen == []
+    nachrichten = (
+        db.query(AiMessage)
+        .filter(AiMessage.conversation_id == aufgabe.conversation_id)
+        .all()
+    )
+    assert any(n.role == "assistant" and (n.content or "").strip() for n in nachrichten)
 
 
 @pytest.mark.asyncio

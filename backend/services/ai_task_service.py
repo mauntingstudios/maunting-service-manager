@@ -509,7 +509,7 @@ def _leere_aufgabe(user: User) -> AiTask:
         weekdays=None,
         interval_hours=None,
         once_at=None,
-        channel="chat",
+        channel="both",
         enabled=True,
     )
 
@@ -754,6 +754,14 @@ def _auftragstext(aufgabe: AiTask) -> str:
         "entscheide selbst oder melde ehrlich Fehlanzeige. Fasse am Ende in "
         "wenigen Saetzen zusammen, was du festgestellt oder getan hast; diese "
         "Zusammenfassung liest der Benutzer spaeter im Chat" + gelesen,
+        "Fruehere Laeufe dieser Aufgabe stehen im Verlauf darueber. Prueft "
+        "dieser Auftrag eine Bedingung, Neuigkeit oder fehlende Eintraege und "
+        "gibt es gegenueber dem bisherigen Stand nichts Neues zu melden oder "
+        "zu tun, beginne deine Schlussantwort mit [KEINE_MELDUNG] — dann "
+        "unterbleibt die E-Mail-Benachrichtigung. Wartet der Auftrag auf ein "
+        "einmaliges Ereignis ('sobald X passiert') und ist es jetzt "
+        "eingetreten, schliesse deinen Bericht mit [AUFGABE_ERLEDIGT] ab; "
+        "das Panel verschickt dann die Meldung und schaltet die Aufgabe ab.",
     ]
     if aufgabe.kind != "act":
         zeilen.append(

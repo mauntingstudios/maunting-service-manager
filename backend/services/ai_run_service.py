@@ -1172,9 +1172,10 @@ async def _wiederanlauf_versuchen(db: Session, run: AiRun, rahmen: dict) -> bool
     user = db.get(User, run.user_id)
     titel = str(rahmen.get("titel") or "Auftrag")
     kanal = str(rahmen.get("kanal") or "chat")
+    alter_zustand = zustand_lesen(run)
 
     def _melden(text: str) -> None:
-        if user is None:
+        if user is None or isinstance(alter_zustand.get("aufgabe"), dict):
             return
         try:
             ai_meldestelle.melden(
@@ -1241,9 +1242,8 @@ async def _wiederanlauf_versuchen(db: Session, run: AiRun, rahmen: dict) -> bool
     # einzige Grund, warum dieser Lauf noch einmal anfängt — der Mensch sitzt
     # unverändert vor demselben Gerät. Fällt die Kennung hier weg, wären die
     # Desktop-Aufträge des Nachfolgers wieder für jedes gekoppelte Gerät
-    # abholbar (`desktop_job_service.naechster`), und zwar dauerhaft: eine
-    # Familie bekommt ein Lauf nur beim Anlegen.
-    alter_zustand = zustand_lesen(run)
+    # Desktop-Auftraege bleiben an diesem Geraet.
+    # (`alter_zustand` wurde oben bereits ausgelesen.)
     neuer, fehler = lauf_beginnen(
         db,
         user=user,

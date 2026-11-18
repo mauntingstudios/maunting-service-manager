@@ -41,7 +41,7 @@ function leeresFormular(defaultTz?: string | null): FormularDaten {
     interval_hours: 24,
     once_at: '',
     timezone: defaultTz || browserTz || 'UTC',
-    email: false,
+    email: true,
     act: false,
   }
 }

@@ -625,3 +625,94 @@ def test_endet_die_antwort_mit_einem_werkzeug_greift_die_schaetzung(
     text = ai_task_report.abschlusstext(db, run, {})
 
     assert text == "Ich sehe kurz nach und melde mich gleich mit dem Ergebnis."
+
+
+# ── Stille Pruefung & Auto-Abschluss ──────────────────────────────────────
+
+
+def test_stille_pruefung_mit_keine_meldung_verschickt_keine_mail(
+    db: Session, monkeypatch
+) -> None:
+    """Bei unveraenderter Lage soll ein Ueberwachungsauftrag nicht spammen."""
+    fach = Mailfach().einbauen(monkeypatch)
+    user = _benutzer(db, "still")
+    aufgabe = _aufgabe(db, user)
+    run = _lauf(
+        db, user, aufgabe, status="completed",
+        antwort="[KEINE_MELDUNG] GTA 6 ist weiterhin nur fuer PS5/Xbox angekuendigt.",
+    )
+
+    ai_task_report.bericht_versenden(db, run=run, zustand=_zustand(aufgabe))
+
+    assert fach.briefe == []
+    db.refresh(aufgabe)
+    assert aufgabe.enabled is True
+
+
+@pytest.mark.parametrize("status,stop_reason", [
+    ("failed", "AI_STREAM_FAILED"),
+    ("cancelled", "cancelled"),
+    ("completed", "content_filter"),
+])
+def test_fehlgeschlagener_oder_gestoppter_lauf_verschickt_trotz_keine_meldung_immer_mail(
+    db: Session, monkeypatch, status: str, stop_reason: str
+) -> None:
+    """Ein Fehlschlag oder Sicherheitsstopp darf niemals still untergehen."""
+    from services import openai_compatible_adapter
+
+    if stop_reason == "content_filter":
+        stop_reason = openai_compatible_adapter.SICHERHEITSSTOPP
+    fach = Mailfach().einbauen(monkeypatch)
+    user = _benutzer(db, f"fehlschlag_{status}")
+    aufgabe = _aufgabe(db, user)
+    run = _lauf(
+        db, user, aufgabe, status=status,
+        antwort="[KEINE_MELDUNG] Abbruch mitten im Lauf.",
+    )
+    run.stop_reason = stop_reason
+    db.commit()
+
+    ai_task_report.bericht_versenden(db, run=run, zustand=_zustand(aufgabe))
+
+    assert len(fach.briefe) == 1
+
+
+def test_aufgabe_erledigt_verschickt_bereinigte_mail_und_legt_aufgabe_still(
+    db: Session, monkeypatch
+) -> None:
+    """Einmal-Waechter senden den Treffer ohne Steuermarker und schalten ab."""
+    fach = Mailfach().einbauen(monkeypatch)
+    user = _benutzer(db, "erledigt")
+    aufgabe = _aufgabe(db, user, channel="both")
+    run = _lauf(
+        db, user, aufgabe, status="completed",
+        antwort="GTA 6 wurde offiziell fuer den PC angekuendigt! [AUFGABE_ERLEDIGT]",
+    )
+
+    ai_task_report.bericht_versenden(db, run=run, zustand=_zustand(aufgabe))
+
+    assert len(fach.briefe) == 1
+    assert "[AUFGABE_ERLEDIGT]" not in fach.briefe[0]["bericht"]
+    assert "GTA 6 wurde offiziell fuer den PC angekuendigt!" in fach.briefe[0]["bericht"]
+    db.refresh(aufgabe)
+    assert aufgabe.enabled is False
+    assert aufgabe.next_run_at is None
+
+
+def test_aufgabe_erledigt_legt_aufgabe_auch_bei_kanal_chat_still(
+    db: Session, monkeypatch
+) -> None:
+    fach = Mailfach().einbauen(monkeypatch)
+    user = _benutzer(db, "erledigt_chat")
+    aufgabe = _aufgabe(db, user, channel="chat")
+    run = _lauf(
+        db, user, aufgabe, status="completed",
+        antwort="Ereignis eingetreten. [AUFGABE_ERLEDIGT]",
+    )
+
+    ai_task_report.bericht_versenden(db, run=run, zustand=_zustand(aufgabe))
+
+    assert fach.briefe == []
+    db.refresh(aufgabe)
+    assert aufgabe.enabled is False
+    assert aufgabe.next_run_at is None

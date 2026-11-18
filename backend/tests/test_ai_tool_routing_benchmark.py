@@ -103,3 +103,25 @@ def test_gebeugte_und_zusammengesetzte_woerter_treffen():
     )
     assert {"read_user_permissions", "list_roles", "propose_user_server_permission"} & set(treffer)
     assert router.select("Erstelle eine Rolle Moderator", ALLOWED, top_k=3)[0] == "propose_role_set"
+
+
+def test_natuerliche_benachrichtigungs_und_ueberwachungswuensche_finden_propose_task_set():
+    """Natuerliche Erinnerungs- und Ueberwachungswuensche muessen Aufgabenwerkzeuge liefern."""
+    from services.tool_selection_port import pflichtwerkzeuge
+
+    router = SemanticToolRouterAdapter()
+    anfragen = [
+        (
+            "Benachrichtige mich sofort, sobald GTA 6 auf dem PC offiziell von "
+            "Rockstar Games angekündigt wird. Weil morgen um 0 Uhr am 19.11.2026 "
+            "kommt es ja erst auf PS5 und Xbox auf den Konsolen."
+        ),
+        "Halte mich über Updates auf dem Laufenden",
+    ]
+    for query in anfragen:
+        routed = router.select(query, ALLOWED, top_k=5)
+        pflicht = pflichtwerkzeuge(ALLOWED, "panel", query=query)
+        kombiniert = set(routed) | set(pflicht)
+        assert "propose_task_set" in kombiniert, (query, routed, pflicht)
+        assert "propose_task_set" in pflicht, query
+        assert "list_tasks" in pflicht, query
