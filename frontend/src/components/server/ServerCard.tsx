@@ -26,7 +26,7 @@ interface ServerCardProps {
 export function ServerCard({ server, gameLabel, variant = 'list' }: ServerCardProps) {
   const { t } = useTranslation()
   const isDashboard = variant === 'dashboard'
-  const { favoriteIds, lastVisitedId, toggleFavorite, setLastVisited } = useServerPreferencesStore()
+  const { favoriteIds, lastVisitedId, toggleFavorite } = useServerPreferencesStore()
   const isFavorite = favoriteIds.includes(server.id)
   const isLastVisited = lastVisitedId === server.id
   const hasConnectEndpoint = Boolean(resolveServerConnect(server).primary)
@@ -57,10 +57,11 @@ export function ServerCard({ server, gameLabel, variant = 'list' }: ServerCardPr
             data-testid={`server-card-icon-${server.id}`}
           />
           <h3 className="font-headline text-body-md font-semibold text-on-surface group-hover:text-primary transition-colors min-w-0 truncate">
+            {/* Die Aufzeichnung ("Zuletzt geöffnet") passiert in der Detailseite erst
+                bei angekommenen Daten — ein Klick allein ist noch kein Öffnen. */}
             <Link
               to={`/servers/${server.id}`}
               state={wallpaperNavigationsState(server)}
-              onClick={() => setLastVisited(server.id)}
               onFocus={vorladen}
               className="focus:outline-none after:absolute after:inset-0 after:content-['']"
             >

@@ -389,7 +389,6 @@ export function ServerStatusBlocks({
   testIdPrefix = 'server-block',
 }: ServerStatusBlocksProps) {
   const { t } = useTranslation()
-  const setLastVisited = useServerPreferencesStore((s) => s.setLastVisited)
   const favoriteIds = useServerPreferencesStore((s) => s.favoriteIds)
 
   const entries: StatusBlockEntry[] = useMemo(() => {
@@ -410,12 +409,13 @@ export function ServerStatusBlocks({
     })
   }, [servers, favoriteIds, t])
 
+  // Die Aufzeichnung ("Zuletzt geöffnet") passiert in der Detailseite erst bei
+  // angekommenen Daten — ein Klick allein ist noch kein Öffnen.
   return (
     <StatusBlockStrip
       entries={entries}
       maxVisible={maxVisible}
       testIdPrefix={testIdPrefix}
-      onNavigate={setLastVisited}
     />
   )
 }

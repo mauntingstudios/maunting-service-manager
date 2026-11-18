@@ -634,8 +634,12 @@ describe('Servers — Sortierung, Favoriten, Zuletzt geöffnet & feste IP-Zeile'
     expect(regularCard).toHaveAttribute('data-favorite', 'false')
     expect(regularCard.className).not.toContain('border-status-warning/80')
 
-    // Gestoppten Server als zuletzt besucht markieren -> direkt sichtbar ganz oben neben Favoriten + Badge.
-    fireEvent.click(screen.getByRole('link', { name: 'Stopped-Alpha' }))
+    // Als zuletzt besucht aufgezeichnet (die Detailseite meldet bei angekommenen
+    // Daten, ein Klick allein zählt nicht) -> direkt sichtbar ganz oben neben
+    // Favoriten + Badge.
+    act(() => {
+      useServerPreferencesStore.getState().setLastVisited(1)
+    })
     expect(headingsOrder()).toEqual(['Stopped-Gamma', 'Stopped-Alpha', 'Running-Beta'])
     expect(screen.getByTestId('server-last-visited-1')).toHaveTextContent('Zuletzt geöffnet')
 

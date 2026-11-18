@@ -219,11 +219,12 @@ export function ServerDetail() {
   const serverId = parseInt(id || "0");
   const { favoriteIds, lastVisitedId, recentVisitedIds } = useServerPreferencesStore();
 
-  useEffect(() => {
-    if (serverId > 0) {
-      useServerPreferencesStore.getState().setLastVisited(serverId);
-    }
-  }, [serverId]);
+  // Jede Antwort gehört zu genau einem Server: Wer nach einem schnellen Wechsel
+  // noch für den alten Server antwortet, wird verworfen. Ohne diesen Schutz
+  // überschriebe eine späte Antwort die frische Seite mit alten Daten — der
+  // Wechsler bliebe scheinbar beim letzten Server stehen.
+  const serverIdRef = useRef(serverId);
+  serverIdRef.current = serverId;
 
   // Permission-Gating fuer Ressourcen-Editor (VAL-UI-002, VAL-UI-018):
   // Backend bleibt alleinige Wahrheitsquelle — Frontend versteckt nur die UI.
@@ -276,7 +277,8 @@ export function ServerDetail() {
   // Blitzstart: Die Karte kennt URL + Version schon aus der Liste und gibt sie
   // im Navigations-State mit. Damit malt der Kopf das Bild sofort aus dem
   // (immutable) Cache, statt erst auf fetchAll zu warten. fetchAll bestätigt
-  // kurz darauf — oder korrigiert, falls die Liste veraltet war.
+  // kurz darauf — oder korrigiert, falls die Liste veraltet war. Ohne Mitgabe
+  // steht ehrlich das Panorama, nie das Bild des vorigen Servers.
   // Muss hinter dem Motiv-Effekt stehen: Auf dem Mount setzt der erst null.
   const location = useLocation();
   useEffect(() => {
@@ -285,6 +287,8 @@ export function ServerDetail() {
       useServerWallpaperStore.getState().setActiveWallpaper(
         wallpaperMotiv(serverId, mitgabe.url, typeof mitgabe.version === "string" ? mitgabe.version : null),
       );
+    } else {
+      useServerWallpaperStore.getState().setActiveWallpaper(null);
     }
     // Nur beim Betreten der Seite auswerten, nicht bei jedem State-Wechsel.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -300,20 +304,46 @@ export function ServerDetail() {
   const [showEditResource, setShowEditResource] = useState(false);
   const [allServers, setAllServers] = useState<Server[]>([]);
 
+  // Serverwechsel: Ladezustände, Badge und Dialoge gehören zum alten Server.
+  // Sie werden zurückgesetzt bzw. geschlossen, damit nichts davon auf der
+  // neuen Seite nachwirkt — laufende Aktionen selbst laufen auf dem alten
+  // Server normal weiter, nur ihre Anzeige zieht nicht um.
+  useEffect(() => {
+    setActionLoading(null);
+    setOptimisticStatus(null);
+    setServerUpdateCheckLoading(false);
+    setSavingNetwork(false);
+    lastServerUpdateBadgeRef.current = null;
+    setShowEditNetwork(false);
+    setShowEditResource(false);
+    setShowSwitchBlueprint(false);
+    setShowWallpaper(false);
+  }, [serverId]);
+
   const fetchAll = async () => {
     if (!serverId) return;
+    const gefragterId = serverId;
+    const nochAktuell = () => gefragterId === serverIdRef.current;
     try {
       // Beide Anfragen laufen parallel, aber Seite und Titelbild warten nicht
       // auf den Status: Der fragt Docker bzw. den Node-Agenten und ist der
       // langsame Teil. Kennzahlen trudeln nach, sobald sie da sind.
       const statusVersprechen = api<ServerStatus>(`/servers/${serverId}/status`).catch(() => null);
-      setServer(await api<Server>(`/servers/${serverId}`));
+      const srv = await api<Server>(`/servers/${serverId}`);
+      if (!nochAktuell()) return;
+      setServer(srv);
       setLoading(false);
-      setStatus(await statusVersprechen);
+      // Einziger Aufzeichnungsort: Als geöffnet gilt ein Server erst, wenn seine
+      // Daten wirklich ankamen — nicht schon beim Klick. Fehlgeschlagene oder
+      // überholte Wechsel verfälschen die Verlauf-Badges nicht.
+      useServerPreferencesStore.getState().setLastVisited(gefragterId);
+      const st = await statusVersprechen;
+      if (!nochAktuell()) return;
+      setStatus(st);
     } catch {
       // silent
     } finally {
-      setLoading(false);
+      if (nochAktuell()) setLoading(false);
     }
   };
 
@@ -323,8 +353,11 @@ export function ServerDetail() {
 
   const pollStatus = async () => {
     if (!serverId) return;
+    const gefragterId = serverId;
+    const nochAktuell = () => gefragterId === serverIdRef.current;
     try {
       const st = await api<ServerStatus>(`/servers/${serverId}/status`).catch(() => null);
+      if (!nochAktuell()) return;
       setStatus(st);
       fullRefreshTickRef.current += 1;
       const statusChanged = Boolean(st?.status && st.status !== serverStatusRef.current);
@@ -332,9 +365,15 @@ export function ServerDetail() {
       if (statusChanged || fullRefreshTickRef.current >= 8) {
         fullRefreshTickRef.current = 0;
         const srv = await api<Server>(`/servers/${serverId}`);
+        if (!nochAktuell()) return;
         setServer(srv);
         if (isFrontendServer) {
-          frontendApi.getOverview(serverId).then(setFrontendOverview).catch(() => {});
+          frontendApi
+            .getOverview(serverId)
+            .then((o) => {
+              if (nochAktuell()) setFrontendOverview(o);
+            })
+            .catch(() => {});
         }
       }
     } catch {
@@ -426,7 +465,13 @@ export function ServerDetail() {
 
   const loadFrontendOverview = () => {
     if (!isFrontendServer || !serverId) return;
-    frontendApi.getOverview(serverId).then(setFrontendOverview).catch(() => {});
+    const gefragterId = serverId;
+    frontendApi
+      .getOverview(serverId)
+      .then((o) => {
+        if (gefragterId === serverIdRef.current) setFrontendOverview(o);
+      })
+      .catch(() => {});
   };
 
   useEffect(() => {
@@ -578,6 +623,11 @@ export function ServerDetail() {
   };
 
   const doAction = async (action: string) => {
+    // Die Anfrage geht immer an den Server des Klicks (Closure) — ein Wechsel
+    // unterwegs ändert daran nichts. Nur die Anzeige wird geschützt: Was nach
+    // dem Wechsel fertig wird, räumt nicht den Zustand der neuen Seite weg.
+    const aktionsId = serverId;
+    const nochAktuell = () => aktionsId === serverIdRef.current;
     // AUFGABE 4B: optimistic für sofortiges Feedback (wird durch realen Poll überschrieben)
     if (action === "stop") setOptimisticStatus("stopping");
     else if (action === "start") setOptimisticStatus("starting");
@@ -585,21 +635,24 @@ export function ServerDetail() {
     // no "kill" branch here (handleKill dedicated; dead code removed per review Issue 6)
     setActionLoading(action);
     try {
-      await api(`/servers/${serverId}/${action}`, {
+      await api(`/servers/${aktionsId}/${action}`, {
         method: "POST",
         headers: { "Idempotency-Key": crypto.randomUUID() },
       });
-      if (action === "restart") {
+      if (action === "restart" && nochAktuell()) {
         lastServerUpdateBadgeRef.current = null;
       }
-      void fetchAll().then(() => setOptimisticStatus(null)); // real data wins
+      // fetchAll ist selbst geschützt; das Aufräumen dahinter auch.
+      void fetchAll().then(() => {
+        if (nochAktuell()) setOptimisticStatus(null);
+      }); // real data wins
     } catch (err: unknown) {
       const raw = err instanceof Error ? err.message : String(err);
       const msg = t(raw, { defaultValue: raw }) || t("common.error");
       toast.error(msg);
-      setOptimisticStatus(null);
+      if (nochAktuell()) setOptimisticStatus(null);
     } finally {
-      setActionLoading(null);
+      if (nochAktuell()) setActionLoading(null);
     }
   };
 
@@ -701,44 +754,57 @@ export function ServerDetail() {
   };
 
   const handleDelete = async () => {
+    const aktionsId = serverId;
     const ok = await confirm({
       message: t("servers.confirmDelete"),
       danger: true,
       confirmText: t("common.delete"),
     });
     if (!ok) return;
-    setActionLoading("delete");
+    // Anzeige nur auf der Seite des Klicks (der Reset beim Wechsel räumt sie
+    // sonst weg, und das finally dürfte sie nicht wieder anfassen).
+    if (aktionsId === serverIdRef.current) setActionLoading("delete");
     try {
-      await api(`/servers/${serverId}`, { method: "DELETE" });
+      await api(`/servers/${aktionsId}`, { method: "DELETE" });
       toast.success(t("servers.deleted"));
-      navigate("/servers");
+      // Nur weg navigieren, wenn die gelöschte Seite noch offen ist — wer
+      // inzwischen weitergezogen ist, bleibt, wo er ist.
+      if (aktionsId === serverIdRef.current) navigate("/servers");
     } catch (err: unknown) {
       const raw = err instanceof Error ? err.message : String(err);
       toast.error(t(raw, { defaultValue: raw }) || t("common.error"));
     } finally {
-      setActionLoading(null);
+      if (aktionsId === serverIdRef.current) setActionLoading(null);
     }
   };
 
   const handleKill = async () => {
+    const aktionsId = serverId;
+    const nochAktuell = () => aktionsId === serverIdRef.current;
     // KISS: bestehendes confirmStore Pattern (explizit, wie delete/restore) + danger:true per review
     const ok = await confirm({ message: t("servers.killConfirm"), danger: true });
     if (!ok) return;
-    setOptimisticStatus("stopped");
-    setActionLoading("kill");
+    // Die Bestätigung kann einen Wechsel überlebt haben: Anzeige nur auf der
+    // Seite des Klicks, die Anfrage geht ohnehin an dessen ID.
+    if (nochAktuell()) {
+      setOptimisticStatus("stopped");
+      setActionLoading("kill");
+    }
     try {
-      await api(`/servers/${serverId}/kill`, {
+      await api(`/servers/${aktionsId}/kill`, {
         method: "POST",
         headers: { "Idempotency-Key": crypto.randomUUID() },
       });
       toast.success(t("servers.killSuccess"));
-      void fetchAll().then(() => setOptimisticStatus(null));
+      void fetchAll().then(() => {
+        if (nochAktuell()) setOptimisticStatus(null);
+      });
     } catch (err: unknown) {
       const raw = err instanceof Error ? err.message : String(err);
       toast.error(t(raw, { defaultValue: raw }) || t("common.error"));
-      setOptimisticStatus(null);
+      if (nochAktuell()) setOptimisticStatus(null);
     } finally {
-      setActionLoading(null);
+      if (nochAktuell()) setActionLoading(null);
     }
   };
 
@@ -872,12 +938,15 @@ export function ServerDetail() {
 
   const checkServerFileUpdates = async () => {
     if (!serverId) return;
+    const gefragterId = serverId;
     setServerUpdateCheckLoading(true);
     try {
       const data = await api<{
         server_file_update_available: boolean;
         server_file_update_reason: string | null;
-      }>(`/servers/${serverId}/check-server-file-updates`, { method: "POST" });
+      }>(`/servers/${gefragterId}/check-server-file-updates`, { method: "POST" });
+      // Fremder Stand nach Wechsel: weder Status noch Badge anfassen.
+      if (gefragterId !== serverIdRef.current) return;
       setStatus((prev) =>
         prev
           ? {
@@ -901,7 +970,7 @@ export function ServerDetail() {
       const raw = err instanceof Error ? err.message : String(err);
       toast.error(t(raw, { defaultValue: raw }) || t("servers.serverFileUpdateCheckFailed"));
     } finally {
-      setServerUpdateCheckLoading(false);
+      if (gefragterId === serverIdRef.current) setServerUpdateCheckLoading(false);
     }
   };
 
@@ -1205,17 +1274,21 @@ export function ServerDetail() {
                   <Switch
                     checked={frontendOverview ? frontendOverview.online : effectiveStatus === "running"}
                     onCheckedChange={async (checked) => {
+                      const aktionsId = serverId;
+                      const nochAktuell = () => aktionsId === serverIdRef.current;
                       setOptimisticStatus(checked ? "starting" : "stopping");
                       try {
-                        const res = await frontendApi.toggleOnline(serverId, checked);
-                        setFrontendOverview((prev) => (prev ? { ...prev, online: res.online } : prev));
+                        const res = await frontendApi.toggleOnline(aktionsId, checked);
+                        if (nochAktuell()) {
+                          setFrontendOverview((prev) => (prev ? { ...prev, online: res.online } : prev));
+                        }
                         toast.success(res.online ? t("frontendDeployments.online") : t("frontendDeployments.offline"));
                         await fetchAll();
                         loadFrontendOverview();
                       } catch {
                         toast.error(t("frontendDeployments.actionError"));
                       } finally {
-                        setOptimisticStatus(null);
+                        if (nochAktuell()) setOptimisticStatus(null);
                       }
                     }}
                   />
@@ -1350,8 +1423,10 @@ export function ServerDetail() {
             moreLabel={t("serverDetail.moreTabs")}
           />
 
-          {/* Vollflächiger Arbeitsbereich über die komplette Breite (Mods, Dateien, Konsole, ...) */}
-          <div role="tabpanel" aria-label={activeTabLabel} className="w-full min-w-0">
+          {/* Vollflächiger Arbeitsbereich über die komplette Breite (Mods, Dateien, Konsole, ...).
+              key pro Server: Jeder Reiter startet mit frischem Zustand — keine Bäume,
+              Konsolen oder Formulare vom vorigen Server, egal wie schnell gewechselt wird. */}
+          <div key={serverId} role="tabpanel" aria-label={activeTabLabel} className="w-full min-w-0">
             {activeTab === "deployments" && isFrontendServer && (
               <Suspense
                 fallback={

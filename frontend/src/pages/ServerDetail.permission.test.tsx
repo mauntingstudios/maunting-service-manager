@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor, act, fireEvent, within } from '@testing-library/react'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom'
 import { ServerDetail } from './ServerDetail'
 import * as client from '@/api/client'
 import i18n from '@/i18n'
@@ -845,5 +845,119 @@ describe('ServerDetail Titelbild-Blitzstart', () => {
     renderMitState(SERVER_ID, undefined)
     await waitForServerToLoad()
     expect(useServerWallpaperStore.getState().activeWallpaper?.pfad).toContain('?v=custom-5')
+  })
+})
+
+describe('ServerDetail Wechsel-Isolation', () => {
+  const SERVER_99 = { ...SYNTHETIC_SERVER, id: 99, name: 'synthetic-second-server' }
+
+  function schalter<T>() {
+    let resolve!: (wert: T) => void
+    const versprechen = new Promise<T>((r) => {
+      resolve = r
+    })
+    return { versprechen, resolve }
+  }
+
+  function renderWechselbar(anfang: string | { pathname: string; state?: unknown } = `/servers/${SERVER_ID}`) {
+    let los: (to: string) => void = () => {}
+    function NavFang() {
+      const nav = useNavigate()
+      los = (to) => nav(to)
+      return null
+    }
+    const utils = render(
+      <MemoryRouter initialEntries={[anfang]}>
+        <Routes>
+          <Route path="/servers/:id" element={<ServerDetail />} />
+        </Routes>
+        <NavFang />
+      </MemoryRouter>,
+    )
+    return { ...utils, los: (to: string) => act(() => los(to)) }
+  }
+
+  beforeEach(async () => {
+    mockApi.mockReset()
+    await i18n.changeLanguage('en')
+    useRolePreviewStore.getState().stopPreview()
+    usePermissionsStore.setState({ me: OWNER_ME, isLoading: false, error: null })
+    useToastStore.setState({ toasts: [] })
+    useServerWallpaperStore.getState().clear()
+    useServerPreferencesStore.getState().resetForTests()
+  })
+
+  afterEach(() => {
+    useServerWallpaperStore.getState().clear()
+    useServerPreferencesStore.getState().resetForTests()
+  })
+
+  it('verwirft späte Antworten des vorigen Servers (Wechsler bleibt nicht stehen)', async () => {
+    const daten84 = schalter<Server>()
+    const status84 = schalter<typeof SYNTHETIC_STATUS>()
+    const daten99 = schalter<Server>()
+    const status99 = schalter<typeof SYNTHETIC_STATUS>()
+    mockApi.mockImplementation(async (path: string) => {
+      if (path === `/servers/${SERVER_ID}`) return daten84.versprechen as any
+      if (path === `/servers/${SERVER_ID}/status`) return status84.versprechen as any
+      if (path === '/servers/99') return daten99.versprechen as any
+      if (path === '/servers/99/status') return status99.versprechen as any
+      if (path === '/system/games') return SYNTHETIC_GAMES as any
+      if (path === '/servers') return [] as any
+      return new Promise(() => {}) as any
+    })
+    const { los } = renderWechselbar()
+    // Schneller Wechsel, bevor irgendetwas antwortet:
+    los('/servers/99')
+    await act(async () => {
+      daten99.resolve(SERVER_99)
+      status99.resolve(SYNTHETIC_STATUS)
+    })
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { level: 1, name: 'synthetic-second-server' })).toBeInTheDocument()
+    })
+    // Jetzt trudeln die alten Antworten ein — sie dürfen nichts mehr ändern.
+    await act(async () => {
+      daten84.resolve(SYNTHETIC_SERVER)
+      status84.resolve(SYNTHETIC_STATUS)
+      await new Promise((r) => setTimeout(r, 50))
+    })
+    expect(screen.getByRole('heading', { level: 1, name: 'synthetic-second-server' })).toBeInTheDocument()
+    expect(screen.queryByText('synthetic-permission-test-server')).not.toBeInTheDocument()
+  })
+
+  it('zeichnet nur wirklich geöffnete Server auf, keine überholten Wechsel', async () => {
+    mockApi.mockImplementation(async (path: string) => {
+      if (path === `/servers/${SERVER_ID}`) return SYNTHETIC_SERVER as any
+      if (path === `/servers/${SERVER_ID}/status`) return SYNTHETIC_STATUS as any
+      if (path === '/system/games') return SYNTHETIC_GAMES as any
+      if (path === '/servers') return [] as any
+      return new Promise(() => {}) as any // 99 antwortet nie
+    })
+    const { los } = renderWechselbar()
+    await waitForServerToLoad()
+    expect(useServerPreferencesStore.getState().recentVisitedIds).toEqual([SERVER_ID])
+    los('/servers/99')
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 50))
+    })
+    // 99 kam nie an — im Verlauf steht weiter nur 84.
+    expect(useServerPreferencesStore.getState().recentVisitedIds).toEqual([SERVER_ID])
+    expect(useServerPreferencesStore.getState().lastVisitedId).toBe(SERVER_ID)
+  })
+
+  it('leert das Titelbild beim Wechsel ohne Mitgabe (kein Bild des Vorgängers)', async () => {
+    mockApi.mockImplementation(() => new Promise(() => {}) as any)
+    const { los } = renderWechselbar({
+      pathname: `/servers/${SERVER_ID}`,
+      state: { wallpaper: { serverId: SERVER_ID, url: `/api/servers/${SERVER_ID}/wallpaper`, version: 'custom-3' } },
+    })
+    await waitFor(() => {
+      expect(useServerWallpaperStore.getState().activeWallpaper?.pfad).toContain('?v=custom-3')
+    })
+    los('/servers/99')
+    await waitFor(() => {
+      expect(useServerWallpaperStore.getState().activeWallpaper).toBeNull()
+    })
   })
 })
