@@ -120,7 +120,6 @@ export function Teams() {
   const [newMemberId, setNewMemberId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
-  const [rollenWahl, setRollenWahl] = useState<Record<number, number | null>>({})
   const [editingRole, setEditingRole] = useState<TeamRole | null>(null)
   const [isCreatingRole, setIsCreatingRole] = useState(false)
 
@@ -399,25 +398,6 @@ export function Teams() {
     closeRoleForm()
   }
 
-  const setRoleServerKeys = async (serverId: number, roleId: number, keys: string[]) => {
-    if (!detail) return
-    const rolle = detail.roles?.find((r) => r.id === roleId)
-    if (!rolle || rolle.is_admin) return
-    const naechste = mitServerSicht(keys).keys
-    await run(async () => {
-      const grants = (rolle.server_grants || [])
-        .filter((g) => g.server_id !== serverId)
-        .map((g) => ({ server_id: g.server_id, permission_keys: g.permission_keys }))
-      if (naechste.length > 0) {
-        grants.push({ server_id: serverId, permission_keys: naechste })
-      }
-      const gespeichert = await teamsApi.updateRole(detail.id, roleId, {
-        name: rolle.name, server_grants: grants,
-      })
-      onRoleSaved(gespeichert)
-    }, 'teams.serversSaved')
-  }
-
   const confirmSyncOverwrite = async (
     sourceServerId: number,
     targetGrants: { server_id: number; permission_keys: string[] }[],
@@ -437,38 +417,6 @@ export function Teams() {
       message: t('teams.syncPermissionsConfirmText'),
       confirmText: t('teams.syncPermissionsConfirmAction'),
     })
-  }
-
-  const syncRoleServerKeysToAll = async (sourceServerId: number, roleId: number, keys: string[]) => {
-    if (!detail) return
-    const rolle = detail.roles?.find((r) => r.id === roleId)
-    if (!rolle || rolle.is_admin) return
-
-    const targetGrants = assignable.map((server) => ({
-      server_id: server.server_id,
-      permission_keys: mitServerSicht(keys.filter((k) => server.permission_keys.includes(k))).keys,
-    }))
-    const ok = await confirmSyncOverwrite(
-      sourceServerId,
-      targetGrants,
-      (sid) => rolle.server_grants?.find((g) => g.server_id === sid)?.permission_keys ?? [],
-    )
-    if (!ok) return
-
-    await run(async () => {
-      const assignableIds = new Set(assignable.map((s) => s.server_id))
-      const preserved = (rolle.server_grants || [])
-        .filter((g) => !assignableIds.has(g.server_id))
-        .map((g) => ({ server_id: g.server_id, permission_keys: g.permission_keys }))
-      const merged = [
-        ...preserved,
-        ...targetGrants.filter((g) => g.permission_keys.length > 0),
-      ]
-      const gespeichert = await teamsApi.updateRole(detail.id, roleId, {
-        name: rolle.name, server_grants: merged,
-      })
-      onRoleSaved(gespeichert)
-    }, 'teams.serversSynced')
   }
 
   const syncServerKeysToAll = async (sourceServerId: number, keys: string[]) => {
@@ -705,13 +653,15 @@ export function Teams() {
                     assignable={assignable}
                     busy={busy}
                     canToggleServerRoles={access.isFounder}
+                    canManageRoles={access.canManageRoles}
                     onSetServerKeys={(serverId, keys) => void setServerKeys(serverId, keys)}
-                    rollenWahl={rollenWahl}
-                    onRollenWahl={(serverId, roleId) => setRollenWahl((prev) => ({ ...prev, [serverId]: roleId }))}
-                    onRoleKeys={(serverId, roleId, keys) => void setRoleServerKeys(serverId, roleId, keys)}
                     onToggleServerRoles={(next) => void setServerRolesActive(next)}
-                    onSyncRoleKeysToAll={(serverId, roleId, keys) => void syncRoleServerKeysToAll(serverId, roleId, keys)}
                     onSyncServerKeysToAll={(serverId, keys) => void syncServerKeysToAll(serverId, keys)}
+                    onOpenRoleInRolesTab={(role) => {
+                      setReiter('roles')
+                      if (role) openEditRole(role)
+                      else closeRoleForm()
+                    }}
                   />
                 )}
 

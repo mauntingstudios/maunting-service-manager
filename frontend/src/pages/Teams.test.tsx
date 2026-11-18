@@ -566,34 +566,35 @@ describe('Teams', () => {
     }))
   })
 
-  it('zeigt im Rollenmodus je Server Rollenwahl und Rechte-Editor', async () => {
-    const mitglied = realDetail.roles.find((r) => r.name === 'Mitglied')!
+  it('zeigt im Rollenmodus je Server einen eingeklappten Read-Only-Überblick ohne doppelte Bearbeitung', async () => {
     vi.mocked(teamsApi.get).mockImplementation(async (id: number) =>
-      id === 1 ? personalDetail : {
-        ...realDetail,
-        server_roles_active: true,
-        roles: realDetail.roles.map((r) => ({ ...r, server_grants: [] })),
-      })
-    vi.mocked(teamsApi.updateRole).mockResolvedValue({ ...mitglied, server_grants: [] })
+      id === 1 ? personalDetail : { ...realDetail, server_roles_active: true })
     renderTeams()
     await zuTeams()
     await screen.findByRole('heading', { name: 'Betrieb' })
 
     fireEvent.click(screen.getByRole('tab', { name: /^Server/ }))
     expect(await screen.findByText(i18n.t('teams.serverRollenHinweis'))).toBeInTheDocument()
-    // Team-Editor ist weg, Rollenwahl ist da (Admin steht nicht zur Wahl).
+
+    // Keine doppelte Rollenbearbeitung und kein Sync-Button im Rollenmodus
     expect(screen.queryByLabelText('Rechte: Valheim')).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Rollen & Rechte: Valheim' }))
-    expect(screen.queryByRole('option', { name: 'Admin' })).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole('option', { name: 'Mitglied' }))
+    expect(screen.queryByRole('button', { name: 'Rollen & Rechte: Valheim' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: i18n.t('teams.syncToAllServers') })).not.toBeInTheDocument()
 
-    fireEvent.click(await screen.findByLabelText('Rechte: Valheim'))
-    fireEvent.click(await screen.findByRole('option', { name: 'Server starten' }))
+    // Standardmäßig eingeklappt: Detail-Vorschau noch nicht sichtbar, aber Pill mit Rechtezahl sichtbar
+    expect(screen.queryByText(i18n.t('teams.rolePermissionsReadOnlyHint'))).not.toBeInTheDocument()
+    const pillButton = screen.getByRole('button', { name: /Mitglied.*1 Rechte/i })
+    expect(pillButton).toHaveAttribute('aria-expanded', 'false')
 
-    await waitFor(() => expect(teamsApi.updateRole).toHaveBeenCalledWith(2, 11, {
-      name: 'Mitglied',
-      server_grants: [{ server_id: 7, permission_keys: ['server.start', 'server.view'] }],
-    }))
+    // Klick klappt schreibgeschützte Vorschau auf und führt bei Klick direkt in „Rollen & Rechte“
+    fireEvent.click(pillButton)
+    expect(pillButton).toHaveAttribute('aria-expanded', 'true')
+    expect(await screen.findByText(i18n.t('teams.rolePermissionsReadOnlyHint'))).toBeInTheDocument()
+    expect(within(screen.getByLabelText('Rechte: Valheim (Mitglied)')).getByText('Server anzeigen')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('teams.editRoleInRolesTab') }))
+    expect(await screen.findByText(/Rolle bearbeiten: Mitglied/)).toBeInTheDocument()
+    expect(teamsApi.updateRole).not.toHaveBeenCalled()
   })
 
   it('synchronisiert Serverrechte im Standard-Modus per Batch-API nach Rückfrage', async () => {
@@ -634,46 +635,13 @@ describe('Teams', () => {
     })
   })
 
-  it('wählt eine Rolle für alle Server im Rollenmodus und synchronisiert Rollenrechte', async () => {
-    const mitglied = realDetail.roles.find((r) => r.name === 'Mitglied')!
-    const zweiServer = [
-      { server_id: 7, server_name: 'Valheim', permission_keys: ['server.view', 'server.start'] },
-      { server_id: 8, server_name: 'Rust', permission_keys: ['server.view', 'server.stop'] },
-    ]
-    const mitGrant: TeamDetail = {
-      ...realDetail,
-      server_roles_active: true,
-      roles: realDetail.roles.map((r) =>
-        r.id === 11
-          ? { ...r, server_grants: [{ server_id: 7, server_name: 'Valheim', permission_keys: ['server.view', 'server.start'] }] }
-          : r,
-      ),
-    }
-    vi.mocked(teamsApi.assignableServers).mockResolvedValue(zweiServer)
-    vi.mocked(teamsApi.get).mockImplementation(async (id: number) =>
-      id === 1 ? personalDetail : mitGrant)
-    vi.mocked(teamsApi.updateRole).mockResolvedValue(mitglied)
-
+  it('zeigt bei Rollen in „Rollen & Rechte“ direkt die zugewiesenen Servernamen an', async () => {
     renderTeams()
     await zuTeams()
     await screen.findByRole('heading', { name: 'Betrieb' })
 
-    fireEvent.click(screen.getByRole('tab', { name: /^Server/ }))
-    fireEvent.click(await screen.findByRole('button', { name: i18n.t('teams.bulkRoleLabel') }))
-    fireEvent.click(screen.getByRole('option', { name: 'Mitglied' }))
-    fireEvent.click(screen.getByRole('button', { name: i18n.t('teams.applyRoleToAllServers') }))
-
-    const syncButtons = await screen.findAllByRole('button', { name: i18n.t('teams.syncToAllServers') })
-    expect(syncButtons).toHaveLength(2)
-    fireEvent.click(syncButtons[0])
-
-    await waitFor(() => expect(teamsApi.updateRole).toHaveBeenCalledWith(2, 11, {
-      name: 'Mitglied',
-      server_grants: [
-        { server_id: 7, permission_keys: ['server.view', 'server.start'] },
-        { server_id: 8, permission_keys: ['server.view'] },
-      ],
-    }))
+    fireEvent.click(screen.getByRole('tab', { name: /Rollen/i }))
+    expect(await screen.findByText('Valheim')).toBeInTheDocument()
   })
 
   it('startet beim Klick auf eine Team-Rolle die Vorschau und passt die Team-Oberfläche an', async () => {
@@ -728,9 +696,10 @@ describe('Teams', () => {
 
     fireEvent.click(screen.getByRole('tab', { name: /^Server/ }))
 
-    // Ohne manuelle Dropdown-Auswahl ist sofort sichtbar, welche Rolle auf Valheim Rechte hält
+    // Kompakt eingeklappt: direkt sichtbar, welche Rolle auf Valheim Rechte hält (Admin bleibt ausgeblendet)
     expect(await screen.findByText('1 Rechte')).toBeInTheDocument()
-    expect(screen.getAllByText('Mitglied').length).toBeGreaterThanOrEqual(2)
+    expect(screen.getByText('1 Rollen')).toBeInTheDocument()
+    expect(screen.getByText('Mitglied')).toBeInTheDocument()
   })
 
   it('rendert die Team-Tab-Leiste freischwebend ohne deckenden Trennbalken', async () => {

@@ -192,10 +192,25 @@ export function TeamRolesTab({
                           </span>
                         ))}
                         {hasServerGrants && (
-                          <span className="rounded-md bg-primary/10 px-2 py-0.5 text-label-sm text-primary font-medium flex items-center gap-1">
-                            <Server className="h-3 w-3" />
-                            {role.server_grants.length} Server
-                          </span>
+                          <>
+                            {role.server_grants.slice(0, 3).map((grant) => (
+                              <span
+                                key={grant.server_id}
+                                className="rounded-md bg-primary/10 px-2 py-0.5 text-label-sm text-primary font-medium flex items-center gap-1"
+                              >
+                                <Server className="h-3 w-3 shrink-0" aria-hidden="true" />
+                                <span className="truncate max-w-[140px]">
+                                  {grant.server_name || `#${grant.server_id}`}
+                                </span>
+                                <span className="opacity-75">({grant.permission_keys.length})</span>
+                              </span>
+                            ))}
+                            {role.server_grants.length > 3 && (
+                              <span className="rounded-md bg-primary/10 px-2 py-0.5 text-label-sm text-primary font-medium">
+                                +{role.server_grants.length - 3} {t('teams.moreServersLabel')}
+                              </span>
+                            )}
+                          </>
                         )}
                         {role.permission_keys.length === 0 && !hasServerGrants && (
                           <span className="text-label-sm text-on-surface-variant/70 italic">

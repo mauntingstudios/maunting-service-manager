@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Info, Server } from 'lucide-react'
-import type { TeamDetail, TeamServer } from '@/api/teams'
-import { Button, Dropdown, RoleBadge, Switch } from '@maunting/ui'
+import { ArrowUpRight, ChevronDown, Info, Lock, Server, Shield } from 'lucide-react'
+import type { TeamDetail, TeamRole, TeamServer } from '@/api/teams'
+import { Button, RoleBadge, Switch } from '@maunting/ui'
 import { TeamServerCard } from './TeamServerCard'
 
 export interface TeamServerManagerProps {
@@ -10,44 +10,39 @@ export interface TeamServerManagerProps {
   assignable: TeamServer[]
   busy: boolean
   canToggleServerRoles?: boolean
+  canManageRoles?: boolean
   onSetServerKeys: (serverId: number, keys: string[]) => void
-  rollenWahl: Record<number, number | null>
-  onRollenWahl: (serverId: number, roleId: number | null) => void
-  onRoleKeys: (serverId: number, roleId: number, keys: string[]) => void
   onToggleServerRoles: (active: boolean) => void
-  onSyncRoleKeysToAll?: (sourceServerId: number, roleId: number, keys: string[]) => void
   onSyncServerKeysToAll?: (sourceServerId: number, keys: string[]) => void
+  onOpenRoleInRolesTab?: (role: TeamRole | null) => void
 }
 
 /**
- * Moderner Server- und Berechtigungsmanager für Teams.
+ * Server-Verwaltung eines Teams.
  *
- * Zeigt im rollenbasierten Modus für jeden Server direkt alle Rollen mit
- * aktiven Rechten an und synchronisiert sich unmittelbar mit „Rollen & Rechte“.
+ * - Standardmodus (`server_roles_active = false`): teamweite Serverrechte werden hier je Server gepflegt.
+ * - Rollenmodus (`server_roles_active = true`): reiner Überblick je Server (Single Source of Truth ist „Rollen & Rechte“).
  */
 export function TeamServerManager({
   team,
   assignable,
   busy,
   canToggleServerRoles = team.is_owner,
+  canManageRoles = false,
   onSetServerKeys,
-  rollenWahl,
-  onRollenWahl,
-  onRoleKeys,
   onToggleServerRoles,
-  onSyncRoleKeysToAll,
   onSyncServerKeysToAll,
+  onOpenRoleInRolesTab,
 }: TeamServerManagerProps) {
   const { t } = useTranslation()
   const rollen = (team.roles || []).filter((r) => !r.is_admin)
-  const [bulkRoleId, setBulkRoleId] = useState<string | null>(null)
+  const [expandedByServer, setExpandedByServer] = useState<Record<number, number | null>>({})
 
-  const handleBulkRoleSelect = () => {
-    if (!bulkRoleId) return
-    const id = Number(bulkRoleId)
-    for (const server of assignable) {
-      onRollenWahl(server.server_id, id)
-    }
+  const toggleRoleInspection = (serverId: number, roleId: number) => {
+    setExpandedByServer((prev) => ({
+      ...prev,
+      [serverId]: prev[serverId] === roleId ? null : roleId,
+    }))
   }
 
   const serverGridClass =
@@ -94,11 +89,24 @@ export function TeamServerManager({
           <p>{t('teams.noAssignableServers')}</p>
         </div>
       ) : team.server_roles_active ? (
-        /* Rollenbasierter Modus: Direkte Rollenübersicht je Server + synchronisierte Bearbeitung */
+        /* Rollenbasierter Modus: Kompakter Read-Only-Überblick je Server */
         <div className="space-y-5">
-          <div className="flex items-start gap-3 rounded-2xl border border-primary/25 bg-primary/5 p-4 text-xs sm:text-sm text-on-surface-variant">
-            <Info className="h-5 w-5 text-primary shrink-0 mt-0.5" aria-hidden="true" />
-            <p className="leading-relaxed">{t('teams.serverRollenHinweis')}</p>
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-primary/25 bg-primary/5 p-4 text-xs sm:text-sm text-on-surface-variant">
+            <div className="flex items-start gap-3 min-w-0 flex-1">
+              <Info className="h-5 w-5 text-primary shrink-0 mt-0.5" aria-hidden="true" />
+              <p className="leading-relaxed">{t('teams.serverRollenHinweis')}</p>
+            </div>
+            {canManageRoles && onOpenRoleInRolesTab && (
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={() => onOpenRoleInRolesTab(null)}
+              >
+                {t('teams.openInRolesTab')}
+                <ArrowUpRight className="h-3.5 w-3.5 ml-1" aria-hidden="true" />
+              </Button>
+            )}
           </div>
 
           {rollen.length === 0 ? (
@@ -106,144 +114,143 @@ export function TeamServerManager({
               {t('teams.keineRollenFuerServer')}
             </div>
           ) : (
-            <div className="space-y-4">
-              {assignable.length > 1 && (
-                <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-outline-variant/30 bg-surface-container-low/60 p-3.5 sm:px-4">
-                  <span className="text-xs sm:text-sm font-medium text-on-surface">
-                    {t('teams.bulkRoleLabel')}
-                  </span>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <div className="w-56 max-w-full">
-                      <Dropdown
-                        value={bulkRoleId}
-                        onChange={(val) => setBulkRoleId(val)}
-                        options={rollen.map((r) => ({ value: String(r.id), label: r.name }))}
-                        placeholder={t('teams.rolleWaehlen')}
-                        disabled={busy}
-                        aria-label={t('teams.bulkRoleLabel')}
-                      />
-                    </div>
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      size="sm"
-                      disabled={busy || !bulkRoleId}
-                      onClick={handleBulkRoleSelect}
-                    >
-                      {t('teams.applyRoleToAllServers')}
-                    </Button>
-                  </div>
-                </div>
-              )}
+            <div className={serverGridClass}>
+              {assignable.map((server) => {
+                const activeRoleGrants = rollen
+                  .map((r) => ({
+                    role: r,
+                    keys: r.server_grants?.find((g) => g.server_id === server.server_id)?.permission_keys ?? [],
+                  }))
+                  .filter((entry) => entry.keys.length > 0)
 
-              <div className={serverGridClass}>
-                {assignable.map((server) => {
-                  // Alle nicht-Admin-Rollen mit aktiven Rechten auf diesem Server
-                  const activeRoleGrants = rollen
-                    .map((r) => ({
-                      role: r,
-                      keys: r.server_grants?.find((g) => g.server_id === server.server_id)?.permission_keys ?? [],
-                    }))
-                    .filter((entry) => entry.keys.length > 0)
+                const expandedRoleId = expandedByServer[server.server_id] ?? null
+                const expandedEntry =
+                  expandedRoleId !== null
+                    ? activeRoleGrants.find((entry) => entry.role.id === expandedRoleId) ?? null
+                    : null
 
-                  const selectedId = rollenWahl[server.server_id]
-                  const gewaehlt =
-                    (selectedId !== undefined ? rollen.find((r) => r.id === selectedId) : null) ??
-                    activeRoleGrants[0]?.role ??
-                    null
-                  const grant = gewaehlt?.server_grants?.find((g) => g.server_id === server.server_id)
-
-                  return (
-                    <div key={server.server_id} className="space-y-3">
-                      <div className="space-y-2.5 rounded-2xl border border-outline-variant/30 bg-surface-container-high/40 p-3 sm:px-4">
-                        <div className="flex flex-wrap items-center justify-between gap-3">
-                          <div className="flex items-center gap-2 min-w-0">
-                            <Server className="h-4 w-4 text-primary shrink-0" aria-hidden="true" />
-                            <span className="font-semibold text-sm text-on-surface truncate">
-                              {server.server_name}
-                            </span>
-                          </div>
-                          <div className="w-60 max-w-full">
-                            <Dropdown
-                              value={gewaehlt ? String(gewaehlt.id) : null}
-                              onChange={(val) => onRollenWahl(server.server_id, val ? Number(val) : null)}
-                              options={rollen.map((r) => {
-                                const count =
-                                  r.server_grants?.find((g) => g.server_id === server.server_id)?.permission_keys.length ?? 0
-                                return {
-                                  value: String(r.id),
-                                  label: count > 0 ? `${r.name} (${count})` : r.name,
-                                }
-                              })}
-                              placeholder={t('teams.rolleWaehlen')}
-                              disabled={busy}
-                              aria-label={`${t('teams.roles')}: ${server.server_name}`}
-                            />
-                          </div>
+                return (
+                  <article
+                    key={server.server_id}
+                    className="overflow-hidden rounded-2xl border border-outline-variant/35 bg-surface-container-low/60 backdrop-blur-md shadow-sm"
+                  >
+                    {/* Kompakter Server-Header */}
+                    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-outline-variant/25 bg-surface-container-high/35 px-4 py-3 sm:px-5">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-primary/15 text-primary border border-primary/25 shadow-sm">
+                          <Server className="h-4 w-4" aria-hidden="true" />
                         </div>
-
-                        {/* Direkte Übersicht aller Rollen mit Rechten auf diesem Server */}
-                        <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-outline-variant/20">
-                          {activeRoleGrants.length > 0 ? (
-                            activeRoleGrants.map(({ role, keys }) => {
-                              const isCurrent = gewaehlt?.id === role.id
-                              return (
-                                <button
-                                  key={role.id}
-                                  type="button"
-                                  disabled={busy}
-                                  onClick={() => onRollenWahl(server.server_id, role.id)}
-                                  className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs transition-all border ${
-                                    isCurrent
-                                      ? 'border-primary bg-primary/15 text-primary font-semibold'
-                                      : 'border-outline-variant/35 bg-surface-container-low/70 text-on-surface-variant hover:border-primary/45 hover:text-on-surface'
-                                  }`}
-                                >
-                                  <RoleBadge
-                                    name={role.name}
-                                    color={role.color}
-                                    icon={role.icon}
-                                    size="sm"
-                                  />
-                                  <span className="text-label-sm opacity-80">
-                                    {t('teams.roleGrantCount', '{{count}} Rechte', { count: keys.length })}
-                                  </span>
-                                </button>
-                              )
-                            })
-                          ) : (
-                            <span className="text-xs text-on-surface-variant/75 italic">
-                              {t(
-                                'teams.noRoleGrantsForServer',
-                                'Noch keine Rolle mit Rechten für diesen Server — wähle oben eine Rolle zum Zuweisen.',
-                              )}
-                            </span>
-                          )}
+                        <div className="min-w-0">
+                          <h4 className="font-headline text-sm sm:text-base font-bold text-on-surface truncate">
+                            {server.server_name}
+                          </h4>
+                          <p className="text-xs text-on-surface-variant font-mono">
+                            ID #{server.server_id}
+                          </p>
                         </div>
                       </div>
 
-                      {gewaehlt ? (
-                        <TeamServerCard
-                          server={server}
-                          assignedKeys={grant?.permission_keys ?? []}
-                          onChangeKeys={(keys) => onRoleKeys(server.server_id, gewaehlt.id, keys)}
-                          disabled={busy}
-                          roleName={gewaehlt.name}
-                          onSyncToAllServers={
-                            assignable.length > 1 && onSyncRoleKeysToAll
-                              ? () => onSyncRoleKeysToAll(server.server_id, gewaehlt.id, grant?.permission_keys ?? [])
-                              : undefined
-                          }
-                        />
+                      <span className="inline-flex items-center gap-1.5 rounded-full bg-surface-container-high border border-outline-variant/30 px-3 py-1 text-xs font-medium text-on-surface-variant">
+                        <Shield className="h-3.5 w-3.5 text-primary" aria-hidden="true" />
+                        <span>
+                          {t('teams.rolesAssignedCount', { count: activeRoleGrants.length })}
+                        </span>
+                      </span>
+                    </div>
+
+                    {/* Zugewiesene Rollen als kompakte, klickbare Pills (standardmäßig eingeklappt) */}
+                    <div className="p-4 sm:p-5 space-y-3">
+                      {activeRoleGrants.length > 0 ? (
+                        <div className="flex flex-wrap items-center gap-2">
+                          {activeRoleGrants.map(({ role, keys }) => {
+                            const isExpanded = expandedEntry?.role.id === role.id
+                            return (
+                              <button
+                                key={role.id}
+                                type="button"
+                                aria-expanded={isExpanded}
+                                onClick={() => toggleRoleInspection(server.server_id, role.id)}
+                                className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs transition-all border ${
+                                  isExpanded
+                                    ? 'border-primary bg-primary/15 text-primary font-semibold shadow-sm'
+                                    : 'border-outline-variant/35 bg-surface-container-low/80 text-on-surface-variant hover:border-primary/45 hover:text-on-surface'
+                                }`}
+                              >
+                                <RoleBadge
+                                  name={role.name}
+                                  color={role.color}
+                                  icon={role.icon}
+                                  size="sm"
+                                />
+                                <span className="text-label-sm opacity-85">
+                                  {t('teams.roleGrantCount', { count: keys.length })}
+                                </span>
+                                <ChevronDown
+                                  className={`h-3.5 w-3.5 transition-transform ${
+                                    isExpanded ? 'rotate-180 text-primary' : 'opacity-65'
+                                  }`}
+                                  aria-hidden="true"
+                                />
+                              </button>
+                            )
+                          })}
+                        </div>
                       ) : (
-                        <div className="rounded-xl border border-dashed border-outline-variant/40 bg-surface-container-low/20 p-4 text-center text-xs text-on-surface-variant/70 italic">
-                          {t('teams.selectRoleToEditServer')}
+                        <p className="text-xs text-on-surface-variant/80">
+                          {t('teams.noRoleGrantsForServerOverview')}
+                        </p>
+                      )}
+
+                      {/* Aufgeklappte Schreibgeschützt-Ansicht der gewählten Rolle */}
+                      {expandedEntry && (
+                        <div className="rounded-xl border border-outline-variant/30 bg-surface-container/50 p-3.5 space-y-3">
+                          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-outline-variant/20 pb-2.5">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <RoleBadge
+                                name={expandedEntry.role.name}
+                                color={expandedEntry.role.color}
+                                icon={expandedEntry.role.icon}
+                                size="sm"
+                              />
+                              <span className="inline-flex items-center gap-1 text-xs text-on-surface-variant">
+                                <Lock className="h-3 w-3 shrink-0" aria-hidden="true" />
+                                {t('teams.rolePermissionsReadOnlyHint')}
+                              </span>
+                            </div>
+
+                            {canManageRoles && onOpenRoleInRolesTab && (
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 px-2 text-xs text-primary"
+                                onClick={() => onOpenRoleInRolesTab(expandedEntry.role)}
+                              >
+                                {t('teams.editRoleInRolesTab')}
+                                <ArrowUpRight className="h-3.5 w-3.5 ml-1" aria-hidden="true" />
+                              </Button>
+                            )}
+                          </div>
+
+                          <div
+                            className="flex flex-wrap gap-1.5"
+                            aria-label={`${t('teams.permissions')}: ${server.server_name} (${expandedEntry.role.name})`}
+                          >
+                            {expandedEntry.keys.map((key) => (
+                              <span
+                                key={key}
+                                className="inline-flex items-center rounded-lg border border-outline-variant/30 bg-surface-container-high/70 px-2.5 py-1 text-xs font-medium text-on-surface"
+                              >
+                                {t(`permissionDetails.${key.replace(/\./g, '_')}.title`, { defaultValue: key })}
+                              </span>
+                            ))}
+                          </div>
                         </div>
                       )}
                     </div>
-                  )
-                })}
-              </div>
+                  </article>
+                )
+              })}
             </div>
           )}
         </div>
@@ -253,10 +260,7 @@ export function TeamServerManager({
           <div className="flex items-start gap-3 rounded-2xl border border-outline-variant/30 bg-surface-container-low/50 p-3.5 text-xs text-on-surface-variant">
             <Info className="h-4 w-4 text-on-surface-variant shrink-0 mt-0.5" aria-hidden="true" />
             <p className="leading-relaxed">
-              {t(
-                'teams.globalServerGrantsNotice',
-                'Rollenbezogene Serverrechte sind ausgeschaltet: Alle Mitglieder erhalten dieselben unten festgelegten Server-Rechte unabhängig von ihrer Team-Rolle.',
-              )}
+              {t('teams.globalServerGrantsNotice')}
             </p>
           </div>
           <div className={serverGridClass}>
