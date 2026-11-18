@@ -60,7 +60,7 @@ tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
 # Bytes reisen als Text durch JSON: Bilder zum Panel und Modell, gespeicherte
 # Dateien vom WebView nach Rust (Android kennt keinen rohen IPC-Körper).
-base64 = "0.22"
+base64 = "0.23"
 sha2 = "0.10"
 uuid = { version = "1", features = ["v4"] }
 reqwest = { version = "0.13", default-features = false, features = ["rustls", "blocking"] }
@@ -178,12 +178,12 @@ windows = { version = "0.62", features = [
 # PermissionRequested-Handler der Mikrofonfreigabe — WebView2 zeigt fuer
 # getUserMedia auf tauri.localhost keinen eigenen Prompt, ohne Handler
 # bliebe das Mikrofon in der App stumm.
-webview2-com = "0.38"
-# Der PWSTR-Typ, den webview2-com erwartet (windows-0.61-Familie nutzt
-# windows-strings 0.4). Unser `windows = 0.62` (WASAPI-Ducking) traegt einen
+webview2-com = "0.39"
+# Der PWSTR-Typ, den webview2-com erwartet (webview2-com 0.39 nutzt
+# windows-strings 0.5). Unser `windows = 0.62` (WASAPI-Ducking) traegt einen
 # gleichnamigen, aber inkompatiblen Typ — dieselbe Kiste steht schon als
 # wry-Abhaengigkeit im Lock, hier wird sie nur direkt ansprechbar.
-windows-strings = "0.4"
+windows-strings = "0.5"
 
 [features]
 default = ["custom-protocol"]

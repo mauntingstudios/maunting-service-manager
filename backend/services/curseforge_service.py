@@ -192,6 +192,9 @@ class CurseForgeModInfo:
     game_id: Optional[str] = None
     class_id: Optional[int] = None
     is_modpack: bool = False
+    issues_url: Optional[str] = None
+    wiki_url: Optional[str] = None
+    source_url: Optional[str] = None
 
 
 class CurseForgeService:
@@ -287,6 +290,9 @@ class CurseForgeService:
 
         links = item.get("links") or {}
         direct_url = links.get("websiteUrl") or "https://www.curseforge.com"
+        issues_url = links.get("issuesUrl") or None
+        wiki_url = links.get("wikiUrl") or None
+        source_url = links.get("sourceUrl") or None
 
         subscriptions = int(item.get("downloadCount") or 0)
         favorites = int(item.get("thumbsUpCount") or 0)
@@ -344,6 +350,9 @@ class CurseForgeService:
             allow_mod_distribution=allow_dist,
             game_id=game_id_str,
             class_id=class_id_int,
+            issues_url=issues_url,
+            wiki_url=wiki_url,
+            source_url=source_url,
         )
 
     async def get_games(self) -> List[Dict[str, Any]]:
@@ -736,6 +745,46 @@ class CurseForgeService:
         except Exception as e:
             logger.warning("CurseForge details failed: %s", type(e).__name__)
             raise CurseForgeApiUnavailable("curseforge_api_unavailable") from e
+
+    async def get_mod_description(self, mod_id: int | str) -> Optional[str]:
+        """Lädt die vollständige Mod-Beschreibung via GET /v1/mods/{modId}/description."""
+        if not self.api_key:
+            raise CurseForgeApiUnavailable("curseforge_api_key_missing")
+
+        mod_id_int = int(mod_id)
+        cache_key = f"cf_desc_{mod_id_int}"
+        cached = self._get_cache(cache_key)
+        if cached is not None:
+            return cached
+
+        try:
+            response = await self.client.get(f"{self.API_BASE}/mods/{mod_id_int}/description")
+            if response.status_code == 404:
+                return None
+            if response.status_code in (401, 403):
+                raise CurseForgeApiUnavailable("curseforge_api_key_invalid")
+            response.raise_for_status()
+            data = response.json()
+            raw_html = str((data or {}).get("data") or "")
+            if not raw_html.strip():
+                return ""
+            from services.ai_web_search_service import html_to_clean_text
+
+            cleaned = html_to_clean_text(raw_html, max_len=4000)
+            self._set_cache(cache_key, cleaned)
+            return cleaned
+        except CurseForgeApiUnavailable:
+            raise
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                return None
+            if e.response.status_code in (401, 403):
+                raise CurseForgeApiUnavailable("curseforge_api_key_invalid") from e
+            logger.warning("CurseForge description failed with HTTP status %s", e.response.status_code)
+            return None
+        except Exception as e:
+            logger.warning("CurseForge description failed: %s", type(e).__name__)
+            return None
 
     async def get_mods_by_ids(self, mod_ids: List[int | str]) -> List[CurseForgeModInfo]:
         """Lädt Details für mehrere Mods gebündelt via POST /v1/mods."""

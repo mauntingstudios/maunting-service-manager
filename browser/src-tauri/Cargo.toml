@@ -29,7 +29,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 url = "2"
 # Favicons (Windows) und Standbilder (Android) reisen als Base64; schon im Baum, über Tauri.
-base64 = "0.22"
+base64 = "0.23"
 # Werbe- und Trackerfilter von Brave (MPL-2.0), dieselbe Engine wie in Brave.
 # Ohne `single-thread`: die Engine liegt hinter einem RwLock und wird aus dem
 # UI-Thread (WebView2) und aus dem Ladefaden der Listen angefasst.
@@ -58,7 +58,7 @@ tauri-plugin-single-instance = "2"
 # dort liegen Chromium- und Firefox-Profile als SQLite-Dateien. Gebündelt, damit
 # die Fassung der Bibliothek nicht von der Installation des Rechners abhängt;
 # der Import öffnet ausschließlich Kopien im eigenen Datenordner.
-rusqlite = { version = "0.31", features = ["bundled"] }
+rusqlite = { version = "0.43", features = ["bundled"] }
 # Dieselben Versionen, die wry mitbringt: die Schnittstellen der WebView2
 # (Anfragen filtern, Adresse, Verlauf, Favicon) gibt Tauri nicht selbst heraus.
 webview2-com = "0.39"

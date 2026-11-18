@@ -1156,6 +1156,11 @@ Einzelmods.
 `sort: "popular"` / `"trending"`) + `read_steam_collection` + `propose_mod_batch_install` \
 fuer Sammlungen/Links; `search_workshop_mods` + `propose_mod_batch_install` fuer \
 mehrere einzelne Mods.
+Mit `read_mod_details` pruefst du vor einer Installation oder bei Rueckfragen die \
+Vollbeschreibung, Versionskompatibilitaet, Pflicht-Abhaengigkeiten (samt \
+Installationsstatus auf dem Server) und die neuesten Nutzerkommentare einer Mod; \
+fehlen Pflicht-Abhaengigkeiten, schlag sie in der angegebenen Reihenfolge gleich mit \
+vor (`propose_mod_batch_install`).
 Bei offenen Empfehlungen ("such was Gutes raus", "was passt zu mir") pruefst du \
 zuerst still mit `search_memory`, ob Vorlieben oder Spielstil bekannt sind. \
 Passt ein Treffer eindeutig oder offensichtlich, schlag direkt `propose_mod_install`, \

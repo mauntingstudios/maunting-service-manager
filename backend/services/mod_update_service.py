@@ -124,13 +124,28 @@ def _minimized(mod_data: dict) -> dict:
         if isinstance(tag, dict) and tag.get("tag")
     ]
     raw_desc = str(mod_data.get("short_description") or "").strip()
+    wid = str(mod_data.get("publishedfileid") or "").strip()
+    child_ids: list[str] = []
+    seen_children: set[str] = set()
+    raw_children = mod_data.get("children") or []
+    if isinstance(raw_children, list):
+        dict_children = [ch for ch in raw_children if isinstance(ch, dict)]
+        dict_children.sort(key=lambda ch: int(ch.get("sortorder") or 0))
+        for ch in dict_children:
+            cid = str(ch.get("publishedfileid") or "").strip()
+            if cid and cid.isdigit() and cid != wid and cid not in seen_children:
+                seen_children.add(cid)
+                child_ids.append(cid)
     return {
-        "workshop_id": str(mod_data.get("publishedfileid") or ""),
+        "workshop_id": wid,
         "title": str(mod_data.get("title") or "")[:MAX_TITLE_CHARS],
         "description": raw_desc[:256] if raw_desc else None,
         "updated": mod_data.get("time_updated"),
         "subscriptions": mod_data.get("subscriptions"),
         "tags": tags[:8],
+        "direct_url": f"https://steamcommunity.com/sharedfiles/filedetails/?id={wid}" if wid else "",
+        "dependencies_count": len(child_ids),
+        "required_dependency_ids": child_ids[:10],
     }
 
 
@@ -161,6 +176,7 @@ def search_workshop(
         "return_previews": False,
         "return_details": True,
         "return_metadata": False,
+        "return_children": True,
     }
     if required_tags:
         query_data["requiredtags"] = ",".join(required_tags)

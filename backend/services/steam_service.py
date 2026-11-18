@@ -273,6 +273,7 @@ class SteamService:
         appid: Optional[str] = None,
         *,
         allow_public_fallback: bool = False,
+        full_description: bool = False,
     ) -> Dict[str, SteamModInfo]:
         """Batch-fetch published file details via IPublishedFileService/GetDetails/v1 with public fallback."""
         if not self.api_key and not allow_public_fallback:
@@ -286,11 +287,12 @@ class SteamService:
                 seen.add(pid)
                 unique_ids.append(pid)
 
+        cache_prefix = "details_full" if full_description else "details"
         results: Dict[str, SteamModInfo] = {}
         missing_ids: List[str] = []
         for pid in unique_ids:
             if appid:
-                cached = self._get_cache(f"details_{appid}_{pid}")
+                cached = self._get_cache(f"{cache_prefix}_{appid}_{pid}")
                 if cached is not None:
                     results[pid] = cached
                     continue
@@ -310,7 +312,7 @@ class SteamService:
                 query_data = {
                     "publishedfileids": [int(pid) for pid in chunk],
                     "includevotes": True,
-                    "short_description": True,
+                    "short_description": not full_description,
                     "includechildren": True,
                     "includetags": True,
                 }
@@ -389,7 +391,7 @@ class SteamService:
         for pid, parsed in results.items():
             target_app = appid or parsed.consumer_appid
             if target_app:
-                self._set_cache(f"details_{target_app}_{pid}", parsed)
+                self._set_cache(f"{cache_prefix}_{target_app}_{pid}", parsed)
 
         return results
 
@@ -533,22 +535,29 @@ class SteamService:
         publishedfileid: str,
         max_depth: int = 2,
         max_items: int = 50,
+        *,
+        full_description: bool = False,
     ) -> Optional[Dict[str, Any]]:
         """Resolve required Workshop dependencies (children) in dependency-first order."""
-        if not self.api_key:
+        if not self.api_key and not full_description:
             raise SteamApiUnavailable("steam_api_key_missing")
 
         clean_id = str(publishedfileid).strip()
         if not clean_id.isdigit():
             return None
 
-        cache_key = f"deps_{appid}_{clean_id}_{max_depth}_{max_items}"
+        cache_key = f"deps_{appid}_{clean_id}_{max_depth}_{max_items}_{int(full_description)}"
         cached = self._get_cache(cache_key)
         if cached is not None:
             return cached
 
         try:
-            root_map = await self.get_details_batch([clean_id], appid=appid)
+            root_map = await self.get_details_batch(
+                [clean_id],
+                appid=appid,
+                allow_public_fallback=full_description,
+                full_description=full_description,
+            )
             root_mod = root_map.get(clean_id)
             if not root_mod:
                 return None
@@ -569,7 +578,11 @@ class SteamService:
                 if not to_fetch:
                     break
 
-                batch_map = await self.get_details_batch(to_fetch, appid=appid)
+                batch_map = await self.get_details_batch(
+                    to_fetch,
+                    appid=appid,
+                    allow_public_fallback=full_description,
+                )
                 details_map.update(batch_map)
 
                 next_frontier: List[str] = []
@@ -664,6 +677,96 @@ class SteamService:
         except Exception as e:
             logger.warning("Steam API details failed: %s", type(e).__name__)
             raise SteamApiUnavailable("steam_api_unavailable") from e
+
+    async def get_mod_comments(
+        self,
+        publishedfileid: str,
+        limit: int = 12,
+    ) -> List[Dict[str, str]]:
+        """Liest die neuesten oeffentlichen Nutzerkommentare einer Steam-Workshop-Seite."""
+        clean_id = str(publishedfileid or "").strip()
+        if not clean_id.isdigit():
+            return []
+
+        capped_limit = max(1, min(int(limit), 25))
+        cache_key = f"comments_{clean_id}_{capped_limit}"
+        cached = self._get_cache(cache_key)
+        if cached is not None:
+            return cached
+
+        try:
+            resp = await self.client.get(
+                f"{self.COMMUNITY_BASE}/sharedfiles/filedetails/",
+                params={"id": clean_id},
+                headers={
+                    "Accept": "text/html,application/xhtml+xml",
+                    "Accept-Language": "de,en-US;q=0.9,en;q=0.8",
+                },
+                timeout=6.0,
+            )
+            if resp.status_code != 200 or not resp.text:
+                return []
+
+            blocks = re.split(
+                r'<div\b[^>]*class=["\'][^"\']*\bcommentthread_comment\b[^"\']*["\'][^>]*>',
+                resp.text,
+                flags=re.IGNORECASE,
+            )[1:]
+            comments: List[Dict[str, str]] = []
+            for block in blocks:
+                text_m = re.search(
+                    r'<div[^>]*class=["\'][^"\']*\bcommentthread_comment_text\b[^"\']*["\'][^>]*>(.*?)</div>',
+                    block,
+                    flags=re.DOTALL | re.IGNORECASE,
+                )
+                if not text_m:
+                    continue
+                raw_text = re.sub(r"<br\s*/?>", "\n", text_m.group(1), flags=re.IGNORECASE)
+                raw_text = re.sub(r"<[^>]+>", " ", raw_text)
+                raw_text = html.unescape(raw_text)
+                lines = [re.sub(r"[ \t]+", " ", ln).strip() for ln in raw_text.splitlines()]
+                clean_text = "\n".join(ln for ln in lines if ln).strip()[:500]
+                if not clean_text:
+                    continue
+
+                author_m = re.search(
+                    r'<a[^>]*class=["\'][^"\']*\bcommentthread_author_link\b[^"\']*["\'][^>]*>(.*?)</a>',
+                    block,
+                    flags=re.DOTALL | re.IGNORECASE,
+                )
+                author = ""
+                if author_m:
+                    author = html.unescape(re.sub(r"<[^>]+>", " ", author_m.group(1)))
+                    author = re.sub(r"\s+", " ", author).strip()[:64]
+
+                ts_m = re.search(
+                    r'<span[^>]*class=["\'][^"\']*\bcommentthread_comment_timestamp\b[^"\']*["\']([^>]*)>(.*?)</span>',
+                    block,
+                    flags=re.DOTALL | re.IGNORECASE,
+                )
+                timestamp = ""
+                if ts_m:
+                    attrs, inner_ts = ts_m.group(1), ts_m.group(2)
+                    title_m = re.search(r'\btitle=["\']([^"\']+)["\']', attrs, flags=re.IGNORECASE)
+                    raw_ts = title_m.group(1) if title_m else inner_ts
+                    raw_ts = html.unescape(re.sub(r"<[^>]+>", " ", raw_ts))
+                    timestamp = re.sub(r"\s+", " ", raw_ts).strip()[:64]
+
+                comments.append(
+                    {
+                        "author": author or "Steam User",
+                        "timestamp": timestamp,
+                        "text": clean_text,
+                    }
+                )
+                if len(comments) >= capped_limit:
+                    break
+
+            self._set_cache(cache_key, comments)
+            return comments
+        except Exception as exc:
+            logger.debug("Steam Workshop comments fetch skipped for %s: %s", clean_id, type(exc).__name__)
+            return []
     
     def _parse_mod_data(self, mod_data: Dict[str, Any]) -> SteamModInfo:
         """Parse Steam API response into SteamModInfo."""
@@ -708,12 +811,12 @@ class SteamService:
         except (TypeError, ValueError):
             declared_children = 0
 
-        raw_desc = (
-            mod_data.get('short_description')
-            or mod_data.get('file_description')
-            or mod_data.get('description')
-            or ''
-        )
+        candidates = [
+            str(mod_data.get("file_description") or "").strip(),
+            str(mod_data.get("description") or "").strip(),
+            str(mod_data.get("short_description") or "").strip(),
+        ]
+        raw_desc = max(candidates, key=len) if any(candidates) else ""
         clean_desc = re.sub(
             r'\[/?(?:b|i|u|h[1-6]|url(?:=[^\]]*)?|list|quote(?:=[^\]]*)?|code|spoiler|strike|table|tr|th|td|\*|img|previewyoutube|noparse)\]',
             '',

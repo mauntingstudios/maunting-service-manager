@@ -744,10 +744,47 @@ def test_der_dispatch_kennt_die_delegationen(db: Session) -> None:
         )
 
 
-def test_worker_ohne_sondermodell_wechselt_nicht_den_anbieter(db, monkeypatch):
+def test_worker_wechselt_auf_anderen_anbieter_mit_aktivem_worker(db, monkeypatch):
     user = _benutzer(db, "anbietergrenze")
     chosen = _provider(db, name="Ausgewaehlt")
-    _provider(db, name="Anderer Zugang", worker_model="anderes-arbeitsmodell")
+    anderer = _provider(db, name="Anderer Zugang", worker_model="anderes-arbeitsmodell")
+    monkeypatch.setattr(ai_provider_service, "anbieter_ohne_auswahl", lambda *_: chosen)
+    result = _start(db, user)
+    assert result["started"] is True
+    run = db.query(AiRun).filter_by(conversation_id=result["worker_id"]).one()
+    assert run.provider_id == anderer.id
+
+
+def test_worker_bleibt_beim_chat_anbieter_wenn_kein_worker_aktiv_ist(db, monkeypatch):
+    user = _benutzer(db, "einmodell")
+    chosen = _provider(db, name="Ausgewaehlt")
+    _provider(
+        db,
+        name="Deaktivierter Worker",
+        worker_model="anderes-arbeitsmodell",
+        worker_enabled=False,
+    )
+    monkeypatch.setattr(ai_provider_service, "anbieter_ohne_auswahl", lambda *_: chosen)
+    result = _start(db, user)
+    assert result["started"] is True
+    run = db.query(AiRun).filter_by(conversation_id=result["worker_id"]).one()
+    assert run.provider_id == chosen.id
+
+
+def test_worker_ueberspringt_anbieter_ohne_api_schluessel(db, monkeypatch):
+    user = _benutzer(db, "ohnekek")
+    chosen = _provider(db, name="Ausgewaehlt")
+    ai_provider_service.create_provider(
+        db,
+        name="Ohne Schluessel",
+        provider_kind="openrouter",
+        default_model="schnelles-modell",
+        worker_model="anderes-arbeitsmodell",
+        enabled=True,
+        requires_api_key=True,
+        operator_api_key=None,
+    )
+    db.commit()
     monkeypatch.setattr(ai_provider_service, "anbieter_ohne_auswahl", lambda *_: chosen)
     result = _start(db, user)
     assert result["started"] is True

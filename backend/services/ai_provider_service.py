@@ -1372,6 +1372,41 @@ def anbieter_ohne_auswahl(db: Session, user: User) -> AiProvider | None:
     return aktive[0] if len(aktive) == 1 else None
 
 
+def worker_anbieter(db: Session, user: User) -> AiProvider | None:
+    """Ermittelt den Zugang für Worker-Läufe mit Provider-Fallback.
+
+    Reihenfolge:
+    1. Der über `anbieter_ohne_auswahl` ermittelte aktuelle Chat-Zugang,
+       falls dort `fuer_worker` aktiv ist.
+    2. Der erste aktive Zugang (aufsteigend nach ID), bei dem `fuer_worker`
+       aktiv und der benötigte API-Schlüssel hinterlegt ist (analog zu Ethik,
+       Gedächtnis und Suchzusammenfassung).
+    3. Rückfall auf `anbieter_ohne_auswahl` (Ein-Modell-Betrieb über
+       `default_model`), falls nirgends ein eigener Worker konfiguriert ist.
+    """
+    anbieter = anbieter_ohne_auswahl(db, user)
+    if anbieter is not None and fuer_worker(anbieter):
+        return anbieter
+
+    kandidaten = (
+        db.query(AiProvider)
+        .filter(
+            AiProvider.enabled.is_(True),
+            AiProvider.worker_enabled.is_(True),
+            AiProvider.worker_model.isnot(None),
+        )
+        .order_by(AiProvider.id.asc())
+        .all()
+    )
+    for kandidat in kandidaten:
+        if fuer_worker(kandidat) and (
+            not kandidat.requires_api_key or kandidat.operator_api_key_encrypted
+        ):
+            return kandidat
+
+    return anbieter
+
+
 def estimate_cost_microunits(provider: AiProvider, tokens: int) -> int:
     """Rechnet Tokens mit dem gepflegten Preis in Kosten um — die Rückfallebene.
 

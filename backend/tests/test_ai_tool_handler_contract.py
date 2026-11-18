@@ -504,6 +504,8 @@ def test_the_tool_catalogue_stays_within_a_stated_budget(
         # mit den Team-Werkzeugen (`list_teams`, `read_team_overview`, `propose_team_*`).
         # Stand 18.11.2026: 103.890 Zeichen App (139 Werkzeuge) mit
         # `read_steam_collection`, `propose_mod_batch_install` und Kollektions-Suche.
+        # Stand 18.11.2026 (Mod-Details): 104.489 Zeichen App (140 Werkzeuge),
+        # 99.417 Zeichen Panel (134 Werkzeuge) mit `read_mod_details`.
         assert len(katalog) < 105_000, (
             f"Der Werkzeugkatalog der Herkunft '{herkunft}' ist auf "
             f"{len(katalog)} Zeichen gewachsen. Er geht in jeder Runde mit und "
@@ -554,6 +556,7 @@ OHNE_RAUCHTEST = {
     "check_server_reachability": "öffnet eine TCP-Verbindung zum Server",
     "search_workshop_mods": "fragt die Steam-Workshop-Suche",
     "read_steam_collection": "fragt die Steam-Kollektionsdetails ab",
+    "read_mod_details": "fragt Mod-Details, Abhängigkeiten und Kommentare bei Steam/CurseForge ab",
 }
 
 

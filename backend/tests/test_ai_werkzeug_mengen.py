@@ -42,7 +42,7 @@ def _katalog(monkeypatch, *, suche: bool, cloudflare: bool, politik: str) -> lis
 MENGEN = {
     "SERVER_READ_TOOLS": [
         "check_server_reachability", "frontend_read", "list_server_files", "read_ai_action_history",
-        "read_config", "read_database", "read_guardian_incidents", "read_mod_updates",
+        "read_config", "read_database", "read_guardian_incidents", "read_mod_details", "read_mod_updates",
         "read_server_backups", "read_server_capacity", "read_server_logs",
         "read_server_mods", "read_server_network", "read_server_ports",
         "read_server_status", "read_steam_collection", "search_server_files", "search_workshop_mods",
@@ -79,7 +79,7 @@ MENGEN = {
         "read_ai_action_history", "read_audit_summary", "read_blueprint", "read_chat_attachment", "read_config",
         "read_database", "read_docs", "read_document", "read_document_selection",
         "read_document_skill", "read_document_structure", "read_guardian_incidents",
-        "read_hoster_integration_guide", "read_hoster_setup", "read_mod_updates",
+        "read_hoster_integration_guide", "read_hoster_setup", "read_mod_details", "read_mod_updates",
         "read_node_capacity", "read_node_health", "read_server_backups",
         "read_server_capacity", "read_server_logs", "read_server_mods",
         "read_server_network", "read_server_ports", "read_server_status", "read_skill",
@@ -228,14 +228,14 @@ MENGEN = {
 }
 
 KATALOG = [
-    (False, False, "off", 132, "1cefc9d9397e08ac446a3bc1ccc4e2040bbed8137ecd2b67a4e608f0813871bf"),
-    (False, False, "review", 132, "72d5e29d78d03e91b31de6c783a5d1f6a028890471781015c708bf2b6b334533"),
-    (False, True, "off", 134, "003ed19e3337dfb52962e847b23e6c636fb81d8fe41c97d9ef57d2fc74d62970"),
-    (False, True, "review", 134, "7ba2a81ddd22a9b79c077dd88de0bd9422f2ebdb24f98bb8c5dd160bfd1df0eb"),
-    (True, False, "off", 134, "667a6b38a73c9ae17b99581df1550ee45bb20eeb1f47437350ff4bc43d9aec4d"),
-    (True, False, "review", 134, "44828596fb1b3eeeff0f2568847af7218147faaa3a56beba115f29cf81b86bf5"),
-    (True, True, "off", 136, "886ec6b6642fe3cf8675e67a38d4a215f41ca5f3bf51864681d703c7b80f0c3e"),
-    (True, True, "review", 136, "9e8dd41c42ac546586b8bd54163c134b586c79e968e914296bf68a206ccacd0e"),
+    (False, False, "off", 133, "82c2570d650fe3ac7221268fddb416264126da3c6ffdb02f787bd26725107204"),
+    (False, False, "review", 133, "6e3bd6c13fbb52cd23f0d09d31651238e6a95be6584d2f8ee15dd1a1ecdad94c"),
+    (False, True, "off", 135, "a36589e07b505caef77da89525f8a13dba5031836d181643bc00fa4557dad69e"),
+    (False, True, "review", 135, "0da92fc3bb97e42f266728a3628ed6043e0a7e0f73df85d0a6ae318912df9602"),
+    (True, False, "off", 135, "d0d0a758538eb04ae5ed4c51267767e3723f27b2b6037a94e9a1593593a3cc47"),
+    (True, False, "review", 135, "ab220c8251a2f1a03f1ef6ce53856c808b97c9c8095cda7dbf80c99fb48bcb80"),
+    (True, True, "off", 137, "5c12d0652a85423256c0bd6e09711dcd96a01e70ed3c4715235c556b119f1952"),
+    (True, True, "review", 137, "5c6bcc52362b803d1df6d6a16c9ef1b8f4983c0d0023f2f397df2538cd514e9c"),
 ]
 
 SPRACHE_KATALOG_HASH = "d616c67eee2793c462ef37b9540cffa53dc445688fbd8a890aa3e82bc41cf266"
@@ -345,4 +345,4 @@ def test_der_import_der_ki_schicht_bleibt_moeglich() -> None:
         "services.ai_tool_compat",
     ):
         importlib.import_module(modul)
-    assert len(registry.WERKZEUGE) == 139
+    assert len(registry.WERKZEUGE) == 140

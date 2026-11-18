@@ -131,8 +131,17 @@ def suche_mods(db: Session, *, user: User, arguments: dict, lauf: dict | None = 
         mods = _sync_search()
         if isinstance(mods, dict) and "error" in mods:
             return mods
-        return {
-            "mods": [
+        from routers.curseforge import _extract_required_dep_ids, _select_primary_curseforge_file
+
+        mod_items = []
+        for m in mods:
+            primary = _select_primary_curseforge_file(
+                getattr(m, "latest_files", None) or [],
+                getattr(m, "main_file_id", None),
+                is_modpack=bool(getattr(m, "is_modpack", False)),
+            )
+            dep_ids = _extract_required_dep_ids(primary, m.publishedfileid)
+            mod_items.append(
                 {
                     "id": m.publishedfileid,
                     "name": m.title,
@@ -141,9 +150,13 @@ def suche_mods(db: Session, *, user: User, arguments: dict, lauf: dict | None = 
                     "summary": (m.description or "")[:180],
                     "updated": m.updated.strftime("%Y-%m-%d") if m.updated else None,
                     "tags": m.tags[:5] if m.tags else [],
+                    "direct_url": getattr(m, "direct_url", "") or "",
+                    "dependencies_count": len(dep_ids),
+                    "required_dependency_ids": [str(d) for d in dep_ids[:10]],
                 }
-                for m in mods
-            ],
+            )
+        return {
+            "mods": mod_items,
             "query": query,
         }
     except Exception as exc:

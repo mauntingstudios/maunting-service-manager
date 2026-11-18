@@ -864,3 +864,332 @@ def test_propose_mod_batch_install_from_collection_and_execute(
     assert new_row is not None
     assert new_row.name == "New Cool Mod"
     assert new_row.install_status == "pending"
+
+
+def test_read_mod_details_steam_returns_full_description_dependencies_and_comments(
+    db: Session, regular_user: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import json
+    import httpx
+    from unittest.mock import AsyncMock
+
+    server, _conversation = _setup(
+        db, regular_user, server_keys=("server.view", "server.mods.read")
+    )
+    db.add(Mod(
+        server_id=server.id,
+        workshop_id="100200",
+        name="CF",
+        enabled=True,
+        install_status="installed",
+    ))
+    db.commit()
+
+    long_desc = "Compatibility: Works on DayZ 1.26 and Build 42. " + ("Details " * 60)
+    workshop_html = """
+    <div class="commentthread_comment responsive_body_text" id="comment_1">
+      <div class="commentthread_comment_content">
+        <div class="commentthread_comment_author">
+          <a class="hoverunderline commentthread_author_link" href="#"><bdi>SurvivorOne</bdi></a>
+          <span class="commentthread_comment_timestamp" title="12 Nov, 2026 @ 5:10pm">12 Nov @ 5:10pm</span>
+        </div>
+        <div class="commentthread_comment_text">Works great on 1.26!<br>No errors in logs.</div>
+      </div>
+    </div>
+    """
+
+    async def _fake_get(url: str, **kwargs):
+        if "GetDetails" in url:
+            payload = json.loads(kwargs["params"]["input_json"])
+            pids = [str(pid) for pid in payload["publishedfileids"]]
+            items = []
+            for pid in pids:
+                if pid == "100100":
+                    assert payload["short_description"] is False
+                    items.append({
+                        "result": 1,
+                        "publishedfileid": "100100",
+                        "title": "Expansion Core",
+                        "file_description": long_desc,
+                        "short_description": "Short text",
+                        "creator": "ModTeam",
+                        "file_size": 4 * 1024 * 1024,
+                        "time_created": 1700000000,
+                        "time_updated": 1700001000,
+                        "subscriptions": 5000,
+                        "favorited": 300,
+                        "tags": [{"tag": "Mod"}, {"tag": "Framework"}],
+                        "children": [
+                            {"publishedfileid": "100200", "sortorder": 0},
+                            {"publishedfileid": "100300", "sortorder": 1},
+                        ],
+                    })
+                elif pid == "100200":
+                    items.append({
+                        "result": 1,
+                        "publishedfileid": "100200",
+                        "title": "CF",
+                        "short_description": "Community Framework",
+                        "creator": "CFTeam",
+                        "file_size": 1024,
+                        "time_created": 1700000000,
+                        "time_updated": 1700000100,
+                    })
+                elif pid == "100300":
+                    items.append({
+                        "result": 1,
+                        "publishedfileid": "100300",
+                        "title": "Dabs Framework",
+                        "short_description": "Required UI framework",
+                        "creator": "Dab",
+                        "file_size": 2048,
+                        "time_created": 1700000000,
+                        "time_updated": 1700000200,
+                    })
+            return httpx.Response(200, json={"response": {"publishedfiledetails": items}}, request=httpx.Request("GET", url))
+        if "sharedfiles/filedetails" in url:
+            return httpx.Response(200, text=workshop_html, request=httpx.Request("GET", url))
+        raise AssertionError(f"Unerwartete URL: {url}")
+
+    monkeypatch.setattr("services.steam_api_key_service.resolve_key", lambda: "STEAM_TEST_KEY")
+    monkeypatch.setattr(httpx.AsyncClient, "get", AsyncMock(side_effect=_fake_get))
+
+    result = ai_action_service.execute_read_tool(
+        db,
+        user=regular_user,
+        tool_name="read_mod_details",
+        arguments={
+            "server_id": server.id,
+            "mod_id": "https://steamcommunity.com/sharedfiles/filedetails/?id=100100",
+        },
+    )
+
+    assert result["available"] is True
+    assert result["provider"] == "steam"
+    assert result["mod"]["workshop_id"] == "100100"
+    assert len(result["mod"]["full_description"]) > 256
+    assert "Compatibility: Works on DayZ 1.26" in result["mod"]["full_description"]
+    assert result["mod"]["already_installed"] is False
+    assert result["dependencies_count"] == 2
+    assert result["missing_dependencies_count"] == 1
+    deps_by_id = {d["workshop_id"]: d for d in result["dependencies"]}
+    assert deps_by_id["100200"]["already_installed"] is True
+    assert deps_by_id["100200"]["currently_enabled"] is True
+    assert deps_by_id["100300"]["already_installed"] is False
+    assert deps_by_id["100300"]["currently_enabled"] is False
+    assert len(result["comments"]) == 1
+    assert result["comments"][0]["author"] == "SurvivorOne"
+    assert result["comments"][0]["timestamp"] == "12 Nov, 2026 @ 5:10pm"
+    assert "Works great on 1.26!" in result["comments"][0]["text"]
+
+
+def test_read_mod_details_curseforge_returns_description_compatibility_and_dependencies(
+    db: Session, regular_user: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from datetime import datetime, timezone
+    from unittest.mock import AsyncMock, MagicMock
+    from services.curseforge_service import CurseForgeModInfo
+
+    server, _conversation = _setup(
+        db, regular_user, server_keys=("server.view", "server.mods.read")
+    )
+    server.game_type = "minecraft_fabric"
+    db.add(Mod(
+        server_id=server.id,
+        workshop_id="500",
+        name="Fabric API",
+        enabled=False,
+        install_status="installed",
+    ))
+    db.commit()
+
+    fake_plugin = MagicMock()
+    fake_plugin.supports_mods = True
+    fake_plugin.get_mod_support.return_value = {"provider": "curseforge", "curseforge_game_id": "432"}
+    fake_plugin.blueprint = MagicMock()
+    fake_plugin.blueprint.runtime.env = {"VERSION": "1.20.1"}
+
+    now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    files = [
+        {
+            "id": 10,
+            "displayName": "Mod Forge 1.20.1",
+            "fileName": "mod-forge.jar",
+            "fileDate": "2026-01-01T00:00:00Z",
+            "fileLength": 1024,
+            "gameVersions": ["1.20.1", "Forge"],
+            "dependencies": [{"modId": 9001, "relationType": 3}],
+        },
+        {
+            "id": 11,
+            "displayName": "Mod Fabric 1.20.1",
+            "fileName": "mod-fabric.jar",
+            "fileDate": "2026-01-02T00:00:00Z",
+            "fileLength": 2048,
+            "gameVersions": ["1.20.1", "Fabric"],
+            "dependencies": [{"modId": 500, "relationType": 3}],
+        },
+    ]
+    main_mod = CurseForgeModInfo(
+        publishedfileid="400",
+        title="Fancy Fabric Mod",
+        description="Short summary",
+        creator="CFDev",
+        file_size=2048,
+        created=now,
+        updated=now,
+        subscriptions=1000,
+        favorites=50,
+        tags=["Tech"],
+        direct_url="https://www.curseforge.com/minecraft/mc-mods/fancy-fabric-mod",
+        main_file_id=10,
+        latest_files=files,
+        game_id="432",
+        class_id=6,
+        issues_url="https://github.com/example/issues",
+        wiki_url="https://github.com/example/wiki",
+    )
+    dep_500 = CurseForgeModInfo(
+        publishedfileid="500",
+        title="Fabric API",
+        description="Core API",
+        creator="modmuss50",
+        file_size=1024,
+        created=now,
+        updated=now,
+        subscriptions=999999,
+        favorites=500,
+        tags=["API"],
+        direct_url="https://www.curseforge.com/minecraft/mc-mods/fabric-api",
+        main_file_id=50,
+        latest_files=[{
+            "id": 50,
+            "gameVersions": ["1.20.1", "Fabric"],
+            "dependencies": [{"modId": 600, "relationType": 3}],
+        }],
+        game_id="432",
+        class_id=6,
+    )
+    dep_600 = CurseForgeModInfo(
+        publishedfileid="600",
+        title="Cloth Config",
+        description="Config lib",
+        creator="shedaniel",
+        file_size=512,
+        created=now,
+        updated=now,
+        subscriptions=500000,
+        favorites=100,
+        tags=["Library"],
+        direct_url="https://www.curseforge.com/minecraft/mc-mods/cloth-config",
+        main_file_id=60,
+        latest_files=[],
+        game_id="432",
+        class_id=6,
+    )
+
+    mock_cf = MagicMock()
+    mock_cf.search_mods = AsyncMock(return_value=[main_mod])
+    mock_cf.get_mod_details = AsyncMock(return_value=main_mod)
+    mock_cf.get_mod_files = AsyncMock(return_value=files)
+    mock_cf.find_class_id = AsyncMock(return_value=4471)
+    mock_cf.get_mods_by_ids = AsyncMock(side_effect=[[dep_500], [dep_600]])
+    mock_cf.get_mod_description = AsyncMock(
+        return_value="Full description for Minecraft 1.20.1 Fabric. " + ("Note " * 70)
+    )
+
+    monkeypatch.setattr("games.get_plugin", lambda _gt: fake_plugin)
+    monkeypatch.setattr("services.curseforge_service.get_curseforge_service", AsyncMock(return_value=mock_cf))
+
+    result = ai_action_service.execute_read_tool(
+        db,
+        user=regular_user,
+        tool_name="read_mod_details",
+        arguments={
+            "server_id": server.id,
+            "mod_id": "https://www.curseforge.com/minecraft/mc-mods/fancy-fabric-mod",
+        },
+    )
+
+    assert result["available"] is True
+    assert result["provider"] == "curseforge"
+    assert result["mod"]["workshop_id"] == "400"
+    assert len(result["mod"]["full_description"]) > 256
+    assert result["mod"]["issues_url"] == "https://github.com/example/issues"
+    assert result["mod"]["wiki_url"] == "https://github.com/example/wiki"
+    assert result["compatibility"]["server_mod_loader"] == "fabric"
+    assert result["compatibility"]["server_game_version"] == "1.20.1"
+    assert result["compatibility"]["compatible_files"][0]["id"] == 11
+    assert "Fabric" in result["compatibility"]["compatible_files"][0]["game_versions"]
+    assert result["dependencies_count"] == 2
+    assert result["missing_dependencies_count"] == 1
+    assert [d["workshop_id"] for d in result["dependencies"]] == ["600", "500"]
+    assert result["dependencies"][0]["already_installed"] is False
+    assert result["dependencies"][1]["already_installed"] is True
+    assert result["dependencies"][1]["currently_enabled"] is False
+
+
+def test_search_workshop_mods_includes_dependencies_count_and_direct_url(
+    db: Session, regular_user: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import json
+    import httpx
+
+    server, _conversation = _setup(
+        db, regular_user, server_keys=("server.view", "server.mods.read")
+    )
+
+    steam_json = {
+        "response": {
+            "publishedfiledetails": [
+                {
+                    "result": 1,
+                    "publishedfileid": "2542661512",
+                    "title": "Dabs Framework",
+                    "short_description": "Required UI framework",
+                    "time_updated": 1700000000,
+                    "subscriptions": 25000,
+                    "tags": [{"tag": "Framework"}],
+                    "children": [
+                        {"publishedfileid": "1559212036", "sortorder": 0},
+                        {"publishedfileid": "2542661512", "sortorder": 1},
+                    ],
+                }
+            ]
+        }
+    }
+
+    captured_params: dict = {}
+
+    class _FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def get(self, url, params=None):
+            captured_params.update(params or {})
+            return httpx.Response(200, json=steam_json, request=httpx.Request("GET", url))
+
+    monkeypatch.setattr("services.steam_api_key_service.resolve_key", lambda: "STEAM_TEST_KEY")
+    monkeypatch.setattr(httpx, "Client", _FakeClient)
+
+    result = ai_action_service.execute_read_tool(
+        db,
+        user=regular_user,
+        tool_name="search_workshop_mods",
+        arguments={"server_id": server.id, "query": "Dabs"},
+    )
+
+    assert result["available"] is True
+    sent = json.loads(captured_params["input_json"])
+    assert sent["return_children"] is True
+    hit = result["results"][0]
+    assert hit["workshop_id"] == "2542661512"
+    assert hit["direct_url"] == "https://steamcommunity.com/sharedfiles/filedetails/?id=2542661512"
+    assert hit["dependencies_count"] == 1
+    assert hit["required_dependency_ids"] == ["1559212036"]

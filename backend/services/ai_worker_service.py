@@ -16,9 +16,11 @@ Die Worker-ID ist die Unterhaltungs-ID. Sie bleibt stabil, wenn ein Neustart
 den Lauf neu saet (der Lauf wechselt, das Fenster nicht) — und sie ist es,
 worueber Rueckfragen und Ergebnisse spaeter geroutet werden.
 
-Der Anbieter wird nicht gewaehlt, sondern geerbt: `anbieter_ohne_auswahl`
-liefert den zuletzt benutzten Zugang des Benutzers — das ist der Zugang, ueber
-den das Gehirn gerade spricht, denn dessen Lauf ist der juengste. Welches
+Der Anbieter wird ueber `worker_anbieter` aufgeloest: bevorzugt wird der
+zuletzt benutzte Zugang des Benutzers (`anbieter_ohne_auswahl`), sofern dort
+ein Worker aktiv ist; andernfalls greift der erste aktive Zugang mit
+konfiguriertem Worker (analog zu Ethik, Gedaechtnis und Suchzusammenfassung),
+und erst danach faellt er auf den Ein-Modell-Betrieb zurueck. Welches
 Modell darauf arbeitet (``worker_model`` oder der Ein-Modell-Fallback),
 entscheidet der Sendepfad je Segment, nicht diese Datei.
 """
@@ -215,7 +217,7 @@ def worker_start(
 
     from services import ai_chat_service, ai_provider_service
 
-    anbieter = ai_provider_service.anbieter_ohne_auswahl(db, user)
+    anbieter = ai_provider_service.worker_anbieter(db, user)
     if anbieter is None:
         return {
             "started": False,
@@ -445,7 +447,7 @@ def worker_antwort(db: Session, *, user: User, arguments: dict) -> dict:
         db.get(AiProvider, juengster.provider_id) if juengster.provider_id else None
     )
     if anbieter is None or not anbieter.enabled:
-        anbieter = ai_provider_service.anbieter_ohne_auswahl(db, user)
+        anbieter = ai_provider_service.worker_anbieter(db, user)
     if anbieter is None:
         return {
             "delivered": False,
