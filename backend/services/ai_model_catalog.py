@@ -1105,6 +1105,7 @@ async def fuer_provider(
     provider,
     *,
     user_id: int,
+    model_id: str | None = None,
 ) -> Modell | None:
     """Das eingestellte Modell eines Providers — mit Schlüssel, wenn nötig.
 
@@ -1135,7 +1136,7 @@ async def fuer_provider(
     from services.ai_provider_service import resolve_api_key
 
     kind = provider.provider_kind
-    modell_id = provider.default_model or ""
+    modell_id = (model_id or "").strip() or (provider.default_model or "")
     if not modell_id:
         return None
 

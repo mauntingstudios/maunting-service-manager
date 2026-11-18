@@ -205,6 +205,44 @@ describe('AiTab', () => {
     })
   })
 
+  it('lässt das Eintippen von 440000 von Grund auf zu, speichert 440000 und benachrichtigt den Chat', async () => {
+    vi.mocked(client.api).mockResolvedValue([blankRow])
+    const events: string[] = []
+    const listener = () => events.push('changed')
+    window.addEventListener('msm:ai-context-settings-changed', listener)
+
+    try {
+      render(<AiTab />)
+      fireEvent.click(await screen.findByRole('tab', { name: /Rollen & Kontingente/i }))
+
+      const feld = (await screen.findByLabelText(
+        /Max\. Kontext je Anfrage: user/i,
+      )) as HTMLInputElement
+      expect(feld.value).toBe('44000')
+
+      // Zwischenschritte unter 44.000 dürfen beim Tippen nicht sofort zurückspringen.
+      for (const schritt of ['', '4', '44', '440', '4400', '44000', '440000']) {
+        fireEvent.change(feld, { target: { value: schritt } })
+        expect(feld.value).toBe(schritt)
+      }
+
+      vi.mocked(client.api).mockResolvedValue({ ...blankRow, configured: true, max_context_tokens: 440_000 })
+      fireEvent.click(screen.getByRole('button', { name: /Speichern: user/i }))
+
+      await waitFor(() => {
+        const aufruf = vi.mocked(client.api).mock.calls.find(
+          ([pfad]) => pfad === '/ai/settings/role-limits/3',
+        )
+        expect(aufruf).toBeDefined()
+        const rumpf = JSON.parse(String((aufruf?.[1] as { body?: string })?.body))
+        expect(rumpf.max_context_tokens).toBe(440_000)
+      })
+      expect(events).toEqual(['changed'])
+    } finally {
+      window.removeEventListener('msm:ai-context-settings-changed', listener)
+    }
+  })
+
   it('shows only the selected role and switches to another one', async () => {
     vi.mocked(client.api).mockResolvedValue([blankRow, row])
     render(<AiTab />)

@@ -446,12 +446,27 @@ def typing_signal(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
+def _erlaubtes_wunschmodell(provider: AiProvider, model: str | None) -> str | None:
+    if not model or not model.strip():
+        return None
+    candidate = model.strip()
+    erlaubte = ai_provider_service.freigegebene_modelle(provider)
+    if (
+        getattr(provider, "allow_all_models", False)
+        or candidate in erlaubte
+        or candidate == provider.default_model
+    ):
+        return candidate
+    return None
+
+
 @router.get("/context", response_model=AiContextStatus)
 async def get_context_status(
     request: Request,
     provider_id: int,
     conversation_id: str | None = Query(None, max_length=36),
     document_uid: str | None = Query(None, max_length=36),
+    model: str | None = Query(None, max_length=256),
     db: Session = Depends(get_db),
     user: User = Depends(require_global("ai.chat.use")),
 ) -> AiContextStatus:
@@ -471,8 +486,20 @@ async def get_context_status(
         conversation = ai_chat_service.get_or_create_primary_conversation(db, user)
         db.commit()
 
+    requested_model = _erlaubtes_wunschmodell(provider, model)
+    if requested_model is not None:
+        effective_allowed = ai_limit_service.resolve_effective_allowed_models(db, user)
+        if effective_allowed is not None:
+            allowed_models = effective_allowed.get(provider.id)
+            if allowed_models is None or ("*" not in allowed_models and requested_model not in allowed_models):
+                requested_model = None
+
     fenster = await ai_context_window.ermitteln(
-        request.app.state.ai_http_client, provider, db=db, user_id=user.id
+        request.app.state.ai_http_client,
+        provider,
+        db=db,
+        user_id=user.id,
+        model_id=requested_model,
     )
     context_chars = fenster.zeichen if fenster.bekannt else None
     grenzen = ai_context_service.teilbudgets(context_chars)
@@ -827,12 +854,7 @@ async def stream_message(
         docs_is_link_guest = scope_res.is_link_guest
     db.commit()
 
-    requested_model: str | None = None
-    if payload.model and payload.model.strip():
-        candidate = payload.model.strip()
-        erlaubte = ai_provider_service.freigegebene_modelle(provider)
-        if getattr(provider, "allow_all_models", False) or candidate in erlaubte or candidate == provider.default_model:
-            requested_model = candidate
+    requested_model = _erlaubtes_wunschmodell(provider, payload.model)
 
     safe_content = redact_sensitive_text(payload.content).strip()
     if not safe_content and not ai_attachment_service.has_unbound(
@@ -859,7 +881,11 @@ async def stream_message(
     # mit demselben Budget rechnen wie der erste Zug, auch wenn der
     # Betreiber zwischendurch das Modell wechselt.
     fenster = await ai_context_window.ermitteln(
-        request.app.state.ai_http_client, provider, db=db, user_id=user.id
+        request.app.state.ai_http_client,
+        provider,
+        db=db,
+        user_id=user.id,
+        model_id=requested_model,
     )
     # Ab hier reisen nur noch **Kennungen** weiter. Der Anlauf legt sich
     # gleich eine eigene Sitzung in einem eigenen Thread an, und die des

@@ -39,7 +39,8 @@ from sqlalchemy.orm import Session
 
 from models import AiProvider, Role, RoleAiLimit, RoleAiModelAccess, Team, User
 from services import ai_context_window, ai_provider_service
-from services.role_service import effective_user_role_ids
+from services.permission_catalog import SYSTEM_ROLE_ADMIN
+from services.role_service import effective_user_role_ids, get_role_by_name
 
 
 # Genau die Breite von PostgreSQL INTEGER (2^31-1). Die drei Tokenspalten in
@@ -364,7 +365,15 @@ def resolve_context_ceiling(db: Session, user: User | None) -> int:
     """
     if user is None:
         return KONTEXT_DECKEL_STANDARD
-    role_ids = effective_user_role_ids(db, user)
+    role_ids = list(effective_user_role_ids(db, user))
+    # Owner-Konten tragen in `users.role_id` / `user_roles` keine zuweisbare
+    # Rolle (`Owner-Account hat keine zuweisbare Rolle`). Ohne diese Ergaenzung
+    # bliebe der Owner dauerhaft auf 44.000 Token stehen, selbst wenn er fuer die
+    # `admin`-Rolle einen hoeheren Deckel freigegeben hat.
+    if getattr(user, "is_owner", False):
+        admin_role = get_role_by_name(db, SYSTEM_ROLE_ADMIN)
+        if admin_role is not None and admin_role.id not in role_ids:
+            role_ids.append(admin_role.id)
     if not role_ids:
         return KONTEXT_DECKEL_STANDARD
     gesetzt = [

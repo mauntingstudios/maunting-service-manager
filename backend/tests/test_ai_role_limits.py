@@ -1669,3 +1669,30 @@ def test_der_hinweis_nennt_den_standarddeckel(sprache: str) -> None:
         f"Der Hinweis in {sprache}.json nennt nicht den Standarddeckel "
         f"({ai_context_window.ANFRAGE_DECKEL_TOKENS}): {hinweis!r}"
     )
+
+
+def test_owner_without_assigned_role_inherits_admin_context_ceiling(
+    db: Session,
+) -> None:
+    """Owner-Konten haben keine zuweisbare Rolle — die `admin`-Rolle regelt ihren Deckel."""
+    from services.auth_service import AuthService
+    from services.permission_catalog import SYSTEM_ROLE_ADMIN
+    from services.role_service import ensure_system_roles, get_role_by_name
+
+    ensure_system_roles(db)
+    admin_role = get_role_by_name(db, SYSTEM_ROLE_ADMIN)
+    assert admin_role is not None
+    owner = AuthService.create_owner(
+        db, "owner-kontext-test", "owner-kontext@example.invalid", "SuperSecret123!"
+    )
+    assert owner.role_id is None
+
+    # Ohne Eintrag an der `admin`-Rolle gilt weiterhin der Standarddeckel (44.000).
+    assert resolve_context_ceiling(db, owner) == ai_context_window.ANFRAGE_DECKEL_TOKENS
+
+    db.add(RoleAiLimit(role_id=admin_role.id))
+    db.commit()
+    set_role_context_ceiling(db, admin_role.id, 440_000)
+    db.commit()
+
+    assert resolve_context_ceiling(db, owner) == 440_000

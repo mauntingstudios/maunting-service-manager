@@ -25,7 +25,7 @@ function clamp(value: number, min?: number, max?: number): number {
 }
 
 export const NumberStepper = forwardRef<HTMLInputElement, NumberStepperProps>(
-  ({ value, onValueChange, min, max, step = 1, size = 'md', disabled, className = '', ...props }, ref) => {
+  ({ value, onValueChange, min, max, step = 1, size = 'md', disabled, className = '', onBlur, ...props }, ref) => {
   const { t } = useTranslation()
 
     const current = toNumber(value)
@@ -62,9 +62,10 @@ export const NumberStepper = forwardRef<HTMLInputElement, NumberStepperProps>(
             const next = event.target.value
             if (next === '' || /^-?\d*$/.test(next)) onValueChange(next)
           }}
-          onBlur={() => {
+          onBlur={(event) => {
             const parsed = toNumber(value)
             if (parsed != null) onValueChange(String(clamp(parsed, min, max)))
+            onBlur?.(event)
           }}
           disabled={disabled}
           inputMode="numeric"

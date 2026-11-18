@@ -239,8 +239,13 @@ export function AiTab() {
   const [rows, setRows] = useState<AiRoleLimits[]>([])
   const [providers, setProviders] = useState<AiProviderAdmin[]>([])
   const [selectedRoleId, setSelectedRoleId] = useState<number | null>(null)
+  const [contextDraft, setContextDraft] = useState<string | null>(null)
   const [loading, setLoading] = useState(canRead)
   const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    setContextDraft(null)
+  }, [selectedRoleId])
 
   const visibleTabs = useMemo(() => {
     return AI_TABS.filter((tab) => tab.id !== 'usage' || canReadUsage)
@@ -386,6 +391,8 @@ export function AiTab() {
       setRows((current) => current.map((item) => (
         item.role_id === updated.role_id ? updated : item
       )))
+      setContextDraft(null)
+      window.dispatchEvent(new CustomEvent('msm:ai-context-settings-changed'))
       toast.success(t('aiSettings.saved'))
     } catch (error: unknown) {
       // Wie beim Laden: ein roher Laufzeitfehler bekommt den übersetzten Satz.
@@ -587,12 +594,14 @@ export function AiTab() {
                       min={KONTEXT_DECKEL_MIN}
                       max={KONTEXT_DECKEL_MAX}
                       step={10_000}
-                      value={selected.max_context_tokens ?? KONTEXT_DECKEL_MIN}
+                      value={contextDraft ?? (selected.max_context_tokens ?? KONTEXT_DECKEL_MIN)}
                       disabled={!canWrite || saving}
                       onValueChange={(raw) => {
+                        setContextDraft(raw)
                         const parsed = parseLimitValue(raw, KONTEXT_DECKEL_MAX, KONTEXT_DECKEL_MIN)
                         if (parsed !== null) updateContextCeiling(selected.role_id, parsed)
                       }}
+                      onBlur={() => setContextDraft(null)}
                       aria-label={`${t('aiSettings.maxContextTokens')}: ${selected.role_name}`}
                       aria-describedby={`ai-${selected.role_id}-max-context-hint`}
                     />

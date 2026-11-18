@@ -190,6 +190,7 @@ async def ermitteln(
     *,
     db=None,
     user_id: int | None = None,
+    model_id: str | None = None,
 ) -> Fenster:
     """Das Fenster des eingestellten Modells dieses Providers.
 
@@ -222,9 +223,11 @@ async def ermitteln(
     Chat anhalten.
     """
     try:
+        ziel_modell = (model_id or "").strip() or None
         if db is not None and user_id is not None:
+            fuer_kwargs = {"model_id": ziel_modell} if ziel_modell else {}
             modell = await ai_model_catalog.fuer_provider(
-                client, db, provider, user_id=user_id
+                client, db, provider, user_id=user_id, **fuer_kwargs
             )
         else:
             kind = provider.provider_kind
@@ -237,7 +240,7 @@ async def ermitteln(
             modell = await ai_model_catalog.finde(
                 client,
                 kind,
-                provider.default_model or "",
+                ziel_modell or (provider.default_model or ""),
                 **finde_kwargs,
             )
     except Exception as exc:

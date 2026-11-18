@@ -41,6 +41,7 @@ export function AiContextSettings({ canWrite }: { canWrite: boolean }) {
     setBusy(true)
     try {
       setState(await aiApi.setContextPolicy(Number(value)))
+      window.dispatchEvent(new CustomEvent('msm:ai-context-settings-changed'))
       toast.success(t('ai.context.saved'))
     } catch (error: unknown) {
       toast.error(error instanceof SanitizedApiError ? error.message : t('ai.context.errors.save'))
@@ -59,7 +60,7 @@ export function AiContextSettings({ canWrite }: { canWrite: boolean }) {
   // die API nimmt jede Zahl im erlaubten Bereich, und ein Dropdown, dessen
   // `value` in keiner Option vorkommt, zeigt leer an — es sähe aus, als wäre
   // nichts eingestellt.
-  const stufen = Array.from(new Set([60, 70, 75, 80, 90, state.compaction_percent]))
+  const stufen = Array.from(new Set([60, 65, 70, 75, 80, 85, 90, state.compaction_percent]))
     .filter((wert) => wert >= state.min_percent && wert <= state.max_percent)
     .sort((links, rechts) => links - rechts)
 

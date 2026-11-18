@@ -117,6 +117,16 @@ export function useAiProviderModell({
 
   useEffect(() => { void ladeKontext() }, [ladeKontext])
 
+  useEffect(() => {
+    const handleContextChange = () => {
+      void ladeKontext()
+    }
+    window.addEventListener('msm:ai-context-settings-changed', handleContextChange)
+    return () => {
+      window.removeEventListener('msm:ai-context-settings-changed', handleContextChange)
+    }
+  }, [ladeKontext])
+
   const availableProviders = useMemo(
     () => providers.filter((provider) => provider.available),
     [providers],

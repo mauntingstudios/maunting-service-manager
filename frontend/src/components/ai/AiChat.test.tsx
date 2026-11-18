@@ -776,6 +776,29 @@ describe('AiChat', () => {
       .toHaveAccessibleName(expect.stringContaining('50k Token (10 %)'))
   })
 
+  it('lädt den Kontext-Ring sofort neu, wenn KI-Einstellungen geändert wurden', async () => {
+    let aktuellerStand: AiContextStatus = {
+      known: true, window_tokens: 1_100_000, usable_tokens: 44_000,
+      used_tokens: 14_000, compaction_percent: 75, summarized: false,
+    }
+    vi.mocked(aiApi.getContextStatus).mockImplementation(() => Promise.resolve(aktuellerStand))
+    render(<MemoryRouter><AiChat /></MemoryRouter>)
+    await screen.findByText('synthetic-note.txt')
+
+    expect(await screen.findByRole('img', { name: /Frei: etwa 30k Token/ })).toBeInTheDocument()
+
+    aktuellerStand = {
+      known: true, window_tokens: 1_100_000, usable_tokens: 440_000,
+      used_tokens: 14_000, compaction_percent: 85, summarized: false,
+    }
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent('msm:ai-context-settings-changed'))
+    })
+
+    const ring = await screen.findByRole('img', { name: /Frei: etwa 426k Token/ })
+    expect(ring).toHaveAccessibleName(expect.stringContaining('Zusammenfassung ab 85 % Belegung'))
+  })
+
   it('bietet bei einem Modell mit Denkzwang kein „aus" an', async () => {
     // 82 der 402 Katalogmodelle tragen `mandatory: true` — dort ist Nachdenken
     // nicht abschaltbar. Ein „aus" in der Liste waere eine Wahl, die der

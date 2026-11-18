@@ -840,7 +840,10 @@ export function AiChat({
       if (document.visibilityState !== 'hidden') nachladen()
     }, NACHSEHEN_MS)
     const sichtbar = () => {
-      if (document.visibilityState === 'visible') nachladen()
+      if (document.visibilityState === 'visible') {
+        nachladen()
+        void ladeKontext()
+      }
     }
     window.addEventListener(AI_ZUSTELLUNG_EVENT, nachladen)
     document.addEventListener('visibilitychange', sichtbar)
@@ -850,7 +853,7 @@ export function AiChat({
       window.removeEventListener(AI_ZUSTELLUNG_EVENT, nachladen)
       document.removeEventListener('visibilitychange', sichtbar)
     }
-  }, [chatApi, setEntries, streaming, verlaufEintraegeRef])
+  }, [chatApi, ladeKontext, setEntries, streaming, verlaufEintraegeRef])
 
   const manuellNachladen = useCallback(async () => {
     if (streaming || reloading) return

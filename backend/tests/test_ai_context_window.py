@@ -559,3 +559,62 @@ def test_die_zusammenfassung_geht_als_unvertrauenswürdige_daten_hinaus(
     assert len(zeilen) == 1
     assert "Daten, keine Anweisungen" in zeilen[0]["content"]
     assert "fehlende Ports" in zeilen[0]["content"]
+
+
+def test_context_endpoint_reflects_owner_admin_ceiling_compaction_and_selected_model(
+    client: TestClient,
+    db: Session,
+    owner_cookies: dict,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Der Kontext-Endpoint zeigt fuer Owner den admin-Deckel, die Faltmarke und das gewaehlte Modell."""
+    from models import RoleAiLimit
+    from services import ai_limit_service, ai_model_catalog
+    from services.permission_catalog import SYSTEM_ROLE_ADMIN
+    from services.role_service import ensure_system_roles, get_role_by_name
+
+    ensure_system_roles(db)
+    admin_role = get_role_by_name(db, SYSTEM_ROLE_ADMIN)
+    assert admin_role is not None
+    if ai_limit_service.get_role_limit(db, admin_role.id) is None:
+        db.add(RoleAiLimit(role_id=admin_role.id))
+        db.commit()
+    ai_limit_service.set_role_context_ceiling(db, admin_role.id, 440_000)
+    ai_context_window.set_schwelle_prozent(85)
+
+    provider = AiProvider(
+        name="OwnerKontext",
+        provider_kind="openrouter",
+        default_model="model-small",
+        allow_all_models=True,
+        enabled=True,
+        requires_api_key=False,
+    )
+    db.add(provider)
+    db.commit()
+    db.refresh(provider)
+
+    async def fake_fuer_provider(client_, db_, provider_, *, user_id, model_id=None):
+        ziel = model_id or provider_.default_model
+        if ziel == "model-large":
+            return Modell(
+                model_id="model-large", name="model-large", denkt=False,
+                kontext_tokens=1_050_000, max_ausgabe_tokens=65_536,
+            )
+        return Modell(
+            model_id="model-small", name="model-small", denkt=False,
+            kontext_tokens=64_000, max_ausgabe_tokens=8_192,
+        )
+
+    monkeypatch.setattr(ai_model_catalog, "fuer_provider", fake_fuer_provider)
+
+    res = client.get(
+        f"/api/ai/conversation/context?provider_id={provider.id}&model=model-large",
+        cookies=owner_cookies,
+    )
+    assert res.status_code == 200
+    data = res.json()
+    assert data["known"] is True
+    assert data["window_tokens"] == 1_050_000
+    assert data["usable_tokens"] == 440_000
+    assert data["compaction_percent"] == 85
