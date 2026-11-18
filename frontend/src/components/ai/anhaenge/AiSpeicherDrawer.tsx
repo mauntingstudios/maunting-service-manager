@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   CheckSquare,
@@ -8,6 +8,7 @@ import {
   HardDrive,
   Image as ImageIcon,
   MessageSquarePlus,
+  Plus,
   Search,
   Square,
   Trash2,
@@ -15,8 +16,72 @@ import {
 } from 'lucide-react'
 
 import { aiApi, type AiAttachment } from '@/api/ai'
-import { Button, Checkbox, Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, Input, Kurzinfo } from '@maunting/ui'
+import {
+  Button,
+  Checkbox,
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  FileButton,
+  Input,
+  Kurzinfo,
+} from '@maunting/ui'
+import { useBildquelle } from '@/hooks/useBildquelle'
 import { anhangArt, lesbareGroesse } from '@/lib/aiAnhangTypen'
+import { still } from '@/lib/still'
+
+/** Authentifizierte Bildvorschau für KI-Anhänge (Web + Tauri/MSS). */
+export function AiAnhangMiniatur({ attachmentId, className = 'h-full w-full object-cover' }: { attachmentId: string; className?: string }) {
+  const pfad =
+    typeof aiApi.attachmentContentUrl === 'function'
+      ? aiApi.attachmentContentUrl(attachmentId)
+      : `/api/ai/attachments/${encodeURIComponent(attachmentId)}/content`
+  const { quelle, fehlgeschlagen, bildFehler } = useBildquelle(pfad)
+
+  if (!quelle || fehlgeschlagen) {
+    return <ImageIcon className="h-4 w-4 text-on-surface-variant" aria-hidden="true" />
+  }
+  return (
+    <img
+      src={quelle}
+      alt=""
+      className={className}
+      loading="lazy"
+      onError={bildFehler}
+    />
+  )
+}
+
+/** Optionales Entfernen einer gespiegelten Datei aus dem entsperrten Tresor. */
+export async function entferneAnhangAusTresor(originalName: string): Promise<void> {
+  try {
+    const { useVaultStore } = await import('@/desktop/vault/vaultStore')
+    const vaultStore = useVaultStore.getState()
+    if (vaultStore.isUnlocked) {
+      const vaultItem = vaultStore.items.find((i) => i.service === originalName)
+      if (vaultItem) {
+        await vaultStore.deleteItem(vaultItem.id)
+      }
+    }
+  } catch (err) {
+    still(err, 'ai.storage.deleteVault')
+  }
+}
+
+export interface AiSpeicherInhaltProps {
+  anhaenge: AiAttachment[]
+  onLoeschen: (anhang: AiAttachment, auchAusTresor: boolean) => Promise<void>
+  onInPromptEinfuegen?: (anhang: AiAttachment) => void
+  onUploadFiles?: (files: File[]) => Promise<void> | void
+  uploading?: boolean
+  tresorSpiegelungAktiv?: boolean
+  /** Header-Titel/Schließ-Kontext im Dialog vs. Vollseite. */
+  alsDialog?: boolean
+  onSchliessen?: () => void
+  footer?: ReactNode
+}
 
 export interface AiSpeicherDrawerProps {
   offen: boolean
@@ -24,19 +89,27 @@ export interface AiSpeicherDrawerProps {
   anhaenge: AiAttachment[]
   onLoeschen: (anhang: AiAttachment, auchAusTresor: boolean) => Promise<void>
   onInPromptEinfuegen?: (anhang: AiAttachment) => void
+  onUploadFiles?: (files: File[]) => Promise<void> | void
+  uploading?: boolean
   tresorSpiegelungAktiv?: boolean
 }
 
 type FilterArt = 'alle' | 'bilder' | 'dokumente' | 'texte'
 
-export function AiSpeicherDrawer({
-  offen,
-  onSchliessen,
+/**
+ * Gemeinsamer KI-Speicher-Kern (Single Source of Truth für Chat-Drawer & `/ai?bereich=dateien`).
+ */
+export function AiSpeicherInhalt({
   anhaenge,
   onLoeschen,
   onInPromptEinfuegen,
+  onUploadFiles,
+  uploading = false,
   tresorSpiegelungAktiv = false,
-}: AiSpeicherDrawerProps) {
+  alsDialog = false,
+  onSchliessen,
+  footer,
+}: AiSpeicherInhaltProps) {
   const { t, i18n } = useTranslation()
   const [suchbegriff, setSuchbegriff] = useState('')
   const [filter, setFilter] = useState<FilterArt>('alle')
@@ -119,231 +192,244 @@ export function AiSpeicherDrawer({
     }
   }
 
-  return (
+  const kopfBlock = (
     <>
-      <Dialog open={offen} onOpenChange={(auf) => { if (!auf) onSchliessen() }}>
-        <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col p-0 overflow-hidden">
-          <DialogHeader className="p-4 sm:p-6 pb-3 border-b border-outline-variant/20">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                  <HardDrive className="h-5 w-5" aria-hidden="true" />
+      <div className="flex flex-wrap items-center justify-between gap-3 pr-8">
+        <div className="flex items-center gap-2.5">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
+            <HardDrive className="h-5 w-5" aria-hidden="true" />
+          </div>
+          <div>
+            {alsDialog ? (
+              <DialogTitle className="text-base font-semibold text-on-surface">
+                {t('ai.attachments.storageTitle')}
+              </DialogTitle>
+            ) : (
+              <h2 className="font-headline text-lg font-semibold text-on-surface">
+                {t('ai.attachments.storageTitle')}
+              </h2>
+            )}
+            <p className="text-xs text-on-surface-variant">
+              {anhaenge.length} {t('ai.attachments.list')} · {t('ai.attachments.totalSize')}: {lesbareGroesse(gesamtGroesse)}
+            </p>
+          </div>
+        </div>
+
+        {onUploadFiles && (
+          <FileButton
+            variant="primary"
+            size="sm"
+            multiple
+            disabled={uploading}
+            onFiles={(files) => void onUploadFiles(files)}
+          >
+            <Plus className="h-4 w-4" aria-hidden="true" />
+            <span>{uploading ? t('common.loading') : t('ai.attachments.upload')}</span>
+          </FileButton>
+        )}
+      </div>
+
+      {/* Filter- & Suchleiste */}
+      <div className="mt-3 flex flex-col sm:flex-row gap-2">
+        <div className="relative flex-1">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-on-surface-variant pointer-events-none" aria-hidden="true" />
+          <Input
+            value={suchbegriff}
+            onChange={(e) => setSuchbegriff(e.target.value)}
+            placeholder={t('ai.attachments.searchPlaceholder')}
+            className="pl-8 h-9 text-sm"
+            aria-label={t('ai.attachments.searchPlaceholder')}
+          />
+          {suchbegriff && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7 text-on-surface-variant hover:text-on-surface"
+              onClick={() => setSuchbegriff('')}
+              aria-label={t('common.clear', 'Suche leeren')}
+            >
+              <X className="h-3.5 w-3.5" aria-hidden="true" />
+            </Button>
+          )}
+        </div>
+        <div className="flex items-center gap-1 overflow-x-auto pb-1 sm:pb-0">
+          {(['alle', 'bilder', 'dokumente', 'texte'] as FilterArt[]).map((f) => (
+            <Button
+              key={f}
+              type="button"
+              variant={filter === f ? 'primary' : 'ghost'}
+              size="sm"
+              className="h-8 text-xs shrink-0"
+              onClick={() => setFilter(f)}
+            >
+              {f === 'alle' && t('common.all')}
+              {f === 'bilder' && t('ai.attachments.filterImages')}
+              {f === 'dokumente' && t('ai.attachments.filterDocuments')}
+              {f === 'texte' && t('ai.attachments.filterText')}
+            </Button>
+          ))}
+        </div>
+      </div>
+
+      {/* Sammel-Aktionsleiste bei Auswahl */}
+      {gefilterteAnhaenge.length > 0 && (
+        <div className="mt-2.5 pt-2 border-t border-outline-variant/15 flex items-center justify-between text-xs text-on-surface-variant">
+          <button
+            type="button"
+            onClick={toggleSelectAll}
+            className="flex items-center gap-2 hover:text-on-surface transition-colors select-none font-medium"
+          >
+            {ausgewaehlteIds.size === gefilterteAnhaenge.length ? (
+              <CheckSquare className="h-4 w-4 text-primary" />
+            ) : (
+              <Square className="h-4 w-4 text-outline" />
+            )}
+            <span>{t('ai.attachments.selectAll')}</span>
+          </button>
+
+          {ausgewaehlteIds.size > 0 && (
+            <div className="flex items-center gap-2">
+              <span className="font-semibold text-primary">
+                {t('ai.attachments.selectedCount', { count: ausgewaehlteIds.size })}
+              </span>
+              <Button
+                type="button"
+                variant="destructive"
+                size="sm"
+                className="h-7 px-2.5 text-xs"
+                onClick={() => {
+                  const gewaehlt = gefilterteAnhaenge.filter((a) => ausgewaehlteIds.has(a.id))
+                  handleOpenDelete(gewaehlt)
+                }}
+              >
+                <Trash2 className="h-3.5 w-3.5 mr-1" />
+                {t('ai.attachments.deleteSelected', { count: ausgewaehlteIds.size })}
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
+    </>
+  )
+
+  const listeBlock =
+    gefilterteAnhaenge.length === 0 ? (
+      <div className="flex flex-col items-center justify-center h-48 text-center text-on-surface-variant">
+        <HardDrive className="h-10 w-10 opacity-30 mb-2" aria-hidden="true" />
+        <p className="text-sm font-medium">{t('ai.attachments.emptyStorage')}</p>
+        <p className="text-xs text-on-surface-variant/70 mt-1 max-w-sm">
+          {t('ai.attachments.storageDescription')}
+        </p>
+      </div>
+    ) : (
+      <ul className="space-y-1.5" aria-label={t('ai.attachments.list')}>
+        {gefilterteAnhaenge.map((item) => {
+          const art = anhangArt(item.media_type, item.original_name)
+          const istAusgewaehlt = ausgewaehlteIds.has(item.id)
+          return (
+            <li
+              key={item.id}
+              className={`group flex items-center justify-between p-2.5 rounded-xl border transition-colors gap-3 ${
+                istAusgewaehlt
+                  ? 'border-primary/50 bg-primary/5'
+                  : 'border-outline-variant/30 bg-surface-container hover:bg-surface-container-high'
+              }`}
+            >
+              <div className="flex items-center gap-3 min-w-0 flex-1">
+                <Checkbox
+                  id={`select-${item.id}`}
+                  checked={istAusgewaehlt}
+                  onCheckedChange={() => toggleSelect(item.id)}
+                  aria-label={`${t('common.select', 'Auswählen')}: ${item.original_name}`}
+                />
+                <div className="flex h-9 w-9 shrink-0 overflow-hidden items-center justify-center rounded-lg bg-surface border border-outline-variant/30 text-on-surface-variant">
+                  {art === 'image' ? (
+                    <AiAnhangMiniatur attachmentId={item.id} />
+                  ) : art === 'document' ? (
+                    <FileText className="h-4 w-4" aria-hidden="true" />
+                  ) : art === 'text' ? (
+                    <FileCode className="h-4 w-4" aria-hidden="true" />
+                  ) : (
+                    <File className="h-4 w-4" aria-hidden="true" />
+                  )}
                 </div>
-                <div>
-                  <DialogTitle className="text-base font-semibold text-on-surface">
-                    {t('ai.attachments.storageTitle')}
-                  </DialogTitle>
-                  <p className="text-xs text-on-surface-variant">
-                    {anhaenge.length} {t('ai.attachments.list')} · {t('ai.attachments.totalSize')}: {lesbareGroesse(gesamtGroesse)}
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium text-on-surface truncate">
+                    {item.original_name}
                   </p>
+                  <div className="flex items-center gap-2 text-xs text-on-surface-variant">
+                    <span>{lesbareGroesse(item.size_bytes)}</span>
+                    <span>·</span>
+                    <span>{formatiereDatum(item.created_at)}</span>
+                    {item.redacted_spans ? (
+                      <span className="rounded-full bg-warning/10 text-warning border border-warning/20 px-1.5 py-0.5 text-xs">
+                        {t('ai.attachments.redacted', { count: item.redacted_spans })}
+                      </span>
+                    ) : null}
+                  </div>
                 </div>
               </div>
-            </div>
 
-            {/* Filter- & Suchleiste */}
-            <div className="mt-3 flex flex-col sm:flex-row gap-2">
-              <div className="relative flex-1">
-                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-on-surface-variant pointer-events-none" aria-hidden="true" />
-                <Input
-                  value={suchbegriff}
-                  onChange={(e) => setSuchbegriff(e.target.value)}
-                  placeholder={t('ai.attachments.searchPlaceholder')}
-                  className="pl-8 h-9 text-sm"
-                  aria-label={t('ai.attachments.searchPlaceholder')}
-                />
-                {suchbegriff && (
+              <div className="flex items-center gap-1 shrink-0">
+                {onInPromptEinfuegen && (
+                  <Kurzinfo text={t('ai.attachments.insertIntoPrompt')} lage="oben" seite="mitte">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 text-on-surface-variant hover:text-primary"
+                      aria-label={`${t('ai.attachments.insertIntoPrompt')}: ${item.original_name}`}
+                      onClick={() => {
+                        onInPromptEinfuegen(item)
+                        onSchliessen?.()
+                      }}
+                    >
+                      <MessageSquarePlus className="h-4 w-4" aria-hidden="true" />
+                    </Button>
+                  </Kurzinfo>
+                )}
+                <Kurzinfo text={t('ai.attachments.remove')} lage="oben" seite="ende">
                   <Button
                     type="button"
                     variant="ghost"
                     size="icon"
-                    className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7 text-on-surface-variant hover:text-on-surface"
-                    onClick={() => setSuchbegriff('')}
-                    aria-label="Suche leeren"
+                    className="h-8 w-8 text-on-surface-variant hover:text-error"
+                    aria-label={`${t('ai.attachments.remove')}: ${item.original_name}`}
+                    onClick={() => handleOpenDelete([item])}
                   >
-                    <X className="h-3.5 w-3.5" aria-hidden="true" />
+                    <Trash2 className="h-4 w-4" aria-hidden="true" />
                   </Button>
-                )}
+                </Kurzinfo>
               </div>
-              <div className="flex items-center gap-1 overflow-x-auto pb-1 sm:pb-0">
-                {(['alle', 'bilder', 'dokumente', 'texte'] as FilterArt[]).map((f) => (
-                  <Button
-                    key={f}
-                    type="button"
-                    variant={filter === f ? 'primary' : 'ghost'}
-                    size="sm"
-                    className="h-8 text-xs shrink-0"
-                    onClick={() => setFilter(f)}
-                  >
-                    {f === 'alle' && t('common.all')}
-                    {f === 'bilder' && t('ai.attachments.filterImages')}
-                    {f === 'dokumente' && t('ai.attachments.filterDocuments')}
-                    {f === 'texte' && t('ai.attachments.filterText')}
-                  </Button>
-                ))}
-              </div>
-            </div>
+            </li>
+          )
+        })}
+      </ul>
+    )
 
-            {/* Sammel-Aktionsleiste bei Auswahl */}
-            {gefilterteAnhaenge.length > 0 && (
-              <div className="mt-2.5 pt-2 border-t border-outline-variant/15 flex items-center justify-between text-xs text-on-surface-variant">
-                <button
-                  type="button"
-                  onClick={toggleSelectAll}
-                  className="flex items-center gap-2 hover:text-on-surface transition-colors select-none font-medium"
-                >
-                  {ausgewaehlteIds.size === gefilterteAnhaenge.length ? (
-                    <CheckSquare className="h-4 w-4 text-primary" />
-                  ) : (
-                    <Square className="h-4 w-4 text-outline" />
-                  )}
-                  <span>{t('ai.attachments.selectAll')}</span>
-                </button>
-
-                {ausgewaehlteIds.size > 0 && (
-                  <div className="flex items-center gap-2">
-                    <span className="font-semibold text-primary">
-                      {t('ai.attachments.selectedCount', { count: ausgewaehlteIds.size })}
-                    </span>
-                    <Button
-                      type="button"
-                      variant="destructive"
-                      size="sm"
-                      className="h-7 px-2.5 text-xs"
-                      onClick={() => {
-                        const gewaehlt = gefilterteAnhaenge.filter((a) => ausgewaehlteIds.has(a.id))
-                        handleOpenDelete(gewaehlt)
-                      }}
-                    >
-                      <Trash2 className="h-3.5 w-3.5 mr-1" />
-                      {t('ai.attachments.deleteSelected', { count: ausgewaehlteIds.size })}
-                    </Button>
-                  </div>
-                )}
-              </div>
-            )}
+  return (
+    <>
+      {alsDialog ? (
+        <>
+          <DialogHeader className="p-4 sm:p-6 pb-3 border-b border-outline-variant/20">
+            {kopfBlock}
           </DialogHeader>
-
-          {/* Dateiliste */}
           <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-2 min-h-[220px]">
-            {gefilterteAnhaenge.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-48 text-center text-on-surface-variant">
-                <HardDrive className="h-10 w-10 opacity-30 mb-2" aria-hidden="true" />
-                <p className="text-sm font-medium">{t('ai.attachments.emptyStorage')}</p>
-                <p className="text-xs text-on-surface-variant/70 mt-1 max-w-sm">
-                  {t('ai.attachments.storageDescription')}
-                </p>
-              </div>
-            ) : (
-              <ul className="space-y-1.5" aria-label={t('ai.attachments.list')}>
-                {gefilterteAnhaenge.map((item) => {
-                  const art = anhangArt(item.media_type, item.original_name)
-                  const istAusgewaehlt = ausgewaehlteIds.has(item.id)
-                  return (
-                    <li
-                      key={item.id}
-                      className={`group flex items-center justify-between p-2.5 rounded-xl border transition-colors gap-3 ${
-                        istAusgewaehlt
-                          ? 'border-primary/50 bg-primary/5'
-                          : 'border-outline-variant/30 bg-surface-container hover:bg-surface-container-high'
-                      }`}
-                    >
-                      <div className="flex items-center gap-3 min-w-0 flex-1">
-                        <Checkbox
-                          id={`select-${item.id}`}
-                          checked={istAusgewaehlt}
-                          onCheckedChange={() => toggleSelect(item.id)}
-                          aria-label={`${t('common.select', 'Auswählen')}: ${item.original_name}`}
-                        />
-                        <div className="flex h-9 w-9 shrink-0 overflow-hidden items-center justify-center rounded-lg bg-surface border border-outline-variant/30 text-on-surface-variant">
-                          {art === 'image' ? (
-                            <>
-                              <img
-                                src={
-                                  typeof aiApi.attachmentContentUrl === 'function'
-                                    ? aiApi.attachmentContentUrl(item.id)
-                                    : `/api/ai/attachments/${encodeURIComponent(item.id)}/content`
-                                }
-                                alt=""
-                                className="h-full w-full object-cover"
-                                loading="lazy"
-                                onError={(e) => {
-                                  e.currentTarget.style.display = 'none'
-                                  const fallback = e.currentTarget.nextElementSibling as HTMLElement | null
-                                  if (fallback) fallback.classList.remove('hidden')
-                                }}
-                              />
-                              <ImageIcon className="h-4 w-4 hidden" aria-hidden="true" />
-                            </>
-                          ) : art === 'document' ? (
-                            <FileText className="h-4 w-4" aria-hidden="true" />
-                          ) : art === 'text' ? (
-                            <FileCode className="h-4 w-4" aria-hidden="true" />
-                          ) : (
-                            <File className="h-4 w-4" aria-hidden="true" />
-                          )}
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <p className="text-sm font-medium text-on-surface truncate">
-                            {item.original_name}
-                          </p>
-                          <div className="flex items-center gap-2 text-xs text-on-surface-variant">
-                            <span>{lesbareGroesse(item.size_bytes)}</span>
-                            <span>·</span>
-                            <span>{formatiereDatum(item.created_at)}</span>
-                            {item.redacted_spans ? (
-                              <span className="rounded-full bg-warning/10 text-warning border border-warning/20 px-1.5 py-0.5 text-xs">
-                                {t('ai.attachments.redacted', { count: item.redacted_spans })}
-                              </span>
-                            ) : null}
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-1 shrink-0">
-                        {onInPromptEinfuegen && (
-                          <Kurzinfo text={t('ai.attachments.insertIntoPrompt')} lage="oben" seite="mitte">
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8 text-on-surface-variant hover:text-primary"
-                              aria-label={`${t('ai.attachments.insertIntoPrompt')}: ${item.original_name}`}
-                              onClick={() => {
-                                onInPromptEinfuegen(item)
-                                onSchliessen()
-                              }}
-                            >
-                              <MessageSquarePlus className="h-4 w-4" aria-hidden="true" />
-                            </Button>
-                          </Kurzinfo>
-                        )}
-                        <Kurzinfo text={t('ai.attachments.remove')} lage="oben" seite="ende">
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 text-on-surface-variant hover:text-error"
-                            aria-label={`${t('ai.attachments.remove')}: ${item.original_name}`}
-                            onClick={() => handleOpenDelete([item])}
-                          >
-                            <Trash2 className="h-4 w-4" aria-hidden="true" />
-                          </Button>
-                        </Kurzinfo>
-                      </div>
-                    </li>
-                  )
-                })}
-              </ul>
-            )}
+            {listeBlock}
           </div>
-
-          <DialogFooter variant="plain" className="p-3 sm:p-4 border-t border-outline-variant/20 flex justify-end">
-            <Button type="button" variant="ghost" onClick={onSchliessen}>
-              {t('common.close', 'Schließen')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          {footer}
+        </>
+      ) : (
+        <div className="space-y-4">
+          <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-low/45 p-5">
+            {kopfBlock}
+          </div>
+          <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-low/30 p-4">
+            {listeBlock}
+          </div>
+        </div>
+      )}
 
       {/* Bestätigungsdialog zum Löschen (luftig, ohne dunklen Balken) */}
       <Dialog
@@ -412,5 +498,42 @@ export function AiSpeicherDrawer({
         </DialogContent>
       </Dialog>
     </>
+  )
+}
+
+export function AiSpeicherDrawer({
+  offen,
+  onSchliessen,
+  anhaenge,
+  onLoeschen,
+  onInPromptEinfuegen,
+  onUploadFiles,
+  uploading,
+  tresorSpiegelungAktiv = false,
+}: AiSpeicherDrawerProps) {
+  const { t } = useTranslation()
+
+  return (
+    <Dialog open={offen} onOpenChange={(auf) => { if (!auf) onSchliessen() }}>
+      <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col p-0 overflow-hidden">
+        <AiSpeicherInhalt
+          alsDialog
+          onSchliessen={onSchliessen}
+          anhaenge={anhaenge}
+          onLoeschen={onLoeschen}
+          onInPromptEinfuegen={onInPromptEinfuegen}
+          onUploadFiles={onUploadFiles}
+          uploading={uploading}
+          tresorSpiegelungAktiv={tresorSpiegelungAktiv}
+          footer={
+            <DialogFooter variant="plain" className="p-3 sm:p-4 border-t border-outline-variant/20 flex justify-end">
+              <Button type="button" variant="ghost" onClick={onSchliessen}>
+                {t('common.close', 'Schließen')}
+              </Button>
+            </DialogFooter>
+          }
+        />
+      </DialogContent>
+    </Dialog>
   )
 }

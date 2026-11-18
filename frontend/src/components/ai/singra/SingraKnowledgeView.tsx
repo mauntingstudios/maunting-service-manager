@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   BookOpen,
+  Check,
   ChevronDown,
   ChevronUp,
   Pencil,
@@ -11,9 +12,10 @@ import {
   User,
   Users,
 } from 'lucide-react'
-import { aiApi, type AiSkillManaged, type AiSkillSummary } from '@/api/ai'
+import { aiApi, type AiSkillManaged } from '@/api/ai'
 import { SanitizedApiError } from '@/api/client'
 import { teamsApi, type Team } from '@/api/teams'
+import { AiSkillDirectory } from '@/components/ai/AiSkillDirectory'
 import {
   Button,
   Dialog,
@@ -49,7 +51,6 @@ export function SingraKnowledgeView() {
   const [loading, setLoading] = useState(true)
 
   const [managedSkills, setManagedSkills] = useState<AiSkillManaged[]>([])
-  const [directorySkills, setDirectorySkills] = useState<AiSkillSummary[]>([])
   const [searchQuery, setSearchQuery] = useState('')
   const [filterTab, setFilterTab] = useState<'own' | 'built_in'>('own')
   const [busy, setBusy] = useState(false)
@@ -68,10 +69,9 @@ export function SingraKnowledgeView() {
   const loadData = useCallback(async () => {
     setLoading(true)
     try {
-      const [teamRows, managedRows, dirRows] = await Promise.all([
+      const [teamRows, managedRows] = await Promise.all([
         teamsApi.list().catch(() => [] as Team[]),
         aiApi.listManagedSkills().catch(() => [] as AiSkillManaged[]),
-        aiApi.listSkills().catch(() => [] as AiSkillSummary[]),
       ])
       const personal = teamRows.find((r) => r.is_personal) ?? null
       // Nur Teams anzeigen, bei denen der Benutzer für Skills berechtigt ist
@@ -79,7 +79,6 @@ export function SingraKnowledgeView() {
       setPersonalTeam(personal)
       setSharedTeams(shared)
       setManagedSkills(managedRows)
-      setDirectorySkills(dirRows)
     } catch (err: unknown) {
       toast.error(
         err instanceof SanitizedApiError
@@ -107,10 +106,6 @@ export function SingraKnowledgeView() {
     return managedSkills.filter((s) => s.team_id === activeTeamId)
   }, [managedSkills, activeTeamId])
 
-  const builtInSkills = useMemo(() => {
-    return directorySkills.filter((s) => s.scope === 'shipped')
-  }, [directorySkills])
-
   const filteredOwnSkills = useMemo(() => {
     const q = searchQuery.trim().toLowerCase()
     if (!q) return ownSkills
@@ -118,14 +113,6 @@ export function SingraKnowledgeView() {
       `${s.name} ${s.description} ${s.body}`.toLowerCase().includes(q),
     )
   }, [ownSkills, searchQuery])
-
-  const filteredBuiltInSkills = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase()
-    if (!q) return builtInSkills
-    return builtInSkills.filter((s) =>
-      `${s.name} ${s.description}`.toLowerCase().includes(q),
-    )
-  }, [builtInSkills, searchQuery])
 
   const openCreateModal = () => {
     setEditingSkill(null)
@@ -190,6 +177,24 @@ export function SingraKnowledgeView() {
         err instanceof SanitizedApiError
           ? err.message
           : 'Status konnte nicht geändert werden.',
+      )
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const handleApprove = async (skill: AiSkillManaged) => {
+    if (busy) return
+    setBusy(true)
+    try {
+      const updated = await aiApi.approveSkill(skill.id, skill.fingerprint)
+      setManagedSkills((prev) => prev.map((s) => (s.id === updated.id ? updated : s)))
+      toast.success('Wissenseintrag freigegeben.')
+    } catch (err: unknown) {
+      toast.error(
+        err instanceof SanitizedApiError
+          ? err.message
+          : 'Eintrag konnte nicht freigegeben werden.',
       )
     } finally {
       setBusy(false)
@@ -315,11 +320,11 @@ export function SingraKnowledgeView() {
               ].join(' ')}
             >
               <Sparkles className="h-3.5 w-3.5" />
-              <span>Mitgeliefertes Grundwissen ({builtInSkills.length})</span>
+              <span>Verzeichnis & Grundwissen</span>
             </button>
           </div>
 
-          {(ownSkills.length > 2 || builtInSkills.length > 2 || searchQuery) && (
+          {filterTab === 'own' && (ownSkills.length > 2 || searchQuery) && (
             <div className="relative w-full sm:w-64">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-on-surface-variant" />
               <input
@@ -408,6 +413,19 @@ export function SingraKnowledgeView() {
 
                   {canManage && (
                     <div className="mt-4 flex items-center justify-end gap-1 border-t border-outline-variant/15 pt-2.5">
+                      {skill.status === 'pending' && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="secondary"
+                          disabled={busy}
+                          className="h-7 px-2.5 text-xs"
+                          onClick={() => void handleApprove(skill)}
+                        >
+                          <Check className="h-3.5 w-3.5" aria-hidden="true" />
+                          Freigeben
+                        </Button>
+                      )}
                       <Button
                         type="button"
                         size="sm"
@@ -435,28 +453,7 @@ export function SingraKnowledgeView() {
             </div>
           )
         ) : (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            {filteredBuiltInSkills.map((skill) => (
-              <div
-                key={skill.skill_key}
-                className="flex flex-col justify-between rounded-2xl border border-outline-variant/20 bg-surface-container-low/25 p-4"
-              >
-                <div>
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-sm font-medium text-on-surface">
-                      {skill.name}
-                    </span>
-                    <span className="rounded-full bg-surface-container-high px-2 py-0.5 text-label-sm text-on-surface-variant">
-                      Standard
-                    </span>
-                  </div>
-                  <p className="mt-1.5 text-xs text-on-surface-variant leading-relaxed">
-                    {skill.description}
-                  </p>
-                </div>
-              </div>
-            ))}
-          </div>
+          <AiSkillDirectory />
         )}
       </div>
 

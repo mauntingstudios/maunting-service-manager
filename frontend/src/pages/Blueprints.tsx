@@ -253,22 +253,13 @@ export function Blueprints() {
       />
 
       {/* Help Banner: Host custom blueprints & Discord bots */}
-      <div className="mb-6 bg-primary/10 border border-primary/20 rounded-md p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h4 className="font-bold text-on-surface text-sm">
-            {t('blueprints.docsBannerTitle')}
-          </h4>
-          <p className="text-xs text-on-surface-variant mt-1">
-            {t('blueprints.docsBannerText')}
-          </p>
-        </div>
-        <Link
-          to="/docs/blueprints#docs-howto"
-          className={buttonClasses('secondary', 'sm', 'shrink-0 self-start sm:self-center')}
-        >
-          <BookOpen className="w-3.5 h-3.5" />
-          {t('blueprints.docsBannerBtn')}
-        </Link>
+      <div className="mb-6 bg-primary/10 border border-primary/20 rounded-md p-4">
+        <h4 className="font-bold text-on-surface text-sm">
+          {t('blueprints.docsBannerTitle')}
+        </h4>
+        <p className="text-xs text-on-surface-variant mt-1">
+          {t('blueprints.docsBannerText')}
+        </p>
       </div>
 
       {/* Toolbar: Upload + Suche + Filter */}

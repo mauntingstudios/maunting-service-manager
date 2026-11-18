@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { BookOpen, Plus, Save, Sparkles, Trash2, X } from 'lucide-react'
+import { BookOpen, Check, Plus, Save, Sparkles, Trash2, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { aiApi, type AiSkillManaged, type AiSkillSummary } from '@/api/ai'
@@ -48,12 +48,14 @@ interface Zeile {
   origin: 'shipped' | 'operator' | 'ai'
   status: 'active' | 'pending'
   enabled: boolean
+  fingerprint: string
 }
 
 function ausVerwaltet(row: AiSkillManaged): Zeile {
   return {
     id: row.id, skill_key: row.skill_key, name: row.name, description: row.description,
     body: row.body, origin: row.origin, status: row.status, enabled: row.enabled,
+    fingerprint: row.fingerprint,
   }
 }
 
@@ -61,6 +63,7 @@ function ausVerzeichnis(row: AiSkillSummary): Zeile {
   return {
     id: row.id, skill_key: row.skill_key, name: row.name, description: row.description,
     body: '', origin: row.origin, status: row.status, enabled: row.enabled,
+    fingerprint: '',
   }
 }
 
@@ -194,6 +197,20 @@ export function AiSkillManager({ scope }: Props) {
     }
   }
 
+  const approve = async (row: Zeile) => {
+    if (row.id === null || !row.fingerprint) return
+    setBusy(true)
+    try {
+      await aiApi.approveSkill(row.id, row.fingerprint)
+      await reload()
+      toast.success(t('ai.skills.saved'))
+    } catch (error: unknown) {
+      toast.error(error instanceof SanitizedApiError ? error.message : t('ai.skills.errors.save'))
+    } finally {
+      setBusy(false)
+    }
+  }
+
   if (loading) return null
 
   const valid = SCHLUESSEL_MUSTER.test(draft.skill_key.trim().toLowerCase())
@@ -258,6 +275,16 @@ export function AiSkillManager({ scope }: Props) {
             </div>
             {darfAendern && (
               <>
+                {row.status === 'pending' && row.id !== null && row.fingerprint && (
+                  <Button
+                    type="button" variant="secondary" size="sm" disabled={busy}
+                    onClick={() => void approve(row)}
+                    aria-label={`${t('ai.skills.approve', 'Freigeben')}: ${row.name}`}
+                  >
+                    <Check className="h-4 w-4" aria-hidden="true" />
+                    {t('ai.skills.approve', 'Freigeben')}
+                  </Button>
+                )}
                 <Switch
                   checked={row.enabled}
                   disabled={busy}

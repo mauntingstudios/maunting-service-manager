@@ -1,7 +1,7 @@
-import type { FormEvent } from 'react'
-import { FolderGit2, GitCommit, Plus, RefreshCw } from 'lucide-react'
+import { useEffect, useState, type FormEvent } from 'react'
+import { FolderGit2, GitCommit, Plus, RefreshCw, Save } from 'lucide-react'
 import type { AiProject, AiProjectGitStatus, AiProjectWrite } from '@/api/ai'
-import { Badge, Button, Dropdown, Input, Switch, Textarea } from '@maunting/ui'
+import { Badge, Button, Dropdown, Input, PasswordInput, Switch, Textarea } from '@maunting/ui'
 import { GIT_PROVIDER_OPTIONS } from './singraProjectTypes'
 
 export interface SingraSettingsTabProps {
@@ -43,6 +43,67 @@ export function SingraSettingsTab({
   onGitSync,
   onGitCommit,
 }: SingraSettingsTabProps) {
+  const [projectName, setProjectName] = useState(selectedProject.name)
+  const [systemPrompt, setSystemPrompt] = useState(selectedProject.system_prompt ?? '')
+  const [gitBranch, setGitBranch] = useState(selectedProject.git_branch ?? '')
+  const [gitRepoUrl, setGitRepoUrl] = useState(selectedProject.git_repo_url ?? '')
+  const [gitToken, setGitToken] = useState('')
+
+  useEffect(() => {
+    setProjectName(selectedProject.name)
+    setSystemPrompt(selectedProject.system_prompt ?? '')
+    setGitBranch(selectedProject.git_branch ?? '')
+    setGitRepoUrl(selectedProject.git_repo_url ?? '')
+    setGitToken('')
+  }, [
+    selectedProject.id,
+    selectedProject.name,
+    selectedProject.system_prompt,
+    selectedProject.git_branch,
+    selectedProject.git_repo_url,
+  ])
+
+  const generalDirty =
+    projectName.trim() !== selectedProject.name ||
+    systemPrompt !== (selectedProject.system_prompt ?? '')
+
+  const gitConfigDirty =
+    gitBranch.trim() !== (selectedProject.git_branch ?? '') ||
+    gitRepoUrl.trim() !== (selectedProject.git_repo_url ?? '') ||
+    Boolean(gitToken.trim())
+
+  const handleSaveGeneral = (e: FormEvent) => {
+    e.preventDefault()
+    if (!projectName.trim() || !generalDirty) return
+    const patch: AiProjectWrite = {}
+    if (projectName.trim() !== selectedProject.name) {
+      patch.name = projectName.trim()
+    }
+    if (systemPrompt !== (selectedProject.system_prompt ?? '')) {
+      patch.system_prompt = systemPrompt
+    }
+    onUpdateProject(patch)
+  }
+
+  const handleSaveGitConfig = (e: FormEvent) => {
+    e.preventDefault()
+    if (!gitConfigDirty) return
+    const patch: AiProjectWrite = {}
+    if (gitBranch.trim() && gitBranch.trim() !== (selectedProject.git_branch ?? '')) {
+      patch.git_branch = gitBranch.trim()
+    }
+    if (gitRepoUrl.trim() !== (selectedProject.git_repo_url ?? '')) {
+      patch.git_repo_url = gitRepoUrl.trim() || null
+    }
+    if (gitToken.trim()) {
+      patch.git_token = gitToken.trim()
+      setGitToken('')
+    }
+    if (Object.keys(patch).length > 0) {
+      onUpdateProject(patch)
+    }
+  }
+
   return (
     <div className="max-w-3xl w-full mx-auto space-y-5 py-1">
       {/* Card 1: Everyday Project Name, Instructions & Autonomy */}
@@ -55,18 +116,14 @@ export function SingraSettingsTab({
             Lege fest, wie das Projekt heißt und worauf Singra bei der Zusammenarbeit achten soll.
           </p>
         </div>
-        <div className="space-y-3">
+        <form onSubmit={handleSaveGeneral} className="space-y-3">
           <div>
             <label className="block text-xs font-medium text-on-surface-variant mb-1">
               Projektname
             </label>
             <Input
-              defaultValue={selectedProject.name}
-              onBlur={(e) => {
-                if (e.target.value.trim() && e.target.value !== selectedProject.name) {
-                  onUpdateProject({ name: e.target.value.trim() })
-                }
-              }}
+              value={projectName}
+              onChange={(e) => setProjectName(e.target.value)}
               aria-label="Projektname"
             />
           </div>
@@ -75,62 +132,68 @@ export function SingraSettingsTab({
               Arbeitsanweisungen für dieses Projekt
             </label>
             <Textarea
-              defaultValue={selectedProject.system_prompt ?? ''}
+              value={systemPrompt}
+              onChange={(e) => setSystemPrompt(e.target.value)}
               rows={4}
               placeholder="Welche Ziele, Stilvorgaben oder Wünsche gelten für dieses Projekt?"
-              onBlur={(e) => {
-                if (e.target.value !== (selectedProject.system_prompt ?? '')) {
-                  onUpdateProject({ system_prompt: e.target.value })
-                }
-              }}
               aria-label="Projektanweisungen"
             />
           </div>
-          <div className="rounded-xl border border-outline-variant/25 bg-surface-container/60 p-3.5 space-y-2">
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-semibold text-on-surface">
-                    Selbstständiges Arbeiten im Projekt erlauben
-                  </span>
-                  {hasProjectAutonomyOverride ? (
-                    <Badge variant="default" className="text-xs">
-                      Projektspezifisch
-                    </Badge>
-                  ) : (
-                    <Badge variant={globalAutonomy ? 'success' : 'default'} className="text-xs">
-                      {globalAutonomy ? 'Global aktiv (Tools)' : 'Global inaktiv (Tools)'}
-                    </Badge>
-                  )}
-                </div>
-                <p className="text-xs text-on-surface-variant">
-                  Singra darf Dateien in diesem Projekt direkt anlegen und bearbeiten, ohne jede Änderung einzeln abzufragen.
-                </p>
+          <div className="flex justify-end">
+            <Button
+              type="submit"
+              size="sm"
+              disabled={!projectName.trim() || !generalDirty}
+            >
+              <Save className="h-3.5 w-3.5" aria-hidden="true" />
+              Einstellungen speichern
+            </Button>
+          </div>
+        </form>
+        <div className="rounded-xl border border-outline-variant/25 bg-surface-container/60 p-3.5 space-y-2">
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold text-on-surface">
+                  Selbstständiges Arbeiten im Projekt erlauben
+                </span>
+                {hasProjectAutonomyOverride ? (
+                  <Badge variant="default" className="text-xs">
+                    Projektspezifisch
+                  </Badge>
+                ) : (
+                  <Badge variant={globalAutonomy ? 'success' : 'default'} className="text-xs">
+                    {globalAutonomy ? 'Global aktiv (Tools)' : 'Global inaktiv (Tools)'}
+                  </Badge>
+                )}
               </div>
-              <Switch
-                checked={projectAutonomy}
+              <p className="text-xs text-on-surface-variant">
+                Singra darf Dateien in diesem Projekt direkt anlegen und bearbeiten, ohne jede Änderung einzeln abzufragen.
+              </p>
+            </div>
+            <Switch
+              checked={projectAutonomy}
+              disabled={savingAutonomy}
+              onCheckedChange={onToggleAutonomy}
+              aria-label="Selbstständiges Arbeiten im Projekt erlauben"
+            />
+          </div>
+          <div className="flex items-center justify-between text-xs text-on-surface-variant border-t border-outline-variant/15 pt-2">
+            <span>
+              {hasProjectAutonomyOverride
+                ? 'Dieses Projekt nutzt eine eigene Freigabe und überschreibt die globale KI-Einstellung unter „Tools“.'
+                : `Erbt aktuell die globale Einstellung aus dem Menü „Tools“ (dort: ${globalAutonomy ? 'aktiv' : 'inaktiv'}).`}
+            </span>
+            {hasProjectAutonomyOverride && (
+              <button
+                type="button"
                 disabled={savingAutonomy}
-                onCheckedChange={onToggleAutonomy}
-                aria-label="Selbstständiges Arbeiten im Projekt erlauben"
-              />
-            </div>
-            <div className="flex items-center justify-between text-xs text-on-surface-variant border-t border-outline-variant/15 pt-2">
-              <span>
-                {hasProjectAutonomyOverride
-                  ? 'Dieses Projekt nutzt eine eigene Freigabe und überschreibt die globale KI-Einstellung unter „Tools“.'
-                  : `Erbt aktuell die globale Einstellung aus dem Menü „Tools“ (dort: ${globalAutonomy ? 'aktiv' : 'inaktiv'}).`}
-              </span>
-              {hasProjectAutonomyOverride && (
-                <button
-                  type="button"
-                  disabled={savingAutonomy}
-                  onClick={onResetAutonomyToGlobal}
-                  className="text-primary hover:underline text-xs shrink-0 ml-2"
-                >
-                  Auf globale Einstellung zurücksetzen
-                </button>
-              )}
-            </div>
+                onClick={onResetAutonomyToGlobal}
+                className="text-primary hover:underline text-xs shrink-0 ml-2"
+              >
+                Auf globale Einstellung zurücksetzen
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -227,81 +290,68 @@ export function SingraSettingsTab({
         </form>
 
         {/* Repository URL & Token configuration */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-outline-variant/15">
-          <div>
-            <label className="block text-xs font-medium text-on-surface-variant mb-1">
-              Anbieter
-            </label>
-            <Dropdown
-              value={selectedProject.git_provider ?? '__none__'}
-              onChange={(val) =>
-                onUpdateProject({
-                  git_provider:
-                    val === '__none__'
-                      ? null
-                      : (val as 'github' | 'gitlab' | 'custom'),
-                })
-              }
-              options={GIT_PROVIDER_OPTIONS}
-              aria-label="Git-Anbieter"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-on-surface-variant mb-1">
-              Zweig (Branch)
-            </label>
-            <Input
-              defaultValue={selectedProject.git_branch}
-              onBlur={(e) => {
-                if (
-                  e.target.value.trim() &&
-                  e.target.value !== selectedProject.git_branch
-                ) {
-                  onUpdateProject({ git_branch: e.target.value.trim() })
-                }
-              }}
-              aria-label="Git-Branch"
-            />
-          </div>
-          <div className="sm:col-span-2">
-            <label className="block text-xs font-medium text-on-surface-variant mb-1">
-              Repository-Adresse
-            </label>
-            <Input
-              key={selectedProject.git_repo_url ?? 'no-url'}
-              defaultValue={selectedProject.git_repo_url ?? ''}
-              placeholder="https://github.com/nutzer/projekt.git"
-              onBlur={(e) => {
-                if (e.target.value !== (selectedProject.git_repo_url ?? '')) {
+        <form onSubmit={handleSaveGitConfig} className="space-y-3 pt-2 border-t border-outline-variant/15">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-on-surface-variant mb-1">
+                Anbieter
+              </label>
+              <Dropdown
+                value={selectedProject.git_provider ?? '__none__'}
+                onChange={(val) =>
                   onUpdateProject({
-                    git_repo_url: e.target.value.trim() || null,
+                    git_provider:
+                      val === '__none__'
+                        ? null
+                        : (val as 'github' | 'gitlab' | 'custom'),
                   })
                 }
-              }}
-              aria-label="Repository-Adresse"
-            />
-          </div>
-          <div className="sm:col-span-2">
-            <label className="block text-xs font-medium text-on-surface-variant mb-1">
-              Zugangsschlüssel (optional, falls nicht global im Schlüsselbund hinterlegt)
-            </label>
-            <Input
-              type="password"
-              placeholder={
-                selectedProject.git_token_configured
-                  ? 'Schlüssel ist hinterlegt (zum Ändern neu eingeben)'
-                  : 'Nur nötig bei eigenem Zugangsschlüssel…'
-              }
-              onBlur={(e) => {
-                if (e.target.value.trim()) {
-                  onUpdateProject({ git_token: e.target.value.trim() })
-                  e.target.value = ''
+                options={GIT_PROVIDER_OPTIONS}
+                aria-label="Git-Anbieter"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-on-surface-variant mb-1">
+                Zweig (Branch)
+              </label>
+              <Input
+                value={gitBranch}
+                onChange={(e) => setGitBranch(e.target.value)}
+                aria-label="Git-Branch"
+              />
+            </div>
+            <div className="sm:col-span-2">
+              <label className="block text-xs font-medium text-on-surface-variant mb-1">
+                Repository-Adresse
+              </label>
+              <Input
+                value={gitRepoUrl}
+                onChange={(e) => setGitRepoUrl(e.target.value)}
+                placeholder="https://github.com/nutzer/projekt.git"
+                aria-label="Repository-Adresse"
+              />
+            </div>
+            <div className="sm:col-span-2">
+              <PasswordInput
+                label="Zugangsschlüssel (optional, falls nicht global im Schlüsselbund hinterlegt)"
+                value={gitToken}
+                onChange={(e) => setGitToken(e.target.value)}
+                placeholder={
+                  selectedProject.git_token_configured
+                    ? 'Schlüssel ist hinterlegt (zum Ändern neu eingeben)'
+                    : 'Nur nötig bei eigenem Zugangsschlüssel…'
                 }
-              }}
-              aria-label="Git Zugangstoken"
-            />
+                aria-label="Git Zugangstoken"
+              />
+            </div>
           </div>
-        </div>
+          <div className="flex justify-end">
+            <Button type="submit" size="sm" variant="secondary" disabled={!gitConfigDirty}>
+              <Save className="h-3.5 w-3.5" aria-hidden="true" />
+              Repository-Einstellungen speichern
+            </Button>
+          </div>
+        </form>
       </div>
     </div>
   )

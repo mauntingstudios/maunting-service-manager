@@ -61,15 +61,17 @@ export function AiChatMenue({
             }}
           />
         )}
-        <Blatteintrag
-          icon={<RotateCw className={`h-4 w-4 ${reloading ? 'animate-spin' : ''}`} aria-hidden="true" />}
-          label={t('common.refresh', 'Aktualisieren')}
-          disabled={busy || streaming}
-          onClick={() => {
-            onSchliessen()
-            onReload()
-          }}
-        />
+        {singraShell && (
+          <Blatteintrag
+            icon={<RotateCw className={`h-4 w-4 ${reloading ? 'animate-spin' : ''}`} aria-hidden="true" />}
+            label={t('common.refresh', 'Aktualisieren')}
+            disabled={busy || streaming}
+            onClick={() => {
+              onSchliessen()
+              onReload()
+            }}
+          />
+        )}
         {singraShell && onOpenHistorySearch && (
           <Blatteintrag
             icon={<Search className="h-4 w-4" aria-hidden="true" />}

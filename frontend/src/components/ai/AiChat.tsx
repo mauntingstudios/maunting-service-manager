@@ -31,7 +31,7 @@ import { useAuthStore } from '@/stores/authStore'
 import { useAiGenerationStore } from '@/stores/aiGenerationStore'
 import { confirm } from '@/stores/confirmStore'
 import { toast } from '@/stores/toastStore'
-import { AiSpeicherDrawer } from './anhaenge/AiSpeicherDrawer'
+import { AiSpeicherDrawer, entferneAnhangAusTresor } from './anhaenge/AiSpeicherDrawer'
 import { useAnhangUpload } from './anhaenge/useAnhangUpload'
 import { AiSkillModal } from './AiSkillModal'
 import { mergeEntries } from './AiVerlauf'
@@ -547,18 +547,7 @@ export function AiChat({
   const handleStorageDelete = useCallback(async (anhang: AiAttachment, auchAusTresor: boolean) => {
     await removeAttachment(anhang)
     if (auchAusTresor) {
-      try {
-        const { useVaultStore } = await import('@/desktop/vault/vaultStore')
-        const vaultStore = useVaultStore.getState()
-        if (vaultStore.isUnlocked) {
-          const vaultItem = vaultStore.items.find((i) => i.service === anhang.original_name)
-          if (vaultItem) {
-            await vaultStore.deleteItem(vaultItem.id)
-          }
-        }
-      } catch (err) {
-        still(err, 'ai.storage.deleteVault')
-      }
+      await entferneAnhangAusTresor(anhang.original_name)
     }
   }, [removeAttachment])
 

@@ -1209,6 +1209,7 @@
       "redacted_one": "{{count}} spot redacted",
       "redacted_other": "{{count}} spots redacted",
       "storageTitle": "AI file storage",
+      "upload": "Upload files",
       "selectAll": "Select all",
       "selectedCount": "{{count}} selected",
       "deleteSelected": "Delete selected ({{count}})",

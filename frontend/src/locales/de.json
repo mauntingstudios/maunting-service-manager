@@ -1209,6 +1209,7 @@
       "redacted_one": "{{count}} Stelle unkenntlich",
       "redacted_other": "{{count}} Stellen unkenntlich",
       "storageTitle": "KI-Dateispeicher",
+      "upload": "Dateien hochladen",
       "selectAll": "Alle auswählen",
       "selectedCount": "{{count}} ausgewählt",
       "deleteSelected": "Ausgewählte löschen ({{count}})",
