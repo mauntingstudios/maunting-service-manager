@@ -7,19 +7,16 @@
  * Welche Seite sichtbar ist, entscheidet `usePanelNavigation` — dieselbe Quelle
  * wie die Kopfleiste im Web.
  */
-import { lazy, Suspense, useEffect, useMemo, useRef } from 'react'
-import { useTranslation } from 'react-i18next'
+import { lazy, Suspense, useEffect, useRef } from 'react'
 import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { RequirePermission } from '@/components/RequirePermission'
 import { RolePreviewBanner } from '@/components/RolePreviewBanner'
-import { usePanelNavigation } from '@/components/layout/usePanelNavigation'
+import { DashboardReiter } from '@/components/layout/DashboardReiter'
 import { Loader } from '@/components/app/Loader'
-import { TabBar, TabDef } from '@maunting/ui'
-import { ActionMenu, useZurueckSchliesst, ActionMenuItem } from '@maunting/ui'
-import { Bot } from 'lucide-react'
-import { DASHBOARD_SEITEN, dashboardElternroute } from './dashboardWege'
+import { useZurueckSchliesst } from '@maunting/ui'
+import { dashboardElternroute } from './dashboardWege'
 import { TageszeitHintergrund } from '@/components/layout/TageszeitHintergrund'
 import { useBildquelle } from '@/hooks/useBildquelle'
 import { useTageszeitMotiv } from '@/lib/tageszeit'
@@ -39,10 +36,8 @@ const PanelBackups = lazy(() => import('@/pages/PanelBackups').then((modul) => (
 const PanelDatabase = lazy(() => import('@/pages/PanelDatabase').then((modul) => ({ default: modul.PanelDatabase })))
 
 export function DashboardBereich() {
-  const { t } = useTranslation()
   const navigate = useNavigate()
   const location = useLocation()
-  const { items } = usePanelNavigation()
   const inhaltRef = useRef<HTMLDivElement>(null)
 
   const headerMotiv = useTageszeitMotiv('dashboard')
@@ -67,37 +62,6 @@ export function DashboardBereich() {
     inhaltRef.current?.scrollTo?.({ top: 0 })
   }, [location.pathname])
 
-  const seiten = useMemo(() => {
-    const erlaubt = new Set(items.map((eintrag) => eintrag.to))
-    if (erlaubt.has('/settings')) {
-      erlaubt.add('/admin/ai-providers')
-    }
-    return DASHBOARD_SEITEN.filter((seite) => erlaubt.has(seite.to)).map((seite) => ({
-      ...seite,
-      label: t(seite.labelKey),
-      icon: items.find((eintrag) => eintrag.to === seite.to)?.icon ?? (seite.to === '/admin/ai-providers' ? Bot : undefined),
-    }))
-  }, [items, t])
-
-  const reiter = seiten.filter((seite) => seite.gruppe === 'Overview' || seite.gruppe === 'Infrastructure')
-  const weitere = seiten.filter((seite) => seite.gruppe === 'Administration' || seite.gruppe === 'Panel')
-
-  const aktiv = eltern ?? location.pathname
-  const tabs: TabDef<string>[] = reiter.map((seite) => ({
-    id: seite.to,
-    label: seite.label,
-    icon: seite.icon,
-  }))
-  const mehrItems: ActionMenuItem[] = weitere.map((seite) => {
-    const Icon = seite.icon
-    return {
-      key: seite.to,
-      label: seite.label,
-      icon: Icon ? <Icon className="h-4 w-4" aria-hidden="true" /> : undefined,
-      onSelect: () => navigate(seite.to),
-    }
-  })
-
   return (
     <div className="relative isolate flex h-full min-h-0 w-full flex-col overflow-hidden">
       {/* Weicher atmosphärischer Tageszeit-Hintergrund geht direkt hinter die Menü-Punkte —
@@ -112,27 +76,7 @@ export function DashboardBereich() {
       <RolePreviewBanner />
 
       {/* Freischwebende Menü-Reiter (Schwebe-Buttons) direkt über dem Hintergrund */}
-      <div className="relative z-20 flex shrink-0 items-center justify-between gap-2 px-3.5 sm:px-6 lg:px-8 pt-3 sm:pt-3.5 pb-1 max-w-7xl 2xl:max-w-[1600px] w-full mx-auto">
-        <div className="flex flex-1 items-center gap-2 min-w-0">
-          <TabBar
-            tabs={tabs}
-            active={aktiv}
-            onChange={(ziel) => navigate(ziel)}
-            ariaLabel={t('mss.dashboard.bereiche')}
-            einzeilig
-            embedded
-          />
-          {mehrItems.length > 0 && (
-            <ActionMenu
-              label={t('mss.dashboard.mehr')}
-              items={mehrItems}
-              variant="ghost"
-              surface="dna"
-              compact
-            />
-          )}
-        </div>
-      </div>
+      <DashboardReiter />
 
       <div
         ref={inhaltRef}

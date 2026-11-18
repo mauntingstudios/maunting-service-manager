@@ -28,7 +28,7 @@ class TeamMemberWrite(BaseModel):
 class TeamMemberUpdate(BaseModel):
     can_manage_skills: bool
     can_manage_memory: bool
-    can_access_vault: bool = True
+    can_access_vault: bool | None = None
     team_role_id: int | None = None
     role_ids: list[int] | None = None
 

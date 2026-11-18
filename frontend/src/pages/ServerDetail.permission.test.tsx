@@ -960,4 +960,26 @@ describe('ServerDetail Wechsel-Isolation', () => {
       expect(useServerWallpaperStore.getState().activeWallpaper).toBeNull()
     })
   })
+
+  it('leert den alten Server sofort beim Wechsel, auch wenn der neue Server fehlschlägt', async () => {
+    mockApi.mockImplementation(async (path: string) => {
+      if (path === `/servers/${SERVER_ID}`) return SYNTHETIC_SERVER as any
+      if (path === `/servers/${SERVER_ID}/status`) return SYNTHETIC_STATUS as any
+      if (path === '/servers/99') throw new Error('boom')
+      if (path === '/servers/99/status') throw new Error('boom')
+      if (path === '/system/games') return SYNTHETIC_GAMES as any
+      if (path === '/servers') return [] as any
+      return new Promise(() => {}) as any
+    })
+    const { los } = renderWechselbar()
+    await waitForServerToLoad()
+    expect(screen.getByRole('heading', { level: 1, name: 'synthetic-permission-test-server' })).toBeInTheDocument()
+
+    los('/servers/99')
+
+    await waitFor(() => {
+      expect(screen.queryByText('synthetic-permission-test-server')).not.toBeInTheDocument()
+      expect(screen.getByText('Server not found')).toBeInTheDocument()
+    })
+  })
 })

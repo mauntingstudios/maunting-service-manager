@@ -231,4 +231,27 @@ describe('Users access workspace', () => {
     expect(within(directory).getByText('owner@example.invalid')).toBeInTheDocument()
     expect(within(directory).queryByText('delegated-user')).not.toBeInTheDocument()
   })
+
+  it('loads server permissions once permissions resolve after mount', async () => {
+    usePermissionsStore.setState({ me: null, isLoading: true, error: null })
+    render(<Users />)
+
+    await screen.findByTestId('user-directory')
+    expect(renderedServerIds).toEqual([])
+
+    usePermissionsStore.setState({
+      me: {
+        user_id: 1,
+        username: 'owner',
+        is_owner: true,
+        permissions: ['users.permissions.manage'],
+      },
+      isLoading: false,
+      error: null,
+    })
+
+    await waitFor(() => {
+      expect(renderedServerIds).toContain(41)
+    })
+  })
 })

@@ -216,7 +216,8 @@ export function ServerDetail() {
     showEditNetwork,
   );
 
-  const serverId = parseInt(id || "0");
+  const parsedId = Number(id);
+  const serverId = Number.isInteger(parsedId) && parsedId > 0 ? parsedId : 0;
   const { favoriteIds, lastVisitedId, recentVisitedIds } = useServerPreferencesStore();
 
   // Jede Antwort gehört zu genau einem Server: Wer nach einem schnellen Wechsel
@@ -264,8 +265,9 @@ export function ServerDetail() {
   // zurück zum Panorama. Muss hier oben stehen: weiter unten gibt es
   // Early-Returns (loading, !server).
   useEffect(() => {
+    if (!server || server.id !== serverIdRef.current) return;
     const setMotiv = useServerWallpaperStore.getState().setActiveWallpaper;
-    if (server?.wallpaper_url) {
+    if (server.wallpaper_url) {
       setMotiv(wallpaperMotiv(server.id, server.wallpaper_url, server.wallpaper_version));
     } else {
       setMotiv(null);
@@ -309,6 +311,10 @@ export function ServerDetail() {
   // neuen Seite nachwirkt — laufende Aktionen selbst laufen auf dem alten
   // Server normal weiter, nur ihre Anzeige zieht nicht um.
   useEffect(() => {
+    setServer(null);
+    setStatus(null);
+    setFrontendOverview(null);
+    setLoading(true);
     setActionLoading(null);
     setOptimisticStatus(null);
     setServerUpdateCheckLoading(false);
@@ -321,7 +327,10 @@ export function ServerDetail() {
   }, [serverId]);
 
   const fetchAll = async () => {
-    if (!serverId) return;
+    if (!serverId) {
+      setLoading(false);
+      return;
+    }
     const gefragterId = serverId;
     const nochAktuell = () => gefragterId === serverIdRef.current;
     try {
@@ -738,13 +747,17 @@ export function ServerDetail() {
         setShowEditNetwork(false);
         return;
       }
-      await api<Server>(`/servers/${serverId}`, {
+      const aktionsId = serverId;
+      const nochAktuell = () => aktionsId === serverIdRef.current;
+      await api<Server>(`/servers/${aktionsId}`, {
         method: "PATCH",
         body: JSON.stringify(body),
       });
       toast.success(t("servers.networkSaved"));
-      setShowEditNetwork(false);
-      void fetchAll();
+      if (nochAktuell()) {
+        setShowEditNetwork(false);
+        void fetchAll();
+      }
     } catch (err: unknown) {
       const raw = err instanceof Error ? err.message : String(err);
       toast.error(t(raw, { defaultValue: raw }) || t("common.error"));
@@ -1283,8 +1296,12 @@ export function ServerDetail() {
                           setFrontendOverview((prev) => (prev ? { ...prev, online: res.online } : prev));
                         }
                         toast.success(res.online ? t("frontendDeployments.online") : t("frontendDeployments.offline"));
-                        await fetchAll();
-                        loadFrontendOverview();
+                        if (nochAktuell()) {
+                          await fetchAll();
+                        }
+                        if (nochAktuell()) {
+                          loadFrontendOverview();
+                        }
                       } catch {
                         toast.error(t("frontendDeployments.actionError"));
                       } finally {

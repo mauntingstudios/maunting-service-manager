@@ -60,7 +60,6 @@ function ladeBlobGemeinsam(pfad: string): Promise<Blob | null> {
       blobAnfragen.delete(pfad)
       return null
     })
-  blobAnfragen.delete(pfad)
   blobAnfragen.set(pfad, aufgabe)
   if (blobAnfragen.size > VORLADE_MAX) {
     const aeltester = blobAnfragen.keys().next().value
@@ -79,14 +78,6 @@ export function vorladenBildquelle(pfad: string | null, priority: 'high' | 'low'
     if (vorgeladeneAdressen.size > VORLADE_MAX) {
       const aelteste = vorgeladeneAdressen.values().next().value
       if (aelteste) vorgeladeneAdressen.delete(aelteste)
-    }
-    if (typeof document !== 'undefined' && priority === 'high') {
-      const link = document.createElement('link')
-      link.rel = 'preload'
-      link.as = 'image'
-      link.href = href
-      link.setAttribute('fetchpriority', 'high')
-      document.head.appendChild(link)
     }
     if (typeof Image !== 'undefined') {
       const img = new Image()

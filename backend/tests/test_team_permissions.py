@@ -1993,3 +1993,27 @@ def test_rollen_serverrechte_ohne_server_view_sind_422(db: Session, regular_user
         )
     assert exc.value.status_code == 422
     assert exc.value.detail["code"] == "TEAM_ROLE_GRANT_DENIED"
+
+
+def test_update_member_without_vault_flag_preserves_existing_vault_access(
+    client, db: Session, owner_user: User, regular_user: User,
+    owner_cookies: dict, csrf_token: str,
+) -> None:
+    """Omitting can_access_vault when updating member skills must not re-enable vault access."""
+    kollege = _user(db, "kollege-vault-preserve")
+    team = _team_with_member(db, owner_user, kollege)
+    member = team_service.membership(db, team.id, kollege.id)
+    assert member is not None
+    member.can_access_vault = False
+    db.commit()
+
+    res = client.put(
+        f"/api/teams/{team.id}/members/{kollege.id}",
+        json={"can_manage_skills": True, "can_manage_memory": False},
+        cookies=owner_cookies,
+        headers={"X-CSRF-Token": csrf_token},
+    )
+    assert res.status_code == 200
+    updated = _schalter(db, team, kollege)
+    assert updated.can_manage_skills is True
+    assert updated.can_access_vault is False

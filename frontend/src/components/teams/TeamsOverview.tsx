@@ -18,7 +18,7 @@ import { Button } from '@maunting/ui'
 import { useAuthStore } from '@/stores/authStore'
 import { TageszeitHintergrund } from '@/components/layout/TageszeitHintergrund'
 import { begruessungSchluessel, useTageszeitMotiv } from '@/lib/tageszeit'
-import { TeamStatCard } from './TeamStatCard'
+import { StatCard } from '@/components/app/StatCard'
 import { TeamCard } from './TeamCard'
 import { getTeamMetadata, type TeamMetadata } from './teamMeta'
 import type { Team, TeamDetail, TeamInvitation } from '@/api/teams'
@@ -218,25 +218,25 @@ export function TeamsOverview({
 
         {/* 4 KPI Metrik-Kacheln */}
         <section aria-label="Statistiken" className="grid grid-cols-2 gap-2.5 sm:grid-cols-4 sm:gap-4">
-          <TeamStatCard
+          <StatCard
             icon={<Users className="h-5 w-5" />}
             value={totalTeamsCount}
             label={t('teams.statTeams', 'Teams')}
             accent="blue"
           />
-          <TeamStatCard
+          <StatCard
             icon={<UsersRound className="h-5 w-5" />}
             value={totalMembersCount}
             label={t('teams.statMembers', 'Mitglieder')}
             accent="green"
           />
-          <TeamStatCard
+          <StatCard
             icon={<Layers className="h-5 w-5" />}
             value={totalProjectsCount}
             label={t('teams.statProjects', 'Projekte')}
             accent="purple"
           />
-          <TeamStatCard
+          <StatCard
             icon={<Lock className="h-5 w-5" />}
             value={totalVaultsCount}
             label={t('teams.statVaults', 'Team-Tresore')}

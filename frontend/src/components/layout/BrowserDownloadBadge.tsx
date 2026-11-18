@@ -1,9 +1,8 @@
-import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Globe, Smartphone } from 'lucide-react'
-import { api } from '@/api/client'
 import { geraeteArt } from '@/desktop/geraeteArt'
-import { DownloadKnopf, DownloadZeile } from './DownloadKnopf'
+import { usePublicSettingsStore } from '@/stores/publicSettingsStore'
+import { DownloadBadge } from './DownloadKnopf'
 
 /**
  * Hinweis auf Maunting Pontis fuer Windows und Android.
@@ -14,23 +13,7 @@ import { DownloadKnopf, DownloadZeile } from './DownloadKnopf'
  */
 export function BrowserDownloadBadge({ variante = 'knopf' }: { variante?: 'knopf' | 'zeile' } = {}) {
   const { t } = useTranslation()
-  const [enabled, setEnabled] = useState<boolean>(true)
-
-  useEffect(() => {
-    let active = true
-    api<{ browser_download_enabled?: boolean }>('/settings/public')
-      .then((data) => {
-        if (active && data) {
-          setEnabled(data.browser_download_enabled ?? true)
-        }
-      })
-      .catch(() => {
-        // Rueckfall: aktiviert lassen
-      })
-    return () => {
-      active = false
-    }
-  }, [])
+  const enabled = usePublicSettingsStore((s) => s.browser_download_enabled)
 
   if (!enabled || geraeteArt() === 'browser') return null
 
@@ -40,22 +23,14 @@ export function BrowserDownloadBadge({ variante = 'knopf' }: { variante?: 'knopf
     ? 'https://github.com/mauntingstudios/maunting-service-manager/releases/latest/download/MauntingSecureBrowser.apk'
     : 'https://github.com/mauntingstudios/maunting-service-manager/releases/latest/download/MauntingPontis-Setup.exe'
 
-  const titleText = isAndroid ? 'Pontis Mobile' : 'Maunting Pontis'
-  const subtext = isAndroid
-    ? t('browserBadge.androidLabel')
-    : t('browserBadge.label')
-  const tooltip = isAndroid
-    ? t('browserBadge.androidTooltip')
-    : t('browserBadge.tooltip')
-
-  const Darstellung = variante === 'zeile' ? DownloadZeile : DownloadKnopf
   return (
-    <Darstellung
+    <DownloadBadge
+      variante={variante}
       href={downloadUrl}
       icon={isAndroid ? <Smartphone className="w-4 h-4" /> : <Globe className="w-4 h-4" />}
-      titel={titleText}
-      subtext={subtext}
-      tooltip={tooltip}
+      titel={isAndroid ? 'Pontis Mobile' : 'Maunting Pontis'}
+      subtext={isAndroid ? t('browserBadge.androidLabel') : t('browserBadge.label')}
+      tooltip={isAndroid ? t('browserBadge.androidTooltip') : t('browserBadge.tooltip')}
     />
   )
 }

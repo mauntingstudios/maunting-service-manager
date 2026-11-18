@@ -46,7 +46,29 @@ def _agent_key(server: Server) -> str:
     return agent_server_key(server.id, getattr(server, "install_dir", None))
 
 
-def _agent(server: Server, db: Session) -> NodeClient | None:
+def local_fs_readable(install_dir: str | None) -> bool:
+    """Darf der Dateizugriff das lokale Dateisystem nehmen?
+
+    Nur wenn das Panel das Verzeichnis auch LIST-en kann, nicht schon wenn
+    `stat()` gelingt: Bei Traverse-only-Eltern liefert `isdir()` True, und
+    `iterdir()` stirbt danach mit EACCES (403) — obwohl der Agent dieselben
+    Dateien liefern koennte. (`os.access` prueft reale IDs; das Panel
+    laeuft als `msm`.)
+    """
+    return bool(
+        install_dir
+        and os.path.isdir(install_dir)
+        and os.access(install_dir, os.R_OK | os.X_OK)
+    )
+
+
+def _agent(
+    server: Server,
+    db: Session,
+    *,
+    local_readable: Callable[[str | None], bool] | None = None,
+    node_client_cls: type[NodeClient] = NodeClient,
+) -> NodeClient | None:
     from config import settings
     from services.node_service import NODE_OFFLINE_MSG, is_node_offline
 
@@ -55,15 +77,15 @@ def _agent(server: Server, db: Session) -> NodeClient | None:
         return None
     if is_node_offline(node) and not node.is_local:
         raise HTTPException(status_code=503, detail=NODE_OFFLINE_MSG)
+    readable_check = local_readable or local_fs_readable
     if (
         node.is_local
         and not getattr(settings, "local_agent_required", False)
-        and server.install_dir
-        and os.path.isdir(server.install_dir)
+        and readable_check(server.install_dir)
     ):
         return None
     try:
-        return NodeClient.from_node(node)
+        return node_client_cls.from_node(node)
     except NodeClientError as exc:
         if node.is_local:
             return None

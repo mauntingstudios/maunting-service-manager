@@ -124,17 +124,12 @@ export function Users() {
 
   const fetchAll = async () => {
     try {
-      const [u, r, s] = await Promise.all([
+      const [u, r] = await Promise.all([
         api<User[]>('/admin/users'),
         rbacApi.listRoles().catch(() => [] as Role[]),
-        canManagePermissions ? api<Server[]>('/servers').catch(() => [] as Server[]) : Promise.resolve([] as Server[]),
       ])
       setUsers(u)
       setRoles(r)
-      setServers(s)
-      if (canManagePermissions && s.length > 0 && permServerId === '') {
-        setPermServerId(s[0].id)
-      }
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : String(err))
     } finally {
@@ -145,6 +140,32 @@ export function Users() {
   useEffect(() => {
     void fetchAll()
   }, [])
+
+  // Rechte können asynchron nach dem Mount eintreffen — Serverliste dann nachziehen.
+  useEffect(() => {
+    if (!canManagePermissions) {
+      setServers([])
+      setPermServerId('')
+      return
+    }
+    let active = true
+    api<Server[]>('/servers')
+      .then((s) => {
+        if (!active) return
+        setServers(s)
+        if (s.length > 0) {
+          setPermServerId((current) =>
+            typeof current === 'number' && s.some((entry) => entry.id === current) ? current : s[0].id,
+          )
+        }
+      })
+      .catch(() => {
+        if (active) setServers([])
+      })
+    return () => {
+      active = false
+    }
+  }, [canManagePermissions])
 
   /** Speichert das vollständige Rollen-Set atomar und verhindert parallele Updates pro Ansicht. */
   const assignRoles = async (user: User, roleIds: number[]) => {

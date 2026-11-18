@@ -16,7 +16,7 @@ import { RolePreviewBanner } from '@/components/RolePreviewBanner'
 import { TageszeitHintergrund } from './TageszeitHintergrund'
 import { useTageszeitMotiv } from '@/lib/tageszeit'
 import { useServerWallpaperStore } from '@/stores/serverWallpaperStore'
-import { api } from '@/api/client'
+import { usePublicSettingsStore } from '@/stores/publicSettingsStore'
 import { useMessengerSperreBereitschaft } from '@/hooks/useMessengerSperre'
 import { usePresenceAndActivity } from '@/hooks/usePresenceAndActivity'
 import { MessengerHintergrund } from '@/browser/MessengerHintergrund'
@@ -33,7 +33,7 @@ export interface ShellOutletKontext {
 export function Shell() {
   useMessengerSperreBereitschaft()
 
-  const [socialEnabled, setSocialEnabled] = useState(true)
+  const socialEnabled = usePublicSettingsStore((s) => s.social_enabled)
   const [walletOpen, setWalletOpen] = useState(false)
 
   const { status: presenceStatus, effectiveStatus: presenceEffektiv, changeStatus: handlePresenceChange } = usePresenceAndActivity(socialEnabled, true)
@@ -42,16 +42,6 @@ export function Shell() {
     const handleOpenWallet = () => setWalletOpen(true)
     window.addEventListener('msm:open-wallet', handleOpenWallet)
     return () => window.removeEventListener('msm:open-wallet', handleOpenWallet)
-  }, [])
-
-  useEffect(() => {
-    api<{ social_enabled?: boolean }>('/settings/public')
-      .then((res) => {
-        if (typeof res.social_enabled === 'boolean') {
-          setSocialEnabled(res.social_enabled)
-        }
-      })
-      .catch(() => {})
   }, [])
 
   const location = useLocation()

@@ -1255,3 +1255,68 @@ class TestLocalVsAgent:
         assert res.status_code == 200
         assert [e["name"] for e in res.json()["entries"]] == ["welt.dat"]
         mock_agent.assert_called_once()
+
+    def test_read_weicht_auf_agent_aus_wenn_unlesbar(
+        self,
+        client: TestClient,
+        db: Session,
+        owner_cookies: dict,
+        server_with_dir: Server,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        from types import SimpleNamespace
+
+        node = Node(name="Lokal", host="http://127.0.0.1:9000", auth_token_enc="x", is_local=True, status="online")
+        db.add(node)
+        db.commit()
+        db.refresh(node)
+        server_with_dir.node_id = node.id
+        db.commit()
+
+        monkeypatch.setattr("services.server_file_access_service.local_fs_readable", lambda p: False)
+        agent = SimpleNamespace(
+            files_read_info=lambda key, path: {
+                "path": path,
+                "name": "server.cfg",
+                "content": "port=7777",
+                "size": 9,
+                "revision": "rev-1",
+                "modified": 0.0,
+            }
+        )
+        with patch("routers.files.NodeClient.from_node", return_value=agent) as mock_agent:
+            res = client.get(
+                f"/api/files/{server_with_dir.id}/read?path=server.cfg",
+                cookies=owner_cookies,
+            )
+        assert res.status_code == 200
+        assert res.json()["content"] == "port=7777"
+        mock_agent.assert_called_once()
+
+    def test_browse_nutzt_agent_wenn_local_agent_required_gesetzt(
+        self,
+        client: TestClient,
+        db: Session,
+        owner_cookies: dict,
+        server_with_dir: Server,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        from types import SimpleNamespace
+        from config import settings
+
+        node = Node(name="Lokal", host="http://127.0.0.1:9000", auth_token_enc="x", is_local=True, status="online")
+        db.add(node)
+        db.commit()
+        db.refresh(node)
+        server_with_dir.node_id = node.id
+        db.commit()
+
+        monkeypatch.setattr(settings, "local_agent_required", True)
+        agent = SimpleNamespace(
+            files_list=lambda key, path: [{"name": "agent.cfg", "is_dir": False, "size": 4, "modified": 0.0}]
+        )
+        with patch("routers.files.NodeClient.from_node", return_value=agent) as mock_agent:
+            res = client.get(f"/api/files/{server_with_dir.id}/browse?path=", cookies=owner_cookies)
+        assert res.status_code == 200
+        assert [e["name"] for e in res.json()["entries"]] == ["agent.cfg"]
+        mock_agent.assert_called_once()

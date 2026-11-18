@@ -72,3 +72,10 @@ export function DownloadKnopf({ href, icon, titel, subtext, tooltip }: DownloadK
     </a>
   )
 }
+
+export function DownloadBadge({
+  variante = 'knopf',
+  ...props
+}: DownloadKnopfProps & { variante?: 'knopf' | 'zeile' }) {
+  return variante === 'zeile' ? <DownloadZeile {...props} /> : <DownloadKnopf {...props} />
+}

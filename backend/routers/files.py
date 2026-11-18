@@ -43,10 +43,11 @@ from services import file_history_service
 from services.file_edit_service import FileRevisionConflict
 from services.dis_client import DisSidecarError
 from services.node_client import NodeClient, NodeClientError
-from services.node_service import resolve_server_node
 from services.server_file_access_service import (
     CHUNK_TMP_DIRNAME,
+    _agent as _shared_agent,
     apply_permissions as _apply_permissions,
+    local_fs_readable as _local_fs_readable,
     read_server_text,
     search_file_contents,
     write_server_text,
@@ -142,48 +143,14 @@ def _assert_frontend_writable(server: Server, *rel_paths: str) -> None:
             )
 
 
-def _local_fs_readable(install_dir: str | None) -> bool:
-    """Darf der Datei-Tab das lokale Dateisystem nehmen?
-
-    Nur wenn das Panel das Verzeichnis auch LISTEN kann, nicht schon wenn
-    `stat()` gelingt: Bei Traverse-only-Eltern liefert `isdir()` True, und
-    `iterdir()` stirbt danach mit EACCES (403) — obwohl der Agent dieselben
-    Dateien liefern koennte. (`os.access` prueft reale IDs; das Panel
-    laeuft als `msm`.)
-    """
-    return bool(
-        install_dir
-        and os.path.isdir(install_dir)
-        and os.access(install_dir, os.R_OK | os.X_OK)
-    )
-
-
 def _agent_client(server: Server, db: Session) -> NodeClient | None:
-    """Return NodeClient when file ops must hit the agent.
-
-    Remote nodes always use the agent. Local node uses agent when reachable
-    (token decrypt OK); otherwise falls back to panel-local filesystem so
-    existing tests and single-host without agent keep working.
-    Offline remote nodes fail closed (503) — graceful degradation.
-    """
-    from services.node_service import NODE_OFFLINE_MSG, is_node_offline
-
-    node = resolve_server_node(server, db)
-    if node is None:
-        return None
-    if is_node_offline(node) and not getattr(node, "is_local", False):
-        raise HTTPException(status_code=503, detail=NODE_OFFLINE_MSG)
-    if getattr(node, "is_local", False):
-        # Local: prefer local FS when the panel can actually read it
-        # (dev/tests/single-host). Unreadable dirs fall through to the agent.
-        if _local_fs_readable(server.install_dir):
-            return None
-    try:
-        return NodeClient.from_node(node)
-    except NodeClientError as exc:
-        if getattr(node, "is_local", False):
-            return None
-        raise HTTPException(status_code=503, detail=exc.message or "Node-Agent nicht erreichbar") from exc
+    """Delegiert an die gemeinsame Agent-Auflösung (inkl. Lesbarkeits- und Isolation-Check)."""
+    return _shared_agent(
+        server,
+        db,
+        local_readable=_local_fs_readable,
+        node_client_cls=NodeClient,
+    )
 
 
 def _map_agent_error(exc: NodeClientError) -> HTTPException:

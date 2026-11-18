@@ -1194,7 +1194,9 @@ function MitgliederReiter({
                     checked={member.can_manage_skills}
                     disabled={!access.isFounder || busy}
                     onCheckedChange={(next) => onSchalter(member, {
-                      can_manage_skills: next, can_manage_memory: member.can_manage_memory,
+                      can_manage_skills: next,
+                      can_manage_memory: member.can_manage_memory,
+                      ...(member.can_access_vault !== undefined ? { can_access_vault: member.can_access_vault } : {}),
                     })}
                     aria-label={`${t('teams.manageSkills')}: ${member.username}`}
                   />

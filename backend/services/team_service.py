@@ -894,7 +894,7 @@ def _docs_verbindungen_trennen(db: Session, team_id: int, user_id: int) -> None:
 def update_member(
     db: Session, *, team: Team, user: User, member_user_id: int,
     can_manage_skills: bool, can_manage_memory: bool,
-    can_access_vault: bool = True, team_role_id: int | None = None,
+    can_access_vault: bool | None = None, team_role_id: int | None = None,
 ) -> TeamMember:
     """Setzt die Schalter eines Mitglieds — herunter sofort, herauf als Angebot.
 
@@ -936,7 +936,8 @@ def update_member(
     member.can_manage_skills = neu_skills
     member.can_manage_memory = neu_memory
     hatte_tresor = member.can_access_vault
-    member.can_access_vault = can_access_vault
+    ziel_tresor = member.can_access_vault if can_access_vault is None else can_access_vault
+    member.can_access_vault = ziel_tresor
     if team_role_id is not None:
         # Die Rolle ist vergeben wie in set_member_roles: ihre Schalter gelten
         # sofort — auch senkend (Befund 15). Reine Schalterwuensche ohne Rolle
@@ -953,7 +954,7 @@ def update_member(
             db.add(offen)
         offen.can_manage_skills = can_manage_skills
         offen.can_manage_memory = can_manage_memory
-        offen.can_access_vault = can_access_vault
+        offen.can_access_vault = ziel_tresor
         offen.team_role_id = team_role_id
         offen.invited_by = user.id
     elif offen is not None:
