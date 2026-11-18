@@ -210,3 +210,81 @@ def docs_enabled() -> bool:
     return PanelSettingsService.get("docs_enabled", "true") != "false"
 
 
+class PanelEncryptedKeySetting:
+    """Gemeinsame Verwaltung DIS-verschlüsselter Panel-API-Keys mit ENV-Fallback.
+
+    Ersetzt identische Kopien in `steam_api_key_service`,
+    `curseforge_api_key_service` und `cloudflare_api_key_service`.
+    """
+
+    def __init__(
+        self,
+        *,
+        enc_key: str,
+        legacy_key: str,
+        aad: str,
+        settings_attr: str,
+        env_vars: tuple[str, ...],
+    ) -> None:
+        self.enc_key = enc_key
+        self.legacy_key = legacy_key
+        self.aad = aad
+        self.settings_attr = settings_attr
+        self.env_vars = env_vars
+
+    def env_key(self) -> str:
+        import os
+        from config import settings
+
+        direct = (getattr(settings, self.settings_attr, "") or "").strip()
+        if direct:
+            return direct
+        for var in self.env_vars:
+            val = os.getenv(var, "").strip()
+            if val:
+                return val
+        return ""
+
+    def panel_key(self) -> str:
+        from services.auth_service import AuthService
+
+        enc = PanelSettingsService.get(self.enc_key, "")
+        if enc:
+            try:
+                dec = AuthService.decrypt_secret(enc, aad=self.aad).strip()
+                if dec:
+                    return dec
+            except Exception:
+                pass
+        return PanelSettingsService.get(self.legacy_key, "").strip()
+
+    def resolve_key(self) -> str:
+        return self.panel_key() or self.env_key()
+
+    def current_source(self) -> str:
+        if self.panel_key():
+            return "panel"
+        if self.env_key():
+            return "env"
+        return "none"
+
+    def status(self) -> dict[str, str | bool]:
+        key = self.resolve_key()
+        return {"configured": bool(key), "source": self.current_source()}
+
+    def set_panel_key(self, key: str) -> None:
+        from services.auth_service import AuthService
+
+        clean = (key or "").strip()
+        if not clean:
+            self.clear_panel_key()
+            return
+        enc = AuthService.encrypt_secret(clean, aad=self.aad)
+        PanelSettingsService.set(self.enc_key, enc)
+        PanelSettingsService.set(self.legacy_key, "")
+
+    def clear_panel_key(self) -> None:
+        PanelSettingsService.set(self.enc_key, "")
+        PanelSettingsService.set(self.legacy_key, "")
+
+

@@ -32,7 +32,9 @@ from services.media_gallery_service import (
     WEBP_QUALITY,
     MediaValidationError as WallpaperValidationError,
     apply_gallery_retention,
+    read_scoped_file_bytes,
     sanitize_and_compress_image,
+    unlink_scoped_file,
 )
 
 if TYPE_CHECKING:
@@ -189,10 +191,7 @@ def gallery_image_bytes(
     )
     if row is None:
         return None
-    try:
-        return (_game_verzeichnis(game_type) / row.file_name).read_bytes()
-    except OSError:
-        return None
+    return read_scoped_file_bytes(_game_verzeichnis(game_type), row.file_name)
 
 
 def delete_wallpaper(db: Session, game_type: str, wallpaper_id: int) -> None:
@@ -211,10 +210,7 @@ def delete_wallpaper(db: Session, game_type: str, wallpaper_id: int) -> None:
     )
     if row is None:
         raise HTTPException(status_code=404, detail="Bild nicht gefunden")
-    try:
-        (_game_verzeichnis(game_type) / row.file_name).unlink(missing_ok=True)
-    except OSError:
-        pass
+    unlink_scoped_file(_game_verzeichnis(game_type), row.file_name)
     db.delete(row)
     db.commit()
 

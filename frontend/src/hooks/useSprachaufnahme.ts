@@ -13,6 +13,7 @@ import { messengerSocket } from '@/services/messengerSocket'
 import type { AudioAttachment } from '@/components/social/ChatMediaAttachments'
 import { duckingBelegen } from '@/lib/audioDucking'
 import { getAudioTrackConstraints } from '@/lib/audioSettings'
+import { readFileAsDataUrl } from '@/lib/imageCompression'
 import { still } from '@/lib/still'
 import { toast } from '@/stores/toastStore'
 
@@ -152,9 +153,7 @@ export function useSprachaufnahme({ blindMailboxId, chatType, chatId, onFertig }
         if (senden && audioChunksRef.current.length > 0) {
           const mime = recorder.mimeType || getSupportedAudioMimeType() || 'audio/webm'
           const audioBlob = new Blob(audioChunksRef.current, { type: mime })
-          const reader = new FileReader()
-          reader.onload = () => {
-            const dataUrl = reader.result as string
+          void readFileAsDataUrl(audioBlob).then((dataUrl) => {
             if (dataUrl) {
               onFertig({
                 dataUrl,
@@ -162,8 +161,7 @@ export function useSprachaufnahme({ blindMailboxId, chatType, chatId, onFertig }
                 mimeType: mime,
               })
             }
-          }
-          reader.readAsDataURL(audioBlob)
+          }).catch(() => undefined)
         }
         audioChunksRef.current = []
       }

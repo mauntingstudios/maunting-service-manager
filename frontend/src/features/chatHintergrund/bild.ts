@@ -7,6 +7,8 @@
  * die Kantenlänge. Was danach zu groß ist, wird abgewiesen und gesagt.
  */
 
+import { readFileAsDataUrl } from '@/lib/imageCompression'
+
 /** Zielgröße des fertigen Data-URL; 2 MiB Bild brauchen rund 2,8 Mio Zeichen. */
 export const MAX_HINTERGRUND_ZEICHEN = 2_800_000
 const KANTE = 1600
@@ -42,12 +44,7 @@ export async function bildAlsHintergrund(
     // Ohne Bilddekodierung bleibt nur die Originaldatei; die Grenze gilt dann
     // genauso und wird hier geprüft, statt sie später zu entdecken.
     if (datei.size > 2 * 1024 * 1024) return null
-    const url = await new Promise<string | null>((fertig) => {
-      const leser = new FileReader()
-      leser.onload = () => fertig(typeof leser.result === 'string' ? leser.result : null)
-      leser.onerror = () => fertig(null)
-      leser.readAsDataURL(datei)
-    })
+    const url = await readFileAsDataUrl(datei).catch(() => null)
     return url && url.length <= maxZeichen && BILD_ZEICHEN.test(url) ? url : null
   } catch {
     return null

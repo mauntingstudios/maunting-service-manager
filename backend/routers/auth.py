@@ -1175,8 +1175,6 @@ def update_ai_provider(
 
 # ── Profilbild (Avatar) ──────────────────────────────────────────────────
 
-# Groesse, erlaubte Typen und die Magic-Byte-Pruefung liegen in
-# services/bild_upload.py, weil das Gruppenlogo dieselben Regeln braucht.
 MAX_AVATAR_BYTES = bild_upload.MAX_BILD_BYTES
 ALLOWED_AVATAR_TYPES = bild_upload.ERLAUBTE_BILDTYPEN
 
@@ -1188,22 +1186,23 @@ async def upload_avatar(
     db: Session = Depends(get_db),
     _: None = Depends(verify_csrf),
 ) -> User:
-    """Lädt ein eigenes Profilbild hoch (max. 5 MB)."""
+    """Lädt ein eigenes Profilbild hoch (max. 5 MB) und bereinigt es über die zentrale Medien-Pipeline."""
     content_type = (file.content_type or "").lower().split(";")[0].strip()
     if content_type not in ALLOWED_AVATAR_TYPES:
         raise HTTPException(
             status_code=400,
             detail="Ungültiges Bildformat. Erlaubt sind JPEG, PNG, WebP und GIF.",
         )
-    content = await file.read()
+    content = await file.read(MAX_AVATAR_BYTES + 1)
     if len(content) > MAX_AVATAR_BYTES:
         raise HTTPException(status_code=400, detail="Bild darf maximal 5 MB groß sein.")
-    if not bild_upload.ist_gueltiges_bild(content, content_type):
-        raise HTTPException(status_code=400, detail="Ungültige oder beschädigte Bilddatei.")
+
+    try:
+        filename = bild_upload.sanitisiere_und_speichere_bild(content, "avatar", user.id)
+    except bild_upload.MediaValidationError as exc:
+        raise HTTPException(status_code=400, detail=exc.message) from exc
 
     bild_upload.loesche_bild(user.avatar_url)
-    filename = bild_upload.speichere_bild(content, content_type, "avatar", user.id)
-
     user.avatar_url = f"/api/auth/avatar/{filename}"
     db.commit()
     db.refresh(user)
@@ -1238,6 +1237,7 @@ def get_avatar(filename: str):
         headers={
             "Cache-Control": "public, max-age=86400",
             "Access-Control-Allow-Origin": "*",
+            "X-Content-Type-Options": "nosniff",
         },
     )
 

@@ -1,4 +1,5 @@
 import type React from 'react'
+import { compressImageToWebp } from '@/lib/imageCompression'
 import { alleSaisonMotive, jahreszeit, saisonBildFuerPhase, tageszeit } from '@/lib/tageszeit'
 import type { Hintergrund } from '../services/einstellungenStore'
 
@@ -146,26 +147,5 @@ export function hintergrundStil(
  * direkt in verlustarmes WebP mit 85 % Qualitaet fuer minimale Speichergroesse.
  */
 export function bildZuWebp(datei: File, qualitaet = 0.85): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const img = new Image()
-    const blobUrl = URL.createObjectURL(datei)
-    img.onload = () => {
-      URL.revokeObjectURL(blobUrl)
-      const canvas = document.createElement('canvas')
-      canvas.width = img.naturalWidth
-      canvas.height = img.naturalHeight
-      const ctx = canvas.getContext('2d')
-      if (!ctx) {
-        reject(new Error('Canvas Context nicht verfuegbar'))
-        return
-      }
-      ctx.drawImage(img, 0, 0)
-      resolve(canvas.toDataURL('image/webp', qualitaet))
-    }
-    img.onerror = () => {
-      URL.revokeObjectURL(blobUrl)
-      reject(new Error('Bild konnte nicht dekodiert werden'))
-    }
-    img.src = blobUrl
-  })
+  return compressImageToWebp(datei, { maxDimension: 2560, quality: qualitaet })
 }

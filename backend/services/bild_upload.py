@@ -1,29 +1,28 @@
-"""Gemeinsame Pruefung fuer hochgeladene Bilder (Profil- und Gruppenbilder).
-
-Die Regeln standen bis hierher nur in `routers/auth.py`. Mit dem Gruppenlogo
-gab es einen zweiten Aufrufer, und zwei Kopien derselben Magic-Byte-Tabelle sind
-genau die Art Duplikat, bei der eine Seite spaeter eine Luecke bekommt, die die
-andere laengst geschlossen hat.
-
-Der Content-Type eines Uploads ist eine Behauptung des Browsers. Deshalb wird
-zusaetzlich der Dateianfang geprueft: ohne diesen Schritt koennte eine als
-`image/png` deklarierte Datei alles Moegliche enthalten.
-"""
+"""Speicherung und Entfernung von Benutzer-Avataren ueber die zentrale Medien-Pipeline."""
 
 from __future__ import annotations
 
 import os
 import re
 import uuid
+from pathlib import Path
 
 from config import settings
+from services.media_gallery_service import (
+    AVATAR_MAX_WIDTH,
+    WEBP_QUALITY,
+    MediaValidationError,
+    resolve_scoped_dir,
+    sanitize_and_compress_image,
+    unlink_scoped_file,
+)
 
 MAX_BILD_BYTES = 5 * 1024 * 1024  # 5 MB
 ERLAUBTE_BILDTYPEN = {
-    "image/jpeg": ".jpg",
-    "image/png": ".png",
-    "image/webp": ".webp",
-    "image/gif": ".gif",
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+    "image/gif",
 }
 
 # Dateinamen, die wir selbst vergeben. Alles andere wird beim Ausliefern und
@@ -39,27 +38,18 @@ def bilder_verzeichnis() -> str:
     return verzeichnis
 
 
-def ist_gueltiges_bild(inhalt: bytes, mime_type: str) -> bool:
-    """Prueft Groesse und Dateianfang gegen den behaupteten Typ."""
-    if len(inhalt) > MAX_BILD_BYTES or len(inhalt) < 8:
-        return False
-    if mime_type == "image/jpeg" and inhalt.startswith(b"\xff\xd8\xff"):
-        return True
-    if mime_type == "image/png" and inhalt.startswith(b"\x89PNG\r\n\x1a\n"):
-        return True
-    if mime_type == "image/gif" and (inhalt.startswith(b"GIF87a") or inhalt.startswith(b"GIF89a")):
-        return True
-    if mime_type == "image/webp" and inhalt.startswith(b"RIFF") and b"WEBP" in inhalt[8:16]:
-        return True
-    return False
-
-
-def speichere_bild(inhalt: bytes, mime_type: str, praefix: str, kennung: int) -> str:
-    """Legt das Bild ab und gibt den Dateinamen zurueck."""
-    endung = ERLAUBTE_BILDTYPEN[mime_type]
-    dateiname = f"{praefix}_{kennung}_{uuid.uuid4().hex[:12]}{endung}"
-    with open(os.path.join(bilder_verzeichnis(), dateiname), "wb") as datei:
-        datei.write(inhalt)
+def sanitisiere_und_speichere_bild(inhalt: bytes, praefix: str, kennung: int) -> str:
+    """Prueft, desinfiziert und speichert ein Profilbild als WebP (EXIF-frei)."""
+    webp_bytes = sanitize_and_compress_image(
+        inhalt,
+        max_width=AVATAR_MAX_WIDTH,
+        quality=WEBP_QUALITY,
+        max_bytes=MAX_BILD_BYTES,
+        allow_gif=True,
+    )
+    dateiname = f"{praefix}_{kennung}_{uuid.uuid4().hex[:12]}.webp"
+    ziel = resolve_scoped_dir(Path(bilder_verzeichnis()), dateiname)
+    ziel.write_bytes(webp_bytes)
     return dateiname
 
 
@@ -70,9 +60,4 @@ def loesche_bild(url: str | None) -> None:
     dateiname = url.split("/")[-1]
     if not dateiname or not DATEINAME_MUSTER.match(dateiname):
         return
-    pfad = os.path.join(bilder_verzeichnis(), dateiname)
-    if os.path.isfile(pfad):
-        try:
-            os.remove(pfad)
-        except OSError:
-            pass
+    unlink_scoped_file(Path(bilder_verzeichnis()), dateiname)

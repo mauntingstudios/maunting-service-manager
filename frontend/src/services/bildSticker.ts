@@ -7,6 +7,7 @@
  */
 
 import { ladeStempelSchriften } from '@/components/social/augenblickStempel'
+import { readFileAsDataUrl } from '@/lib/imageCompression'
 import type { StickerMotiv } from './stickerCatalog'
 import {
   STICKER_BILD_MAX_ZEICHEN,
@@ -176,12 +177,7 @@ export function istBildDaten(bild: string): boolean {
 }
 
 export function blobAlsDatenUrl(blob: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const leser = new FileReader()
-    leser.onload = () => resolve(String(leser.result || ''))
-    leser.onerror = () => reject(leser.error ?? new Error('Bild nicht lesbar'))
-    leser.readAsDataURL(blob)
-  })
+  return readFileAsDataUrl(blob)
 }
 
 /** Was die Blase und der Versand aus einem gespeicherten Foto-Sticker machen. */

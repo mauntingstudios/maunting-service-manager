@@ -29,8 +29,10 @@ from services.media_gallery_service import (
     WEBP_QUALITY,
     MediaValidationError,
     apply_gallery_retention,
+    read_scoped_file_bytes,
     resolve_scoped_dir,
     sanitize_and_compress_image,
+    unlink_scoped_file,
 )
 
 TeamMediaKind = Literal["avatar", "banner"]
@@ -226,10 +228,7 @@ def delete_media(
     if row is None:
         raise HTTPException(status_code=404, detail="Bild nicht gefunden")
     was_active = bool(row.is_active)
-    try:
-        resolve_scoped_dir(_scope_dir(team_id, kind), row.file_name).unlink(missing_ok=True)
-    except (MediaValidationError, OSError):
-        pass
+    unlink_scoped_file(_scope_dir(team_id, kind), row.file_name)
     db.delete(row)
     db.commit()
     return was_active
@@ -249,10 +248,7 @@ def gallery_image_bytes(
     )
     if row is None:
         return None
-    try:
-        return resolve_scoped_dir(_scope_dir(team_id, kind), row.file_name).read_bytes()
-    except (MediaValidationError, OSError):
-        return None
+    return read_scoped_file_bytes(_scope_dir(team_id, kind), row.file_name)
 
 
 def resolve_team_media(
@@ -294,10 +290,7 @@ def media_bytes_for_team(
     active = get_active_media(db, team_id, kind)
     if active is None:
         return None
-    try:
-        data = resolve_scoped_dir(_scope_dir(team_id, kind), active.file_name).read_bytes()
-    except (MediaValidationError, OSError):
-        return None
+    data = read_scoped_file_bytes(_scope_dir(team_id, kind), active.file_name)
     if not data:
         return None
     return data, f'"custom-{active.id}"'

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Dialog, DialogContent, Button, Input } from '@maunting/ui'
+import { readFileAsDataUrl } from '@/lib/imageCompression'
 import {
   RefreshCw,
   SwitchCamera,
@@ -233,13 +234,9 @@ export function CameraSnapshotModal({
   const handleFallbackFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
-    const reader = new FileReader()
-    reader.onload = () => {
-      if (typeof reader.result === 'string') {
-        setCapturedPhoto(reader.result)
-      }
-    }
-    reader.readAsDataURL(file)
+    void readFileAsDataUrl(file).then((dataUrl) => {
+      if (dataUrl) setCapturedPhoto(dataUrl)
+    }).catch(() => undefined)
   }
 
   return (

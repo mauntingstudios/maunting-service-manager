@@ -30,19 +30,10 @@ import type { VideoNoteAufnahme } from '@/components/social/CircularVideoNoteRec
 import type { Versandauftrag } from '@/hooks/useKonversation'
 import type { AugenblickMarke, RettungsMarke } from './funkenService'
 import { enqueueMessageMutation } from '@/lib/offlineSync'
+import { readFileAsDataUrl } from '@/lib/imageCompression'
 import { chatMediaBlobCache } from './klartextSpeicher'
 import { speichereMedium } from './messengerLocalStore'
-/**
- * Legt den Anhang zusätzlich dauerhaft ab.
- *
- * Der Arbeitsspeicher allein reicht nicht: bis 10/2026 lag ein gesendetes Bild
- * nur im RAM und war nach dem Neuladen weg, obwohl der Server es noch 30 Tage
- * hält. Der lokale Bestand ist die Zusage, und der Arbeitsspeicher ist nur die
- * Optimierung darüber.
- *
- * Scheitert das Ablegen, geht die Nachricht trotzdem raus: der Anhang liegt
- * beim Server, und der Empfänger holt ihn sich von dort.
- */
+/** Legt den Anhang zusätzlich dauerhaft ab. */
 async function sichereLokal(
   mediaId: string,
   klartext: string,
@@ -53,16 +44,6 @@ async function sichereLokal(
   } catch {
     // Kein Grund, das Senden abzubrechen.
   }
-}
-
-/** Macht aus einer Aufnahme die Zeichenkette, die `medienKrypto` verschlüsselt. */
-function blobAlsDataUrl(blob: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const leser = new FileReader()
-    leser.onload = () => resolve(String(leser.result || ''))
-    leser.onerror = () => reject(leser.error ?? new Error('Aufnahme nicht lesbar'))
-    leser.readAsDataURL(blob)
-  })
 }
 
 /** Was an Anhängen aus dem Eingabefeld kommt, noch unverschlüsselt. */
@@ -205,7 +186,7 @@ export async function ladeAnhaengeHoch(
   }
 
   if (videoNote) {
-    const dataUrl = await blobAlsDataUrl(videoNote.blob)
+    const dataUrl = await readFileAsDataUrl(videoNote.blob)
     const zeiger = await anhangHochladen(dataUrl, 'videonotiz.webm', videoNote.mimeType)
     chatMediaBlobCache.set(zeiger.mediaId, dataUrl)
     await sichereLokal(zeiger.mediaId, dataUrl, 'videonotiz.webm')

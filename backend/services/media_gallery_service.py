@@ -32,11 +32,13 @@ class MediaValidationError(ValueError):
         self.message = message
 
 
-def magic_ok(raw: bytes) -> bool:
-    """Prueft echte Datei-Header (nur JPEG, PNG, WebP — blockiert SVG/HTML)."""
+def magic_ok(raw: bytes, *, allow_gif: bool = False) -> bool:
+    """Prueft echte Datei-Header (JPEG, PNG, WebP sowie optional GIF)."""
     if raw.startswith(b"\xff\xd8\xff"):
         return True
     if raw.startswith(b"\x89PNG\r\n\x1a\n"):
+        return True
+    if allow_gif and (raw.startswith(b"GIF87a") or raw.startswith(b"GIF89a")):
         return True
     return len(raw) >= 12 and raw.startswith(b"RIFF") and raw[8:12] == b"WEBP"
 
@@ -50,33 +52,48 @@ def resolve_scoped_dir(base_dir: Path, *parts: str) -> Path:
     return target
 
 
+def read_scoped_file_bytes(scope_dir: Path, file_name: str) -> bytes | None:
+    """Liest eine sicher innerhalb von `scope_dir` aufgeloeste Datei oder gibt None zurueck."""
+    try:
+        return resolve_scoped_dir(scope_dir, file_name).read_bytes()
+    except (MediaValidationError, OSError):
+        return None
+
+
+def unlink_scoped_file(scope_dir: Path, file_name: str) -> None:
+    """Entfernt eine sicher innerhalb von `scope_dir` aufgeloeste Datei ohne Absturz."""
+    try:
+        resolve_scoped_dir(scope_dir, file_name).unlink(missing_ok=True)
+    except (MediaValidationError, OSError):
+        pass
+
+
 def sanitize_and_compress_image(
     raw_bytes: bytes,
     *,
     max_width: int = DEFAULT_MAX_WIDTH,
     quality: int = WEBP_QUALITY,
+    max_bytes: int = MAX_MEDIA_BYTES,
+    allow_gif: bool = False,
 ) -> bytes:
     """Prueft, desinfiziert und komprimiert Upload-Bytes sicher zu WebP.
 
-    1. Groessenlimit (32 B bis 10 MB)
-    2. Magic-Bytes (nur JPEG/PNG/WebP — kein SVG/XSS, keine MIME-Faelschung)
+    1. Groessenlimit (32 B bis `max_bytes`)
+    2. Magic-Bytes (kein SVG/XSS, keine MIME-Faelschung)
     3. Pillow-Verifizierung & Dekodierung (entfernt EXIF, Polyglots, Payloads)
     4. Lanczos-Verkleinerung auf `max_width`
     5. WebP-Neukodierung
     """
-    if len(raw_bytes) > MAX_MEDIA_BYTES or len(raw_bytes) < MIN_MEDIA_BYTES:
-        raise MediaValidationError("Ungueltige Dateigroesse (max. 10 MB).")
-    if not magic_ok(raw_bytes):
-        raise MediaValidationError(
-            "Ungueltiges Bildformat. Nur JPEG, PNG und WebP erlaubt."
-        )
+    if len(raw_bytes) > max_bytes or len(raw_bytes) < MIN_MEDIA_BYTES:
+        max_mb = max(1, max_bytes // (1024 * 1024))
+        raise MediaValidationError(f"Ungueltige Dateigroesse (max. {max_mb} MB).")
+    if not magic_ok(raw_bytes, allow_gif=allow_gif):
+        allowed = "JPEG, PNG, WebP und GIF" if allow_gif else "JPEG, PNG und WebP"
+        raise MediaValidationError(f"Ungueltiges Bildformat. Nur {allowed} erlaubt.")
     try:
         with Image.open(io.BytesIO(raw_bytes)) as img:
             img.verify()
         with Image.open(io.BytesIO(raw_bytes)) as img:
-            # RGBA/P mit Transparenz bei Avataren oder PNGs sauber nach RGB/RGBA?
-            # Einheitlich RGB oder RGBA? Bisherige Server-Wallpapers nutzen RGB;
-            # fuer WebP ist RGBA verlustfrei moeglich falls Alpha vorhanden, sonst RGB.
             mode = "RGBA" if ("A" in img.getbands()) else "RGB"
             converted = img.convert(mode)
             if converted.width > max_width:

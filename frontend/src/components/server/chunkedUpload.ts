@@ -1,5 +1,4 @@
-import { api, getCsrfToken } from '@/api/client'
-import { apiUrl } from '@/config/api'
+import { api } from '@/api/client'
 
 // Schwelle, ab der wir vom einfachen Multipart-Upload auf den
 // chunked-resumable-Modus wechseln. ~5 MB ist genau der Bereich, in dem
@@ -37,12 +36,7 @@ async function uploadSingle({ serverId, destinationPath, file, signal }: UploadO
   })
 }
 
-/** Chunked-resumable Upload fuer grosse Dateien.
- *
- *  Wir benutzen rohes `fetch()` fuer die Chunk-Anfragen, weil der zentrale
- *  `api()`-Client die Antworten als JSON parsed und wir an dieser Stelle nur
- *  einen `2xx`-Check brauchen. CSRF + Cookies werden manuell mitgegeben.
- */
+/** Chunked-resumable Upload fuer grosse Dateien über den zentralen API-Client. */
 async function uploadChunked({
   serverId,
   destinationPath,
@@ -61,7 +55,6 @@ async function uploadChunked({
   })
 
   const uploadId = init.upload_id
-  const csrf = getCsrfToken()
   const totalChunks = Math.max(1, Math.ceil(file.size / CHUNK_SIZE_BYTES))
 
   try {
@@ -76,20 +69,11 @@ async function uploadChunked({
       const formData = new FormData()
       formData.append('chunk', blob, file.name)
 
-      const res = await fetch(
-        apiUrl(`/files/${serverId}/upload/${uploadId}/chunk`),
-        {
-          method: 'PUT',
-          credentials: 'include',
-          body: formData,
-          headers: csrf ? { 'X-CSRF-Token': csrf } : undefined,
-          signal,
-        },
-      )
-      if (!res.ok) {
-        const text = await res.text().catch(() => '')
-        throw new Error(text || `Chunk ${idx + 1}/${totalChunks} fehlgeschlagen`)
-      }
+      await api(`/files/${serverId}/upload/${uploadId}/chunk`, {
+        method: 'PUT',
+        body: formData,
+        signal,
+      })
       onProgress?.(end / file.size)
     }
 

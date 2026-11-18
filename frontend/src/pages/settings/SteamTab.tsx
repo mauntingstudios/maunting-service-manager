@@ -194,10 +194,7 @@ export function SteamTab() {
                 setSavingSteam(true)
                 try {
                   if (clearSteamKey) {
-                    await api('/settings/steam-key', {
-                      method: 'POST',
-                      body: JSON.stringify({ steam_api_key: '' }),
-                    })
+                    await api('/settings/steam-key', { method: 'DELETE' })
                     setClearSteamKey(false)
                     setNewSteamKey('')
                   } else if (newSteamKey.trim()) {

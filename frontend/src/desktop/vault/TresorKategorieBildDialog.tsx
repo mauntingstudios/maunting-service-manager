@@ -6,10 +6,10 @@
  * WebP-Data-URL im verschlüsselten Ordner-Eintrag (`extra.titelbild`) bzw.
  * für Standardkategorien lokal im Gerät gespeichert.
  */
-import { useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Check, ImagePlus, RotateCcw } from 'lucide-react'
-import { Button, Dialog, DialogContent, DialogHeader, DialogTitle } from '@maunting/ui'
+import { Button, Dialog, DialogContent, DialogHeader, DialogTitle, FileButton } from '@maunting/ui'
+import { compressImageToWebp } from '@/lib/imageCompression'
 import { still } from '@/lib/still'
 import { KATEGORIE_HINTERGRUENDE } from './vaultKennzahlen'
 
@@ -22,38 +22,6 @@ export interface TresorKategorieBildDialogProps {
   onStandardWiederherstellen?: () => void
 }
 
-async function komprimiereBildDatei(datei: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const leser = new FileReader()
-    leser.onerror = () => reject(new Error('Datei konnte nicht gelesen werden'))
-    leser.onload = () => {
-      const bild = new Image()
-      bild.onerror = () => reject(new Error('Bild konnte nicht dekodiert werden'))
-      bild.onload = () => {
-        const zielBreite = 640
-        const zielHoehe = 360
-        const leinwand = document.createElement('canvas')
-        leinwand.width = zielBreite
-        leinwand.height = zielHoehe
-        const kontext = leinwand.getContext('2d')
-        if (!kontext) {
-          resolve(String(leser.result ?? ''))
-          return
-        }
-        const skalierung = Math.max(zielBreite / bild.width, zielHoehe / bild.height)
-        const breite = bild.width * skalierung
-        const hoehe = bild.height * skalierung
-        const x = (zielBreite - breite) / 2
-        const y = (zielHoehe - hoehe) / 2
-        kontext.drawImage(bild, x, y, breite, hoehe)
-        resolve(leinwand.toDataURL('image/webp', 0.82))
-      }
-      bild.src = String(leser.result ?? '')
-    }
-    leser.readAsDataURL(datei)
-  })
-}
-
 export function TresorKategorieBildDialog({
   offen,
   kategorieName,
@@ -63,14 +31,14 @@ export function TresorKategorieBildDialog({
   onStandardWiederherstellen,
 }: TresorKategorieBildDialogProps) {
   const { t } = useTranslation()
-  const dateiEingabeRef = useRef<HTMLInputElement | null>(null)
 
-  const eigenesBildVerarbeiten = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const datei = event.target.files?.[0]
-    event.target.value = ''
-    if (!datei) return
+  const eigenesBildVerarbeiten = async (datei: File) => {
     try {
-      const dataUrl = await komprimiereBildDatei(datei)
+      const dataUrl = await compressImageToWebp(datei, {
+        targetWidth: 640,
+        targetHeight: 360,
+        quality: 0.82,
+      })
       onBildWaehlen(dataUrl)
       onSchliessen()
     } catch (err) {
@@ -133,25 +101,17 @@ export function TresorKategorieBildDialog({
             })}
           </div>
 
-          <input
-            ref={dateiEingabeRef}
-            type="file"
-            accept="image/*"
-            onChange={eigenesBildVerarbeiten}
-            className="hidden"
-          />
-
           <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-outline-variant/20">
             <div className="flex flex-wrap items-center gap-2">
-              <Button
-                type="button"
+              <FileButton
                 variant="secondary"
                 size="sm"
-                onClick={() => dateiEingabeRef.current?.click()}
+                accept="image/*"
+                onFile={(datei) => void eigenesBildVerarbeiten(datei)}
               >
                 <ImagePlus className="h-4 w-4" aria-hidden="true" />
                 {t('mss.vault.dashboard.eigenesBildHochladen')}
-              </Button>
+              </FileButton>
               {onStandardWiederherstellen && (
                 <Button
                   type="button"

@@ -42,6 +42,7 @@ from services.auth_service import AuthService
 from services.steam_account_service import SteamAccountService
 from services.sync_event_service import SyncEventService
 from services.steam_api_key_service import (
+    clear_panel_key as clear_steam_panel_key,
     current_source as steam_api_source,
     resolve_key as resolve_steam_api_key,
     set_panel_key,
@@ -653,14 +654,27 @@ def update_steam_key(
     _=Depends(require_global("panel.settings.write")),
     __=Depends(verify_csrf),
 ) -> dict:
-    """Stores the Steam Web API key securely in the panel database (DIS-encrypted)."""
+    """Stores or clears the Steam Web API key securely in the panel database (DIS-encrypted)."""
     key = req.steam_api_key.strip()
-    if not key or len(key) < 10:
+    if not key:
+        clear_steam_panel_key()
+        return {"message": "Steam API-Key entfernt", "steam_api_source": steam_api_source()}
+    if len(key) < 10:
         raise HTTPException(status_code=400, detail="Ungültiger Steam API-Key")
 
     set_panel_key(key)
 
     return {"message": "Steam API-Key gespeichert", "steam_api_source": steam_api_source()}
+
+
+@router.delete("/steam-key", status_code=200)
+def delete_steam_key(
+    _=Depends(require_global("panel.settings.write")),
+    __=Depends(verify_csrf),
+) -> dict:
+    """Removes the Steam Web API key from panel database."""
+    clear_steam_panel_key()
+    return {"message": "Steam API-Key entfernt", "steam_api_source": steam_api_source()}
 
 
 @router.post("/steam-account", status_code=200)

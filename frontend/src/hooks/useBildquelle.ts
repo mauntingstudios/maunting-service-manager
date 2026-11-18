@@ -9,12 +9,19 @@
  */
 import { useEffect, useState } from 'react'
 
-import { apiStream } from '@/api/client'
+import { apiStream, isInternalApiUrl } from '@/api/client'
 import { apiUrl, getIsAbsoluteApi } from '@/config/api'
 
 function brauchtBlob(): boolean {
   if (getIsAbsoluteApi()) return true
   return typeof window !== 'undefined' && ('__TAURI_INTERNALS__' in window || '__TAURI__' in window)
+}
+
+function istDirektQuelle(aufgeloest: string | null): boolean {
+  if (!aufgeloest) return false
+  if (aufgeloest.startsWith('data:') || aufgeloest.startsWith('blob:')) return true
+  if (!isInternalApiUrl(aufgeloest)) return true
+  return !brauchtBlob()
 }
 
 export interface Bildquelle {
@@ -71,8 +78,8 @@ function ladeBlobGemeinsam(pfad: string): Promise<Blob | null> {
 /** Lädt ein API-Bild vorab (Browser-Preload im Web, geteilter Blob-Abruf im Desktop-Modus). */
 export function vorladenBildquelle(pfad: string | null, priority: 'high' | 'low' = 'high'): void {
   if (!pfad) return
-  if (!brauchtBlob()) {
-    const href = apiUrl(pfad)
+  const href = apiUrl(pfad)
+  if (istDirektQuelle(href)) {
     if (vorgeladeneAdressen.has(href)) return
     vorgeladeneAdressen.add(href)
     if (vorgeladeneAdressen.size > VORLADE_MAX) {
@@ -93,71 +100,76 @@ export function vorladenBildquelle(pfad: string | null, priority: 'high' | 'low'
  * Die Quelle eines Panelbilds für ein `<img>`. Ein Blob gehört zu seinem Pfad
  * und wird freigegeben, sobald der Pfad wechselt oder das Bild verschwindet.
  *
- * Im Web trägt das `<img>` das Sitzungscookie, und das lebt 15 Minuten. Nach
- * einer langen Sprachsitzung ohne andere Anfrage bekommt es ein 401, und ein
- * `<img>` frischt keine Sitzung auf. Ein Fehler fragt deshalb einmal über
- * `apiStream` nach — das frischt sie auf — und lädt dann neu; erst wenn auch
- * das scheitert, fehlt das Bild.
+ * `data:`, `blob:` sowie externe Nicht-API-URLs werden immer direkt ausgeliefert.
  */
-export function useBildquelle(pfad: string | null): Bildquelle {
-  const direkt = !brauchtBlob()
+export function useBildquelle(
+  pfad: string | null,
+  resolveUrl?: (url: string) => string,
+): Bildquelle {
+  const aufgeloest = pfad ? (resolveUrl ? resolveUrl(pfad) : apiUrl(pfad)) : null
+  const direkt = istDirektQuelle(aufgeloest)
+  const schluessel = aufgeloest
   const [blob, setBlob] = useState<Blobstand | null>(null)
   const [nachfrage, setNachfrage] = useState<Nachfrage | null>(null)
 
   useEffect(() => {
-    if (!pfad || direkt) return
+    if (!schluessel || direkt) return
     let aktiv = true
     let blobUrl: string | null = null
-    void ladeBlobGemeinsam(pfad).then((inhalt) => {
+    void ladeBlobGemeinsam(schluessel).then((inhalt) => {
       if (!aktiv) return
       if (!inhalt) {
-        setBlob({ pfad, quelle: null, fehlgeschlagen: true })
+        setBlob({ pfad: schluessel, quelle: null, fehlgeschlagen: true })
         return
       }
       blobUrl = URL.createObjectURL(inhalt)
-      setBlob({ pfad, quelle: blobUrl, fehlgeschlagen: false })
+      setBlob({ pfad: schluessel, quelle: blobUrl, fehlgeschlagen: false })
     })
     return () => {
       aktiv = false
       if (blobUrl) URL.revokeObjectURL(blobUrl)
     }
-  }, [pfad, direkt])
+  }, [schluessel, direkt])
 
   const bildFehler = () => {
-    if (!pfad) return
+    if (!schluessel) return
     if (!direkt) {
-      // Ein Blob, den das `<img>` nicht lesen kann, wird beim nächsten Mal
-      // nicht besser.
-      setBlob((jetzt) => (jetzt?.pfad === pfad ? { ...jetzt, quelle: null, fehlgeschlagen: true } : jetzt))
+      setBlob((jetzt) => (jetzt?.pfad === schluessel ? { ...jetzt, quelle: null, fehlgeschlagen: true } : jetzt))
       return
     }
-    if (nachfrage?.pfad === pfad) {
-      if (nachfrage.stand === 'wieder') setNachfrage({ pfad, stand: 'fehlt' })
+    if (!isInternalApiUrl(schluessel) || schluessel.startsWith('data:') || schluessel.startsWith('blob:')) {
+      setNachfrage({ pfad: schluessel, stand: 'fehlt' })
       return
     }
-    setNachfrage({ pfad, stand: 'fragt' })
+    if (nachfrage?.pfad === schluessel) {
+      if (nachfrage.stand === 'wieder') setNachfrage({ pfad: schluessel, stand: 'fehlt' })
+      return
+    }
+    setNachfrage({ pfad: schluessel, stand: 'fragt' })
     void Promise.resolve()
-      .then(() => apiStream(pfad, { method: 'GET', headers: { Accept: 'image/*' } }))
+      .then(() => apiStream(schluessel, { method: 'GET', headers: { Accept: 'image/*' } }))
       .then((antwort) => {
-        // Nur die Auskunft zählt; das Bild selbst lädt gleich das `<img>`.
         void antwort.body?.cancel().catch(() => undefined)
         return antwort.ok
       })
       .catch(() => false)
       .then((da) => {
-        setNachfrage((jetzt) => (jetzt?.pfad === pfad ? { pfad, stand: da ? 'wieder' : 'fehlt' } : jetzt))
+        setNachfrage((jetzt) => (jetzt?.pfad === schluessel ? { pfad: schluessel, stand: da ? 'wieder' : 'fehlt' } : jetzt))
       })
   }
 
-  if (!pfad) return { quelle: null, fehlgeschlagen: true, bildFehler }
+  if (!schluessel) return { quelle: null, fehlgeschlagen: true, bildFehler }
   if (direkt) {
-    const stand = nachfrage?.pfad === pfad ? nachfrage.stand : null
+    const stand = nachfrage?.pfad === schluessel ? nachfrage.stand : null
     if (stand === 'fehlt') return { quelle: null, fehlgeschlagen: true, bildFehler }
     if (stand === 'fragt') return { quelle: null, fehlgeschlagen: false, bildFehler }
-    return { quelle: apiUrl(stand === 'wieder' ? zweiterAnlauf(pfad) : pfad), fehlgeschlagen: false, bildFehler }
+    return {
+      quelle: stand === 'wieder' ? zweiterAnlauf(schluessel) : schluessel,
+      fehlgeschlagen: false,
+      bildFehler,
+    }
   }
-  // Ein Blob für einen anderen Pfad gilt nicht mehr, auch nicht für einen Takt.
-  return blob?.pfad === pfad
+  return blob?.pfad === schluessel
     ? { quelle: blob.quelle, fehlgeschlagen: blob.fehlgeschlagen, bildFehler }
     : { quelle: null, fehlgeschlagen: false, bildFehler }
 }

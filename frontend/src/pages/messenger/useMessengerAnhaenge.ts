@@ -3,7 +3,7 @@ import type { TFunction } from 'i18next'
 import { useZurueckSchliesst } from '@maunting/ui'
 import type { CalendarAttachment, NoteAttachment } from '@/components/social/ChatMessageBubble'
 import type { FileAttachment, ImageAttachment } from '@/components/social/ChatMediaAttachments'
-import { compressImageFile } from '@/lib/imageCompression'
+import { compressImageFile, readFileAsDataUrl } from '@/lib/imageCompression'
 import {
   loadCalendarEventsOfflineFirst,
   loadNotesOfflineFirst,
@@ -50,13 +50,10 @@ export function useMessengerAnhaenge(t: TFunction) {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const docInputRef = useRef<HTMLInputElement>(null)
 
-  const readFileAsDataUrl = (file: File, onLoaded: (dataUrl: string) => void) => {
-    const reader = new FileReader()
-    reader.onload = (event) => {
-      const dataUrl = event.target?.result as string
+  const loadAsDataUrl = (file: File, onLoaded: (dataUrl: string) => void) => {
+    void readFileAsDataUrl(file).then((dataUrl) => {
       if (dataUrl) onLoaded(dataUrl)
-    }
-    reader.readAsDataURL(file)
+    }).catch(() => undefined)
   }
 
   const stageImageFile = async (file: File) => {
@@ -64,7 +61,7 @@ export function useMessengerAnhaenge(t: TFunction) {
       const compressed = await compressImageFile(file)
       setSelectedImage({ dataUrl: compressed.dataUrl, name: compressed.name })
     } catch {
-      readFileAsDataUrl(file, (dataUrl) => {
+      loadAsDataUrl(file, (dataUrl) => {
         setSelectedImage({ dataUrl, name: file.name })
       })
     }
@@ -125,7 +122,7 @@ export function useMessengerAnhaenge(t: TFunction) {
       return
     }
 
-    readFileAsDataUrl(file, (dataUrl) => {
+    loadAsDataUrl(file, (dataUrl) => {
       setStagedFile({
         name: file.name,
         sizeBytes: file.size,

@@ -121,16 +121,96 @@ export async function compressImageFile(
   }
 }
 
+export interface WebpCompressionOptions {
+  /** Maximale Kantenlänge bei proportionaler Skalierung (Standard: 2560). */
+  maxDimension?: number
+  /** Feste Zielbreite für zentrierten Cover-Zuschnitt (optional, mit targetHeight). */
+  targetWidth?: number
+  /** Feste Zielhöhe für zentrierten Cover-Zuschnitt (optional, mit targetWidth). */
+  targetHeight?: number
+  /** WebP-Qualität 0..1 (Standard: 0.85). */
+  quality?: number
+}
+
+/**
+ * Zentrale WebP-Skalierung (proportional oder zentrierter Zuschnitt).
+ * Verhindert unskalierte 48-MP-Bilder im Speicher.
+ */
+export async function compressImageToWebp(
+  file: File | Blob,
+  options: WebpCompressionOptions = {},
+): Promise<string> {
+  const { maxDimension = 2560, targetWidth, targetHeight, quality = 0.85 } = options
+  if (typeof window === 'undefined' || typeof document === 'undefined') {
+    return await readFileAsDataUrl(file)
+  }
+
+  let width = 0
+  let height = 0
+  let source: ImageBitmap | HTMLImageElement | null = null
+
+  if (typeof createImageBitmap === 'function') {
+    try {
+      const bitmap = await createImageBitmap(file)
+      width = bitmap.width
+      height = bitmap.height
+      source = bitmap
+    } catch {
+      source = null
+    }
+  }
+
+  if (!source) {
+    source = await loadImageElement(file)
+    width = source.naturalWidth || source.width
+    height = source.naturalHeight || source.height
+  }
+
+  try {
+    if (width === 0 || height === 0) {
+      return await readFileAsDataUrl(file)
+    }
+
+    const canvas = document.createElement('canvas')
+    const ctx = canvas.getContext('2d')
+    if (!ctx) {
+      throw new Error('Canvas Context nicht verfügbar')
+    }
+
+    if (targetWidth && targetHeight) {
+      canvas.width = targetWidth
+      canvas.height = targetHeight
+      const scale = Math.max(targetWidth / width, targetHeight / height)
+      const drawW = width * scale
+      const drawH = height * scale
+      ctx.drawImage(source, (targetWidth - drawW) / 2, (targetHeight - drawH) / 2, drawW, drawH)
+    } else {
+      const factor = Math.min(1, maxDimension / Math.max(width, height))
+      const outW = Math.max(1, Math.round(width * factor))
+      const outH = Math.max(1, Math.round(height * factor))
+      canvas.width = outW
+      canvas.height = outH
+      ctx.drawImage(source, 0, 0, outW, outH)
+    }
+
+    return canvas.toDataURL('image/webp', quality)
+  } finally {
+    if (source && 'close' in source && typeof (source as ImageBitmap).close === 'function') {
+      ;(source as ImageBitmap).close()
+    }
+  }
+}
+
 export function readFileAsDataUrl(file: File | Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
-    reader.onload = () => resolve(reader.result as string)
-    reader.onerror = () => reject(reader.error)
+    reader.onload = () => resolve(String(reader.result ?? ''))
+    reader.onerror = () => reject(reader.error ?? new Error('Datei konnte nicht gelesen werden'))
     reader.readAsDataURL(file)
   })
 }
 
-function loadImageElement(file: File): Promise<HTMLImageElement> {
+function loadImageElement(file: File | Blob): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image()
     const url = URL.createObjectURL(file)
