@@ -563,6 +563,8 @@ def clean_db():
     # die Tabellen sind geleert, dieselben Kennungen kommen wieder.
     from services import ai_gedaechtnis_abruf
     ai_gedaechtnis_abruf.leeren()
+    from services.mod_update_service import reset_update_check_cache
+    reset_update_check_cache()
     PanelSettingsService.set("captcha_enabled", "false")
     session = db_module.SessionLocal()
     try:

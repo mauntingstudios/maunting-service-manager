@@ -130,19 +130,19 @@ def test_sozialrouter_behaelt_allen_vertraegen() -> None:
     assert social_router.prefix == "/api/social"
 
     vertraege: list[tuple[str, str]] = []
-
-    def _sammle(routen, praefix: str = "") -> None:
-        for route in routen:
-            if hasattr(route, "methods"):
-                vertraege.extend((methode, praefix + route.path) for methode in route.methods)
-            elif hasattr(route, "path"):
-                vertraege.append(("WEBSOCKET", praefix + route.path))
-            elif hasattr(route, "router"):
-                # FastAPI >= 0.160 speichert eingebundene Router als _IncludedRouter in .routes.
-                basis = praefix or social_router.prefix
-                _sammle(route.router.routes, basis + (getattr(route, "prefix", "") or ""))
-
-    _sammle(social_router.routes)
+    for r in social_router.routes:
+        if hasattr(r, "effective_route_contexts"):
+            for ctx in r.effective_route_contexts():
+                orig = ctx.original_route
+                p = ctx.path
+                if hasattr(orig, "methods"):
+                    vertraege.extend((m, p) for m in orig.methods)
+                else:
+                    vertraege.append(("WEBSOCKET", p))
+        elif hasattr(r, "methods"):
+            vertraege.extend((m, r.path) for m in r.methods)
+        else:
+            vertraege.append(("WEBSOCKET", r.path))
 
     assert len(vertraege) == 84, f"Erwartet 84 Social-Routen, gefunden {len(vertraege)}"
     doppelt = sorted({v for v in vertraege if vertraege.count(v) > 1})

@@ -16,6 +16,35 @@ from slowapi.util import get_remote_address
 from config import settings
 from services.rate_limit_settings import dynamic_global_limit_provider
 
+# FastAPI >= 0.160 speichert Router als _IncludedRouter in app.routes.
+# slowapi 0.1.10 _find_route_handler sucht nur nach route.endpoint,
+# wodurch alle Endpunkte in eingebundenen Routern None lieferten und
+# key_style="endpoint" das Rate-Limit umging.
+import slowapi.middleware
+from starlette.routing import Match
+
+_orig_find_route_handler = slowapi.middleware._find_route_handler
+
+
+def _compatible_find_route_handler(routes, scope):
+    handler = _orig_find_route_handler(routes, scope)
+    if handler is not None:
+        return handler
+    for route in routes:
+        if hasattr(route, "_match"):
+            try:
+                m, _, matched_route, ctx = route._match(scope)
+                if m == Match.FULL:
+                    endpoint = getattr(ctx, "endpoint", None) or getattr(matched_route, "endpoint", None)
+                    if endpoint is not None:
+                        return endpoint
+            except Exception:
+                pass
+    return None
+
+
+slowapi.middleware._find_route_handler = _compatible_find_route_handler
+
 # Im Testlauf zaehlt jeder Prozess fuer sich. Ein gemeinsamer Redis-Zaehler
 # teilte sich sonst zwischen xdist-Workern, und `limiter.reset()` des einen
 # loeschte die Zaehler, waehrend der andere gerade ein Limit prueft — die

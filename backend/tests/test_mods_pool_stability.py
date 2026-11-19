@@ -88,6 +88,8 @@ def test_list_mods_skips_refresh_during_active_jobs(client, test_server, owner_c
 
 
 def test_list_mods_runs_refresh_when_idle(client, test_server, owner_cookies, db):
+    from services.mod_update_service import reset_update_check_cache
+    reset_update_check_cache()
     db.add(Mod(server_id=test_server.id, workshop_id="1", install_status="installed"))
     db.commit()
 

@@ -364,9 +364,7 @@ class TestBrowseReadWrite:
             )
 
         assert res.status_code == 200
-        mock_repair.assert_called_once()
-        assert mock_repair.call_args.args == (server_with_dir.install_dir,)
-        assert mock_repair.call_args.kwargs["server_id"] == server_with_dir.id
+        mock_repair.assert_called_once_with(server_with_dir.install_dir)
         assert attempts == 2
         assert (Path(server_with_dir.install_dir) / "locked.ini").read_text(encoding="utf-8") == "ServerName=SCUM"
 
@@ -742,9 +740,9 @@ class TestMutations:
             )
 
         assert res.status_code == 200
-        mock_repair.assert_called_once()
-        assert mock_repair.call_args.args == (server_with_dir.install_dir,)
-        assert mock_repair.call_args.kwargs["server_id"] == server_with_dir.id
+        mock_repair.assert_called_once_with(
+            server_with_dir.install_dir, node=None, server_id=server_with_dir.id
+        )
         assert attempts == 2
         assert not target.exists()
 

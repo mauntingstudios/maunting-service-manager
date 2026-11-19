@@ -127,7 +127,7 @@ def test_check_server_file_update_remote_online_steam() -> None:
         assert result["action"] == "none"
         assert result["reason"] == "up_to_date"
         client.files_list.assert_called_once_with("77", "")
-        client.files_read.assert_called_once_with(77, "steamapps/appmanifest_440900.acf")
+        client.files_read.assert_called_once_with("77", "steamapps/appmanifest_440900.acf")
 
 
 def test_check_server_file_update_remote_online_http() -> None:

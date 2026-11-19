@@ -49,6 +49,13 @@ def is_update_check_due(server_id: int) -> bool:
         return now - _UPDATE_CHECK_CACHE.get(server_id, 0) >= UPDATE_CHECK_TTL_SECONDS
 
 
+def reset_update_check_cache() -> None:
+    """Leert den Update-Check-Cache und laufende Prüfungen (für Tests)."""
+    with _CHECK_LOCK:
+        _UPDATE_CHECK_CACHE.clear()
+        _IN_FLIGHT_SERVERS.clear()
+
+
 class ModSearchUnavailable(RuntimeError):
     """Die Workshop-Suche ist nicht nutzbar — mit stabilem Grund."""
 
