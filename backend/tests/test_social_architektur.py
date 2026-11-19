@@ -134,7 +134,7 @@ def test_sozialrouter_behaelt_allen_vertraegen() -> None:
         if hasattr(r, "effective_route_contexts"):
             for ctx in r.effective_route_contexts():
                 orig = ctx.original_route
-                p = ctx.path
+                p = ctx.path or getattr(getattr(ctx, "starlette_route", None), "path", "") or getattr(orig, "path", "")
                 if hasattr(orig, "methods"):
                     vertraege.extend((m, p) for m in orig.methods)
                 else:

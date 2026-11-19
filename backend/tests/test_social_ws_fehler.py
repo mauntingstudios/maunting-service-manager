@@ -85,3 +85,4 @@ def test_kaputter_rahmen_beendet_den_socket_nicht(
 
         ws.send_json({"type": "ping"})
         assert ws.receive_json() == {"type": "pong"}
+        ws.close()
