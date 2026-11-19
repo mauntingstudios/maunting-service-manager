@@ -89,7 +89,7 @@ def test_remote_modlist_is_written_through_agent() -> None:
         write_workshop_modlist(server, "Runtime/modlist.txt", ["mod-a.pak", "mod-b.pak"])
 
     client.files_write.assert_called_once_with(
-        77,
+        "77",
         "Runtime/modlist.txt",
         "*mod-a.pak\n*mod-b.pak\n",
     )

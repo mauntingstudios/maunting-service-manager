@@ -81,7 +81,7 @@ def test_check_workshop_mod_updates_remote_online() -> None:
 
         result = check_workshop_mod_updates(server, bp)
         assert result == []  # Mod is up to date, so no actions needed
-        client.files_list.assert_called_once_with(77, "steamapps/workshop/content/67890/12345")
+        client.files_list.assert_called_once_with("77", "steamapps/workshop/content/67890/12345")
 
 
 def test_check_workshop_mod_updates_remote_offline() -> None:
@@ -126,7 +126,7 @@ def test_check_server_file_update_remote_online_steam() -> None:
         result = check_server_file_update(server, bp)
         assert result["action"] == "none"
         assert result["reason"] == "up_to_date"
-        client.files_list.assert_called_once_with(77, "")
+        client.files_list.assert_called_once_with("77", "")
         client.files_read.assert_called_once_with(77, "steamapps/appmanifest_440900.acf")
 
 
@@ -152,4 +152,4 @@ def test_check_server_file_update_remote_online_http() -> None:
         result = check_server_file_update(server, bp)
         assert result["action"] == "none"
         assert result["reason"] == "up_to_date"
-        client.files_list.assert_called_once_with(77, "")
+        client.files_list.assert_called_once_with("77", "")

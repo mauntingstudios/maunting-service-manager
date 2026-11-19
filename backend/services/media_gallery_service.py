@@ -13,7 +13,6 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import Response
-from PIL import Image
 from sqlalchemy.orm import Session
 
 MAX_MEDIA_BYTES = 10 * 1024 * 1024  # 10 MB
@@ -90,6 +89,10 @@ def sanitize_and_compress_image(
     if not magic_ok(raw_bytes, allow_gif=allow_gif):
         allowed = "JPEG, PNG, WebP und GIF" if allow_gif else "JPEG, PNG und WebP"
         raise MediaValidationError(f"Ungueltiges Bildformat. Nur {allowed} erlaubt.")
+    try:
+        from PIL import Image
+    except ImportError as exc:
+        raise MediaValidationError("Bildverarbeitung (Pillow) ist nicht verfuegbar.") from exc
     try:
         with Image.open(io.BytesIO(raw_bytes)) as img:
             img.verify()

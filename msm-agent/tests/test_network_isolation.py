@@ -224,6 +224,8 @@ def test_reconcile_invokes_msm_iptables_wrapper_with_json_and_respects_fail_clos
     monkeypatch.setattr("services.network_isolation_service.sys", SimpleNamespace(platform="linux"))
     monkeypatch.setattr("services.network_isolation_service.os", posix_os)
     monkeypatch.setattr("services.network_isolation_service.subprocess.run", fake_run)
+    # Die Testmaschine kann nsenter/iptables haben (CI-Runner); der Test prüft nur den Host-Wrapper.
+    monkeypatch.setattr("services.network_isolation_service.shutil.which", lambda _name: None)
     monkeypatch.setattr("services.network_isolation_service.list_host_interfaces", lambda: [])
     monkeypatch.setattr("services.network_isolation_service._find_rootlesskit_child_pids", lambda: [4321])
     fake_client = SimpleNamespace(networks=SimpleNamespace(list=lambda: []))

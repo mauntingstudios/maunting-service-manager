@@ -364,7 +364,9 @@ class TestBrowseReadWrite:
             )
 
         assert res.status_code == 200
-        mock_repair.assert_called_once_with(server_with_dir.install_dir)
+        mock_repair.assert_called_once()
+        assert mock_repair.call_args.args == (server_with_dir.install_dir,)
+        assert mock_repair.call_args.kwargs["server_id"] == server_with_dir.id
         assert attempts == 2
         assert (Path(server_with_dir.install_dir) / "locked.ini").read_text(encoding="utf-8") == "ServerName=SCUM"
 
@@ -430,7 +432,7 @@ class TestBrowseReadWrite:
         assert kwargs["volumes"][0].host_path == str(Path(server_with_dir.install_dir).resolve(strict=False))
         assert kwargs["volumes"][0].container_path == PERMISSION_REPAIR_CONTAINER_DIR
         script = kwargs["command"][1]
-        assert f"find {PERMISSION_REPAIR_CONTAINER_DIR} -xdev -type f" in script
+        assert f"find {PERMISSION_REPAIR_CONTAINER_DIR} " in script and "-xdev -type f" in script
         # Geteilte **Gruppe** statt Weltrechte: `a+rwX` machte jede Serverdatei
         # fuer jeden Prozess auf dem Host beschreibbar, und weil diese
         # Reparatur vor jedem Serverstart laeuft, war ein aufgeraeumtes
@@ -740,7 +742,9 @@ class TestMutations:
             )
 
         assert res.status_code == 200
-        mock_repair.assert_called_once_with(server_with_dir.install_dir)
+        mock_repair.assert_called_once()
+        assert mock_repair.call_args.args == (server_with_dir.install_dir,)
+        assert mock_repair.call_args.kwargs["server_id"] == server_with_dir.id
         assert attempts == 2
         assert not target.exists()
 

@@ -23,6 +23,7 @@
     "stopGracePeriodSeconds": 30,
     "startupCheckSeconds": 5,
     "allowUnprivilegedUserNamespaces": false,
+    "allowTmpfsExec": true,
     "enableExec": false,
     "execTimeoutSeconds": 60
   },

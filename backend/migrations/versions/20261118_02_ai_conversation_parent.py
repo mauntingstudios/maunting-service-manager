@@ -54,13 +54,15 @@ def downgrade() -> None:
     spalten = {col["name"] for col in inspector.get_columns("ai_conversations")}
     if "parent_conversation_id" in spalten:
         if bind.dialect.name != "sqlite":
-            op.drop_constraint(
-                "fk_ai_conversations_parent_conversation_id",
-                "ai_conversations",
-                type_="foreignkey",
+            # Der Name hängt davon ab, ob die Spalte aus dieser Migration oder
+            # aus `create_all` stammt (dort heißt der Fremdschlüssel anders).
+            for fk in inspector.get_foreign_keys("ai_conversations"):
+                if fk.get("constrained_columns") == ["parent_conversation_id"] and fk.get("name"):
+                    op.drop_constraint(fk["name"], "ai_conversations", type_="foreignkey")
+        indizes = {ix["name"] for ix in inspector.get_indexes("ai_conversations")}
+        if "ix_ai_conversations_parent_conversation_id" in indizes:
+            op.drop_index(
+                "ix_ai_conversations_parent_conversation_id",
+                table_name="ai_conversations",
             )
-        op.drop_index(
-            "ix_ai_conversations_parent_conversation_id",
-            table_name="ai_conversations",
-        )
         op.drop_column("ai_conversations", "parent_conversation_id")

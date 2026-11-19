@@ -379,7 +379,8 @@ def angebotene_werkzeuge(db: Session, user: User) -> frozenset[str]:
     if not user_teams and "teams.create" not in gehalten:
         verfuegbar -= _TEAM_READ_TOOLS
     if not echte_teams:
-        verfuegbar -= _TEAM_SCOPED_WRITE_TOOLS
+        if not user.is_owner:
+            verfuegbar -= _TEAM_SCOPED_WRITE_TOOLS
     else:
         can_roles = any(
             user.is_owner or t.owner_user_id == user.id or team_service.has_team_permission(db, t.id, user, "team.roles.manage")

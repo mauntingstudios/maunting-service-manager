@@ -36,7 +36,7 @@ if TYPE_CHECKING:
     from services.ai_voice_bridge import Sprachbruecke
 
 
-_PIPECAT_VERSION = "1.15.0"
+_PIPECAT_VERSION = "1.16.0"
 
 
 class PipecatNichtVerfuegbar(RuntimeError):

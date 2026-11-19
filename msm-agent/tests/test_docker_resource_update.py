@@ -77,6 +77,8 @@ def test_update_container_resources_maps_cpu_via_raw_path(
         "HostConfig": {"NanoCpus": 1_000_000_000, "Memory": 0, "MemorySwap": 0},
     }
     container.reload = MagicMock()
+    monkeypatch.setattr(docker_service, "_host_cpu_count", lambda: 64)
+    monkeypatch.setattr(docker_service, "_host_total_ram_mb", lambda: 262144)
     monkeypatch.setattr(docker_service, "_get_container", lambda _name: container)
 
     captured: dict = {}
@@ -108,6 +110,8 @@ def test_update_container_resources_maps_ram_and_cpu_together(
         },
     }
     container.reload = MagicMock()
+    monkeypatch.setattr(docker_service, "_host_cpu_count", lambda: 64)
+    monkeypatch.setattr(docker_service, "_host_total_ram_mb", lambda: 262144)
     monkeypatch.setattr(docker_service, "_get_container", lambda _name: container)
 
     captured: dict = {}

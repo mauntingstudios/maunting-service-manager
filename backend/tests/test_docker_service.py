@@ -1256,7 +1256,9 @@ class TestUpdateContainerResources:
         container.attrs = {"HostConfig": {}}
         container.update.return_value = {"Warnings": []}
 
-        with patch.object(docker_service, "_container", return_value=container):
+        # Die Obergrenze richtet sich nach den Kernen des Hosts; der Test pinnt sie.
+        with patch.object(docker_service.os, "cpu_count", return_value=64), \
+                patch.object(docker_service, "_container", return_value=container):
             result = docker_service.update_container_resources(
                 "msm-srv-1", {"cpu_limit_percent": cpu_percent},
             )
