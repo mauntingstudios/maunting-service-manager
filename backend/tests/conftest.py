@@ -32,6 +32,8 @@ if not _ADMIN_URL.startswith(("postgresql://", "postgresql+psycopg2://")):
         "startet einen passenden Wegwerf-Container.",
         returncode=4,
     )
+if _ADMIN_URL.startswith("postgresql://"):
+    _ADMIN_URL = "postgresql+psycopg2://" + _ADMIN_URL[len("postgresql://"):]
 
 _admin_engine = create_engine(_ADMIN_URL, isolation_level="AUTOCOMMIT", poolclass=NullPool)
 _LAUF = (os.environ.get("PYTEST_XDIST_TESTRUNUID") or uuid.uuid4().hex)[:8].lower()

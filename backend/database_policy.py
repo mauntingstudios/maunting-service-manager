@@ -15,7 +15,10 @@ def validate_panel_database_url(database_url: str) -> str:
         raise RuntimeError(
             "MSM_DATABASE_URL fehlt. MSM benötigt PostgreSQL als Panel-Datenbank."
         )
-    if url.startswith(("postgresql://", "postgresql+psycopg2://")):
+    if url.startswith("postgresql://"):
+        # SQLAlchemy 2.1+ defaults bare postgresql:// to psycopg3; MSM ships psycopg2-binary.
+        return "postgresql+psycopg2://" + url[len("postgresql://"):]
+    if url.startswith("postgresql+psycopg2://"):
         return url
     if url.startswith("sqlite"):
         raise RuntimeError(
