@@ -11,8 +11,8 @@ android {
         applicationId = "com.mauntingstudios.msm.kamera"
         minSdk = 26
         targetSdk = 36
-        versionCode = 6001000
-        versionName = "6.1.0"
+        versionCode = 7000000
+        versionName = "7.0.0"
     }
 
     buildTypes {

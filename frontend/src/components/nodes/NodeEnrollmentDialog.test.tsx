@@ -119,14 +119,15 @@ describe('NodeEnrollmentDialog', () => {
     trigger.focus()
     fireEvent.click(trigger)
 
+    const manualButton = screen.getByRole('button', { name: 'Manuell einrichten' })
     const closeButton = screen.getByRole('button', { name: 'Schließen' })
-    expect(closeButton).toHaveFocus()
+    expect(manualButton).toHaveFocus()
 
     fireEvent.keyDown(document, { key: 'Tab', shiftKey: true })
-    expect(screen.getByRole('button', { name: 'Manuell einrichten' })).toHaveFocus()
+    expect(closeButton).toHaveFocus()
 
     fireEvent.keyDown(document, { key: 'Tab' })
-    expect(closeButton).toHaveFocus()
+    expect(manualButton).toHaveFocus()
 
     fireEvent.keyDown(document, { key: 'Escape' })
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()

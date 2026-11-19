@@ -201,9 +201,9 @@ describe('PanelBackups', () => {
     fireEvent.click(screen.getByRole('button', { name: /Einstellungen/ }))
     await screen.findByText('Panel-Backup-Einstellungen')
 
-    // Toggle enabled on by clicking the checkbox label input
-    const checkbox = screen.getByRole('checkbox')
-    fireEvent.click(checkbox)
+    // Toggle enabled on by clicking the switch control
+    const toggle = screen.getByRole('switch')
+    fireEvent.click(toggle)
 
     fireEvent.click(screen.getByRole('button', { name: /Speichern/ }))
     await waitFor(() => {

@@ -529,7 +529,7 @@ jobs:
           for kandidat in "docs/patchnotes/${TAG}-release-notes.md" "docs/patchnotes/${TAG}-hotfix-notes.md"; do
             if [ -f "$kandidat" ]; then notes="$kandidat"; break; fi
           done
-          title="MSM / MSS / MSB $TAG"
+          title="MSM / MSS / Pontis $TAG"
           if [ -n "$notes" ]; then
             # "# Hotfix v5.0.1 — Thema" wird zu "MSM / MSS v5.0.1 — Hotfix: Thema".
             kopf=$(head -n1 "$notes")

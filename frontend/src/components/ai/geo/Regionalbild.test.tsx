@@ -11,7 +11,10 @@ import type { AiSatelliteLayer } from '@/api/ai'
 import i18n from '@/i18n'
 
 const apiStream = vi.hoisted(() => vi.fn())
-vi.mock('@/api/client', () => ({ apiStream }))
+vi.mock('@/api/client', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/api/client')>()
+  return { ...actual, apiStream }
+})
 
 import { Regionalbild } from './Regionalbild'
 
@@ -101,7 +104,7 @@ describe('Regionalbild', () => {
       'src', '/api/ai/geo/image?kind=map&bbox=13.0883,52.3382,13.7611,52.6755&versuch=2',
     ))
     expect(apiStream).toHaveBeenCalledWith(
-      '/ai/geo/image?kind=map&bbox=13.0883,52.3382,13.7611,52.6755',
+      '/api/ai/geo/image?kind=map&bbox=13.0883,52.3382,13.7611,52.6755',
       expect.objectContaining({ method: 'GET' }),
     )
     fireEvent.load(screen.getByRole('img'))
@@ -137,7 +140,7 @@ describe('Regionalbild', () => {
 
     await waitFor(() => expect(screen.getByRole('img')).toHaveAttribute('src', 'blob:msm/regionalbild'))
     expect(apiStream).toHaveBeenCalledWith(
-      '/ai/geo/image?kind=map&bbox=13.0883,52.3382,13.7611,52.6755',
+      '/api/ai/geo/image?kind=map&bbox=13.0883,52.3382,13.7611,52.6755',
       expect.objectContaining({ method: 'GET', headers: { Accept: 'image/*' } }),
     )
     unmount()

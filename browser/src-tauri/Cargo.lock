@@ -2502,7 +2502,7 @@ dependencies = [
 
 [[package]]
 name = "maunting-secure-browser"
-version = "6.1.0"
+version = "7.0.0"
 dependencies = [
  "adblock",
  "audio_ducking",
