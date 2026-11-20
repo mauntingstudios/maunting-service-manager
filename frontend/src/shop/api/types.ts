@@ -7,8 +7,6 @@ export type OrderStatus =
   | 'cancelled'
   | 'refunded'
 
-export type InvoiceStatus = 'open' | 'paid' | 'void'
-
 export interface Plan {
   id: string
   name: string
@@ -49,28 +47,6 @@ export interface Order {
   steuerCent: number
   bruttoCent: number
   rechnungId?: string
-}
-
-export interface InvoiceLine {
-  bezeichnung: string
-  menge: number
-  einzelpreisCent: number
-  steuersatzProzent: number
-  gesamtCent: number
-}
-
-export interface Invoice {
-  id: string
-  nummer: string
-  status: InvoiceStatus
-  datum: string
-  leistungszeitraum: string
-  empfaenger: string
-  positionen: InvoiceLine[]
-  nettoCent: number
-  steuerCent: number
-  bruttoCent: number
-  pdfVerfuegbar: boolean
 }
 
 export interface Subscription {

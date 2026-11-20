@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Link, useLocation, useParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { ArrowLeft } from 'lucide-react'
-import { Badge, Button, Spinner, Zustandsflaeche } from '@maunting/ui'
+import { Badge, Button, Dropdown, Spinner, Zustandsflaeche } from '@maunting/ui'
 import { shopOrderApi } from '@/api/shop'
 import { SanitizedApiError } from '@/api/client'
 import { useAuthStore } from '@/stores/authStore'
@@ -33,6 +33,11 @@ export function ShopKasse() {
 
   const [email, setEmail] = useState('')
   const [karte, setKarte] = useState('')
+  const [name, setName] = useState('')
+  const [strasse, setStrasse] = useState('')
+  const [plz, setPlz] = useState('')
+  const [stadt, setStadt] = useState('')
+  const [land, setLand] = useState('DE')
   const [fehler, setFehler] = useState('')
   const [busy, setBusy] = useState(false)
   const [erfolg, setErfolg] = useState<string | null>(null)
@@ -89,6 +94,10 @@ export function ShopKasse() {
       setFehler(t('shop.kasse.karteFehlt'))
       return
     }
+    if (!name.trim() || !strasse.trim() || !plz.trim() || !stadt.trim()) {
+      setFehler(t('shop.kasse.adresseFehlt'))
+      return
+    }
 
     setFehler('')
     setBusy(true)
@@ -102,6 +111,12 @@ export function ShopKasse() {
           ram_mb: konfiguration.ramGb * 1024,
           cpu: konfiguration.cpu,
           slots: konfiguration.slots,
+          buyer_name: name.trim(),
+          buyer_street: strasse.trim(),
+          buyer_postal_code: plz.trim(),
+          buyer_city: stadt.trim(),
+          buyer_country: land,
+          buyer_email: email.trim(),
         })
         try {
           const stripe = await shopOrderApi.checkout(order.id)
@@ -218,6 +233,75 @@ export function ShopKasse() {
                 className="msm-input w-full"
               />
             </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-1.5 sm:col-span-2">
+                <label htmlFor="kasse-name" className="block text-sm font-semibold text-on-surface">
+                  {t('shop.kasse.name')}
+                </label>
+                <input
+                  id="kasse-name"
+                  autoComplete="name"
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
+                  className="msm-input w-full"
+                />
+              </div>
+              <div className="space-y-1.5 sm:col-span-2">
+                <label htmlFor="kasse-strasse" className="block text-sm font-semibold text-on-surface">
+                  {t('shop.kasse.strasse')}
+                </label>
+                <input
+                  id="kasse-strasse"
+                  autoComplete="street-address"
+                  value={strasse}
+                  onChange={(event) => setStrasse(event.target.value)}
+                  className="msm-input w-full"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label htmlFor="kasse-plz" className="block text-sm font-semibold text-on-surface">
+                  {t('shop.kasse.plz')}
+                </label>
+                <input
+                  id="kasse-plz"
+                  autoComplete="postal-code"
+                  value={plz}
+                  onChange={(event) => setPlz(event.target.value)}
+                  className="msm-input w-full"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label htmlFor="kasse-stadt" className="block text-sm font-semibold text-on-surface">
+                  {t('shop.kasse.stadt')}
+                </label>
+                <input
+                  id="kasse-stadt"
+                  autoComplete="address-level2"
+                  value={stadt}
+                  onChange={(event) => setStadt(event.target.value)}
+                  className="msm-input w-full"
+                />
+              </div>
+              <div className="space-y-1.5 sm:col-span-2">
+                <span className="block text-sm font-semibold text-on-surface">
+                  {t('shop.kasse.land')}
+                </span>
+                <Dropdown
+                  value={land}
+                  onChange={setLand}
+                  aria-label={t('shop.kasse.land')}
+                  options={[
+                    { value: 'DE', label: 'Deutschland' },
+                    { value: 'AT', label: 'Österreich' },
+                    { value: 'CH', label: 'Schweiz' },
+                  ]}
+                />
+              </div>
+            </div>
+            <p className="text-label-sm text-on-surface-variant">
+              {t('shop.kasse.adresseHinweis')}
+            </p>
 
             <div className="space-y-1.5">
               <label htmlFor="kasse-karte" className="block text-sm font-semibold text-on-surface">

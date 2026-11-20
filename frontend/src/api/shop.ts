@@ -1,4 +1,4 @@
-import { api } from './client'
+import { api, apiUrl } from './client'
 
 export type ShopArtworkSource = 'steam' | 'custom' | 'none' | 'panorama'
 export type ShopArtworkMode = 'steam' | 'custom' | 'none'
@@ -173,6 +173,12 @@ export interface ShopOrderCreate {
   ram_mb?: number | null
   cpu?: number | null
   slots?: number | null
+  buyer_name?: string | null
+  buyer_street?: string | null
+  buyer_postal_code?: string | null
+  buyer_city?: string | null
+  buyer_country?: string | null
+  buyer_email?: string | null
 }
 
 export interface ShopSubscriptionDto {
@@ -235,6 +241,75 @@ export const shopStripeApi = {
   status: () => api<ShopStripeStatusDto>('/shop/stripe/status'),
   setKeys: (payload: ShopStripeKeysUpdate) =>
     api<ShopStripeStatusDto>('/shop/stripe/keys', {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    }),
+}
+
+export interface ShopInvoiceLineDto {
+  position: number
+  description: string
+  quantity: number
+  unit_code: string
+  unit_price_cents: number
+  line_net_cents: number
+  tax_rate_percent: number
+  tax_category: 'S' | 'E'
+}
+
+export interface ShopInvoiceSummaryDto {
+  id: number
+  number: string
+  order_id: number
+  order_number: string
+  type: 'invoice' | 'credit_note'
+  status: 'issued' | 'void'
+  issued_at: string
+  due_date: string
+  currency: string
+  buyer_reference: string
+  net_cents: number
+  tax_cents: number
+  gross_cents: number
+}
+
+export interface ShopInvoiceDto extends ShopInvoiceSummaryDto {
+  seller_name: string
+  seller_vat_id: string | null
+  buyer_name: string
+  buyer_email: string
+  lines: ShopInvoiceLineDto[]
+}
+
+export const shopInvoiceApi = {
+  list: () => api<ShopInvoiceSummaryDto[]>('/shop/invoices'),
+  get: (id: number | string) => api<ShopInvoiceDto>(`/shop/invoices/${id}`),
+  pdfUrl: (id: number | string) => apiUrl(`/api/shop/invoices/${id}/pdf`),
+  xmlUrl: (id: number | string) => apiUrl(`/api/shop/invoices/${id}/xml`),
+}
+
+export interface ShopSellerSettingsDto {
+  name: string
+  street: string
+  postal_code: string
+  city: string
+  country: string
+  email: string
+  phone: string
+  vat_id: string
+  tax_number: string
+  iban: string
+  bic: string
+  payment_terms_days: number
+  invoice_prefix: string
+  small_business: boolean
+  missing_fields: string[]
+}
+
+export const shopSellerApi = {
+  get: () => api<ShopSellerSettingsDto>('/shop/seller'),
+  set: (payload: Partial<Omit<ShopSellerSettingsDto, 'missing_fields'>>) =>
+    api<ShopSellerSettingsDto>('/shop/seller', {
       method: 'PUT',
       body: JSON.stringify(payload),
     }),

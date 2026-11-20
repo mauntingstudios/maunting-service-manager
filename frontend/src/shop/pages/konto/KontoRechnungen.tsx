@@ -1,20 +1,24 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { FileText } from 'lucide-react'
 import { Badge, Zustandsflaeche } from '@maunting/ui'
-import { shopApi } from '../../api/shopApi'
-import type { Invoice } from '../../api/types'
-import { INVOICE_STATUS_KEY, INVOICE_STATUS_VARIANT } from '../../kontoStatus'
+import { shopInvoiceApi, type ShopInvoiceSummaryDto } from '@/api/shop'
 import { formatEuro } from '../../preis'
 
 export function KontoRechnungen() {
   const { t } = useTranslation()
-  const [invoices, setInvoices] = useState<Invoice[] | null>(null)
+  const [invoices, setInvoices] = useState<ShopInvoiceSummaryDto[] | null>(null)
 
   useEffect(() => {
     let aktiv = true
-    void shopApi.listInvoices().then((rows) => {
-      if (aktiv) setInvoices(rows)
-    })
+    void shopInvoiceApi
+      .list()
+      .then((rows) => {
+        if (aktiv) setInvoices(rows)
+      })
+      .catch(() => {
+        if (aktiv) setInvoices([])
+      })
     return () => {
       aktiv = false
     }
@@ -36,12 +40,12 @@ export function KontoRechnungen() {
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="font-headline text-lg font-bold text-on-surface">
-          {t('shop.konto.rechnungen.titel')}
-        </h2>
-        <Badge variant="warning">{t('shop.konto.demo')}</Badge>
-      </div>
+      <h2 className="font-headline text-lg font-bold text-on-surface">
+        {t('shop.konto.rechnungen.titel')}
+      </h2>
+      <p className="text-xs text-on-surface-variant">
+        {t('shop.konto.rechnungen.xrechnungHinweis')}
+      </p>
       {invoices.map((invoice) => (
         <div
           key={invoice.id}
@@ -49,23 +53,45 @@ export function KontoRechnungen() {
         >
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <p className="font-headline text-sm font-semibold text-on-surface">{invoice.nummer}</p>
+              <p className="font-headline text-sm font-semibold text-on-surface">
+                {invoice.number}
+              </p>
               <p className="mt-1 text-xs text-on-surface-variant">
-                {invoice.datum} · {invoice.leistungszeitraum}
+                {t('shop.konto.rechnungen.datum', {
+                  datum: new Date(invoice.issued_at).toLocaleDateString('de-DE'),
+                })}
+                {' · '}
+                {t('shop.konto.rechnungen.faellig', { datum: invoice.due_date })}
               </p>
             </div>
             <div className="flex items-center gap-3">
-              <Badge variant={INVOICE_STATUS_VARIANT[invoice.status]}>
-                {t(INVOICE_STATUS_KEY[invoice.status])}
+              <Badge variant={invoice.status === 'issued' ? 'success' : 'default'}>
+                {invoice.status === 'issued'
+                  ? t('shop.konto.status.invoicePaid')
+                  : t('shop.konto.status.invoiceVoid')}
               </Badge>
               <span className="font-headline text-sm font-bold tabular-nums text-primary">
-                {formatEuro(invoice.bruttoCent)}
+                {formatEuro(invoice.gross_cents)}
               </span>
             </div>
           </div>
-          <p className="mt-3 text-xs text-on-surface-variant">
-            {t('shop.konto.rechnungen.pdfFolgt')}
-          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <a
+              href={shopInvoiceApi.pdfUrl(invoice.id)}
+              download={`${invoice.number}.pdf`}
+              className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-outline-variant/40 px-3 text-xs font-semibold text-on-surface hover:text-primary"
+            >
+              <FileText className="h-3.5 w-3.5" aria-hidden="true" />
+              {t('shop.konto.rechnungen.pdf')}
+            </a>
+            <a
+              href={shopInvoiceApi.xmlUrl(invoice.id)}
+              download={`${invoice.number}.xml`}
+              className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-outline-variant/40 px-3 text-xs font-semibold text-on-surface hover:text-primary"
+            >
+              {t('shop.konto.rechnungen.xml')}
+            </a>
+          </div>
         </div>
       ))}
     </div>

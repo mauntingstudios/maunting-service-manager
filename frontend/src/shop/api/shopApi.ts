@@ -1,7 +1,6 @@
 import { shopOrderApi } from '@/api/shop'
 import type {
   Entitlement,
-  Invoice,
   Order,
   PaymentMethod,
   ShopSettings,
@@ -11,7 +10,6 @@ import type {
 export interface ShopApi {
   listOrders(): Promise<Order[]>
   getOrder(id: string): Promise<Order | undefined>
-  listInvoices(): Promise<Invoice[]>
   listSubscriptions(): Promise<Subscription[]>
   listEntitlements(): Promise<Entitlement[]>
   listPaymentMethods(): Promise<PaymentMethod[]>
@@ -40,59 +38,7 @@ function orderAusApi(dto: Awaited<ReturnType<typeof shopOrderApi.getOrder>>): Or
   }
 }
 
-// Rechnungen und Zahlungsmethoden sind bis zur Stripe-Anbindung Demo-Daten.
-const MOCK_INVOICES: Invoice[] = [
-  {
-    id: 'inv-1001',
-    nummer: 'RE-2026-0001',
-    status: 'paid',
-    datum: '2026-11-02',
-    leistungszeitraum: '02.11.2026 – 01.12.2026',
-    empfaenger: 'Beispielkunde',
-    positionen: [
-      {
-        bezeichnung: 'Palworld · 8 GB · 8 Slots',
-        menge: 1,
-        einzelpreisCent: 699,
-        steuersatzProzent: 19,
-        gesamtCent: 699,
-      },
-      {
-        bezeichnung: 'KI-Zugang',
-        menge: 1,
-        einzelpreisCent: 499,
-        steuersatzProzent: 19,
-        gesamtCent: 499,
-      },
-    ],
-    nettoCent: 1007,
-    steuerCent: 191,
-    bruttoCent: 1198,
-    pdfVerfuegbar: false,
-  },
-  {
-    id: 'inv-1002',
-    nummer: 'RE-2026-0002',
-    status: 'open',
-    datum: '2026-11-18',
-    leistungszeitraum: '18.11.2026 – 17.12.2026',
-    empfaenger: 'Beispielkunde',
-    positionen: [
-      {
-        bezeichnung: 'Valheim · 4 GB · 8 Slots',
-        menge: 1,
-        einzelpreisCent: 499,
-        steuersatzProzent: 19,
-        gesamtCent: 499,
-      },
-    ],
-    nettoCent: 419,
-    steuerCent: 80,
-    bruttoCent: 499,
-    pdfVerfuegbar: false,
-  },
-]
-
+// Zahlungsmethoden sind bis zur Stripe-Anbindung Demo-Daten.
 const MOCK_PAYMENT_METHODS: PaymentMethod[] = [
   {
     id: 'pm-1',
@@ -120,7 +66,6 @@ export const shopApi: ShopApi = {
       return undefined
     }
   },
-  listInvoices: async () => MOCK_INVOICES,
   listSubscriptions: async () =>
     (await shopOrderApi.listSubscriptions()).map((dto) => ({
       id: String(dto.id),

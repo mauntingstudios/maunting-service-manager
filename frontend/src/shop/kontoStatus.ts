@@ -1,4 +1,4 @@
-import type { InvoiceStatus, OrderStatus } from './api/types'
+import type { OrderStatus } from './api/types'
 
 type BadgeVariante = 'default' | 'success' | 'warning' | 'destructive' | 'info'
 
@@ -20,16 +20,4 @@ export const ORDER_STATUS_VARIANT: Record<OrderStatus, BadgeVariante> = {
   failed: 'destructive',
   cancelled: 'default',
   refunded: 'warning',
-}
-
-export const INVOICE_STATUS_KEY: Record<InvoiceStatus, string> = {
-  open: 'shop.konto.status.invoiceOpen',
-  paid: 'shop.konto.status.invoicePaid',
-  void: 'shop.konto.status.invoiceVoid',
-}
-
-export const INVOICE_STATUS_VARIANT: Record<InvoiceStatus, BadgeVariante> = {
-  open: 'warning',
-  paid: 'success',
-  void: 'default',
 }

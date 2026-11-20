@@ -23,11 +23,15 @@ from schemas.shop import (
     ShopCatalogPlan,
     ShopCheckoutResponse,
     ShopEntitlementResponse,
+    ShopInvoiceResponse,
+    ShopInvoiceSummaryResponse,
     ShopOrderCreate,
     ShopOrderResponse,
     ShopPlanResponse,
     ShopPlanUpdate,
     ShopPlanWrite,
+    ShopSellerSettings,
+    ShopSellerSettingsUpdate,
     ShopStripeKeysUpdate,
     ShopStripeStatus,
     ShopSubscriptionResponse,
@@ -35,7 +39,9 @@ from schemas.shop import (
 from services import (
     audit_service,
     shop_catalog_service,
+    shop_invoice_service,
     shop_order_service,
+    shop_seller_settings_service,
     stripe_service,
     stripe_settings_service,
     wallpaper_service,
@@ -198,6 +204,103 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)) -> dic
         db.rollback()
         status = "duplicate"
     return {"status": status}
+
+
+@router.get("/invoices", response_model=list[ShopInvoiceSummaryResponse])
+def list_my_invoices(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> list[ShopInvoiceSummaryResponse]:
+    return [
+        shop_invoice_service.summary_response(db, rechnung)
+        for rechnung in shop_invoice_service.list_invoices(db, user.id)
+    ]
+
+
+@router.get("/invoices/{invoice_id}", response_model=ShopInvoiceResponse)
+def get_my_invoice(
+    invoice_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> ShopInvoiceResponse:
+    rechnung = shop_invoice_service.get_invoice(db, user.id, invoice_id)
+    if rechnung is None:
+        raise HTTPException(status_code=404, detail="Rechnung nicht gefunden")
+    return shop_invoice_service.detail_response(db, rechnung)
+
+
+@router.get("/invoices/{invoice_id}/xml")
+def download_my_invoice_xml(
+    invoice_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> Response:
+    rechnung = shop_invoice_service.get_invoice(db, user.id, invoice_id)
+    if rechnung is None:
+        raise HTTPException(status_code=404, detail="Rechnung nicht gefunden")
+    return Response(
+        content=rechnung.xml_text.encode("utf-8"),
+        media_type="application/xml",
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="{shop_invoice_service.download_name(rechnung, "xml")}"'
+            )
+        },
+    )
+
+
+@router.get("/invoices/{invoice_id}/pdf")
+def download_my_invoice_pdf(
+    invoice_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> Response:
+    rechnung = shop_invoice_service.get_invoice(db, user.id, invoice_id)
+    if rechnung is None:
+        raise HTTPException(status_code=404, detail="Rechnung nicht gefunden")
+    return Response(
+        content=rechnung.pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="{shop_invoice_service.download_name(rechnung, "pdf")}"'
+            )
+        },
+    )
+
+
+@router.get("/seller", response_model=ShopSellerSettings)
+def get_seller_settings(
+    _: User = Depends(require_global("panel.settings.read")),
+) -> dict:
+    daten = shop_seller_settings_service.read()
+    daten["missing_fields"] = shop_seller_settings_service.missing_fields()
+    return daten
+
+
+@router.put("/seller", response_model=ShopSellerSettings)
+def set_seller_settings(
+    payload: ShopSellerSettingsUpdate,
+    db: Session = Depends(get_db),
+    actor: User = Depends(require_global("panel.settings.write")),
+    _: None = Depends(verify_csrf),
+) -> dict:
+    try:
+        shop_seller_settings_service.update(payload.model_dump(exclude_unset=True))
+    except shop_seller_settings_service.SellerSettingsError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    daten = shop_seller_settings_service.read()
+    daten["missing_fields"] = shop_seller_settings_service.missing_fields()
+    audit_service.record_privileged_action(
+        db,
+        user_id=actor.id,
+        action="shop.seller.updated",
+        target_type="shop_settings",
+        target_id="seller",
+        details={"complete": not daten["missing_fields"]},
+    )
+    db.commit()
+    return daten
 
 
 @router.get("/stripe/status", response_model=ShopStripeStatus)

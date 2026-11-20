@@ -146,6 +146,12 @@ def create_order(db: Session, user: User, payload: ShopOrderCreate) -> ShopOrder
         billing_interval=plan.billing_interval,
         months=payload.months,
         discount_percent=discount,
+        buyer_name=payload.buyer_name,
+        buyer_street=payload.buyer_street,
+        buyer_postal_code=payload.buyer_postal_code,
+        buyer_city=payload.buyer_city,
+        buyer_country=payload.buyer_country,
+        buyer_email=payload.buyer_email,
         net_cents=netto,
         tax_cents=steuer,
         gross_cents=brutto,
@@ -204,6 +210,12 @@ def apply_payment(
     _grant_entitlements(db, order, jetzt)
     # Die Test- und Produktions-Session laeuft ohne Autoflush; der Webhook
     # braucht die frischen Abo-/Entitlement-Zeilen fuer seine Zuordnung.
+    db.flush()
+    from services import shop_invoice_service
+
+    # Ohne vollstaendige Verkaeufer- und Kaeuferdaten entsteht bewusst keine
+    # Rechnung; der Zahlungseingang bleibt davon unberuehrt.
+    shop_invoice_service.ensure_invoice_for_order(db, order)
     db.flush()
     audit_service.record_privileged_action(
         db,

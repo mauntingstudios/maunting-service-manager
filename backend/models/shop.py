@@ -18,10 +18,12 @@ from datetime import datetime, timezone
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
+    Date,
     DateTime,
     ForeignKey,
     Index,
     Integer,
+    LargeBinary,
     String,
     Text,
     UniqueConstraint,
@@ -157,6 +159,15 @@ class ShopOrder(Base):
     discount_percent: Mapped[int] = mapped_column(
         Integer, default=0, nullable=False
     )
+
+    # Rechnungsanschrift zum Kaufzeitpunkt. Pflicht fuer eine Rechnung,
+    # optional am Datensatz, damit alte Bestellungen ladbar bleiben.
+    buyer_name: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    buyer_street: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    buyer_postal_code: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    buyer_city: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    buyer_country: Mapped[str | None] = mapped_column(String(2), nullable=True)
+    buyer_email: Mapped[str | None] = mapped_column(String(254), nullable=True)
     net_cents: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     tax_cents: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     gross_cents: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
@@ -354,3 +365,119 @@ class ShopEntitlement(Base):
     revoked_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+
+
+class ShopInvoiceSequence(Base):
+    """Fortlaufender Rechnungsnummernkreis je Jahr (lueckenlos, gesperrt)."""
+
+    __tablename__ = "shop_invoice_sequences"
+
+    year: Mapped[int] = mapped_column(Integer, primary_key=True)
+    last_number: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+
+class ShopInvoice(Base):
+    """Unveraenderlicher Rechnungs-Snapshot mit XRechnung-XML und PDF.
+
+    Es gibt bewusst keinen Update-/Delete-Pfad: Korrekturen laufen spaeter
+    ueber Storno- oder Gutschriftsbelege. Verkaeufer- und Kaeuferdaten stehen
+    als Kopie am Beleg, nicht als Verweis auf veraenderliche Stammdaten.
+    """
+
+    __tablename__ = "shop_invoices"
+    __table_args__ = (
+        UniqueConstraint("number", name="uq_shop_invoices_number"),
+        UniqueConstraint("order_id", name="uq_shop_invoices_order"),
+        CheckConstraint(
+            "type IN ('invoice', 'credit_note')", name="ck_shop_invoices_type"
+        ),
+        CheckConstraint(
+            "status IN ('issued', 'void')", name="ck_shop_invoices_status"
+        ),
+        CheckConstraint(
+            "net_cents >= 0 AND tax_cents >= 0 AND gross_cents >= 0",
+            name="ck_shop_invoices_cents",
+        ),
+        Index("ix_shop_invoices_user_issued", "user_id", "issued_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    number: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    order_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("shop_orders.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    user_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    type: Mapped[str] = mapped_column(String(16), default="invoice", nullable=False)
+    status: Mapped[str] = mapped_column(String(16), default="issued", nullable=False)
+    issued_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, nullable=False
+    )
+    due_date: Mapped[datetime] = mapped_column(Date, nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), default="EUR", nullable=False)
+    buyer_reference: Mapped[str] = mapped_column(String(64), nullable=False)
+
+    seller_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    seller_street: Mapped[str] = mapped_column(String(200), nullable=False)
+    seller_postal_code: Mapped[str] = mapped_column(String(16), nullable=False)
+    seller_city: Mapped[str] = mapped_column(String(120), nullable=False)
+    seller_country: Mapped[str] = mapped_column(String(2), nullable=False)
+    seller_email: Mapped[str] = mapped_column(String(254), nullable=False)
+    seller_phone: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    seller_vat_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    seller_tax_number: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    seller_iban: Mapped[str | None] = mapped_column(String(34), nullable=True)
+    seller_bic: Mapped[str | None] = mapped_column(String(11), nullable=True)
+    small_business: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False
+    )
+
+    buyer_name: Mapped[str] = mapped_column(String(160), nullable=False)
+    buyer_street: Mapped[str] = mapped_column(String(160), nullable=False)
+    buyer_postal_code: Mapped[str] = mapped_column(String(16), nullable=False)
+    buyer_city: Mapped[str] = mapped_column(String(120), nullable=False)
+    buyer_country: Mapped[str] = mapped_column(String(2), nullable=False)
+    buyer_email: Mapped[str] = mapped_column(String(254), nullable=False)
+    buyer_vat_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+
+    net_cents: Mapped[int] = mapped_column(Integer, nullable=False)
+    tax_cents: Mapped[int] = mapped_column(Integer, nullable=False)
+    gross_cents: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    xml_text: Mapped[str] = mapped_column(Text, nullable=False)
+    xml_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    pdf_bytes: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    pdf_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, nullable=False
+    )
+
+
+class ShopInvoiceLine(Base):
+    """Rechnungsposition als Snapshot; Betraege netto in Cent."""
+
+    __tablename__ = "shop_invoice_lines"
+    __table_args__ = (
+        CheckConstraint("quantity > 0", name="ck_shop_invoice_lines_quantity"),
+        UniqueConstraint("invoice_id", "position", name="uq_shop_invoice_lines_pos"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    invoice_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("shop_invoices.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+    description: Mapped[str] = mapped_column(String(255), nullable=False)
+    quantity: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    unit_code: Mapped[str] = mapped_column(String(8), default="C62", nullable=False)
+    unit_price_cents: Mapped[int] = mapped_column(Integer, nullable=False)
+    line_net_cents: Mapped[int] = mapped_column(Integer, nullable=False)
+    tax_rate_percent: Mapped[int] = mapped_column(Integer, nullable=False)
+    tax_category: Mapped[str] = mapped_column(String(4), default="S", nullable=False)

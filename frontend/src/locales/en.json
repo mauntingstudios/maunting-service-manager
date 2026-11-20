@@ -4564,6 +4564,30 @@
         "gespeichert": "Stripe keys saved.",
         "fehler": "Keys could not be saved."
       },
+      "seller": {
+        "titel": "Seller details",
+        "text": "These details appear on every invoice. Without name, address, contact and tax number or VAT ID, no invoice is issued.",
+        "vollstaendig": "Invoice details complete",
+        "unvollstaendig": "Invoice details missing",
+        "fehlend": "Missing: {{felder}}",
+        "name": "Company or name",
+        "strasse": "Street and number",
+        "plz": "Postal code",
+        "stadt": "City",
+        "land": "Country",
+        "email": "Email",
+        "telefon": "Phone",
+        "ustId": "VAT ID",
+        "steuernummer": "Tax number",
+        "iban": "IBAN",
+        "bic": "BIC",
+        "zahlungsziel": "Payment terms (days)",
+        "praefix": "Invoice prefix",
+        "kleinunternehmer": "Small business under § 19 UStG",
+        "speichern": "Save seller details",
+        "gespeichert": "Seller details saved.",
+        "fehler": "Seller details could not be saved."
+      },
       "zahlungen": {
         "titel": "Payments",
         "text": "Stripe Checkout, keys and webhook."
@@ -6531,6 +6555,13 @@
       "fehltDaten": "The configuration is missing. Defaults are used.",
       "emailFehlt": "Please enter an email.",
       "emailUngueltig": "That email does not look valid.",
+      "name": "Name",
+      "strasse": "Street and number",
+      "plz": "Postal code",
+      "stadt": "City",
+      "land": "Country",
+      "adresseHinweis": "This address appears on the invoice.",
+      "adresseFehlt": "Please provide name and address for the invoice.",
       "karteFehlt": "Please enter a demo card number with at least 12 digits."
     },
     "preis": {
@@ -6578,7 +6609,11 @@
         "titel": "Invoices",
         "leer": "No invoices yet",
         "leerText": "Invoices appear after the first payment.",
-        "pdfFolgt": "The PDF follows in phase 2. Mandatory fields will then be generated from the invoice ledger."
+        "datum": "Issued on {{datum}}",
+        "faellig": "due {{datum}}",
+        "pdf": "Download PDF",
+        "xml": "XRechnung XML",
+        "xrechnungHinweis": "Invoices are issued as XRechnung XML (EN 16931); the PDF is the readable copy."
       },
       "zahlungsmethoden": {
         "titel": "Payment methods",

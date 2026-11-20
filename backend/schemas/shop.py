@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -128,6 +128,14 @@ class ShopOrderCreate(BaseModel):
     cpu: int | None = Field(None, ge=0, le=10_000)
     slots: int | None = Field(None, ge=0, le=100_000)
 
+    # Rechnungsanschrift; ohne sie wird keine Rechnung ausgestellt.
+    buyer_name: str | None = Field(None, max_length=160)
+    buyer_street: str | None = Field(None, max_length=160)
+    buyer_postal_code: str | None = Field(None, max_length=16)
+    buyer_city: str | None = Field(None, max_length=120)
+    buyer_country: str | None = Field(None, pattern=r"^[A-Z]{2}$")
+    buyer_email: str | None = Field(None, max_length=254)
+
 
 class ShopOrderItemResponse(BaseModel):
     id: int
@@ -194,6 +202,76 @@ class ShopStripeStatus(BaseModel):
     secret_key_source: Literal["env", "panel", "none"]
     webhook_secret_source: Literal["env", "panel", "none"]
     publishable_key: str
+
+
+class ShopSellerSettings(BaseModel):
+    name: str = ""
+    street: str = ""
+    postal_code: str = ""
+    city: str = ""
+    country: str = "DE"
+    email: str = ""
+    phone: str = ""
+    vat_id: str = ""
+    tax_number: str = ""
+    iban: str = ""
+    bic: str = ""
+    payment_terms_days: int = 14
+    invoice_prefix: str = "RE"
+    small_business: bool = False
+    missing_fields: list[str] = Field(default_factory=list)
+
+
+class ShopSellerSettingsUpdate(BaseModel):
+    name: str | None = Field(None, max_length=200)
+    street: str | None = Field(None, max_length=200)
+    postal_code: str | None = Field(None, max_length=16)
+    city: str | None = Field(None, max_length=120)
+    country: str | None = Field(None, pattern=r"^[A-Z]{2}$")
+    email: str | None = Field(None, max_length=254)
+    phone: str | None = Field(None, max_length=64)
+    vat_id: str | None = Field(None, max_length=32)
+    tax_number: str | None = Field(None, max_length=32)
+    iban: str | None = Field(None, max_length=34)
+    bic: str | None = Field(None, max_length=11)
+    payment_terms_days: int | None = Field(None, ge=0, le=365)
+    invoice_prefix: str | None = Field(None, pattern=r"^[A-Z0-9]{1,8}$")
+    small_business: bool | None = None
+
+
+class ShopInvoiceLineResponse(BaseModel):
+    position: int
+    description: str
+    quantity: int
+    unit_code: str
+    unit_price_cents: int
+    line_net_cents: int
+    tax_rate_percent: int
+    tax_category: Literal["S", "E"]
+
+
+class ShopInvoiceSummaryResponse(BaseModel):
+    id: int
+    number: str
+    order_id: int
+    order_number: str
+    type: Literal["invoice", "credit_note"]
+    status: Literal["issued", "void"]
+    issued_at: datetime
+    due_date: date
+    currency: str
+    buyer_reference: str
+    net_cents: int
+    tax_cents: int
+    gross_cents: int
+
+
+class ShopInvoiceResponse(ShopInvoiceSummaryResponse):
+    seller_name: str
+    seller_vat_id: str | None
+    buyer_name: str
+    buyer_email: str
+    lines: list[ShopInvoiceLineResponse]
 
 
 class ShopEntitlementResponse(BaseModel):

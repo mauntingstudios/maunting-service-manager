@@ -11,6 +11,7 @@ import {
 import { Badge } from '@maunting/ui'
 import { usePublicSettingsStore } from '@/stores/publicSettingsStore'
 import { ShopPlansEditor } from './ShopPlansEditor'
+import { SellerDatenKarte } from './SellerDatenKarte'
 import { StripeZahlungenKarte } from './StripeZahlungenKarte'
 
 const KARTEN = [
@@ -75,6 +76,7 @@ export function ShopTab() {
       </div>
 
       <StripeZahlungenKarte />
+      <SellerDatenKarte />
 
       <div className="border-t border-outline-variant/30 pt-6">
         <ShopPlansEditor />

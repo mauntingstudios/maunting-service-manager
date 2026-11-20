@@ -8,17 +8,37 @@ vi.mock('@/api/client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/api/client')>()
   return {
     ...actual,
-    api: vi.fn(async (pfad: string) =>
-      pfad.includes('/shop/stripe/status')
-        ? {
-            configured: false,
-            mode: 'unknown',
-            secret_key_source: 'none',
-            webhook_secret_source: 'none',
-            publishable_key: '',
-          }
-        : [],
-    ),
+    api: vi.fn(async (pfad: string) => {
+      if (pfad.includes('/shop/stripe/status')) {
+        return {
+          configured: false,
+          mode: 'unknown',
+          secret_key_source: 'none',
+          webhook_secret_source: 'none',
+          publishable_key: '',
+        }
+      }
+      if (pfad.includes('/shop/seller')) {
+        return {
+          name: '',
+          street: '',
+          postal_code: '',
+          city: '',
+          country: 'DE',
+          email: '',
+          phone: '',
+          vat_id: '',
+          tax_number: '',
+          iban: '',
+          bic: '',
+          payment_terms_days: 14,
+          invoice_prefix: 'RE',
+          small_business: false,
+          missing_fields: ['name'],
+        }
+      }
+      return []
+    }),
   }
 })
 

@@ -71,6 +71,18 @@ function fuelleFormular() {
   fireEvent.change(screen.getByLabelText(i18n.t('shop.kasse.email')), {
     target: { value: 'kunde@example.com' },
   })
+  fireEvent.change(screen.getByLabelText(i18n.t('shop.kasse.name')), {
+    target: { value: 'Max Testkunde' },
+  })
+  fireEvent.change(screen.getByLabelText(i18n.t('shop.kasse.strasse')), {
+    target: { value: 'Kundenweg 7' },
+  })
+  fireEvent.change(screen.getByLabelText(i18n.t('shop.kasse.plz')), {
+    target: { value: '54321' },
+  })
+  fireEvent.change(screen.getByLabelText(i18n.t('shop.kasse.stadt')), {
+    target: { value: 'Kundenstadt' },
+  })
   fireEvent.change(screen.getByLabelText(i18n.t('shop.kasse.karte')), {
     target: { value: '4242 4242 4242 4242' },
   })
@@ -140,6 +152,12 @@ describe('ShopKasse', () => {
       ram_mb: 8192,
       cpu: 2,
       slots: 8,
+      buyer_name: 'Max Testkunde',
+      buyer_street: 'Kundenweg 7',
+      buyer_postal_code: '54321',
+      buyer_city: 'Kundenstadt',
+      buyer_country: 'DE',
+      buyer_email: 'kunde@example.com',
     })
     expect(hoisted.checkout).toHaveBeenCalledWith(42)
     expect(hoisted.payDemo).toHaveBeenCalledWith(42)

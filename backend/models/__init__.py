@@ -128,6 +128,9 @@ from .hoster import (
 )
 from .shop import (
     ShopEntitlement,
+    ShopInvoice,
+    ShopInvoiceLine,
+    ShopInvoiceSequence,
     ShopOrder,
     ShopOrderItem,
     ShopPaymentEvent,
@@ -176,5 +179,6 @@ __all__ = [
     "UserE2eeDevice", "PushSubscription",
     "ChatGroup", "ChatGroupMember", "ChatGroupConfig", "ChatGroupInfo", "ChatGroupBackground", "ChatStory", "DirectChat", "ChatMedia",
     "ShopPlan", "ShopOrder", "ShopOrderItem", "ShopSubscription", "ShopEntitlement", "ShopPaymentEvent",
+    "ShopInvoice", "ShopInvoiceLine", "ShopInvoiceSequence",
 ]  # noqa: E501
 

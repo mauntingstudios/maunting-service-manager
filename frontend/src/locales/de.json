@@ -4564,6 +4564,30 @@
         "gespeichert": "Stripe-Schlüssel gespeichert.",
         "fehler": "Schlüssel konnten nicht gespeichert werden."
       },
+      "seller": {
+        "titel": "Verkäuferdaten",
+        "text": "Diese Angaben stehen auf jeder Rechnung. Ohne Name, Anschrift, Kontakt und Steuernummer oder USt-IdNr. wird keine Rechnung ausgestellt.",
+        "vollstaendig": "Rechnungsdaten vollständig",
+        "unvollstaendig": "Rechnungsdaten fehlen",
+        "fehlend": "Es fehlen: {{felder}}",
+        "name": "Firma oder Name",
+        "strasse": "Straße und Hausnummer",
+        "plz": "Postleitzahl",
+        "stadt": "Stadt",
+        "land": "Land",
+        "email": "E-Mail",
+        "telefon": "Telefon",
+        "ustId": "USt-IdNr.",
+        "steuernummer": "Steuernummer",
+        "iban": "IBAN",
+        "bic": "BIC",
+        "zahlungsziel": "Zahlungsziel (Tage)",
+        "praefix": "Rechnungs-Präfix",
+        "kleinunternehmer": "Kleinunternehmer nach § 19 UStG",
+        "speichern": "Verkäuferdaten speichern",
+        "gespeichert": "Verkäuferdaten gespeichert.",
+        "fehler": "Verkäuferdaten konnten nicht gespeichert werden."
+      },
       "zahlungen": {
         "titel": "Zahlungen",
         "text": "Stripe Checkout, Schlüssel und Webhook."
@@ -6531,6 +6555,13 @@
       "fehltDaten": "Die Konfiguration fehlt. Es gelten die Standardwerte.",
       "emailFehlt": "Bitte E-Mail angeben.",
       "emailUngueltig": "Die E-Mail sieht nicht gültig aus.",
+      "name": "Name",
+      "strasse": "Straße und Hausnummer",
+      "plz": "Postleitzahl",
+      "stadt": "Stadt",
+      "land": "Land",
+      "adresseHinweis": "Diese Anschrift steht auf der Rechnung.",
+      "adresseFehlt": "Bitte Name und Anschrift für die Rechnung angeben.",
       "karteFehlt": "Bitte eine Demo-Kartennummer mit mindestens 12 Ziffern angeben."
     },
     "preis": {
@@ -6578,7 +6609,11 @@
         "titel": "Rechnungen",
         "leer": "Noch keine Rechnungen",
         "leerText": "Rechnungen erscheinen nach der ersten Zahlung.",
-        "pdfFolgt": "PDF folgt in Phase 2. Die Pflichtangaben werden dann aus dem Rechnungs-Ledger erzeugt."
+        "datum": "Ausgestellt am {{datum}}",
+        "faellig": "fällig {{datum}}",
+        "pdf": "PDF laden",
+        "xml": "XRechnung-XML",
+        "xrechnungHinweis": "Rechnungen werden als XRechnung-XML (EN 16931) ausgestellt; das PDF ist die lesbare Kopie."
       },
       "zahlungsmethoden": {
         "titel": "Zahlungsmethoden",
