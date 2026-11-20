@@ -202,6 +202,9 @@ def apply_payment(
     order.payment_provider = provider
     order.payment_reference = reference
     _grant_entitlements(db, order, jetzt)
+    # Die Test- und Produktions-Session laeuft ohne Autoflush; der Webhook
+    # braucht die frischen Abo-/Entitlement-Zeilen fuer seine Zuordnung.
+    db.flush()
     audit_service.record_privileged_action(
         db,
         user_id=order.user_id,
@@ -310,6 +313,181 @@ def _grant_entitlements(db: Session, order: ShopOrder, jetzt: datetime) -> None:
                 )
 
 
+def _order_id_from_metadata(metadata: object) -> int | None:
+    if not isinstance(metadata, dict):
+        return None
+    try:
+        return int(metadata.get("order_id"))
+    except (TypeError, ValueError):
+        return None
+
+
+def _invoice_subscription_id(invoice: dict) -> str | None:
+    """Stripe-Abo-ID aus einer Rechnung, ueber alte und neue API-Struktur."""
+    direkt = invoice.get("subscription")
+    if isinstance(direkt, str) and direkt:
+        return direkt
+    eltern = (invoice.get("parent") or {}).get("subscription_details") or {}
+    wert = eltern.get("subscription")
+    if isinstance(wert, str) and wert:
+        return wert
+    for zeile in (invoice.get("lines") or {}).get("data") or []:
+        details = ((zeile.get("parent") or {}).get("subscription_item_details") or {})
+        wert = details.get("subscription")
+        if isinstance(wert, str) and wert:
+            return wert
+    return None
+
+
+def _invoice_order_id(invoice: dict) -> int | None:
+    eltern = (invoice.get("parent") or {}).get("subscription_details") or {}
+    return _order_id_from_metadata(eltern.get("metadata"))
+
+
+def _timestamp_utc(value: object) -> datetime | None:
+    try:
+        return datetime.fromtimestamp(int(value), timezone.utc)  # type: ignore[arg-type]
+    except (TypeError, ValueError, OSError, OverflowError):
+        return None
+
+
+def _invoice_period_end(invoice: dict) -> datetime | None:
+    for zeile in (invoice.get("lines") or {}).get("data") or []:
+        ende = (zeile.get("period") or {}).get("end")
+        zeitpunkt = _timestamp_utc(ende)
+        if zeitpunkt is not None:
+            return zeitpunkt
+    return None
+
+
+def _subscription_by_provider(db: Session, reference: str) -> ShopSubscription | None:
+    return (
+        db.query(ShopSubscription)
+        .filter(ShopSubscription.provider_reference == reference)
+        .first()
+    )
+
+
+def _subscription_for_invoice(
+    db: Session, invoice: dict
+) -> ShopSubscription | None:
+    referenz = _invoice_subscription_id(invoice)
+    if referenz:
+        abo = _subscription_by_provider(db, referenz)
+        if abo is not None:
+            return abo
+    order_id = _invoice_order_id(invoice)
+    if order_id is not None:
+        return (
+            db.query(ShopSubscription)
+            .filter(ShopSubscription.order_id == order_id)
+            .order_by(ShopSubscription.id.desc())
+            .first()
+        )
+    return None
+
+
+def _set_entitlements_status(
+    db: Session, subscription: ShopSubscription, status: str
+) -> None:
+    jetzt = _now()
+    zeilen = (
+        db.query(ShopEntitlement)
+        .filter(ShopEntitlement.order_item_id == subscription.order_item_id)
+        .all()
+    )
+    for zeile in zeilen:
+        zeile.status = status
+        zeile.revoked_at = jetzt if status == "revoked" else None
+
+
+def _map_subscription_status(value: object) -> str | None:
+    if value in ("active", "trialing"):
+        return "active"
+    if value in ("past_due", "unpaid", "incomplete", "incomplete_expired"):
+        return "past_due"
+    if value == "canceled":
+        return "cancelled"
+    return None
+
+
+def _handle_checkout_completed(db: Session, event_id: str, session: dict) -> int | None:
+    order_id = _order_id_from_metadata(session.get("metadata"))
+    if order_id is None:
+        return None
+    order = db.query(ShopOrder).filter(ShopOrder.id == order_id).first()
+    if order is None:
+        return None
+    apply_payment(
+        db,
+        order,
+        provider="stripe",
+        reference=str(session.get("id") or event_id),
+        origin="external",
+    )
+    referenz = session.get("subscription")
+    if isinstance(referenz, str) and referenz:
+        abo = (
+            db.query(ShopSubscription)
+            .filter(ShopSubscription.order_id == order.id)
+            .order_by(ShopSubscription.id.desc())
+            .first()
+        )
+        if abo is not None and not abo.provider_reference:
+            abo.provider_reference = referenz
+    return order.id
+
+
+def _handle_invoice_paid(db: Session, invoice: dict) -> int | None:
+    abo = _subscription_for_invoice(db, invoice)
+    if abo is None:
+        return None
+    abo.status = "active"
+    ende = _invoice_period_end(invoice)
+    if ende is not None and ende > abo.current_period_end:
+        abo.current_period_end = ende
+    _set_entitlements_status(db, abo, "active")
+    return abo.order_id
+
+
+def _handle_invoice_failed(db: Session, invoice: dict) -> int | None:
+    abo = _subscription_for_invoice(db, invoice)
+    if abo is None:
+        return None
+    # Kulanz: Der Anspruch bleibt, bis Stripe das Abo auf unpaid/canceled setzt.
+    abo.status = "past_due"
+    return abo.order_id
+
+
+def _handle_subscription_changed(db: Session, obj: dict, deleted: bool) -> int | None:
+    referenz = str(obj.get("id") or "")
+    if not referenz:
+        return None
+    abo = _subscription_by_provider(db, referenz)
+    if abo is None:
+        return None
+
+    if deleted:
+        abo.status = "cancelled"
+    else:
+        neu = _map_subscription_status(obj.get("status"))
+        if neu is not None:
+            abo.status = neu
+        if "cancel_at_period_end" in obj:
+            abo.cancel_at_period_end = bool(obj.get("cancel_at_period_end"))
+        ende = _timestamp_utc(obj.get("current_period_end"))
+        if ende is not None and ende > abo.current_period_end:
+            abo.current_period_end = ende
+
+    if abo.status == "cancelled":
+        _set_entitlements_status(db, abo, "revoked")
+    elif abo.status == "past_due" and obj.get("status") == "unpaid":
+        _set_entitlements_status(db, abo, "suspended")
+    elif abo.status == "active":
+        _set_entitlements_status(db, abo, "active")
+    return abo.order_id
+
+
 def handle_payment_event(db: Session, event: dict) -> tuple[str, int | None]:
     """Verarbeitet ein signaturgeprueftes Stripe-Ereignis, idempotent.
 
@@ -329,24 +507,18 @@ def handle_payment_event(db: Session, event: dict) -> tuple[str, int | None]:
         return "duplicate", vorhanden.order_id
 
     typ = str(event.get("type") or "")
+    obj = (event.get("data") or {}).get("object") or {}
     order_id: int | None = None
     if typ == "checkout.session.completed":
-        session = (event.get("data") or {}).get("object") or {}
-        roh_id = (session.get("metadata") or {}).get("order_id")
-        try:
-            order_id = int(roh_id)
-        except (TypeError, ValueError):
-            order_id = None
-        if order_id is not None:
-            order = db.query(ShopOrder).filter(ShopOrder.id == order_id).first()
-            if order is not None:
-                apply_payment(
-                    db,
-                    order,
-                    provider="stripe",
-                    reference=str(session.get("id") or event_id),
-                    origin="external",
-                )
+        order_id = _handle_checkout_completed(db, event_id, obj)
+    elif typ == "invoice.paid":
+        order_id = _handle_invoice_paid(db, obj)
+    elif typ == "invoice.payment_failed":
+        order_id = _handle_invoice_failed(db, obj)
+    elif typ == "customer.subscription.updated":
+        order_id = _handle_subscription_changed(db, obj, deleted=False)
+    elif typ == "customer.subscription.deleted":
+        order_id = _handle_subscription_changed(db, obj, deleted=True)
 
     db.add(
         ShopPaymentEvent(

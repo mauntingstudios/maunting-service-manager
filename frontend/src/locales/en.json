@@ -4559,7 +4559,7 @@
         "webhookSecretHinweis": "Starts with whsec_",
         "publishableKey": "Publishable key",
         "webhookUrl": "Webhook address",
-        "webhookUrlHinweis": "Add this endpoint in Stripe. The checkout.session.completed event is enough.",
+        "webhookUrlHinweis": "Add this endpoint in Stripe. It needs checkout.session.completed, invoice.paid, invoice.payment_failed and the customer.subscription events.",
         "speichern": "Save keys",
         "gespeichert": "Stripe keys saved.",
         "fehler": "Keys could not be saved."
@@ -6517,7 +6517,7 @@
       "karte": "Card number (demo)",
       "kartePlatzhalter": "4242 4242 4242 4242",
       "karteHinweis": "Demo only. No payment data is transmitted.",
-      "zahlen": "Complete demo payment",
+      "zahlen": "Complete payment",
       "laeuft": "Processing …",
       "erfolgTitel": "Demo order created",
       "erfolgText": "In the real shop the server would now be set up. Nothing happens in this phase yet.",

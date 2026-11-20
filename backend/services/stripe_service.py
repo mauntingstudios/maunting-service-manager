@@ -4,9 +4,10 @@ Keine neue Abhaengigkeit: Stripe spricht HTTP-Formulare, die Pruefung der
 Webhook-Signatur ist HMAC-SHA256 nach der dokumentierten Konstruktion
 ``t=<timestamp>,v1=<hex>`` ueber ``"<t>.<payload>"``.
 
-Betraege gehen brutto an Stripe (deutsche B2C-Preise sind Brutto). Steuer-
-und Billing-Feinheiten (automatische Steuer, Abo-Verlängerung, Mahnwesen)
-bleiben bewusst offen und folgen in einem eigenen Schritt.
+Betraege gehen brutto an Stripe (deutsche B2C-Preise sind Brutto). Monatliche
+Laufzeiten laufen als Stripe-Abo, vorausbezahlte 3/12 Monate als Einmalkauf.
+Mahnwesen und Abo-Zustand kommen ueber Stripe-Ereignisse (invoice.*,
+customer.subscription.*) zurueck; automatische Steuer bleibt offen.
 """
 
 from __future__ import annotations
@@ -63,18 +64,31 @@ def create_checkout_session(order: ShopOrder, item: ShopOrderItem) -> tuple[str,
         raise StripeNotConfigured("Stripe ist nicht konfiguriert")
 
     base = _panel_base()
-    data = [
-        ("mode", "payment"),
+    # Monatliche Laufzeit wird ein echtes Stripe-Abo (Renewal-Ereignisse
+    # treiben Abo und Dunning). Vorausbezahlte 3/12 Monate bleiben Einmalkauf.
+    abo = order.months == 1
+    data: list[tuple[str, str]] = [
+        ("mode", "subscription" if abo else "payment"),
         ("client_reference_id", order.number),
         ("success_url", f"{base}/konto/bestellungen?checkout=erfolg&bestellung={order.id}"),
         ("cancel_url", f"{base}/shop/{item.game_type}?checkout=abgebrochen"),
         ("line_items[0][quantity]", "1"),
         ("line_items[0][price_data][currency]", order.currency.lower()),
-        ("line_items[0][price_data][unit_amount]", str(order.gross_cents)),
+        (
+            "line_items[0][price_data][unit_amount]",
+            str(item.unit_price_cents if abo else order.gross_cents),
+        ),
         ("line_items[0][price_data][product_data][name]", item.name),
         ("metadata[order_id]", str(order.id)),
         ("metadata[order_number]", order.number),
     ]
+    if abo:
+        data.extend(
+            [
+                ("line_items[0][price_data][recurring][interval]", "month"),
+                ("subscription_data[metadata][order_id]", str(order.id)),
+            ]
+        )
     antwort = _post_form("/checkout/sessions", data, secret)
     url = str(antwort.get("url") or "")
     session_id = str(antwort.get("id") or "")

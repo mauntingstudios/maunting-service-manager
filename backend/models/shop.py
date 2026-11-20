@@ -257,6 +257,11 @@ class ShopSubscription(Base):
     )
     monthly_gross_cents: Mapped[int] = mapped_column(Integer, nullable=False)
     tax_rate_percent: Mapped[int] = mapped_column(Integer, nullable=False)
+    # Stripe-Abo-Kennung (nur bei monatlicher Laufzeit); Renewal-Ereignisse
+    # werden darueber der lokalen Zeile zugeordnet.
+    provider_reference: Mapped[str | None] = mapped_column(
+        String(128), nullable=True, index=True
+    )
     started_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_now, nullable=False
     )
