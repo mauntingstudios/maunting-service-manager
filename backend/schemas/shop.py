@@ -176,6 +176,26 @@ class ShopSubscriptionResponse(BaseModel):
     cancel_at_period_end: bool
 
 
+class ShopCheckoutResponse(BaseModel):
+    checkout_url: str
+
+
+class ShopStripeKeysUpdate(BaseModel):
+    """Leere/fehlende Felder bleiben unveraendert; leere Strings loeschen."""
+
+    secret_key: str | None = Field(None, max_length=200)
+    webhook_secret: str | None = Field(None, max_length=200)
+    publishable_key: str | None = Field(None, max_length=200)
+
+
+class ShopStripeStatus(BaseModel):
+    configured: bool
+    mode: Literal["test", "live", "unknown"]
+    secret_key_source: Literal["env", "panel", "none"]
+    webhook_secret_source: Literal["env", "panel", "none"]
+    publishable_key: str
+
+
 class ShopEntitlementResponse(BaseModel):
     id: int
     kind: EntitlementKind

@@ -21,6 +21,7 @@ from models import (
     ShopEntitlement,
     ShopOrder,
     ShopOrderItem,
+    ShopPaymentEvent,
     ShopPlan,
     ShopSubscription,
     User,
@@ -177,8 +178,19 @@ def create_order(db: Session, user: User, payload: ShopOrderCreate) -> ShopOrder
     return order
 
 
-def mark_demo_paid(db: Session, order: ShopOrder) -> ShopOrder:
-    """Lokaler Zahlungserfolg: Abo und Entitlements entstehen genau einmal."""
+def apply_payment(
+    db: Session,
+    order: ShopOrder,
+    *,
+    provider: str,
+    reference: str,
+    origin: str = "direct",
+) -> ShopOrder:
+    """Bucht einen Zahlungseingang: Abo und Entitlements entstehen genau einmal.
+
+    Committet nicht selbst — der Aufrufer entscheidet ueber die Transaktion
+    (Demo-Route oder Webhook). Eine bereits bezahlte Order bleibt unveraendert.
+    """
     if order.status == "paid":
         return order
     if order.status != "pending_payment":
@@ -187,8 +199,8 @@ def mark_demo_paid(db: Session, order: ShopOrder) -> ShopOrder:
     jetzt = _now()
     order.status = "paid"
     order.paid_at = jetzt
-    order.payment_provider = "demo"
-    order.payment_reference = f"demo-{order.number}"
+    order.payment_provider = provider
+    order.payment_reference = reference
     _grant_entitlements(db, order, jetzt)
     audit_service.record_privileged_action(
         db,
@@ -196,7 +208,20 @@ def mark_demo_paid(db: Session, order: ShopOrder) -> ShopOrder:
         action="shop.order.paid",
         target_type="shop_order",
         target_id=order.id,
-        details={"number": order.number, "gross_cents": order.gross_cents},
+        details={
+            "number": order.number,
+            "gross_cents": order.gross_cents,
+            "provider": provider,
+        },
+        origin=origin,
+    )
+    return order
+
+
+def mark_demo_paid(db: Session, order: ShopOrder) -> ShopOrder:
+    """Lokaler Zahlungserfolg ohne Zahlungsdienst."""
+    order = apply_payment(
+        db, order, provider="demo", reference=f"demo-{order.number}"
     )
     db.commit()
     db.refresh(order)
@@ -283,6 +308,55 @@ def _grant_entitlements(db: Session, order: ShopOrder, jetzt: datetime) -> None:
                         role_id=plan.role_id,
                     )
                 )
+
+
+def handle_payment_event(db: Session, event: dict) -> tuple[str, int | None]:
+    """Verarbeitet ein signaturgeprueftes Stripe-Ereignis, idempotent.
+
+    Committet nicht selbst. Liefert ("processed"|"duplicate", order_id).
+    Unbekannte Ereignistypen werden nur festgehalten, damit Retries sauber
+    als Duplikat erkannt werden.
+    """
+    event_id = str(event.get("id") or "").strip()
+    if not event_id:
+        raise ShopOrderError("Ereignis ohne ID")
+    vorhanden = (
+        db.query(ShopPaymentEvent)
+        .filter(ShopPaymentEvent.event_id == event_id)
+        .first()
+    )
+    if vorhanden is not None:
+        return "duplicate", vorhanden.order_id
+
+    typ = str(event.get("type") or "")
+    order_id: int | None = None
+    if typ == "checkout.session.completed":
+        session = (event.get("data") or {}).get("object") or {}
+        roh_id = (session.get("metadata") or {}).get("order_id")
+        try:
+            order_id = int(roh_id)
+        except (TypeError, ValueError):
+            order_id = None
+        if order_id is not None:
+            order = db.query(ShopOrder).filter(ShopOrder.id == order_id).first()
+            if order is not None:
+                apply_payment(
+                    db,
+                    order,
+                    provider="stripe",
+                    reference=str(session.get("id") or event_id),
+                    origin="external",
+                )
+
+    db.add(
+        ShopPaymentEvent(
+            event_id=event_id,
+            event_type=typ[:64],
+            order_id=order_id,
+            status="processed",
+        )
+    )
+    return "processed", order_id
 
 
 def list_orders(db: Session, user_id: int) -> list[ShopOrder]:

@@ -4546,9 +4546,27 @@
         "titel": "General",
         "text": "Shop switch, currency and seller details."
       },
+      "stripe": {
+        "text": "Payments run through Stripe Checkout. Keys are stored encrypted and never shown again; an empty field keeps the existing value.",
+        "konfiguriert": "Stripe connected",
+        "nichtKonfiguriert": "Stripe missing",
+        "modusTest": "Test mode",
+        "modusLive": "Live mode",
+        "modusUnbekannt": "Mode unknown",
+        "secretKey": "Secret key",
+        "secretKeyHinweis": "Starts with sk_test_ or sk_live_",
+        "webhookSecret": "Webhook secret",
+        "webhookSecretHinweis": "Starts with whsec_",
+        "publishableKey": "Publishable key",
+        "webhookUrl": "Webhook address",
+        "webhookUrlHinweis": "Add this endpoint in Stripe. The checkout.session.completed event is enough.",
+        "speichern": "Save keys",
+        "gespeichert": "Stripe keys saved.",
+        "fehler": "Keys could not be saved."
+      },
       "zahlungen": {
         "titel": "Payments",
-        "text": "Stripe test/live, webhook and payment status. No keys yet."
+        "text": "Stripe Checkout, keys and webhook."
       },
       "rechnungen": {
         "titel": "Invoices",

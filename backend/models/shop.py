@@ -271,6 +271,30 @@ class ShopSubscription(Base):
     )
 
 
+class ShopPaymentEvent(Base):
+    """Verarbeitete Webhook-Ereignisse (Idempotenz fuer Stripe-Wiederholungen)."""
+
+    __tablename__ = "shop_payment_events"
+    __table_args__ = (
+        Index("ix_shop_payment_events_type_received", "event_type", "received_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    event_id: Mapped[str] = mapped_column(
+        String(128), nullable=False, unique=True, index=True
+    )
+    event_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    order_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("shop_orders.id", ondelete="SET NULL"), nullable=True
+    )
+    status: Mapped[str] = mapped_column(
+        String(16), default="processed", nullable=False
+    )
+    received_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, nullable=False
+    )
+
+
 class ShopEntitlement(Base):
     """Freischaltung aus einer bezahlten Bestellung (Server-Spec oder Rolle).
 

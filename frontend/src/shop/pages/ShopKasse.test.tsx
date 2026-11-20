@@ -2,12 +2,14 @@ import { act, fireEvent, render, screen } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import i18n from '@/i18n'
+import { SanitizedApiError } from '@/api/client'
 import { useAuthStore } from '@/stores/authStore'
 
 const hoisted = vi.hoisted(() => ({
   katalog: [] as Record<string, unknown>[],
   createOrder: vi.fn(),
   payDemo: vi.fn(),
+  checkout: vi.fn(),
 }))
 
 vi.mock('@/api/shop', async (importOriginal) => {
@@ -19,6 +21,7 @@ vi.mock('@/api/shop', async (importOriginal) => {
       ...actual.shopOrderApi,
       createOrder: hoisted.createOrder,
       payDemo: hoisted.payDemo,
+      checkout: hoisted.checkout,
     },
   }
 })
@@ -80,6 +83,7 @@ describe('ShopKasse', () => {
     hoisted.katalog = []
     hoisted.createOrder.mockReset()
     hoisted.payDemo.mockReset()
+    hoisted.checkout.mockReset()
     useAuthStore.setState({ isAuthenticated: false, user: null, isLoading: false })
   })
 
@@ -113,6 +117,9 @@ describe('ShopKasse', () => {
     vi.useRealTimers()
     hoisted.katalog = [PALWORLD_PLAN]
     hoisted.createOrder.mockResolvedValue({ id: 42, number: 'MSM-2026-000042' })
+    hoisted.checkout.mockRejectedValue(
+      new SanitizedApiError('Stripe ist nicht konfiguriert', { status: 409 }),
+    )
     hoisted.payDemo.mockResolvedValue({ id: 42, number: 'MSM-2026-000042' })
     useAuthStore.setState({
       isAuthenticated: true,
@@ -134,6 +141,7 @@ describe('ShopKasse', () => {
       cpu: 2,
       slots: 8,
     })
+    expect(hoisted.checkout).toHaveBeenCalledWith(42)
     expect(hoisted.payDemo).toHaveBeenCalledWith(42)
   })
 })

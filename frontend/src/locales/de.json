@@ -4546,9 +4546,27 @@
         "titel": "Allgemein",
         "text": "Shop-Schalter, Währung und Verkäuferdaten."
       },
+      "stripe": {
+        "text": "Zahlungen laufen über Stripe Checkout. Die Schlüssel werden verschlüsselt gespeichert und nie wieder angezeigt; ein leeres Feld lässt den vorhandenen Wert stehen.",
+        "konfiguriert": "Stripe verbunden",
+        "nichtKonfiguriert": "Stripe fehlt",
+        "modusTest": "Testmodus",
+        "modusLive": "Livemodus",
+        "modusUnbekannt": "Modus unbekannt",
+        "secretKey": "Secret Key",
+        "secretKeyHinweis": "Beginnt mit sk_test_ oder sk_live_",
+        "webhookSecret": "Webhook-Secret",
+        "webhookSecretHinweis": "Beginnt mit whsec_",
+        "publishableKey": "Publishable Key",
+        "webhookUrl": "Webhook-Adresse",
+        "webhookUrlHinweis": "In Stripe als Endpunkt eintragen. Das Ereignis checkout.session.completed genügt.",
+        "speichern": "Schlüssel speichern",
+        "gespeichert": "Stripe-Schlüssel gespeichert.",
+        "fehler": "Schlüssel konnten nicht gespeichert werden."
+      },
       "zahlungen": {
         "titel": "Zahlungen",
-        "text": "Stripe Test/Live, Webhook und Zahlungsstatus. Noch ohne Schlüssel."
+        "text": "Stripe Checkout, Schlüssel und Webhook."
       },
       "rechnungen": {
         "titel": "Rechnungen",

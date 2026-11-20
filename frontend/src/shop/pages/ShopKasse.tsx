@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { ArrowLeft } from 'lucide-react'
 import { Badge, Button, Spinner, Zustandsflaeche } from '@maunting/ui'
 import { shopOrderApi } from '@/api/shop'
+import { SanitizedApiError } from '@/api/client'
 import { useAuthStore } from '@/stores/authStore'
 import { formatEuro, preisAufschluesselung } from '../preis'
 import { standardKonfiguration } from '../typen'
@@ -102,6 +103,16 @@ export function ShopKasse() {
           cpu: konfiguration.cpu,
           slots: konfiguration.slots,
         })
+        try {
+          const stripe = await shopOrderApi.checkout(order.id)
+          window.location.assign(stripe.checkout_url)
+          return
+        } catch (error) {
+          // Ohne Stripe-Schluessel bleibt der lokale Demo-Abschluss.
+          if (!(error instanceof SanitizedApiError) || error.status !== 409) {
+            throw error
+          }
+        }
         const bezahlt = await shopOrderApi.payDemo(order.id)
         setErfolg(bezahlt.number)
         setEchteBestellung(true)

@@ -130,6 +130,7 @@ from .shop import (
     ShopEntitlement,
     ShopOrder,
     ShopOrderItem,
+    ShopPaymentEvent,
     ShopPlan,
     ShopSubscription,
 )
@@ -174,6 +175,6 @@ __all__ = [
     "E2eeMessage", "E2eeMessageReaction", "DirectChatMember",
     "UserE2eeDevice", "PushSubscription",
     "ChatGroup", "ChatGroupMember", "ChatGroupConfig", "ChatGroupInfo", "ChatGroupBackground", "ChatStory", "DirectChat", "ChatMedia",
-    "ShopPlan", "ShopOrder", "ShopOrderItem", "ShopSubscription", "ShopEntitlement",
+    "ShopPlan", "ShopOrder", "ShopOrderItem", "ShopSubscription", "ShopEntitlement", "ShopPaymentEvent",
 ]  # noqa: E501
 

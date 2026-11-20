@@ -1,6 +1,5 @@
 import { useTranslation } from 'react-i18next'
 import {
-  CreditCard,
   ImagePlus,
   Package,
   Puzzle,
@@ -12,17 +11,13 @@ import {
 import { Badge } from '@maunting/ui'
 import { usePublicSettingsStore } from '@/stores/publicSettingsStore'
 import { ShopPlansEditor } from './ShopPlansEditor'
+import { StripeZahlungenKarte } from './StripeZahlungenKarte'
 
 const KARTEN = [
   {
     titelKey: 'settings.shop.allgemein.titel',
     textKey: 'settings.shop.allgemein.text',
     icon: SlidersHorizontal,
-  },
-  {
-    titelKey: 'settings.shop.zahlungen.titel',
-    textKey: 'settings.shop.zahlungen.text',
-    icon: CreditCard,
   },
   {
     titelKey: 'settings.shop.rechnungen.titel',
@@ -79,9 +74,7 @@ export function ShopTab() {
         </div>
       </div>
 
-      <p className="rounded-lg border border-status-warning/30 bg-status-warning/10 px-3 py-2 text-xs text-on-surface-variant">
-        {t('settings.shop.stripeNichtKonfiguriert')}
-      </p>
+      <StripeZahlungenKarte />
 
       <div className="border-t border-outline-variant/30 pt-6">
         <ShopPlansEditor />

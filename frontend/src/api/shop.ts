@@ -206,6 +206,36 @@ export const shopOrderApi = {
     }),
   payDemo: (id: number | string) =>
     api<ShopOrderDto>(`/shop/orders/${id}/demo-pay`, { method: 'POST' }),
+  checkout: (id: number | string) =>
+    api<{ checkout_url: string }>(`/shop/orders/${id}/checkout`, {
+      method: 'POST',
+    }),
   listSubscriptions: () => api<ShopSubscriptionDto[]>('/shop/subscriptions'),
   listEntitlements: () => api<ShopEntitlementDto[]>('/shop/entitlements'),
+}
+
+export type ShopStripeMode = 'test' | 'live' | 'unknown'
+export type ShopKeySource = 'env' | 'panel' | 'none'
+
+export interface ShopStripeStatusDto {
+  configured: boolean
+  mode: ShopStripeMode
+  secret_key_source: ShopKeySource
+  webhook_secret_source: ShopKeySource
+  publishable_key: string
+}
+
+export interface ShopStripeKeysUpdate {
+  secret_key?: string
+  webhook_secret?: string
+  publishable_key?: string
+}
+
+export const shopStripeApi = {
+  status: () => api<ShopStripeStatusDto>('/shop/stripe/status'),
+  setKeys: (payload: ShopStripeKeysUpdate) =>
+    api<ShopStripeStatusDto>('/shop/stripe/keys', {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    }),
 }

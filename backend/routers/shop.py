@@ -2,8 +2,18 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, File, Header, HTTPException, Query, UploadFile
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Header,
+    HTTPException,
+    Query,
+    Request,
+    UploadFile,
+)
 from fastapi.responses import Response
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from database import get_db
@@ -11,15 +21,25 @@ from dependencies import get_current_user, require_global, verify_csrf
 from models import ShopPlan, User
 from schemas.shop import (
     ShopCatalogPlan,
+    ShopCheckoutResponse,
     ShopEntitlementResponse,
     ShopOrderCreate,
     ShopOrderResponse,
     ShopPlanResponse,
     ShopPlanUpdate,
     ShopPlanWrite,
+    ShopStripeKeysUpdate,
+    ShopStripeStatus,
     ShopSubscriptionResponse,
 )
-from services import shop_catalog_service, shop_order_service, wallpaper_service
+from services import (
+    audit_service,
+    shop_catalog_service,
+    shop_order_service,
+    stripe_service,
+    stripe_settings_service,
+    wallpaper_service,
+)
 from services.media_gallery_service import build_webp_response
 
 
@@ -126,6 +146,97 @@ def pay_my_order_demo(
     except shop_order_service.ShopOrderError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     return shop_order_service.order_response(db, order)
+
+
+@router.post("/orders/{order_id}/checkout", response_model=ShopCheckoutResponse)
+def start_my_order_checkout(
+    order_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    _: None = Depends(verify_csrf),
+) -> ShopCheckoutResponse:
+    """Startet die Stripe-Zahlung; 409, solange Stripe nicht konfiguriert ist."""
+    order = shop_order_service.get_order(db, user.id, order_id)
+    if order is None:
+        raise HTTPException(status_code=404, detail="Bestellung nicht gefunden")
+    if order.status != "pending_payment":
+        raise HTTPException(status_code=409, detail="Bestellung ist nicht zahlbar")
+    artikel = shop_order_service.order_items(db, order.id)
+    if not artikel:
+        raise HTTPException(status_code=422, detail="Bestellung ohne Position")
+    try:
+        session_id, url = stripe_service.create_checkout_session(order, artikel[0])
+    except stripe_service.StripeNotConfigured as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except stripe_service.StripeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    order.payment_provider = "stripe"
+    order.payment_reference = session_id
+    db.commit()
+    return ShopCheckoutResponse(checkout_url=url)
+
+
+@router.post("/stripe/webhook")
+async def stripe_webhook(request: Request, db: Session = Depends(get_db)) -> dict:
+    """Signaturgepruefter Stripe-Webhook; wiederholte Ereignisse sind harmlos."""
+    roh = await request.body()
+    try:
+        ereignis = stripe_service.verify_webhook(
+            roh, request.headers.get("stripe-signature", "")
+        )
+    except stripe_service.StripeNotConfigured as exc:
+        raise HTTPException(status_code=503, detail="Webhook ist nicht konfiguriert") from exc
+    except stripe_service.StripeSignatureError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    try:
+        status, _ = shop_order_service.handle_payment_event(db, ereignis)
+        db.commit()
+    except shop_order_service.ShopOrderError as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except IntegrityError:
+        db.rollback()
+        status = "duplicate"
+    return {"status": status}
+
+
+@router.get("/stripe/status", response_model=ShopStripeStatus)
+def get_stripe_status(
+    _: User = Depends(require_global("panel.settings.read")),
+) -> dict:
+    return stripe_settings_service.status()
+
+
+@router.put("/stripe/keys", response_model=ShopStripeStatus)
+def set_stripe_keys(
+    payload: ShopStripeKeysUpdate,
+    db: Session = Depends(get_db),
+    actor: User = Depends(require_global("panel.settings.write")),
+    _: None = Depends(verify_csrf),
+) -> dict:
+    """Setzt Stripe-Schluessel; Werte gehen nie zurueck, nur der Status."""
+    gesetzt = payload.model_fields_set
+    if "secret_key" in gesetzt and payload.secret_key is not None:
+        stripe_settings_service.set_secret_key(payload.secret_key)
+    if "webhook_secret" in gesetzt and payload.webhook_secret is not None:
+        stripe_settings_service.set_webhook_secret(payload.webhook_secret)
+    if "publishable_key" in gesetzt and payload.publishable_key is not None:
+        stripe_settings_service.set_publishable_key(payload.publishable_key)
+    status = stripe_settings_service.status()
+    audit_service.record_privileged_action(
+        db,
+        user_id=actor.id,
+        action="shop.stripe.keys_updated",
+        target_type="shop_settings",
+        target_id="stripe",
+        details={
+            "secret_key_source": status["secret_key_source"],
+            "webhook_secret_source": status["webhook_secret_source"],
+            "configured": status["configured"],
+        },
+    )
+    db.commit()
+    return status
 
 
 @router.get("/subscriptions", response_model=list[ShopSubscriptionResponse])
