@@ -13,9 +13,14 @@ export function KontoBestellungen() {
 
   useEffect(() => {
     let aktiv = true
-    void shopApi.listOrders().then((rows) => {
-      if (aktiv) setOrders(rows)
-    })
+    void shopApi
+      .listOrders()
+      .then((rows) => {
+        if (aktiv) setOrders(rows)
+      })
+      .catch(() => {
+        if (aktiv) setOrders([])
+      })
     return () => {
       aktiv = false
     }

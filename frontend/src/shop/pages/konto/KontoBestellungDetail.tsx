@@ -19,9 +19,14 @@ export function KontoBestellungDetail() {
       setOrder(null)
       return
     }
-    void shopApi.getOrder(id).then((row) => {
-      if (aktiv) setOrder(row ?? null)
-    })
+    void shopApi
+      .getOrder(id)
+      .then((row) => {
+        if (aktiv) setOrder(row ?? null)
+      })
+      .catch(() => {
+        if (aktiv) setOrder(null)
+      })
     return () => {
       aktiv = false
     }

@@ -1,3 +1,4 @@
+import { shopOrderApi } from '@/api/shop'
 import type {
   Entitlement,
   Invoice,
@@ -17,82 +18,29 @@ export interface ShopApi {
   getSettings(): Promise<ShopSettings>
 }
 
-const MOCK_ORDERS: Order[] = [
-  {
-    id: 'ord-1001',
-    nummer: 'MSM-2026-1001',
-    status: 'fulfilled',
-    erstelltAm: '2026-11-02T10:15:00+00:00',
-    spielId: 'palworld',
-    positionen: [
-      {
-        id: 'pos-1',
-        kind: 'plan',
-        bezeichnung: 'Palworld · 8 GB · 8 Slots',
-        menge: 1,
-        einzelpreisCent: 699,
-        steuersatzProzent: 19,
-        gesamtCent: 699,
-      },
-      {
-        id: 'pos-2',
-        kind: 'addon',
-        bezeichnung: 'KI-Zugang',
-        menge: 1,
-        einzelpreisCent: 499,
-        steuersatzProzent: 19,
-        gesamtCent: 499,
-      },
-    ],
-    nettoCent: 1007,
-    steuerCent: 191,
-    bruttoCent: 1198,
-    rechnungId: 'inv-1001',
-  },
-  {
-    id: 'ord-1002',
-    nummer: 'MSM-2026-1002',
-    status: 'pending_payment',
-    erstelltAm: '2026-11-18T08:40:00+00:00',
-    spielId: 'valheim',
-    positionen: [
-      {
-        id: 'pos-3',
-        kind: 'plan',
-        bezeichnung: 'Valheim · 4 GB · 8 Slots',
-        menge: 1,
-        einzelpreisCent: 499,
-        steuersatzProzent: 19,
-        gesamtCent: 499,
-      },
-    ],
-    nettoCent: 419,
-    steuerCent: 80,
-    bruttoCent: 499,
-  },
-  {
-    id: 'ord-1003',
-    nummer: 'MSM-2026-1003',
-    status: 'cancelled',
-    erstelltAm: '2026-10-12T14:05:00+00:00',
-    spielId: 'rust',
-    positionen: [
-      {
-        id: 'pos-4',
-        kind: 'plan',
-        bezeichnung: 'Rust · 8 GB · 16 Slots',
-        menge: 1,
-        einzelpreisCent: 999,
-        steuersatzProzent: 19,
-        gesamtCent: 999,
-      },
-    ],
-    nettoCent: 839,
-    steuerCent: 160,
-    bruttoCent: 999,
-  },
-]
+function orderAusApi(dto: Awaited<ReturnType<typeof shopOrderApi.getOrder>>): Order {
+  return {
+    id: String(dto.id),
+    nummer: dto.number,
+    status: dto.status,
+    erstelltAm: dto.created_at,
+    spielId: dto.items[0]?.game_type ?? '',
+    positionen: dto.items.map((item) => ({
+      id: String(item.id),
+      kind: item.kind,
+      bezeichnung: item.name,
+      menge: item.quantity,
+      einzelpreisCent: item.unit_price_cents,
+      steuersatzProzent: item.tax_rate_percent,
+      gesamtCent: item.gross_cents,
+    })),
+    nettoCent: dto.net_cents,
+    steuerCent: dto.tax_cents,
+    bruttoCent: dto.gross_cents,
+  }
+}
 
+// Rechnungen und Zahlungsmethoden sind bis zur Stripe-Anbindung Demo-Daten.
 const MOCK_INVOICES: Invoice[] = [
   {
     id: 'inv-1001',
@@ -145,41 +93,6 @@ const MOCK_INVOICES: Invoice[] = [
   },
 ]
 
-const MOCK_SUBSCRIPTIONS: Subscription[] = [
-  {
-    id: 'sub-1',
-    bezeichnung: 'Palworld · 8 GB · 8 Slots',
-    status: 'active',
-    intervall: 'month',
-    naechsteZahlung: '2026-12-02',
-    preisCent: 699,
-  },
-  {
-    id: 'sub-2',
-    bezeichnung: 'KI-Zugang',
-    status: 'active',
-    intervall: 'month',
-    naechsteZahlung: '2026-12-02',
-    preisCent: 499,
-  },
-]
-
-const MOCK_ENTITLEMENTS: Entitlement[] = [
-  {
-    id: 'ent-1',
-    art: 'server',
-    bezeichnung: 'Palworld-Server',
-    status: 'active',
-    serverId: 42,
-  },
-  {
-    id: 'ent-2',
-    art: 'rolle',
-    bezeichnung: 'KI-Zugang',
-    status: 'active',
-  },
-]
-
 const MOCK_PAYMENT_METHODS: PaymentMethod[] = [
   {
     id: 'pm-1',
@@ -198,18 +111,32 @@ const MOCK_SETTINGS: ShopSettings = {
   steuersatzProzent: 19,
 }
 
-/**
- * Phase 1: reine Mock-API. Keine Netzwerkaufrufe, keine Zahlung, keine
- * Provisionierung. `httpShopApi` kommt in Phase 2 an dieselbe Schnittstelle.
- */
-export const mockShopApi: ShopApi = {
-  listOrders: async () => MOCK_ORDERS,
-  getOrder: async (id) => MOCK_ORDERS.find((order) => order.id === id),
+export const shopApi: ShopApi = {
+  listOrders: async () => (await shopOrderApi.listOrders()).map(orderAusApi),
+  getOrder: async (id) => {
+    try {
+      return orderAusApi(await shopOrderApi.getOrder(id))
+    } catch {
+      return undefined
+    }
+  },
   listInvoices: async () => MOCK_INVOICES,
-  listSubscriptions: async () => MOCK_SUBSCRIPTIONS,
-  listEntitlements: async () => MOCK_ENTITLEMENTS,
+  listSubscriptions: async () =>
+    (await shopOrderApi.listSubscriptions()).map((dto) => ({
+      id: String(dto.id),
+      bezeichnung: dto.name,
+      status: dto.status,
+      intervall: 'month',
+      naechsteZahlung: dto.current_period_end.slice(0, 10),
+      preisCent: dto.monthly_gross_cents,
+    })),
+  listEntitlements: async () =>
+    (await shopOrderApi.listEntitlements()).map((dto) => ({
+      id: String(dto.id),
+      art: dto.kind === 'role' ? 'rolle' : dto.kind,
+      bezeichnung: dto.label,
+      status: dto.status === 'active' ? 'active' : 'suspended',
+    })),
   listPaymentMethods: async () => MOCK_PAYMENT_METHODS,
   getSettings: async () => MOCK_SETTINGS,
 }
-
-export const shopApi: ShopApi = mockShopApi

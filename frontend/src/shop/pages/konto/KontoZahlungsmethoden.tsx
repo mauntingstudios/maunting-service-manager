@@ -34,9 +34,12 @@ export function KontoZahlungsmethoden() {
 
   return (
     <div className="space-y-3">
-      <h2 className="font-headline text-lg font-bold text-on-surface">
-        {t('shop.konto.zahlungsmethoden.titel')}
-      </h2>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="font-headline text-lg font-bold text-on-surface">
+          {t('shop.konto.zahlungsmethoden.titel')}
+        </h2>
+        <Badge variant="warning">{t('shop.konto.demo')}</Badge>
+      </div>
       {methoden.map((methode) => (
         <div
           key={methode.id}

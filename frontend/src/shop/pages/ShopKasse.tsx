@@ -3,6 +3,8 @@ import { Link, useLocation, useParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { ArrowLeft } from 'lucide-react'
 import { Badge, Button, Spinner, Zustandsflaeche } from '@maunting/ui'
+import { shopOrderApi } from '@/api/shop'
+import { useAuthStore } from '@/stores/authStore'
 import { formatEuro, preisAufschluesselung } from '../preis'
 import { standardKonfiguration } from '../typen'
 import type { KassenEntwurf } from '../typen'
@@ -15,6 +17,7 @@ export function ShopKasse() {
   const location = useLocation()
   const { t, i18n } = useTranslation()
   const { tarifeFuer, loading } = useShopKatalog()
+  const istAngemeldet = useAuthStore((s) => s.isAuthenticated)
   const entwurf = (location.state as KassenEntwurf | null) ?? null
   const tarife = spielId ? tarifeFuer(spielId) : []
   const ausgewaehlt =
@@ -32,6 +35,7 @@ export function ShopKasse() {
   const [fehler, setFehler] = useState('')
   const [busy, setBusy] = useState(false)
   const [erfolg, setErfolg] = useState<string | null>(null)
+  const [echteBestellung, setEchteBestellung] = useState(false)
   const timer = useRef<number | null>(null)
 
   useEffect(() => {
@@ -68,7 +72,7 @@ export function ShopKasse() {
   const sprache = i18n.language.startsWith('de') ? 'de' : 'en'
   const preis = preisAufschluesselung(spiel, konfiguration)
 
-  const absenden = (event: FormEvent) => {
+  const absenden = async (event: FormEvent) => {
     event.preventDefault()
     if (busy) return
 
@@ -87,6 +91,28 @@ export function ShopKasse() {
 
     setFehler('')
     setBusy(true)
+
+    const planId = ausgewaehlt?.plan.id ?? 0
+    if (istAngemeldet && planId > 0) {
+      try {
+        const order = await shopOrderApi.createOrder({
+          plan_id: planId,
+          months: konfiguration.laufzeitMonate,
+          ram_mb: konfiguration.ramGb * 1024,
+          cpu: konfiguration.cpu,
+          slots: konfiguration.slots,
+        })
+        const bezahlt = await shopOrderApi.payDemo(order.id)
+        setErfolg(bezahlt.number)
+        setEchteBestellung(true)
+      } catch {
+        setFehler(t('shop.kasse.fehler'))
+      } finally {
+        setBusy(false)
+      }
+      return
+    }
+
     timer.current = window.setTimeout(() => {
       const nummer = `MSM-DEMO-${Math.floor(100000 + Math.random() * 900000)}`
       setErfolg(nummer)
@@ -101,15 +127,29 @@ export function ShopKasse() {
           role="status"
           className="msm-card rounded-2xl border border-primary/30 bg-surface-container-low/90 p-8 text-center"
         >
-          <Badge variant="warning">{t('shop.kasse.demoBadge')}</Badge>
+          {!echteBestellung && (
+            <Badge variant="warning">{t('shop.kasse.demoBadge')}</Badge>
+          )}
           <h1 className="mt-4 font-headline text-2xl font-extrabold text-on-surface">
-            {t('shop.kasse.erfolgTitel')}
+            {echteBestellung
+              ? t('shop.kasse.erfolgEchtTitel')
+              : t('shop.kasse.erfolgTitel')}
           </h1>
           <p className="mt-2 text-sm leading-relaxed text-on-surface-variant">
-            {t('shop.kasse.erfolgText')}
+            {echteBestellung
+              ? t('shop.kasse.erfolgEchtText')
+              : t('shop.kasse.erfolgText')}
           </p>
           <p className="mt-4 font-mono text-sm text-primary">{erfolg}</p>
           <div className="mt-6 flex flex-col justify-center gap-2 sm:flex-row">
+            {echteBestellung && (
+              <Link
+                to="/konto/bestellungen"
+                className="inline-flex min-h-11 items-center justify-center rounded-lg bg-primary px-4 text-sm font-semibold text-on-primary"
+              >
+                {t('shop.kasse.zurBestellung')}
+              </Link>
+            )}
             <Link
               to="/dashboard"
               className="inline-flex min-h-11 items-center justify-center rounded-lg bg-primary px-4 text-sm font-semibold text-on-primary"

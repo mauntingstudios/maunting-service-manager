@@ -11,11 +11,13 @@ export function KontoAbos() {
 
   useEffect(() => {
     let aktiv = true
-    void Promise.all([shopApi.listSubscriptions(), shopApi.listEntitlements()]).then(
-      ([subscriptions, entitlements]) => {
+    void Promise.all([shopApi.listSubscriptions(), shopApi.listEntitlements()])
+      .then(([subscriptions, entitlements]) => {
         if (aktiv) setAbos({ subscriptions, entitlements })
-      },
-    )
+      })
+      .catch(() => {
+        if (aktiv) setAbos({ subscriptions: [], entitlements: [] })
+      })
     return () => {
       aktiv = false
     }

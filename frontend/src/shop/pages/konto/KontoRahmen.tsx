@@ -1,7 +1,6 @@
 import { Link, NavLink, Outlet } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { ArrowLeft, CreditCard, ReceiptText, Repeat, ShoppingBag } from 'lucide-react'
-import { Badge } from '@maunting/ui'
 import { PANEL_HOME } from '@/lib/panelWege'
 
 const EINTRAEGE = [
@@ -26,7 +25,6 @@ export function KontoRahmen() {
           </h1>
           <p className="mt-1 text-sm text-on-surface-variant">{t('shop.konto.untertitel')}</p>
         </div>
-        <Badge variant="warning">{t('shop.konto.demo')}</Badge>
       </div>
 
       <nav className="mt-6 flex flex-wrap gap-2" aria-label={t('shop.konto.navigation')}>

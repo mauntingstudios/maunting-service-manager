@@ -125,3 +125,87 @@ export const shopAdminApi = {
 export const shopCatalogApi = {
   getCatalog: () => api<ShopCatalogPlan[]>('/shop/catalog'),
 }
+
+export type ShopOrderStatus =
+  | 'pending_payment'
+  | 'paid'
+  | 'cancelled'
+  | 'refunded'
+  | 'failed'
+
+export interface ShopOrderItemDto {
+  id: number
+  kind: 'plan' | 'addon'
+  game_type: string
+  name: string
+  quantity: number
+  unit_price_cents: number
+  tax_rate_percent: number
+  net_cents: number
+  tax_cents: number
+  gross_cents: number
+  ram_mb: number | null
+  cpu: number | null
+  slots: number | null
+}
+
+export interface ShopOrderDto {
+  id: number
+  number: string
+  status: ShopOrderStatus
+  currency: string
+  billing_interval: string
+  months: number
+  discount_percent: number
+  net_cents: number
+  tax_cents: number
+  gross_cents: number
+  payment_provider: string
+  payment_reference: string | null
+  created_at: string
+  paid_at: string | null
+  items: ShopOrderItemDto[]
+}
+
+export interface ShopOrderCreate {
+  plan_id: number
+  months: 1 | 3 | 12
+  ram_mb?: number | null
+  cpu?: number | null
+  slots?: number | null
+}
+
+export interface ShopSubscriptionDto {
+  id: number
+  game_type: string
+  name: string
+  status: 'active' | 'past_due' | 'cancelled'
+  billing_interval: string
+  monthly_gross_cents: number
+  tax_rate_percent: number
+  started_at: string
+  current_period_end: string
+  cancel_at_period_end: boolean
+}
+
+export interface ShopEntitlementDto {
+  id: number
+  kind: 'server' | 'role' | 'addon'
+  label: string
+  status: 'active' | 'suspended' | 'revoked'
+  created_at: string
+}
+
+export const shopOrderApi = {
+  listOrders: () => api<ShopOrderDto[]>('/shop/orders'),
+  getOrder: (id: number | string) => api<ShopOrderDto>(`/shop/orders/${id}`),
+  createOrder: (payload: ShopOrderCreate) =>
+    api<ShopOrderDto>('/shop/orders', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  payDemo: (id: number | string) =>
+    api<ShopOrderDto>(`/shop/orders/${id}/demo-pay`, { method: 'POST' }),
+  listSubscriptions: () => api<ShopSubscriptionDto[]>('/shop/subscriptions'),
+  listEntitlements: () => api<ShopEntitlementDto[]>('/shop/entitlements'),
+}

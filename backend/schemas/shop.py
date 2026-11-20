@@ -112,6 +112,78 @@ class ShopPlanResponse(BaseModel):
     artwork: ShopArtworkResponse
 
 
+OrderMonths = Literal[1, 3, 12]
+OrderStatus = Literal["pending_payment", "paid", "cancelled", "refunded", "failed"]
+SubscriptionStatus = Literal["active", "past_due", "cancelled"]
+EntitlementKind = Literal["server", "role", "addon"]
+EntitlementStatus = Literal["active", "suspended", "revoked"]
+
+
+class ShopOrderCreate(BaseModel):
+    """Kaufwunsch: Tarif plus gewaehlte Ressourcen. Preise kommen vom Server."""
+
+    plan_id: int = Field(..., ge=1)
+    months: OrderMonths = 1
+    ram_mb: int | None = Field(None, ge=0, le=4_194_304)
+    cpu: int | None = Field(None, ge=0, le=10_000)
+    slots: int | None = Field(None, ge=0, le=100_000)
+
+
+class ShopOrderItemResponse(BaseModel):
+    id: int
+    kind: Literal["plan", "addon"]
+    game_type: str
+    name: str
+    quantity: int
+    unit_price_cents: int
+    tax_rate_percent: int
+    net_cents: int
+    tax_cents: int
+    gross_cents: int
+    ram_mb: int | None
+    cpu: int | None
+    slots: int | None
+
+
+class ShopOrderResponse(BaseModel):
+    id: int
+    number: str
+    status: OrderStatus
+    currency: str
+    billing_interval: str
+    months: int
+    discount_percent: int
+    net_cents: int
+    tax_cents: int
+    gross_cents: int
+    payment_provider: str
+    payment_reference: str | None
+    created_at: datetime
+    paid_at: datetime | None
+    items: list[ShopOrderItemResponse]
+
+
+class ShopSubscriptionResponse(BaseModel):
+    id: int
+    game_type: str
+    name: str
+    status: SubscriptionStatus
+    billing_interval: str
+    monthly_gross_cents: int
+    tax_rate_percent: int
+    started_at: datetime
+    current_period_end: datetime
+    cancel_at_period_end: bool
+
+
+class ShopEntitlementResponse(BaseModel):
+    id: int
+    kind: EntitlementKind
+    label: str
+    status: EntitlementStatus
+    created_at: datetime
+
+
 class ShopCatalogPlan(BaseModel):
     """Oeffentliche Sicht: keine Node-/Rollen-IDs, nur was der Shop braucht."""
 

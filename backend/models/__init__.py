@@ -126,7 +126,13 @@ from .hoster import (
     HosterService,
     HosterWebhookDelivery,
 )
-from .shop import ShopPlan
+from .shop import (
+    ShopEntitlement,
+    ShopOrder,
+    ShopOrderItem,
+    ShopPlan,
+    ShopSubscription,
+)
 
 from .chat_group import ChatGroup, ChatGroupMember
 from .chat_group_config import ChatGroupConfig
@@ -168,5 +174,6 @@ __all__ = [
     "E2eeMessage", "E2eeMessageReaction", "DirectChatMember",
     "UserE2eeDevice", "PushSubscription",
     "ChatGroup", "ChatGroupMember", "ChatGroupConfig", "ChatGroupInfo", "ChatGroupBackground", "ChatStory", "DirectChat", "ChatMedia",
+    "ShopPlan", "ShopOrder", "ShopOrderItem", "ShopSubscription", "ShopEntitlement",
 ]  # noqa: E501
 

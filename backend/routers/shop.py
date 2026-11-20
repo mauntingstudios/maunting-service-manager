@@ -7,15 +7,19 @@ from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from database import get_db
-from dependencies import require_global, verify_csrf
+from dependencies import get_current_user, require_global, verify_csrf
 from models import ShopPlan, User
 from schemas.shop import (
     ShopCatalogPlan,
+    ShopEntitlementResponse,
+    ShopOrderCreate,
+    ShopOrderResponse,
     ShopPlanResponse,
     ShopPlanUpdate,
     ShopPlanWrite,
+    ShopSubscriptionResponse,
 )
-from services import shop_catalog_service, wallpaper_service
+from services import shop_catalog_service, shop_order_service, wallpaper_service
 from services.media_gallery_service import build_webp_response
 
 
@@ -63,6 +67,87 @@ def get_artwork(
     return build_webp_response(
         data=bild, etag=etag, if_none_match=if_none_match, versioned=bool(v)
     )
+
+
+# ── Kundenbereich: Bestellungen, Abos, Freischaltungen ───────────────────
+
+
+@router.get("/orders", response_model=list[ShopOrderResponse])
+def list_my_orders(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> list[ShopOrderResponse]:
+    return [
+        shop_order_service.order_response(db, order)
+        for order in shop_order_service.list_orders(db, user.id)
+    ]
+
+
+@router.post("/orders", response_model=ShopOrderResponse)
+def create_my_order(
+    payload: ShopOrderCreate,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    _: None = Depends(verify_csrf),
+) -> ShopOrderResponse:
+    """Legt eine Bestellung aus dem Tarif an; Preise berechnet der Server."""
+    try:
+        order = shop_order_service.create_order(db, user, payload)
+    except shop_order_service.ShopOrderError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return shop_order_service.order_response(db, order)
+
+
+@router.get("/orders/{order_id}", response_model=ShopOrderResponse)
+def get_my_order(
+    order_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> ShopOrderResponse:
+    order = shop_order_service.get_order(db, user.id, order_id)
+    if order is None:
+        raise HTTPException(status_code=404, detail="Bestellung nicht gefunden")
+    return shop_order_service.order_response(db, order)
+
+
+@router.post("/orders/{order_id}/demo-pay", response_model=ShopOrderResponse)
+def pay_my_order_demo(
+    order_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    _: None = Depends(verify_csrf),
+) -> ShopOrderResponse:
+    """Lokaler Zahlungserfolg, bis Stripe angebunden ist."""
+    order = shop_order_service.get_order(db, user.id, order_id)
+    if order is None:
+        raise HTTPException(status_code=404, detail="Bestellung nicht gefunden")
+    try:
+        order = shop_order_service.mark_demo_paid(db, order)
+    except shop_order_service.ShopOrderError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return shop_order_service.order_response(db, order)
+
+
+@router.get("/subscriptions", response_model=list[ShopSubscriptionResponse])
+def list_my_subscriptions(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> list[ShopSubscriptionResponse]:
+    return [
+        shop_order_service.subscription_response(row)
+        for row in shop_order_service.list_subscriptions(db, user.id)
+    ]
+
+
+@router.get("/entitlements", response_model=list[ShopEntitlementResponse])
+def list_my_entitlements(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> list[ShopEntitlementResponse]:
+    return [
+        shop_order_service.entitlement_response(row)
+        for row in shop_order_service.list_entitlements(db, user.id)
+    ]
 
 
 # ── Panel: Tarife verwalten ──────────────────────────────────────────────
