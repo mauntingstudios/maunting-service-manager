@@ -139,6 +139,7 @@ export function GeneralTab() {
           // den Social-Hub um, bekam "Gespeichert" zu sehen und fand beim naechsten Laden alles
           // beim Alten. Ein stummer Schalter ist schlimmer als gar keiner.
           social_enabled: settings.social_enabled,
+          shop_enabled: settings.shop_enabled,
           vault_enabled: settings.vault_enabled,
           cloudflare_enabled: settings.cloudflare_enabled,
           ...saisonalAlsPayload(settings),
@@ -150,6 +151,7 @@ export function GeneralTab() {
         notes_enabled: settings.notes_enabled,
         docs_enabled: settings.docs_enabled,
         social_enabled: settings.social_enabled,
+        shop_enabled: settings.shop_enabled,
         vault_enabled: settings.vault_enabled,
         desktop_app_download_enabled: settings.desktop_app_download_enabled,
         browser_download_enabled: settings.browser_download_enabled,
@@ -395,6 +397,24 @@ export function GeneralTab() {
                   onCheckedChange={(checked) => setSettings({ ...settings, social_enabled: checked })}
                   disabled={!canWrite}
                   aria-label={t('settings.socialEnabled')}
+                />
+              </label>
+            </div>
+            <div className="md:col-span-2 border-t border-outline-variant/30 pt-6">
+              <label className="flex items-center justify-between gap-4">
+                <span className="block">
+                  <span className="block font-headline text-body-md text-primary font-semibold">
+                    {t('settings.shopEnabled')}
+                  </span>
+                  <span className="block font-body text-xs text-on-surface-variant">
+                    {t('settings.shopEnabledHint')}
+                  </span>
+                </span>
+                <Switch
+                  checked={settings.shop_enabled}
+                  onCheckedChange={(checked) => setSettings({ ...settings, shop_enabled: checked })}
+                  disabled={!canWrite}
+                  aria-label={t('settings.shopEnabled')}
                 />
               </label>
             </div>

@@ -9,6 +9,7 @@ import { useHasPermission } from '@/hooks/useHasPermission'
 import { useRolePreviewStore } from '@/stores/rolePreviewStore'
 import type { PermissionCatalog, Role } from '@/types/permissions'
 import { PermissionEditor } from '@/features/permissions/PermissionEditor'
+import { PANEL_HOME } from '@/lib/panelWege'
 import { PageHeader } from '@maunting/ui'
 import { Button, ColorPicker, IconPicker, Input, Kurzinfo, RoleBadge, renderRoleIcon } from '@maunting/ui'
 
@@ -279,7 +280,7 @@ export function Roles() {
       : role.name
     startPanelRolePreview(role, '/roles')
     toast.success(t('rolePreview.started', { name: displayName }))
-    navigate('/')
+    navigate(PANEL_HOME)
   }
 
   if (loading) {

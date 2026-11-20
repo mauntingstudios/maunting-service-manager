@@ -11,6 +11,7 @@ import { usePanelNavigation } from './usePanelNavigation'
 import { BrowserDownloadBadge } from './BrowserDownloadBadge'
 import { DesktopAppDownloadBadge } from './DesktopAppDownloadBadge'
 import { dashboardElternroute, dashboardTitelKey, istDashboardRoute } from '@/desktop/dashboard/dashboardWege'
+import { PANEL_HOME } from '@/lib/panelWege'
 import { useAuthStore } from '@/stores/authStore'
 import { useMessengerNotificationStore } from '@/stores/messengerNotificationStore'
 import { useTeamInvitationStore } from '@/stores/teamInvitationStore'
@@ -30,10 +31,10 @@ interface TopbarProps {
  * erscheint auch hier nicht. Der Tresor bleibt bewusst außen vor: er ist
  * MSS-only und hat im Web keine Route.
  */
-const BEREICH_REIHENFOLGE = ['/', '/ai', '/chat', '/calendar', '/notes', '/dokumente', '/teams', '/docs']
+const BEREICH_REIHENFOLGE = [PANEL_HOME, '/ai', '/chat', '/calendar', '/notes', '/dokumente', '/teams', '/docs']
 
 function bereichAktiv(to: string, pathname: string): boolean {
-  if (to === '/') return istDashboardRoute(pathname)
+  if (to === PANEL_HOME) return istDashboardRoute(pathname)
   switch (to) {
     case '/ai':
       return pathname === '/ai' || pathname.startsWith('/ai/')
@@ -65,7 +66,7 @@ export function Topbar({ onOpenWallet, presenceStatus: propPresenceStatus, effec
   const location = useLocation()
   const { user, logout } = useAuthStore()
 
-  const { items: navItems, isOnline } = usePanelNavigation()
+  const { items: navItems, isOnline } = usePanelNavigation(PANEL_HOME)
   const totalMessengerUnread = useMessengerNotificationStore((s) => s.totalUnreadCount)
   const teamInvitationCount = useTeamInvitationStore((s) => s.count)
   const teamInvitationenLaden = useTeamInvitationStore((s) => s.laden)

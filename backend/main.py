@@ -70,6 +70,7 @@ from routers import (
     hoster_admin_router,
     hoster_api_router,
     hoster_handoff_router,
+    shop_router,
     user_integrations_router,
     popups_router,
     calendar_router,
@@ -582,6 +583,7 @@ app.include_router(tasks_router)
 app.include_router(hoster_admin_router)
 app.include_router(hoster_api_router)
 app.include_router(hoster_handoff_router)
+app.include_router(shop_router)
 # Zugangsdaten auf Benutzer- und Serverebene (Phase 7).
 app.include_router(credentials_router)
 app.include_router(teams_router)

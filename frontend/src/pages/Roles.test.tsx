@@ -116,6 +116,7 @@ describe('Roles Vorschau-Modus', () => {
         <Routes>
           <Route path="/roles" element={<Roles />} />
           <Route path="/" element={<div>Dashboard-Ansicht</div>} />
+          <Route path="/dashboard" element={<div>Dashboard-Ansicht</div>} />
         </Routes>
       </MemoryRouter>,
     )

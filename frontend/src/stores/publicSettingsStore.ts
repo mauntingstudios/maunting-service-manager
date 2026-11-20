@@ -19,6 +19,7 @@ export interface PublicSettings {
   docs_enabled: boolean
   vault_enabled: boolean
   social_enabled: boolean
+  shop_enabled: boolean
   seasonal: SeasonalSettings
 }
 
@@ -34,6 +35,7 @@ export const DEFAULT_PUBLIC_SETTINGS: PublicSettings = {
   docs_enabled: true,
   vault_enabled: true,
   social_enabled: true,
+  shop_enabled: true,
   seasonal: DEFAULT_SEASONAL_SETTINGS,
 }
 
@@ -100,6 +102,10 @@ function loadCachedSettings(): PublicSettings {
           typeof parsed.social_enabled === 'boolean'
             ? parsed.social_enabled
             : DEFAULT_PUBLIC_SETTINGS.social_enabled,
+        shop_enabled:
+          typeof parsed.shop_enabled === 'boolean'
+            ? parsed.shop_enabled
+            : DEFAULT_PUBLIC_SETTINGS.shop_enabled,
         seasonal: normalisiereSaison(parsed.seasonal),
       }
     }
@@ -185,6 +191,10 @@ export const usePublicSettingsStore = create<PublicSettingsState>((set, get) => 
             typeof remote.social_enabled === 'boolean'
               ? remote.social_enabled
               : get().social_enabled,
+          shop_enabled:
+            typeof remote.shop_enabled === 'boolean'
+              ? remote.shop_enabled
+              : get().shop_enabled,
           // Die Saison ist ein verschachteltes Objekt. Fehlt sie in einer
           // aelteren API-Antwort, bleibt die bisherige Einstellung stehen;
           // kaputte Einzelfelder fallen ebenso einzeln zurueck.
@@ -222,6 +232,7 @@ export const usePublicSettingsStore = create<PublicSettingsState>((set, get) => 
         docs_enabled: partial.docs_enabled ?? get().docs_enabled,
         vault_enabled: partial.vault_enabled ?? get().vault_enabled,
         social_enabled: partial.social_enabled ?? get().social_enabled,
+        shop_enabled: partial.shop_enabled ?? get().shop_enabled,
         seasonal: partial.seasonal
           ? normalisiereSaison(partial.seasonal, get().seasonal)
           : get().seasonal,

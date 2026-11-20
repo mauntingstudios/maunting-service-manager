@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useAuthStore } from '@/stores/authStore'
 import { Loader } from '@/components/app/Loader'
+import { PANEL_HOME } from '@/lib/panelWege'
 
 export function PublicOnlyRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading, checkAuth } = useAuthStore()
@@ -17,7 +18,7 @@ export function PublicOnlyRoute({ children }: { children: React.ReactNode }) {
   }
 
   if (isAuthenticated) {
-    return <Navigate to="/" replace />
+    return <Navigate to={PANEL_HOME} replace />
   }
 
   return <>{children}</>

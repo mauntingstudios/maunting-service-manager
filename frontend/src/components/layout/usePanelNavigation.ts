@@ -15,7 +15,7 @@ import { buildNavigation, type NavigationItem } from './navigation'
  * Wer eine Route, ein Recht oder eine Gruppe ändert, ändert damit beide
  * Oberflächen — es gibt keinen zweiten Nachbau der Regeln.
  */
-export function usePanelNavigation(): { items: NavigationItem[]; isOnline: boolean } {
+export function usePanelNavigation(dashboardPath = '/'): { items: NavigationItem[]; isOnline: boolean } {
   const { t } = useTranslation()
   const user = useAuthStore((s) => s.user)
 
@@ -82,6 +82,7 @@ export function usePanelNavigation(): { items: NavigationItem[]; isOnline: boole
       docsEnabled: publicSettings.docs_enabled,
       canUseDocs,
       socialEnabled: publicSettings.social_enabled,
+      dashboardPath,
       isOnline,
     },
   )

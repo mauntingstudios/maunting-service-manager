@@ -45,6 +45,8 @@ export interface PanelSettings {
   docs_enabled: boolean
   vault_enabled: boolean
   social_enabled: boolean
+  /** Nativer Shop: oeffentliche Storefront unter `/`; aus = `/` fuehrt ins Panel. */
+  shop_enabled: boolean
   seasonal_enabled: boolean
   season_birthday_mode: SeasonMode
   season_birthday_start: string
@@ -124,6 +126,7 @@ export const EMPTY_PANEL_SETTINGS: PanelSettings = {
   docs_enabled: true,
   vault_enabled: true,
   social_enabled: true,
+  shop_enabled: true,
   seasonal_enabled: DEFAULT_SEASONAL_SETTINGS.enabled,
   season_birthday_mode: DEFAULT_SEASONAL_SETTINGS.birthday.mode,
   season_birthday_start: DEFAULT_SEASONAL_SETTINGS.birthday.start,

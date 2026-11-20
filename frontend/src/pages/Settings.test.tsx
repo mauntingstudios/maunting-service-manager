@@ -29,7 +29,7 @@ describe('Settings', () => {
     const reihenfolge = [
       'general', 'imprint',
       'security', 'captcha', 'cloudflare',
-      'oauth', 'steam', 'curseforge', 'hoster',
+      'oauth', 'steam', 'curseforge', 'hoster', 'shop',
       'email', 'messenger', 'searchEngine', 'ai',
       'vaultStorage', 'backup',
       'supportWidget', 'popup',

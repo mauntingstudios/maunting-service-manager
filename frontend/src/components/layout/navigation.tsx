@@ -31,6 +31,8 @@ interface NavigationAccess {
   docsEnabled?: boolean
   canUseDocs?: boolean
   socialEnabled?: boolean
+  /** Web-Panel: `/dashboard`; Desktop-App bleibt bei `/`. */
+  dashboardPath?: string
   /**
    * Ist das Gerät offline, werden nur offline-fähige Bereiche angezeigt:
    * Dashboard, Kalender und Notizen. Alle anderen Einträge (Server, KI,
@@ -50,7 +52,7 @@ export function buildNavigation(labels: Record<string, string>, access: Navigati
   // KI-Chat am Anfang seiner Gruppe. Nur Reihenfolge — Gruppen, Rechte
   // und Offline-Regeln bleiben, wie sie sind.
   return [
-    { to: '/', icon: LayoutDashboard, label: labels.dashboard, group: 'Overview' },
+    { to: access.dashboardPath ?? '/', icon: LayoutDashboard, label: labels.dashboard, group: 'Overview' },
     ...(online && access.socialEnabled !== false ? [{ to: '/chat', icon: MessageSquare, label: labels.chat, group: 'Overview' as const }] : []),
     ...(access.calendarEnabled !== false ? [{ to: '/calendar', icon: CalendarIcon, label: labels.calendar, group: 'Overview' as const }] : []),
     ...(access.notesEnabled !== false ? [{ to: '/notes', icon: StickyNote, label: labels.notes, group: 'Overview' as const }] : []),

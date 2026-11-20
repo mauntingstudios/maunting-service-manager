@@ -23,6 +23,7 @@ import { MessengerHintergrund } from '@/browser/MessengerHintergrund'
 import { chatIstOffen } from '@/lib/chatVollbild'
 import { SmartcardWalletModal } from '@/desktop/vault/SmartcardWalletModal'
 import { istDashboardRoute } from '@/desktop/dashboard/dashboardWege'
+import { PANEL_HOME } from '@/lib/panelWege'
 
 /** Was die Hülle ihren Seiten über den Outlet-Kontext mitteilt. */
 export interface ShellOutletKontext {
@@ -130,7 +131,7 @@ export function Shell() {
           onPresenceChange={handlePresenceChange}
         />
       )}
-      {!chatVollbild && zeigeDashboardReiter && <DashboardReiter />}
+      {!chatVollbild && zeigeDashboardReiter && <DashboardReiter dashboardPath={PANEL_HOME} />}
 
       <OfflineBanner />
       <RolePreviewBanner />

@@ -16,11 +16,11 @@ import { DASHBOARD_SEITEN, dashboardElternroute } from '@/desktop/dashboard/dash
  * Sichtbarkeit und Rechte kommen aus `usePanelNavigation`, die Seitenliste aus
  * `DASHBOARD_SEITEN`. Die Zeile trägt bewusst keinen eigenen Balken.
  */
-export function DashboardReiter() {
+export function DashboardReiter({ dashboardPath = '/' }: { dashboardPath?: string }) {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const location = useLocation()
-  const { items } = usePanelNavigation()
+  const { items } = usePanelNavigation(dashboardPath)
 
   const eltern = dashboardElternroute(location.pathname)
 
@@ -29,12 +29,17 @@ export function DashboardReiter() {
     if (erlaubt.has('/settings')) {
       erlaubt.add('/admin/ai-providers')
     }
-    return DASHBOARD_SEITEN.filter((seite) => erlaubt.has(seite.to)).map((seite) => ({
+    return DASHBOARD_SEITEN.map((seite) => ({
       ...seite,
-      label: t(seite.labelKey),
-      icon: items.find((eintrag) => eintrag.to === seite.to)?.icon ?? (seite.to === '/admin/ai-providers' ? Bot : undefined),
+      to: seite.to === '/' ? dashboardPath : seite.to,
     }))
-  }, [items, t])
+      .filter((seite) => erlaubt.has(seite.to))
+      .map((seite) => ({
+        ...seite,
+        label: t(seite.labelKey),
+        icon: items.find((eintrag) => eintrag.to === seite.to)?.icon ?? (seite.to === '/admin/ai-providers' ? Bot : undefined),
+      }))
+  }, [items, t, dashboardPath])
 
   const reiter = seiten.filter((seite) => seite.gruppe === 'Overview' || seite.gruppe === 'Infrastructure')
   const weitere = seiten.filter((seite) => seite.gruppe === 'Administration' || seite.gruppe === 'Panel')

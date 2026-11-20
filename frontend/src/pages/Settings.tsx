@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Globe, Mail, Gamepad2, Flame, KeyRound, Shield, Cloud, FileText, LifeBuoy, ShieldAlert, Bot, Plug, Megaphone, CloudCog, MessageSquare, HardDrive, Search } from 'lucide-react'
+import { Globe, Mail, Gamepad2, Flame, KeyRound, Shield, Cloud, FileText, LifeBuoy, ShieldAlert, Bot, Plug, Megaphone, CloudCog, MessageSquare, HardDrive, Search, ShoppingBag } from 'lucide-react'
 import { SettingsLayout, type SettingsSectionEintrag } from '@maunting/ui'
 import { GeneralTab } from './settings/GeneralTab'
 import { EmailTab } from './settings/EmailTab'
@@ -17,6 +17,7 @@ import { AiTab } from './settings/AiTab'
 import { SearchEngineTab } from './settings/SearchEngineTab'
 import { MessengerTab } from './settings/MessengerTab'
 import { HosterTab } from './settings/HosterTab'
+import { ShopTab } from './settings/ShopTab'
 import { PopupTab } from './settings/PopupTab'
 import { VaultStorageTab } from './settings/VaultStorageTab'
 import { useHasPermission } from '@/hooks/useHasPermission'
@@ -39,6 +40,7 @@ type TabId =
   | 'messenger'
   | 'popup'
   | 'hoster'
+  | 'shop'
 
 export function Settings() {
   const { t } = useTranslation()
@@ -68,6 +70,7 @@ export function Settings() {
     ...(canReadHoster
       ? [{ id: 'hoster' as const, label: t('settings.tabs.hoster'), icon: Plug, group: t('settings.groups.verbindungen') }]
       : []),
+    { id: 'shop', label: t('settings.tabs.shop'), icon: ShoppingBag, group: t('settings.groups.erweitert') },
     { id: 'email', label: t('settings.tabs.email'), icon: Mail, group: t('settings.groups.kommunikation') },
     { id: 'messenger', label: t('settings.tabs.messenger'), icon: MessageSquare, group: t('settings.groups.kommunikation') },
     { id: 'searchEngine', label: t('settings.tabs.searchEngine'), icon: Search, group: t('settings.groups.kommunikation') },
@@ -108,6 +111,7 @@ export function Settings() {
         {aktiv === 'vaultStorage' && <VaultStorageTab />}
         {aktiv === 'messenger' && <MessengerTab />}
         {aktiv === 'hoster' && canReadHoster && <HosterTab canWrite={canWriteHoster} />}
+        {aktiv === 'shop' && <ShopTab />}
       </SettingsLayout>
     </div>
   )

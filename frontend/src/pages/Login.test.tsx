@@ -41,6 +41,7 @@ function renderLogin(from?: string) {
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route path="/" element={<div data-testid="dashboard">Dashboard</div>} />
+        <Route path="/dashboard" element={<div data-testid="dashboard">Dashboard</div>} />
         <Route path="/servers/:id" element={<div data-testid="server-detail">Server</div>} />
       </Routes>
     </MemoryRouter>,

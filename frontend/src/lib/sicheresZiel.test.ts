@@ -18,12 +18,12 @@ describe('sicheresZiel', () => {
       'javascript:alert(1)',
       'fremd.example',
     ]) {
-      expect(sicheresZiel(roh), roh).toBe('/')
+      expect(sicheresZiel(roh), roh).toBe('/dashboard')
     }
   })
 
-  it('nimmt ohne Ziel die Startseite', () => {
-    expect(sicheresZiel(null)).toBe('/')
-    expect(sicheresZiel('')).toBe('/')
+  it('nimmt ohne Ziel die Panel-Startseite', () => {
+    expect(sicheresZiel(null)).toBe('/dashboard')
+    expect(sicheresZiel('')).toBe('/dashboard')
   })
 })

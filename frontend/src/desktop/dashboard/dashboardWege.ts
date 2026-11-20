@@ -36,7 +36,8 @@ const SEITEN_PFADE = DASHBOARD_SEITEN.map((seite) => seite.to).filter((pfad) => 
 
 /** Gehört der Pfad zur Server-Verwaltung? */
 export function istDashboardRoute(pathname: string): boolean {
-  return pathname === '/' || SEITEN_PFADE.some((pfad) => pathname === pfad || pathname.startsWith(`${pfad}/`))
+  // `/dashboard` ist die Startseite des Web-Panels; die App bleibt bei `/`.
+  return pathname === '/' || pathname === '/dashboard' || SEITEN_PFADE.some((pfad) => pathname === pfad || pathname.startsWith(`${pfad}/`))
 }
 
 /** Die Liste, zu der eine Unterseite gehört — das Ziel des Zurück-Pfeils. */

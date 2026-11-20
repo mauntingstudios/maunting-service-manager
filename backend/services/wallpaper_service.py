@@ -320,6 +320,98 @@ def ensure_steam_cached(app_id: str) -> Path | None:
 # ── Resolver ─────────────────────────────────────────────────────────────
 
 
+def _blueprint_for_game_type(game_type: str) -> Any | None:
+    """Lazy-Lookup, damit wallpaper_service nicht an games/blueprints koppelt."""
+    try:
+        from games import get_plugin
+
+        plugin = get_plugin(game_type)
+    except Exception:
+        return None
+    return plugin.get_blueprint() if plugin is not None else None
+
+
+def resolve_plan_artwork(
+    db: Session, game_type: str, mode: str, *, base_url: str
+) -> WallpaperDescriptor:
+    """Artwork fuer einen Shop-Plan nach dessen Modus.
+
+    ``steam`` ignoriert ein vorhandenes Custom-Bild bewusst; ``custom`` nutzt
+    das aktive Galeriebild und faellt sonst auf Steam zurueck; ``none`` liefert
+    absichtlich kein Bild. Die Bytes kommen aus derselben Galerie bzw. demselben
+    Steam-Cache wie die Server-Titelbilder.
+    """
+    if mode == "none":
+        return WallpaperDescriptor(source="none", url=None)
+
+    if mode == "custom":
+        active = get_active_wallpaper(db, game_type)
+        if active is not None:
+            version = f"custom-{active.id}"
+            return WallpaperDescriptor(
+                source="custom",
+                url=f"{base_url}?v={version}",
+                version=version,
+            )
+
+    app_id = artwork_app_id_for_blueprint(_blueprint_for_game_type(game_type))
+    if app_id is not None:
+        version = f"steam-{app_id}"
+        return WallpaperDescriptor(
+            source="steam",
+            url=f"{base_url}?v={version}",
+            app_id=app_id,
+            version=version,
+        )
+    return WallpaperDescriptor(source="none", url=None)
+
+
+def plan_artwork_bytes(
+    db: Session, game_type: str, version: str | None
+) -> tuple[bytes, str] | None:
+    """Loest eine Shop-Artwork-Version (``custom-{id}``/``steam-{app}``) auf."""
+    if version:
+        match = _VERSION_RE.fullmatch(version)
+        if match is None:
+            raise WallpaperValidationError("Ungueltige Bildversion.")
+        art, kennung = match.group(1), match.group(2)
+        if art == "custom":
+            bild_id = int(kennung)
+            bild = gallery_image_bytes(db, game_type, bild_id)
+            if bild is None:
+                return None
+            return bild, f'"custom-{bild_id}"'
+        blueprint = _blueprint_for_game_type(game_type)
+        if artwork_app_id_for_blueprint(blueprint) != kennung:
+            return None
+        pfad = ensure_steam_cached(kennung)
+        if pfad is None:
+            return None
+        try:
+            return pfad.read_bytes(), f'"steam-{kennung}"'
+        except OSError:
+            return None
+
+    active = get_active_wallpaper(db, game_type)
+    if active is not None:
+        try:
+            data = (_game_verzeichnis(game_type) / active.file_name).read_bytes()
+        except OSError:
+            data = b""
+        if data:
+            return data, f'"custom-{active.id}"'
+    app_id = artwork_app_id_for_blueprint(_blueprint_for_game_type(game_type))
+    if app_id is None:
+        return None
+    pfad = ensure_steam_cached(app_id)
+    if pfad is None:
+        return None
+    try:
+        return pfad.read_bytes(), f'"steam-{app_id}"'
+    except OSError:
+        return None
+
+
 def resolve_wallpaper(db: Session, server: "Server") -> WallpaperDescriptor:
     """Ermittelt das aktive Wallpaper eines Servers (einzige Autoritaet)."""
     base_url = f"/api/servers/{server.id}/wallpaper"

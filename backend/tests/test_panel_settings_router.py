@@ -271,6 +271,7 @@ class TestBooleanToggleRoundTrip:
         "notes_enabled",
         "vault_enabled",
         "social_enabled",
+        "shop_enabled",
         "desktop_app_download_enabled",
         "story_fable_download_enabled",
         "imprint_enabled",
@@ -424,6 +425,12 @@ class TestSeasonalSettings:
             "start": "12-01T00:00",
             "end": "01-06T23:59",
         }
+
+
+def test_public_settings_expose_shop_toggle(client: TestClient):
+    """Die oeffentliche Storefront liest den Schalter ohne Anmeldung."""
+    body = client.get("/api/settings/public").json()
+    assert body.get("shop_enabled") is True
 
 
 def test_public_settings_expose_panel_url_without_trailing_slash(client: TestClient):

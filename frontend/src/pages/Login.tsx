@@ -16,6 +16,7 @@ import { ArrowRight, KeyRound, Mail, Check, Fingerprint } from 'lucide-react'
 import { Button, buttonClasses, Input } from '@maunting/ui'
 import { Spinner } from '@maunting/ui'
 import { sicheresZiel } from '@/lib/sicheresZiel'
+import { PANEL_HOME } from '@/lib/panelWege'
 import { passkeyBestaetigen, type PasskeyBestaetigungsOptionen } from '@/services/passkeyService'
 export function Login() {
   const { t } = useTranslation()
@@ -503,7 +504,7 @@ export function Login() {
                     ) : (
                       <a
                         key={p.slug}
-                        href={apiUrl(`/oauth/${p.slug}/start?next=/&cb=${Date.now().toString(36)}`)}
+                        href={apiUrl(`/oauth/${p.slug}/start?next=${PANEL_HOME}&cb=${Date.now().toString(36)}`)}
                         className={buttonClasses('secondary', 'lg', anbieterKlasse)}
                         aria-label={t('auth.signInWith', { provider: p.name })}
                       >
@@ -623,7 +624,7 @@ function OAuth2FAStep({
         redirect: 'manual',
       })
       if (res.status === 0 || res.type === 'opaqueredirect' || (res.status >= 200 && res.status < 400)) {
-        window.location.href = '/'
+        window.location.href = PANEL_HOME
         return
       }
       const data = await res.json().catch(() => null)
@@ -653,7 +654,7 @@ function OAuth2FAStep({
         redirect: 'manual',
       })
       if (res.status === 0 || res.type === 'opaqueredirect' || (res.status >= 200 && res.status < 400)) {
-        window.location.href = '/'
+        window.location.href = PANEL_HOME
         return
       }
       const data = await res.json().catch(() => null)

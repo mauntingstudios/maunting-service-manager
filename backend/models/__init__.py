@@ -126,6 +126,7 @@ from .hoster import (
     HosterService,
     HosterWebhookDelivery,
 )
+from .shop import ShopPlan
 
 from .chat_group import ChatGroup, ChatGroupMember
 from .chat_group_config import ChatGroupConfig

@@ -4356,6 +4356,7 @@
     "backups": "Backups",
     "databases": "Datenbanken",
     "webhooks": "Webhooks",
+    "abo": "Abo & Tarif",
     "memory": "Serverwissen",
     "ai": "Singra"
   },
@@ -4531,6 +4532,92 @@
     "vaultEnabledHint": "Schaltet den Zero-Knowledge-Tresor ein (native Apps, Panel, App).",
     "socialEnabled": "Social-, Freundes- & E2EE-Chat-Hub",
     "socialEnabledHint": "Schaltet Community, Freunde, Achievements und E2EE-Direktnachrichten ein.",
+    "shopEnabled": "Nativer Shop",
+    "shopEnabledHint": "Zeigt die öffentliche Storefront unter `/`. Aus schaltet sie ab und führt direkt ins Panel.",
+    "shop": {
+      "titel": "Nativer Shop",
+      "untertitel": "Storefront, Tarife, Zahlungen und Rechnungen. In dieser Phase siehst du die vorbereitete Oberfläche; Stripe und Provisionierung folgen.",
+      "demo": "Phase 1 · Demo",
+      "aktiv": "Shop aktiv",
+      "inaktiv": "Shop aus",
+      "phase2": "Phase 2",
+      "stripeNichtKonfiguriert": "Stripe ist noch nicht verbunden.",
+      "allgemein": {
+        "titel": "Allgemein",
+        "text": "Shop-Schalter, Währung und Verkäuferdaten."
+      },
+      "zahlungen": {
+        "titel": "Zahlungen",
+        "text": "Stripe Test/Live, Webhook und Zahlungsstatus. Noch ohne Schlüssel."
+      },
+      "rechnungen": {
+        "titel": "Rechnungen",
+        "text": "Nummernkreis, Steuersätze, Pflichtangaben und Aufbewahrung."
+      },
+      "produkte": {
+        "titel": "Produkte & Pläne",
+        "text": "Blueprint, RAM, CPU, Slots und Preis je Tarif."
+      },
+      "bilder": {
+        "titel": "Bilder & Artwork",
+        "text": "Pro Tarif automatisch von Steam (artworkAppId) oder eigenes Bild. Nutzt die bestehende Upload- und Galerie-Logik der Titelbilder."
+      },
+      "plans": {
+        "titel": "Tarife & Preise",
+        "untertitel": "Lege fest, was der Shop pro Spiel verkauft. Ohne aktiven Tarif zeigt die Storefront kein Spiel.",
+        "neu": "Neuer Tarif",
+        "bearbeiten": "Bearbeiten",
+        "leer": "Noch keine Tarife",
+        "leerText": "Lege den ersten Tarif an. Die Preise gelten pro Monat.",
+        "spiel": "Spiel",
+        "name": "Tarifname",
+        "preis": "Grundpreis (EUR/Monat)",
+        "ramIncluded": "RAM enthalten (GB)",
+        "ramMax": "RAM maximal (GB)",
+        "preisRam": "Aufpreis je GB (EUR)",
+        "cpuIncluded": "CPU-Kerne enthalten",
+        "cpuMax": "CPU-Kerne maximal",
+        "preisCpu": "Aufpreis je Kern (EUR)",
+        "slotsIncluded": "Slots enthalten",
+        "slotsMax": "Slots maximal",
+        "preisSlots": "Aufpreis je Slot (EUR)",
+        "steuer": "Steuersatz (%)",
+        "artwork": "Artwork",
+        "artworkSteam": "Automatisch von Steam",
+        "artworkCustom": "Eigenes Bild",
+        "artworkNone": "Kein Bild",
+        "aktiv": "Aktiv",
+        "inaktiv": "Inaktiv",
+        "speichern": "Speichern",
+        "abbrechen": "Abbrechen",
+        "loeschen": "Löschen",
+        "loeschenFrage": "Tarif „{{name}}“ wirklich löschen?",
+        "bildHochladen": "Bild hochladen",
+        "bildZuruecksetzen": "Auf Steam zurücksetzen",
+        "bildHinweis": "Eigene Bilder nutzen dieselbe Galerie wie Server-Titelbilder. Hochladen setzt den Tarif auf „Eigenes Bild“.",
+        "gespeichert": "Tarif gespeichert",
+        "geloescht": "Tarif gelöscht",
+        "bildGespeichert": "Bild gespeichert",
+        "bildZurueckgesetzt": "Bild auf Steam zurückgesetzt",
+        "fehler": "Tarif konnte nicht gespeichert werden",
+        "laedt": "Tarife werden geladen …",
+        "pflichtfelder": "Spiel und Tarifname sind Pflicht.",
+        "maxFehler": "Das Maximum darf nicht unter dem enthaltenen Wert liegen.",
+        "steuerFehler": "Der Steuersatz muss zwischen 0 und 100 liegen."
+      },
+      "addons": {
+        "titel": "Add-ons",
+        "text": "KI-Kontingent, mehr Slots, Backups und Speicher als Zusatzposition."
+      },
+      "bestellungen": {
+        "titel": "Bestellungen",
+        "text": "Order-Liste, Status und manuelle Aktionen."
+      },
+      "webhooks": {
+        "titel": "Webhooks",
+        "text": "Zustellprotokoll und Wiederholungen für Stripe und Shop-Ereignisse."
+      }
+    },
     "cloudflareEnabled": "Cloudflare DNS",
     "cloudflareEnabledHint": "Schaltet Cloudflare-DNS und automatische Subdomains ein.",
     "testConnection": "Verbindung testen",
@@ -4566,6 +4653,7 @@
       "messenger": "Messenger",
       "popup": "Pop-up",
       "hoster": "Hoster",
+      "shop": "Shop",
       "vaultStorage": "Tresorspeicher",
       "searchEngine": "Suchmaschine"
     },
@@ -6315,6 +6403,210 @@
     "restoreModalInstructions": "Anleitung",
     "restoreModalCopyScript": "Skript-Pfad kopieren",
     "restoreModalWarning": "WARNUNG: Dieses Skript stoppt den MSM-Panel-Dienst und überschreibt die Datenbank und Konfigurationsdateien! Die Dateien im Tresor (/opt/msm/vault-blobs) sind nicht im Backup. Stammt das Verzeichnis von einem anderen Stand, gehen Tresor-Dateien verloren."
+  },
+  "shop": {
+    "kopf": {
+      "startseite": "Zur Shop-Startseite",
+      "navigation": "Shop-Navigation",
+      "anmelden": "Anmelden",
+      "konto": "Mein Konto",
+      "dashboard": "Dashboard"
+    },
+    "fuss": {
+      "zumInhalt": "Zum Inhalt springen",
+      "hinweis": "Demo-Shop. Noch keine Zahlungen und keine Server-Provisionierung.",
+      "navigation": "Shop-Fußzeile",
+      "datenschutz": "Datenschutz",
+      "panel": "Panel"
+    },
+    "demo": {
+      "badge": "Demo"
+    },
+    "hero": {
+      "kicker": "Maunting Server Manager",
+      "titel": "Server mieten, ohne Bastelabend.",
+      "untertitel": "Spiel wählen, Ressourcen einstellen, loslegen. Wir kümmern uns um Installation, Rechte und Neustarts.",
+      "ctaSammlung": "Spiele entdecken",
+      "ctaPanel": "Zum Panel",
+      "statSpiele": "Spiele im Demo-Katalog",
+      "statBlueprints": "Blueprints verfügbar",
+      "statSetup": "Schritte bis online"
+    },
+    "sammlung": {
+      "titel": "Spiele",
+      "untertitel": "Wähle ein Spiel und stelle den Server passend zusammen.",
+      "suche": "Spiel suchen",
+      "leerTitel": "Kein Spiel gefunden",
+      "leerText": "Prüfe den Suchbegriff oder wähle ein anderes Spiel."
+    },
+    "karte": {
+      "blueprint": "Blueprint",
+      "abPreis": "ab {{preis}} / Monat",
+      "slots_one": "{{count}} Spieler inklusive",
+      "slots_other": "{{count}} Spieler inklusive",
+      "konfigurieren": "Konfigurieren"
+    },
+    "schritte": {
+      "titel": "So läuft es",
+      "eins": {
+        "titel": "Spiel wählen",
+        "text": "Such dir ein Spiel aus der Sammlung."
+      },
+      "zwei": {
+        "titel": "Server konfigurieren",
+        "text": "RAM, CPU, Slots und Laufzeit einstellen. Der Preis aktualisiert sich sofort."
+      },
+      "drei": {
+        "titel": "Online gehen",
+        "text": "Nach der Zahlung wird der Server eingerichtet und du landest im Panel."
+      }
+    },
+    "spiel": {
+      "zurueck": "Zurück zur Sammlung",
+      "laedt": "Spiel wird geladen …",
+      "tarif": "Tarif",
+      "konfigurator": "Server konfigurieren",
+      "ram": "Arbeitsspeicher",
+      "cpu": "CPU-Kerne",
+      "slots": "Spieler-Slots",
+      "laufzeit": "Laufzeit",
+      "kern": "Kern",
+      "kerne": "Kerne",
+      "spieler": "Spieler",
+      "monate_one": "{{count}} Monat",
+      "monate_other": "{{count}} Monate",
+      "mods": "Mods",
+      "modsHinweis": "Mod-Unterstützung für dieses Spiel.",
+      "modsNichtVerfuegbar": "Für dieses Spiel sind keine Mods hinterlegt.",
+      "ki": "KI-Zugang",
+      "kiHinweis": "Singra-Kontingent für dieses Konto (Demo).",
+      "weiterKasse": "Weiter zur Kasse",
+      "demoHinweis": "Demo: Es wird nichts berechnet und kein Server erstellt.",
+      "nichtGefundenTitel": "Spiel nicht gefunden",
+      "nichtGefundenText": "Dieses Spiel gibt es im Demo-Katalog nicht."
+    },
+    "kasse": {
+      "titel": "Kasse",
+      "zusammenfassung": "Zusammenfassung",
+      "spiel": "Spiel",
+      "ram": "RAM",
+      "cpu": "CPU",
+      "slots": "Slots",
+      "laufzeit": "Laufzeit",
+      "summe": "Summe",
+      "email": "E-Mail",
+      "emailPlatzhalter": "kunde@example.com",
+      "karte": "Kartennummer (Demo)",
+      "kartePlatzhalter": "4242 4242 4242 4242",
+      "karteHinweis": "Nur Demo. Es werden keine Zahlungsdaten übertragen.",
+      "zahlen": "Demo-Zahlung abschließen",
+      "laeuft": "Wird verarbeitet …",
+      "erfolgTitel": "Demo-Bestellung angelegt",
+      "erfolgText": "Im fertigen Shop würde jetzt der Server eingerichtet. In dieser Phase passiert noch nichts.",
+      "zurueck": "Zurück zum Spiel",
+      "zumPanel": "Zum Panel",
+      "demoBadge": "Demo",
+      "fehltDaten": "Die Konfiguration fehlt. Es gelten die Standardwerte.",
+      "emailFehlt": "Bitte E-Mail angeben.",
+      "emailUngueltig": "Die E-Mail sieht nicht gültig aus.",
+      "karteFehlt": "Bitte eine Demo-Kartennummer mit mindestens 12 Ziffern angeben."
+    },
+    "preis": {
+      "grundpreis": "Grundpreis",
+      "ram": "RAM",
+      "cpu": "CPU",
+      "slots": "Slots",
+      "ki": "KI-Zugang",
+      "monat": "pro Monat",
+      "gesamt": "Gesamt",
+      "rabatt": "{{prozent}} % Laufzeitrabatt",
+      "inklusiveSteuer": "inkl. 19 % USt. (Demo)"
+    },
+    "konto": {
+      "kicker": "Dein Konto",
+      "titel": "Bestellungen & Rechnungen",
+      "untertitel": "Alles zum Demo-Shop an einem Ort.",
+      "demo": "Demo-Daten",
+      "navigation": "Konto-Navigation",
+      "zurueck": "Zurück zum Shop",
+      "zumPanel": "Zum Panel",
+      "laedt": "Wird geladen …",
+      "nav": {
+        "bestellungen": "Bestellungen",
+        "rechnungen": "Rechnungen",
+        "zahlungsmethoden": "Zahlungsmethoden",
+        "abos": "Abos"
+      },
+      "bestellungen": {
+        "titel": "Bestellungen",
+        "leer": "Noch keine Bestellungen",
+        "leerText": "Sobald du im Shop bestellst, erscheint der Vorgang hier.",
+        "datum": "Bestellt am {{datum}}"
+      },
+      "bestellung": {
+        "nichtGefunden": "Bestellung nicht gefunden",
+        "nichtGefundenText": "Der Vorgang existiert nicht oder wurde entfernt.",
+        "zurueck": "Zurück zu den Bestellungen",
+        "netto": "Netto",
+        "steuer": "Steuer",
+        "brutto": "Gesamt",
+        "rechnung": "Rechnung ansehen"
+      },
+      "rechnungen": {
+        "titel": "Rechnungen",
+        "leer": "Noch keine Rechnungen",
+        "leerText": "Rechnungen erscheinen nach der ersten Zahlung.",
+        "pdfFolgt": "PDF folgt in Phase 2. Die Pflichtangaben werden dann aus dem Rechnungs-Ledger erzeugt."
+      },
+      "zahlungsmethoden": {
+        "titel": "Zahlungsmethoden",
+        "leer": "Keine Zahlungsmethode",
+        "leerText": "Sobald Stripe verbunden ist, erscheinen Karten und SEPA hier.",
+        "karte": "Karte",
+        "sepa": "SEPA-Lastschrift",
+        "standard": "Standard",
+        "stripeFolgt": "Stripe wird in Phase 2 verbunden. Es werden keine Zahlungsdaten gespeichert."
+      },
+      "abos": {
+        "titel": "Abos",
+        "leer": "Keine Abos",
+        "leerText": "Aktive Tarife und Add-ons erscheinen hier.",
+        "naechsteZahlung": "Nächste Zahlung: {{datum}}",
+        "entitlements": "Freigeschaltet",
+        "artServer": "Server",
+        "artRolle": "Rolle",
+        "artAddon": "Add-on"
+      },
+      "status": {
+        "draft": "Entwurf",
+        "pendingPayment": "Zahlung offen",
+        "paid": "Bezahlt",
+        "fulfilled": "Eingerichtet",
+        "failed": "Fehlgeschlagen",
+        "cancelled": "Storniert",
+        "refunded": "Erstattet",
+        "invoiceOpen": "Offen",
+        "invoicePaid": "Bezahlt",
+        "invoiceVoid": "Storniert",
+        "aboActive": "Aktiv",
+        "aboPastDue": "Zahlung überfällig",
+        "aboCancelled": "Gekündigt",
+        "entitlementActive": "Aktiv",
+        "entitlementSuspended": "Gesperrt"
+      }
+    },
+    "serverAbo": {
+      "titel": "Abo & Tarif",
+      "untertitel": "Server #{{id}} · Demo-Ansicht",
+      "demo": "Demo",
+      "tarif": "Tarif",
+      "tarifName": "Demo-Tarif",
+      "slots": "Slots",
+      "naechsteZahlung": "Nächste Zahlung",
+      "upgrade": "Tarif ändern",
+      "aboAnsehen": "Abo ansehen",
+      "hinweis": "Die echte Tarifverwaltung kommt mit Phase 2. Bis dahin werden hier keine Bestelldaten gelesen oder geändert."
+    }
   },
   "privacyNotice": {
     "eyebrow": "Datenschutz-Hinweis",

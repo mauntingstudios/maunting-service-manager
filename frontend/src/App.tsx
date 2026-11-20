@@ -1,5 +1,5 @@
 import { useState, useEffect, lazy, Suspense } from 'react'
-import { Routes, Route, Navigate, useNavigate } from 'react-router-dom'
+import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { Shell } from './components/layout/Shell'
 import { ProtectedRoute } from './components/ProtectedRoute'
 import { PublicOnlyRoute } from './components/PublicOnlyRoute'
@@ -51,7 +51,18 @@ const Messenger = lazy(() => import('./pages/Messenger').then(module => ({ defau
 const Documents = lazy(() => import('./pages/Documents').then(module => ({ default: module.Documents })))
 const DocumentShareClaim = lazy(() => import('./pages/DocumentShareClaim').then(module => ({ default: module.DocumentShareClaim })))
 const Benutzerprofil = lazy(() => import('./pages/Benutzerprofil').then(module => ({ default: module.Benutzerprofil })))
+const ShopWeiche = lazy(() => import('./shop/ShopWeiche').then(module => ({ default: module.ShopWeiche })))
+const ShopStart = lazy(() => import('./shop/pages/ShopStart').then(module => ({ default: module.ShopStart })))
+const ShopSpiel = lazy(() => import('./shop/pages/ShopSpiel').then(module => ({ default: module.ShopSpiel })))
+const ShopKasse = lazy(() => import('./shop/pages/ShopKasse').then(module => ({ default: module.ShopKasse })))
+const KontoWeiche = lazy(() => import('./shop/pages/konto/KontoWeiche').then(module => ({ default: module.KontoWeiche })))
+const KontoBestellungen = lazy(() => import('./shop/pages/konto/KontoBestellungen').then(module => ({ default: module.KontoBestellungen })))
+const KontoBestellungDetail = lazy(() => import('./shop/pages/konto/KontoBestellungDetail').then(module => ({ default: module.KontoBestellungDetail })))
+const KontoRechnungen = lazy(() => import('./shop/pages/konto/KontoRechnungen').then(module => ({ default: module.KontoRechnungen })))
+const KontoZahlungsmethoden = lazy(() => import('./shop/pages/konto/KontoZahlungsmethoden').then(module => ({ default: module.KontoZahlungsmethoden })))
+const KontoAbos = lazy(() => import('./shop/pages/konto/KontoAbos').then(module => ({ default: module.KontoAbos })))
 import { apiUrl } from '@/config/api'
+import { PANEL_HOME } from '@/lib/panelWege'
 import { useAuthStore } from '@/stores/authStore'
 import { usePublicSettingsStore } from '@/stores/publicSettingsStore'
 import { PrivacyAcknowledgementNotice } from '@/components/app/PrivacyAcknowledgementNotice'
@@ -63,6 +74,8 @@ import { useKontoBundNachholen } from './hooks/useKontoBundNachholen'
 import { SaisonDeko } from './season/SaisonDeko'
 
 function App() {
+  const location = useLocation()
+  const istShopRoute = location.pathname === '/' || location.pathname.startsWith('/shop')
   const [setupRequired, setSetupRequired] = useState<boolean | null>(null)
   const [setupEmailConfigured, setSetupEmailConfigured] = useState(false)
   const [privacyNoticeVisible, setPrivacyNoticeVisible] = useState(true)
@@ -126,6 +139,23 @@ function App() {
         <Loader fullScreen label="Maunting Service Manager" />
       }>
         <Routes>
+        {/* Oeffentliche Storefront. Der Shop-Schalter entscheidet, ob sie
+            sichtbar ist; aus = `/` fuehrt ins Panel. */}
+        <Route path="/" element={<ShopWeiche />}>
+          <Route index element={<ShopStart />} />
+          <Route path="shop" element={<Navigate to="/" replace />} />
+          <Route path="shop/:spielId" element={<ShopSpiel />} />
+          <Route path="shop/:spielId/kasse" element={<ShopKasse />} />
+          <Route path="konto" element={<KontoWeiche />}>
+            <Route index element={<Navigate to="bestellungen" replace />} />
+            <Route path="bestellungen" element={<KontoBestellungen />} />
+            <Route path="bestellungen/:id" element={<KontoBestellungDetail />} />
+            <Route path="rechnungen" element={<KontoRechnungen />} />
+            <Route path="zahlungsmethoden" element={<KontoZahlungsmethoden />} />
+            <Route path="abos" element={<KontoAbos />} />
+          </Route>
+        </Route>
+
         {/* Oeffentliche Auth-Routen — nur fuer nicht-eingeloggte User */}
         <Route path="/login" element={<PublicOnlyRoute><Login /></PublicOnlyRoute>} />
         <Route path="/register" element={<PublicOnlyRoute><Register /></PublicOnlyRoute>} />
@@ -149,7 +179,7 @@ function App() {
 
         {/* Geschuetzte App-Routen */}
         <Route path="/*" element={<ProtectedRoute><Shell /></ProtectedRoute>}>
-          <Route index element={<Dashboard />} />
+          <Route path="dashboard" element={<Dashboard />} />
           <Route path="servers" element={<Servers />} />
           <Route path="servers/:id" element={<ServerDetail />} />
           <Route
@@ -186,8 +216,8 @@ function App() {
           />
           <Route path="profile" element={<Profile />} />
           <Route path="einstellungen" element={<Navigate to="/profile" replace />} />
-          <Route path="calendar" element={calendarEnabled ? <Calendar /> : <Navigate to="/" replace />} />
-          <Route path="notes" element={notesEnabled ? <Notes /> : <Navigate to="/" replace />} />
+          <Route path="calendar" element={calendarEnabled ? <Calendar /> : <Navigate to={PANEL_HOME} replace />} />
+          <Route path="notes" element={notesEnabled ? <Notes /> : <Navigate to={PANEL_HOME} replace />} />
           <Route
             path="dokumente"
             element={
@@ -196,13 +226,13 @@ function App() {
                   <Documents />
                 </RequirePermission>
               ) : (
-                <Navigate to="/" replace />
+                <Navigate to={PANEL_HOME} replace />
               )
             }
           />
           <Route
             path="dokumente/freigabe/:token"
-            element={docsEnabled ? <DocumentShareClaim /> : <Navigate to="/" replace />}
+            element={docsEnabled ? <DocumentShareClaim /> : <Navigate to={PANEL_HOME} replace />}
           />
           <Route
             path="dokumente/:uid"
@@ -212,15 +242,15 @@ function App() {
                   <Documents />
                 </RequirePermission>
               ) : (
-                <Navigate to="/" replace />
+                <Navigate to={PANEL_HOME} replace />
               )
             }
           />
           <Route path="social" element={<Navigate to="/profile" replace />} />
-          <Route path="chat" element={socialEnabled ? <Messenger /> : <Navigate to="/" replace />} />
-          <Route path="chat/join/:inviteCode" element={socialEnabled ? <Messenger /> : <Navigate to="/" replace />} />
-          <Route path="messenger" element={<Navigate to={socialEnabled ? '/chat' : '/'} replace />} />
-          <Route path="user/:userId" element={socialEnabled ? <Benutzerprofil /> : <Navigate to="/" replace />} />
+          <Route path="chat" element={socialEnabled ? <Messenger /> : <Navigate to={PANEL_HOME} replace />} />
+          <Route path="chat/join/:inviteCode" element={socialEnabled ? <Messenger /> : <Navigate to={PANEL_HOME} replace />} />
+          <Route path="messenger" element={<Navigate to={socialEnabled ? '/chat' : PANEL_HOME} replace />} />
+          <Route path="user/:userId" element={socialEnabled ? <Benutzerprofil /> : <Navigate to={PANEL_HOME} replace />} />
           <Route path="ai" element={<RequirePermission routeKey="ai"><Ai /></RequirePermission>} />
           <Route path="teams" element={<Teams />} />
           <Route path="wallet" element={<WalletRoute />} />
@@ -275,8 +305,8 @@ function App() {
       </Routes>
       </Suspense>
       </ErrorBoundary>
-      <PrivacyAcknowledgementNotice onVisibilityChange={setPrivacyNoticeVisible} />
-      <SupportWidgetLoader enabled={!privacyNoticeVisible} />
+      {!istShopRoute && <PrivacyAcknowledgementNotice onVisibilityChange={setPrivacyNoticeVisible} />}
+      <SupportWidgetLoader enabled={!privacyNoticeVisible && !istShopRoute} />
       <ToastContainer />
       <ConfirmDialog />
       <PromptDialog />

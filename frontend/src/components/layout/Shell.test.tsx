@@ -44,6 +44,7 @@ describe('Shell', () => {
       <Routes>
         <Route path="/" element={<Shell />}>
           <Route index element={<div>Dashboard</div>} />
+          <Route path="dashboard" element={<div>Dashboard</div>} />
           <Route path="audit" element={<div>Audit</div>} />
           <Route path="admin/audit" element={<div>Audit</div>} />
           <Route path="docs" element={<div>Hilfe</div>} />
@@ -65,7 +66,7 @@ describe('Shell', () => {
   })
 
   it('zeigt auf Dashboard-Routen die Reiterzeile der Server-Verwaltung', () => {
-    renderShell('/')
+    renderShell('/dashboard')
     expect(screen.getByRole('tablist', { name: i18n.t('mss.dashboard.bereiche') })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: i18n.t('nav.dashboard') })).toHaveAttribute('aria-selected', 'true')
   })

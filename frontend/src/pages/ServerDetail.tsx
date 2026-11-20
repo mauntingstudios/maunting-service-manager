@@ -16,6 +16,7 @@ import {
   Network,
   Package,
   Play,
+  ReceiptText,
   RefreshCw,
   Rocket,
   RotateCcw,
@@ -28,6 +29,7 @@ import {
   Webhook,
 } from "lucide-react";
 import { api, getRateLimitRemainingMs } from "@/api/client";
+import { ServerAboKarte } from "@/shop/components/ServerAboKarte";
 import { toast } from "@/stores/toastStore";
 import { confirm } from "@/stores/confirmStore";
 import { usePermissionsStore } from "@/stores/permissionsStore";
@@ -99,6 +101,7 @@ type TabKey =
   | "restarts"
   | "backups"
   | "databases" | "webhooks"
+  | "abo"
   | "memory"
   | "guardian";
 
@@ -113,6 +116,7 @@ const VALID_TABS: TabKey[] = [
   "backups",
   "databases",
   "webhooks",
+  "abo",
   "memory",
   "guardian",
 ];
@@ -523,6 +527,12 @@ export function ServerDetail() {
           icon: Webhook,
           secondary: true,
         },
+        {
+          key: "abo",
+          label: t("tabs.abo", { defaultValue: "Abo & Tarif" }),
+          icon: ReceiptText,
+          secondary: true,
+        },
       ];
       if (showMemoryTab) {
         frontendTabs.push({
@@ -572,6 +582,12 @@ export function ServerDetail() {
       key: "webhooks",
       label: t("tabs.webhooks", { defaultValue: "Webhooks" }),
       icon: Webhook,
+      secondary: true,
+    });
+    list.push({
+      key: "abo",
+      label: t("tabs.abo", { defaultValue: "Abo & Tarif" }),
+      icon: ReceiptText,
       secondary: true,
     });
     if (showMemoryTab) {
@@ -1496,6 +1512,7 @@ export function ServerDetail() {
             {activeTab === "backups" && <Backups serverId={serverId} />}
             {activeTab === "databases" && <DatabaseManager serverId={serverId} dedicated={isDatabaseServer} />}
             {activeTab === "webhooks" && <OutgoingWebhooksPanel serverId={serverId} />}
+            {activeTab === "abo" && <ServerAboKarte serverId={serverId} />}
             {activeTab === "memory" && showMemoryTab && (
               <AiMemoryManager
                 scope={{

@@ -46,6 +46,7 @@ function PublicApp({ initialPath = '/login' }: { initialPath?: string }) {
           </PublicOnlyRoute>
         } />
         <Route path="/" element={<div data-testid="dashboard">Dashboard</div>} />
+        <Route path="/dashboard" element={<div data-testid="dashboard">Dashboard</div>} />
       </Routes>
     </MemoryRouter>
   )
@@ -222,7 +223,7 @@ describe('PublicOnlyRoute', () => {
     vi.mocked(client.api).mockReset()
   })
 
-  it('should redirect to / when already authenticated', async () => {
+  it('should redirect to /dashboard when already authenticated', async () => {
     useAuthStore.setState({
       user: { id: 1, username: 'test', is_owner: true } as any,
       isAuthenticated: true,

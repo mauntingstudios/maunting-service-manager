@@ -68,6 +68,8 @@ class PanelSettingsResponse(BaseModel):
     docs_enabled: bool = True
     vault_enabled: bool = True
     social_enabled: bool = True
+    # Nativer Shop: oeffentliche Storefront unter `/`. Aus = `/` fuehrt ins Panel.
+    shop_enabled: bool = True
     # Saisonale Akzente. Die Zeitfenster gelten jaehrlich und werden auf dem
     # jeweiligen Geraet in dessen Ortszeit ausgewertet; `MM-DDTHH:MM`.
     seasonal_enabled: bool = True
@@ -105,6 +107,7 @@ class PanelSettingsUpdate(BaseModel):
     docs_enabled: bool | None = None
     vault_enabled: bool | None = None
     social_enabled: bool | None = None
+    shop_enabled: bool | None = None
     seasonal_enabled: bool | None = None
     season_birthday_mode: str | None = None
     season_birthday_start: str | None = None
