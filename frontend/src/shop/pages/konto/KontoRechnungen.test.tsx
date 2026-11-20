@@ -22,6 +22,8 @@ vi.mock('@/api/shop', async (importOriginal) => {
           net_cents: 915,
           tax_cents: 174,
           gross_cents: 1089,
+          reference_invoice_id: null,
+          reason: null,
         },
       ]),
     },

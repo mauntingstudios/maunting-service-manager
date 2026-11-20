@@ -271,6 +271,8 @@ export interface ShopInvoiceSummaryDto {
   net_cents: number
   tax_cents: number
   gross_cents: number
+  reference_invoice_id: number | null
+  reason: string | null
 }
 
 export interface ShopInvoiceDto extends ShopInvoiceSummaryDto {

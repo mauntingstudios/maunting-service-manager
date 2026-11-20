@@ -65,16 +65,26 @@ export function KontoRechnungen() {
               </p>
             </div>
             <div className="flex items-center gap-3">
-              <Badge variant={invoice.status === 'issued' ? 'success' : 'default'}>
-                {invoice.status === 'issued'
-                  ? t('shop.konto.status.invoicePaid')
-                  : t('shop.konto.status.invoiceVoid')}
-              </Badge>
+              {invoice.type === 'credit_note' ? (
+                <Badge variant="info">{t('shop.konto.rechnungen.gutschrift')}</Badge>
+              ) : (
+                <Badge variant={invoice.status === 'issued' ? 'success' : 'default'}>
+                  {invoice.status === 'issued'
+                    ? t('shop.konto.status.invoicePaid')
+                    : t('shop.konto.status.invoiceVoid')}
+                </Badge>
+              )}
               <span className="font-headline text-sm font-bold tabular-nums text-primary">
+                {invoice.type === 'credit_note' ? '−' : ''}
                 {formatEuro(invoice.gross_cents)}
               </span>
             </div>
           </div>
+          {invoice.type === 'credit_note' && invoice.reason && (
+            <p className="mt-2 text-xs text-on-surface-variant">
+              {t('shop.konto.rechnungen.grund', { grund: invoice.reason })}
+            </p>
+          )}
           <div className="mt-3 flex flex-wrap gap-2">
             <a
               href={shopInvoiceApi.pdfUrl(invoice.id)}

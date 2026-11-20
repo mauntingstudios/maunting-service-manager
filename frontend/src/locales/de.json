@@ -6613,6 +6613,8 @@
         "faellig": "fällig {{datum}}",
         "pdf": "PDF laden",
         "xml": "XRechnung-XML",
+        "gutschrift": "Gutschrift",
+        "grund": "Grund: {{grund}}",
         "xrechnungHinweis": "Rechnungen werden als XRechnung-XML (EN 16931) ausgestellt; das PDF ist die lesbare Kopie."
       },
       "zahlungsmethoden": {

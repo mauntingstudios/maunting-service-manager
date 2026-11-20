@@ -18,10 +18,11 @@ from sqlalchemy.orm import Session
 
 from database import get_db
 from dependencies import get_current_user, require_global, verify_csrf
-from models import ShopPlan, User
+from models import ShopInvoice, ShopPlan, User
 from schemas.shop import (
     ShopCatalogPlan,
     ShopCheckoutResponse,
+    ShopCreditNoteCreate,
     ShopEntitlementResponse,
     ShopInvoiceResponse,
     ShopInvoiceSummaryResponse,
@@ -267,6 +268,40 @@ def download_my_invoice_pdf(
             )
         },
     )
+
+
+@router.post("/invoices/{invoice_id}/credit", response_model=ShopInvoiceResponse)
+def credit_invoice_admin(
+    invoice_id: int,
+    payload: ShopCreditNoteCreate,
+    db: Session = Depends(get_db),
+    actor: User = Depends(require_global("panel.settings.write")),
+    _: None = Depends(verify_csrf),
+) -> ShopInvoiceResponse:
+    """Storno per Gutschrift; die Originalrechnung bleibt als `void` im Ledger."""
+    rechnung = db.query(ShopInvoice).filter(ShopInvoice.id == invoice_id).first()
+    if rechnung is None:
+        raise HTTPException(status_code=404, detail="Rechnung nicht gefunden")
+    try:
+        gutschrift = shop_invoice_service.credit_invoice(
+            db, rechnung, payload.reason.strip()
+        )
+    except shop_invoice_service.InvoiceError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    audit_service.record_privileged_action(
+        db,
+        user_id=actor.id,
+        action="shop.invoice.credited",
+        target_type="shop_invoice",
+        target_id=rechnung.id,
+        details={
+            "invoice": rechnung.number,
+            "credit_note": gutschrift.number,
+            "reason": payload.reason.strip()[:200],
+        },
+    )
+    db.commit()
+    return shop_invoice_service.detail_response(db, gutschrift)
 
 
 @router.get("/seller", response_model=ShopSellerSettings)

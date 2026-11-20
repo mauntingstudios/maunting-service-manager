@@ -248,3 +248,119 @@ class TestSellerSettings:
             json=SELLER,
         )
         assert res.status_code == 403
+
+
+class TestCreditNote:
+    def _rechnung(
+        self, client, owner_cookies, csrf_token, user_cookies, user_csrf_token
+    ) -> dict:
+        _configure_seller()
+        _buy_and_pay(client, owner_cookies, csrf_token, user_cookies, user_csrf_token)
+        return client.get("/api/shop/invoices", cookies=user_cookies).json()[0]
+
+    def test_credit_note_voids_invoice_and_references_it(
+        self, client: TestClient, owner_cookies: dict, csrf_token: str,
+        user_cookies: dict, user_csrf_token: str,
+    ):
+        rechnung = self._rechnung(
+            client, owner_cookies, csrf_token, user_cookies, user_csrf_token
+        )
+        res = client.post(
+            f"/api/shop/invoices/{rechnung['id']}/credit",
+            cookies=owner_cookies,
+            headers={"X-CSRF-Token": csrf_token},
+            json={"reason": "Kulanz nach Supportfall"},
+        )
+        assert res.status_code == 200, res.text
+        gutschrift = res.json()
+        assert gutschrift["type"] == "credit_note"
+        assert gutschrift["reference_invoice_id"] == rechnung["id"]
+        assert gutschrift["reason"] == "Kulanz nach Supportfall"
+        jahr = datetime.now(timezone.utc).year
+        assert gutschrift["number"] == f"GS-{jahr}-0001"
+
+        original = client.get(
+            f"/api/shop/invoices/{rechnung['id']}", cookies=user_cookies
+        ).json()
+        assert original["status"] == "void"
+
+        liste = client.get("/api/shop/invoices", cookies=user_cookies).json()
+        assert {eintrag["type"] for eintrag in liste} == {"invoice", "credit_note"}
+
+        xml_res = client.get(
+            f"/api/shop/invoices/{gutschrift['id']}/xml", cookies=user_cookies
+        )
+        assert xml_res.status_code == 200
+        xml_text = xml_res.text
+        assert "CreditNote-2" in xml_text
+        wurzel = ET.fromstring(xml_text)
+        ns = {
+            "cbc": "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2",
+            "cac": "urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2",
+        }
+        assert wurzel.tag.endswith("CreditNote")
+        assert wurzel.findtext("cbc:CreditNoteTypeCode", namespaces=ns) == "381"
+        bezug = wurzel.find(
+            "cac:BillingReference/cac:InvoiceDocumentReference/cbc:ID", ns
+        )
+        assert bezug is not None and bezug.text == rechnung["number"]
+
+        pdf_res = client.get(
+            f"/api/shop/invoices/{gutschrift['id']}/pdf", cookies=user_cookies
+        )
+        assert pdf_res.status_code == 200
+        text = PdfReader(io.BytesIO(pdf_res.content)).pages[0].extract_text()
+        assert "Gutschrift" in text
+        assert rechnung["number"] in text
+
+    def test_second_credit_is_rejected(
+        self, client: TestClient, owner_cookies: dict, csrf_token: str,
+        user_cookies: dict, user_csrf_token: str,
+    ):
+        rechnung = self._rechnung(
+            client, owner_cookies, csrf_token, user_cookies, user_csrf_token
+        )
+        erste = client.post(
+            f"/api/shop/invoices/{rechnung['id']}/credit",
+            cookies=owner_cookies,
+            headers={"X-CSRF-Token": csrf_token},
+            json={"reason": "Erste Gutschrift"},
+        )
+        assert erste.status_code == 200
+        zweite = client.post(
+            f"/api/shop/invoices/{rechnung['id']}/credit",
+            cookies=owner_cookies,
+            headers={"X-CSRF-Token": csrf_token},
+            json={"reason": "Zweite Gutschrift"},
+        )
+        assert zweite.status_code == 409
+
+    def test_regular_user_cannot_credit(
+        self, client: TestClient, owner_cookies: dict, csrf_token: str,
+        user_cookies: dict, user_csrf_token: str,
+    ):
+        rechnung = self._rechnung(
+            client, owner_cookies, csrf_token, user_cookies, user_csrf_token
+        )
+        res = client.post(
+            f"/api/shop/invoices/{rechnung['id']}/credit",
+            cookies=user_cookies,
+            headers={"X-CSRF-Token": user_csrf_token},
+            json={"reason": "Unbefugt"},
+        )
+        assert res.status_code == 403
+
+    def test_credit_requires_reason(
+        self, client: TestClient, owner_cookies: dict, csrf_token: str,
+        user_cookies: dict, user_csrf_token: str,
+    ):
+        rechnung = self._rechnung(
+            client, owner_cookies, csrf_token, user_cookies, user_csrf_token
+        )
+        res = client.post(
+            f"/api/shop/invoices/{rechnung['id']}/credit",
+            cookies=owner_cookies,
+            headers={"X-CSRF-Token": csrf_token},
+            json={"reason": "x"},
+        )
+        assert res.status_code == 422

@@ -15,6 +15,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from models import (
+    ShopCreditNoteSequence,
     ShopInvoice,
     ShopInvoiceLine,
     ShopInvoiceSequence,
@@ -56,6 +57,27 @@ def _naechste_nummer(db: Session, jahr: int, praefix: str) -> str:
     reihe.last_number += 1
     db.flush()
     return f"{praefix}-{jahr}-{reihe.last_number:04d}"
+
+
+def _naechste_gutschrift_nummer(db: Session, jahr: int) -> str:
+    db.execute(
+        text(
+            "INSERT INTO shop_credit_note_sequences (year, last_number) VALUES (:jahr, 0) "
+            "ON CONFLICT (year) DO NOTHING"
+        ),
+        {"jahr": jahr},
+    )
+    reihe = (
+        db.query(ShopCreditNoteSequence)
+        .filter(ShopCreditNoteSequence.year == jahr)
+        .with_for_update()
+        .first()
+    )
+    if reihe is None:
+        raise InvoiceError("Gutschrift-Nummernkreis konnte nicht gesperrt werden")
+    reihe.last_number += 1
+    db.flush()
+    return f"GS-{jahr}-{reihe.last_number:04d}"
 
 
 def _buyer_complete(order: ShopOrder) -> bool:
@@ -183,6 +205,105 @@ def _hash(daten: bytes) -> str:
     return hashlib.sha256(daten).hexdigest()
 
 
+def credit_invoice(db: Session, invoice: ShopInvoice, reason: str) -> ShopInvoice:
+    """Storniert eine Rechnung ueber eine Gutschrift mit Ursprungsbezug.
+
+    Die Rechnung bleibt im Ledger (Status `void`), die Gutschrift traegt einen
+    eigenen Nummernkreis. Rueckerstattung und Entzug von Anspruechen sind
+    eigene Schritte und werden hier bewusst nicht automatisch ausgeloest.
+    """
+    if invoice.type != "invoice":
+        raise InvoiceError("Nur Rechnungen koennen gutgeschrieben werden")
+    if invoice.status == "void":
+        raise InvoiceError("Rechnung ist bereits storniert")
+    vorhanden = (
+        db.query(ShopInvoice)
+        .filter(
+            ShopInvoice.reference_invoice_id == invoice.id,
+            ShopInvoice.type == "credit_note",
+        )
+        .first()
+    )
+    if vorhanden is not None:
+        raise InvoiceError("Gutschrift existiert bereits")
+
+    jetzt = _now()
+    gutschrift = ShopInvoice(
+        number=_naechste_gutschrift_nummer(db, jetzt.year),
+        order_id=invoice.order_id,
+        user_id=invoice.user_id,
+        type="credit_note",
+        status="issued",
+        issued_at=jetzt,
+        due_date=jetzt.date(),
+        currency=invoice.currency,
+        buyer_reference=invoice.buyer_reference,
+        seller_name=invoice.seller_name,
+        seller_street=invoice.seller_street,
+        seller_postal_code=invoice.seller_postal_code,
+        seller_city=invoice.seller_city,
+        seller_country=invoice.seller_country,
+        seller_email=invoice.seller_email,
+        seller_phone=invoice.seller_phone,
+        seller_vat_id=invoice.seller_vat_id,
+        seller_tax_number=invoice.seller_tax_number,
+        seller_iban=invoice.seller_iban,
+        seller_bic=invoice.seller_bic,
+        small_business=invoice.small_business,
+        buyer_name=invoice.buyer_name,
+        buyer_street=invoice.buyer_street,
+        buyer_postal_code=invoice.buyer_postal_code,
+        buyer_city=invoice.buyer_city,
+        buyer_country=invoice.buyer_country,
+        buyer_email=invoice.buyer_email,
+        buyer_vat_id=invoice.buyer_vat_id,
+        net_cents=invoice.net_cents,
+        tax_cents=invoice.tax_cents,
+        gross_cents=invoice.gross_cents,
+        reference_invoice_id=invoice.id,
+        reason=reason,
+        xml_text="",
+        xml_sha256="",
+        pdf_bytes=b"",
+        pdf_sha256="",
+    )
+
+    original_zeilen = invoice_lines(db, invoice.id)
+    kopien = [
+        ShopInvoiceLine(
+            position=zeile.position,
+            description=zeile.description,
+            quantity=zeile.quantity,
+            unit_code=zeile.unit_code,
+            unit_price_cents=zeile.unit_price_cents,
+            line_net_cents=zeile.line_net_cents,
+            tax_rate_percent=zeile.tax_rate_percent,
+            tax_category=zeile.tax_category,
+        )
+        for zeile in original_zeilen
+    ]
+
+    xml_text = shop_invoice_xml.build_xrechnung_credit_note(
+        gutschrift, kopien, invoice.number
+    )
+    gutschrift.xml_text = xml_text
+    gutschrift.xml_sha256 = _hash(xml_text.encode("utf-8"))
+    pdf = shop_invoice_pdf.build_invoice_pdf(
+        gutschrift, kopien, titel="Gutschrift", referenz=invoice.number
+    )
+    gutschrift.pdf_bytes = pdf
+    gutschrift.pdf_sha256 = _hash(pdf)
+
+    invoice.status = "void"
+    db.add(gutschrift)
+    db.flush()
+    for zeile in kopien:
+        zeile.invoice_id = gutschrift.id
+        db.add(zeile)
+    db.flush()
+    return gutschrift
+
+
 def list_invoices(db: Session, user_id: int) -> list[ShopInvoice]:
     return (
         db.query(ShopInvoice)
@@ -229,6 +350,8 @@ def summary_response(db: Session, invoice: ShopInvoice) -> ShopInvoiceSummaryRes
         net_cents=invoice.net_cents,
         tax_cents=invoice.tax_cents,
         gross_cents=invoice.gross_cents,
+        reference_invoice_id=invoice.reference_invoice_id,
+        reason=invoice.reason,
     )
 
 

@@ -387,7 +387,6 @@ class ShopInvoice(Base):
     __tablename__ = "shop_invoices"
     __table_args__ = (
         UniqueConstraint("number", name="uq_shop_invoices_number"),
-        UniqueConstraint("order_id", name="uq_shop_invoices_order"),
         CheckConstraint(
             "type IN ('invoice', 'credit_note')", name="ck_shop_invoices_type"
         ),
@@ -452,9 +451,25 @@ class ShopInvoice(Base):
     xml_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     pdf_bytes: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
     pdf_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    # Nur bei Gutschriften: Ursprungsrechnung und Grund.
+    reference_invoice_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("shop_invoices.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_now, nullable=False
     )
+
+
+class ShopCreditNoteSequence(Base):
+    """Eigener Nummernkreis fuer Gutschriften je Jahr."""
+
+    __tablename__ = "shop_credit_note_sequences"
+
+    year: Mapped[int] = mapped_column(Integer, primary_key=True)
+    last_number: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
 
 class ShopInvoiceLine(Base):

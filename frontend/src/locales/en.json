@@ -6613,6 +6613,8 @@
         "faellig": "due {{datum}}",
         "pdf": "Download PDF",
         "xml": "XRechnung XML",
+        "gutschrift": "Credit note",
+        "grund": "Reason: {{grund}}",
         "xrechnungHinweis": "Invoices are issued as XRechnung XML (EN 16931); the PDF is the readable copy."
       },
       "zahlungsmethoden": {

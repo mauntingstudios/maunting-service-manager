@@ -94,7 +94,13 @@ def _zusammenbauen(stream: bytes) -> bytes:
     return bytes(ausgabe)
 
 
-def build_invoice_pdf(invoice: ShopInvoice, lines: list[ShopInvoiceLine]) -> bytes:
+def build_invoice_pdf(
+    invoice: ShopInvoice,
+    lines: list[ShopInvoiceLine],
+    *,
+    titel: str = "Rechnung",
+    referenz: str | None = None,
+) -> bytes:
     z = _Zeichner()
     x_links = _RAND
     x_rechts = _SEITENBREITE - _RAND
@@ -113,11 +119,16 @@ def build_invoice_pdf(invoice: ShopInvoice, lines: list[ShopInvoiceLine]) -> byt
         y -= 12
 
     y_kopf = _SEITENHOEHE - 70
-    z.rechts(x_rechts, y_kopf, 18, "Rechnung", bold=True)
+    z.rechts(x_rechts, y_kopf, 18, titel, bold=True)
     z.rechts(x_rechts, y_kopf - 20, 10, f"Nr. {invoice.number}")
     z.rechts(x_rechts, y_kopf - 34, 9, f"Datum: {invoice.issued_at.date().isoformat()}")
-    z.rechts(x_rechts, y_kopf - 46, 9, f"Faellig: {invoice.due_date.isoformat()}")
-    z.rechts(x_rechts, y_kopf - 58, 9, f"Bestellung: {invoice.buyer_reference}")
+    y_kopf -= 46
+    if referenz:
+        z.rechts(x_rechts, y_kopf, 9, f"Bezug: {referenz}")
+    else:
+        z.rechts(x_rechts, y_kopf, 9, f"Faellig: {invoice.due_date.isoformat()}")
+    y_kopf -= 12
+    z.rechts(x_rechts, y_kopf, 9, f"Bestellung: {invoice.buyer_reference}")
 
     y = min(y, _SEITENHOEHE - 150) - 26
     z.text(x_links, y, 10, "Rechnung an", bold=True)
@@ -173,7 +184,7 @@ def build_invoice_pdf(invoice: ShopInvoice, lines: list[ShopInvoiceLine]) -> byt
     if invoice.small_business:
         z.text(x_links, y, 8, "Kleinunternehmerregelung nach § 19 UStG, keine Umsatzsteuer.")
         y -= 12
-    if invoice.seller_iban:
+    if invoice.seller_iban and not referenz:
         z.text(x_links, y, 9, f"Zahlung auf IBAN {invoice.seller_iban}"
               + (f", BIC {invoice.seller_bic}" if invoice.seller_bic else ""))
         y -= 12

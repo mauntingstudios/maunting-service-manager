@@ -264,6 +264,12 @@ class ShopInvoiceSummaryResponse(BaseModel):
     net_cents: int
     tax_cents: int
     gross_cents: int
+    reference_invoice_id: int | None = None
+    reason: str | None = None
+
+
+class ShopCreditNoteCreate(BaseModel):
+    reason: str = Field(..., min_length=3, max_length=500)
 
 
 class ShopInvoiceResponse(ShopInvoiceSummaryResponse):
