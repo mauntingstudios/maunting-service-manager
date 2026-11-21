@@ -68,6 +68,18 @@ export interface ShopCatalogPlan {
   slots_step: number
   price_per_slot_step_cents: number
   artwork: ShopArtwork
+  available?: boolean
+  availability_reason?: string | null
+  max_available_ram_mb?: number | null
+  max_available_cpu?: number | null
+}
+
+export interface ShopAvailabilityResponse {
+  available: boolean
+  reason?: string | null
+  available_nodes: number
+  max_ram_mb?: number | null
+  max_cpu?: number | null
 }
 
 export interface ShopPlanWrite {
@@ -338,6 +350,15 @@ export const shopCatalogApi = {
     gross_cents: number
   }) =>
     api<ShopCouponPreviewResponse>('/shop/coupons/preview', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  checkAvailability: (payload: {
+    plan_id: number
+    ram_mb?: number | null
+    cpu?: number | null
+  }) =>
+    api<ShopAvailabilityResponse>('/shop/availability', {
       method: 'POST',
       body: JSON.stringify(payload),
     }),

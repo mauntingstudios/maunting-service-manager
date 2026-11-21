@@ -47,6 +47,10 @@ class ShopOrderError(ValueError):
     """Bestellung ist nicht moeglich; wird am Rand zu 422."""
 
 
+class ShopCapacityError(ShopOrderError):
+    """Keine freie Node-Kapazitaet mehr vorhanden (Ausverkaufsschutz, HTTP 409)."""
+
+
 def _now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -116,7 +120,12 @@ def _item_label(plan: ShopPlan, ram_mb: int | None, slots: int | None) -> str:
     return " · ".join(teile)
 
 
-def _resolve_plan_spec(db: Session, payload: ShopOrderCreate) -> dict[str, object]:
+def _resolve_plan_spec(
+    db: Session,
+    payload: ShopOrderCreate,
+    *,
+    check_capacity: bool = True,
+) -> dict[str, object]:
     plan = (
         db.query(ShopPlan)
         .filter(ShopPlan.id == payload.plan_id, ShopPlan.active.is_(True))
@@ -134,6 +143,16 @@ def _resolve_plan_spec(db: Session, payload: ShopOrderCreate) -> dict[str, objec
     slots = _check_resource(
         payload.slots, plan.slots_included, plan.slots_max, plan.slots_step, "Slots"
     )
+    if check_capacity:
+        from services import node_placement_service
+
+        availability = node_placement_service.check_plan_availability(
+            db, plan, ram_mb=ram_mb, cpu_cores=cpu
+        )
+        if not availability.available:
+            raise ShopCapacityError(
+                "Derzeit ist fuer diese Konfiguration keine ausreichende Server-Kapazitaet frei"
+            )
     return {
         "kind": "plan",
         "plan_id": plan.id,
@@ -182,9 +201,15 @@ def _resolve_addon_spec(db: Session, payload: ShopOrderCreate) -> dict[str, obje
     }
 
 
-def create_order(db: Session, user: User, payload: ShopOrderCreate) -> ShopOrder:
+def create_order(
+    db: Session,
+    user: User,
+    payload: ShopOrderCreate,
+    *,
+    check_capacity: bool = True,
+) -> ShopOrder:
     spec = (
-        _resolve_plan_spec(db, payload)
+        _resolve_plan_spec(db, payload, check_capacity=check_capacity)
         if payload.plan_id is not None
         else _resolve_addon_spec(db, payload)
     )

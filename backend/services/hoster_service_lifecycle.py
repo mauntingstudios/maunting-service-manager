@@ -19,6 +19,7 @@ weitergefuehrt statt ein zweiter Server erzeugt.
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+import inspect
 import logging
 from uuid import uuid4
 
@@ -404,11 +405,17 @@ def _provision(
     # Der Idempotency-Key bindet die Provisionierung an genau diesen Vertrag.
     # Ein wiederholter Shop-Aufruf trifft damit dieselbe Task und erzeugt keinen
     # zweiten Server — selbst wenn die Zeile hier gleichzeitig gelesen wird.
+    prov_kwargs: dict[str, object] = {
+        "idempotency_key": f"hoster-{integration.id}-{service.id}",
+    }
+    if "auto_place" in inspect.signature(provision_server).parameters:
+        prov_kwargs["auto_place"] = request.node_id is None
+        prov_kwargs["strict_capacity"] = True
     result = provision_server(
         db,
         request,
         _actor(db, integration, service.correlation_id),
-        idempotency_key=f"hoster-{integration.id}-{service.id}",
+        **prov_kwargs,
     )
     service.server_id = result.server.id
     service.task_id = result.task.id

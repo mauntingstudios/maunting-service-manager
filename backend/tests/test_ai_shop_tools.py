@@ -312,3 +312,57 @@ def test_propose_and_execute_coupon_and_addon(
     assert addon.category == "ai_quota"
     assert addon.extra_ai_tokens == 500_000
     assert addon.price_cents == 799
+
+
+def test_propose_and_execute_all_43_plus_game_blueprints_in_single_batch(
+    db: Session, owner_user: User
+) -> None:
+    """Regressionsschutz: Singra darf >30 Blueprints (alle ~46 Spiel-Blueprints) auf einmal anlegen."""
+    catalog = ai_action_service.execute_read_tool(
+        db,
+        user=owner_user,
+        tool_name="read_shop_catalog",
+        arguments={"exclude_categories": ["frontend", "backend"]},
+    )
+    blueprints = catalog["blueprints"]
+    assert len(blueprints) >= 40
+
+    conv = _conversation(db, owner_user)
+    plans_payload = [
+        {
+            "game_type": bp["id"],
+            "name": f"{bp['name']} Standard",
+            "price_cents": 999,
+            "currency": "EUR",
+            "billing_interval": "month",
+            "ram_included_mb": 4096,
+            "ram_step_mb": 0,
+            "cpu_included": 2,
+            "cpu_step": 0,
+            "slots_included": 20,
+            "slots_step": 0,
+        }
+        for bp in blueprints
+    ]
+
+    proposal = ai_proposal_service.create_proposal(
+        db,
+        user=owner_user,
+        conversation=conv,
+        tool_name="propose_shop_plan_upsert",
+        arguments={
+            "plans": plans_payload,
+            "reason": "Alle Spiel-Blueprints im nativen Shop als Standard-Tarif anlegen",
+            "expected_effect": f"{len(plans_payload)} Shop-Tarife angelegt",
+        },
+        correlation_id=str(uuid4()),
+    )
+    _, token = ai_proposal_service.confirm_proposal(
+        db, proposal_id=proposal.id, user=owner_user
+    )
+    done, exec_result = ai_proposal_service.execute_proposal(
+        db, proposal_id=proposal.id, user=owner_user, confirmation_token=token
+    )
+    assert done.status == "succeeded"
+    assert exec_result["count"] == len(blueprints)
+    assert db.query(ShopPlan).count() == len(blueprints)

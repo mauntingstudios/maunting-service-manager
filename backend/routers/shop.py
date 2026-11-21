@@ -43,6 +43,8 @@ from schemas.shop import (
     ShopAddonWrite,
     ShopAdminManualOrderCreate,
     ShopAdminOrderResponse,
+    ShopAvailabilityRequest,
+    ShopAvailabilityResponse,
     ShopCatalogAddon,
     ShopCatalogPlan,
     ShopCheckoutRequest,
@@ -95,6 +97,7 @@ from services import (
     shop_invoice_export_service,
     shop_invoice_service,
     shop_order_service,
+    node_placement_service,
     shop_reconciliation_service,
     shop_seller_settings_service,
     shop_slot_service,
@@ -157,6 +160,30 @@ def get_catalog(db: Session = Depends(get_db)) -> list[ShopCatalogPlan]:
         shop_catalog_service.catalog_plan(db, plan)
         for plan in shop_catalog_service.list_plans(db, active_only=True)
     ]
+
+
+@router.post("/availability", response_model=ShopAvailabilityResponse)
+def check_shop_availability(
+    payload: ShopAvailabilityRequest,
+    db: Session = Depends(get_db),
+) -> ShopAvailabilityResponse:
+    """Prueft live vor dem Checkout, ob RAM/CPU/Disk auf einer Node frei sind."""
+    plan = shop_catalog_service.get_plan(db, payload.plan_id)
+    if plan is None or not plan.active:
+        raise HTTPException(status_code=404, detail="Tarif ist nicht verfuegbar")
+    result = node_placement_service.check_plan_availability(
+        db,
+        plan,
+        ram_mb=payload.ram_mb,
+        cpu_cores=payload.cpu,
+    )
+    return ShopAvailabilityResponse(
+        available=result.available,
+        reason=result.reason,
+        available_nodes=result.available_nodes,
+        max_ram_mb=result.max_ram_mb,
+        max_cpu=result.max_cpu,
+    )
 
 
 @router.get("/catalog/addons", response_model=list[ShopCatalogAddon])
@@ -238,6 +265,11 @@ def create_my_order(
     """Legt eine Bestellung aus dem Tarif an; Preise berechnet der Server."""
     try:
         order = shop_order_service.create_order(db, user, payload)
+    except shop_order_service.ShopCapacityError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "shop_out_of_capacity", "message": str(exc)},
+        ) from exc
     except shop_order_service.ShopOrderError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return shop_order_service.order_response(db, order)
@@ -290,6 +322,21 @@ def start_my_order_checkout(
     artikel = shop_order_service.order_items(db, order.id)
     if not artikel:
         raise HTTPException(status_code=422, detail="Bestellung ohne Position")
+    item0 = artikel[0]
+    if item0.kind == "plan" and item0.plan_id is not None:
+        plan = shop_catalog_service.get_plan(db, item0.plan_id)
+        if plan is not None and plan.active:
+            avail = node_placement_service.check_plan_availability(
+                db, plan, ram_mb=item0.ram_mb, cpu_cores=item0.cpu
+            )
+            if not avail.available:
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "code": "shop_out_of_capacity",
+                        "message": "Derzeit ist fuer diese Konfiguration keine ausreichende Server-Kapazitaet frei",
+                    },
+                )
 
     success_url: str | None = None
     cancel_url: str | None = None

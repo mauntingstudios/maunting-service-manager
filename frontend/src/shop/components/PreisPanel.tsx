@@ -1,4 +1,5 @@
 import { useTranslation } from 'react-i18next'
+import { AlertTriangle } from 'lucide-react'
 import { Button } from '@maunting/ui'
 import { formatEuro, preisAufschluesselung } from '../preis'
 import type { Konfiguration, ShopSpiel } from '../typen'
@@ -7,9 +8,15 @@ interface PreisPanelProps {
   spiel: ShopSpiel
   konfiguration: Konfiguration
   onWeiter?: () => void
+  verfuegbar?: boolean
 }
 
-export function PreisPanel({ spiel, konfiguration, onWeiter }: PreisPanelProps) {
+export function PreisPanel({
+  spiel,
+  konfiguration,
+  onWeiter,
+  verfuegbar = true,
+}: PreisPanelProps) {
   const { t } = useTranslation()
   const preis = preisAufschluesselung(spiel, konfiguration)
 
@@ -63,9 +70,30 @@ export function PreisPanel({ spiel, konfiguration, onWeiter }: PreisPanelProps) 
         </p>
       </div>
 
+      {!verfuegbar && (
+        <div
+          role="alert"
+          className="flex items-start gap-2.5 rounded-xl border border-status-warning/40 bg-status-warning/10 p-3 text-xs text-status-warning"
+        >
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+          <div className="space-y-0.5">
+            <p className="font-semibold">{t('shop.spiel.ausverkauftTitel')}</p>
+            <p className="text-on-surface-variant">{t('shop.spiel.ausverkauftText')}</p>
+          </div>
+        </div>
+      )}
+
       {onWeiter && (
-        <Button variant="primary" size="lg" className="w-full" onClick={onWeiter}>
-          {t('shop.spiel.weiterKasse')}
+        <Button
+          variant="primary"
+          size="lg"
+          className="w-full"
+          disabled={!verfuegbar}
+          onClick={onWeiter}
+        >
+          {verfuegbar
+            ? t('shop.spiel.weiterKasse')
+            : t('shop.spiel.keineKapazitaetButton')}
         </Button>
       )}
 

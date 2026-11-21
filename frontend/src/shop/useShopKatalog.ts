@@ -85,6 +85,7 @@ function spielAusPlan(plan: ShopCatalogPlan): ShopSpiel {
     standardSlots: plan.slots_included ?? slotStufen[0],
     preisProSlotCent: plan.price_per_slot_step_cents,
     kiZugangCent: 0,
+    verfuegbar: plan.available !== false,
   }
 }
 
@@ -106,7 +107,9 @@ function ausPlans(plans: ShopCatalogPlan[]): Pick<ShopKatalog, 'spiele' | 'tarif
     )
   }
   return {
-    spiele: [...tarife.values()].map((liste) => liste[0].spiel),
+    spiele: [...tarife.values()].map(
+      (liste) => liste.find((item) => item.spiel.verfuegbar !== false)?.spiel ?? liste[0].spiel,
+    ),
     tarifeFuer: (gameType) => tarife.get(gameType) ?? [],
   }
 }

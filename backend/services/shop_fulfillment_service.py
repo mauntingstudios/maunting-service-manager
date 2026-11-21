@@ -8,6 +8,7 @@ und gleicht globale Produktrollen additiv sowie eskalationsgeschuetzt ab.
 
 from __future__ import annotations
 
+import inspect
 import logging
 from uuid import uuid4
 
@@ -411,13 +412,15 @@ def _sync_server_entitlement(
                 ent.provisioning_error = None
                 db.flush()
 
-                result = server_provisioning_service.provision_server(
-                    db,
-                    req,
-                    actor,
-                    idempotency_key=idempotency_key,
-                    retry_of_id=retry_of_id,
-                )
+                prov_fn = server_provisioning_service.provision_server
+                prov_kwargs: dict[str, object] = {
+                    "idempotency_key": idempotency_key,
+                    "retry_of_id": retry_of_id,
+                }
+                if "auto_place" in inspect.signature(prov_fn).parameters:
+                    prov_kwargs["auto_place"] = req.node_id is None
+                    prov_kwargs["strict_capacity"] = True
+                result = prov_fn(db, req, actor, **prov_kwargs)
                 permission_service.set_user_server_permissions(
                     db,
                     ent.user_id,

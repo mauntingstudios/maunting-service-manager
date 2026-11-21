@@ -3,6 +3,8 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { ArrowLeft } from 'lucide-react'
 import { Badge, Dropdown, Spinner, Zustandsflaeche } from '@maunting/ui'
+import { shopCatalogApi } from '@/api/shop'
+import { still } from '@/lib/still'
 import { SpielArtwork } from '../components/SpielArtwork'
 import { Konfigurator } from '../components/Konfigurator'
 import { PreisPanel } from '../components/PreisPanel'
@@ -24,12 +26,40 @@ export function ShopSpiel() {
   const [konfiguration, setKonfiguration] = useState<Konfiguration | null>(() =>
     spiel ? standardKonfiguration(spiel) : null,
   )
+  const [kapazitaetFrei, setKapazitaetFrei] = useState<boolean | null>(null)
   const aktuelleKonfiguration =
     konfiguration ?? (ausgewaehlt ? standardKonfiguration(ausgewaehlt.spiel) : null)
 
   useEffect(() => {
-    if (ausgewaehlt) setKonfiguration(standardKonfiguration(ausgewaehlt.spiel))
+    if (ausgewaehlt) {
+      setKonfiguration(standardKonfiguration(ausgewaehlt.spiel))
+      setKapazitaetFrei(null)
+    }
   }, [ausgewaehlt?.plan.id])
+
+  useEffect(() => {
+    if (!ausgewaehlt || !aktuelleKonfiguration) return
+    const checkFn = shopCatalogApi.checkAvailability
+    if (!checkFn) {
+      setKapazitaetFrei(ausgewaehlt.plan.available !== false)
+      return
+    }
+    let aktiv = true
+    void checkFn({
+      plan_id: ausgewaehlt.plan.id,
+      ram_mb: aktuelleKonfiguration.ramGb * 1024,
+      cpu: aktuelleKonfiguration.cpu,
+    })
+      .then((res) => {
+        if (aktiv) setKapazitaetFrei(res.available)
+      })
+      .catch((err: unknown) => {
+        still(err, 'shopSpiel.availability')
+      })
+    return () => {
+      aktiv = false
+    }
+  }, [ausgewaehlt?.plan.id, aktuelleKonfiguration?.ramGb, aktuelleKonfiguration?.cpu])
 
   if (!ausgewaehlt || !aktuelleKonfiguration) {
     if (loading) {
@@ -58,8 +88,10 @@ export function ShopSpiel() {
 
   const sprache = i18n.language.startsWith('de') ? 'de' : 'en'
   const aktuellesSpiel = ausgewaehlt.spiel
+  const verfuegbar = kapazitaetFrei ?? (ausgewaehlt.plan.available !== false)
 
   const weiter = () => {
+    if (!verfuegbar) return
     const entwurf: KassenEntwurf = {
       spielId: aktuellesSpiel.id,
       tarifId: ausgewaehlt.plan.id,
@@ -132,6 +164,7 @@ export function ShopSpiel() {
         <PreisPanel
           spiel={aktuellesSpiel}
           konfiguration={aktuelleKonfiguration}
+          verfuegbar={verfuegbar}
           onWeiter={weiter}
         />
       </div>

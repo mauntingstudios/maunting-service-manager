@@ -31,7 +31,7 @@ from services.ai_redaction import redact_sensitive_text
 from services.shop_catalog_service import ShopConfigurationError
 
 
-_MAX_BATCH_PLANS = 30
+_MAX_BATCH_PLANS = 100
 _SLUG_CLEAN_RE = re.compile(r"[^a-z0-9]+")
 
 _PLAN_ITEM_FELDER = frozenset(
@@ -41,6 +41,8 @@ _PLAN_ITEM_FELDER = frozenset(
         "name",
         "description",
         "price_cents",
+        "currency",
+        "billing_interval",
         "tax_rate_percent",
         "ram_included_mb",
         "ram_max_mb",
@@ -246,8 +248,23 @@ def _normalize_single_plan(db: Session, raw: dict[str, Any]) -> tuple[dict[str, 
     for key in int_fields:
         if key in raw:
             val = _int_oder_none(raw[key], feld=key)
+            if key == "ram_step_mb" and val == 0:
+                val = None
+            elif key in ("cpu_step", "slots_step") and val == 0:
+                val = 1
             if val is not None or key in shop_catalog_service._NULLABLE_FIELDS:
                 fields[key] = val
+
+    if "currency" in raw and raw["currency"] is not None:
+        currency = str(raw["currency"]).strip().upper()
+        if currency != "EUR":
+            raise AiActionValidationError("Aktuell wird nur EUR unterstuetzt")
+        fields["currency"] = currency
+    if "billing_interval" in raw and raw["billing_interval"] is not None:
+        interval = str(raw["billing_interval"]).strip()
+        if interval != "month":
+            raise AiActionValidationError("billing_interval muss 'month' sein")
+        fields["billing_interval"] = interval
 
     # Artwork: automatisch Steam waehlen, wenn der Blueprint eine Steam-AppID liefert.
     if "artwork_mode" in raw and raw["artwork_mode"] is not None:

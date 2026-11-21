@@ -508,9 +508,10 @@ def test_the_tool_catalogue_stays_within_a_stated_budget(
         # 99.417 Zeichen Panel (134 Werkzeuge) mit `read_mod_details`.
         # Stand 18.11.2026 (Mod-Entfernen): 105.542 Zeichen App (141 Werkzeuge),
         # 100.470 Zeichen Panel (135 Werkzeuge) mit `propose_mod_delete`.
-        # Stand 21.11.2026 (Nativer Shop): 112.076 Zeichen App (142 Werkzeuge),
-        # 107.004 Zeichen Panel (136 Werkzeuge) mit `read_shop_catalog`,
-        # `propose_shop_plan_upsert`, `propose_shop_coupon_upsert`, `propose_shop_addon_upsert`.
+        # Stand 21.11.2026 (Nativer Shop): 112.293 Zeichen App (142 Werkzeuge),
+        # 107.221 Zeichen Panel (136 Werkzeuge) mit `read_shop_catalog`,
+        # `propose_shop_plan_upsert` (maxItems=100, currency/billing_interval),
+        # `propose_shop_coupon_upsert`, `propose_shop_addon_upsert`.
         assert len(katalog) < 113_000, (
             f"Der Werkzeugkatalog der Herkunft '{herkunft}' ist auf "
             f"{len(katalog)} Zeichen gewachsen. Er geht in jeder Runde mit und "

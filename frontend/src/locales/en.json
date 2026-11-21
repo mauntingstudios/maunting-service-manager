@@ -6723,7 +6723,8 @@
       "slots_one": "Includes {{count}} players",
       "slots_other": "Includes {{count}} players",
       "konfigurieren": "Configure",
-      "rabatt": "-{{wert}}"
+      "rabatt": "-{{wert}}",
+      "ausverkauft": "Sold out"
     },
     "trustLeiste": {
       "titel": "Included with every server",
@@ -6771,6 +6772,9 @@
       "ki": "AI access",
       "kiHinweis": "Singra quota for this account (demo).",
       "weiterKasse": "Continue to checkout",
+      "keineKapazitaetButton": "Currently sold out",
+      "ausverkauftTitel": "No free node capacity",
+      "ausverkauftText": "Not enough RAM or CPU is currently available on an active node for this configuration.",
       "demoHinweis": "Demo: nothing is charged and no server is created.",
       "nichtGefundenTitel": "Game not found",
       "nichtGefundenText": "This item is not available in the current catalog."

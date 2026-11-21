@@ -702,7 +702,7 @@ Tarife ueber Blueprints anlegen: Soll eine Gruppe von Blueprints angelegt \
 werden (z. B. ohne Frontend- und Backend-Blueprints), uebergib \
 `exclude_categories: ['frontend', 'backend']` oder filtere selbst anhand \
 `category`. Buendle mehrere oder alle Tarife moeglichst in einem Aufruf von \
-`propose_shop_plan_upsert` ueber das Feld `plans` (bis 30 Tarife je Aufruf), \
+`propose_shop_plan_upsert` ueber das Feld `plans` (bis 100 Tarife je Aufruf), \
 statt fuer jedes Spiel einzeln zu fragen.
 Artwork & Slots: Wenn `has_steam_artwork: true` ist, nutze \
 `artwork_mode='steam'`, sonst `'none'`. Setze `slots_included` und `slots_max` \

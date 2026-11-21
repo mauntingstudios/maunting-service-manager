@@ -223,6 +223,95 @@ def _initialize_and_start_frontend_server(
             logger.warning("Initialer Frontend-Build fuer Server %s nicht moeglich", server.id)
 
 
+def _bind_ip_for_node(req: ServerCreate, target_node: Node | None, *, is_database: bool) -> str:
+    if req.public_bind_ip:
+        return req.public_bind_ip
+    if is_database:
+        return "127.0.0.1"
+    if target_node is not None and not target_node.is_local:
+        return "0.0.0.0"
+    return default_bind_ip()
+
+
+def _lock_and_allocate_node(
+    db: Session,
+    candidate_node: Node | None,
+    *,
+    req: ServerCreate,
+    port_requirements: list[tuple[str, str]],
+    requested_ports: dict[str, int],
+    is_database: bool,
+    strict_capacity: bool,
+) -> tuple[Node | None, list[tuple[str, int, str]], str]:
+    from services.node_capacity import ensure_ram_limit_fits, ensure_strict_capacity_fits
+    from services.node_placement_service import OFFLINE_NODE_STATUSES
+
+    target_node = candidate_node
+    if target_node is not None:
+        target_node = (
+            db.query(Node)
+            .filter(Node.id == target_node.id)
+            .with_for_update()
+            .one()
+        )
+        if strict_capacity and (target_node.status or "").strip().lower() in OFFLINE_NODE_STATUSES:
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "node_offline", "message": "errors.node_offline"},
+            )
+
+    ensure_ram_limit_fits(
+        db,
+        target_node,
+        new_ram_limit_mb=req.ram_limit_mb,
+        exclude_server_id=None,
+    )
+    ensure_strict_capacity_fits(
+        db,
+        target_node,
+        new_ram_limit_mb=req.ram_limit_mb,
+        new_cpu_limit_percent=req.cpu_limit_percent,
+        new_disk_limit_gb=req.disk_limit_gb,
+        exclude_server_id=None,
+        force=strict_capacity,
+    )
+    bind_ip = _bind_ip_for_node(req, target_node, is_database=is_database)
+    try:
+        allocated = allocate_ports(
+            db,
+            exclude_server_id=None,
+            bind_ip=bind_ip or "0.0.0.0",
+            port_requirements=port_requirements,
+            requested_ports=requested_ports,
+            node_id=target_node.id if target_node else None,
+            check_host=target_node is None or target_node.is_local,
+        )
+    except PortConflictError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "port_conflict", "message": "errors.port_conflict"},
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "invalid_port_request", "message": "errors.invalid_port_request"},
+        ) from exc
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "port_check_unavailable", "message": "errors.port_check_unavailable"},
+        ) from exc
+
+    if isinstance(allocated, tuple) and len(allocated) == 3 and all(isinstance(item, int) for item in allocated):
+        allocated = [
+            ("game", allocated[0], "udp"),
+            ("query", allocated[1], "udp"),
+            ("rcon", allocated[2], "tcp"),
+        ]
+    assert_remote_ports_available(target_node, allocated, bind_ip or "0.0.0.0")
+    return target_node, allocated, bind_ip
+
+
 def provision_server(
     db: Session,
     req: ServerCreate,
@@ -230,6 +319,8 @@ def provision_server(
     *,
     idempotency_key: str | None = None,
     retry_of_id: str | None = None,
+    auto_place: bool = False,
+    strict_capacity: bool = False,
 ) -> ProvisioningResult:
     """Provisioniert über einen einzigen, backendseitig autorisierten Pfad.
 
@@ -300,87 +391,85 @@ def provision_server(
                 requested_ports[role] = value
 
         is_database = req.server_kind == "database"
-        # Datenbankserver sind ohne ausdrueckliche Bind-IP nur lokal erreichbar
-        # (Agent und internes Netz). Nach aussen geht es nur mit Absicht.
-        bind_ip = req.public_bind_ip or ("127.0.0.1" if is_database else default_bind_ip())
+        from services import node_placement_service
         from services.node_service import get_local_node
-
-        if req.node_id is not None:
-            target_node = db.query(Node).filter(Node.id == req.node_id).first()
-            if target_node is None:
-                raise HTTPException(
-                    status_code=400,
-                    detail={"code": "node_not_found", "message": "errors.node_not_found"},
-                )
-        else:
-            target_node = get_local_node(db)
-        if (
-            target_node is not None
-            and not target_node.is_local
-            and req.public_bind_ip is None
-            and not is_database
-        ):
-            bind_ip = "0.0.0.0"
-
-        from services.node_capacity import ensure_ram_limit_fits, ensure_strict_capacity_fits
 
         set_phase(db, task, "allocating")
         # Die Node-Zeile serialisiert Kapazitäts- und Portvergabe über mehrere
         # Backend-Prozesse. PostgreSQL hält den Lock, bis Server und Ports
         # gemeinsam committed sind.
-        if target_node is not None:
-            target_node = (
-                db.query(Node)
-                .filter(Node.id == target_node.id)
-                .with_for_update()
-                .one()
-            )
-        ensure_ram_limit_fits(
-            db,
-            target_node,
-            new_ram_limit_mb=req.ram_limit_mb,
-            exclude_server_id=None,
-        )
-        ensure_strict_capacity_fits(
-            db,
-            target_node,
-            new_ram_limit_mb=req.ram_limit_mb,
-            new_disk_limit_gb=req.disk_limit_gb,
-            exclude_server_id=None,
-        )
-        try:
-            allocated = allocate_ports(
+        if req.node_id is not None:
+            requested_node = db.query(Node).filter(Node.id == req.node_id).first()
+            if requested_node is None:
+                raise HTTPException(
+                    status_code=400,
+                    detail={"code": "node_not_found", "message": "errors.node_not_found"},
+                )
+            target_node, allocated, bind_ip = _lock_and_allocate_node(
                 db,
-                exclude_server_id=None,
-                bind_ip=bind_ip or "0.0.0.0",
+                requested_node,
+                req=req,
                 port_requirements=port_requirements,
                 requested_ports=requested_ports,
-                node_id=target_node.id if target_node else None,
-                check_host=target_node is None or target_node.is_local,
+                is_database=is_database,
+                strict_capacity=strict_capacity,
             )
-        except PortConflictError as exc:
-            raise HTTPException(
-                status_code=400,
-                detail={"code": "port_conflict", "message": "errors.port_conflict"},
-            ) from exc
-        except ValueError as exc:
-            raise HTTPException(
-                status_code=400,
-                detail={"code": "invalid_port_request", "message": "errors.invalid_port_request"},
-            ) from exc
-        except RuntimeError as exc:
-            raise HTTPException(
-                status_code=503,
-                detail={"code": "port_check_unavailable", "message": "errors.port_check_unavailable"},
-            ) from exc
-
-        if isinstance(allocated, tuple) and len(allocated) == 3 and all(isinstance(item, int) for item in allocated):
-            allocated = [
-                ("game", allocated[0], "udp"),
-                ("query", allocated[1], "udp"),
-                ("rcon", allocated[2], "tcp"),
-            ]
-        assert_remote_ports_available(target_node, allocated, bind_ip or "0.0.0.0")
+        elif auto_place:
+            candidates, reason = node_placement_service.find_candidate_nodes(
+                db,
+                ram_mb=req.ram_limit_mb,
+                cpu_percent=req.cpu_limit_percent,
+                disk_gb=req.disk_limit_gb,
+            )
+            if not candidates:
+                if reason is not None:
+                    raise HTTPException(
+                        status_code=409,
+                        detail={"code": reason, "message": f"errors.{reason}"},
+                    )
+                target_node, allocated, bind_ip = _lock_and_allocate_node(
+                    db,
+                    get_local_node(db),
+                    req=req,
+                    port_requirements=port_requirements,
+                    requested_ports=requested_ports,
+                    is_database=is_database,
+                    strict_capacity=strict_capacity,
+                )
+            else:
+                last_exc: HTTPException | None = None
+                placed: tuple[Node | None, list[tuple[str, int, str]], str] | None = None
+                for candidate in candidates:
+                    try:
+                        placed = _lock_and_allocate_node(
+                            db,
+                            candidate,
+                            req=req,
+                            port_requirements=port_requirements,
+                            requested_ports=requested_ports,
+                            is_database=is_database,
+                            strict_capacity=True,
+                        )
+                        break
+                    except HTTPException as exc:
+                        if exc.status_code in (409, 400, 503):
+                            last_exc = exc
+                            continue
+                        raise
+                if placed is None:
+                    assert last_exc is not None
+                    raise last_exc
+                target_node, allocated, bind_ip = placed
+        else:
+            target_node, allocated, bind_ip = _lock_and_allocate_node(
+                db,
+                get_local_node(db),
+                req=req,
+                port_requirements=port_requirements,
+                requested_ports=requested_ports,
+                is_database=is_database,
+                strict_capacity=strict_capacity,
+            )
 
         server = Server(
             name=req.name,

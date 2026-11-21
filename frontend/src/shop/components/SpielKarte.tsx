@@ -29,7 +29,12 @@ export function SpielKarte({ spiel, rabattLabel, priority = false }: SpielKarteP
             className="transition-transform duration-300 group-hover:scale-[1.03]"
           />
           <div className="pointer-events-none absolute right-3 top-3 flex flex-wrap items-center justify-end gap-1.5">
-            {rabattLabel && (
+            {spiel.verfuegbar === false && (
+              <Badge variant="warning">
+                {t('shop.karte.ausverkauft')}
+              </Badge>
+            )}
+            {rabattLabel && spiel.verfuegbar !== false && (
               <Badge variant="success">
                 {t('shop.karte.rabatt', { wert: rabattLabel })}
               </Badge>

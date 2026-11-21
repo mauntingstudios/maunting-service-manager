@@ -6,6 +6,7 @@ import i18n from '@/i18n'
 const hoisted = vi.hoisted(() => ({
   getCatalog: vi.fn(),
   listAddons: vi.fn(),
+  checkAvailability: vi.fn(),
 }))
 
 vi.mock('@/api/shop', async (importOriginal) => {
@@ -15,6 +16,7 @@ vi.mock('@/api/shop', async (importOriginal) => {
     shopCatalogApi: {
       getCatalog: hoisted.getCatalog,
       listAddons: hoisted.listAddons,
+      checkAvailability: hoisted.checkAvailability,
     },
   }
 })
@@ -74,6 +76,13 @@ describe('ShopSpiel', () => {
   beforeEach(() => {
     hoisted.getCatalog.mockReset().mockResolvedValue([PALWORLD_PLAN])
     hoisted.listAddons.mockReset().mockResolvedValue([])
+    hoisted.checkAvailability.mockReset().mockResolvedValue({
+      available: true,
+      reason: null,
+      available_nodes: 1,
+      max_ram_mb: 16384,
+      max_cpu: 4,
+    })
   })
 
   it('zeigt das Spiel und reicht Konfiguration plus Coupon/App-Return weiter', async () => {
@@ -98,5 +107,22 @@ describe('ShopSpiel', () => {
   it('zeigt bei unbekannter ID eine Fehlerflaeche', async () => {
     zeige('/shop/gibtesnicht')
     expect(await screen.findByText(i18n.t('shop.spiel.nichtGefundenTitel'))).toBeInTheDocument()
+  })
+
+  it('sperrt den Checkout bei fehlender Node-Kapazitaet (Ausverkauft-Schutz)', async () => {
+    hoisted.checkAvailability.mockResolvedValue({
+      available: false,
+      reason: 'insufficient_node_ram',
+      available_nodes: 0,
+      max_ram_mb: 2048,
+      max_cpu: 1,
+    })
+    zeige('/shop/palworld')
+    expect(
+      await screen.findByText(i18n.t('shop.spiel.ausverkauftTitel')),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: i18n.t('shop.spiel.keineKapazitaetButton') }),
+    ).toBeDisabled()
   })
 })

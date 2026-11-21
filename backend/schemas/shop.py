@@ -699,3 +699,21 @@ class ShopCatalogPlan(BaseModel):
     slots_step: int
     price_per_slot_step_cents: int
     artwork: ShopArtworkResponse
+    available: bool = True
+    availability_reason: str | None = None
+    max_available_ram_mb: int | None = None
+    max_available_cpu: int | None = None
+
+
+class ShopAvailabilityRequest(BaseModel):
+    plan_id: int = Field(..., ge=1)
+    ram_mb: int | None = Field(None, ge=0, le=4_194_304)
+    cpu: int | None = Field(None, ge=0, le=10_000)
+
+
+class ShopAvailabilityResponse(BaseModel):
+    available: bool
+    reason: str | None = None
+    available_nodes: int = 0
+    max_ram_mb: int | None = None
+    max_cpu: int | None = None

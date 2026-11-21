@@ -302,7 +302,10 @@ def _game_meta(game_type: str) -> dict[str, Any]:
 
 
 def catalog_plan(db: Session, plan: ShopPlan) -> ShopCatalogPlan:
+    from services import node_placement_service
+
     meta = _game_meta(plan.game_type)
+    availability = node_placement_service.check_plan_availability(db, plan)
     return ShopCatalogPlan(
         id=plan.id,
         game_type=plan.game_type,
@@ -331,4 +334,8 @@ def catalog_plan(db: Session, plan: ShopPlan) -> ShopCatalogPlan:
         slots_step=plan.slots_step,
         price_per_slot_step_cents=plan.price_per_slot_step_cents,
         artwork=_artwork(db, plan),
+        available=availability.available,
+        availability_reason=availability.reason,
+        max_available_ram_mb=availability.max_ram_mb,
+        max_available_cpu=availability.max_cpu,
     )

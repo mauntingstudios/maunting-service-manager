@@ -6723,7 +6723,8 @@
       "slots_one": "{{count}} Spieler inklusive",
       "slots_other": "{{count}} Spieler inklusive",
       "konfigurieren": "Konfigurieren",
-      "rabatt": "-{{wert}}"
+      "rabatt": "-{{wert}}",
+      "ausverkauft": "Ausverkauft"
     },
     "trustLeiste": {
       "titel": "Was du mit jedem Server bekommst",
@@ -6771,6 +6772,9 @@
       "ki": "KI-Zugang",
       "kiHinweis": "Singra-Kontingent für dieses Konto (Demo).",
       "weiterKasse": "Weiter zur Kasse",
+      "keineKapazitaetButton": "Derzeit ausverkauft",
+      "ausverkauftTitel": "Keine freie Node-Kapazität",
+      "ausverkauftText": "Für diese Konfiguration steht aktuell nicht genügend RAM oder CPU auf einer aktiven Node zur Verfügung.",
       "demoHinweis": "Demo: Es wird nichts berechnet und kein Server erstellt.",
       "nichtGefundenTitel": "Spiel nicht gefunden",
       "nichtGefundenText": "Dieses Angebot ist im aktuellen Katalog nicht verfügbar."

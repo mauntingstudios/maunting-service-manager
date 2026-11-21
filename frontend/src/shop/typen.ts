@@ -22,6 +22,7 @@ export interface ShopSpiel {
   standardSlots: number
   preisProSlotCent: number
   kiZugangCent: number
+  verfuegbar?: boolean
 }
 
 export type LaufzeitMonate = 1 | 3 | 12

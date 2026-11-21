@@ -164,4 +164,12 @@ describe('ShopStart', () => {
       await screen.findByText(i18n.t('shop.sammlung.keineTarifeTitel')),
     ).toBeInTheDocument()
   })
+
+  it('kennzeichnet nicht verfuegbare Tarife mit Ausverkauft-Badge', async () => {
+    hoisted.getCatalog.mockResolvedValue([
+      { ...SAMPLE_PLANS[0], available: false, availability_reason: 'insufficient_node_cpu' },
+    ])
+    zeige()
+    expect(await screen.findByText(i18n.t('shop.karte.ausverkauft'))).toBeInTheDocument()
+  })
 })

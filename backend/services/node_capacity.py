@@ -96,6 +96,72 @@ def allocatable_ram_mb(node: Node, allocated_mb: int) -> int | None:
     return max(0, budget - max(0, int(allocated_mb)))
 
 
+# ── CPU capacity accounting ────────────────────────────────────────────────
+
+
+def sum_allocated_cpu_percent(
+    db: Session,
+    node_id: int,
+    *,
+    exclude_server_id: int | None = None,
+) -> int:
+    """Sum of non-null server.cpu_limit_percent on the node (100 = 1 core)."""
+    query = db.query(func.coalesce(func.sum(Server.cpu_limit_percent), 0)).filter(
+        Server.node_id == node_id,
+        Server.cpu_limit_percent.isnot(None),
+    )
+    if exclude_server_id is not None:
+        query = query.filter(Server.id != exclude_server_id)
+    total = query.scalar()
+    try:
+        return int(total or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def allocated_cpu_by_node_ids(db: Session, node_ids: list[int]) -> dict[int, int]:
+    """Batch SUM(cpu_limit_percent) grouped by node_id."""
+    if not node_ids:
+        return {}
+    rows = (
+        db.query(Server.node_id, func.coalesce(func.sum(Server.cpu_limit_percent), 0))
+        .filter(
+            Server.node_id.in_(node_ids),
+            Server.cpu_limit_percent.isnot(None),
+        )
+        .group_by(Server.node_id)
+        .all()
+    )
+    out: dict[int, int] = {nid: 0 for nid in node_ids}
+    for node_id, total in rows:
+        if node_id is None:
+            continue
+        try:
+            out[int(node_id)] = int(total or 0)
+        except (TypeError, ValueError):
+            out[int(node_id)] = 0
+    return out
+
+
+def allocatable_cpu_percent(
+    node: Node,
+    allocated_cpu_percent: int,
+    *,
+    overcommit_factor: float = 1.0,
+) -> int | None:
+    """Remaining bookable CPU percent (100 = 1 core), or None if cpu_total unknown."""
+    if node.cpu_total is None:
+        return None
+    try:
+        cores = float(node.cpu_total)
+    except (TypeError, ValueError):
+        return None
+    if cores <= 0:
+        return None
+    budget = max(0, int(round(cores * 100.0 * max(0.1, float(overcommit_factor)))))
+    return max(0, budget - max(0, int(allocated_cpu_percent)))
+
+
 def ensure_ram_limit_fits(
     db: Session,
     node: Node | None,
@@ -244,20 +310,22 @@ def ensure_strict_capacity_fits(
     node: Node | None,
     *,
     new_ram_limit_mb: int | None = None,
+    new_cpu_limit_percent: int | None = None,
     new_disk_limit_gb: int | None = None,
     exclude_server_id: int | None = None,
+    force: bool = False,
+    cpu_overcommit_factor: float = 1.0,
 ) -> None:
-    """Enforce hard node RAM & disk ceilings when strict capacity guard is enabled."""
-    if not bool(getattr(settings, "strict_resource_capacity_guard", False)) or node is None:
+    """Enforce hard node RAM, CPU & disk ceilings when force=True or strict guard is enabled."""
+    if node is None:
+        return
+    if not force and not bool(getattr(settings, "strict_resource_capacity_guard", False)):
         return
 
     from fastapi import HTTPException
 
     if new_ram_limit_mb is not None and node.ram_total is not None:
-        try:
-            total_ram = int(node.ram_total)
-        except (TypeError, ValueError):
-            total_ram = 0
+        total_ram = normalize_ram_mb(node.ram_total) or 0
         reserved = max(ram_headroom_mb(), int(getattr(settings, "host_reserved_ram_mb", 0) or 0))
         used_ram = sum_allocated_ram_mb(db, node.id, exclude_server_id=exclude_server_id)
         max_allocatable_ram = max(0, total_ram - reserved)
@@ -267,6 +335,20 @@ def ensure_strict_capacity_fits(
                 detail={
                     "code": "insufficient_node_ram",
                     "message": "errors.insufficient_node_ram",
+                },
+            )
+
+    if new_cpu_limit_percent is not None and int(new_cpu_limit_percent) > 0 and node.cpu_total is not None:
+        used_cpu = sum_allocated_cpu_percent(db, node.id, exclude_server_id=exclude_server_id)
+        remaining_cpu = allocatable_cpu_percent(
+            node, used_cpu, overcommit_factor=cpu_overcommit_factor
+        )
+        if remaining_cpu is not None and int(new_cpu_limit_percent) > remaining_cpu:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "insufficient_node_cpu",
+                    "message": "errors.insufficient_node_cpu",
                 },
             )
 
