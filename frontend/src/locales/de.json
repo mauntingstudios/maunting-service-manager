@@ -6345,6 +6345,26 @@
         "title": "Kernel-Härtung, AppArmor und gVisor",
         "body": "/etc/sysctl.d/99-msm-hardening.conf und /etc/apparmor.d/msm-container-default schränken Container zusätzlich zu cap-drop=ALL und seccomp ein; tmpfs-Mounts nutzen noexec,nosuid,nodev. Optional aktiviert install.sh --with-gvisor runsc für nicht vertrauenswürdige Container."
       }
+    },
+    "einvoiceToolchain": {
+      "title": "E-Rechnungs-Toolchain (PDF/A-3 und XRechnung)",
+      "intro": "Für den nativen Shop installieren install.sh und update.sh alle Werkzeuge, um Factur-X-CII-Daten als PDF/A-3b einzubetten und Belege gegen die offiziellen XRechnung- und PDF/A-Regelwerke zu prüfen.",
+      "packages": {
+        "title": "Systempakete per apt",
+        "body": "Über apt-get werden ghostscript, default-jre-headless (Java 11+), unzip und icc-profiles-free für den sRGB-OutputIntent eingerichtet."
+      },
+      "pinned": {
+        "title": "KoSIT und veraPDF (SHA-256)",
+        "body": "fetch_einvoice_toolchain.py lädt gepinnte Versionen von KoSIT-Validator (v1.6.3), XRechnung-Konfiguration (3.0.2) und veraPDF Greenfield (1.30.4) nach /opt/msm/backend/tools/einvoice/, prüft SHA-256 und lehnt Pfad-Traversals sowie Symlinks ab."
+      },
+      "runtime": {
+        "title": "Keine Downloads zur Laufzeit",
+        "body": "Das Backend lädt im Betrieb keine externen Werkzeuge nach. Alle CLI-Aufrufe laufen gekapselt mit expliziten Argumentlisten und 45-Sekunden-Timeout."
+      },
+      "fallback": {
+        "title": "Fallback bei fehlender Toolchain",
+        "body": "Auf Offline-Systemen läuft die Installation mit einer Warnung weiter. Ohne erfolgreiche Prüfung durch veraPDF liefert das Panel weiter das schlichte lesbare PDF neben XRechnung-XML und behauptet keine PDF/A-3-Konformität."
+      }
     }
   },
   "docsOAuth": {

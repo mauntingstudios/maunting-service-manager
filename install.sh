@@ -733,6 +733,7 @@ apt-get install -y -qq \
     debian-keyring debian-archive-keyring apt-transport-https \
     uidmap dbus-user-session slirp4netns ufw iptables \
     acl quota e2fsprogs apparmor apparmor-utils \
+    ghostscript default-jre-headless unzip icc-profiles-free \
     2>&1 | tee -a "$LOG_FILE"
 
 # ── Node.js 20 (nicht das veraltete aus apt) ──
@@ -1776,6 +1777,13 @@ if $RUN_BACKEND_SETUP; then
         source venv/bin/activate
         python3 scripts/fetch_embedding_model.py
     " 2>&1 | tee -a "$LOG_FILE" || warn "Embeddingmodell nicht verfuegbar - KI-Gedaechtnis laeuft ohne Vektoren."
+
+    log "Stelle E-Rechnungs-Toolchain bereit (KoSIT-Validator & veraPDF)..."
+    su - msm -c "
+        cd $MSM_DIR/backend
+        source venv/bin/activate
+        python3 scripts/fetch_einvoice_toolchain.py
+    " 2>&1 | tee -a "$LOG_FILE" || warn "E-Rechnungs-Toolchain nicht verfuegbar - PDF/A-3-Validierung deaktiviert."
 
     ok "Python-Backend bereit"
 

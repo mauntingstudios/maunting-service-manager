@@ -98,6 +98,7 @@ export function SelfHostingDocs() {
           { id: 'push-notifications', label: t('docsSelfHosting.push.title') },
           { id: 'smart-system', label: t('docsSelfHosting.smartSystem.title') },
           { id: 'secure-browser', label: t('docsSelfHosting.secureBrowser.title') },
+          { id: 'einvoice-toolchain', label: t('docsSelfHosting.einvoiceToolchain.title') },
         ]}
       />
 
@@ -653,6 +654,28 @@ export function SelfHostingDocs() {
             <p className="text-sm leading-6">{t(`docsSelfHosting.secureBrowser.${hinweis}`)}</p>
           </div>
         ))}
+      </section>
+
+      <section aria-labelledby="einvoice-toolchain" className="msm-card mb-10 p-5 sm:p-6">
+        <div className="flex items-start gap-3">
+          <FileArchive className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
+          <div>
+            <h2 id="einvoice-toolchain" className={`${SPRUNGZIEL_ABSTAND} font-headline text-headline-md text-on-surface`}>
+              {t('docsSelfHosting.einvoiceToolchain.title')}
+            </h2>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-on-surface-variant">
+              {t('docsSelfHosting.einvoiceToolchain.intro')}
+            </p>
+          </div>
+        </div>
+        <dl className="mt-5 grid gap-px overflow-hidden rounded-xl border border-outline-variant bg-outline-variant md:grid-cols-2">
+          {(['packages', 'pinned', 'runtime', 'fallback'] as const).map(item => (
+            <div key={item} className="bg-surface-container p-4">
+              <dt className="text-sm font-semibold text-on-surface">{t(`docsSelfHosting.einvoiceToolchain.${item}.title`)}</dt>
+              <dd className="mt-1 text-sm leading-6 text-on-surface-variant">{t(`docsSelfHosting.einvoiceToolchain.${item}.body`)}</dd>
+            </div>
+          ))}
+        </dl>
       </section>
 
       <aside className="mb-8 flex gap-3 rounded-xl border border-status-warning/30 bg-status-warning/10 p-4 text-status-warning" aria-labelledby="database-compatibility">

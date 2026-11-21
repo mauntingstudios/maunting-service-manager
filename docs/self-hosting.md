@@ -247,6 +247,16 @@ The documents module edits texts together in realtime. The Node process `docs-si
 
 ---
 
+## E-Invoice Toolchain (Factur-X / PDF/A-3 and KoSIT Validator)
+
+For the native shop, `install.sh` and `update.sh` provision the system tools required to embed Factur-X CII XML into PDF/A-3b containers and validate XRechnung documents:
+
+- **System packages (`apt-get`):** `ghostscript`, `default-jre-headless` (Java 11+), `unzip`, and `icc-profiles-free`.
+- **Pinned artifacts (`backend/scripts/fetch_einvoice_toolchain.py`):** Installs SHA-256-verified releases of the KoSIT Validator (`v1.6.3`), XRechnung `3.0.2` validation configuration (`v2026-08-31`), and veraPDF Greenfield CLI (`1.30.4`) under `/opt/msm/backend/tools/einvoice/` during setup and updates. Archive extraction rejects path traversal and symlinks.
+- **No runtime downloads & fail-closed reporting:** The panel never downloads binaries during runtime. In air-gapped environments, setup/updates emit a warning and continue; the shop still issues human-readable PDFs alongside XRechnung XML, and never claims PDF/A-3 compliance unless veraPDF validates the output (`GET /api/shop/admin/einvoice-toolchain`, `POST /api/shop/admin/invoices/{id}/validate`).
+
+---
+
 ## Maintenance & Updates
 
 ### Upgrading the Control Plane

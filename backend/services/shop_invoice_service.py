@@ -27,7 +27,12 @@ from schemas.shop import (
     ShopInvoiceResponse,
     ShopInvoiceSummaryResponse,
 )
-from services import shop_invoice_pdf, shop_invoice_xml, shop_seller_settings_service
+from services import (
+    shop_einvoice_toolchain_service,
+    shop_invoice_pdf,
+    shop_invoice_xml,
+    shop_seller_settings_service,
+)
 
 
 class InvoiceError(ValueError):
@@ -188,7 +193,7 @@ def ensure_invoice_for_order(db: Session, order: ShopOrder) -> ShopInvoice | Non
     rechnung.xml_text = xml_text
     rechnung.xml_sha256 = _hash(xml_text.encode("utf-8"))
 
-    pdf = shop_invoice_pdf.build_invoice_pdf(rechnung, zeilen)
+    pdf = _finalize_invoice_pdf(rechnung, zeilen, titel=f"Rechnung {rechnung.number}")
     rechnung.pdf_bytes = pdf
     rechnung.pdf_sha256 = _hash(pdf)
 
@@ -203,6 +208,31 @@ def ensure_invoice_for_order(db: Session, order: ShopOrder) -> ShopInvoice | Non
 
 def _hash(daten: bytes) -> str:
     return hashlib.sha256(daten).hexdigest()
+
+
+def _finalize_invoice_pdf(
+    invoice: ShopInvoice,
+    lines: list[ShopInvoiceLine],
+    *,
+    titel: str,
+    pdf_titel: str = "Rechnung",
+    referenz: str | None = None,
+    original_number: str | None = None,
+) -> bytes:
+    """Erzeugt das PDF und bettet Factur-X CII ein, wenn die Toolchain bereit ist."""
+    plain_pdf = shop_invoice_pdf.build_invoice_pdf(
+        invoice, lines, titel=pdf_titel, referenz=referenz
+    )
+    facturx_xml = shop_invoice_xml.build_facturx_cii_xml(
+        invoice, lines, original_number=original_number
+    )
+    final_pdf, _pdfa3_ok = shop_einvoice_toolchain_service.build_facturx_pdfa3(
+        plain_pdf,
+        facturx_xml,
+        title=titel,
+        document_type="INVOICE",
+    )
+    return final_pdf
 
 
 def credit_invoice(db: Session, invoice: ShopInvoice, reason: str) -> ShopInvoice:
@@ -288,8 +318,13 @@ def credit_invoice(db: Session, invoice: ShopInvoice, reason: str) -> ShopInvoic
     )
     gutschrift.xml_text = xml_text
     gutschrift.xml_sha256 = _hash(xml_text.encode("utf-8"))
-    pdf = shop_invoice_pdf.build_invoice_pdf(
-        gutschrift, kopien, titel="Gutschrift", referenz=invoice.number
+    pdf = _finalize_invoice_pdf(
+        gutschrift,
+        kopien,
+        titel=f"Gutschrift {gutschrift.number}",
+        pdf_titel="Gutschrift",
+        referenz=invoice.number,
+        original_number=invoice.number,
     )
     gutschrift.pdf_bytes = pdf
     gutschrift.pdf_sha256 = _hash(pdf)

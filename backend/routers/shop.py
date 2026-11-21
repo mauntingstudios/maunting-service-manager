@@ -32,12 +32,15 @@ from schemas.shop import (
     ShopCatalogPlan,
     ShopCheckoutResponse,
     ShopCreditNoteCreate,
+    ShopEinvoiceToolchainStatusResponse,
     ShopEntitlementResponse,
     ShopInvoiceResponse,
     ShopInvoiceSummaryResponse,
+    ShopInvoiceValidationResponse,
     ShopOrderCreate,
     ShopOrderResponse,
     ShopPaymentEventResponse,
+    ShopPdfa3ValidationResult,
     ShopPlanResponse,
     ShopPlanUpdate,
     ShopPlanWrite,
@@ -50,11 +53,13 @@ from schemas.shop import (
     ShopStripeKeysUpdate,
     ShopStripeStatus,
     ShopSubscriptionResponse,
+    ShopXRechnungValidationResult,
 )
 from services import (
     audit_service,
     permission_service,
     shop_catalog_service,
+    shop_einvoice_toolchain_service,
     shop_fulfillment_service,
     shop_invoice_export_service,
     shop_invoice_service,
@@ -809,3 +814,41 @@ def list_admin_webhooks(
         )
         for evt in events
     ]
+
+
+@router.get(
+    "/admin/einvoice-toolchain",
+    response_model=ShopEinvoiceToolchainStatusResponse,
+)
+def get_einvoice_toolchain_status(
+    _: User = Depends(require_global("panel.settings.read")),
+) -> ShopEinvoiceToolchainStatusResponse:
+    """Meldet den Status der installierten E-Rechnungs-Toolchain."""
+    return ShopEinvoiceToolchainStatusResponse(
+        **shop_einvoice_toolchain_service.toolchain_status()
+    )
+
+
+@router.post(
+    "/admin/invoices/{invoice_id}/validate",
+    response_model=ShopInvoiceValidationResponse,
+)
+def validate_admin_invoice(
+    invoice_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_global("panel.settings.read")),
+    __: None = Depends(verify_csrf),
+) -> ShopInvoiceValidationResponse:
+    """Prueft gespeichertes XML via KoSIT-Validator und PDF via veraPDF."""
+    rechnung = db.query(ShopInvoice).filter(ShopInvoice.id == invoice_id).first()
+    if rechnung is None:
+        raise HTTPException(status_code=404, detail="Rechnung nicht gefunden")
+
+    xrechnung = shop_einvoice_toolchain_service.validate_xrechnung_xml(rechnung.xml_text)
+    pdfa3 = shop_einvoice_toolchain_service.validate_pdfa3(rechnung.pdf_bytes)
+    return ShopInvoiceValidationResponse(
+        invoice_id=rechnung.id,
+        invoice_number=rechnung.number,
+        xrechnung=ShopXRechnungValidationResult(**xrechnung),
+        pdfa3=ShopPdfa3ValidationResult(**pdfa3),
+    )

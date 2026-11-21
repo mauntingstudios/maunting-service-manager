@@ -984,6 +984,17 @@ su - msm -c "
     python3 scripts/fetch_embedding_model.py
 " 2>&1 | tee -a "$LOG_FILE" || warn "Embeddingmodell nicht verfuegbar - KI-Gedaechtnis laeuft ohne Vektoren."
 
+if ! command -v gs &>/dev/null || ! command -v java &>/dev/null || ! command -v unzip &>/dev/null; then
+    apt-get install -y -qq ghostscript default-jre-headless unzip icc-profiles-free 2>/dev/null || true
+fi
+
+log "Stelle E-Rechnungs-Toolchain bereit (KoSIT-Validator & veraPDF)..."
+su - msm -c "
+    cd $MSM_DIR/backend
+    source venv/bin/activate
+    python3 scripts/fetch_einvoice_toolchain.py
+" 2>&1 | tee -a "$LOG_FILE" || warn "E-Rechnungs-Toolchain nicht verfuegbar - PDF/A-3-Validierung deaktiviert."
+
 
 # ── 3-User-Privilegientrennung & Kernel/Systemd/DB-Härten sicherstellen ──
 if ! command -v setfacl &>/dev/null || ! command -v quota &>/dev/null; then

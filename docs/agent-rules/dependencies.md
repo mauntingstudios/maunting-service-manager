@@ -991,3 +991,63 @@ Exit-Plan:
   weiter (Rohdurchreichen nach Magic-Pruefung), HEIC/AVIF/TIFF/BMP werden mit
   einem benannten Fehler abgewiesen, PDF/Office auf den Textpfad reduziert.
   Die Fassade bleibt; kein Router und kein Frontend muss angefasst werden.
+
+### E-Rechnungs-Toolchain: Ghostscript, OpenJDK Headless, KoSIT-Validator & veraPDF
+
+Zweck:
+  Erzeugt fuer Shop-Rechnungen und Gutschriften PDF/A-3b-Container mit
+  eingebettetem Factur-X-CII-XML und prueft ausgestelltes XRechnung-XML sowie
+  PDF/A-3b-Dateien gegen die offiziellen Regelwerke.
+
+Notwendigkeit:
+  Python allein und `pypdf` koennen weder PDF-Fonts/Farbprofile vollstaendig
+  in konformes PDF/A-3b mit XMP-Erweiterungsschemata umwandeln noch die
+  offiziellen KoSIT-XRechnung-Schematron-Regeln oder ISO-19005-3-Pruefregeln
+  abbilden. Ohne reale Pruefung durch veraPDF darf das System keine
+  PDF/A-3-Konformitaet behaupten.
+
+Security:
+  Keine Server-Credentials, keine Datenbank-Secrets, keine Runtime-Netzaufrufe.
+  Die Downloads (`validator-1.6.3-standalone.jar`,
+  `xrechnung-3.0.2-validator-configuration-2026-08-31.zip`,
+  `verapdf-greenfield-1.30.4-installer.zip`) passieren ausschliesslich in
+  `install.sh`/`update.sh` ueber `backend/scripts/fetch_einvoice_toolchain.py`
+  mit gepinnten Versionen, strenger SHA-256-Pruefung und Zip-Slip-/Symlink-Schutz.
+  Zur Laufzeit startet `shop_einvoice_toolchain_service.py` Subprozesse nur mit
+  expliziter Argumentliste (`shell=False`), Timeout (45s) und kurzlebigen
+  `TemporaryDirectory`-Arbeitsordnern.
+
+Wartung & Advisories:
+  `ghostscript`, `default-jre-headless`, `unzip` und `icc-profiles-free` kommen
+  aus den Debian/Ubuntu-Systempaketen und erhalten dort Sicherheitsupdates.
+  KoSIT-Validator (v1.6.3), KoSIT-XRechnung-Konfiguration (v2026-08-31) und
+  veraPDF Greenfield (1.30.4) werden bei gepinnten Release-Updates nach Pruefung
+  der Checksummen und Changelogs angehoben. Offene CVEs werden im Betrieb durch
+  isolierten Prozessstart pro Beleg ohne persistente Daemons begrenzt.
+
+Transitive Flaeche, API & Bundle:
+  Keine neuen Python- oder npm-Abhaengigkeiten. Die Systemwerkzeuge belegen auf
+  dem Host rund 300 MB (Headless JRE + Ghostscript + veraPDF/KoSIT) ausserhalb
+  des Python-`venv`.
+
+Lizenz:
+  Ghostscript (AGPL-3.0, kompatibel mit MSM AGPL-3.0), OpenJDK (GPLv2+CE),
+  KoSIT Validator (Apache-2.0), KoSIT XRechnung Config (Apache-2.0),
+  veraPDF Greenfield (GPLv3+/MPLv2+).
+
+Kapselung:
+  Ausschliesslich `backend/services/shop_einvoice_toolchain_service.py` kennt
+  Pfade, PostScript-Definitionen und CLI-Parameter. `shop_invoice_service.py`
+  und der Shop-Router nutzen nur die Fassadenfunktionen `toolchain_status`,
+  `build_facturx_pdfa3`, `validate_xrechnung_xml` und `validate_pdfa3`.
+
+Entfernbarkeit / Exit-Plan:
+  Fehlen Werkzeuge (z. B. Offline-Install oder fehlende JVM), liefert das Panel
+  weiterhin das schlichte lesbare Rechnungs-PDF plus XRechnung-XML und meldet
+  im Status/Pruefendpunkt explizit `available=False` / `pdfa3_ready=False`.
+  Router, Datenbankschema und Downloadpfade funktionieren ohne Umbau weiter.
+
+Alternativen:
+  Reine Python-PDF-Bibliotheken (z. B. ReportLab/WeasyPrint/factur-x) wurden
+  geprueft, liefern aber ohne veraPDF/KoSIT keinen pruefbaren Nachweis fuer
+  PDF/A-3b und XRechnung-3.0-Schematron.

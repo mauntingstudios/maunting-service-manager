@@ -293,6 +293,7 @@ The bootstrap installer automates:
 - LiveKit sidecar for audio and video messenger calls
 - Local Node Agent and Guardian monitoring daemon
 - Caddy reverse proxy with automated Let's Encrypt TLS provisioning
+- E-invoice toolchain (Ghostscript, headless Java, SHA-256-verified KoSIT XRechnung validator and veraPDF)
 - Systemd service configurations and automated update timers
 
 ### Post-Installation Steps

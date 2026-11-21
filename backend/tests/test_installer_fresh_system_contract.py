@@ -333,3 +333,27 @@ def test_update_meldet_eine_site_ohne_cache_regeln() -> None:
     assert 'grep -q "root \\* /opt/msm/frontend/dist"' in block
     assert '! grep -q "handle /assets/\\*"' in block
     assert "install.sh erneut ausfuehren" in block
+
+
+def test_installer_and_updater_provision_einvoice_toolchain() -> None:
+    installer = _installer()
+    updater = (ROOT / "update.sh").read_text(encoding="utf-8")
+
+    assert "\r" not in installer
+    assert "\r" not in updater
+
+    base_packages = installer.split('log "Installiere Basis-Pakete..."', 1)[1].split(
+        "# ── Node.js 20", 1
+    )[0]
+    for package in ("ghostscript", "default-jre-headless", "unzip", "icc-profiles-free"):
+        assert package in base_packages, f"install.sh Basis-Pakete fehlen: {package}"
+        assert package in updater, f"update.sh Nachinstallation fehlt: {package}"
+
+    assert "python3 scripts/fetch_einvoice_toolchain.py" in installer
+    assert "python3 scripts/fetch_einvoice_toolchain.py" in updater
+    assert installer.index("python3 scripts/fetch_embedding_model.py") < installer.index(
+        "python3 scripts/fetch_einvoice_toolchain.py"
+    )
+    assert updater.index("python3 scripts/fetch_embedding_model.py") < updater.index(
+        "python3 scripts/fetch_einvoice_toolchain.py"
+    )

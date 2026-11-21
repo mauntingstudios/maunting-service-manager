@@ -335,6 +335,38 @@ class ShopServerSubscriptionResponse(BaseModel):
     slots: int | None = None
 
 
+class ShopEinvoiceToolchainStatusResponse(BaseModel):
+    ghostscript: bool
+    java: bool
+    kosit_validator: bool
+    kosit_config: bool
+    verapdf: bool
+    srgb_icc: bool
+    pdfa3_ready: bool
+    xrechnung_validation_ready: bool
+    facturx_certified_ready: bool
+
+
+class ShopXRechnungValidationResult(BaseModel):
+    available: bool
+    valid: bool
+    errors: list[str] = Field(default_factory=list)
+
+
+class ShopPdfa3ValidationResult(BaseModel):
+    available: bool
+    valid: bool
+    flavour: str = "3b"
+    errors: list[str] = Field(default_factory=list)
+
+
+class ShopInvoiceValidationResponse(BaseModel):
+    invoice_id: int
+    invoice_number: str
+    xrechnung: ShopXRechnungValidationResult
+    pdfa3: ShopPdfa3ValidationResult
+
+
 class ShopCatalogPlan(BaseModel):
     """Oeffentliche Sicht: keine Node-/Rollen-IDs, nur was der Shop braucht."""
 

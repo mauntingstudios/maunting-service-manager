@@ -2516,6 +2516,17 @@ anderen auszuliefern.
 
 ---
 
+## E-Rechnungs-Toolchain (Factur-X / PDF/A-3 und KoSIT-Validator)
+
+Für den nativen Shop installieren `install.sh` und `update.sh` Systemwerkzeuge für
+PDF/A-3b (Factur-X CII) und die offizielle XRechnung-Prüfung:
+
+- **Systempakete (`apt-get`):** `ghostscript`, `default-jre-headless` (Java 11+), `unzip` und `icc-profiles-free` (sRGB-ICC-Profil für den PDF/A-3-OutputIntent).
+- **Gepinnte Werkzeuge (`backend/scripts/fetch_einvoice_toolchain.py`):** Lädt während Installation und Update die fest gepinnten Versionen von KoSIT Validator (`v1.6.3`), KoSIT XRechnung-Konfiguration (`3.0.2`, Stand `v2026-08-31`) und veraPDF Greenfield CLI (`1.30.4`) unter `/opt/msm/backend/tools/einvoice/` herunter, prüft jede Datei per SHA-256 und schützt beim Entpacken gegen Zip-Slip und Symlinks.
+- **Kein Download im laufenden Betrieb:** Das Backend lädt zur Laufzeit niemals Archive aus dem Internet nach. Auf Offline-Systemen schließt der Lauf trotzdem mit einer Warnung ab; das Panel stellt dann weiter das schlichte lesbare PDF neben dem XRechnung-XML bereit und meldet unter `GET /api/shop/admin/einvoice-toolchain` sowie `POST /api/shop/admin/invoices/{id}/validate` ausdrücklich fehlende PDF/A-3-Bereitschaft, statt Konformität zu behaupten.
+
+---
+
 ## Aktualität dieser Dokumentation
 
 Änderungen an Bootstrap, `install.sh`, `update.sh`, Node-Enrollment,

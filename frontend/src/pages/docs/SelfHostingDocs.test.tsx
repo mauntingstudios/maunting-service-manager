@@ -232,4 +232,17 @@ describe('SelfHostingDocs', () => {
     renderPage()
     expect(screen.getByRole('heading', { name: 'Lokale und eigene KI-Endpunkte (Custom Provider)' })).toBeInTheDocument()
   })
+
+  it('dokumentiert E-Rechnungs-Toolchain, SHA-256-Pinning und Offline-Fallback', async () => {
+    renderPage()
+
+    expect(document.querySelector('a[href="#einvoice-toolchain"]')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'E-invoice toolchain (PDF/A-3 and XRechnung)' })).toBeInTheDocument()
+    expect(screen.getByText(/ghostscript, default-jre-headless/i)).toBeInTheDocument()
+    expect(screen.getByText(/never claims PDF\/A-3 compliance/i)).toBeInTheDocument()
+
+    await i18n.changeLanguage('de')
+    renderPage()
+    expect(screen.getByRole('heading', { name: 'E-Rechnungs-Toolchain (PDF/A-3 und XRechnung)' })).toBeInTheDocument()
+  })
 })
