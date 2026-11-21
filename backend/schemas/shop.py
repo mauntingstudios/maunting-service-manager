@@ -285,6 +285,9 @@ class ShopEntitlementResponse(BaseModel):
     kind: EntitlementKind
     label: str
     status: EntitlementStatus
+    server_id: int | None = None
+    provisioning_status: str | None = None
+    provisioning_error: str | None = None
     created_at: datetime
 
 

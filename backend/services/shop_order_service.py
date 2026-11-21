@@ -239,6 +239,11 @@ def mark_demo_paid(db: Session, order: ShopOrder) -> ShopOrder:
         db, order, provider="demo", reference=f"demo-{order.number}"
     )
     db.commit()
+    from services import shop_fulfillment_service
+
+    shop_fulfillment_service.sync_order_entitlements(
+        db, order.id, origin="system"
+    )
     db.refresh(order)
     return order
 
@@ -645,5 +650,8 @@ def entitlement_response(row: ShopEntitlement) -> ShopEntitlementResponse:
         kind=row.kind,
         label=row.label,
         status=row.status,
+        server_id=row.server_id,
+        provisioning_status=row.provisioning_status,
+        provisioning_error=row.provisioning_error,
         created_at=row.created_at,
     )

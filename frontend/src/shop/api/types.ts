@@ -62,8 +62,9 @@ export interface Entitlement {
   id: string
   art: 'server' | 'rolle' | 'addon'
   bezeichnung: string
-  status: 'active' | 'suspended'
+  status: 'active' | 'suspended' | 'revoked'
   serverId?: number
+  provisioningStatus?: string | null
 }
 
 export interface PaymentMethod {

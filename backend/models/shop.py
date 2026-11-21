@@ -315,8 +315,7 @@ class ShopEntitlement(Base):
     """Freischaltung aus einer bezahlten Bestellung (Server-Spec oder Rolle).
 
     Eine Zeile ist die Quelle der Wahrheit; Rollenvergabe und Server-Anlage
-    lesen daraus. Bis Provisionierung und Rollenvergabe gebaut sind, existiert
-    nur der Anspruch, keine Wirkung.
+    lesen daraus und halten ihren erreichten Stand hier fest.
     """
 
     __tablename__ = "shop_entitlements"
@@ -327,6 +326,11 @@ class ShopEntitlement(Base):
         CheckConstraint(
             "status IN ('active', 'suspended', 'revoked')",
             name="ck_shop_entitlements_status",
+        ),
+        CheckConstraint(
+            "provisioning_status IS NULL OR provisioning_status IN "
+            "('pending', 'provisioning', 'ready', 'suspended', 'revoked', 'failed')",
+            name="ck_shop_entitlements_provisioning_status",
         ),
     )
 
@@ -353,8 +357,20 @@ class ShopEntitlement(Base):
     role_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("roles.id", ondelete="SET NULL"), nullable=True
     )
+    server_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("servers.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    granted_role_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("roles.id", ondelete="SET NULL"), nullable=True
+    )
     status: Mapped[str] = mapped_column(
         String(16), default="active", nullable=False, index=True
+    )
+    provisioning_status: Mapped[str | None] = mapped_column(
+        String(24), nullable=True
+    )
+    provisioning_error: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
     )
     ram_mb: Mapped[int | None] = mapped_column(Integer, nullable=True)
     cpu: Mapped[int | None] = mapped_column(Integer, nullable=True)

@@ -40,6 +40,7 @@ from schemas.shop import (
 from services import (
     audit_service,
     shop_catalog_service,
+    shop_fulfillment_service,
     shop_invoice_service,
     shop_order_service,
     shop_seller_settings_service,
@@ -196,7 +197,7 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)) -> dic
     except stripe_service.StripeSignatureError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     try:
-        status, _ = shop_order_service.handle_payment_event(db, ereignis)
+        status, order_id = shop_order_service.handle_payment_event(db, ereignis)
         db.commit()
     except shop_order_service.ShopOrderError as exc:
         db.rollback()
@@ -204,6 +205,11 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)) -> dic
     except IntegrityError:
         db.rollback()
         status = "duplicate"
+        order_id = None
+    if status == "processed" and order_id is not None:
+        shop_fulfillment_service.sync_order_entitlements(
+            db, order_id, origin="external"
+        )
     return {"status": status}
 
 
@@ -397,6 +403,25 @@ def list_my_entitlements(
         shop_order_service.entitlement_response(row)
         for row in shop_order_service.list_entitlements(db, user.id)
     ]
+
+
+@router.post(
+    "/entitlements/{entitlement_id}/sync",
+    response_model=ShopEntitlementResponse,
+)
+def sync_entitlement_admin(
+    entitlement_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_global("panel.settings.write")),
+    __: None = Depends(verify_csrf),
+) -> ShopEntitlementResponse:
+    """Synchronisiert ein Entitlement (z. B. Retry nach behobenem Fehler)."""
+    entitlement = shop_fulfillment_service.sync_entitlement(
+        db, entitlement_id, origin="direct"
+    )
+    if entitlement is None:
+        raise HTTPException(status_code=404, detail="Entitlement nicht gefunden")
+    return shop_order_service.entitlement_response(entitlement)
 
 
 # ── Panel: Tarife verwalten ──────────────────────────────────────────────

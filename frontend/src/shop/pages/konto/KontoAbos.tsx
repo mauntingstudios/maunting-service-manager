@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { Badge, Zustandsflaeche } from '@maunting/ui'
 import { shopApi } from '../../api/shopApi'
@@ -91,11 +92,39 @@ export function KontoAbos() {
                     : t('shop.konto.abos.artAddon')}
               </p>
             </div>
-            <Badge variant={entitlement.status === 'active' ? 'success' : 'warning'}>
-              {entitlement.status === 'active'
-                ? t('shop.konto.status.entitlementActive')
-                : t('shop.konto.status.entitlementSuspended')}
-            </Badge>
+            <div className="flex flex-wrap items-center gap-2">
+              {entitlement.art === 'server' &&
+                entitlement.serverId != null &&
+                entitlement.status === 'active' && (
+                  <Link
+                    to={`/servers/${entitlement.serverId}`}
+                    className="rounded-lg border border-primary/30 bg-primary/10 px-3 py-1 text-xs font-medium text-primary transition-colors hover:bg-primary/20"
+                  >
+                    {t('shop.konto.abos.serverOeffnen')}
+                  </Link>
+                )}
+              {entitlement.status === 'active' &&
+                entitlement.provisioningStatus === 'failed' && (
+                  <Badge variant="destructive">
+                    {t('shop.konto.abos.bereitstellungFehlgeschlagen')}
+                  </Badge>
+                )}
+              <Badge
+                variant={
+                  entitlement.status === 'active'
+                    ? 'success'
+                    : entitlement.status === 'suspended'
+                      ? 'warning'
+                      : 'default'
+                }
+              >
+                {entitlement.status === 'active'
+                  ? t('shop.konto.status.entitlementActive')
+                  : entitlement.status === 'suspended'
+                    ? t('shop.konto.status.entitlementSuspended')
+                    : t('shop.konto.status.entitlementRevoked')}
+              </Badge>
+            </div>
           </div>
         ))}
       </div>

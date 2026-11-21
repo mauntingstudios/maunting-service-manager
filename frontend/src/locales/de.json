@@ -6634,7 +6634,9 @@
         "entitlements": "Freigeschaltet",
         "artServer": "Server",
         "artRolle": "Rolle",
-        "artAddon": "Add-on"
+        "artAddon": "Add-on",
+        "serverOeffnen": "Server öffnen",
+        "bereitstellungFehlgeschlagen": "Bereitstellung fehlgeschlagen"
       },
       "status": {
         "draft": "Entwurf",
@@ -6651,7 +6653,8 @@
         "aboPastDue": "Zahlung überfällig",
         "aboCancelled": "Gekündigt",
         "entitlementActive": "Aktiv",
-        "entitlementSuspended": "Gesperrt"
+        "entitlementSuspended": "Gesperrt",
+        "entitlementRevoked": "Widerrufen"
       }
     },
     "serverAbo": {

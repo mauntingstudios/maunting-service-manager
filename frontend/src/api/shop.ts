@@ -199,6 +199,9 @@ export interface ShopEntitlementDto {
   kind: 'server' | 'role' | 'addon'
   label: string
   status: 'active' | 'suspended' | 'revoked'
+  server_id: number | null
+  provisioning_status: string | null
+  provisioning_error: string | null
   created_at: string
 }
 

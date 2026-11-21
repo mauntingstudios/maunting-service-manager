@@ -51,8 +51,13 @@ def _validate_plan_values(db: Session, values: dict[str, Any]) -> None:
         raise ShopConfigurationError("Zugeordnete Node existiert nicht")
 
     role_id = values.get("role_id")
-    if role_id is not None and db.query(Role).filter(Role.id == role_id).first() is None:
-        raise ShopConfigurationError("Zugeordnete Rolle existiert nicht")
+    if role_id is not None:
+        from services import shop_fulfillment_service
+
+        try:
+            shop_fulfillment_service.ensure_shop_role_allowed(db, role_id)
+        except shop_fulfillment_service.ShopRoleEscalationError as exc:
+            raise ShopConfigurationError(str(exc)) from exc
 
     for included_key, max_key, label in (
         ("ram_included_mb", "ram_max_mb", "RAM"),

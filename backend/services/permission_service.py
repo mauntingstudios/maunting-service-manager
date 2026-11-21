@@ -20,6 +20,7 @@ from models import (
     RolePermission,
     Server,
     ServerPermission,
+    ShopEntitlement,
     Team,
     TeamMember,
     TeamMemberRole,
@@ -83,19 +84,26 @@ HOSTER_CUSTOMERS_VIEW_KEY = "servers.hoster_customers.view"
 
 
 def hoster_customer_server_ids(db: Session) -> set[int]:
-    """Server, die zu einem Shop-Vertrag gehoeren — statusagnostisch.
+    """Server, die zu einem Hoster- oder Shop-Vertrag gehoeren — statusagnostisch.
 
     Auch suspendierte oder in Kuendigung befindliche Vertraege sind
-    Kundendaten. `ondelete=SET NULL` auf `hoster_services.server_id` sorgt
-    dafuer, dass geloeschte Server hier von selbst verschwinden.
+    Kundendaten. `ondelete=SET NULL` auf `hoster_services.server_id` und
+    `shop_entitlements.server_id` sorgt dafuer, dass geloeschte Server hier von
+    selbst verschwinden.
     """
-    rows = (
+    hoster_rows = (
         db.query(HosterService.server_id)
         .filter(HosterService.server_id.isnot(None))
         .distinct()
         .all()
     )
-    return {r[0] for r in rows}
+    shop_rows = (
+        db.query(ShopEntitlement.server_id)
+        .filter(ShopEntitlement.server_id.isnot(None))
+        .distinct()
+        .all()
+    )
+    return {r[0] for r in hoster_rows} | {r[0] for r in shop_rows}
 
 
 def is_hoster_customer_server(db: Session, server_id: int) -> bool:
@@ -104,7 +112,14 @@ def is_hoster_customer_server(db: Session, server_id: int) -> bool:
         .filter(HosterService.server_id == server_id)
         .first()
     )
-    return exists is not None
+    if exists is not None:
+        return True
+    shop_exists = (
+        db.query(ShopEntitlement.id)
+        .filter(ShopEntitlement.server_id == server_id)
+        .first()
+    )
+    return shop_exists is not None
 
 
 def is_hoster_service_user_for_server(db: Session, user_id: int, server_id: int) -> bool:
