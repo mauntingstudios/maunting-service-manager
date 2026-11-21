@@ -20,6 +20,7 @@ from models import (
     HosterService,
     OperationTask,
     Role,
+    ShopAddon,
     ShopEntitlement,
     ShopOrder,
     ShopOrderItem,
@@ -209,15 +210,16 @@ def _sync_customer_roles(
 
     # Koexistenz mit der Hoster-API: laufende Vertraege behalten ihre Rollen.
     hoster_rows = (
-        db.query(HosterService, HosterProduct)
+        db.query(HosterService, HosterProduct, ShopAddon)
         .select_from(HosterService)
         .join(HosterIdentity, HosterIdentity.id == HosterService.identity_id)
         .outerjoin(HosterProduct, HosterProduct.id == HosterService.product_id)
+        .outerjoin(ShopAddon, ShopAddon.id == HosterService.addon_id)
         .filter(HosterIdentity.user_id == user.id)
         .all()
     )
-    for hoster_service, hoster_product in hoster_rows:
-        getragen = _borne_role(hoster_service, hoster_product)
+    for hoster_service, hoster_product, hoster_addon in hoster_rows:
+        getragen = _borne_role(hoster_service, hoster_product, hoster_addon)
         if getragen is not None:
             soll.add(getragen)
 

@@ -8,8 +8,9 @@ Hinweis auf die letzten vier Zeichen.
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 # ── Panel-Verwaltung ───────────────────────────────────────────────────────
@@ -87,6 +88,8 @@ class HosterServiceResponse(BaseModel):
     """Vertragszustand — ohne Node, Ports, Pfade oder Kundendaten."""
 
     external_service_id: str
+    item_kind: Literal["server", "addon"] = "server"
+    addon_slug: str | None = None
     desired_state: str
     status: str
     status_code: str | None
@@ -135,6 +138,63 @@ class HosterHandoffResponse(BaseModel):
 
     url: str
     expires_at: datetime
+
+
+class HosterApplyItem(BaseModel):
+    """Einzelposition im Hoster-API-v2-Batch (`server` oder eigenstaendiges `addon`)."""
+
+    external_service_id: str = Field(..., min_length=1, max_length=128)
+    kind: Literal["server", "addon"] = "server"
+    product_key: str | None = Field(None, min_length=1, max_length=128)
+    addon_slug: str | None = Field(None, min_length=1, max_length=64)
+    slots: int | None = Field(None, ge=1, le=1000)
+    desired_state: Literal["active", "suspended", "terminated"] | None = None
+
+    @model_validator(mode="after")
+    def _validate_item_fields(self) -> "HosterApplyItem":
+        if not self.external_service_id.strip():
+            raise ValueError("external_service_id darf nicht leer sein")
+        if self.kind == "server":
+            if self.addon_slug is not None:
+                raise ValueError("Server-Positionen akzeptieren kein addon_slug")
+        else:
+            if self.product_key is not None or self.slots is not None:
+                raise ValueError(
+                    "Add-on-Positionen akzeptieren weder product_key noch slots"
+                )
+        return self
+
+
+class HosterApplyRequest(BaseModel):
+    """Deklarativer Sammelauftrag der Hoster-API v2 (`POST /api/hoster/v1/apply`)."""
+
+    external_subject: str = Field(..., min_length=1, max_length=128)
+    desired_state: Literal["active", "suspended", "terminated"]
+    email: str | None = Field(None, max_length=255)
+    items: list[HosterApplyItem] = Field(..., min_length=1, max_length=50)
+
+    @model_validator(mode="after")
+    def _validate_unique_items(self) -> "HosterApplyRequest":
+        seen: set[str] = set()
+        for item in self.items:
+            key = item.external_service_id.strip()
+            if key in seen:
+                raise ValueError(f"Doppelte external_service_id im Batch: {key}")
+            seen.add(key)
+        return self
+
+
+class HosterApplyItemResult(HosterServiceResponse):
+    ok: bool = True
+    error_code: str | None = None
+
+
+class HosterApplyResponse(BaseModel):
+    external_subject: str
+    desired_state: Literal["active", "suspended", "terminated"]
+    sandbox: bool
+    correlation_id: str
+    items: list[HosterApplyItemResult]
 
 
 # ── Simulator ──────────────────────────────────────────────────────────────

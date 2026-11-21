@@ -33,9 +33,12 @@ from models import (
     HosterService,
     Role,
     Server,
+    ShopAddon,
+    ShopEntitlement,
     User,
 )
 from schemas import ServerCreate
+from schemas.hoster import HosterApplyRequest, HosterServiceResponse
 from services import audit_service, permission_service, role_service
 from services.actor_context import ActorContext
 from services.hoster_integration_service import (
@@ -156,6 +159,23 @@ def _server_name(external_service_id: str) -> str:
     return f"svc-{external_service_id}"[:128]
 
 
+def service_response(row: HosterService) -> HosterServiceResponse:
+    """Einheitliche Serialisierung eines HosterService ohne interne Details."""
+    return HosterServiceResponse(
+        external_service_id=row.external_service_id,
+        item_kind=row.item_kind,  # type: ignore[arg-type]
+        addon_slug=row.addon.slug if row.addon is not None else None,
+        desired_state=row.desired_state,
+        status=row.status,
+        status_code=row.status_code,
+        server_id=row.server_id,
+        task_id=row.task_id,
+        correlation_id=row.correlation_id,
+        terminate_after=row.terminate_after,
+        updated_at=row.updated_at,
+    )
+
+
 def get_service(
     db: Session, integration: HosterIntegration, external_service_id: str
 ) -> HosterService | None:
@@ -216,7 +236,11 @@ def _grant_customer_permissions(db: Session, service: HosterService) -> None:
     )
 
 
-def _borne_role(service: HosterService, product: HosterProduct | None) -> int | None:
+def _borne_role(
+    service: HosterService,
+    product: HosterProduct | None,
+    addon: ShopAddon | None = None,
+) -> int | None:
     """Welche Rolle dieser eine Vertrag gerade traegt — ``None``, wenn keine.
 
     `desired_state` allein reicht als Bedingung nicht. Ein neu angelegter
@@ -228,12 +252,17 @@ def _borne_role(service: HosterService, product: HosterProduct | None) -> int | 
     naechsten Vertrag desselben Kunden nachtraeglich doch vergeben. Deshalb
     zaehlt hier zusaetzlich der *erreichte* Zustand.
 
-    Fehlt das Produkt, gilt weiter, was diesem Vertrag zuletzt zugestanden
-    wurde: dass der Betreiber ein Produkt aufraeumt, darf einem zahlenden
-    Kunden nicht sein Kontingent nehmen.
+    Fehlt das Produkt bzw. Add-on, gilt weiter, was diesem Vertrag zuletzt
+    zugestanden wurde: dass der Betreiber ein Produkt aufraeumt, darf einem
+    zahlenden Kunden nicht sein Kontingent nehmen.
     """
     if service.desired_state != "active" or service.status not in ROLE_BEARING_STATUSES:
         return None
+    if getattr(service, "item_kind", "server") == "addon":
+        resolved_addon = addon if addon is not None else getattr(service, "addon", None)
+        if resolved_addon is None:
+            return service.granted_role_id
+        return resolved_addon.role_id
     if product is None:
         return service.granted_role_id
     return product.role_id
@@ -288,10 +317,11 @@ def _apply_customer_role(db: Session, service: HosterService) -> None:
     # damit ein Vertrag mit geloeschtem Produkt (`product_id` faellt auf NULL)
     # nicht aus der Betrachtung faellt und seine Rolle unentziehbar wird.
     zeilen = (
-        db.query(HosterService, HosterProduct)
+        db.query(HosterService, HosterProduct, ShopAddon)
         .select_from(HosterService)
         .join(HosterIdentity, HosterIdentity.id == HosterService.identity_id)
         .outerjoin(HosterProduct, HosterProduct.id == HosterService.product_id)
+        .outerjoin(ShopAddon, ShopAddon.id == HosterService.addon_id)
         .filter(HosterIdentity.user_id == user.id)
         .all()
     )
@@ -299,14 +329,31 @@ def _apply_customer_role(db: Session, service: HosterService) -> None:
     soll: set[int] = set()
     kandidaten: set[int] = set()
     eigene_rolle: int | None = None
-    for zeile, produkt in zeilen:
-        getragen = _borne_role(zeile, produkt)
+    for zeile, produkt, addon in zeilen:
+        getragen = _borne_role(zeile, produkt, addon)
         if zeile.id == service.id:
             eigene_rolle = getragen
         if getragen is not None:
             soll.add(getragen)
         if zeile.granted_role_id is not None:
             kandidaten.add(zeile.granted_role_id)
+
+    # Bidirektionale Koexistenz mit dem nativen Shop: laufende Shop-Entitlements
+    # behalten ihre globale Rolle, selbst wenn ein Hoster-Vertrag gekuendigt wird.
+    shop_role_rows = (
+        db.query(ShopEntitlement.role_id)
+        .filter(
+            ShopEntitlement.user_id == user.id,
+            ShopEntitlement.kind.in_(("role", "addon")),
+            ShopEntitlement.status == "active",
+            ShopEntitlement.role_id.isnot(None),
+        )
+        .all()
+    )
+    for (shop_role_id,) in shop_role_rows:
+        if shop_role_id is not None:
+            soll.add(shop_role_id)
+
     kandidaten |= soll
 
     aktuell = set(role_service.effective_user_role_ids(db, user))
@@ -395,6 +442,52 @@ def _lifecycle(
     service.task_id = result.get("task_id")
 
 
+def _resolve_active_addon(db: Session, addon_slug: str) -> ShopAddon:
+    slug = addon_slug.strip()
+    if not slug:
+        raise HosterConfigurationError("Add-on-Slug darf nicht leer sein")
+    addon = (
+        db.query(ShopAddon)
+        .filter(ShopAddon.slug == slug, ShopAddon.active.is_(True))
+        .first()
+    )
+    if addon is None:
+        raise HosterConfigurationError("Add-on ist unbekannt oder deaktiviert")
+    return addon
+
+
+def _validate_slots_for_product(product: HosterProduct | None, slots: int | None) -> None:
+    if slots is None:
+        return
+    if product is None:
+        raise HosterConfigurationError("Ohne aktives Produkt koennen keine Slots gesetzt werden")
+    from services import shop_slot_service
+
+    players = shop_slot_service.get_blueprint_players(product.game_type)
+    if players is None:
+        raise HosterConfigurationError(
+            "Dieser Blueprint unterstuetzt keine konfigurierbaren Spieler-Slots"
+        )
+    if not (players.min <= slots <= players.max):
+        raise HosterConfigurationError(
+            f"Spieler-Slots muessen zwischen {players.min} und {players.max} liegen"
+        )
+
+
+def _apply_slots_on_server(db: Session, server_id: int | None, slots: int | None) -> None:
+    if server_id is None or slots is None:
+        return
+    from services import shop_slot_service
+
+    server = db.query(Server).filter(Server.id == server_id).first()
+    if server is None:
+        return
+    try:
+        shop_slot_service.apply_server_slots(db, server, slots, commit_env=False)
+    except shop_slot_service.SlotConfigurationError as exc:
+        raise HosterConfigurationError(str(exc)) from exc
+
+
 def apply_desired_state(
     db: Session,
     *,
@@ -404,8 +497,10 @@ def apply_desired_state(
     external_subject: str,
     product_key: str | None,
     email: str | None = None,
+    slots: int | None = None,
+    correlation_id: str | None = None,
 ) -> HosterService:
-    """Bringt einen Vertrag in den vom Shop gewuenschten Zustand.
+    """Bringt einen Server-Vertrag in den vom Shop gewuenschten Zustand.
 
     Der Aufruf ist wiederholbar: derselbe `external_service_id` fuehrt immer
     denselben Vertrag weiter. Fehler werden am Vertrag festgehalten
@@ -417,6 +512,11 @@ def apply_desired_state(
     key = normalize_external_id(external_service_id, label="Service-Kennung")
 
     service = get_service(db, integration, key)
+    if service is not None and service.item_kind != "server":
+        raise HosterConfigurationError(
+            "Service-Kennung gehoert zu einem Add-on-Vertrag und kann nicht als Server genutzt werden"
+        )
+
     if service is None:
         if desired_state == "terminated":
             # Eine Kuendigung fuer einen nie angelegten Vertrag ist kein Fehler:
@@ -428,14 +528,17 @@ def apply_desired_state(
         if not product_key:
             raise HosterConfigurationError("Fuer einen neuen Service wird eine Produktkennung benoetigt")
         product = get_product(db, integration, product_key)
+        if desired_state != "terminated":
+            _validate_slots_for_product(product, slots)
         service = HosterService(
             integration_id=integration.id,
             external_service_id=key,
             identity_id=identity.id,
+            item_kind="server",
             product_id=product.id,
             desired_state=desired_state,
             status="pending",
-            correlation_id=str(uuid4()),
+            correlation_id=correlation_id or str(uuid4()),
         )
         db.add(service)
         try:
@@ -462,6 +565,8 @@ def apply_desired_state(
         # einem bereits laufenden Server bleiben eine bewusste Operator-Aktion,
         # weil sie den Server neu starten muessen.
         product = get_product(db, integration, product_key)
+        if desired_state != "terminated":
+            _validate_slots_for_product(product, slots)
         if service.product_id != product.id:
             # Die Beziehung setzen, nicht nur den Fremdschluessel: `product` ist
             # `lazy="joined"` und beim Laden dieses Vertrags bereits gefuellt.
@@ -472,6 +577,8 @@ def apply_desired_state(
             # bereits die des neuen vergibt. Genau daneben.
             service.product = product
             service.status_code = "product_changed_manual_resize_required"
+    elif desired_state != "terminated":
+        _validate_slots_for_product(service.product, slots)
 
     service.desired_state = desired_state
     service.updated_at = _now()
@@ -492,6 +599,7 @@ def apply_desired_state(
                 _set_status(service, "ready")
                 service.terminate_after = None
                 _grant_customer_permissions(db, service)
+            _apply_slots_on_server(db, service.server_id, slots)
             _apply_customer_role(db, service)
         elif desired_state == "suspended":
             # Gesperrt heisst: Server aus, Kundenrechte entzogen, Daten bleiben.
@@ -547,11 +655,243 @@ def apply_desired_state(
         service=service,
         action="hoster.service.applied",
         succeeded=True,
+        extra={"item_kind": service.item_kind},
     )
     db.commit()
     db.refresh(service)
     _notify(db, integration=integration, service=service)
     return service
+
+
+def _ensure_addon_role_allowed(
+    db: Session, *, integration: HosterIntegration, role_id: int | None
+) -> None:
+    if role_id is None:
+        return
+    ensure_role_is_delegatable(db, integration=integration, role_id=role_id)
+    from services import shop_fulfillment_service
+
+    try:
+        shop_fulfillment_service.ensure_shop_role_allowed(db, role_id)
+    except shop_fulfillment_service.ShopRoleEscalationError as exc:
+        raise HosterRoleEscalation(str(exc)) from exc
+
+
+def apply_addon_desired_state(
+    db: Session,
+    *,
+    integration: HosterIntegration,
+    external_service_id: str,
+    desired_state: str,
+    external_subject: str,
+    addon_slug: str | None,
+    email: str | None = None,
+    correlation_id: str | None = None,
+) -> HosterService:
+    """Bringt einen eigenstaendigen Add-on-Vertrag ohne Server in den Zielzustand."""
+    if desired_state not in DESIRED_STATES:
+        raise HosterConfigurationError("Unbekannter Zielzustand")
+    key = normalize_external_id(external_service_id, label="Service-Kennung")
+
+    service = get_service(db, integration, key)
+    if service is not None and service.item_kind != "addon":
+        raise HosterConfigurationError(
+            "Service-Kennung gehoert zu einem Server-Vertrag und kann nicht als Add-on genutzt werden"
+        )
+
+    if service is None:
+        if desired_state == "terminated":
+            raise HosterConfigurationError("Unbekannter Service")
+        identity = resolve_identity(
+            db, integration=integration, external_subject=external_subject, email=email
+        )
+        if not addon_slug:
+            raise HosterConfigurationError(
+                "Fuer ein neues Add-on wird ein addon_slug benoetigt"
+            )
+        addon = _resolve_active_addon(db, addon_slug)
+        service = HosterService(
+            integration_id=integration.id,
+            external_service_id=key,
+            identity_id=identity.id,
+            item_kind="addon",
+            addon_id=addon.id,
+            addon=addon,
+            desired_state=desired_state,
+            status="pending",
+            correlation_id=correlation_id or str(uuid4()),
+        )
+        db.add(service)
+        try:
+            db.flush()
+        except IntegrityError as exc:
+            db.rollback()
+            existing = get_service(db, integration, key)
+            if existing is None:
+                raise HosterConfigurationError("Add-on-Service konnte nicht angelegt werden") from exc
+            service = existing
+        else:
+            db.commit()
+            db.refresh(service)
+    elif addon_slug:
+        addon = _resolve_active_addon(db, addon_slug)
+        if service.addon_id != addon.id:
+            service.addon_id = addon.id
+            service.addon = addon
+
+    service.desired_state = desired_state
+    service.updated_at = _now()
+
+    try:
+        if desired_state == "active":
+            _ensure_addon_role_allowed(
+                db,
+                integration=integration,
+                role_id=service.addon.role_id if service.addon is not None else None,
+            )
+            _set_status(service, "ready")
+            service.status_code = None
+            service.terminate_after = None
+            _apply_customer_role(db, service)
+        elif desired_state == "suspended":
+            _apply_customer_role(db, service)
+            _set_status(service, "suspended")
+        else:
+            _apply_customer_role(db, service)
+            service.terminate_after = _now() + timedelta(
+                days=integration.terminate_grace_days
+            )
+            _set_status(service, "terminated")
+    except HosterRoleEscalation:
+        db.rollback()
+        _fail(db, integration=integration, service_id=service.id, code=ROLE_ESCALATION_CODE)
+        raise
+    except HosterConfigurationError:
+        db.rollback()
+        _fail(db, integration=integration, service_id=service.id, code="hoster_configuration_error")
+        raise
+    except Exception:
+        db.rollback()
+        logger.exception(
+            "Hoster-Add-on-Desired-State fehlgeschlagen (integration=%s)",
+            integration.slug,
+        )
+        _fail(db, integration=integration, service_id=service.id, code="hoster_internal_error")
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "hoster_internal_error",
+                "message": "errors.hoster_internal_error",
+            },
+        )
+
+    _record(
+        db,
+        integration=integration,
+        service=service,
+        action="hoster.service.applied",
+        succeeded=True,
+        extra={
+            "item_kind": "addon",
+            "addon_slug": service.addon.slug if service.addon is not None else None,
+        },
+    )
+    db.commit()
+    db.refresh(service)
+    _notify(db, integration=integration, service=service)
+    return service
+
+
+def apply_batch(
+    db: Session,
+    *,
+    integration: HosterIntegration,
+    payload: HosterApplyRequest,
+    idempotency_key: str | None = None,
+) -> tuple[str, list[HosterService]]:
+    """Pre-validiert und setzt einen Sammelauftrag aus Servern und Add-ons um."""
+    batch_correlation_id = str(uuid4())
+    _actor(db, integration, batch_correlation_id)
+
+    for item in payload.items:
+        key = normalize_external_id(item.external_service_id, label="Service-Kennung")
+        effective_state = item.desired_state or payload.desired_state
+        if effective_state not in DESIRED_STATES:
+            raise HosterConfigurationError("Unbekannter Zielzustand")
+
+        existing = get_service(db, integration, key)
+        if existing is not None and existing.item_kind != item.kind:
+            raise HosterConfigurationError(
+                f"hoster_item_kind_mismatch: Service '{key}' ist bereits vom Typ '{existing.item_kind}'"
+            )
+        if existing is None and effective_state == "terminated":
+            raise HosterConfigurationError("Unbekannter Service")
+
+        if item.kind == "server":
+            if item.product_key:
+                product = get_product(db, integration, item.product_key)
+            elif existing is not None:
+                product = existing.product
+            else:
+                raise HosterConfigurationError(
+                    "Fuer einen neuen Service wird eine Produktkennung benoetigt"
+                )
+            if effective_state != "terminated":
+                _validate_slots_for_product(product, item.slots)
+        else:
+            if item.addon_slug:
+                _resolve_active_addon(db, item.addon_slug)
+            elif existing is None:
+                raise HosterConfigurationError(
+                    "Fuer ein neues Add-on wird ein addon_slug benoetigt"
+                )
+
+    services: list[HosterService] = []
+    for item in payload.items:
+        effective_state = item.desired_state or payload.desired_state
+        if item.kind == "server":
+            svc = apply_desired_state(
+                db,
+                integration=integration,
+                external_service_id=item.external_service_id,
+                desired_state=effective_state,
+                external_subject=payload.external_subject,
+                product_key=item.product_key,
+                email=payload.email,
+                slots=item.slots,
+                correlation_id=batch_correlation_id,
+            )
+        else:
+            svc = apply_addon_desired_state(
+                db,
+                integration=integration,
+                external_service_id=item.external_service_id,
+                desired_state=effective_state,
+                external_subject=payload.external_subject,
+                addon_slug=item.addon_slug,
+                email=payload.email,
+                correlation_id=batch_correlation_id,
+            )
+        services.append(svc)
+
+    if idempotency_key:
+        audit_service.record_privileged_action(
+            db,
+            user_id=integration.service_user_id,
+            action="hoster.batch.applied",
+            target_type="hoster_integration",
+            target_id=integration.id,
+            details={
+                "integration": integration.slug,
+                "idempotency_key": idempotency_key[:128],
+                "item_count": len(services),
+            },
+            origin="external",
+            correlation_id=batch_correlation_id,
+        )
+        db.commit()
+
+    return batch_correlation_id, services
 
 
 def _error_code(exc: HTTPException) -> str:

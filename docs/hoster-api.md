@@ -80,10 +80,63 @@ curl -sS https://panel.example/api/hoster/v1/health \
 | Method | Endpoint | Purpose |
 |---|---|---|
 | `GET` | `/api/hoster/v1/health` | Validate integration API key without side effects |
-| `PUT` | `/api/hoster/v1/services/{external_service_id}` | Declare desired contract state (create or reconcile) |
+| `POST` | `/api/hoster/v1/apply` | Declare desired state across one or more servers and standalone add-ons in one batch |
+| `PUT` | `/api/hoster/v1/services/{external_service_id}` | Legacy alias for declaring desired state on a single server contract |
 | `GET` | `/api/hoster/v1/services/{external_service_id}` | Query current real-world status |
 | `POST` | `/api/hoster/v1/handoffs` | Generate single-use authenticated login handoff |
 | `GET` | `/api/hoster/handoff/{token}` | Public redirection consumed by customer's browser (no key required) |
+
+### `POST /api/hoster/v1/apply` (Hoster API v2)
+
+Applies the desired contract state for a customer subject and an array of server and standalone add-on `items` in a single idempotent request. Optionally supply an `Idempotency-Key` header for batch trace correlation.
+
+All items are validated upfront before any provisioning runs: unknown product keys, unknown or inactive `addon_slug` values, duplicate `external_service_id` entries in the batch, invalid slot limits, or kind mismatches return `422 Unprocessable` without partial provisioning.
+
+#### Request Body
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `external_subject` | `string` (1–128) | Yes | Customer ID from the billing platform. |
+| `desired_state` | `string` | Yes | Batch default state: `active`, `suspended`, or `terminated`. |
+| `email` | `string` (≤255) | No | Used only if a new panel user is created during initial provisioning. |
+| `items` | `array` (1–50) | Yes | List of server or standalone add-on items. |
+| `items[].external_service_id` | `string` (1–128) | Yes | Unique subscription or item reference per integration. |
+| `items[].kind` | `string` | No | `server` (default) or `addon`. Cannot be changed for an existing contract. |
+| `items[].product_key` | `string` (1–128) | For new `server` | Store product SKU (`kind: "server"` only). |
+| `items[].slots` | `integer` (1–1000) | No | Optional slot override for slot-capable server blueprints (`kind: "server"` only). |
+| `items[].addon_slug` | `string` (1–64) | For new `addon` | Slug of an active standalone shop add-on (`kind: "addon"` only). |
+| `items[].desired_state` | `string` | No | Per-item override (`active`, `suspended`, `terminated`). Defaults to batch `desired_state`. |
+
+#### Example Batch Call
+
+```bash
+curl -X POST https://panel.example/api/hoster/v1/apply \
+  -H "X-MSM-Hoster-Key: $MSM_HOSTER_KEY" \
+  -H "Idempotency-Key: order-9001-attempt-1" \
+  -H "Content-Type: application/json" \
+  -d '{
+        "external_subject": "CUST-1234",
+        "desired_state": "active",
+        "email": "customer@example.com",
+        "items": [
+          {
+            "external_service_id": "SVC-4711",
+            "kind": "server",
+            "product_key": "mc-8gb",
+            "slots": 24
+          },
+          {
+            "external_service_id": "ADDON-91",
+            "kind": "addon",
+            "addon_slug": "ai-pro"
+          }
+        ]
+      }'
+```
+
+#### Batch Response
+
+Returns `external_subject`, `desired_state`, `sandbox` (`true` for sandbox integrations), batch `correlation_id`, and per-item status objects (`ok`, `error_code`, and all standard service fields). Standalone add-on items transition directly to `status: "ready"` without creating a server (`server_id: null`).
 
 ### `PUT /api/hoster/v1/services/{external_service_id}`
 
@@ -119,6 +172,8 @@ curl -X PUT https://panel.example/api/hoster/v1/services/SVC-4711 \
 | Field | Type | Description |
 |---|---|---|
 | `external_service_id` | `string` | The external reference submitted by the store |
+| `item_kind` | `string` | Contract item kind (`server` or `addon`) |
+| `addon_slug` | `string \| null` | Slug of the bound standalone add-on when `item_kind` is `addon`, otherwise `null` |
 | `desired_state` | `string` | The latest registered desired target state |
 | `status` | `string` | Real-world state — see [State Machine](#state-machine) |
 | `status_code` | `string \| null` | Stable diagnostic code or failure reason, otherwise `null` |
@@ -205,8 +260,9 @@ When product mappings include a `role_id`, reaching `active` grants that global 
 | `node_not_found` | Mapped product references a nonexistent or decommissioned node. |
 | `install_directory_exists` | Residual files remain from an uncleaned previous installation. |
 | `install_update_already_running` | Another deployment or update task is actively executing for this instance. |
-| `hoster_configuration_error` | Assigned product, service user, or identity mapping is misconfigured. |
-| `hoster_role_escalation` | Product role grants permissions exceeding the service user's own authorization. Provisioning halts safely. |
+| `hoster_configuration_error` | Assigned product, add-on, service user, or identity mapping is misconfigured. |
+| `hoster_item_kind_mismatch` | Attempted to apply `addon` fields to an existing `server` contract or vice versa. |
+| `hoster_role_escalation` | Product or add-on role grants permissions exceeding the service user's own authorization or outside the customer allowlist. Provisioning halts safely. |
 | `hoster_internal_error` | Unexpected internal exception (detailed in panel backend logs). |
 | `product_changed_manual_resize_required` | Informational: Tier updated; hardware reallocations apply upon next instance restart. |
 

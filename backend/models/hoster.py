@@ -11,6 +11,7 @@ Handoff-Token nur als SHA-256-Hash.
 
 from datetime import datetime, timezone
 import hashlib
+from typing import TYPE_CHECKING
 
 from sqlalchemy import (
     Boolean,
@@ -26,6 +27,9 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from database import Base
+
+if TYPE_CHECKING:
+    from models.shop import ShopAddon
 
 
 def hash_token(value: str) -> str:
@@ -170,6 +174,10 @@ class HosterService(Base):
             name="ck_hoster_services_desired_state",
         ),
         CheckConstraint(
+            "item_kind IN ('server', 'addon')",
+            name="ck_hoster_services_item_kind",
+        ),
+        CheckConstraint(
             "status IN ('pending', 'provisioning', 'ready', 'suspended', "
             "'failed', 'terminating', 'terminated')",
             name="ck_hoster_services_status",
@@ -190,8 +198,12 @@ class HosterService(Base):
     identity_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("hoster_identities.id", ondelete="CASCADE"), nullable=False
     )
+    item_kind: Mapped[str] = mapped_column(String(16), default="server", nullable=False)
     product_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("hoster_products.id", ondelete="SET NULL"), nullable=True
+    )
+    addon_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("shop_addons.id", ondelete="SET NULL"), nullable=True
     )
     server_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("servers.id", ondelete="SET NULL"), nullable=True, index=True
@@ -226,6 +238,7 @@ class HosterService(Base):
 
     identity: Mapped["HosterIdentity"] = relationship("HosterIdentity", lazy="joined")
     product: Mapped["HosterProduct | None"] = relationship("HosterProduct", lazy="joined")
+    addon: Mapped["ShopAddon | None"] = relationship("ShopAddon", lazy="joined")
 
 
 class HosterHandoff(Base):

@@ -89,10 +89,36 @@ curl -sS https://panel.example/api/hoster/v1/health \
 | Methode | Pfad | Zweck |
 | --- | --- | --- |
 | `GET` | `/api/hoster/v1/health` | API-Key prüfen, ohne etwas zu ändern |
-| `PUT` | `/api/hoster/v1/services/{external_service_id}` | Gewünschten Vertragszustand setzen |
+| `POST` | `/api/hoster/v1/apply` | Gewünschten Zustand für Server und Add-ons gemeinsam setzen (v2) |
+| `PUT` | `/api/hoster/v1/services/{external_service_id}` | Bisheriger v1-Einzelendpunkt für Serververträge (bleibt erhalten) |
 | `GET` | `/api/hoster/v1/services/{external_service_id}` | Tatsächlichen Zustand abfragen |
 | `POST` | `/api/hoster/v1/handoffs` | Einmal-Link in das Panel des Kunden erzeugen |
 | `GET` | `/api/hoster/handoff/{token}` | Einlösung durch den Browser des Kunden (kein API-Key) |
+
+### `POST /api/hoster/v1/apply` (Hoster-API v2)
+
+Nimmt für eine externe Kundenkennung (`external_subject`) einen Sammelauftrag aus Servern (`kind: "server"`) und eigenständigen Add-ons (`kind: "addon"`) entgegen. Über einen optionalen Header `Idempotency-Key` lässt sich der Sammelauftrag im Audit-Log eindeutig zuordnen.
+
+Alle Positionen werden vorab geprüft: unbekannte `product_key`- oder `addon_slug`-Werte, doppelte `external_service_id`-Einträge im selben Batch, ungültige `slots` oder ein Typwechsel (`server` ↔ `addon`) brechen vor der Provisionierung mit `422` ab.
+
+**Request-Body**
+
+| Feld | Typ | Pflicht | Beschreibung |
+| --- | --- | --- | --- |
+| `external_subject` | `string` (1–128) | ja | Eindeutige Kunden-ID aus dem Shop |
+| `desired_state` | `string` | ja | Zielzustand des Batches (`active`, `suspended`, `terminated`) |
+| `email` | `string` (≤255) | nein | Nur bei Erstanlage eines Panelaccounts verwendet |
+| `items` | `array` (1–50) | ja | Liste aus Server- oder Add-on-Positionen |
+| `items[].external_service_id` | `string` (1–128) | ja | Eindeutige Positionskennung je Integration |
+| `items[].kind` | `string` | nein | `server` (Standard) oder `addon` |
+| `items[].product_key` | `string` (1–128) | bei neuem `server` | Produktkennung des Server-Tarifs |
+| `items[].slots` | `integer` (1–1000) | nein | Optionales Slot-Limit für slot-fähige Server-Blueprints |
+| `items[].addon_slug` | `string` (1–64) | bei neuem `addon` | Slug eines aktiven eigenständigen Shop-Add-ons |
+| `items[].desired_state` | `string` | nein | Optionaler Zielzustand je Einzelposition |
+
+**Response-Body**
+
+Enthält `external_subject`, `desired_state`, `sandbox` (`true` bei Sandbox-Integrationen), `correlation_id` und `items[]` (alle Vertragsfelder plus `ok` und `error_code`). Eigenständige Add-on-Verträge gehen ohne Servererstellung (`server_id: null`) auf `status: "ready"` und teilen die Rollen-Synchronisation bidirektional mit dem nativen Shop.
 
 ### `PUT /api/hoster/v1/services/{external_service_id}`
 
@@ -130,6 +156,8 @@ curl -X PUT https://panel.example/api/hoster/v1/services/SVC-4711 \
 | Feld | Typ | Beschreibung |
 | --- | --- | --- |
 | `external_service_id` | `string` | Die Vertragskennung des Shops |
+| `item_kind` | `string` | Vertragsart (`server` oder `addon`) |
+| `addon_slug` | `string \| null` | Slug des gebundenen Add-ons bei `item_kind: "addon"`, sonst `null` |
 | `desired_state` | `string` | Zuletzt gemeldeter Zielzustand |
 | `status` | `string` | Tatsächlicher Zustand — siehe [Zustandsmodell](#zustandsmodell) |
 | `status_code` | `string \| null` | Stabiler Fehler- oder Hinweiscode, sonst `null` |
@@ -251,8 +279,9 @@ Häufige `status_code`-Werte:
 | `node_not_found` | Das Produkt verweist auf eine Node, die es nicht gibt |
 | `install_directory_exists` | Rückstand einer früheren Installation |
 | `install_update_already_running` | Auf dem Server läuft bereits eine Installation |
-| `hoster_configuration_error` | Produkt, Dienstbenutzer oder Identität sind nicht nutzbar |
-| `hoster_role_escalation` | Die im Produkt hinterlegte Rolle enthält Rechte, die der Dienstbenutzer der Integration selbst nicht hat. Der Vertrag wird nicht umgesetzt. |
+| `hoster_configuration_error` | Produkt, Add-on, Dienstbenutzer oder Identität sind nicht nutzbar |
+| `hoster_item_kind_mismatch` | Bestehender Server-Vertrag wurde als Add-on angesprochen (oder umgekehrt) |
+| `hoster_role_escalation` | Die im Produkt oder Add-on hinterlegte Rolle enthält nicht delegierbare oder außerhalb der Shop-Freigabe liegende Rechte. Der Vertrag wird nicht umgesetzt. |
 | `hoster_internal_error` | Unerwarteter Fehler, im Panel-Log nachvollziehbar |
 | `product_changed_manual_resize_required` | Hinweis, kein Fehler: Tarif gewechselt, Ressourcen noch nicht angepasst |
 

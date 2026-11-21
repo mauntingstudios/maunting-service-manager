@@ -23,7 +23,6 @@ from models import (
     User,
 )
 from schemas.hoster import (
-    HosterServiceResponse,
     HosterSimulationRequest,
     HosterSimulationResponse,
 )
@@ -33,24 +32,11 @@ from services import (
     hoster_service_lifecycle,
     hoster_webhook_service,
 )
+from services.hoster_service_lifecycle import service_response as _service_response
 from services.auth_service import AuthService
 
 
 logger = logging.getLogger(__name__)
-
-
-def _service_response(row: HosterService) -> HosterServiceResponse:
-    return HosterServiceResponse(
-        external_service_id=row.external_service_id,
-        desired_state=row.desired_state,
-        status=row.status,
-        status_code=row.status_code,
-        server_id=row.server_id,
-        task_id=row.task_id,
-        correlation_id=row.correlation_id,
-        terminate_after=row.terminate_after,
-        updated_at=row.updated_at,
-    )
 
 
 def simulate_event(
@@ -169,10 +155,13 @@ def simulate_event(
             db, integration, req.external_service_id
         )
     if service is None:
-        # Nimm den zuletzt aktualisierten Service dieser Integration
+        # Nimm den zuletzt aktualisierten Server-Vertrag dieser Integration
         service = (
             db.query(HosterService)
-            .filter(HosterService.integration_id == integration.id)
+            .filter(
+                HosterService.integration_id == integration.id,
+                HosterService.item_kind == "server",
+            )
             .order_by(HosterService.updated_at.desc())
             .first()
         )

@@ -20,6 +20,9 @@ from config import get_cors_origins, settings
 from database import get_db
 from models import HosterIntegration
 from schemas.hoster import (
+    HosterApplyItemResult,
+    HosterApplyRequest,
+    HosterApplyResponse,
     HosterDesiredStateRequest,
     HosterHandoffRequest,
     HosterHandoffResponse,
@@ -30,7 +33,12 @@ from services.hoster_integration_service import (
     API_KEY_HEADER,
     HosterConfigurationError,
 )
-from services.hoster_service_lifecycle import apply_desired_state, get_service
+from services.hoster_service_lifecycle import (
+    apply_batch,
+    apply_desired_state,
+    get_service,
+    service_response,
+)
 from services.session_service import issue_session
 
 
@@ -45,17 +53,37 @@ def current_integration(
     return hoster_integration_service.authenticate(db, api_key)
 
 
-def _service_response(row) -> HosterServiceResponse:
-    return HosterServiceResponse(
-        external_service_id=row.external_service_id,
-        desired_state=row.desired_state,
-        status=row.status,
-        status_code=row.status_code,
-        server_id=row.server_id,
-        task_id=row.task_id,
-        correlation_id=row.correlation_id,
-        terminate_after=row.terminate_after,
-        updated_at=row.updated_at,
+@router.post("/apply", response_model=HosterApplyResponse)
+def apply_services(
+    payload: HosterApplyRequest,
+    db: Session = Depends(get_db),
+    integration: HosterIntegration = Depends(current_integration),
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
+) -> HosterApplyResponse:
+    """Deklarativer Hoster-API-v2-Einstieg fuer Server- und Add-on-Bestellungen."""
+    try:
+        correlation_id, services = apply_batch(
+            db,
+            integration=integration,
+            payload=payload,
+            idempotency_key=idempotency_key,
+        )
+    except HosterConfigurationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    return HosterApplyResponse(
+        external_subject=payload.external_subject,
+        desired_state=payload.desired_state,
+        sandbox=bool(integration.is_sandbox),
+        correlation_id=correlation_id,
+        items=[
+            HosterApplyItemResult(
+                **service_response(row).model_dump(),
+                ok=row.status != "failed",
+                error_code=row.status_code if row.status == "failed" else None,
+            )
+            for row in services
+        ],
     )
 
 
@@ -84,7 +112,7 @@ def put_desired_state(
         )
     except HosterConfigurationError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return _service_response(service)
+    return service_response(service)
 
 
 @router.get("/services/{external_service_id}", response_model=HosterServiceResponse)
@@ -100,7 +128,7 @@ def read_service(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     if service is None:
         raise HTTPException(status_code=404, detail="Service nicht gefunden")
-    return _service_response(service)
+    return service_response(service)
 
 
 @router.post("/handoffs", response_model=HosterHandoffResponse)

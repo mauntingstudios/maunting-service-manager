@@ -37,6 +37,7 @@ from services.hoster_integration_service import (
     HosterConfigurationError,
     HosterRoleEscalation,
 )
+from services.hoster_service_lifecycle import service_response as _service_response
 
 
 router = APIRouter(prefix="/api/hoster", tags=["hoster-admin"])
@@ -95,20 +96,6 @@ def _product_response(row: HosterProduct) -> HosterProductResponse:
         backup_interval_hours=row.backup_interval_hours,
         role_id=row.role_id,
         enabled=row.enabled,
-    )
-
-
-def _service_response(row: HosterService) -> HosterServiceResponse:
-    return HosterServiceResponse(
-        external_service_id=row.external_service_id,
-        desired_state=row.desired_state,
-        status=row.status,
-        status_code=row.status_code,
-        server_id=row.server_id,
-        task_id=row.task_id,
-        correlation_id=row.correlation_id,
-        terminate_after=row.terminate_after,
-        updated_at=row.updated_at,
     )
 
 
