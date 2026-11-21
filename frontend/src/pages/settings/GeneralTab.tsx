@@ -140,6 +140,7 @@ export function GeneralTab() {
           // beim Alten. Ein stummer Schalter ist schlimmer als gar keiner.
           social_enabled: settings.social_enabled,
           shop_enabled: settings.shop_enabled,
+          external_shop_url: settings.external_shop_url,
           vault_enabled: settings.vault_enabled,
           cloudflare_enabled: settings.cloudflare_enabled,
           ...saisonalAlsPayload(settings),
@@ -152,6 +153,7 @@ export function GeneralTab() {
         docs_enabled: settings.docs_enabled,
         social_enabled: settings.social_enabled,
         shop_enabled: settings.shop_enabled,
+        external_shop_url: settings.external_shop_url,
         vault_enabled: settings.vault_enabled,
         desktop_app_download_enabled: settings.desktop_app_download_enabled,
         browser_download_enabled: settings.browser_download_enabled,
@@ -417,6 +419,20 @@ export function GeneralTab() {
                   aria-label={t('settings.shopEnabled')}
                 />
               </label>
+              <div className="mt-4">
+                <label className="block font-label-md text-label-md text-on-surface-variant mb-1.5 uppercase tracking-wider">
+                  {t('settings.externalShopUrl')}
+                </label>
+                <input
+                  type="url"
+                  value={settings.external_shop_url}
+                  onChange={(e) => setSettings({ ...settings, external_shop_url: e.target.value })}
+                  disabled={!canWrite}
+                  placeholder="https://shop.example.com"
+                  className="msm-input w-full max-w-xl"
+                />
+                <p className="msm-field-help">{t('settings.externalShopUrlHint')}</p>
+              </div>
             </div>
             <div className="md:col-span-2 border-t border-outline-variant/30 pt-6">
               <label className="flex items-center justify-between gap-4">

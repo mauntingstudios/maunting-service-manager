@@ -4554,6 +4554,8 @@
     "socialEnabledHint": "Enables community, friends, achievements and E2EE direct messages.",
     "shopEnabled": "Native shop",
     "shopEnabledHint": "Shows the public storefront at `/`. Off hides it and sends visitors straight to the panel.",
+    "externalShopUrl": "External shop URL",
+    "externalShopUrlHint": "Optional destination for the shop link in the panel while the native shop is off.",
     "shop": {
       "titel": "Native shop",
       "untertitel": "Storefront, plans, Stripe payments, invoice ledger and server provisioning.",
@@ -6609,12 +6611,19 @@
       "startseite": "Back to shop home",
       "navigation": "Shop navigation",
       "anmelden": "Sign in",
+      "registrieren": "Sign up",
       "konto": "My account",
-      "dashboard": "Dashboard"
+      "dashboard": "Dashboard",
+      "spiele": "Games",
+      "addons": "Add-ons & AI",
+      "shopLink": "Shop",
+      "zumShop": "Open shop",
+      "kiChat": "AI chat",
+      "bereiche": "Shop sections"
     },
     "fuss": {
       "zumInhalt": "Skip to content",
-      "hinweis": "Demo shop. No payments or server provisioning yet.",
+      "hinweis": "Game servers, add-ons and AI quotas directly through your Maunting Service Manager.",
       "navigation": "Shop footer",
       "datenschutz": "Privacy",
       "panel": "Panel"
@@ -6627,8 +6636,10 @@
       "titel": "Rent a server without the setup night.",
       "untertitel": "Pick a game, set the resources, go live. We handle installation, permissions and restarts.",
       "ctaSammlung": "Browse games",
+      "ctaAddons": "Add-ons & AI",
       "ctaPanel": "Open panel",
-      "statSpiele": "Games in the demo catalog",
+      "statSpiele": "Available games",
+      "statAddons": "Add-ons & bundles",
       "statBlueprints": "Blueprints available",
       "statSetup": "Steps to online"
     },
@@ -6636,8 +6647,29 @@
       "titel": "Games",
       "untertitel": "Pick a game and build the server to match.",
       "suche": "Search games",
+      "kategorien": "Game categories",
+      "alleKategorien": "All",
       "leerTitel": "No game found",
-      "leerText": "Check the search term or pick another game."
+      "leerText": "Check the search term or pick another game.",
+      "keineTarifeTitel": "No server plans published yet",
+      "keineTarifeText": "Active plans are configured in the shop settings and will appear here automatically.",
+      "fehlerTitel": "Could not load catalog",
+      "fehlerText": "Please reload the page in a moment.",
+      "tarifeEinrichten": "Configure plans in panel"
+    },
+    "addons": {
+      "titel": "Add-ons, roles & AI quotas",
+      "untertitel": "Booked separately and tied to your account independently of a server.",
+      "leerText": "No standalone add-ons are enabled right now.",
+      "buchen": "Order now",
+      "standardBeschreibung": "Adds extra features or quotas to your account.",
+      "aiTokens": "{{wert}} AI tokens per month",
+      "extraSlots_one": "+{{count}} extra slot",
+      "extraSlots_other": "+{{count}} extra slots",
+      "extraBackups_one": "+{{count}} backup slot",
+      "extraBackups_other": "+{{count}} backup slots",
+      "extraStorage": "+{{gb}} GB extra storage",
+      "grantsRole": "Unlocks the assigned panel role right away"
     },
     "karte": {
       "blueprint": "Blueprint",
@@ -6684,12 +6716,13 @@
       "weiterKasse": "Continue to checkout",
       "demoHinweis": "Demo: nothing is charged and no server is created.",
       "nichtGefundenTitel": "Game not found",
-      "nichtGefundenText": "This game is not in the demo catalog."
+      "nichtGefundenText": "This item is not available in the current catalog."
     },
     "kasse": {
       "titel": "Checkout",
       "zusammenfassung": "Summary",
       "spiel": "Game",
+      "produkt": "Product",
       "ram": "RAM",
       "cpu": "CPU",
       "slots": "Slots",
@@ -6706,7 +6739,13 @@
       "erfolgText": "In the real shop the server would now be set up. Nothing happens in this phase yet.",
       "zurueck": "Back to the game",
       "zumPanel": "Open panel",
+      "zurueckApp": "Return to MSS app",
       "demoBadge": "Demo",
+      "stripeSicherBadge": "Stripe checkout",
+      "bezahltBadge": "Paid",
+      "anmeldungTitel": "Sign in to complete checkout",
+      "anmeldungText": "Orders, invoices and server provisioning are linked directly to your account.",
+      "zahlungsHinweis": "Payment details are entered directly at Stripe in the next step (MSM stores no card numbers). Without configured Stripe keys, a local test completion runs instead.",
       "fehler": "The order could not be created. Please try again.",
       "erfolgEchtTitel": "Order created",
       "erfolgEchtText": "The payment is booked. Subscription and entitlement are now in your account.",
@@ -6736,7 +6775,9 @@
       "kopiert": "Code copied",
       "schliessen": "Dismiss promo",
       "prozentRabatt": "{{prozent}}% off",
-      "festRabatt": "{{betrag}} off"
+      "festRabatt": "{{betrag}} off",
+      "endetIn": "Ends in",
+      "naechste": "Show next promo"
     },
     "preis": {
       "grundpreis": "Base price",
@@ -6745,14 +6786,15 @@
       "slots": "Slots",
       "ki": "AI access",
       "monat": "per month",
+      "proMonat": "per month",
       "gesamt": "Total",
       "rabatt": "{{prozent}}% term discount",
-      "inklusiveSteuer": "incl. 19% VAT (demo)"
+      "inklusiveSteuer": "incl. applicable VAT"
     },
     "konto": {
       "kicker": "Your account",
-      "titel": "Orders & invoices",
-      "untertitel": "Everything about the demo shop in one place.",
+      "titel": "My account",
+      "untertitel": "Orders, invoices, subscriptions and account settings in one place.",
       "demo": "Demo data",
       "navigation": "Account navigation",
       "zurueck": "Back to the shop",
@@ -6762,7 +6804,8 @@
         "bestellungen": "Orders",
         "rechnungen": "Invoices",
         "zahlungsmethoden": "Payment methods",
-        "abos": "Subscriptions"
+        "abos": "Subscriptions",
+        "profil": "Profile & security"
       },
       "bestellungen": {
         "titel": "Orders",
@@ -6848,7 +6891,14 @@
       "aboAnsehen": "View subscription",
       "keinesTitel": "No shop subscription linked",
       "keinesText": "This server was created directly in the panel.",
-      "ladefehler": "Could not load subscription details."
+      "ladefehler": "Could not load subscription details.",
+      "liveSpieler": "{{aktiv}} / {{max}} players",
+      "slotsAnpassen": "Adjust slots",
+      "slotsSpeichern": "Apply",
+      "slotsGespeichert": "Slot limit saved.",
+      "slotsNeustart": "Saved, takes effect on the next server restart.",
+      "slotsFehler": "Could not save slot limit.",
+      "slotsDowngradeWarnung": "Note: Lowering slots does not kick active players, though new joins are capped once applied."
     }
   },
   "privacyNotice": {

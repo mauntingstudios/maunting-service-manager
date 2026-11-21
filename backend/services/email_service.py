@@ -4,6 +4,7 @@ import logging
 import re
 from functools import lru_cache
 from pathlib import Path
+from typing import Any
 
 import httpx
 import aiosmtplib
@@ -143,20 +144,38 @@ class EmailService:
         return "none"
 
     @staticmethod
-    async def send_email(to: str, subject: str, body: str, html: str | None = None) -> bool:
+    async def send_email(
+        to: str,
+        subject: str,
+        body: str,
+        html: str | None = None,
+        *,
+        attachments: list[dict[str, Any]] | None = None,
+    ) -> bool:
         provider = EmailService._get_provider()
         if provider == "none":
             return False
         if provider == "resend":
-            ok = await EmailService._send_resend(to, subject, body, html)
+            ok = await EmailService._send_resend(
+                to, subject, body, html, attachments=attachments
+            )
         else:
-            ok = await EmailService._send_smtp(to, subject, body, html)
+            ok = await EmailService._send_smtp(
+                to, subject, body, html, attachments=attachments
+            )
         if not ok:
             _log.warning("Email send failed for %s (provider=%s, subject=%s) – check Resend/SMTP config or rate limits", to, provider, subject)
         return ok
 
     @staticmethod
-    async def _send_smtp(to: str, subject: str, body: str, html: str | None = None) -> bool:
+    async def _send_smtp(
+        to: str,
+        subject: str,
+        body: str,
+        html: str | None = None,
+        *,
+        attachments: list[dict[str, Any]] | None = None,
+    ) -> bool:
         """Der SMTP-Weg.
 
         **Umlaute sind hier unbedenklich, in Text wie in Betreff.** Das steht
@@ -194,6 +213,15 @@ class EmailService:
                     filename="msm-logo.png",
                     disposition="inline",
                 )
+        for att in attachments or ():
+            content_type = str(att.get("content_type") or "application/octet-stream")
+            maintype, _, subtype = content_type.partition("/")
+            msg.add_attachment(
+                att["content"],
+                maintype=maintype or "application",
+                subtype=subtype or "octet-stream",
+                filename=str(att.get("filename") or "anhang.bin"),
+            )
 
         try:
             await aiosmtplib.send(
@@ -209,10 +237,17 @@ class EmailService:
             return False
 
     @staticmethod
-    async def _send_resend(to: str, subject: str, body: str, html: str | None = None) -> bool:
+    async def _send_resend(
+        to: str,
+        subject: str,
+        body: str,
+        html: str | None = None,
+        *,
+        attachments: list[dict[str, Any]] | None = None,
+    ) -> bool:
         """Sendet via Resend API (resend.com) — kein SMTP nötig."""
         try:
-            payload = {
+            payload: dict[str, Any] = {
                 "from": EmailService._get_setting("smtp_from") or settings.smtp_from,
                 "to": [to],
                 "subject": subject,
@@ -228,6 +263,14 @@ class EmailService:
                         "content_type": "image/png",
                         "content_id": EmailService.LOGO_CID,
                     }]
+            if attachments:
+                resend_attachments = payload.setdefault("attachments", [])
+                for att in attachments:
+                    resend_attachments.append({
+                        "content": base64.b64encode(att["content"]).decode("ascii"),
+                        "filename": str(att.get("filename") or "anhang.bin"),
+                        "content_type": str(att.get("content_type") or "application/octet-stream"),
+                    })
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.post(
                     "https://api.resend.com/emails",
@@ -1582,4 +1625,68 @@ Maunting Service Manager
             fakten=[("Termin", title), ("Zeitpunkt", start_str), ("Ort", location_str)],
         )
         return await EmailService.send_email(to, subject, body, email_html)
+
+    @staticmethod
+    async def send_shop_invoice_email(
+        to: str,
+        buyer_name: str,
+        invoice_number: str,
+        order_number: str,
+        gross_formatted: str,
+        pdf_bytes: bytes,
+    ) -> bool:
+        """Verschickt eine neu ausgestellte Shop-Rechnung automatisch per E-Mail mit PDF-Anhang."""
+        base = (settings.panel_url or "").rstrip("/")
+        rechnungen_url = f"{base}/konto/rechnungen" if base else "/konto/rechnungen"
+        subject = f"Deine Rechnung {invoice_number} (Bestellung {order_number})"
+        anrede_name = buyer_name.strip() or "Kundin / Kunde"
+        body = f"""Hallo {anrede_name},
+
+vielen Dank für deine Bestellung {order_number}.
+Im Anhang findest du deine Rechnung {invoice_number} über {gross_formatted} als PDF (mit eingebetteten Factur-X-Daten).
+
+Du kannst alle Rechnungen auch jederzeit in deinem Kundenkonto einsehen:
+{rechnungen_url}
+
+Maunting Service Manager
+"""
+        bausteine = [
+            EmailService._kategorie("Shop & Rechnungen"),
+            EmailService._ueberschrift(f"Rechnung {EmailService.html_text(invoice_number)}"),
+            EmailService._anrede(EmailService.html_text(anrede_name)),
+            EmailService._absatz(
+                f"vielen Dank für deine Bestellung <strong>{EmailService.html_text(order_number)}</strong>. "
+                "Deine Rechnung liegt als PDF im Anhang dieser E-Mail."
+            ),
+            EmailService._fakten([
+                ("Rechnungsnummer", invoice_number),
+                ("Bestellnummer", order_number),
+                ("Gesamtbetrag", gross_formatted),
+            ]),
+        ]
+        if base:
+            bausteine.append(
+                EmailService._cta_button(html.escape(rechnungen_url, quote=True), "Rechnungen im Konto ansehen")
+            )
+        bausteine.append(
+            EmailService._kleingedruckt(
+                "Das PDF enthält maschinenlesbare Factur-X/ZUGFeRD-Daten für deine Buchhaltung."
+            )
+        )
+        email_html = EmailService._base_template(
+            f"Rechnung {invoice_number}",
+            "\n".join(bausteine),
+            f"Rechnung {invoice_number} über {gross_formatted} zu Bestellung {order_number}.",
+        )
+        return await EmailService.send_email(
+            to,
+            subject,
+            body,
+            email_html,
+            attachments=[{
+                "filename": f"{invoice_number}.pdf",
+                "content": pdf_bytes,
+                "content_type": "application/pdf",
+            }],
+        )
 

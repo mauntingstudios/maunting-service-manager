@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { ArrowLeft } from 'lucide-react'
 import { Badge, Dropdown, Spinner, Zustandsflaeche } from '@maunting/ui'
@@ -13,9 +13,10 @@ import { useShopKatalog } from '../useShopKatalog'
 
 export function ShopSpiel() {
   const { spielId } = useParams()
+  const [searchParams] = useSearchParams()
   const navigate = useNavigate()
   const { t, i18n } = useTranslation()
-  const { tarifeFuer, loading, quelle } = useShopKatalog()
+  const { tarifeFuer, loading } = useShopKatalog()
   const tarife = spielId ? tarifeFuer(spielId) : []
   const [tarifId, setTarifId] = useState<number | null>(null)
   const ausgewaehlt = tarife.find((tarif) => tarif.plan.id === tarifId) ?? tarife[0]
@@ -64,7 +65,13 @@ export function ShopSpiel() {
       tarifId: ausgewaehlt.plan.id,
       konfiguration: aktuelleKonfiguration,
     }
-    navigate(`/shop/${aktuellesSpiel.id}/kasse`, { state: entwurf })
+    const qs = new URLSearchParams()
+    const coupon = searchParams.get('coupon')
+    const appReturn = searchParams.get('app_return')
+    if (coupon) qs.set('coupon', coupon)
+    if (appReturn) qs.set('app_return', appReturn)
+    const suffix = qs.toString() ? `?${qs.toString()}` : ''
+    navigate(`/shop/${aktuellesSpiel.id}/kasse${suffix}`, { state: entwurf })
   }
 
   return (
@@ -80,12 +87,11 @@ export function ShopSpiel() {
       <div className="mt-5 grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
         <div className="space-y-5">
           <div className="overflow-hidden rounded-2xl border border-outline-variant/30">
-            <SpielArtwork spiel={aktuellesSpiel} />
+            <SpielArtwork spiel={aktuellesSpiel} priority />
           </div>
 
           <div>
             <div className="flex flex-wrap items-center gap-2">
-              {quelle === 'mock' && <Badge variant="warning">{t('shop.demo.badge')}</Badge>}
               <Badge variant="info">{aktuellesSpiel.category}</Badge>
               {aktuellesSpiel.tags.map((tag) => (
                 <Badge key={tag}>{tag}</Badge>

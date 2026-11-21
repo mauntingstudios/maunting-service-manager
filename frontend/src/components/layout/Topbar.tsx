@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { ArrowLeft, CreditCard, LogOut, Menu, User as UserIcon, X } from 'lucide-react'
+import { ArrowLeft, CreditCard, ExternalLink, LogOut, Menu, ReceiptText, ShoppingBag, User as UserIcon, X } from 'lucide-react'
 import { Blatteintrag, Blattmenue, Kurzinfo } from '@maunting/ui'
 import { Avatar } from '@/components/app/Avatar'
 import { Logo } from '@/components/Logo'
@@ -71,6 +71,8 @@ export function Topbar({ onOpenWallet, presenceStatus: propPresenceStatus, effec
   const teamInvitationCount = useTeamInvitationStore((s) => s.count)
   const teamInvitationenLaden = useTeamInvitationStore((s) => s.laden)
   const socialEnabled = usePublicSettingsStore((s) => s.social_enabled)
+  const shopEnabled = usePublicSettingsStore((s) => s.shop_enabled)
+  const externalShopUrl = usePublicSettingsStore((s) => s.external_shop_url)
   const [blattOffen, setBlattOffen] = useState(false)
 
   // Die Hülle meldet die Präsenz; ein zweiter Melder schriebe bei jedem
@@ -100,6 +102,33 @@ export function Topbar({ onOpenWallet, presenceStatus: propPresenceStatus, effec
   }
 
   const profileMenuItems: ProfileDropdownItem[] = [
+    ...(shopEnabled
+      ? [
+          {
+            key: 'shop',
+            label: t('shop.kopf.zumShop'),
+            icon: <ShoppingBag className="h-4 w-4" />,
+            onClick: () => navigate('/'),
+          },
+          {
+            key: 'konto',
+            label: t('shop.kopf.konto'),
+            icon: <ReceiptText className="h-4 w-4" />,
+            onClick: () => navigate('/konto/bestellungen'),
+          },
+        ]
+      : externalShopUrl
+        ? [
+            {
+              key: 'external-shop',
+              label: t('shop.kopf.zumShop'),
+              icon: <ExternalLink className="h-4 w-4" />,
+              onClick: () => {
+                window.open(externalShopUrl, '_blank', 'noopener,noreferrer')
+              },
+            },
+          ]
+        : []),
     {
       key: 'profile',
       label: t('profile.title'),
@@ -172,6 +201,27 @@ export function Topbar({ onOpenWallet, presenceStatus: propPresenceStatus, effec
         </nav>
 
         <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
+          {shopEnabled && (
+            <button
+              type="button"
+              onClick={() => navigate('/')}
+              className="hidden h-8 items-center gap-1.5 rounded-lg border border-outline-variant/40 bg-surface-container-low/80 px-2.5 text-xs font-semibold text-on-surface transition-colors hover:border-primary/40 hover:text-primary sm:inline-flex"
+            >
+              <ShoppingBag className="h-3.5 w-3.5" aria-hidden="true" />
+              <span>{t('shop.kopf.shopLink')}</span>
+            </button>
+          )}
+          {!shopEnabled && externalShopUrl && (
+            <a
+              href={externalShopUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hidden h-8 items-center gap-1.5 rounded-lg border border-outline-variant/40 bg-surface-container-low/80 px-2.5 text-xs font-semibold text-on-surface transition-colors hover:border-primary/40 hover:text-primary sm:inline-flex"
+            >
+              <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+              <span>{t('shop.kopf.shopLink')}</span>
+            </a>
+          )}
           <div className="hidden items-center gap-1.5 lg:flex">
             <BrowserDownloadBadge />
             <DesktopAppDownloadBadge />
@@ -254,6 +304,30 @@ export function Topbar({ onOpenWallet, presenceStatus: propPresenceStatus, effec
           </nav>
 
           <div className="border-t border-outline-variant/30 py-1">
+            {shopEnabled && (
+              <>
+                <Blatteintrag
+                  icon={<ShoppingBag className="h-4 w-4" aria-hidden="true" />}
+                  label={t('shop.kopf.zumShop')}
+                  onClick={() => { setBlattOffen(false); navigate('/') }}
+                />
+                <Blatteintrag
+                  icon={<ReceiptText className="h-4 w-4" aria-hidden="true" />}
+                  label={t('shop.kopf.konto')}
+                  onClick={() => { setBlattOffen(false); navigate('/konto/bestellungen') }}
+                />
+              </>
+            )}
+            {!shopEnabled && externalShopUrl && (
+              <Blatteintrag
+                icon={<ExternalLink className="h-4 w-4" aria-hidden="true" />}
+                label={t('shop.kopf.zumShop')}
+                onClick={() => {
+                  setBlattOffen(false)
+                  window.open(externalShopUrl, '_blank', 'noopener,noreferrer')
+                }}
+              />
+            )}
             <BrowserDownloadBadge variante="zeile" />
             <DesktopAppDownloadBadge variante="zeile" />
             {onOpenWallet && (

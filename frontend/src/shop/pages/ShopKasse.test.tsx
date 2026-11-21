@@ -1,12 +1,14 @@
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import i18n from '@/i18n'
 import { SanitizedApiError } from '@/api/client'
 import { useAuthStore } from '@/stores/authStore'
 
 const hoisted = vi.hoisted(() => ({
   katalog: [] as Record<string, unknown>[],
+  addons: [] as Record<string, unknown>[],
+  previewCoupon: vi.fn(),
   createOrder: vi.fn(),
   payDemo: vi.fn(),
   checkout: vi.fn(),
@@ -16,7 +18,11 @@ vi.mock('@/api/shop', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/api/shop')>()
   return {
     ...actual,
-    shopCatalogApi: { getCatalog: vi.fn(async () => hoisted.katalog) },
+    shopCatalogApi: {
+      getCatalog: vi.fn(async () => hoisted.katalog),
+      listAddons: vi.fn(async () => hoisted.addons),
+      previewCoupon: hoisted.previewCoupon,
+    },
     shopOrderApi: {
       ...actual.shopOrderApi,
       createOrder: hoisted.createOrder,
@@ -33,7 +39,7 @@ const PALWORLD_PLAN = {
   game_type: 'palworld',
   game_name: 'Palworld API',
   game_description: 'Testbeschreibung',
-  game_category: 'steam_game',
+  game_category: 'Survival',
   supports_mods: true,
   supports_workshop: true,
   name: 'Standard',
@@ -57,11 +63,29 @@ const PALWORLD_PLAN = {
   artwork: { source: 'none', url: null, version: null },
 }
 
-function zeige() {
+const KI_ADDON = {
+  id: 12,
+  slug: 'singra-pro',
+  name: 'Singra KI Pro',
+  description: 'KI-Paket fuer direkten Chat.',
+  category: 'ai_quota',
+  price_cents: 499,
+  currency: 'EUR',
+  billing_interval: 'month',
+  tax_rate_percent: 19,
+  extra_slots: null,
+  extra_storage_mb: null,
+  extra_backups: null,
+  extra_ai_tokens: 250000,
+  grants_role: true,
+}
+
+function zeige(start = '/shop/palworld/kasse') {
   return render(
-    <MemoryRouter initialEntries={['/shop/palworld/kasse']}>
+    <MemoryRouter initialEntries={[start]}>
       <Routes>
         <Route path="/shop/:spielId/kasse" element={<ShopKasse />} />
+        <Route path="/shop/addon/:addonId/kasse" element={<ShopKasse />} />
       </Routes>
     </MemoryRouter>,
   )
@@ -83,51 +107,54 @@ function fuelleFormular() {
   fireEvent.change(screen.getByLabelText(i18n.t('shop.kasse.stadt')), {
     target: { value: 'Kundenstadt' },
   })
-  fireEvent.change(screen.getByLabelText(i18n.t('shop.kasse.karte')), {
-    target: { value: '4242 4242 4242 4242' },
-  })
   fireEvent.click(screen.getByRole('button', { name: i18n.t('shop.kasse.zahlen') }))
 }
 
 describe('ShopKasse', () => {
   beforeEach(() => {
-    vi.useFakeTimers()
-    hoisted.katalog = []
+    hoisted.katalog = [PALWORLD_PLAN]
+    hoisted.addons = [KI_ADDON]
+    hoisted.previewCoupon.mockReset()
     hoisted.createOrder.mockReset()
     hoisted.payDemo.mockReset()
     hoisted.checkout.mockReset()
     useAuthStore.setState({ isAuthenticated: false, user: null, isLoading: false })
   })
 
-  afterEach(() => {
-    vi.useRealTimers()
+  it('fordert nicht angemeldete Gaeste zur Anmeldung statt Fake-Demo auf', async () => {
+    zeige()
+    expect(await screen.findByText('Palworld API')).toBeInTheDocument()
+    expect(screen.getByText(i18n.t('shop.kasse.anmeldungTitel'))).toBeInTheDocument()
+    expect(
+      screen.getByRole('link', { name: i18n.t('shop.kopf.anmelden') }),
+    ).toHaveAttribute('href', '/login?redirect=%2Fshop%2Fpalworld%2Fkasse')
   })
 
-  it('verlangt eine gueltige E-Mail', () => {
+  it('verlangt eine gueltige E-Mail von angemeldeten Nutzern', async () => {
+    useAuthStore.setState({
+      isAuthenticated: true,
+      user: { id: 1, username: 'kunde', is_owner: false } as never,
+      isLoading: false,
+    })
     zeige()
+    expect(await screen.findByText('Palworld API')).toBeInTheDocument()
     fireEvent.change(screen.getByLabelText(i18n.t('shop.kasse.email')), {
       target: { value: 'keine-mail' },
-    })
-    fireEvent.change(screen.getByLabelText(i18n.t('shop.kasse.karte')), {
-      target: { value: '4242 4242 4242 4242' },
     })
     fireEvent.click(screen.getByRole('button', { name: i18n.t('shop.kasse.zahlen') }))
     expect(screen.getByRole('alert')).toHaveTextContent(i18n.t('shop.kasse.emailUngueltig'))
   })
 
-  it('schliesst die Demo-Zahlung ohne Netzwerkaufruf ab', () => {
-    zeige()
-    fuelleFormular()
-    act(() => {
-      vi.advanceTimersByTime(800)
+  it('legt fuer angemeldete Kunden Bestellung an, prueft Handoff-Coupon und App-Return', async () => {
+    hoisted.previewCoupon.mockResolvedValue({
+      valid: true,
+      code: 'SAVE10',
+      discount_type: 'percent',
+      discount_value: 10,
+      discount_cents: 70,
+      final_gross_cents: 629,
+      reason: null,
     })
-    expect(screen.getByRole('status')).toHaveTextContent('MSM-DEMO-')
-    expect(hoisted.createOrder).not.toHaveBeenCalled()
-  })
-
-  it('legt fuer angemeldete Kunden eine echte Bestellung an', async () => {
-    vi.useRealTimers()
-    hoisted.katalog = [PALWORLD_PLAN]
     hoisted.createOrder.mockResolvedValue({ id: 42, number: 'MSM-2026-000042' })
     hoisted.checkout.mockRejectedValue(
       new SanitizedApiError('Stripe ist nicht konfiguriert', { status: 409 }),
@@ -139,9 +166,9 @@ describe('ShopKasse', () => {
       isLoading: false,
     })
 
-    zeige()
-    // Erst wenn der Katalog da ist, zeigt die Kasse den API-Namen.
+    zeige('/shop/palworld/kasse?coupon=SAVE10&app_return=maunting://checkout/done')
     expect(await screen.findByText('Palworld API')).toBeInTheDocument()
+    expect(await screen.findByText(/-0,70\s*€/)).toBeInTheDocument()
 
     fuelleFormular()
 
@@ -152,6 +179,7 @@ describe('ShopKasse', () => {
       ram_mb: 8192,
       cpu: 2,
       slots: 8,
+      coupon_code: 'SAVE10',
       buyer_name: 'Max Testkunde',
       buyer_street: 'Kundenweg 7',
       buyer_postal_code: '54321',
@@ -159,7 +187,37 @@ describe('ShopKasse', () => {
       buyer_country: 'DE',
       buyer_email: 'kunde@example.com',
     })
-    expect(hoisted.checkout).toHaveBeenCalledWith(42)
+    expect(hoisted.checkout).toHaveBeenCalledWith(42, {
+      return_url: 'maunting://checkout/done',
+    })
     expect(hoisted.payDemo).toHaveBeenCalledWith(42)
+    expect(
+      screen.getByRole('link', { name: i18n.t('shop.kasse.zurueckApp') }),
+    ).toHaveAttribute('href', 'maunting://checkout/done')
+  })
+
+  it('unterstuetzt den direkten Checkout eines eigenstaendigen Add-ons', async () => {
+    hoisted.createOrder.mockResolvedValue({ id: 88, number: 'MSM-2026-000088' })
+    hoisted.checkout.mockRejectedValue(
+      new SanitizedApiError('Stripe ist nicht konfiguriert', { status: 409 }),
+    )
+    hoisted.payDemo.mockResolvedValue({ id: 88, number: 'MSM-2026-000088' })
+    useAuthStore.setState({
+      isAuthenticated: true,
+      user: { id: 1, username: 'kunde', is_owner: false } as never,
+      isLoading: false,
+    })
+
+    zeige('/shop/addon/12/kasse')
+    expect(await screen.findByText('Singra KI Pro')).toBeInTheDocument()
+
+    fuelleFormular()
+    expect(await screen.findByText('MSM-2026-000088')).toBeInTheDocument()
+    expect(hoisted.createOrder).toHaveBeenCalledWith(
+      expect.objectContaining({
+        addon_id: 12,
+        months: 1,
+      }),
+    )
   })
 })

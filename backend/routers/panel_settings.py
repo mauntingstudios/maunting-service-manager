@@ -231,7 +231,8 @@ def get_settings(db: Session = Depends(get_db), _=Depends(require_global("panel.
         "docs_enabled": docs_enabled(),
         "vault_enabled": all_db.get("vault_enabled", "true") != "false",
         "social_enabled": all_db.get("social_enabled", "true") != "false",
-        "shop_enabled": all_db.get("shop_enabled", "true") != "false",
+        "shop_enabled": all_db.get("shop_enabled", "false") == "true",
+        "external_shop_url": all_db.get("external_shop_url", ""),
         **_seasonal_settings(all_db),
         "captcha_enabled": all_db.get("captcha_enabled", "true") == "true",
         "captcha_provider": all_db.get("captcha_provider", "altcha"),
@@ -277,7 +278,8 @@ def get_public_settings() -> dict:
         "docs_enabled": docs_enabled(),
         "vault_enabled": all_db.get("vault_enabled", "true") != "false",
         "social_enabled": all_db.get("social_enabled", "true") != "false",
-        "shop_enabled": all_db.get("shop_enabled", "true") != "false",
+        "shop_enabled": all_db.get("shop_enabled", "false") == "true",
+        "external_shop_url": all_db.get("external_shop_url", ""),
         # Die Clients werten das Fenster in ihrer eigenen Ortszeit aus. Sie
         # bekommen deshalb die Rohdaten und keinen serverseitig eingefrorenen
         # Aktiv-Zustand: eine Zeitzone auf dem Server waere fuer ein Geraet in
@@ -319,6 +321,19 @@ def _validate_imprint_url(value: str) -> str:
     if parsed.scheme not in ("http", "https") or not parsed.netloc:
         raise HTTPException(status_code=400, detail="Ungueltige Impressum-URL")
     return url
+
+
+def _validate_external_shop_url(value: str) -> str:
+    """Validiert die optionale externe Shop-URL."""
+    url = value.strip()
+    if not url:
+        return ""
+    if len(url) > 512 or any(ord(ch) < 32 for ch in url):
+        raise HTTPException(status_code=400, detail="Ungueltige externe Shop-URL")
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        raise HTTPException(status_code=400, detail="Ungueltige externe Shop-URL")
+    return url.rstrip("/")
 
 
 @router.post("", status_code=200)
@@ -389,6 +404,8 @@ async def update_settings(
             raise HTTPException(status_code=400, detail="Ungueltiges Zeitformat")
         if key == "imprint_url":
             value = _validate_imprint_url(str(value))
+        if key == "external_shop_url":
+            value = _validate_external_shop_url(str(value))
         if key == "imprint_enabled":
             value = "true" if bool(value) else "false"
         if key == "support_widget_enabled":

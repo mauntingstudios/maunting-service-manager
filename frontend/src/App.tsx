@@ -52,6 +52,7 @@ const Documents = lazy(() => import('./pages/Documents').then(module => ({ defau
 const DocumentShareClaim = lazy(() => import('./pages/DocumentShareClaim').then(module => ({ default: module.DocumentShareClaim })))
 const Benutzerprofil = lazy(() => import('./pages/Benutzerprofil').then(module => ({ default: module.Benutzerprofil })))
 const ShopWeiche = lazy(() => import('./shop/ShopWeiche').then(module => ({ default: module.ShopWeiche })))
+const ShopRahmen = lazy(() => import('./shop/ShopRahmen').then(module => ({ default: module.ShopRahmen })))
 const ShopStart = lazy(() => import('./shop/pages/ShopStart').then(module => ({ default: module.ShopStart })))
 const ShopSpiel = lazy(() => import('./shop/pages/ShopSpiel').then(module => ({ default: module.ShopSpiel })))
 const ShopKasse = lazy(() => import('./shop/pages/ShopKasse').then(module => ({ default: module.ShopKasse })))
@@ -61,6 +62,7 @@ const KontoBestellungDetail = lazy(() => import('./shop/pages/konto/KontoBestell
 const KontoRechnungen = lazy(() => import('./shop/pages/konto/KontoRechnungen').then(module => ({ default: module.KontoRechnungen })))
 const KontoZahlungsmethoden = lazy(() => import('./shop/pages/konto/KontoZahlungsmethoden').then(module => ({ default: module.KontoZahlungsmethoden })))
 const KontoAbos = lazy(() => import('./shop/pages/konto/KontoAbos').then(module => ({ default: module.KontoAbos })))
+const KontoProfil = lazy(() => import('./shop/pages/konto/KontoProfil').then(module => ({ default: module.KontoProfil })))
 import { apiUrl } from '@/config/api'
 import { PANEL_HOME } from '@/lib/panelWege'
 import { useAuthStore } from '@/stores/authStore'
@@ -75,7 +77,10 @@ import { SaisonDeko } from './season/SaisonDeko'
 
 function App() {
   const location = useLocation()
-  const istShopRoute = location.pathname === '/' || location.pathname.startsWith('/shop')
+  const istShopRoute =
+    location.pathname === '/' ||
+    location.pathname.startsWith('/shop') ||
+    location.pathname.startsWith('/konto')
   const [setupRequired, setSetupRequired] = useState<boolean | null>(null)
   const [setupEmailConfigured, setSetupEmailConfigured] = useState(false)
   const [privacyNoticeVisible, setPrivacyNoticeVisible] = useState(true)
@@ -146,13 +151,20 @@ function App() {
           <Route path="shop" element={<Navigate to="/" replace />} />
           <Route path="shop/:spielId" element={<ShopSpiel />} />
           <Route path="shop/:spielId/kasse" element={<ShopKasse />} />
-          <Route path="konto" element={<KontoWeiche />}>
+          <Route path="shop/addon/:addonId/kasse" element={<ShopKasse />} />
+        </Route>
+
+        {/* Kundenbereich bleibt fuer bestehende Abos/Rechnungen/Profil auch
+            dann erreichbar, wenn die Storefront deaktiviert ist. */}
+        <Route path="/konto" element={<ShopRahmen />}>
+          <Route element={<KontoWeiche />}>
             <Route index element={<Navigate to="bestellungen" replace />} />
             <Route path="bestellungen" element={<KontoBestellungen />} />
             <Route path="bestellungen/:id" element={<KontoBestellungDetail />} />
             <Route path="rechnungen" element={<KontoRechnungen />} />
             <Route path="zahlungsmethoden" element={<KontoZahlungsmethoden />} />
             <Route path="abos" element={<KontoAbos />} />
+            <Route path="profil" element={<KontoProfil />} />
           </Route>
         </Route>
 

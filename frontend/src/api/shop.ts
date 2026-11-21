@@ -48,6 +48,7 @@ export interface ShopCatalogPlan {
   game_category: string
   supports_mods: boolean
   supports_workshop: boolean
+  supports_slots?: boolean
   name: string
   description: string | null
   price_cents: number
@@ -241,6 +242,7 @@ export interface ShopPublicBadgePromo {
 
 export interface ShopPublicPromosResponse {
   banner: ShopPublicBannerPromo | null
+  banners?: ShopPublicBannerPromo[]
   badges: ShopPublicBadgePromo[]
 }
 
@@ -439,9 +441,15 @@ export const shopOrderApi = {
     }),
   payDemo: (id: number | string) =>
     api<ShopOrderDto>(`/shop/orders/${id}/demo-pay`, { method: 'POST' }),
-  checkout: (id: number | string) =>
+  checkout: (
+    id: number | string,
+    body?: { return_url?: string; cancel_url?: string },
+  ) =>
     api<{ checkout_url: string }>(`/shop/orders/${id}/checkout`, {
       method: 'POST',
+      ...(body && (body.return_url || body.cancel_url)
+        ? { body: JSON.stringify(body) }
+        : {}),
     }),
   listSubscriptions: () => api<ShopSubscriptionDto[]>('/shop/subscriptions'),
   switchAddon: (subscriptionId: number | string, targetAddonId: number) =>
@@ -456,6 +464,13 @@ export const shopOrderApi = {
   listEntitlements: () => api<ShopEntitlementDto[]>('/shop/entitlements'),
   getServerSubscription: (serverId: number | string) =>
     api<ShopServerSubscriptionDto>(`/shop/servers/${serverId}/subscription`),
+  getServerPlayers: (serverId: number | string) =>
+    api<ShopServerPlayersDto>(`/shop/servers/${serverId}/players`),
+  updateServerSlots: (serverId: number | string, slots: number) =>
+    api<ShopServerSlotsResponseDto>(`/shop/servers/${serverId}/slots`, {
+      method: 'POST',
+      body: JSON.stringify({ slots }),
+    }),
 }
 
 export interface ShopServerSubscriptionDto {
@@ -465,6 +480,29 @@ export interface ShopServerSubscriptionDto {
   ram_mb: number | null
   cpu: number | null
   slots: number | null
+}
+
+export interface ShopServerPlayersDto {
+  server_id: number
+  protocol: string
+  online: boolean
+  players: number | null
+  max_players: number | null
+  server_name: string | null
+  booked_slots: number | null
+  slot_exceeded: boolean
+  warning: string | null
+  error: string | null
+}
+
+export interface ShopServerSlotsResponseDto {
+  server_id: number
+  slots: number
+  previous_slots: number | null
+  target_type: string
+  downgrade_warning: boolean
+  restart_required: boolean
+  live_players: number | null
 }
 
 export interface ShopAdminOrderDto extends ShopOrderDto {

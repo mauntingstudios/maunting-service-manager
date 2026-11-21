@@ -1,18 +1,62 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import i18n from '@/i18n'
+
+const hoisted = vi.hoisted(() => ({
+  getCatalog: vi.fn(),
+  listAddons: vi.fn(),
+}))
 
 vi.mock('@/api/shop', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/api/shop')>()
-  return { ...actual, shopCatalogApi: { getCatalog: vi.fn().mockResolvedValue([]) } }
+  return {
+    ...actual,
+    shopCatalogApi: {
+      getCatalog: hoisted.getCatalog,
+      listAddons: hoisted.listAddons,
+    },
+  }
 })
 
 import { ShopSpiel } from './ShopSpiel'
 
+const PALWORLD_PLAN = {
+  id: 7,
+  game_type: 'palworld',
+  game_name: 'Palworld',
+  game_description: 'Testbeschreibung',
+  game_category: 'Survival',
+  supports_mods: true,
+  supports_workshop: true,
+  name: 'Standard',
+  description: 'Testtarif',
+  price_cents: 699,
+  currency: 'EUR',
+  billing_interval: 'month',
+  tax_rate_percent: 19,
+  ram_included_mb: 8192,
+  ram_max_mb: 16384,
+  ram_step_mb: 1024,
+  price_per_ram_step_cents: 90,
+  cpu_included: 2,
+  cpu_max: 4,
+  cpu_step: 1,
+  price_per_cpu_step_cents: 150,
+  slots_included: 8,
+  slots_max: 32,
+  slots_step: 1,
+  price_per_slot_step_cents: 30,
+  artwork: { source: 'none', url: null, version: null },
+}
+
 function KasseZiel() {
   const location = useLocation()
-  return <div data-testid="kasse">{JSON.stringify(location.state)}</div>
+  return (
+    <div data-testid="kasse">
+      {location.search}|{JSON.stringify(location.state)}
+    </div>
+  )
 }
 
 function zeige(start: string) {
@@ -27,15 +71,26 @@ function zeige(start: string) {
 }
 
 describe('ShopSpiel', () => {
-  it('zeigt das Spiel und reicht die Konfiguration an die Kasse weiter', () => {
-    zeige('/shop/palworld')
-    expect(screen.getByRole('heading', { level: 1, name: 'Palworld' })).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: i18n.t('shop.spiel.weiterKasse') }))
-    expect(screen.getByTestId('kasse')).toHaveTextContent('palworld')
+  beforeEach(() => {
+    hoisted.getCatalog.mockReset().mockResolvedValue([PALWORLD_PLAN])
+    hoisted.listAddons.mockReset().mockResolvedValue([])
   })
 
-  it('aktualisiert den Gesamtpreis bei laengerer Laufzeit', () => {
+  it('zeigt das Spiel und reicht Konfiguration plus Coupon/App-Return weiter', async () => {
+    zeige('/shop/palworld?coupon=FLASH15&app_return=maunting://done')
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Palworld' }),
+    ).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('shop.spiel.weiterKasse') }))
+    const ziel = screen.getByTestId('kasse')
+    expect(ziel).toHaveTextContent('palworld')
+    expect(ziel).toHaveTextContent('coupon=FLASH15')
+    expect(ziel).toHaveTextContent('app_return=maunting%3A%2F%2Fdone')
+  })
+
+  it('aktualisiert den Gesamtpreis bei laengerer Laufzeit', async () => {
     zeige('/shop/palworld')
+    await screen.findByRole('heading', { level: 1, name: 'Palworld' })
     fireEvent.click(screen.getByRole('button', { name: i18n.t('shop.spiel.monate', { count: 12 }) }))
     expect(screen.getByText(/67,10/)).toBeInTheDocument()
   })

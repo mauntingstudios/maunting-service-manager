@@ -1,7 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import { apiUrl } from '@/config/api'
-import { shopCatalogApi, type ShopCatalogPlan } from '@/api/shop'
-import { SHOP_SPIELE } from './mockKatalog'
+import { still } from '@/lib/still'
+import {
+  shopCatalogApi,
+  type ShopCatalogAddon,
+  type ShopCatalogPlan,
+} from '@/api/shop'
 import type { ShopSpiel } from './typen'
 
 export interface ShopTarif {
@@ -11,9 +15,11 @@ export interface ShopTarif {
 
 export interface ShopKatalog {
   spiele: ShopSpiel[]
+  addons: ShopCatalogAddon[]
   tarifeFuer: (gameType: string) => ShopTarif[]
-  quelle: 'api' | 'mock'
+  addonFuer: (addonId: number) => ShopCatalogAddon | null
   loading: boolean
+  fehler: boolean
 }
 
 function motivFuerKategorie(kategorie: string): string {
@@ -53,6 +59,9 @@ function spielAusPlan(plan: ShopCatalogPlan): ShopSpiel {
   const cpuStufen = stufen(plan.cpu_included, plan.cpu_max, plan.cpu_step, [1, 2, 4])
   const slotStufen = stufen(plan.slots_included, plan.slots_max, plan.slots_step, [4, 8, 16])
   const text = plan.game_description || plan.description || plan.name
+  const tags: string[] = []
+  if (plan.supports_mods) tags.push('Mods')
+  if (plan.supports_workshop) tags.push('Workshop')
 
   return {
     id: plan.game_type,
@@ -60,7 +69,7 @@ function spielAusPlan(plan: ShopCatalogPlan): ShopSpiel {
     game: plan.game_type,
     category: plan.game_category || 'Server',
     beschreibung: { de: text, en: text },
-    tags: [],
+    tags,
     unterstuetztMods: plan.supports_mods,
     unterstuetztWorkshop: plan.supports_workshop,
     motiv: motivFuerKategorie(plan.game_category),
@@ -102,81 +111,52 @@ function ausPlans(plans: ShopCatalogPlan[]): Pick<ShopKatalog, 'spiele' | 'tarif
   }
 }
 
-function mockPlan(spiel: ShopSpiel, index: number): ShopCatalogPlan {
-  return {
-    id: -(index + 1),
-    game_type: spiel.id,
-    game_name: spiel.name,
-    game_description: spiel.beschreibung.de,
-    game_category: spiel.category,
-    supports_mods: spiel.unterstuetztMods,
-    supports_workshop: spiel.unterstuetztWorkshop,
-    name: `${spiel.name} Standard`,
-    description: spiel.beschreibung.de,
-    price_cents: spiel.grundpreisCent,
-    currency: 'EUR',
-    billing_interval: 'month',
-    tax_rate_percent: 19,
-    ram_included_mb: spiel.standardRamGb * 1024,
-    ram_max_mb: spiel.ramStufenGb[spiel.ramStufenGb.length - 1] * 1024,
-    ram_step_mb: 1024,
-    price_per_ram_step_cents: spiel.preisProGbCent,
-    cpu_included: spiel.standardCpu,
-    cpu_max: spiel.cpuStufen[spiel.cpuStufen.length - 1],
-    cpu_step: 1,
-    price_per_cpu_step_cents: spiel.preisProKernCent,
-    slots_included: spiel.standardSlots,
-    slots_max: spiel.slotStufen[spiel.slotStufen.length - 1],
-    slots_step: 1,
-    price_per_slot_step_cents: spiel.preisProSlotCent,
-    artwork: {
-      source: spiel.bildUrl ? 'steam' : 'none',
-      url: spiel.bildUrl ?? null,
-      version: null,
-    },
-  }
-}
-
-function mockKatalog(): Pick<ShopKatalog, 'spiele' | 'tarifeFuer'> {
-  const tarife = new Map<string, ShopTarif[]>()
-  SHOP_SPIELE.forEach((spiel, index) => {
-    tarife.set(spiel.id, [{ plan: mockPlan(spiel, index), spiel }])
-  })
-  return {
-    spiele: SHOP_SPIELE,
-    tarifeFuer: (gameType) => tarife.get(gameType) ?? [],
-  }
-}
-
 export function useShopKatalog(): ShopKatalog {
-  const [plans, setPlans] = useState<ShopCatalogPlan[] | null>(null)
+  const [plans, setPlans] = useState<ShopCatalogPlan[]>([])
+  const [addons, setAddons] = useState<ShopCatalogAddon[]>([])
   const [loading, setLoading] = useState(true)
+  const [fehler, setFehler] = useState(false)
 
   useEffect(() => {
     let aktiv = true
-    void shopCatalogApi
-      .getCatalog()
-      .then((rows) => {
-        if (aktiv) {
-          setPlans(rows)
-          setLoading(false)
-        }
+    const plansPromise = shopCatalogApi.getCatalog()
+    const addonsPromise = shopCatalogApi.listAddons
+      ? shopCatalogApi.listAddons().catch((err: unknown) => {
+          still(err, 'useShopKatalog.addons')
+          return [] as ShopCatalogAddon[]
+        })
+      : Promise.resolve([] as ShopCatalogAddon[])
+
+    void Promise.all([plansPromise, addonsPromise])
+      .then(([planRows, addonRows]) => {
+        if (!aktiv) return
+        setPlans(planRows)
+        setAddons(addonRows)
+        setFehler(false)
+        setLoading(false)
       })
-      .catch(() => {
-        if (aktiv) {
-          setPlans([])
-          setLoading(false)
-        }
+      .catch((err: unknown) => {
+        still(err, 'useShopKatalog.catalog')
+        if (!aktiv) return
+        setPlans([])
+        setAddons([])
+        setFehler(true)
+        setLoading(false)
       })
+
     return () => {
       aktiv = false
     }
   }, [])
 
   return useMemo(() => {
-    if (plans && plans.length > 0) {
-      return { ...ausPlans(plans), quelle: 'api' as const, loading: false }
+    const katalog = ausPlans(plans)
+    return {
+      ...katalog,
+      addons,
+      addonFuer: (addonId: number) => addons.find((item) => item.id === addonId) ?? null,
+      loading,
+      fehler,
     }
-    return { ...mockKatalog(), quelle: 'mock' as const, loading }
-  }, [plans, loading])
+  }, [plans, addons, loading, fehler])
 }

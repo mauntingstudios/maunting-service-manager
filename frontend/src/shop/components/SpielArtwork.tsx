@@ -4,14 +4,18 @@ import type { ShopSpiel } from '../typen'
 
 interface SpielArtworkProps {
   spiel: ShopSpiel
+  priority?: boolean
   className?: string
 }
 
-export function SpielArtwork({ spiel, className = '' }: SpielArtworkProps) {
+export function SpielArtwork({ spiel, priority = false, className = '' }: SpielArtworkProps) {
   const [fehler, setFehler] = useState(false)
   const motiv = motivFuer(spiel.motiv)
   const Icon = motiv.icon
   const zeigeBild = Boolean(spiel.bildUrl) && !fehler
+  const prioritaetProps = priority
+    ? ({ fetchpriority: 'high' } as Record<string, string>)
+    : ({ loading: 'lazy' } as const)
 
   return (
     <div
@@ -21,8 +25,10 @@ export function SpielArtwork({ spiel, className = '' }: SpielArtworkProps) {
         <img
           src={spiel.bildUrl}
           alt=""
-          loading="lazy"
-          className="h-full w-full object-cover opacity-90"
+          width={460}
+          height={215}
+          {...prioritaetProps}
+          className="block h-full w-full object-cover opacity-90"
           onError={() => setFehler(true)}
         />
       ) : (

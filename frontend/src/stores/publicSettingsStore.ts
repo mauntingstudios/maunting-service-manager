@@ -20,6 +20,7 @@ export interface PublicSettings {
   vault_enabled: boolean
   social_enabled: boolean
   shop_enabled: boolean
+  external_shop_url: string
   seasonal: SeasonalSettings
 }
 
@@ -35,7 +36,8 @@ export const DEFAULT_PUBLIC_SETTINGS: PublicSettings = {
   docs_enabled: true,
   vault_enabled: true,
   social_enabled: true,
-  shop_enabled: true,
+  shop_enabled: false,
+  external_shop_url: '',
   seasonal: DEFAULT_SEASONAL_SETTINGS,
 }
 
@@ -106,6 +108,9 @@ function loadCachedSettings(): PublicSettings {
           typeof parsed.shop_enabled === 'boolean'
             ? parsed.shop_enabled
             : DEFAULT_PUBLIC_SETTINGS.shop_enabled,
+        external_shop_url: istHttpAdresse(parsed.external_shop_url)
+          ? parsed.external_shop_url.replace(/\/+$/, '')
+          : DEFAULT_PUBLIC_SETTINGS.external_shop_url,
         seasonal: normalisiereSaison(parsed.seasonal),
       }
     }
@@ -195,6 +200,12 @@ export const usePublicSettingsStore = create<PublicSettingsState>((set, get) => 
             typeof remote.shop_enabled === 'boolean'
               ? remote.shop_enabled
               : get().shop_enabled,
+          external_shop_url:
+            typeof remote.external_shop_url === 'string'
+              ? (istHttpAdresse(remote.external_shop_url)
+                  ? remote.external_shop_url.replace(/\/+$/, '')
+                  : '')
+              : get().external_shop_url,
           // Die Saison ist ein verschachteltes Objekt. Fehlt sie in einer
           // aelteren API-Antwort, bleibt die bisherige Einstellung stehen;
           // kaputte Einzelfelder fallen ebenso einzeln zurueck.
@@ -233,6 +244,12 @@ export const usePublicSettingsStore = create<PublicSettingsState>((set, get) => 
         vault_enabled: partial.vault_enabled ?? get().vault_enabled,
         social_enabled: partial.social_enabled ?? get().social_enabled,
         shop_enabled: partial.shop_enabled ?? get().shop_enabled,
+        external_shop_url:
+          partial.external_shop_url !== undefined
+            ? (istHttpAdresse(partial.external_shop_url)
+                ? partial.external_shop_url.replace(/\/+$/, '')
+                : '')
+            : get().external_shop_url,
         seasonal: partial.seasonal
           ? normalisiereSaison(partial.seasonal, get().seasonal)
           : get().seasonal,

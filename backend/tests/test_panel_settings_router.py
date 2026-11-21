@@ -428,9 +428,48 @@ class TestSeasonalSettings:
 
 
 def test_public_settings_expose_shop_toggle(client: TestClient):
-    """Die oeffentliche Storefront liest den Schalter ohne Anmeldung."""
+    """Die oeffentliche Storefront liest den Schalter ohne Anmeldung (Default: aus)."""
     body = client.get("/api/settings/public").json()
-    assert body.get("shop_enabled") is True
+    assert body.get("shop_enabled") is False
+    assert body.get("external_shop_url") == ""
+
+
+def test_external_shop_url_roundtrip_and_validation(
+    client: TestClient, owner_cookies: dict, csrf_token: str
+):
+    bad = client.post(
+        "/api/settings",
+        cookies=owner_cookies,
+        headers={"X-CSRF-Token": csrf_token},
+        json={"external_shop_url": "javascript:alert(1)"},
+    )
+    assert bad.status_code == 400
+
+    bad_ftp = client.post(
+        "/api/settings",
+        cookies=owner_cookies,
+        headers={"X-CSRF-Token": csrf_token},
+        json={"external_shop_url": "ftp://shop.example.com"},
+    )
+    assert bad_ftp.status_code == 400
+
+    ok = client.post(
+        "/api/settings",
+        cookies=owner_cookies,
+        headers={"X-CSRF-Token": csrf_token},
+        json={"external_shop_url": "https://shop.example.com/"},
+    )
+    assert ok.status_code == 200
+    assert client.get("/api/settings/public").json()["external_shop_url"] == "https://shop.example.com"
+
+    cleared = client.post(
+        "/api/settings",
+        cookies=owner_cookies,
+        headers={"X-CSRF-Token": csrf_token},
+        json={"external_shop_url": ""},
+    )
+    assert cleared.status_code == 200
+    assert client.get("/api/settings/public").json()["external_shop_url"] == ""
 
 
 def test_public_settings_expose_panel_url_without_trailing_slash(client: TestClient):

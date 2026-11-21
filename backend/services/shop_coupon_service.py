@@ -380,32 +380,42 @@ def get_public_promos(db: Session) -> ShopPublicPromosResponse:
     )
     valid_rows = [row for row in active_rows if _is_coupon_currently_valid(row, now)]
 
-    banner: ShopPublicBannerPromo | None = None
-    badges: list[ShopPublicBadgePromo] = []
-    for row in valid_rows:
-        if row.show_banner and banner is None:
-            banner = ShopPublicBannerPromo(
-                code=row.code,
-                name=row.name,
-                promo_text=row.promo_text,
-                discount_type=row.discount_type,  # type: ignore[arg-type]
-                discount_value=row.discount_value,
-                scope=row.scope,  # type: ignore[arg-type]
-                cooldown_hours=row.banner_cooldown_hours,
-                valid_until=row.valid_until,
-            )
-        if row.show_badge:
-            badges.append(
-                ShopPublicBadgePromo(
-                    code=row.code,
-                    name=row.name,
-                    discount_type=row.discount_type,  # type: ignore[arg-type]
-                    discount_value=row.discount_value,
-                    scope=row.scope,  # type: ignore[arg-type]
-                    target_plan_ids=_parse_plan_ids(row.target_plan_ids_json),
-                )
-            )
-    return ShopPublicPromosResponse(banner=banner, badges=badges)
+    banner_rows = [row for row in valid_rows if row.show_banner]
+    banner_rows.sort(
+        key=lambda r: (
+            0 if r.valid_until is not None else 1,
+            r.valid_until.timestamp() if r.valid_until is not None else 0.0,
+            -r.discount_value,
+            -r.id,
+        )
+    )
+    banners = [
+        ShopPublicBannerPromo(
+            code=row.code,
+            name=row.name,
+            promo_text=row.promo_text,
+            discount_type=row.discount_type,  # type: ignore[arg-type]
+            discount_value=row.discount_value,
+            scope=row.scope,  # type: ignore[arg-type]
+            cooldown_hours=row.banner_cooldown_hours,
+            valid_until=row.valid_until,
+        )
+        for row in banner_rows
+    ]
+    banner: ShopPublicBannerPromo | None = banners[0] if banners else None
+    badges: list[ShopPublicBadgePromo] = [
+        ShopPublicBadgePromo(
+            code=row.code,
+            name=row.name,
+            discount_type=row.discount_type,  # type: ignore[arg-type]
+            discount_value=row.discount_value,
+            scope=row.scope,  # type: ignore[arg-type]
+            target_plan_ids=_parse_plan_ids(row.target_plan_ids_json),
+        )
+        for row in valid_rows
+        if row.show_badge
+    ]
+    return ShopPublicPromosResponse(banner=banner, banners=banners, badges=badges)
 
 
 def get_shop_stats(db: Session) -> ShopStatsResponse:

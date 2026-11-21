@@ -4554,6 +4554,8 @@
     "socialEnabledHint": "Schaltet Community, Freunde, Achievements und E2EE-Direktnachrichten ein.",
     "shopEnabled": "Nativer Shop",
     "shopEnabledHint": "Zeigt die öffentliche Storefront unter `/`. Aus schaltet sie ab und führt direkt ins Panel.",
+    "externalShopUrl": "Externe Shop-URL",
+    "externalShopUrlHint": "Optionales Ziel für den Shop-Link im Panel, solange der native Shop ausgeschaltet ist.",
     "shop": {
       "titel": "Nativer Shop",
       "untertitel": "Storefront, Tarife, Stripe-Zahlungen, Rechnungs-Ledger und Server-Provisionierung.",
@@ -6609,12 +6611,19 @@
       "startseite": "Zur Shop-Startseite",
       "navigation": "Shop-Navigation",
       "anmelden": "Anmelden",
+      "registrieren": "Registrieren",
       "konto": "Mein Konto",
-      "dashboard": "Dashboard"
+      "dashboard": "Dashboard",
+      "spiele": "Spiele",
+      "addons": "Add-ons & KI",
+      "shopLink": "Shop",
+      "zumShop": "Zum Shop",
+      "kiChat": "KI-Chat",
+      "bereiche": "Shop-Bereiche"
     },
     "fuss": {
       "zumInhalt": "Zum Inhalt springen",
-      "hinweis": "Demo-Shop. Noch keine Zahlungen und keine Server-Provisionierung.",
+      "hinweis": "Game-Server, Add-ons und KI-Kontingente direkt über deinen Maunting Service Manager.",
       "navigation": "Shop-Fußzeile",
       "datenschutz": "Datenschutz",
       "panel": "Panel"
@@ -6627,8 +6636,10 @@
       "titel": "Server mieten, ohne Bastelabend.",
       "untertitel": "Spiel wählen, Ressourcen einstellen, loslegen. Wir kümmern uns um Installation, Rechte und Neustarts.",
       "ctaSammlung": "Spiele entdecken",
+      "ctaAddons": "Add-ons & KI",
       "ctaPanel": "Zum Panel",
-      "statSpiele": "Spiele im Demo-Katalog",
+      "statSpiele": "Verfügbare Spiele",
+      "statAddons": "Add-ons & Pakete",
       "statBlueprints": "Blueprints verfügbar",
       "statSetup": "Schritte bis online"
     },
@@ -6636,8 +6647,29 @@
       "titel": "Spiele",
       "untertitel": "Wähle ein Spiel und stelle den Server passend zusammen.",
       "suche": "Spiel suchen",
+      "kategorien": "Spielkategorien",
+      "alleKategorien": "Alle",
       "leerTitel": "Kein Spiel gefunden",
-      "leerText": "Prüfe den Suchbegriff oder wähle ein anderes Spiel."
+      "leerText": "Prüfe den Suchbegriff oder wähle ein anderes Spiel.",
+      "keineTarifeTitel": "Noch keine Server-Tarife veröffentlicht",
+      "keineTarifeText": "Aktive Tarife werden in den Shop-Einstellungen gepflegt und erscheinen dann automatisch hier.",
+      "fehlerTitel": "Katalog konnte nicht geladen werden",
+      "fehlerText": "Bitte lade die Seite gleich noch einmal.",
+      "tarifeEinrichten": "Tarife im Panel einrichten"
+    },
+    "addons": {
+      "titel": "Add-ons, Rollen & KI-Kontingente",
+      "untertitel": "Separat buchbar und unabhängig von einem Server am Konto aktiv.",
+      "leerText": "Derzeit sind keine eigenständigen Add-ons freigegeben.",
+      "buchen": "Jetzt buchen",
+      "standardBeschreibung": "Erweitert dein Konto um zusätzliche Funktionen oder Kontingente.",
+      "aiTokens": "{{wert}} KI-Tokens im Monat",
+      "extraSlots_one": "+{{count}} Slot inklusive",
+      "extraSlots_other": "+{{count}} Slots inklusive",
+      "extraBackups_one": "+{{count}} Backup-Platz inklusive",
+      "extraBackups_other": "+{{count}} Backup-Plätze inklusive",
+      "extraStorage": "+{{gb}} GB Speicher inklusive",
+      "grantsRole": "Schaltet zugehörige Panel-Rolle sofort frei"
     },
     "karte": {
       "blueprint": "Blueprint",
@@ -6684,12 +6716,13 @@
       "weiterKasse": "Weiter zur Kasse",
       "demoHinweis": "Demo: Es wird nichts berechnet und kein Server erstellt.",
       "nichtGefundenTitel": "Spiel nicht gefunden",
-      "nichtGefundenText": "Dieses Spiel gibt es im Demo-Katalog nicht."
+      "nichtGefundenText": "Dieses Angebot ist im aktuellen Katalog nicht verfügbar."
     },
     "kasse": {
       "titel": "Kasse",
       "zusammenfassung": "Zusammenfassung",
       "spiel": "Spiel",
+      "produkt": "Produkt",
       "ram": "RAM",
       "cpu": "CPU",
       "slots": "Slots",
@@ -6706,7 +6739,13 @@
       "erfolgText": "Im fertigen Shop würde jetzt der Server eingerichtet. In dieser Phase passiert noch nichts.",
       "zurueck": "Zurück zum Spiel",
       "zumPanel": "Zum Panel",
+      "zurueckApp": "Zurück zur MSS-App",
       "demoBadge": "Demo",
+      "stripeSicherBadge": "Stripe Checkout",
+      "bezahltBadge": "Bezahlt",
+      "anmeldungTitel": "Für den Kauf anmelden",
+      "anmeldungText": "Bestellungen, Rechnungen und Server-Freischaltungen werden fest mit deinem Konto verknüpft.",
+      "zahlungsHinweis": "Die Zahlungsdaten gibst du im nächsten Schritt direkt bei Stripe ein (MSM speichert keine Kartennummern). Ohne hinterlegte Stripe-Keys wird ein lokaler Testabschluss ausgeführt.",
       "fehler": "Die Bestellung konnte nicht angelegt werden. Bitte erneut versuchen.",
       "erfolgEchtTitel": "Bestellung angelegt",
       "erfolgEchtText": "Die Zahlung ist verbucht. Abo und Freischaltung stehen jetzt im Konto.",
@@ -6736,7 +6775,9 @@
       "kopiert": "Code kopiert",
       "schliessen": "Hinweis ausblenden",
       "prozentRabatt": "{{prozent}} % Rabatt",
-      "festRabatt": "{{betrag}} Rabatt"
+      "festRabatt": "{{betrag}} Rabatt",
+      "endetIn": "Endet in",
+      "naechste": "Nächste Aktion anzeigen"
     },
     "preis": {
       "grundpreis": "Grundpreis",
@@ -6745,14 +6786,15 @@
       "slots": "Slots",
       "ki": "KI-Zugang",
       "monat": "pro Monat",
+      "proMonat": "pro Monat",
       "gesamt": "Gesamt",
       "rabatt": "{{prozent}} % Laufzeitrabatt",
-      "inklusiveSteuer": "inkl. 19 % USt. (Demo)"
+      "inklusiveSteuer": "inkl. gesetzlicher USt."
     },
     "konto": {
       "kicker": "Dein Konto",
-      "titel": "Bestellungen & Rechnungen",
-      "untertitel": "Alles zum Demo-Shop an einem Ort.",
+      "titel": "Mein Konto",
+      "untertitel": "Bestellungen, Rechnungen, Abos und Kontoeinstellungen an einem Ort.",
       "demo": "Demo-Daten",
       "navigation": "Konto-Navigation",
       "zurueck": "Zurück zum Shop",
@@ -6762,7 +6804,8 @@
         "bestellungen": "Bestellungen",
         "rechnungen": "Rechnungen",
         "zahlungsmethoden": "Zahlungsmethoden",
-        "abos": "Abos"
+        "abos": "Abos",
+        "profil": "Profil & Sicherheit"
       },
       "bestellungen": {
         "titel": "Bestellungen",
@@ -6848,7 +6891,14 @@
       "aboAnsehen": "Abo ansehen",
       "keinesTitel": "Kein Shop-Abo verknüpft",
       "keinesText": "Dieser Server wurde direkt im Panel angelegt.",
-      "ladefehler": "Abo-Daten konnten nicht geladen werden."
+      "ladefehler": "Abo-Daten konnten nicht geladen werden.",
+      "liveSpieler": "{{aktiv}} / {{max}} Spieler",
+      "slotsAnpassen": "Slots anpassen",
+      "slotsSpeichern": "Übernehmen",
+      "slotsGespeichert": "Slot-Limit gespeichert.",
+      "slotsNeustart": "Gespeichert, wird beim nächsten Server-Neustart aktiv.",
+      "slotsFehler": "Slots konnten nicht gespeichert werden.",
+      "slotsDowngradeWarnung": "Hinweis: Beim Verringern der Slots werden verbundene Spieler nicht getrennt, neue Beitritte werden nach Übernahme jedoch begrenzt."
     }
   },
   "privacyNotice": {

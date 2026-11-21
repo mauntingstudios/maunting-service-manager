@@ -18,6 +18,7 @@ import json
 import re
 import time
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 
@@ -93,33 +94,100 @@ def _panel_base() -> str:
     return (settings.panel_url or "").rstrip("/")
 
 
-def create_checkout_session(order: ShopOrder, item: ShopOrderItem) -> tuple[str, str]:
+def validate_redirect_url(
+    url: str | None,
+    *,
+    allow_app_deep_link: bool = True,
+) -> str | None:
+    """Prueft Ruecksprung-URLs streng gegen Open-Redirect- und Script-Angriffe."""
+    if url is None:
+        return None
+    cleaned = url.strip()
+    if not cleaned:
+        return None
+    if len(cleaned) > 512 or any(ord(ch) < 32 or ch.isspace() for ch in cleaned):
+        raise StripeError("Ungueltige Ruecksprung-Adresse")
+    parsed = urlparse(cleaned)
+    scheme = parsed.scheme.lower()
+    if not scheme and not parsed.netloc:
+        if not cleaned.startswith("/") or cleaned.startswith("//") or "\\" in cleaned:
+            raise StripeError("Ungueltige Ruecksprung-Adresse")
+        return cleaned
+    if scheme in ("maunting", "msm"):
+        if not allow_app_deep_link or (not parsed.netloc and not parsed.path):
+            raise StripeError("Ungueltige Ruecksprung-Adresse")
+        return cleaned
+    if scheme in ("http", "https"):
+        base = _panel_base()
+        if not base or not parsed.netloc:
+            raise StripeError("Ungueltige Ruecksprung-Adresse")
+        base_parsed = urlparse(base)
+        if (
+            scheme != base_parsed.scheme.lower()
+            or parsed.netloc.lower() != base_parsed.netloc.lower()
+        ):
+            raise StripeError("Ungueltige Ruecksprung-Adresse")
+        return cleaned
+    raise StripeError("Ungueltige Ruecksprung-Adresse")
+
+
+def create_checkout_session(
+    order: ShopOrder,
+    item: ShopOrderItem,
+    *,
+    success_url: str | None = None,
+    cancel_url: str | None = None,
+    stripe_promotion_code_id: str | None = None,
+) -> tuple[str, str]:
     """Legt eine Checkout-Session an und liefert (Session-ID, Weiterleitungs-URL)."""
     secret = _require_secret()
 
     base = _panel_base()
+
+    def _resolve_url(candidate: str | None, fallback: str) -> str:
+        valid = validate_redirect_url(candidate)
+        if not valid:
+            return fallback
+        if valid.startswith("/"):
+            return f"{base}{valid}"
+        return valid
+
+    resolved_success = _resolve_url(
+        success_url,
+        f"{base}/konto/bestellungen?checkout=erfolg&bestellung={order.id}",
+    )
+    resolved_cancel = _resolve_url(
+        cancel_url,
+        f"{base}/shop/{item.game_type}?checkout=abgebrochen",
+    )
+
     # Monatliche Laufzeit wird ein echtes Stripe-Abo (Renewal-Ereignisse
     # treiben Abo und Dunning). Vorausbezahlte 3/12 Monate bleiben Einmalkauf.
     abo = order.months == 1
+    if stripe_promotion_code_id:
+        unit_amount = order.gross_cents + order.coupon_discount_cents
+    elif order.coupon_discount_cents > 0 or not abo:
+        unit_amount = order.gross_cents
+    else:
+        unit_amount = item.unit_price_cents
+
     data: list[tuple[str, str]] = [
         ("mode", "subscription" if abo else "payment"),
         ("client_reference_id", order.number),
-        ("success_url", f"{base}/konto/bestellungen?checkout=erfolg&bestellung={order.id}"),
-        ("cancel_url", f"{base}/shop/{item.game_type}?checkout=abgebrochen"),
+        ("success_url", resolved_success),
+        ("cancel_url", resolved_cancel),
         ("line_items[0][quantity]", "1"),
         ("line_items[0][price_data][currency]", order.currency.lower()),
-        (
-            "line_items[0][price_data][unit_amount]",
-            str(
-                order.gross_cents
-                if order.coupon_discount_cents > 0 or not abo
-                else item.unit_price_cents
-            ),
-        ),
+        ("line_items[0][price_data][unit_amount]", str(unit_amount)),
         ("line_items[0][price_data][product_data][name]", item.name),
         ("metadata[order_id]", str(order.id)),
         ("metadata[order_number]", order.number),
     ]
+    if stripe_promotion_code_id:
+        promo_id = _validate_stripe_id(stripe_promotion_code_id, "Promotion-Code-ID")
+        data.append(("discounts[0][promotion_code]", promo_id))
+    elif order.coupon_discount_cents == 0:
+        data.append(("allow_promotion_codes", "true"))
     if abo:
         data.extend(
             [

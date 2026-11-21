@@ -8,7 +8,9 @@ weiter, im Panel steht dann ein Hinweis auf die fehlenden Angaben.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
+import logging
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import text
@@ -37,6 +39,51 @@ from services import (
 
 class InvoiceError(ValueError):
     """Rechnung kann nicht ausgestellt werden."""
+
+
+_log = logging.getLogger("msm.shop.invoice")
+_BACKGROUND_MAIL_TASKS: set[asyncio.Task[object]] = set()
+
+
+def _format_euro(cents: int, currency: str = "EUR") -> str:
+    betrag = f"{cents / 100:.2f}".replace(".", ",")
+    return f"{betrag} {currency or 'EUR'}"
+
+
+def dispatch_invoice_email(invoice: ShopInvoice, order_number: str) -> None:
+    """Verschickt das Rechnungs-PDF best-effort an den Kaeufer (ohne Zahlung zu blockieren)."""
+    if not invoice.buyer_email or not invoice.pdf_bytes:
+        return
+    try:
+        from services.email_service import EmailService
+
+        gross_formatted = _format_euro(invoice.gross_cents, invoice.currency)
+        kwargs = {
+            "to": invoice.buyer_email,
+            "buyer_name": invoice.buyer_name or "",
+            "invoice_number": invoice.number,
+            "order_number": order_number,
+            "gross_formatted": gross_formatted,
+            "pdf_bytes": invoice.pdf_bytes,
+        }
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            asyncio.run(EmailService.send_shop_invoice_email(**kwargs))
+        else:
+            task = loop.create_task(EmailService.send_shop_invoice_email(**kwargs))
+            _BACKGROUND_MAIL_TASKS.add(task)
+
+            def _done(done_task: asyncio.Task[object]) -> None:
+                _BACKGROUND_MAIL_TASKS.discard(done_task)
+                if not done_task.cancelled():
+                    exc = done_task.exception()
+                    if exc is not None:
+                        _log.warning("Rechnungs-Mail fuer %s fehlgeschlagen: %s", invoice.number, exc)
+
+            task.add_done_callback(_done)
+    except Exception as exc:
+        _log.warning("Rechnungs-Mail fuer %s konnte nicht versendet werden: %s", invoice.number, exc)
 
 
 def _now() -> datetime:
@@ -203,6 +250,7 @@ def ensure_invoice_for_order(db: Session, order: ShopOrder) -> ShopInvoice | Non
         zeile.invoice_id = rechnung.id
         db.add(zeile)
     db.flush()
+    dispatch_invoice_email(rechnung, order.number)
     return rechnung
 
 

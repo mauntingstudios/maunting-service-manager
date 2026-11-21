@@ -362,6 +362,7 @@ class ShopPublicBadgePromo(BaseModel):
 
 class ShopPublicPromosResponse(BaseModel):
     banner: ShopPublicBannerPromo | None = None
+    banners: list[ShopPublicBannerPromo] = Field(default_factory=list)
     badges: list[ShopPublicBadgePromo] = Field(default_factory=list)
 
 
@@ -432,8 +433,25 @@ class ShopSubscriptionResponse(BaseModel):
     cancel_at_period_end: bool
 
 
+class ShopCheckoutRequest(BaseModel):
+    return_url: str | None = Field(None, max_length=512)
+    cancel_url: str | None = Field(None, max_length=512)
+
+
 class ShopCheckoutResponse(BaseModel):
     checkout_url: str
+
+
+class ShopHandoffRequest(BaseModel):
+    target: Literal["catalog", "game", "addon", "konto"] = "catalog"
+    game_type: str | None = Field(None, max_length=64)
+    addon_id: int | None = Field(None, ge=1)
+    coupon_code: str | None = Field(None, max_length=48)
+    app_return_url: str | None = Field(None, max_length=512)
+
+
+class ShopHandoffResponse(BaseModel):
+    url: str
 
 
 class ShopStripeKeysUpdate(BaseModel):

@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import re
+from urllib.parse import urlencode
+
 from fastapi import (
     APIRouter,
     Depends,
@@ -15,6 +18,8 @@ from fastapi import (
 from fastapi.responses import Response
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+
+from config import settings
 
 from database import get_db
 from dependencies import get_current_user, verify_csrf
@@ -40,6 +45,7 @@ from schemas.shop import (
     ShopAdminOrderResponse,
     ShopCatalogAddon,
     ShopCatalogPlan,
+    ShopCheckoutRequest,
     ShopCheckoutResponse,
     ShopCouponPreviewRequest,
     ShopCouponPreviewResponse,
@@ -49,6 +55,8 @@ from schemas.shop import (
     ShopCreditNoteCreate,
     ShopEinvoiceToolchainStatusResponse,
     ShopEntitlementResponse,
+    ShopHandoffRequest,
+    ShopHandoffResponse,
     ShopInvoiceResponse,
     ShopInvoiceSummaryResponse,
     ShopInvoiceValidationResponse,
@@ -268,6 +276,7 @@ def pay_my_order_demo(
 @router.post("/orders/{order_id}/checkout", response_model=ShopCheckoutResponse)
 def start_my_order_checkout(
     order_id: int,
+    body: ShopCheckoutRequest | None = None,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
     _: None = Depends(verify_csrf),
@@ -281,8 +290,34 @@ def start_my_order_checkout(
     artikel = shop_order_service.order_items(db, order.id)
     if not artikel:
         raise HTTPException(status_code=422, detail="Bestellung ohne Position")
+
+    success_url: str | None = None
+    cancel_url: str | None = None
+    if body is not None:
+        try:
+            success_url = stripe_service.validate_redirect_url(body.return_url)
+            cancel_url = stripe_service.validate_redirect_url(body.cancel_url)
+        except stripe_service.StripeError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    stripe_promo_id: str | None = None
+    if order.coupon_code:
+        coupon = (
+            db.query(ShopCoupon)
+            .filter(ShopCoupon.code == order.coupon_code)
+            .first()
+        )
+        if coupon is not None and coupon.stripe_promotion_code_id:
+            stripe_promo_id = coupon.stripe_promotion_code_id
+
     try:
-        session_id, url = stripe_service.create_checkout_session(order, artikel[0])
+        session_id, url = stripe_service.create_checkout_session(
+            order,
+            artikel[0],
+            success_url=success_url,
+            cancel_url=cancel_url,
+            stripe_promotion_code_id=stripe_promo_id,
+        )
     except stripe_service.StripeNotConfigured as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except stripe_service.StripeError as exc:
@@ -291,6 +326,47 @@ def start_my_order_checkout(
     order.payment_reference = session_id
     db.commit()
     return ShopCheckoutResponse(checkout_url=url)
+
+
+_HANDOFF_GAME_RE = re.compile(r"^[a-zA-Z0-9_-]{1,64}$")
+
+
+@router.post("/handoff", response_model=ShopHandoffResponse)
+def create_shop_handoff(
+    body: ShopHandoffRequest,
+    user: User = Depends(get_current_user),
+    _: None = Depends(verify_csrf),
+) -> ShopHandoffResponse:
+    """Erzeugt eine sichere Webshop-Zieladresse fuer gekoppelte MSS-App-Clients."""
+    app_return: str | None = None
+    if body.app_return_url:
+        try:
+            app_return = stripe_service.validate_redirect_url(body.app_return_url)
+        except stripe_service.StripeError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    base = (settings.panel_url or "").rstrip("/")
+    if body.target == "catalog":
+        path = "/"
+    elif body.target == "konto":
+        path = "/konto/bestellungen"
+    elif body.target == "game":
+        slug = (body.game_type or "").strip()
+        if not _HANDOFF_GAME_RE.fullmatch(slug):
+            raise HTTPException(status_code=422, detail="Ungueltige Spiel-Kennung")
+        path = f"/shop/{slug}"
+    else:
+        if body.addon_id is None or body.addon_id < 1:
+            raise HTTPException(status_code=422, detail="addon_id fehlt oder ungueltig")
+        path = f"/shop/addon/{body.addon_id}/kasse"
+
+    query_params: dict[str, str] = {}
+    if body.coupon_code and body.coupon_code.strip():
+        query_params["coupon"] = body.coupon_code.strip().upper()
+    if app_return:
+        query_params["app_return"] = app_return
+    query = f"?{urlencode(query_params)}" if query_params else ""
+    return ShopHandoffResponse(url=f"{base}{path}{query}")
 
 
 @router.post("/stripe/webhook")
