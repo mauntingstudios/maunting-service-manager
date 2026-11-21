@@ -4536,11 +4536,12 @@
     "shopEnabledHint": "Shows the public storefront at `/`. Off hides it and sends visitors straight to the panel.",
     "shop": {
       "titel": "Native shop",
-      "untertitel": "Storefront, plans, payments and invoices. This phase shows the prepared surface; Stripe and provisioning follow.",
+      "untertitel": "Storefront, plans, Stripe payments, invoice ledger and server provisioning.",
       "demo": "Phase 1 · Demo",
       "aktiv": "Shop active",
       "inaktiv": "Shop off",
       "phase2": "Phase 2",
+      "phase3": "Phase 3",
       "stripeNichtKonfiguriert": "Stripe is not connected yet.",
       "allgemein": {
         "titel": "General",
@@ -4658,6 +4659,34 @@
       "webhooks": {
         "titel": "Webhooks",
         "text": "Delivery log and retries for Stripe and shop events."
+      },
+      "betrieb": {
+        "ladefehler": "Could not load shop records.",
+        "abgleichStarten": "Run reconciliation",
+        "abgleichErfolg": "Shop reconciliation finished.",
+        "abgleichFehler": "Shop reconciliation failed.",
+        "abgleichErgebnis": "Checked: {{geprueft}} · Newly paid: {{bezahlt}} · Invoices: {{rechnungen}} · Syncs: {{entitlements}}",
+        "ordersLeer": "No orders yet",
+        "ordersLeerText": "Placed orders appear here.",
+        "erstatten": "Refund",
+        "erstattenBestaetigen": "Confirm refund",
+        "refundErfolg": "Order refunded.",
+        "refundFehler": "Refund failed.",
+        "erneutSyncen": "Retry sync",
+        "syncErfolg": "Entitlement synced.",
+        "syncFehler": "Sync failed.",
+        "grundPlatzhalter": "Reason (at least 3 characters)",
+        "grundKurz": "Please provide a reason of at least 3 characters.",
+        "pruefExport": "Audit export (ZIP)",
+        "rechnungenLeer": "No invoices yet",
+        "rechnungenLeerText": "Issued invoices and credit notes appear here.",
+        "typGutschrift": "Credit note",
+        "gutschriftErstellen": "Credit note",
+        "gutschriftBestaetigen": "Issue credit note",
+        "gutschriftErfolg": "Credit note issued.",
+        "gutschriftFehler": "Could not issue credit note.",
+        "webhooksLeer": "No webhook events yet",
+        "webhooksLeerText": "Processed Stripe events appear here."
       }
     },
     "cloudflareEnabled": "Cloudflare DNS",
@@ -6624,7 +6653,9 @@
         "karte": "Card",
         "sepa": "SEPA direct debit",
         "standard": "Default",
-        "stripeFolgt": "Stripe will be connected in phase 2. No payment data is stored."
+        "stripeFolgt": "Stripe will be connected in phase 2. No payment data is stored.",
+        "stripeTitel": "Payments via Stripe",
+        "stripeHinweis": "Card details and SEPA mandates stay with Stripe and are never stored in MSM."
       },
       "abos": {
         "titel": "Subscriptions",
@@ -6664,15 +6695,15 @@
     },
     "serverAbo": {
       "titel": "Plan & subscription",
-      "untertitel": "Server #{{id}} · demo view",
-      "demo": "Demo",
+      "untertitel": "Server #{{id}}",
       "tarif": "Plan",
-      "tarifName": "Demo plan",
-      "slots": "Slots",
+      "tarifName": "Shop plan",
+      "ressourcen": "Resources",
       "naechsteZahlung": "Next payment",
-      "upgrade": "Change plan",
       "aboAnsehen": "View subscription",
-      "hinweis": "Real plan management arrives with phase 2. Until then no order data is read or changed here."
+      "keinesTitel": "No shop subscription linked",
+      "keinesText": "This server was created directly in the panel.",
+      "ladefehler": "Could not load subscription details."
     }
   },
   "privacyNotice": {

@@ -225,6 +225,48 @@ export const shopOrderApi = {
       method: 'POST',
     }),
   listEntitlements: () => api<ShopEntitlementDto[]>('/shop/entitlements'),
+  getServerSubscription: (serverId: number | string) =>
+    api<ShopServerSubscriptionDto>(`/shop/servers/${serverId}/subscription`),
+}
+
+export interface ShopServerSubscriptionDto {
+  has_subscription: boolean
+  subscription: ShopSubscriptionDto | null
+  entitlement: ShopEntitlementDto | null
+  ram_mb: number | null
+  cpu: number | null
+  slots: number | null
+}
+
+export interface ShopAdminOrderDto extends ShopOrderDto {
+  user_id: number
+  username: string | null
+  entitlements: ShopEntitlementDto[]
+}
+
+export interface ShopPaymentEventDto {
+  id: number
+  event_id: string
+  event_type: string
+  order_id: number | null
+  status: string
+  received_at: string
+}
+
+export interface ShopReconciliationDto {
+  orders_checked: number
+  orders_marked_paid: number
+  orders_expired: number
+  invoices_issued: number
+  entitlements_synced: number
+  pending_orders_remaining: number
+  failed_entitlements_remaining: number
+  errors: string[]
+}
+
+export interface ShopRefundResponseDto {
+  order: ShopOrderDto
+  credit_note_number: string | null
 }
 
 export type ShopStripeMode = 'test' | 'live' | 'unknown'
@@ -322,4 +364,35 @@ export const shopSellerApi = {
       method: 'PUT',
       body: JSON.stringify(payload),
     }),
+}
+
+export const shopAdminOpsApi = {
+  listOrders: (limit = 50) =>
+    api<ShopAdminOrderDto[]>(`/shop/admin/orders?limit=${limit}`),
+  refundOrder: (orderId: number, reason: string) =>
+    api<ShopRefundResponseDto>(`/shop/orders/${orderId}/refund`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    }),
+  syncEntitlement: (entitlementId: number) =>
+    api<ShopEntitlementDto>(`/shop/entitlements/${entitlementId}/sync`, {
+      method: 'POST',
+    }),
+  reconcile: () =>
+    api<ShopReconciliationDto>('/shop/reconcile', { method: 'POST' }),
+  listInvoices: (limit = 50) =>
+    api<ShopInvoiceSummaryDto[]>(`/shop/admin/invoices?limit=${limit}`),
+  creditInvoice: (invoiceId: number, reason: string) =>
+    api<ShopInvoiceDto>(`/shop/invoices/${invoiceId}/credit`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    }),
+  exportInvoicesUrl: (year?: number) =>
+    year
+      ? apiUrl(`/api/shop/invoices/export?year=${year}`)
+      : apiUrl('/api/shop/invoices/export'),
+  adminInvoicePdfUrl: (id: number) => apiUrl(`/api/shop/admin/invoices/${id}/pdf`),
+  adminInvoiceXmlUrl: (id: number) => apiUrl(`/api/shop/admin/invoices/${id}/xml`),
+  listWebhooks: (limit = 50) =>
+    api<ShopPaymentEventDto[]>(`/shop/admin/webhooks?limit=${limit}`),
 }

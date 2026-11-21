@@ -4536,11 +4536,12 @@
     "shopEnabledHint": "Zeigt die öffentliche Storefront unter `/`. Aus schaltet sie ab und führt direkt ins Panel.",
     "shop": {
       "titel": "Nativer Shop",
-      "untertitel": "Storefront, Tarife, Zahlungen und Rechnungen. In dieser Phase siehst du die vorbereitete Oberfläche; Stripe und Provisionierung folgen.",
+      "untertitel": "Storefront, Tarife, Stripe-Zahlungen, Rechnungs-Ledger und Server-Provisionierung.",
       "demo": "Phase 1 · Demo",
       "aktiv": "Shop aktiv",
       "inaktiv": "Shop aus",
       "phase2": "Phase 2",
+      "phase3": "Phase 3",
       "stripeNichtKonfiguriert": "Stripe ist noch nicht verbunden.",
       "allgemein": {
         "titel": "Allgemein",
@@ -4658,6 +4659,34 @@
       "webhooks": {
         "titel": "Webhooks",
         "text": "Zustellprotokoll und Wiederholungen für Stripe und Shop-Ereignisse."
+      },
+      "betrieb": {
+        "ladefehler": "Shop-Daten konnten nicht geladen werden.",
+        "abgleichStarten": "Abgleich starten",
+        "abgleichErfolg": "Shop-Abgleich abgeschlossen.",
+        "abgleichFehler": "Shop-Abgleich fehlgeschlagen.",
+        "abgleichErgebnis": "Geprüft: {{geprueft}} · Neu bezahlt: {{bezahlt}} · Rechnungen: {{rechnungen}} · Syncs: {{entitlements}}",
+        "ordersLeer": "Noch keine Bestellungen",
+        "ordersLeerText": "Eingegangene Bestellungen erscheinen hier.",
+        "erstatten": "Erstatten",
+        "erstattenBestaetigen": "Erstattung auslösen",
+        "refundErfolg": "Bestellung erstattet.",
+        "refundFehler": "Erstattung fehlgeschlagen.",
+        "erneutSyncen": "Erneut prüfen",
+        "syncErfolg": "Freischaltung synchronisiert.",
+        "syncFehler": "Synchronisierung fehlgeschlagen.",
+        "grundPlatzhalter": "Begründung (mindestens 3 Zeichen)",
+        "grundKurz": "Bitte eine Begründung mit mindestens 3 Zeichen angeben.",
+        "pruefExport": "Betriebsprüfungs-Export (ZIP)",
+        "rechnungenLeer": "Noch keine Belege",
+        "rechnungenLeerText": "Ausgestellte Rechnungen und Gutschriften erscheinen hier.",
+        "typGutschrift": "Gutschrift",
+        "gutschriftErstellen": "Gutschrift",
+        "gutschriftBestaetigen": "Gutschrift ausstellen",
+        "gutschriftErfolg": "Gutschrift ausgestellt.",
+        "gutschriftFehler": "Gutschrift konnte nicht ausgestellt werden.",
+        "webhooksLeer": "Noch keine Webhook-Ereignisse",
+        "webhooksLeerText": "Verarbeitete Stripe-Ereignisse erscheinen hier."
       }
     },
     "cloudflareEnabled": "Cloudflare DNS",
@@ -6624,7 +6653,9 @@
         "karte": "Karte",
         "sepa": "SEPA-Lastschrift",
         "standard": "Standard",
-        "stripeFolgt": "Stripe wird in Phase 2 verbunden. Es werden keine Zahlungsdaten gespeichert."
+        "stripeFolgt": "Stripe wird in Phase 2 verbunden. Es werden keine Zahlungsdaten gespeichert.",
+        "stripeTitel": "Zahlungsabwicklung über Stripe",
+        "stripeHinweis": "Kartendaten und SEPA-Mandate werden direkt bei Stripe geführt und nicht in MSM gespeichert."
       },
       "abos": {
         "titel": "Abos",
@@ -6664,15 +6695,15 @@
     },
     "serverAbo": {
       "titel": "Abo & Tarif",
-      "untertitel": "Server #{{id}} · Demo-Ansicht",
-      "demo": "Demo",
+      "untertitel": "Server #{{id}}",
       "tarif": "Tarif",
-      "tarifName": "Demo-Tarif",
-      "slots": "Slots",
+      "tarifName": "Shop-Tarif",
+      "ressourcen": "Ressourcen",
       "naechsteZahlung": "Nächste Zahlung",
-      "upgrade": "Tarif ändern",
       "aboAnsehen": "Abo ansehen",
-      "hinweis": "Die echte Tarifverwaltung kommt mit Phase 2. Bis dahin werden hier keine Bestelldaten gelesen oder geändert."
+      "keinesTitel": "Kein Shop-Abo verknüpft",
+      "keinesText": "Dieser Server wurde direkt im Panel angelegt.",
+      "ladefehler": "Abo-Daten konnten nicht geladen werden."
     }
   },
   "privacyNotice": {

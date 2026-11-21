@@ -51,16 +51,6 @@ function orderAusApi(dto: Awaited<ReturnType<typeof shopOrderApi.getOrder>>): Or
   }
 }
 
-// Zahlungsmethoden sind bis zur Stripe-Anbindung Demo-Daten.
-const MOCK_PAYMENT_METHODS: PaymentMethod[] = [
-  {
-    id: 'pm-1',
-    art: 'card',
-    bezeichnung: 'Visa •••• 4242',
-    standard: true,
-  },
-]
-
 const MOCK_SETTINGS: ShopSettings = {
   shopEnabled: true,
   waehrung: 'EUR',
@@ -92,6 +82,6 @@ export const shopApi: ShopApi = {
       serverId: dto.server_id ?? undefined,
       provisioningStatus: dto.provisioning_status,
     })),
-  listPaymentMethods: async () => MOCK_PAYMENT_METHODS,
+  listPaymentMethods: async () => [],
   getSettings: async () => MOCK_SETTINGS,
 }

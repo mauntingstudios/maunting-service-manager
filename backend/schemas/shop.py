@@ -311,6 +311,30 @@ class ShopReconciliationResponse(BaseModel):
     errors: list[str]
 
 
+class ShopAdminOrderResponse(ShopOrderResponse):
+    user_id: int
+    username: str | None = None
+    entitlements: list[ShopEntitlementResponse] = Field(default_factory=list)
+
+
+class ShopPaymentEventResponse(BaseModel):
+    id: int
+    event_id: str
+    event_type: str
+    order_id: int | None = None
+    status: str
+    received_at: datetime
+
+
+class ShopServerSubscriptionResponse(BaseModel):
+    has_subscription: bool
+    subscription: ShopSubscriptionResponse | None = None
+    entitlement: ShopEntitlementResponse | None = None
+    ram_mb: int | None = None
+    cpu: int | None = None
+    slots: int | None = None
+
+
 class ShopCatalogPlan(BaseModel):
     """Oeffentliche Sicht: keine Node-/Rollen-IDs, nur was der Shop braucht."""
 

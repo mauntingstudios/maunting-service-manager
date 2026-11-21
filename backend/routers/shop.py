@@ -18,8 +18,17 @@ from sqlalchemy.orm import Session
 
 from database import get_db
 from dependencies import get_current_user, require_global, verify_csrf
-from models import ShopInvoice, ShopOrder, ShopPlan, User
+from models import (
+    ShopEntitlement,
+    ShopInvoice,
+    ShopOrder,
+    ShopPaymentEvent,
+    ShopPlan,
+    ShopSubscription,
+    User,
+)
 from schemas.shop import (
+    ShopAdminOrderResponse,
     ShopCatalogPlan,
     ShopCheckoutResponse,
     ShopCreditNoteCreate,
@@ -28,6 +37,7 @@ from schemas.shop import (
     ShopInvoiceSummaryResponse,
     ShopOrderCreate,
     ShopOrderResponse,
+    ShopPaymentEventResponse,
     ShopPlanResponse,
     ShopPlanUpdate,
     ShopPlanWrite,
@@ -36,14 +46,17 @@ from schemas.shop import (
     ShopRefundResponse,
     ShopSellerSettings,
     ShopSellerSettingsUpdate,
+    ShopServerSubscriptionResponse,
     ShopStripeKeysUpdate,
     ShopStripeStatus,
     ShopSubscriptionResponse,
 )
 from services import (
     audit_service,
+    permission_service,
     shop_catalog_service,
     shop_fulfillment_service,
+    shop_invoice_export_service,
     shop_invoice_service,
     shop_order_service,
     shop_reconciliation_service,
@@ -217,6 +230,28 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)) -> dic
     return {"status": status}
 
 
+def _invoice_file_response(rechnung: ShopInvoice, endung: str) -> Response:
+    if endung == "xml":
+        return Response(
+            content=rechnung.xml_text.encode("utf-8"),
+            media_type="application/xml",
+            headers={
+                "Content-Disposition": (
+                    f'attachment; filename="{shop_invoice_service.download_name(rechnung, "xml")}"'
+                )
+            },
+        )
+    return Response(
+        content=rechnung.pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="{shop_invoice_service.download_name(rechnung, "pdf")}"'
+            )
+        },
+    )
+
+
 @router.get("/invoices", response_model=list[ShopInvoiceSummaryResponse])
 def list_my_invoices(
     db: Session = Depends(get_db),
@@ -226,6 +261,25 @@ def list_my_invoices(
         shop_invoice_service.summary_response(db, rechnung)
         for rechnung in shop_invoice_service.list_invoices(db, user.id)
     ]
+
+
+@router.get("/invoices/export")
+def export_invoices_admin(
+    year: int | None = Query(default=None, ge=2000, le=2100),
+    db: Session = Depends(get_db),
+    actor: User = Depends(require_global("panel.settings.read")),
+) -> Response:
+    """Exportiert alle Belege als Betriebspruefungs-ZIP (CSV, JSON, PDF, XML)."""
+    daten, dateiname = shop_invoice_export_service.build_audit_export_zip(
+        db, actor_user_id=actor.id, year=year
+    )
+    return Response(
+        content=daten,
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="{dateiname}"'
+        },
+    )
 
 
 @router.get("/invoices/{invoice_id}", response_model=ShopInvoiceResponse)
@@ -249,15 +303,7 @@ def download_my_invoice_xml(
     rechnung = shop_invoice_service.get_invoice(db, user.id, invoice_id)
     if rechnung is None:
         raise HTTPException(status_code=404, detail="Rechnung nicht gefunden")
-    return Response(
-        content=rechnung.xml_text.encode("utf-8"),
-        media_type="application/xml",
-        headers={
-            "Content-Disposition": (
-                f'attachment; filename="{shop_invoice_service.download_name(rechnung, "xml")}"'
-            )
-        },
-    )
+    return _invoice_file_response(rechnung, "xml")
 
 
 @router.get("/invoices/{invoice_id}/pdf")
@@ -269,15 +315,7 @@ def download_my_invoice_pdf(
     rechnung = shop_invoice_service.get_invoice(db, user.id, invoice_id)
     if rechnung is None:
         raise HTTPException(status_code=404, detail="Rechnung nicht gefunden")
-    return Response(
-        content=rechnung.pdf_bytes,
-        media_type="application/pdf",
-        headers={
-            "Content-Disposition": (
-                f'attachment; filename="{shop_invoice_service.download_name(rechnung, "pdf")}"'
-            )
-        },
-    )
+    return _invoice_file_response(rechnung, "pdf")
 
 
 @router.post("/invoices/{invoice_id}/credit", response_model=ShopInvoiceResponse)
@@ -611,3 +649,163 @@ def reset_plan_artwork(
     plan = _plan_or_404(db, plan_id)
     plan = shop_catalog_service.reset_plan_artwork(db, plan, actor_id=actor.id)
     return shop_catalog_service.plan_response(db, plan)
+
+
+# ── Server-Abo-Zuordnung & Panel-Betriebsansichten ───────────────────────
+
+
+@router.get(
+    "/servers/{server_id}/subscription",
+    response_model=ShopServerSubscriptionResponse,
+)
+def get_server_subscription(
+    server_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> ShopServerSubscriptionResponse:
+    """Liefert Tarif- und Abo-Informationen zu einem Server fuer berechtigte Nutzer."""
+    if not permission_service.has_server_permission(
+        db, user, server_id, "server.view"
+    ):
+        raise HTTPException(status_code=404, detail="Server nicht gefunden")
+    entitlement = (
+        db.query(ShopEntitlement)
+        .filter(
+            ShopEntitlement.server_id == server_id,
+            ShopEntitlement.kind == "server",
+        )
+        .order_by(ShopEntitlement.id.desc())
+        .first()
+    )
+    if entitlement is None:
+        return ShopServerSubscriptionResponse(has_subscription=False)
+    abo = (
+        db.query(ShopSubscription)
+        .filter(ShopSubscription.order_item_id == entitlement.order_item_id)
+        .first()
+    )
+    return ShopServerSubscriptionResponse(
+        has_subscription=True,
+        subscription=(
+            shop_order_service.subscription_response(abo)
+            if abo is not None
+            else None
+        ),
+        entitlement=shop_order_service.entitlement_response(entitlement),
+        ram_mb=entitlement.ram_mb,
+        cpu=entitlement.cpu,
+        slots=entitlement.slots,
+    )
+
+
+@router.get("/admin/orders", response_model=list[ShopAdminOrderResponse])
+def list_admin_orders(
+    limit: int = Query(default=50, ge=1, le=200),
+    db: Session = Depends(get_db),
+    _: User = Depends(require_global("panel.settings.read")),
+) -> list[ShopAdminOrderResponse]:
+    orders = (
+        db.query(ShopOrder)
+        .order_by(ShopOrder.created_at.desc(), ShopOrder.id.desc())
+        .limit(limit)
+        .all()
+    )
+    if not orders:
+        return []
+    user_ids = {order.user_id for order in orders}
+    users_by_id = {
+        row.id: row.username
+        for row in db.query(User.id, User.username)
+        .filter(User.id.in_(user_ids))
+        .all()
+    }
+    order_ids = [order.id for order in orders]
+    ents_by_order: dict[int, list[ShopEntitlementResponse]] = {}
+    for ent in (
+        db.query(ShopEntitlement)
+        .filter(ShopEntitlement.order_id.in_(order_ids))
+        .order_by(ShopEntitlement.id.asc())
+        .all()
+    ):
+        ents_by_order.setdefault(ent.order_id, []).append(
+            shop_order_service.entitlement_response(ent)
+        )
+    ergebnis: list[ShopAdminOrderResponse] = []
+    for order in orders:
+        basis = shop_order_service.order_response(db, order)
+        ergebnis.append(
+            ShopAdminOrderResponse(
+                **basis.model_dump(),
+                user_id=order.user_id,
+                username=users_by_id.get(order.user_id),
+                entitlements=ents_by_order.get(order.id, []),
+            )
+        )
+    return ergebnis
+
+
+@router.get("/admin/invoices", response_model=list[ShopInvoiceSummaryResponse])
+def list_admin_invoices(
+    limit: int = Query(default=50, ge=1, le=200),
+    db: Session = Depends(get_db),
+    _: User = Depends(require_global("panel.settings.read")),
+) -> list[ShopInvoiceSummaryResponse]:
+    rechnungen = (
+        db.query(ShopInvoice)
+        .order_by(ShopInvoice.issued_at.desc(), ShopInvoice.id.desc())
+        .limit(limit)
+        .all()
+    )
+    return [
+        shop_invoice_service.summary_response(db, rechnung)
+        for rechnung in rechnungen
+    ]
+
+
+@router.get("/admin/invoices/{invoice_id}/pdf")
+def download_admin_invoice_pdf(
+    invoice_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_global("panel.settings.read")),
+) -> Response:
+    rechnung = db.query(ShopInvoice).filter(ShopInvoice.id == invoice_id).first()
+    if rechnung is None:
+        raise HTTPException(status_code=404, detail="Rechnung nicht gefunden")
+    return _invoice_file_response(rechnung, "pdf")
+
+
+@router.get("/admin/invoices/{invoice_id}/xml")
+def download_admin_invoice_xml(
+    invoice_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_global("panel.settings.read")),
+) -> Response:
+    rechnung = db.query(ShopInvoice).filter(ShopInvoice.id == invoice_id).first()
+    if rechnung is None:
+        raise HTTPException(status_code=404, detail="Rechnung nicht gefunden")
+    return _invoice_file_response(rechnung, "xml")
+
+
+@router.get("/admin/webhooks", response_model=list[ShopPaymentEventResponse])
+def list_admin_webhooks(
+    limit: int = Query(default=50, ge=1, le=200),
+    db: Session = Depends(get_db),
+    _: User = Depends(require_global("panel.settings.read")),
+) -> list[ShopPaymentEventResponse]:
+    events = (
+        db.query(ShopPaymentEvent)
+        .order_by(ShopPaymentEvent.received_at.desc(), ShopPaymentEvent.id.desc())
+        .limit(limit)
+        .all()
+    )
+    return [
+        ShopPaymentEventResponse(
+            id=evt.id,
+            event_id=evt.event_id,
+            event_type=evt.event_type,
+            order_id=evt.order_id,
+            status=evt.status,
+            received_at=evt.received_at,
+        )
+        for evt in events
+    ]
