@@ -1389,6 +1389,9 @@
         "propose_calendar_event_update": "Update calendar event",
         "propose_calendar_event_delete": "Delete calendar event",
         "propose_popup_set": "Save pop-up announcement",
+        "propose_shop_plan_upsert": "Save shop plan",
+        "propose_shop_coupon_upsert": "Save shop coupon",
+        "propose_shop_addon_upsert": "Save shop add-on",
         "propose_note_create": "Create note",
         "propose_note_update": "Update note",
         "propose_note_delete": "Delete note",
@@ -1471,6 +1474,9 @@
         "propose_calendar_event_update": "Update this calendar event with the new details now?",
         "propose_calendar_event_delete": "Delete this event from your calendar? This cannot be undone.",
         "propose_popup_set": "Save this pop-up announcement for the panel now?",
+        "propose_shop_plan_upsert": "Save the proposed shop plans in the catalog?",
+        "propose_shop_coupon_upsert": "Save this coupon or promotion in the shop?",
+        "propose_shop_addon_upsert": "Save this shop add-on in the catalog?",
         "propose_note_create": "Create note “{{title}}” now?",
         "propose_note_update": "Update this note with the new details?",
         "propose_note_delete": "Permanently delete this note? This cannot be undone.",
@@ -1683,6 +1689,10 @@
       "voice_resolve_latest_proposal": "Voice confirmation processed",
       "notes_read": "Notes queried",
       "popups_read": "Pop-ups queried",
+      "read_shop_catalog": "Shop catalog queried",
+      "propose_shop_plan_upsert": "Shop plans prepared",
+      "propose_shop_coupon_upsert": "Shop coupon prepared",
+      "propose_shop_addon_upsert": "Shop add-on prepared",
       "voice_leave_region_view": "Exited region view",
       "voice_set_region_view": "Opened region view",
       "propose_note_create": "Note creation prepared",
@@ -1778,6 +1788,10 @@
       "propose_calendar_event_update": "Updating the calendar event",
       "propose_calendar_event_delete": "Preparing to delete the calendar event",
       "propose_popup_set": "Preparing the pop-up announcement",
+      "read_shop_catalog": "Reading blueprints and shop catalog",
+      "propose_shop_plan_upsert": "Preparing the shop plans",
+      "propose_shop_coupon_upsert": "Preparing the shop coupon",
+      "propose_shop_addon_upsert": "Preparing the shop add-on",
       "email_search": "Searching your emails",
       "email_read": "Reading the email",
       "calendar_read": "Checking your calendar events",
@@ -3631,6 +3645,10 @@
       "title": "AI-assisted pop-ups",
       "desc": "Let the AI read existing announcements and propose new or edited ones."
     },
+    "ai_shop_manage": {
+      "title": "AI-assisted shop management",
+      "desc": "Let Singra inspect game blueprints, plans, coupons and add-ons and propose catalog changes."
+    },
     "calendar_use": {
       "title": "Use calendar",
       "desc": "Enables access to the calendar module for manual event management and calendar subscriptions."
@@ -4630,6 +4648,7 @@
       "plans": {
         "titel": "Plans & prices",
         "untertitel": "Define what the shop sells per game. Without an active plan the storefront shows no game.",
+        "ressourcenGrenzen": "Resources & scaling",
         "neu": "New plan",
         "bearbeiten": "Edit",
         "leer": "No plans yet",
@@ -4746,6 +4765,9 @@
         "mindestbetrag": "Minimum order (EUR)",
         "maxEinloesungen": "Max redemptions (empty = unlimited)",
         "cooldown": "Banner cooldown (hours)",
+        "gueltigAb": "Valid from (optional)",
+        "gueltigBis": "Valid until (flash sale)",
+        "zeitraumFehler": "The end date must be after the start date.",
         "badgeAnzeigen": "Show discount badge in storefront",
         "bannerAnzeigen": "Display top storefront banner",
         "einloesungen": "{{count}} used",
@@ -6632,16 +6654,40 @@
       "badge": "Demo"
     },
     "hero": {
-      "kicker": "Maunting Server Manager",
+      "kicker": "GAME · SERVER · HOSTING",
       "titel": "Rent a server without the setup night.",
-      "untertitel": "Pick a game, set the resources, go live. We handle installation, permissions and restarts.",
+      "untertitel": "Pick a game, set your resources, go live. Installation, backups and permissions run in one panel.",
       "ctaSammlung": "Browse games",
       "ctaAddons": "Add-ons & AI",
       "ctaPanel": "Open panel",
+      "statusTitel": "Shop status",
+      "statusBereit": "All systems ready",
       "statSpiele": "Available games",
       "statAddons": "Add-ons & bundles",
+      "statBereitstellung": "Provisioning",
+      "statSofortWert": "Instant after payment",
       "statBlueprints": "Blueprints available",
-      "statSetup": "Steps to online"
+      "statSetup": "Steps to online",
+      "trust": {
+        "sofortAktiv": "Instant activation",
+        "backups": "Automated backups",
+        "kontrolle": "Full panel control",
+        "preise": "Transparent pricing"
+      }
+    },
+    "shortcuts": {
+      "gameserver": {
+        "titel": "Game servers",
+        "text": "Dedicated blueprint instances"
+      },
+      "addons": {
+        "titel": "Add-ons & AI",
+        "text": "Extra tokens, slots and backups"
+      },
+      "konto": {
+        "titel": "Customer area",
+        "text": "Subscriptions, invoices and profile"
+      }
     },
     "sammlung": {
       "titel": "Games",
@@ -6678,6 +6724,17 @@
       "slots_other": "Includes {{count}} players",
       "konfigurieren": "Configure",
       "rabatt": "-{{wert}}"
+    },
+    "trustLeiste": {
+      "titel": "Included with every server",
+      "einrichtungTitel": "Ready to play",
+      "einrichtungText": "Containers and startup config are provisioned right after payment.",
+      "backupsTitel": "Encrypted backups",
+      "backupsText": "Safe snapshots and one-click recovery inside the panel.",
+      "kontrolleTitel": "Full control",
+      "kontrolleText": "Console, files, mods and scheduled tasks in a single place.",
+      "preiseTitel": "Fair billing",
+      "preiseText": "Clear monthly plans without hidden extra charges."
     },
     "schritte": {
       "titel": "How it works",

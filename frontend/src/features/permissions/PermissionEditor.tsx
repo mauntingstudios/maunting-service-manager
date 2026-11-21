@@ -94,6 +94,7 @@ const SUBGROUPS = [
       'ai.mcp.manage',
       'ai.docs.use',
       'ai.popups.manage',
+      'ai.shop.manage',
       'ai.usage.read.all',
     ],
   },

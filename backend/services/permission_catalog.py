@@ -150,6 +150,7 @@ GLOBAL_PERMISSIONS: tuple[PermissionDef, ...] = (
     # jedem Tool-Aufruf erneut geprueft.
     PermissionDef("ai.docs.use",               "ai",      "Singra in Dokumenten verwenden"),
     PermissionDef("ai.popups.manage",          "ai",      "Pop-ups und Ankündigungen über die KI lesen, erstellen und ändern"),
+    PermissionDef("ai.shop.manage",            "ai",      "Shop-Tarife, Gutscheine und Add-ons über die KI lesen, erstellen und ändern"),
     # OAuth-Provider-Konfiguration (Phase 4 — Social Login).
     # `secret_update` ist bewusst separat: erfordert zusaetzliche Audit-Bestaetigung.
     # `test` ist read-only, damit ein Operator ohne write-Rechte die Konfiguration pruefen kann.

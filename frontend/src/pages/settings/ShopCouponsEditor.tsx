@@ -39,6 +39,8 @@ interface CouponDraft {
   minGrossEuro: string
   maxRedemptions: string
   bannerCooldownHours: string
+  validFrom: string
+  validUntil: string
   showBadge: boolean
   showBanner: boolean
   active: boolean
@@ -57,6 +59,8 @@ const LEER: CouponDraft = {
   minGrossEuro: '0',
   maxRedemptions: '',
   bannerCooldownHours: '6',
+  validFrom: '',
+  validUntil: '',
   showBadge: true,
   showBanner: false,
   active: true,
@@ -67,6 +71,21 @@ function zahl(wert: string): number | null {
   if (!bereinigt) return null
   const num = Number(bereinigt)
   return Number.isFinite(num) && num >= 0 ? num : null
+}
+
+function isoZuLokal(iso: string | null): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (!Number.isFinite(d.getTime())) return ''
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+function lokalZuIso(wert: string): string | null {
+  const sauber = wert.trim()
+  if (!sauber) return null
+  const d = new Date(sauber)
+  return Number.isFinite(d.getTime()) ? d.toISOString() : null
 }
 
 function couponZuDraft(row: ShopCoupon): CouponDraft {
@@ -84,6 +103,8 @@ function couponZuDraft(row: ShopCoupon): CouponDraft {
     minGrossEuro: (row.min_gross_cents / 100).toFixed(2),
     maxRedemptions: row.max_redemptions === null ? '' : String(row.max_redemptions),
     bannerCooldownHours: String(row.banner_cooldown_hours),
+    validFrom: isoZuLokal(row.valid_from),
+    validUntil: isoZuLokal(row.valid_until),
     showBadge: row.show_badge,
     showBanner: row.show_banner,
     active: row.active,
@@ -106,8 +127,8 @@ function draftZuPayload(draft: CouponDraft): ShopCouponWrite {
     target_plan_ids: draft.scope === 'plans' ? draft.targetPlanIds : [],
     min_gross_cents: Math.round((zahl(draft.minGrossEuro) ?? 0) * 100),
     max_redemptions: maxNum !== null && maxNum >= 1 ? Math.round(maxNum) : null,
-    valid_from: null,
-    valid_until: null,
+    valid_from: lokalZuIso(draft.validFrom),
+    valid_until: lokalZuIso(draft.validUntil),
     show_badge: draft.showBadge,
     show_banner: draft.showBanner,
     banner_cooldown_hours: Math.round(cooldownNum),
@@ -203,6 +224,10 @@ export function ShopCouponsEditor() {
     }
     if (problem === 'name' || problem === 'wert') {
       toast.error(t('settings.shop.coupons.wertFehler'))
+      return
+    }
+    if (draft.validFrom && draft.validUntil && new Date(draft.validUntil) <= new Date(draft.validFrom)) {
+      toast.error(t('settings.shop.coupons.zeitraumFehler'))
       return
     }
     setBusy(true)
@@ -379,7 +404,7 @@ export function ShopCouponsEditor() {
       )}
 
       <Dialog open={dialogOffen} onOpenChange={setDialogOffen}>
-        <DialogContent size="voll" className="max-w-2xl">
+        <DialogContent className="max-w-2xl max-h-[90dvh]">
           <DialogHeader>
             <DialogTitle>
               {editing
@@ -388,7 +413,7 @@ export function ShopCouponsEditor() {
             </DialogTitle>
           </DialogHeader>
 
-          <div className="space-y-4 py-2">
+          <div className="flex-1 space-y-5 overflow-y-auto p-6">
             <div className="grid gap-3 sm:grid-cols-2">
               <Input
                 label={t('settings.shop.coupons.code')}
@@ -470,32 +495,49 @@ export function ShopCouponsEditor() {
               </div>
             )}
 
-            <div className="grid gap-3 sm:grid-cols-3">
-              <Input
-                label={t('settings.shop.coupons.mindestbetrag')}
-                type="number"
-                min="0"
-                step="0.01"
-                inputMode="decimal"
-                value={draft.minGrossEuro}
-                onChange={(event) => setze('minGrossEuro', event.target.value)}
-              />
-              <Input
-                label={t('settings.shop.coupons.maxEinloesungen')}
-                type="number"
-                min="1"
-                inputMode="numeric"
-                value={draft.maxRedemptions}
-                onChange={(event) => setze('maxRedemptions', event.target.value)}
-              />
-              <Input
-                label={t('settings.shop.coupons.cooldown')}
-                type="number"
-                min="0"
-                inputMode="numeric"
-                value={draft.bannerCooldownHours}
-                onChange={(event) => setze('bannerCooldownHours', event.target.value)}
-              />
+            <div className="space-y-3 rounded-xl border border-outline-variant/30 bg-surface-container/60 p-4">
+              <div className="grid gap-3 sm:grid-cols-3">
+                <Input
+                  label={t('settings.shop.coupons.mindestbetrag')}
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  inputMode="decimal"
+                  value={draft.minGrossEuro}
+                  onChange={(event) => setze('minGrossEuro', event.target.value)}
+                />
+                <Input
+                  label={t('settings.shop.coupons.maxEinloesungen')}
+                  type="number"
+                  min="1"
+                  inputMode="numeric"
+                  value={draft.maxRedemptions}
+                  onChange={(event) => setze('maxRedemptions', event.target.value)}
+                />
+                <Input
+                  label={t('settings.shop.coupons.cooldown')}
+                  type="number"
+                  min="0"
+                  inputMode="numeric"
+                  value={draft.bannerCooldownHours}
+                  onChange={(event) => setze('bannerCooldownHours', event.target.value)}
+                />
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Input
+                  label={t('settings.shop.coupons.gueltigAb')}
+                  type="datetime-local"
+                  value={draft.validFrom}
+                  onChange={(event) => setze('validFrom', event.target.value)}
+                />
+                <Input
+                  label={t('settings.shop.coupons.gueltigBis')}
+                  type="datetime-local"
+                  value={draft.validUntil}
+                  onChange={(event) => setze('validUntil', event.target.value)}
+                />
+              </div>
             </div>
 
             <Input

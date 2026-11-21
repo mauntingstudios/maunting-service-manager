@@ -206,7 +206,9 @@ function prüfeDraft(draft: Draft): string | null {
 
 export function ShopPlansEditor() {
   const { t } = useTranslation()
-  const canWrite = useHasPermission('panel.settings.write')
+  const canWriteSettings = useHasPermission('panel.settings.write')
+  const canWriteShop = useHasPermission('shop.write')
+  const canWrite = canWriteSettings || canWriteShop
   const [plans, setPlans] = useState<ShopPlan[] | null>(null)
   const [games, setGames] = useState<GameInfo[]>([])
   const [dialogOffen, setDialogOffen] = useState(false)
@@ -454,14 +456,14 @@ export function ShopPlansEditor() {
       />
 
       <Dialog open={dialogOffen} onOpenChange={setDialogOffen}>
-        <DialogContent size="voll" className="max-w-3xl">
+        <DialogContent className="max-w-3xl max-h-[90dvh]">
           <DialogHeader>
             <DialogTitle>
               {editing ? t('settings.shop.plans.bearbeiten') : t('settings.shop.plans.neu')}
             </DialogTitle>
           </DialogHeader>
 
-          <div className="space-y-4 p-6">
+          <div className="flex-1 space-y-5 overflow-y-auto p-6">
             <div className="grid gap-4 sm:grid-cols-2">
               <label className="space-y-1.5">
                 <span className="block text-sm font-medium text-on-surface">
@@ -500,35 +502,40 @@ export function ShopPlansEditor() {
               />
             </div>
 
-            {RESSOURCEN.map((ressource) => (
-              <div key={ressource.id} className="grid gap-3 sm:grid-cols-3">
-                <Input
-                  label={t(ressource.includedKey)}
-                  type="number"
-                  min="0"
-                  inputMode="numeric"
-                  value={draft[ressource.includedFeld]}
-                  onChange={(event) => setze(ressource.includedFeld, event.target.value)}
-                />
-                <Input
-                  label={t(ressource.maxKey)}
-                  type="number"
-                  min="0"
-                  inputMode="numeric"
-                  value={draft[ressource.maxFeld]}
-                  onChange={(event) => setze(ressource.maxFeld, event.target.value)}
-                />
-                <Input
-                  label={t(ressource.preisKey)}
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  inputMode="decimal"
-                  value={draft[ressource.preisFeld]}
-                  onChange={(event) => setze(ressource.preisFeld, event.target.value)}
-                />
-              </div>
-            ))}
+            <div className="space-y-3 rounded-xl border border-outline-variant/30 bg-surface-container/60 p-4">
+              <p className="text-xs font-semibold uppercase tracking-wider text-on-surface-variant">
+                {t('settings.shop.plans.ressourcenGrenzen')}
+              </p>
+              {RESSOURCEN.map((ressource) => (
+                <div key={ressource.id} className="grid gap-3 sm:grid-cols-3">
+                  <Input
+                    label={t(ressource.includedKey)}
+                    type="number"
+                    min="0"
+                    inputMode="numeric"
+                    value={draft[ressource.includedFeld]}
+                    onChange={(event) => setze(ressource.includedFeld, event.target.value)}
+                  />
+                  <Input
+                    label={t(ressource.maxKey)}
+                    type="number"
+                    min="0"
+                    inputMode="numeric"
+                    value={draft[ressource.maxFeld]}
+                    onChange={(event) => setze(ressource.maxFeld, event.target.value)}
+                  />
+                  <Input
+                    label={t(ressource.preisKey)}
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    inputMode="decimal"
+                    value={draft[ressource.preisFeld]}
+                    onChange={(event) => setze(ressource.preisFeld, event.target.value)}
+                  />
+                </div>
+              ))}
+            </div>
 
             <div className="grid gap-4 sm:grid-cols-2">
               <label className="space-y-1.5">

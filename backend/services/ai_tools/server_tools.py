@@ -62,6 +62,7 @@ from services.ai_tools.panel_overview_tools import (
     REST_DEFINITIONEN as _PANEL_REST_DEFINITIONEN,
 )
 from services.ai_tools.audit_tools import DEFINITIONEN as _AUDIT_DEFINITIONEN
+from services.ai_tools.shop_tools import DEFINITIONEN as _SHOP_DEFINITIONEN
 from services.ai_tools.system_tools import (
     ASK_DEFINITIONEN as _ASK_DEFINITIONEN,
     DOKU_DEFINITIONEN as _DOKU_DEFINITIONEN,
@@ -298,6 +299,7 @@ def _global_tool_definitions() -> list[dict]:
         *_TASK_DEFINITIONEN,
         *_PERSONAL_DEFINITIONEN,
         *_DOCUMENT_DEFINITIONEN,
+        *_SHOP_DEFINITIONEN,
         *_USER_DEFINITIONEN,
         *_TEAM_DEFINITIONEN,
     ]

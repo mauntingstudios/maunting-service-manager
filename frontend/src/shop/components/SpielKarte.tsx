@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
+import { ArrowRight } from 'lucide-react'
 import { Badge } from '@maunting/ui'
 import { formatEuro } from '../preis'
 import type { ShopSpiel } from '../typen'
@@ -18,41 +19,48 @@ export function SpielKarte({ spiel, rabattLabel, priority = false }: SpielKarteP
   return (
     <Link
       to={`/shop/${spiel.id}`}
-      className="msm-card group flex overflow-hidden rounded-2xl border border-outline-variant/30 bg-surface-container-low/80 transition-all hover:border-primary/40 hover:bg-surface-container-high/50 focus-visible:ring-2 focus-visible:ring-primary/50"
+      className="msm-card group relative flex overflow-hidden rounded-2xl border border-white/10 bg-surface-container-low/90 shadow-lg transition-all hover:border-primary/45 hover:bg-surface-container-high/70 focus-visible:ring-2 focus-visible:ring-primary/50"
     >
       <article className="flex flex-1 flex-col">
-        <SpielArtwork spiel={spiel} priority={priority} />
-        <div className="flex flex-1 flex-col gap-3 p-5">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <h3 className="font-headline text-lg font-bold text-on-surface">{spiel.name}</h3>
-              <p className="text-xs uppercase tracking-wider text-on-surface-variant">
-                {spiel.category}
-              </p>
-            </div>
-            <div className="flex flex-wrap items-center justify-end gap-1.5">
-              {rabattLabel && (
-                <Badge variant="success">
-                  {t('shop.karte.rabatt', { wert: rabattLabel })}
-                </Badge>
-              )}
-              <Badge variant="info">{t('shop.karte.blueprint')}</Badge>
-            </div>
+        <div className="relative overflow-hidden">
+          <SpielArtwork
+            spiel={spiel}
+            priority={priority}
+            className="transition-transform duration-300 group-hover:scale-[1.03]"
+          />
+          <div className="pointer-events-none absolute right-3 top-3 flex flex-wrap items-center justify-end gap-1.5">
+            {rabattLabel && (
+              <Badge variant="success">
+                {t('shop.karte.rabatt', { wert: rabattLabel })}
+              </Badge>
+            )}
+            <span className="rounded-full border border-white/15 bg-background/75 px-2.5 py-0.5 text-label-sm font-medium text-on-surface/85 backdrop-blur-md">
+              {spiel.category}
+            </span>
           </div>
-          <p className="line-clamp-2 text-sm text-on-surface-variant">
+        </div>
+
+        <div className="flex flex-1 flex-col gap-2.5 p-4 sm:p-5">
+          <h3 className="font-headline text-base font-bold text-on-surface sm:text-lg">
+            {spiel.name}
+          </h3>
+          <p className="line-clamp-2 text-xs leading-relaxed text-on-surface-variant sm:text-sm">
             {spiel.beschreibung[sprache]}
           </p>
-          <footer className="mt-auto flex items-end justify-between gap-3 pt-2">
+          <footer className="mt-auto flex items-center justify-between gap-3 border-t border-white/10 pt-3">
             <div>
-              <p className="text-xs text-on-surface-variant">
+              <p className="font-headline text-sm font-bold text-primary">
                 {t('shop.karte.abPreis', { preis: formatEuro(spiel.grundpreisCent) })}
               </p>
-              <p className="font-headline text-sm font-semibold text-primary">
+              <p className="text-xs text-on-surface-variant">
                 {t('shop.karte.slots', { count: spiel.standardSlots })}
               </p>
             </div>
-            <span className="text-sm font-semibold text-primary transition-transform group-hover:translate-x-0.5">
-              {t('shop.karte.konfigurieren')} →
+            <span
+              className="grid h-9 w-9 shrink-0 place-items-center rounded-full border border-white/15 bg-white/5 text-on-surface-variant transition-all group-hover:border-primary/60 group-hover:bg-primary group-hover:text-on-primary"
+              aria-hidden="true"
+            >
+              <ArrowRight className="h-4 w-4" />
             </span>
           </footer>
         </div>

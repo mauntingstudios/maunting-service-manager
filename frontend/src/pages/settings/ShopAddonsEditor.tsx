@@ -169,7 +169,9 @@ function pruefeDraft(draft: AddonDraft): string | null {
 
 export function ShopAddonsEditor() {
   const { t } = useTranslation()
-  const canWrite = useHasPermission('panel.settings.write')
+  const canWriteSettings = useHasPermission('panel.settings.write')
+  const canWriteShop = useHasPermission('shop.write')
+  const canWrite = canWriteSettings || canWriteShop
   const [addons, setAddons] = useState<ShopAddon[] | null>(null)
   const [roles, setRoles] = useState<Role[]>([])
   const [dialogOffen, setDialogOffen] = useState(false)
@@ -448,7 +450,7 @@ export function ShopAddonsEditor() {
       )}
 
       <Dialog open={dialogOffen} onOpenChange={setDialogOffen}>
-        <DialogContent size="voll" className="max-w-2xl">
+        <DialogContent className="max-w-2xl max-h-[90dvh]">
           <DialogHeader>
             <DialogTitle>
               {editing
@@ -457,7 +459,7 @@ export function ShopAddonsEditor() {
             </DialogTitle>
           </DialogHeader>
 
-          <div className="space-y-4 py-2">
+          <div className="flex-1 space-y-5 overflow-y-auto p-6">
             <div className="grid gap-3 sm:grid-cols-2">
               <Input
                 label={t('settings.shop.addons.name')}

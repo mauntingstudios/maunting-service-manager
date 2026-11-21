@@ -1389,6 +1389,9 @@
         "propose_calendar_event_update": "Kalendertermin ändern",
         "propose_calendar_event_delete": "Kalendertermin löschen",
         "propose_popup_set": "Pop-up-Ankündigung speichern",
+        "propose_shop_plan_upsert": "Shop-Tarif speichern",
+        "propose_shop_coupon_upsert": "Shop-Gutschein speichern",
+        "propose_shop_addon_upsert": "Shop-Add-on speichern",
         "propose_note_create": "Notiz erstellen",
         "propose_note_update": "Notiz bearbeiten",
         "propose_note_delete": "Notiz löschen",
@@ -1471,6 +1474,9 @@
         "propose_calendar_event_update": "Termin im Kalender mit den neuen Details aktualisieren?",
         "propose_calendar_event_delete": "Diesen Termin aus dem Kalender löschen? Das lässt sich nicht rückgängig machen.",
         "propose_popup_set": "Diese Pop-up-Ankündigung für das Panel speichern?",
+        "propose_shop_plan_upsert": "Die vorgeschlagenen Shop-Tarife im Katalog speichern?",
+        "propose_shop_coupon_upsert": "Diesen Gutschein bzw. diese Aktion im Shop speichern?",
+        "propose_shop_addon_upsert": "Dieses Shop-Add-on im Katalog speichern?",
         "propose_note_create": "Notiz „{{title}}“ jetzt anlegen?",
         "propose_note_update": "Notiz mit den neuen Angaben aktualisieren?",
         "propose_note_delete": "Diese Notiz endgültig löschen? Das lässt sich nicht rückgängig machen.",
@@ -1683,6 +1689,10 @@
       "propose_file_delete": "Dateilöschung vorbereitet",
       "notes_read": "Notizen abgefragt",
       "popups_read": "Pop-ups abgefragt",
+      "read_shop_catalog": "Shop-Katalog abgefragt",
+      "propose_shop_plan_upsert": "Shop-Tarife vorbereitet",
+      "propose_shop_coupon_upsert": "Shop-Gutschein vorbereitet",
+      "propose_shop_addon_upsert": "Shop-Add-on vorbereitet",
       "voice_leave_region_view": "Regionenansicht beendet",
       "voice_set_region_view": "Regionenansicht geöffnet",
       "propose_note_create": "Notizerstellung vorbereitet",
@@ -1778,6 +1788,10 @@
       "propose_calendar_event_update": "Ich passe den Kalendertermin an",
       "propose_calendar_event_delete": "Ich bereite das Löschen des Kalendertermins vor",
       "propose_popup_set": "Ich bereite die Pop-up-Ankündigung vor",
+      "read_shop_catalog": "Ich lese Blueprints und den Shop-Katalog",
+      "propose_shop_plan_upsert": "Ich bereite die Shop-Tarife vor",
+      "propose_shop_coupon_upsert": "Ich bereite den Shop-Gutschein vor",
+      "propose_shop_addon_upsert": "Ich bereite das Shop-Add-on vor",
       "email_search": "Ich durchsuche deine E-Mails",
       "email_read": "Ich lese die E-Mail",
       "calendar_read": "Ich prüfe deinen Kalender",
@@ -3631,6 +3645,10 @@
       "title": "KI-gestützte Pop-ups",
       "desc": "Erlaubt der KI, bestehende Ankündigungen zu lesen sowie neue und geänderte vorzuschlagen."
     },
+    "ai_shop_manage": {
+      "title": "KI-gestützte Shop-Verwaltung",
+      "desc": "Erlaubt Singra, Blueprints sowie bestehende Tarife, Gutscheine und Add-ons zu lesen und Änderungen vorzuschlagen."
+    },
     "calendar_use": {
       "title": "Kalender verwenden",
       "desc": "Ermöglicht den Zugriff auf das Kalender-Modul zur manuellen Terminverwaltung und für Kalender-Abonnements."
@@ -4630,6 +4648,7 @@
       "plans": {
         "titel": "Tarife & Preise",
         "untertitel": "Lege fest, was der Shop pro Spiel verkauft. Ohne aktiven Tarif zeigt die Storefront kein Spiel.",
+        "ressourcenGrenzen": "Ressourcen & Ausbau",
         "neu": "Neuer Tarif",
         "bearbeiten": "Bearbeiten",
         "leer": "Noch keine Tarife",
@@ -4746,6 +4765,9 @@
         "mindestbetrag": "Mindestbestellwert (EUR)",
         "maxEinloesungen": "Max. Einlösungen (leer = unbegrenzt)",
         "cooldown": "Banner-Cooldown (Stunden)",
+        "gueltigAb": "Gültig ab (optional)",
+        "gueltigBis": "Gültig bis (Flash-Sale)",
+        "zeitraumFehler": "Das Enddatum muss nach dem Startdatum liegen.",
         "badgeAnzeigen": "Rabatt-Badge in der Storefront anzeigen",
         "bannerAnzeigen": "Oben als Storefront-Banner einblenden",
         "einloesungen": "{{count}} eingelöst",
@@ -6632,16 +6654,40 @@
       "badge": "Demo"
     },
     "hero": {
-      "kicker": "Maunting Server Manager",
+      "kicker": "GAME · SERVER · HOSTING",
       "titel": "Server mieten, ohne Bastelabend.",
-      "untertitel": "Spiel wählen, Ressourcen einstellen, loslegen. Wir kümmern uns um Installation, Rechte und Neustarts.",
+      "untertitel": "Spiel wählen, Ressourcen festlegen, loslegen. Installation, Backups und Rechte laufen über ein Panel.",
       "ctaSammlung": "Spiele entdecken",
       "ctaAddons": "Add-ons & KI",
       "ctaPanel": "Zum Panel",
+      "statusTitel": "Shop-Status",
+      "statusBereit": "Alle Systeme bereit",
       "statSpiele": "Verfügbare Spiele",
       "statAddons": "Add-ons & Pakete",
+      "statBereitstellung": "Einrichtung",
+      "statSofortWert": "Sofort nach Zahlung",
       "statBlueprints": "Blueprints verfügbar",
-      "statSetup": "Schritte bis online"
+      "statSetup": "Schritte bis online",
+      "trust": {
+        "sofortAktiv": "Sofort aktiv",
+        "backups": "Automatische Backups",
+        "kontrolle": "Volle Panel-Kontrolle",
+        "preise": "Transparente Preise"
+      }
+    },
+    "shortcuts": {
+      "gameserver": {
+        "titel": "Gameserver",
+        "text": "Eigene Server pro Blueprint"
+      },
+      "addons": {
+        "titel": "Add-ons & KI",
+        "text": "Mehr Tokens, Slots und Backups"
+      },
+      "konto": {
+        "titel": "Kundenbereich",
+        "text": "Abos, Rechnungen und Profil"
+      }
     },
     "sammlung": {
       "titel": "Spiele",
@@ -6678,6 +6724,17 @@
       "slots_other": "{{count}} Spieler inklusive",
       "konfigurieren": "Konfigurieren",
       "rabatt": "-{{wert}}"
+    },
+    "trustLeiste": {
+      "titel": "Was du mit jedem Server bekommst",
+      "einrichtungTitel": "Direkt spielbereit",
+      "einrichtungText": "Container und Startkonfiguration stehen nach der Zahlung sofort bereit.",
+      "backupsTitel": "Sichere Backups",
+      "backupsText": "Verschlüsselte Sicherungen und einfache Wiederherstellung im Panel.",
+      "kontrolleTitel": "Volle Kontrolle",
+      "kontrolleText": "Konsole, Dateien, Mods und Aufgaben an einem Ort verwalten.",
+      "preiseTitel": "Faire Abrechnung",
+      "preiseText": "Monatliche Laufzeiten ohne versteckte Zusatzgebühren."
     },
     "schritte": {
       "titel": "So läuft es",

@@ -1,7 +1,22 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { ArrowRight, Bot, HardDrive, Search, ShieldCheck, Sparkles, Users } from 'lucide-react'
+import {
+  ArrowRight,
+  Bot,
+  Check,
+  Gamepad2,
+  HardDrive,
+  Receipt,
+  Rocket,
+  Search,
+  ShieldCheck,
+  SlidersHorizontal,
+  Sparkles,
+  User,
+  Users,
+  Zap,
+} from 'lucide-react'
 import { Badge, buttonClasses, Spinner, Zustandsflaeche } from '@maunting/ui'
 import {
   shopCatalogApi,
@@ -10,8 +25,8 @@ import {
   type ShopPublicBadgePromo,
 } from '@/api/shop'
 import { useHasPermission } from '@/hooks/useHasPermission'
-import { PANEL_HOME } from '@/lib/panelWege'
 import { still } from '@/lib/still'
+import { useTageszeitMotiv } from '@/lib/tageszeit'
 import { SpielKarte } from '../components/SpielKarte'
 import { formatEuro } from '../preis'
 import { useShopKatalog } from '../useShopKatalog'
@@ -35,6 +50,7 @@ function addonKategorieLabelKey(category: ShopAddonCategory): string {
 export function ShopStart() {
   const { t } = useTranslation()
   const location = useLocation()
+  const headerMotiv = useTageszeitMotiv('dashboard')
   const { spiele, addons, tarifeFuer, loading, fehler } = useShopKatalog()
   const canManageShop =
     useHasPermission('shop.write') || useHasPermission('panel.settings.write')
@@ -129,56 +145,142 @@ export function ShopStart() {
     return zeilen
   }
 
+  const trustHighlights = [
+    t('shop.hero.trust.sofortAktiv'),
+    t('shop.hero.trust.backups'),
+    t('shop.hero.trust.kontrolle'),
+    t('shop.hero.trust.preise'),
+  ]
+
   return (
     <>
-      <section className="relative isolate overflow-hidden border-b border-outline-variant/30 bg-deep-grid">
-        <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 sm:py-20 lg:px-8 lg:py-24">
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">
-            {t('shop.hero.kicker')}
-          </p>
-          <h1 className="mt-3 max-w-3xl font-headline text-4xl font-extrabold leading-tight tracking-tight text-on-surface sm:text-5xl lg:text-6xl">
-            {t('shop.hero.titel')}
-          </h1>
-          <p className="mt-5 max-w-2xl text-base leading-relaxed text-on-surface-variant sm:text-lg">
-            {t('shop.hero.untertitel')}
-          </p>
-          <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-            <a href="#shop-spiele" className={buttonClasses('primary', 'lg', 'gap-2')}>
-              {t('shop.hero.ctaSammlung')}
-              <ArrowRight className="h-4 w-4" aria-hidden="true" />
-            </a>
-            <a href="#shop-addons" className={buttonClasses('secondary', 'lg', 'gap-2')}>
-              <Sparkles className="h-4 w-4" aria-hidden="true" />
-              {t('shop.hero.ctaAddons')}
-            </a>
-            <Link to={PANEL_HOME} className={buttonClasses('ghost', 'lg')}>
-              {t('shop.hero.ctaPanel')}
-            </Link>
-          </div>
+      <section className="relative isolate overflow-hidden border-b border-white/10 bg-background">
+        <div className="pointer-events-none absolute inset-0 -z-10" aria-hidden="true">
+          <img
+            src={headerMotiv.pfad}
+            alt=""
+            width={1920}
+            height={1080}
+            {...({ fetchpriority: 'high' } as Record<string, string>)}
+            style={{ objectPosition: headerMotiv.position }}
+            className="h-full w-full object-cover opacity-55"
+          />
+          <div
+            className="absolute inset-0"
+            style={{ backgroundImage: headerMotiv.ueberlagerung }}
+          />
+          <div className="absolute inset-0 bg-gradient-to-r from-background/95 via-background/75 to-background/35" />
+          <div className="absolute inset-0 bg-gradient-to-t from-background via-background/25 to-background/35" />
+        </div>
 
-          <dl className="mt-12 grid max-w-2xl grid-cols-3 gap-4 border-t border-outline-variant/30 pt-6">
-            {[
-              { wert: String(spiele.length), label: t('shop.hero.statSpiele') },
-              { wert: String(addons.length), label: t('shop.hero.statAddons') },
-              { wert: '3', label: t('shop.hero.statSetup') },
-            ].map((stat) => (
-              <div key={stat.label}>
-                <dt className="text-xs text-on-surface-variant">{stat.label}</dt>
-                <dd className="font-headline text-2xl font-extrabold tabular-nums text-primary">
-                  {stat.wert}
-                </dd>
+        <div className="mx-auto max-w-7xl px-4 py-14 sm:px-6 sm:py-20 lg:px-8 lg:py-24">
+          <div className="grid items-center gap-10 lg:grid-cols-12">
+            <div className="lg:col-span-7 xl:col-span-8">
+              <p className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-label-sm font-semibold uppercase tracking-[0.2em] text-primary backdrop-blur-md">
+                {t('shop.hero.kicker')}
+              </p>
+              <h1 className="mt-4 max-w-3xl font-headline text-4xl font-extrabold leading-[1.06] tracking-tight text-white sm:text-5xl lg:text-6xl">
+                {t('shop.hero.titel')}
+              </h1>
+              <p className="mt-4 max-w-xl text-base leading-relaxed text-white/80 sm:text-lg">
+                {t('shop.hero.untertitel')}
+              </p>
+
+              <div className="mt-7 flex flex-wrap gap-3">
+                <a href="#shop-spiele" className={buttonClasses('primary', 'lg', 'gap-2 shadow-lg')}>
+                  <Rocket className="h-4 w-4" aria-hidden="true" />
+                  {t('shop.hero.ctaSammlung')}
+                  <ArrowRight className="h-4 w-4" aria-hidden="true" />
+                </a>
+                <a
+                  href="#shop-addons"
+                  className={buttonClasses(
+                    'secondary',
+                    'lg',
+                    'gap-2 border-white/15 bg-surface-container-high/65 backdrop-blur-md hover:bg-surface-container-high/85',
+                  )}
+                >
+                  <Sparkles className="h-4 w-4" aria-hidden="true" />
+                  {t('shop.hero.ctaAddons')}
+                </a>
               </div>
-            ))}
-          </dl>
+
+              <ul className="mt-8 flex flex-wrap gap-x-6 gap-y-2.5 text-sm text-white/80">
+                {trustHighlights.map((punkt) => (
+                  <li key={punkt} className="inline-flex items-center gap-1.5">
+                    <Check className="h-4 w-4 text-primary" aria-hidden="true" />
+                    <span>{punkt}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            <aside className="lg:col-span-5 xl:col-span-4 lg:justify-self-end w-full">
+              <div className="w-full rounded-2xl border border-white/15 bg-surface-container-high/65 p-5 shadow-2xl backdrop-blur-xl">
+                <div className="flex items-center gap-3 pb-4">
+                  <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-status-running/15">
+                    <span className="h-2.5 w-2.5 rounded-full bg-status-running" aria-hidden="true" />
+                  </span>
+                  <div>
+                    <p className="font-headline text-sm font-bold text-white">
+                      {t('shop.hero.statusTitel')}
+                    </p>
+                    <p className="text-xs text-status-running">
+                      {t('shop.hero.statusBereit')}
+                    </p>
+                  </div>
+                </div>
+
+                <dl className="divide-y divide-white/10 border-t border-white/10">
+                  <div className="flex items-center gap-3 py-3.5">
+                    <Gamepad2 className="h-5 w-5 shrink-0 text-primary" aria-hidden="true" />
+                    <div className="min-w-0 flex-1">
+                      <dt className="text-xs text-on-surface-variant">
+                        {t('shop.hero.statSpiele')}
+                      </dt>
+                      <dd className="font-headline text-xl font-extrabold tabular-nums text-white">
+                        {spiele.length}
+                      </dd>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 py-3.5">
+                    <Sparkles className="h-5 w-5 shrink-0 text-primary" aria-hidden="true" />
+                    <div className="min-w-0 flex-1">
+                      <dt className="text-xs text-on-surface-variant">
+                        {t('shop.hero.statAddons')}
+                      </dt>
+                      <dd className="font-headline text-xl font-extrabold tabular-nums text-white">
+                        {addons.length}
+                      </dd>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 pt-3.5">
+                    <Zap className="h-5 w-5 shrink-0 text-primary" aria-hidden="true" />
+                    <div className="min-w-0 flex-1">
+                      <dt className="text-xs text-on-surface-variant">
+                        {t('shop.hero.statBereitstellung')}
+                      </dt>
+                      <dd className="font-headline text-base font-bold text-white">
+                        {t('shop.hero.statSofortWert')}
+                      </dd>
+                    </div>
+                  </div>
+                </dl>
+              </div>
+            </aside>
+          </div>
         </div>
       </section>
 
       <section id="shop-spiele" className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <h2 className="font-headline text-2xl font-bold text-on-surface">
-              {t('shop.sammlung.titel')}
-            </h2>
+            <div className="flex items-center gap-2.5">
+              <Gamepad2 className="h-5 w-5 text-primary" aria-hidden="true" />
+              <h2 className="font-headline text-2xl font-bold text-on-surface">
+                {t('shop.sammlung.titel')}
+              </h2>
+            </div>
             <p className="mt-1 text-sm text-on-surface-variant">
               {t('shop.sammlung.untertitel')}
             </p>
@@ -279,11 +381,73 @@ export function ShopStart() {
             </div>
           )}
         </div>
+
+        <div className="mt-8 grid gap-3 md:grid-cols-3">
+          <a
+            href="#shop-spiele"
+            className="group flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-surface-container-low/80 p-4 transition-all hover:border-primary/40 hover:bg-surface-container-high/60"
+          >
+            <div className="flex items-center gap-3">
+              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-primary/15 text-primary">
+                <Gamepad2 className="h-5 w-5" aria-hidden="true" />
+              </span>
+              <div>
+                <p className="font-headline text-sm font-bold text-on-surface">
+                  {t('shop.shortcuts.gameserver.titel')}
+                </p>
+                <p className="text-xs text-on-surface-variant">
+                  {t('shop.shortcuts.gameserver.text')}
+                </p>
+              </div>
+            </div>
+            <ArrowRight className="h-4 w-4 shrink-0 text-on-surface-variant transition-transform group-hover:translate-x-0.5 group-hover:text-primary" aria-hidden="true" />
+          </a>
+
+          <a
+            href="#shop-addons"
+            className="group flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-surface-container-low/80 p-4 transition-all hover:border-primary/40 hover:bg-surface-container-high/60"
+          >
+            <div className="flex items-center gap-3">
+              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-primary/15 text-primary">
+                <Bot className="h-5 w-5" aria-hidden="true" />
+              </span>
+              <div>
+                <p className="font-headline text-sm font-bold text-on-surface">
+                  {t('shop.shortcuts.addons.titel')}
+                </p>
+                <p className="text-xs text-on-surface-variant">
+                  {t('shop.shortcuts.addons.text')}
+                </p>
+              </div>
+            </div>
+            <ArrowRight className="h-4 w-4 shrink-0 text-on-surface-variant transition-transform group-hover:translate-x-0.5 group-hover:text-primary" aria-hidden="true" />
+          </a>
+
+          <Link
+            to="/konto"
+            className="group flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-surface-container-low/80 p-4 transition-all hover:border-primary/40 hover:bg-surface-container-high/60"
+          >
+            <div className="flex items-center gap-3">
+              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-primary/15 text-primary">
+                <User className="h-5 w-5" aria-hidden="true" />
+              </span>
+              <div>
+                <p className="font-headline text-sm font-bold text-on-surface">
+                  {t('shop.shortcuts.konto.titel')}
+                </p>
+                <p className="text-xs text-on-surface-variant">
+                  {t('shop.shortcuts.konto.text')}
+                </p>
+              </div>
+            </div>
+            <ArrowRight className="h-4 w-4 shrink-0 text-on-surface-variant transition-transform group-hover:translate-x-0.5 group-hover:text-primary" aria-hidden="true" />
+          </Link>
+        </div>
       </section>
 
       <section
         id="shop-addons"
-        className="border-t border-outline-variant/30 bg-surface-container-low/30"
+        className="border-t border-white/10 bg-surface-container-low/30"
       >
         <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
           <div className="flex flex-wrap items-end justify-between gap-4">
@@ -308,7 +472,7 @@ export function ShopStart() {
                 return (
                   <article
                     key={addon.id}
-                    className="msm-card flex flex-col rounded-2xl border border-outline-variant/30 bg-surface-container-low/80 p-5"
+                    className="msm-card flex flex-col rounded-2xl border border-white/10 bg-surface-container-low/85 p-5 shadow-md"
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex items-center gap-2">
@@ -353,7 +517,7 @@ export function ShopStart() {
                       </ul>
                     )}
 
-                    <footer className="mt-auto flex items-center justify-between gap-3 border-t border-outline-variant/25 pt-4">
+                    <footer className="mt-auto flex items-center justify-between gap-3 border-t border-white/10 pt-4">
                       <div>
                         <p className="font-headline text-lg font-extrabold tabular-nums text-primary">
                           {formatEuro(addon.price_cents)}
@@ -378,44 +542,55 @@ export function ShopStart() {
         </div>
       </section>
 
-      <section className="border-t border-outline-variant/30 bg-surface-container-low/40">
-        <div className="mx-auto max-w-7xl px-4 py-14 sm:px-6 lg:px-8">
-          <h2 className="font-headline text-2xl font-bold text-on-surface">
-            {t('shop.schritte.titel')}
-          </h2>
-          <div className="mt-6 grid gap-4 md:grid-cols-3">
-            <div className="msm-card rounded-2xl border border-outline-variant/30 bg-surface-container-low/80 p-5">
-              <span className="grid h-9 w-9 place-items-center rounded-full bg-primary/15 font-headline text-sm font-bold text-primary">
-                1
-              </span>
-              <h3 className="mt-4 font-headline text-base font-semibold text-on-surface">
-                {t('shop.schritte.eins.titel')}
-              </h3>
-              <p className="mt-2 text-sm leading-relaxed text-on-surface-variant">
-                {t('shop.schritte.eins.text')}
-              </p>
+      <section
+        aria-label={t('shop.trustLeiste.titel')}
+        className="border-t border-white/10 bg-background/80"
+      >
+        <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
+          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="flex items-start gap-3">
+              <Zap className="mt-0.5 h-5 w-5 shrink-0 text-primary" aria-hidden="true" />
+              <div>
+                <h3 className="font-headline text-sm font-bold text-on-surface">
+                  {t('shop.trustLeiste.einrichtungTitel')}
+                </h3>
+                <p className="mt-0.5 text-xs leading-relaxed text-on-surface-variant">
+                  {t('shop.trustLeiste.einrichtungText')}
+                </p>
+              </div>
             </div>
-            <div className="msm-card rounded-2xl border border-outline-variant/30 bg-surface-container-low/80 p-5">
-              <span className="grid h-9 w-9 place-items-center rounded-full bg-primary/15 font-headline text-sm font-bold text-primary">
-                2
-              </span>
-              <h3 className="mt-4 font-headline text-base font-semibold text-on-surface">
-                {t('shop.schritte.zwei.titel')}
-              </h3>
-              <p className="mt-2 text-sm leading-relaxed text-on-surface-variant">
-                {t('shop.schritte.zwei.text')}
-              </p>
+            <div className="flex items-start gap-3">
+              <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-primary" aria-hidden="true" />
+              <div>
+                <h3 className="font-headline text-sm font-bold text-on-surface">
+                  {t('shop.trustLeiste.backupsTitel')}
+                </h3>
+                <p className="mt-0.5 text-xs leading-relaxed text-on-surface-variant">
+                  {t('shop.trustLeiste.backupsText')}
+                </p>
+              </div>
             </div>
-            <div className="msm-card rounded-2xl border border-outline-variant/30 bg-surface-container-low/80 p-5">
-              <span className="grid h-9 w-9 place-items-center rounded-full bg-primary/15 font-headline text-sm font-bold text-primary">
-                3
-              </span>
-              <h3 className="mt-4 font-headline text-base font-semibold text-on-surface">
-                {t('shop.schritte.drei.titel')}
-              </h3>
-              <p className="mt-2 text-sm leading-relaxed text-on-surface-variant">
-                {t('shop.schritte.drei.text')}
-              </p>
+            <div className="flex items-start gap-3">
+              <SlidersHorizontal className="mt-0.5 h-5 w-5 shrink-0 text-primary" aria-hidden="true" />
+              <div>
+                <h3 className="font-headline text-sm font-bold text-on-surface">
+                  {t('shop.trustLeiste.kontrolleTitel')}
+                </h3>
+                <p className="mt-0.5 text-xs leading-relaxed text-on-surface-variant">
+                  {t('shop.trustLeiste.kontrolleText')}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-start gap-3">
+              <Receipt className="mt-0.5 h-5 w-5 shrink-0 text-primary" aria-hidden="true" />
+              <div>
+                <h3 className="font-headline text-sm font-bold text-on-surface">
+                  {t('shop.trustLeiste.preiseTitel')}
+                </h3>
+                <p className="mt-0.5 text-xs leading-relaxed text-on-surface-variant">
+                  {t('shop.trustLeiste.preiseText')}
+                </p>
+              </div>
             </div>
           </div>
         </div>

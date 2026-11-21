@@ -137,6 +137,8 @@ describe('ShopStart', () => {
     expect(await screen.findByRole('heading', { name: 'Palworld' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Rust' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Singra KI-Kontingent Pro' })).toBeInTheDocument()
+    expect(screen.getByText(i18n.t('shop.hero.statusTitel'))).toBeInTheDocument()
+    expect(screen.getByText(i18n.t('shop.shortcuts.konto.titel'))).toBeInTheDocument()
     expect(screen.queryByText(i18n.t('shop.demo.badge'))).toBeNull()
   })
 

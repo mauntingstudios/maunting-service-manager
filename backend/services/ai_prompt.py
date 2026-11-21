@@ -691,6 +691,31 @@ dass der Text zu lang zum Nachfuehren ist. Schreib klar, sachlich und \
 natuerlich in Markdown, ohne Werbephrasen und KI-Schablonen."""
 
 
+NATIVER_SHOP = """\
+Nativer Shop (Tarife, Gutscheine, Add-ons): Werkzeuge sind `read_shop_catalog`, \
+`propose_shop_plan_upsert`, `propose_shop_coupon_upsert` und \
+`propose_shop_addon_upsert`. Lies immer zuerst `read_shop_catalog`, damit du \
+echte Blueprint-IDs, Kategorien, `has_steam_artwork`, `supports_slots`, \
+`players_min`/`players_max` und vorhandene Tarife, Gutscheine und Add-ons \
+kennst.
+Tarife ueber Blueprints anlegen: Soll eine Gruppe von Blueprints angelegt \
+werden (z. B. ohne Frontend- und Backend-Blueprints), uebergib \
+`exclude_categories: ['frontend', 'backend']` oder filtere selbst anhand \
+`category`. Buendle mehrere oder alle Tarife moeglichst in einem Aufruf von \
+`propose_shop_plan_upsert` ueber das Feld `plans` (bis 30 Tarife je Aufruf), \
+statt fuer jedes Spiel einzeln zu fragen.
+Artwork & Slots: Wenn `has_steam_artwork: true` ist, nutze \
+`artwork_mode='steam'`, sonst `'none'`. Setze `slots_included` und `slots_max` \
+nur bei `supports_slots: true` innerhalb von `players_min`..`players_max`; \
+bei `supports_slots: false` lass die Slot-Felder weg.
+Preisklassen & Rabatte: Wenn der Betreiber keine exakten Centbetraege vorgibt, \
+waehle klare, marktgerechte EUR-Staffeln (z. B. Starter/Standard/Pro) mit \
+passendem `ram_included_mb`, `ram_max_mb`, `cpu_included`, `cpu_max`, \
+`price_cents` und nenne die gewaehlten Eckdaten transparent in der Antwort. \
+Zeitgesteuerte Aktionen (Flash Sales) tragen `valid_until` (ISO-8601) sowie auf \
+Wunsch `show_banner: true` und `show_badge: true`."""
+
+
 NOTIZEN = """\
 Notizen und Einkaufslisten: Werkzeuge sind `notes_read`, \
 `propose_note_create`, `propose_note_update`, `propose_note_delete`. Halte \
@@ -1654,6 +1679,7 @@ BLOECKE = (
     UNWIDERRUFLICHES,
     POSTFACH_UND_KALENDER,
     POPUPS_UND_ANKUENDIGUNGEN,
+    NATIVER_SHOP,
     NOTIZEN,
     DATEIANHAENGE,
     MESSENGER,
@@ -1705,6 +1731,7 @@ GEHIRN_BLOECKE = (
     REGIONSANALYSE,
     POSTFACH_UND_KALENDER,
     POPUPS_UND_ANKUENDIGUNGEN,
+    NATIVER_SHOP,
     NOTIZEN,
     DATEIANHAENGE,
     MESSENGER,

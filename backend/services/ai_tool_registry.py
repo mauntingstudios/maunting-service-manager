@@ -535,7 +535,7 @@ _TABELLE: dict[str, Werkzeug] = {
 
 
 
-from services.ai_tools import audit_tools, cloudflare_read_tools, curseforge_read_tools, database_tools, document_tools, frontend_tools, geo_tools, global_write_tools, hoster_read_tools, panel_overview_tools, project_tools, personal_tools, server_history_tools, server_network_tools, server_file_tools, server_mod_tools, server_ops_tools, server_write_tools, system_tools, task_tools, team_tools, user_tools  # noqa: E402,F401
+from services.ai_tools import audit_tools, cloudflare_read_tools, curseforge_read_tools, database_tools, document_tools, frontend_tools, geo_tools, global_write_tools, hoster_read_tools, panel_overview_tools, project_tools, personal_tools, server_history_tools, server_network_tools, server_file_tools, server_mod_tools, server_ops_tools, server_write_tools, shop_tools, system_tools, task_tools, team_tools, user_tools  # noqa: E402,F401
 
 _DEKLARIERT = {name: spec.werkzeug for name, spec in ALLE.items()}
 _DOPPELT = set(_TABELLE) & set(_DEKLARIERT)
@@ -652,6 +652,7 @@ DOCS_TOOLS = _mit_gruppe("docs")
 MAIL_TOOLS = _mit_gruppe("mailbox")
 CALENDAR_TOOLS = _mit_gruppe("calendar")
 POPUP_TOOLS = _mit_gruppe("popup")
+SHOP_TOOLS = _mit_gruppe("shop")
 TASK_TOOLS = _mit_gruppe("tasks")
 NOTES_TOOLS = _mit_gruppe("notes")
 ATTACHMENT_TOOLS = _mit_gruppe("attachments")
@@ -660,7 +661,7 @@ ATTACHMENT_TOOLS = _mit_gruppe("attachments")
 # Werkzeug mehr, das den Messenger anfasst. Siehe docs/agent-rules/security.md,
 # Abschnitt 5.1.
 CHAT_INTERACTION_TOOLS = (
-    MAIL_TOOLS | CALENDAR_TOOLS | POPUP_TOOLS | TASK_TOOLS | NOTES_TOOLS | ATTACHMENT_TOOLS
+    MAIL_TOOLS | CALENDAR_TOOLS | POPUP_TOOLS | SHOP_TOOLS | TASK_TOOLS | NOTES_TOOLS | ATTACHMENT_TOOLS
 )
 ASK_TOOLS = _mit_art("ask")
 DELEGATION_TOOLS = _mit_art("delegation")
