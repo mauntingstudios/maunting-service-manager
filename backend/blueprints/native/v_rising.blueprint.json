@@ -139,5 +139,17 @@
     "includePaths": [
       "save-data"
     ]
+  },
+  "players": {
+    "min": 2,
+    "max": 60,
+    "configTarget": {
+      "type": "regex",
+      "file": "save-data/Settings/ServerHostSettings.json",
+      "regex": "\"MaxConnectedUsers\"\\s*:\\s*\\d+",
+      "replacement": "\"MaxConnectedUsers\": {SLOTS}"
+    },
+    "queryProtocol": "a2s",
+    "queryPortRole": "query"
   }
 }

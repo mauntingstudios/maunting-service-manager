@@ -136,5 +136,17 @@
       "linux-oom",
       "port-conflict"
     ]
+  },
+  "players": {
+    "min": 2,
+    "max": 100,
+    "configTarget": {
+      "type": "regex",
+      "file": "Server/servertest.ini",
+      "regex": "MaxPlayers\\s*=\\s*\\d+",
+      "replacement": "MaxPlayers={SLOTS}"
+    },
+    "queryProtocol": "a2s",
+    "queryPortRole": "game"
   }
 }

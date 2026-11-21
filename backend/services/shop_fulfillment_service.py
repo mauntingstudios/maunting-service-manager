@@ -428,6 +428,23 @@ def _sync_server_entitlement(
                     ent.server_id = result.server.id
                     ent.provisioning_status = "ready"
                     ent.provisioning_error = None
+                    if (
+                        ent.slots is not None
+                        and result.server is not None
+                    ):
+                        from services import shop_slot_service
+
+                        if shop_slot_service.get_blueprint_players(item.game_type) is not None:
+                            try:
+                                shop_slot_service.apply_server_slots(
+                                    db, result.server, ent.slots, commit_env=False
+                                )
+                            except shop_slot_service.SlotConfigurationError:
+                                logger.warning(
+                                    "Konnte gebuchte Slots (%s) fuer Server %s nicht setzen",
+                                    ent.slots,
+                                    result.server.id,
+                                )
                     audit_service.record_privileged_action(
                         db,
                         user_id=actor.user.id,

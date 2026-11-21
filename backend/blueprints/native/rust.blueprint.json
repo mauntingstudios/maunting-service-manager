@@ -128,5 +128,15 @@
       "linux-oom",
       "port-conflict"
     ]
+  },
+  "players": {
+    "min": 2,
+    "max": 500,
+    "configTarget": {
+      "type": "env",
+      "key": "MAX_PLAYERS"
+    },
+    "queryProtocol": "a2s",
+    "queryPortRole": "query"
   }
 }

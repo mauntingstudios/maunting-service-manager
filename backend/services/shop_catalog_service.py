@@ -31,13 +31,21 @@ class ShopConfigurationError(ValueError):
     """Ungueltige Tarif-Konfiguration; wird am Rand zu 422."""
 
 
-def _validate_plan_values(db: Session, values: dict[str, Any]) -> None:
+def _validate_plan_values(
+    db: Session, values: dict[str, Any], *, existing_plan: ShopPlan | None = None
+) -> None:
     game_type = values.get("game_type")
+    if game_type is None and existing_plan is not None:
+        game_type = existing_plan.game_type
+
+    blueprint = None
     if game_type is not None:
         from games import get_plugin
 
-        if get_plugin(game_type) is None:
+        plugin = get_plugin(game_type)
+        if plugin is None:
             raise ShopConfigurationError("Unbekannter Blueprint bzw. Spieltyp")
+        blueprint = plugin.get_blueprint()
 
     currency = values.get("currency")
     if currency is not None:
@@ -59,17 +67,39 @@ def _validate_plan_values(db: Session, values: dict[str, Any]) -> None:
         except shop_fulfillment_service.ShopRoleEscalationError as exc:
             raise ShopConfigurationError(str(exc)) from exc
 
+    def _eff(feld: str) -> Any:
+        if feld in values:
+            return values[feld]
+        return getattr(existing_plan, feld, None) if existing_plan is not None else None
+
     for included_key, max_key, label in (
         ("ram_included_mb", "ram_max_mb", "RAM"),
         ("cpu_included", "cpu_max", "CPU"),
         ("slots_included", "slots_max", "Slots"),
     ):
-        included = values.get(included_key)
-        maximum = values.get(max_key)
+        included = _eff(included_key)
+        maximum = _eff(max_key)
         if included is not None and maximum is not None and maximum < included:
             raise ShopConfigurationError(
                 f"Das Maximum fuer {label} darf nicht unter dem enthaltenen Wert liegen"
             )
+
+    if blueprint is not None:
+        slots_included = _eff("slots_included")
+        slots_max = _eff("slots_max")
+        slot_step_price = _eff("price_per_slot_step_cents") or 0
+        players = getattr(blueprint, "players", None)
+        if players is None:
+            if slot_step_price > 0 or slots_included is not None or slots_max is not None:
+                raise ShopConfigurationError(
+                    "Dieser Blueprint unterstuetzt keine konfigurierbaren Spieler-Slots"
+                )
+        else:
+            for val in (slots_included, slots_max):
+                if val is not None and not (players.min <= int(val) <= players.max):
+                    raise ShopConfigurationError(
+                        f"Spieler-Slots muessen zwischen {players.min} und {players.max} liegen"
+                    )
 
 
 def _apply(plan: ShopPlan, values: dict[str, Any]) -> None:
@@ -148,7 +178,7 @@ def update_plan(
         for feld, wert in rohe.items()
         if wert is not None or feld in _NULLABLE_FIELDS
     }
-    _validate_plan_values(db, values)
+    _validate_plan_values(db, values, existing_plan=plan)
     _apply(plan, values)
     try:
         db.flush()
@@ -267,6 +297,7 @@ def _game_meta(game_type: str) -> dict[str, Any]:
         "game_category": blueprint.meta.category.value,
         "supports_mods": bool(mods.supportsMods),
         "supports_workshop": bool(mods.supportsSteamWorkshop),
+        "supports_slots": getattr(blueprint, "players", None) is not None,
     }
 
 
@@ -280,6 +311,7 @@ def catalog_plan(db: Session, plan: ShopPlan) -> ShopCatalogPlan:
         game_category=meta.get("game_category") or "",
         supports_mods=bool(meta.get("supports_mods")),
         supports_workshop=bool(meta.get("supports_workshop")),
+        supports_slots=bool(meta.get("supports_slots")),
         name=plan.name,
         description=plan.description,
         price_cents=plan.price_cents,

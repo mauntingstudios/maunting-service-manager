@@ -116,5 +116,15 @@
       "linux-oom",
       "port-conflict"
     ]
+  },
+  "players": {
+    "min": 2,
+    "max": 200,
+    "configTarget": {
+      "type": "env",
+      "key": "MAX_PLAYERS"
+    },
+    "queryProtocol": "minecraft_slp",
+    "queryPortRole": "game"
   }
 }

@@ -26,6 +26,7 @@ def set_runtime_env(
     probe_url: str | None = None,
     managed_by: str = "singra",
     db: Session | None = None,
+    commit: bool = True,
 ) -> ServerRuntimeEnv:
     """Speichert verschlüsselte Umgebungsvariablen für einen Server.
 
@@ -55,8 +56,11 @@ def set_runtime_env(
             if managed_by:
                 row.managed_by = managed_by
 
-        session.commit()
-        session.refresh(row)
+        if commit:
+            session.commit()
+            session.refresh(row)
+        else:
+            session.flush()
         return row
     except Exception:
         if owns_session:

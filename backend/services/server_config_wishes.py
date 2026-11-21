@@ -70,6 +70,7 @@ MAX_ANKER_CHARS = 2000
 
 ART_INI = "ini"
 ART_TEXT = "text"
+ART_REGEX = "regex"
 
 
 @dataclass(frozen=True)
@@ -102,8 +103,8 @@ class Wunsch:
         Bei Text ist der Anker die Kennung — derselbe Ausschnitt kann nur
         einmal ein Ziel haben.
         """
-        if self.art == ART_TEXT:
-            return (self.datei.casefold(), ART_TEXT, self.finde)
+        if self.art in (ART_TEXT, ART_REGEX):
+            return (self.datei.casefold(), self.art, self.finde)
         return (
             self.datei.casefold(),
             ART_INI,
@@ -191,6 +192,24 @@ def _pruefe_text(finde: str, setze: str) -> tuple[str, str]:
     return finde, setze
 
 
+def _pruefe_regex(muster: str, ersatz: str) -> tuple[str, str]:
+    if not isinstance(muster, str) or not muster:
+        raise AiActionValidationError("Das Regex-Muster fehlt")
+    if not isinstance(ersatz, str):
+        raise AiActionValidationError("Der Ersatztext fehlt")
+    for name, roh in (("Das Regex-Muster", muster), ("Der Ersatztext", ersatz)):
+        if len(roh) > MAX_ANKER_CHARS:
+            raise AiActionValidationError(f"{name} ist zu lang (max. {MAX_ANKER_CHARS})")
+        if "\x00" in roh:
+            raise AiActionValidationError(f"{name} enthaelt ein unzulaessiges Zeichen")
+    try:
+        re.compile(muster)
+    except re.error as exc:
+        raise AiActionValidationError(f"Ungueltiges Regex-Muster: {exc}") from exc
+    _pruefe_geheimnis(ersatz)
+    return muster, ersatz
+
+
 def lese(roh: str | None) -> list[Wunsch]:
     """Liest den Speicher. Unlesbares gilt als leer.
 
@@ -216,14 +235,14 @@ def lese(roh: str | None) -> list[Wunsch]:
         # Ohne `art` ist es ein Eintrag aus der ersten Fassung: die kannte nur
         # INI. Kein Migrationsschritt noetig, kein Datenverlust.
         art = eintrag.get("art", ART_INI)
-        if art == ART_TEXT:
+        if art in (ART_TEXT, ART_REGEX):
             finde = eintrag.get("finde")
             setze = eintrag.get("setze")
             if not isinstance(finde, str) or not finde:
                 continue
             if not isinstance(setze, str):
                 continue
-            ergebnis.append(Wunsch(datei=datei, art=ART_TEXT, finde=finde, setze=setze))
+            ergebnis.append(Wunsch(datei=datei, art=art, finde=finde, setze=setze))
             continue
         sektion = eintrag.get("sektion")
         schluessel = eintrag.get("schluessel")
@@ -243,8 +262,8 @@ def lese(roh: str | None) -> list[Wunsch]:
 def _schreibe(wuensche: list[Wunsch]) -> str:
     daten: list[dict] = []
     for w in wuensche:
-        if w.art == ART_TEXT:
-            daten.append({"datei": w.datei, "art": ART_TEXT, "finde": w.finde, "setze": w.setze})
+        if w.art in (ART_TEXT, ART_REGEX):
+            daten.append({"datei": w.datei, "art": w.art, "finde": w.finde, "setze": w.setze})
         else:
             daten.append({
                 "datei": w.datei, "art": ART_INI,
@@ -322,6 +341,23 @@ def setze_text(
     return _schreibe(vorhanden)
 
 
+def setze_regex(
+    roh: str | None,
+    *,
+    datei: str,
+    muster: str,
+    ersatz: str,
+) -> str:
+    """Legt einen Regex-Wunsch an oder aktualisiert ihn (Muster, Ersatztext)."""
+    datei = _pruefe_pfad(datei)
+    muster, ersatz = _pruefe_regex(muster, ersatz)
+    vorhanden = lese(roh)
+    _einfuegen(vorhanden, Wunsch(
+        datei=datei, art=ART_REGEX, finde=muster, setze=ersatz
+    ))
+    return _schreibe(vorhanden)
+
+
 def entferne(roh: str | None, *, datei: str, sektion: str = "", schluessel: str = "",
              finde: str = "") -> str:
     """Nimmt einen Wunsch heraus. Unbekannt zu sein ist kein Fehler."""
@@ -376,6 +412,15 @@ def als_patches(wuensche: list[Wunsch]) -> list[dict[str, str | None]]:
                 "key": None,
                 "regex": re.escape(w.finde),
                 "value": w.setze.replace("\\", "\\\\"),
+            })
+        elif w.art == ART_REGEX:
+            patches.append({
+                "type": "regex",
+                "file": w.datei,
+                "section": None,
+                "key": None,
+                "regex": w.finde,
+                "value": w.setze,
             })
         else:
             patches.append({
@@ -495,6 +540,20 @@ def wuensche_durchsetzen(server) -> None:
                 neu, meldung = _text_anwenden(neu, wunsch)
                 if meldung:
                     _melde(server, meldung)
+                continue
+            if wunsch.art == ART_REGEX:
+                try:
+                    ersetzt, treffer = re.subn(wunsch.finde, wunsch.setze, neu, count=1)
+                except re.error as fehler:
+                    _melde(server, f"Dauerhafter Wert in {wunsch.datei} uebersprungen: {fehler}")
+                    continue
+                if treffer == 0:
+                    _melde(
+                        server,
+                        f"Dauerhafter Wert in {wunsch.datei} nicht gesetzt: Muster nicht in der Datei",
+                    )
+                else:
+                    neu = ersetzt
                 continue
             try:
                 neu = ini_setzen(neu, wunsch.sektion, wunsch.schluessel, wunsch.wert)

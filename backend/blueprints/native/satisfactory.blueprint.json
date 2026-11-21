@@ -120,5 +120,17 @@
       "linux-oom",
       "port-conflict"
     ]
+  },
+  "players": {
+    "min": 2,
+    "max": 32,
+    "configTarget": {
+      "type": "ini",
+      "file": "FactoryGame/Saved/Config/LinuxServer/Game.ini",
+      "section": "/Script/Engine.GameSession",
+      "key": "MaxPlayers"
+    },
+    "queryProtocol": "none",
+    "queryPortRole": "game"
   }
 }

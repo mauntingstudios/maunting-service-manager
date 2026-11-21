@@ -367,6 +367,33 @@ class ShopInvoiceValidationResponse(BaseModel):
     pdfa3: ShopPdfa3ValidationResult
 
 
+class ShopServerPlayersResponse(BaseModel):
+    server_id: int
+    protocol: str
+    online: bool
+    players: int | None = None
+    max_players: int | None = None
+    server_name: str | None = None
+    booked_slots: int | None = None
+    slot_exceeded: bool = False
+    warning: str | None = None
+    error: str | None = None
+
+
+class ShopServerSlotsUpdate(BaseModel):
+    slots: int = Field(..., ge=1, le=1000)
+
+
+class ShopServerSlotsResponse(BaseModel):
+    server_id: int
+    slots: int
+    previous_slots: int | None = None
+    target_type: str
+    downgrade_warning: bool = False
+    restart_required: bool = False
+    live_players: int | None = None
+
+
 class ShopCatalogPlan(BaseModel):
     """Oeffentliche Sicht: keine Node-/Rollen-IDs, nur was der Shop braucht."""
 
@@ -377,6 +404,7 @@ class ShopCatalogPlan(BaseModel):
     game_category: str
     supports_mods: bool
     supports_workshop: bool
+    supports_slots: bool = False
     name: str
     description: str | None
     price_cents: int

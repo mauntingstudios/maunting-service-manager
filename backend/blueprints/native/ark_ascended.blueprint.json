@@ -151,5 +151,15 @@
       "ShooterGame/Saved/SavedArks",
       "ShooterGame/Saved/Logs"
     ]
+  },
+  "players": {
+    "min": 2,
+    "max": 127,
+    "configTarget": {
+      "type": "env",
+      "key": "MAX_PLAYERS"
+    },
+    "queryProtocol": "a2s",
+    "queryPortRole": "query"
   }
 }

@@ -133,5 +133,17 @@
       "enshrouded_server.json",
       "savegame"
     ]
+  },
+  "players": {
+    "min": 2,
+    "max": 16,
+    "configTarget": {
+      "type": "regex",
+      "file": "enshrouded_server.json",
+      "regex": "\"slotCount\"\\s*:\\s*\\d+",
+      "replacement": "\"slotCount\": {SLOTS}"
+    },
+    "queryProtocol": "a2s",
+    "queryPortRole": "query"
   }
 }

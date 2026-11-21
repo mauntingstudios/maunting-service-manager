@@ -1715,6 +1715,77 @@ class BlueprintBackups(BaseModel):
         return cleaned
 
 
+class BlueprintPlayerConfigTarget(BaseModel):
+    """Konfigurationsziel fuer gebuchte Spieler-Slots am Blueprint."""
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    type: Literal["ini", "env", "regex"]
+    file: str | None = Field(default=None, max_length=512)
+    section: str | None = Field(default=None, max_length=256)
+    key: str | None = Field(default=None, max_length=256)
+    regex: str | None = Field(default=None, max_length=512)
+    replacement: str | None = Field(default=None, max_length=512)
+
+    @model_validator(mode="after")
+    def _check_target_fields(self) -> "BlueprintPlayerConfigTarget":
+        if self.type in ("ini", "regex"):
+            if not self.file or not _is_safe_relative_path(self.file):
+                raise ValueError(
+                    "players.configTarget.file muss ein sicherer relativer Pfad ohne '..' sein."
+                )
+        if self.type == "ini":
+            if not self.section or not self.section.strip():
+                raise ValueError("players.configTarget.section fehlt fuer type='ini'.")
+            if not self.key or not self.key.strip():
+                raise ValueError("players.configTarget.key fehlt fuer type='ini'.")
+        elif self.type == "env":
+            if not self.key or not _ENV_KEY_RE.match(self.key):
+                raise ValueError(
+                    "players.configTarget.key muss fuer type='env' ^[A-Z][A-Z0-9_]*$ erfuellen."
+                )
+            if self.key in _FORBIDDEN_ENV_KEYS:
+                raise ValueError(
+                    f"players.configTarget.key '{self.key}' ist aus Sicherheitsgruenden verboten."
+                )
+        elif self.type == "regex":
+            if not self.regex or "\x00" in self.regex:
+                raise ValueError("players.configTarget.regex fehlt oder ist ungueltig.")
+            try:
+                re.compile(self.regex)
+            except re.error as exc:
+                raise ValueError(
+                    f"players.configTarget.regex ist keine gueltige Regex: {exc}"
+                ) from exc
+            if (
+                not self.replacement
+                or "\x00" in self.replacement
+                or "{SLOTS}" not in self.replacement
+            ):
+                raise ValueError(
+                    "players.configTarget.replacement muss den Platzhalter '{SLOTS}' enthalten."
+                )
+        return self
+
+
+class BlueprintPlayers(BaseModel):
+    """Deklariert konfigurierbare Spieler-Slots und Live-Query-Protokoll."""
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    min: int = Field(default=1, ge=1, le=1000)
+    max: int = Field(ge=1, le=1000)
+    configTarget: BlueprintPlayerConfigTarget
+    queryProtocol: Literal["a2s", "minecraft_slp", "gamespy", "rcon", "none"] = "none"
+    queryPortRole: Literal["game", "query", "rcon"] = "query"
+
+    @model_validator(mode="after")
+    def _check_bounds(self) -> "BlueprintPlayers":
+        if self.max < self.min:
+            raise ValueError("players.max darf nicht unter players.min liegen.")
+        return self
+
+
 def _validate_frontend_cmd_argv(
     cmd: list[str] | None, *, field_name: str
 ) -> list[str] | None:
@@ -1820,6 +1891,7 @@ class Blueprint(BaseModel):
     diagnostics: BlueprintDiagnostics | None = None
     recovery: BlueprintRecovery | None = None
     backups: BlueprintBackups | None = None
+    players: BlueprintPlayers | None = None
 
 
     @field_validator("version")

@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 from database import get_db
 from dependencies import get_current_user, require_global, verify_csrf
 from models import (
+    Server,
     ShopEntitlement,
     ShopInvoice,
     ShopOrder,
@@ -49,6 +50,9 @@ from schemas.shop import (
     ShopRefundResponse,
     ShopSellerSettings,
     ShopSellerSettingsUpdate,
+    ShopServerPlayersResponse,
+    ShopServerSlotsResponse,
+    ShopServerSlotsUpdate,
     ShopServerSubscriptionResponse,
     ShopStripeKeysUpdate,
     ShopStripeStatus,
@@ -58,6 +62,7 @@ from schemas.shop import (
 from services import (
     audit_service,
     permission_service,
+    player_query_service,
     shop_catalog_service,
     shop_einvoice_toolchain_service,
     shop_fulfillment_service,
@@ -66,6 +71,7 @@ from services import (
     shop_order_service,
     shop_reconciliation_service,
     shop_seller_settings_service,
+    shop_slot_service,
     stripe_service,
     stripe_settings_service,
     wallpaper_service,
@@ -700,6 +706,90 @@ def get_server_subscription(
         ram_mb=entitlement.ram_mb,
         cpu=entitlement.cpu,
         slots=entitlement.slots,
+    )
+
+
+@router.get(
+    "/servers/{server_id}/players",
+    response_model=ShopServerPlayersResponse,
+)
+def get_server_players(
+    server_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> ShopServerPlayersResponse:
+    """Liest Live-Spielerzahl und prueft gegen gebuchte Slots."""
+    can_view = permission_service.has_server_permission(
+        db, user, server_id, "server.view"
+    ) or permission_service.has_global_permission(db, user, "panel.settings.read")
+    if not can_view:
+        raise HTTPException(status_code=404, detail="Server nicht gefunden")
+    server = db.query(Server).filter(Server.id == server_id).first()
+    if server is None:
+        raise HTTPException(status_code=404, detail="Server nicht gefunden")
+
+    res = player_query_service.query_server_players(db, server)
+    return ShopServerPlayersResponse(
+        server_id=server.id,
+        protocol=res.protocol,
+        online=res.online,
+        players=res.players,
+        max_players=res.max_players,
+        server_name=res.server_name,
+        booked_slots=res.booked_slots,
+        slot_exceeded=res.slot_exceeded,
+        warning=res.warning,
+        error=res.error,
+    )
+
+
+@router.post(
+    "/servers/{server_id}/slots",
+    response_model=ShopServerSlotsResponse,
+)
+def update_server_slots(
+    server_id: int,
+    payload: ShopServerSlotsUpdate,
+    db: Session = Depends(get_db),
+    actor: User = Depends(require_global("panel.settings.write")),
+    _: None = Depends(verify_csrf),
+) -> ShopServerSlotsResponse:
+    """Setzt Spieler-Slots ueber Blueprint-Ziel (`config_wishes` / Runtime-Env)."""
+    server = db.query(Server).filter(Server.id == server_id).first()
+    if server is None:
+        raise HTTPException(status_code=404, detail="Server nicht gefunden")
+
+    try:
+        result = shop_slot_service.apply_server_slots(db, server, payload.slots)
+    except shop_slot_service.SlotConfigurationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    live = player_query_service.query_server_players(db, server)
+    downgrade_warning = bool(result["downgrade_warning"]) or bool(
+        live.online and live.players is not None and payload.slots < live.players
+    )
+    audit_service.record_privileged_action(
+        db,
+        user_id=actor.id,
+        action="shop.server.slots_updated",
+        target_type="server",
+        target_id=server.id,
+        details={
+            "slots": payload.slots,
+            "previous_slots": result["previous_slots"],
+            "target_type": result["target_type"],
+            "downgrade_warning": downgrade_warning,
+        },
+    )
+    db.commit()
+    return ShopServerSlotsResponse(
+        server_id=server.id,
+        slots=int(result["slots"]),
+        previous_slots=result["previous_slots"],
+        target_type=str(result["target_type"]),
+        downgrade_warning=downgrade_warning,
+        restart_required=bool(result["restart_required"]),
+        live_players=live.players if live.online else None,
     )
 
 

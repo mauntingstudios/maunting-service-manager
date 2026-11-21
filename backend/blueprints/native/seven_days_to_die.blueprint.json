@@ -180,5 +180,17 @@
       "linux-oom",
       "port-conflict"
     ]
+  },
+  "players": {
+    "min": 2,
+    "max": 64,
+    "configTarget": {
+      "type": "regex",
+      "file": "serverconfig.xml",
+      "regex": "name=\"ServerMaxPlayerCount\"\\s+value=\"\\d+\"",
+      "replacement": "name=\"ServerMaxPlayerCount\" value=\"{SLOTS}\""
+    },
+    "queryProtocol": "a2s",
+    "queryPortRole": "game"
   }
 }
