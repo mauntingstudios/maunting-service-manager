@@ -291,6 +291,26 @@ class ShopEntitlementResponse(BaseModel):
     created_at: datetime
 
 
+class ShopRefundCreate(BaseModel):
+    reason: str = Field(..., min_length=3, max_length=500)
+
+
+class ShopRefundResponse(BaseModel):
+    order: ShopOrderResponse
+    credit_note_number: str | None = None
+
+
+class ShopReconciliationResponse(BaseModel):
+    orders_checked: int
+    orders_marked_paid: int
+    orders_expired: int
+    invoices_issued: int
+    entitlements_synced: int
+    pending_orders_remaining: int
+    failed_entitlements_remaining: int
+    errors: list[str]
+
+
 class ShopCatalogPlan(BaseModel):
     """Oeffentliche Sicht: keine Node-/Rollen-IDs, nur was der Shop braucht."""
 

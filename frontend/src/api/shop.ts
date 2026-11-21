@@ -220,6 +220,10 @@ export const shopOrderApi = {
       method: 'POST',
     }),
   listSubscriptions: () => api<ShopSubscriptionDto[]>('/shop/subscriptions'),
+  cancelSubscription: (id: number | string) =>
+    api<ShopSubscriptionDto>(`/shop/subscriptions/${id}/cancel`, {
+      method: 'POST',
+    }),
   listEntitlements: () => api<ShopEntitlementDto[]>('/shop/entitlements'),
 }
 

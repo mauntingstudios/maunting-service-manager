@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 
 from database import get_db
 from dependencies import get_current_user, require_global, verify_csrf
-from models import ShopInvoice, ShopPlan, User
+from models import ShopInvoice, ShopOrder, ShopPlan, User
 from schemas.shop import (
     ShopCatalogPlan,
     ShopCheckoutResponse,
@@ -31,6 +31,9 @@ from schemas.shop import (
     ShopPlanResponse,
     ShopPlanUpdate,
     ShopPlanWrite,
+    ShopReconciliationResponse,
+    ShopRefundCreate,
+    ShopRefundResponse,
     ShopSellerSettings,
     ShopSellerSettingsUpdate,
     ShopStripeKeysUpdate,
@@ -43,6 +46,7 @@ from services import (
     shop_fulfillment_service,
     shop_invoice_service,
     shop_order_service,
+    shop_reconciliation_service,
     shop_seller_settings_service,
     stripe_service,
     stripe_settings_service,
@@ -392,6 +396,97 @@ def list_my_subscriptions(
         shop_order_service.subscription_response(row)
         for row in shop_order_service.list_subscriptions(db, user.id)
     ]
+
+
+@router.post(
+    "/subscriptions/{subscription_id}/cancel",
+    response_model=ShopSubscriptionResponse,
+)
+def cancel_my_subscription(
+    subscription_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    _: None = Depends(verify_csrf),
+) -> ShopSubscriptionResponse:
+    """Merkt ein eigenes Abo zum Laufzeitende als gekuendigt vor."""
+    abo = shop_order_service.get_subscription(db, user.id, subscription_id)
+    if abo is None:
+        raise HTTPException(status_code=404, detail="Abo nicht gefunden")
+    try:
+        abo = shop_order_service.cancel_subscription(
+            db, abo, actor_user_id=user.id
+        )
+    except (
+        shop_order_service.ShopOrderError,
+        stripe_service.StripeNotConfigured,
+    ) as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except stripe_service.StripeError as exc:
+        db.rollback()
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return shop_order_service.subscription_response(abo)
+
+
+@router.post("/orders/{order_id}/refund", response_model=ShopRefundResponse)
+def refund_order_admin(
+    order_id: int,
+    payload: ShopRefundCreate,
+    db: Session = Depends(get_db),
+    actor: User = Depends(require_global("panel.settings.write")),
+    _: None = Depends(verify_csrf),
+) -> ShopRefundResponse:
+    """Erstattet eine Bestellung (inkl. Stripe-Refund, Gutschrift & Entzug)."""
+    clean_reason = payload.reason.strip()
+    if len(clean_reason) < 3:
+        raise HTTPException(
+            status_code=422,
+            detail="Begruendung muss mindestens 3 Zeichen enthalten",
+        )
+    order = db.query(ShopOrder).filter(ShopOrder.id == order_id).first()
+    if order is None:
+        raise HTTPException(status_code=404, detail="Bestellung nicht gefunden")
+    try:
+        gutschrift = shop_order_service.refund_order(
+            db,
+            order,
+            reason=clean_reason,
+            actor_user_id=actor.id,
+            call_stripe=True,
+            origin="direct",
+        )
+    except (
+        shop_order_service.ShopOrderError,
+        shop_invoice_service.InvoiceError,
+        stripe_service.StripeNotConfigured,
+    ) as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except stripe_service.StripeError as exc:
+        db.rollback()
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    db.commit()
+    shop_fulfillment_service.sync_order_entitlements(
+        db, order.id, origin="direct"
+    )
+    db.refresh(order)
+    return ShopRefundResponse(
+        order=shop_order_service.order_response(db, order),
+        credit_note_number=gutschrift.number if gutschrift is not None else None,
+    )
+
+
+@router.post("/reconcile", response_model=ShopReconciliationResponse)
+def reconcile_shop_admin(
+    db: Session = Depends(get_db),
+    actor: User = Depends(require_global("panel.settings.write")),
+    _: None = Depends(verify_csrf),
+) -> ShopReconciliationResponse:
+    """Abgleich offener Stripe-Sessions, fehlender Rechnungen & Entitlements."""
+    bericht = shop_reconciliation_service.reconcile_shop(
+        db, actor_user_id=actor.id
+    )
+    return ShopReconciliationResponse(**bericht)
 
 
 @router.get("/entitlements", response_model=list[ShopEntitlementResponse])

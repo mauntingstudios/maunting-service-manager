@@ -56,6 +56,7 @@ export interface Subscription {
   intervall: 'month'
   naechsteZahlung: string
   preisCent: number
+  cancelAtPeriodEnd?: boolean
 }
 
 export interface Entitlement {

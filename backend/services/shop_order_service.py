@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 
 from models import (
     ShopEntitlement,
+    ShopInvoice,
     ShopOrder,
     ShopOrderItem,
     ShopPaymentEvent,
@@ -505,6 +506,44 @@ def _handle_subscription_changed(db: Session, obj: dict, deleted: bool) -> int |
     return abo.order_id
 
 
+def _handle_charge_refunded(db: Session, charge: dict) -> int | None:
+    amount = charge.get("amount")
+    amount_refunded = charge.get("amount_refunded")
+    voll_erstattet = bool(charge.get("refunded")) or (
+        isinstance(amount, int)
+        and isinstance(amount_refunded, int)
+        and amount > 0
+        and amount_refunded >= amount
+    )
+    if not voll_erstattet:
+        return None
+
+    order: ShopOrder | None = None
+    order_id = _order_id_from_metadata(charge.get("metadata"))
+    if order_id is not None:
+        order = db.query(ShopOrder).filter(ShopOrder.id == order_id).first()
+    if order is None:
+        pi = charge.get("payment_intent")
+        if isinstance(pi, str) and pi:
+            order = (
+                db.query(ShopOrder)
+                .filter(ShopOrder.payment_reference == pi)
+                .first()
+            )
+    if order is None:
+        return None
+    if order.status == "paid":
+        refund_order(
+            db,
+            order,
+            reason="Stripe-Rueckerstattung",
+            actor_user_id=order.user_id,
+            call_stripe=False,
+            origin="external",
+        )
+    return order.id
+
+
 def handle_payment_event(db: Session, event: dict) -> tuple[str, int | None]:
     """Verarbeitet ein signaturgeprueftes Stripe-Ereignis, idempotent.
 
@@ -536,6 +575,8 @@ def handle_payment_event(db: Session, event: dict) -> tuple[str, int | None]:
         order_id = _handle_subscription_changed(db, obj, deleted=False)
     elif typ == "customer.subscription.deleted":
         order_id = _handle_subscription_changed(db, obj, deleted=True)
+    elif typ == "charge.refunded":
+        order_id = _handle_charge_refunded(db, obj)
 
     db.add(
         ShopPaymentEvent(
@@ -563,6 +604,149 @@ def get_order(db: Session, user_id: int, order_id: int) -> ShopOrder | None:
         .filter(ShopOrder.id == order_id, ShopOrder.user_id == user_id)
         .first()
     )
+
+
+def get_subscription(
+    db: Session, user_id: int, subscription_id: int
+) -> ShopSubscription | None:
+    return (
+        db.query(ShopSubscription)
+        .filter(
+            ShopSubscription.id == subscription_id,
+            ShopSubscription.user_id == user_id,
+        )
+        .first()
+    )
+
+
+def cancel_subscription(
+    db: Session, subscription: ShopSubscription, *, actor_user_id: int
+) -> ShopSubscription:
+    """Merkt ein Abo zum Laufzeitende als gekuendigt vor (inkl. Stripe)."""
+    if subscription.status == "cancelled":
+        raise ShopOrderError("Abo ist bereits gekuendigt")
+    if subscription.cancel_at_period_end:
+        return subscription
+    if subscription.provider_reference:
+        from services import stripe_service
+
+        stripe_service.cancel_subscription_at_period_end(
+            subscription.provider_reference
+        )
+    subscription.cancel_at_period_end = True
+    audit_service.record_privileged_action(
+        db,
+        user_id=actor_user_id,
+        action="shop.subscription.cancel_requested",
+        target_type="shop_subscription",
+        target_id=subscription.id,
+        details={
+            "order_id": subscription.order_id,
+            "provider_reference": subscription.provider_reference,
+        },
+    )
+    db.commit()
+    db.refresh(subscription)
+    return subscription
+
+
+def refund_order(
+    db: Session,
+    order: ShopOrder,
+    *,
+    reason: str,
+    actor_user_id: int,
+    call_stripe: bool = True,
+    origin: str = "direct",
+) -> ShopInvoice | None:
+    """Erstattet eine bezahlte Bestellung, storniert Abos und widerruft Ansprueche.
+
+    Committet nicht selbst; der Aufrufer entscheidet ueber Transaktion und
+    anschliessendes Fulfillment-Sync.
+    """
+    if order.status == "refunded":
+        raise ShopOrderError("Bestellung wurde bereits erstattet")
+    if order.status != "paid":
+        raise ShopOrderError("Nur bezahlte Bestellungen koennen erstattet werden")
+
+    abos = (
+        db.query(ShopSubscription)
+        .filter(ShopSubscription.order_id == order.id)
+        .all()
+    )
+
+    if call_stripe and order.payment_provider == "stripe" and order.payment_reference:
+        from services import stripe_service
+
+        payment_intent: str | None = None
+        if order.payment_reference.startswith("pi_"):
+            payment_intent = order.payment_reference
+        elif order.payment_reference.startswith("cs_"):
+            session_obj = stripe_service.get_checkout_session(order.payment_reference)
+            raw_pi = session_obj.get("payment_intent")
+            if isinstance(raw_pi, str) and raw_pi:
+                payment_intent = raw_pi
+
+        if payment_intent:
+            stripe_service.create_refund(
+                payment_intent,
+                idempotency_key=f"shop-refund-order-{order.id}",
+            )
+        for abo in abos:
+            if abo.provider_reference and abo.status != "cancelled":
+                try:
+                    stripe_service.cancel_subscription_at_period_end(
+                        abo.provider_reference
+                    )
+                except stripe_service.StripeError:
+                    if not payment_intent:
+                        raise
+
+    jetzt = _now()
+    order.status = "refunded"
+    for abo in abos:
+        abo.status = "cancelled"
+        abo.cancel_at_period_end = True
+
+    entitlements = (
+        db.query(ShopEntitlement)
+        .filter(ShopEntitlement.order_id == order.id)
+        .all()
+    )
+    for ent in entitlements:
+        ent.status = "revoked"
+        ent.revoked_at = jetzt
+
+    from services import shop_invoice_service
+
+    rechnung = (
+        db.query(ShopInvoice)
+        .filter(
+            ShopInvoice.order_id == order.id,
+            ShopInvoice.type == "invoice",
+            ShopInvoice.status == "issued",
+        )
+        .first()
+    )
+    gutschrift: ShopInvoice | None = None
+    if rechnung is not None:
+        gutschrift = shop_invoice_service.credit_invoice(db, rechnung, reason)
+
+    audit_service.record_privileged_action(
+        db,
+        user_id=actor_user_id,
+        action="shop.order.refunded",
+        target_type="shop_order",
+        target_id=order.id,
+        details={
+            "number": order.number,
+            "gross_cents": order.gross_cents,
+            "reason": reason[:200],
+            **({"credit_note": gutschrift.number} if gutschrift is not None else {}),
+        },
+        origin=origin,
+    )
+    return gutschrift
 
 
 def list_subscriptions(db: Session, user_id: int) -> list[ShopSubscription]:

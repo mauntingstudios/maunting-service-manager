@@ -6636,7 +6636,12 @@
         "artRolle": "Role",
         "artAddon": "Add-on",
         "serverOeffnen": "Open server",
-        "bereitstellungFehlgeschlagen": "Provisioning failed"
+        "bereitstellungFehlgeschlagen": "Provisioning failed",
+        "kuendigen": "Cancel at period end",
+        "kuendigenBestaetigen": "Confirm cancellation",
+        "abbrechen": "Cancel",
+        "kuendigungVorgemerkt": "Cancels at period end",
+        "kuendigenFehler": "Could not cancel subscription."
       },
       "status": {
         "draft": "Draft",

@@ -6636,7 +6636,12 @@
         "artRolle": "Rolle",
         "artAddon": "Add-on",
         "serverOeffnen": "Server öffnen",
-        "bereitstellungFehlgeschlagen": "Bereitstellung fehlgeschlagen"
+        "bereitstellungFehlgeschlagen": "Bereitstellung fehlgeschlagen",
+        "kuendigen": "Zum Laufzeitende kündigen",
+        "kuendigenBestaetigen": "Kündigung bestätigen",
+        "abbrechen": "Abbrechen",
+        "kuendigungVorgemerkt": "Zum Laufzeitende gekündigt",
+        "kuendigenFehler": "Kündigung konnte nicht gespeichert werden."
       },
       "status": {
         "draft": "Entwurf",

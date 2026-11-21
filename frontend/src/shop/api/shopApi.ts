@@ -1,4 +1,4 @@
-import { shopOrderApi } from '@/api/shop'
+import { shopOrderApi, type ShopSubscriptionDto } from '@/api/shop'
 import type {
   Entitlement,
   Order,
@@ -11,9 +11,22 @@ export interface ShopApi {
   listOrders(): Promise<Order[]>
   getOrder(id: string): Promise<Order | undefined>
   listSubscriptions(): Promise<Subscription[]>
+  cancelSubscription(id: string): Promise<Subscription>
   listEntitlements(): Promise<Entitlement[]>
   listPaymentMethods(): Promise<PaymentMethod[]>
   getSettings(): Promise<ShopSettings>
+}
+
+function subscriptionAusApi(dto: ShopSubscriptionDto): Subscription {
+  return {
+    id: String(dto.id),
+    bezeichnung: dto.name,
+    status: dto.status,
+    intervall: 'month',
+    naechsteZahlung: dto.current_period_end.slice(0, 10),
+    preisCent: dto.monthly_gross_cents,
+    cancelAtPeriodEnd: dto.cancel_at_period_end,
+  }
 }
 
 function orderAusApi(dto: Awaited<ReturnType<typeof shopOrderApi.getOrder>>): Order {
@@ -67,14 +80,9 @@ export const shopApi: ShopApi = {
     }
   },
   listSubscriptions: async () =>
-    (await shopOrderApi.listSubscriptions()).map((dto) => ({
-      id: String(dto.id),
-      bezeichnung: dto.name,
-      status: dto.status,
-      intervall: 'month',
-      naechsteZahlung: dto.current_period_end.slice(0, 10),
-      preisCent: dto.monthly_gross_cents,
-    })),
+    (await shopOrderApi.listSubscriptions()).map(subscriptionAusApi),
+  cancelSubscription: async (id) =>
+    subscriptionAusApi(await shopOrderApi.cancelSubscription(id)),
   listEntitlements: async () =>
     (await shopOrderApi.listEntitlements()).map((dto) => ({
       id: String(dto.id),

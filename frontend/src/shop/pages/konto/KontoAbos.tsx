@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { Badge, Zustandsflaeche } from '@maunting/ui'
+import { Badge, Button, Zustandsflaeche } from '@maunting/ui'
 import { shopApi } from '../../api/shopApi'
 import type { Entitlement, Subscription } from '../../api/types'
 import { formatEuro } from '../../preis'
@@ -9,6 +9,9 @@ import { formatEuro } from '../../preis'
 export function KontoAbos() {
   const { t } = useTranslation()
   const [abos, setAbos] = useState<{ subscriptions: Subscription[]; entitlements: Entitlement[] } | null>(null)
+  const [bestaetigeAboId, setBestaetigeAboId] = useState<string | null>(null)
+  const [laufendAboId, setLaufendAboId] = useState<string | null>(null)
+  const [fehler, setFehler] = useState<string | null>(null)
 
   useEffect(() => {
     let aktiv = true
@@ -23,6 +26,29 @@ export function KontoAbos() {
       aktiv = false
     }
   }, [])
+
+  async function kuendigenAusfuehren(aboId: string) {
+    setFehler(null)
+    setLaufendAboId(aboId)
+    try {
+      const aktualisiert = await shopApi.cancelSubscription(aboId)
+      setAbos((prev) =>
+        prev
+          ? {
+              ...prev,
+              subscriptions: prev.subscriptions.map((s) =>
+                s.id === aboId ? aktualisiert : s,
+              ),
+            }
+          : prev,
+      )
+      setBestaetigeAboId(null)
+    } catch {
+      setFehler(t('shop.konto.abos.kuendigenFehler'))
+    } finally {
+      setLaufendAboId(null)
+    }
+  }
 
   if (abos === null) {
     return <p className="text-sm text-on-surface-variant">{t('shop.konto.laedt')}</p>
@@ -44,6 +70,11 @@ export function KontoAbos() {
         <h2 className="font-headline text-lg font-bold text-on-surface">
           {t('shop.konto.abos.titel')}
         </h2>
+        {fehler && (
+          <p role="alert" className="text-sm text-status-destructive">
+            {fehler}
+          </p>
+        )}
         {abos.subscriptions.map((abo) => (
           <div
             key={abo.id}
@@ -55,7 +86,12 @@ export function KontoAbos() {
                 {t('shop.konto.abos.naechsteZahlung', { datum: abo.naechsteZahlung })}
               </p>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3">
+              {abo.cancelAtPeriodEnd && abo.status !== 'cancelled' && (
+                <Badge variant="warning">
+                  {t('shop.konto.abos.kuendigungVorgemerkt')}
+                </Badge>
+              )}
               <Badge variant={abo.status === 'active' ? 'success' : abo.status === 'past_due' ? 'warning' : 'default'}>
                 {abo.status === 'active'
                   ? t('shop.konto.status.aboActive')
@@ -66,6 +102,39 @@ export function KontoAbos() {
               <span className="font-headline text-sm font-bold tabular-nums text-primary">
                 {formatEuro(abo.preisCent)}
               </span>
+              {abo.status !== 'cancelled' && !abo.cancelAtPeriodEnd && (
+                bestaetigeAboId === abo.id ? (
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      disabled={laufendAboId === abo.id}
+                      onClick={() => void kuendigenAusfuehren(abo.id)}
+                    >
+                      {t('shop.konto.abos.kuendigenBestaetigen')}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={laufendAboId === abo.id}
+                      onClick={() => setBestaetigeAboId(null)}
+                    >
+                      {t('shop.konto.abos.abbrechen')}
+                    </Button>
+                  </div>
+                ) : (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => {
+                      setFehler(null)
+                      setBestaetigeAboId(abo.id)
+                    }}
+                  >
+                    {t('shop.konto.abos.kuendigen')}
+                  </Button>
+                )
+              )}
             </div>
           </div>
         ))}

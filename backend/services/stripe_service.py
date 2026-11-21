@@ -15,6 +15,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import re
 import time
 from typing import Any
 
@@ -27,6 +28,7 @@ from services import stripe_settings_service
 STRIPE_API_BASE = "https://api.stripe.com/v1"
 STRIPE_TIMEOUT_SECONDS = 8.0
 SIGNATURE_TOLERANCE_SECONDS = 300
+_STRIPE_ID_RE = re.compile(r"^[A-Za-z0-9_]+$")
 
 
 class StripeError(RuntimeError):
@@ -41,15 +43,49 @@ class StripeSignatureError(StripeError):
     """Signatur fehlt, ist alt oder passt nicht zum Payload."""
 
 
-def _post_form(path: str, data: list[tuple[str, str]], secret: str) -> dict[str, Any]:
+def _validate_stripe_id(value: str, label: str) -> str:
+    cleaned = (value or "").strip()
+    if not cleaned or len(cleaned) > 128 or not _STRIPE_ID_RE.fullmatch(cleaned):
+        raise StripeError(f"{label} ist ungueltig")
+    return cleaned
+
+
+def _require_secret() -> str:
+    secret = stripe_settings_service.resolve_secret_key()
+    if not secret:
+        raise StripeNotConfigured("Stripe ist nicht konfiguriert")
+    return secret
+
+
+def _post_form(
+    path: str,
+    data: list[tuple[str, str]],
+    secret: str,
+    *,
+    idempotency_key: str | None = None,
+) -> dict[str, Any]:
+    headers = {"Authorization": f"Bearer {secret}"}
+    if idempotency_key:
+        headers["Idempotency-Key"] = idempotency_key
     response = httpx.post(
         f"{STRIPE_API_BASE}{path}",
         data=data,
-        headers={"Authorization": f"Bearer {secret}"},
+        headers=headers,
         timeout=STRIPE_TIMEOUT_SECONDS,
     )
     if response.status_code >= 400:
         raise StripeError("Stripe hat die Zahlung nicht angenommen")
+    return response.json()
+
+
+def _get_json(path: str, secret: str) -> dict[str, Any]:
+    response = httpx.get(
+        f"{STRIPE_API_BASE}{path}",
+        headers={"Authorization": f"Bearer {secret}"},
+        timeout=STRIPE_TIMEOUT_SECONDS,
+    )
+    if response.status_code >= 400:
+        raise StripeError("Stripe-Abfrage fehlgeschlagen")
     return response.json()
 
 
@@ -59,9 +95,7 @@ def _panel_base() -> str:
 
 def create_checkout_session(order: ShopOrder, item: ShopOrderItem) -> tuple[str, str]:
     """Legt eine Checkout-Session an und liefert (Session-ID, Weiterleitungs-URL)."""
-    secret = stripe_settings_service.resolve_secret_key()
-    if not secret:
-        raise StripeNotConfigured("Stripe ist nicht konfiguriert")
+    secret = _require_secret()
 
     base = _panel_base()
     # Monatliche Laufzeit wird ein echtes Stripe-Abo (Renewal-Ereignisse
@@ -89,12 +123,52 @@ def create_checkout_session(order: ShopOrder, item: ShopOrderItem) -> tuple[str,
                 ("subscription_data[metadata][order_id]", str(order.id)),
             ]
         )
+    else:
+        data.append(("payment_intent_data[metadata][order_id]", str(order.id)))
     antwort = _post_form("/checkout/sessions", data, secret)
     url = str(antwort.get("url") or "")
     session_id = str(antwort.get("id") or "")
     if not url or not session_id:
         raise StripeError("Stripe lieferte keine Zahlungsadresse")
     return session_id, url
+
+
+def get_checkout_session(session_id: str) -> dict[str, Any]:
+    """Liest den Zustand einer Checkout-Session (fuer Refunds & Reconciliation)."""
+    secret = _require_secret()
+    clean_id = _validate_stripe_id(session_id, "Checkout-Session-ID")
+    return _get_json(f"/checkout/sessions/{clean_id}", secret)
+
+
+def cancel_subscription_at_period_end(subscription_id: str) -> dict[str, Any]:
+    """Merkt die Kuendigung eines Stripe-Abos zum Laufzeitende vor."""
+    secret = _require_secret()
+    clean_id = _validate_stripe_id(subscription_id, "Stripe-Abo-ID")
+    return _post_form(
+        f"/subscriptions/{clean_id}",
+        [("cancel_at_period_end", "true")],
+        secret,
+    )
+
+
+def create_refund(
+    payment_intent: str,
+    *,
+    idempotency_key: str | None = None,
+    reason: str = "requested_by_customer",
+) -> dict[str, Any]:
+    """Erstellt eine volle Rueckerstattung ueber Stripe (idempotent)."""
+    secret = _require_secret()
+    clean_intent = _validate_stripe_id(payment_intent, "Payment-Intent-ID")
+    data: list[tuple[str, str]] = [
+        ("payment_intent", clean_intent),
+        ("reason", reason),
+    ]
+    if idempotency_key:
+        return _post_form(
+            "/refunds", data, secret, idempotency_key=idempotency_key
+        )
+    return _post_form("/refunds", data, secret)
 
 
 def _parse_signature_header(header: str) -> tuple[int, list[str]]:
