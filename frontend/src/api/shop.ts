@@ -162,6 +162,112 @@ export interface ShopAddonSwitchResponse {
   role_changed: boolean
 }
 
+export type ShopCouponDiscountType = 'percent' | 'fixed_cents'
+export type ShopCouponScope = 'all' | 'plans' | 'addons'
+
+export interface ShopCoupon {
+  id: number
+  code: string
+  name: string
+  promo_text: string | null
+  discount_type: ShopCouponDiscountType
+  discount_value: number
+  currency: string
+  scope: ShopCouponScope
+  target_plan_ids: number[]
+  min_gross_cents: number
+  max_redemptions: number | null
+  redemption_count: number
+  valid_from: string | null
+  valid_until: string | null
+  show_badge: boolean
+  show_banner: boolean
+  banner_cooldown_hours: number
+  stripe_coupon_id: string | null
+  stripe_promotion_code_id: string | null
+  active: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface ShopCouponWrite {
+  code: string
+  name: string
+  promo_text: string | null
+  discount_type: ShopCouponDiscountType
+  discount_value: number
+  currency: string
+  scope: ShopCouponScope
+  target_plan_ids: number[]
+  min_gross_cents: number
+  max_redemptions: number | null
+  valid_from: string | null
+  valid_until: string | null
+  show_badge: boolean
+  show_banner: boolean
+  banner_cooldown_hours: number
+  active: boolean
+}
+
+export interface ShopCouponPreviewResponse {
+  valid: boolean
+  code: string
+  discount_type: ShopCouponDiscountType | null
+  discount_value: number | null
+  discount_cents: number
+  final_gross_cents: number
+  reason: string | null
+}
+
+export interface ShopPublicBannerPromo {
+  code: string
+  name: string
+  promo_text: string | null
+  discount_type: ShopCouponDiscountType
+  discount_value: number
+  scope: ShopCouponScope
+  cooldown_hours: number
+  valid_until: string | null
+}
+
+export interface ShopPublicBadgePromo {
+  code: string
+  name: string
+  discount_type: ShopCouponDiscountType
+  discount_value: number
+  scope: ShopCouponScope
+  target_plan_ids: number[]
+}
+
+export interface ShopPublicPromosResponse {
+  banner: ShopPublicBannerPromo | null
+  badges: ShopPublicBadgePromo[]
+}
+
+export interface ShopStatsResponse {
+  total_orders: number
+  paid_orders: number
+  pending_orders: number
+  refunded_orders: number
+  paid_gross_cents: number
+  paid_net_cents: number
+  refunded_gross_cents: number
+  active_subscriptions: number
+  active_addon_subscriptions: number
+  active_coupons: number
+  coupon_redemptions: number
+}
+
+export interface ShopAdminManualOrderCreate {
+  user_id: number
+  plan_id?: number | null
+  addon_id?: number | null
+  months: 1 | 3 | 12
+  coupon_code?: string | null
+  mark_paid: boolean
+  note?: string | null
+}
+
 export const shopAdminApi = {
   listPlans: () => api<ShopPlan[]>('/shop/plans'),
   createPlan: (payload: ShopPlanWrite) =>
@@ -199,6 +305,21 @@ export const shopAdminApi = {
     }),
   deleteAddon: (id: number) =>
     api<void>(`/shop/addons/${id}`, { method: 'DELETE' }),
+  listCoupons: () => api<ShopCoupon[]>('/shop/coupons'),
+  createCoupon: (payload: ShopCouponWrite) =>
+    api<ShopCoupon>('/shop/coupons', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  updateCoupon: (id: number, payload: Partial<ShopCouponWrite>) =>
+    api<ShopCoupon>(`/shop/coupons/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    }),
+  deleteCoupon: (id: number) =>
+    api<void>(`/shop/coupons/${id}`, { method: 'DELETE' }),
+  syncCouponStripe: (id: number) =>
+    api<ShopCoupon>(`/shop/coupons/${id}/stripe-sync`, { method: 'POST' }),
 }
 
 export const shopCatalogApi = {
@@ -207,6 +328,17 @@ export const shopCatalogApi = {
     api<ShopCatalogAddon[]>(
       category ? `/shop/catalog/addons?category=${encodeURIComponent(category)}` : '/shop/catalog/addons',
     ),
+  getPromos: () => api<ShopPublicPromosResponse>('/shop/promos'),
+  previewCoupon: (payload: {
+    code: string
+    kind?: 'plan' | 'addon'
+    plan_id?: number | null
+    gross_cents: number
+  }) =>
+    api<ShopCouponPreviewResponse>('/shop/coupons/preview', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
 }
 
 export type ShopOrderStatus =
@@ -242,6 +374,8 @@ export interface ShopOrderDto {
   billing_interval: string
   months: number
   discount_percent: number
+  coupon_code?: string | null
+  coupon_discount_cents?: number
   net_cents: number
   tax_cents: number
   gross_cents: number
@@ -259,6 +393,7 @@ export interface ShopOrderCreate {
   ram_mb?: number | null
   cpu?: number | null
   slots?: number | null
+  coupon_code?: string | null
   buyer_name?: string | null
   buyer_street?: string | null
   buyer_postal_code?: string | null
@@ -461,8 +596,14 @@ export const shopSellerApi = {
 }
 
 export const shopAdminOpsApi = {
+  getStats: () => api<ShopStatsResponse>('/shop/admin/stats'),
   listOrders: (limit = 50) =>
     api<ShopAdminOrderDto[]>(`/shop/admin/orders?limit=${limit}`),
+  createManualOrder: (payload: ShopAdminManualOrderCreate) =>
+    api<ShopAdminOrderDto>('/shop/admin/orders', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
   refundOrder: (orderId: number, reason: string) =>
     api<ShopRefundResponseDto>(`/shop/orders/${orderId}/refund`, {
       method: 'POST',

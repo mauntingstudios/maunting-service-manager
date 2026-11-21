@@ -63,6 +63,11 @@ const SUBGROUPS = [
       'panel.hoster.read',
       'panel.hoster.write',
       'panel.popups.manage',
+      'shop.read',
+      'shop.write',
+      'shop.orders.read',
+      'shop.invoices.read',
+      'shop.refunds.write',
     ],
   },
   {

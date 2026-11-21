@@ -1,16 +1,50 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { ArrowRight, Search } from 'lucide-react'
 import { Badge, buttonClasses, Zustandsflaeche } from '@maunting/ui'
+import { shopCatalogApi, type ShopPublicBadgePromo } from '@/api/shop'
 import { PANEL_HOME } from '@/lib/panelWege'
 import { SpielKarte } from '../components/SpielKarte'
+import { formatEuro } from '../preis'
 import { useShopKatalog } from '../useShopKatalog'
 
 export function ShopStart() {
   const { t } = useTranslation()
-  const { spiele, quelle } = useShopKatalog()
+  const { spiele, tarifeFuer, quelle } = useShopKatalog()
   const [suche, setSuche] = useState('')
+  const [badges, setBadges] = useState<ShopPublicBadgePromo[]>([])
+
+  useEffect(() => {
+    const fetchPromos = shopCatalogApi.getPromos
+    if (!fetchPromos) return
+    let aktiv = true
+    void fetchPromos()
+      .then((res) => {
+        if (aktiv) setBadges(res?.badges ?? [])
+      })
+      .catch(() => {
+        if (aktiv) setBadges([])
+      })
+    return () => {
+      aktiv = false
+    }
+  }, [])
+
+  const rabattFuerSpiel = (spielId: string): string | null => {
+    if (badges.length === 0) return null
+    const tarife = tarifeFuer(spielId)
+    const planIds = new Set(tarife.map((tItem) => tItem.plan.id))
+    const passend = badges.find((badge) => {
+      if (badge.scope === 'addons') return false
+      if (badge.target_plan_ids.length === 0) return true
+      return badge.target_plan_ids.some((id) => planIds.has(id))
+    })
+    if (!passend) return null
+    return passend.discount_type === 'percent'
+      ? `${passend.discount_value} %`
+      : formatEuro(passend.discount_value)
+  }
 
   const gefiltert = useMemo(() => {
     const begriff = suche.trim().toLowerCase()
@@ -99,7 +133,11 @@ export function ShopStart() {
           ) : (
             <div className="msm-blueprint-grid">
               {gefiltert.map((spiel) => (
-                <SpielKarte key={spiel.id} spiel={spiel} />
+                <SpielKarte
+                  key={spiel.id}
+                  spiel={spiel}
+                  rabattLabel={rabattFuerSpiel(spiel.id)}
+                />
               ))}
             </div>
           )}

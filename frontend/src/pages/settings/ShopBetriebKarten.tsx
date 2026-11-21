@@ -9,6 +9,7 @@ import {
   type ShopInvoiceSummaryDto,
   type ShopPaymentEventDto,
   type ShopReconciliationDto,
+  type ShopStatsResponse,
 } from '@/api/shop'
 import { formatEuro } from '@/shop/preis'
 import { toast } from '@/stores/toastStore'
@@ -25,6 +26,7 @@ export function ShopBetriebKarten() {
   const [orders, setOrders] = useState<ShopAdminOrderDto[]>([])
   const [invoices, setInvoices] = useState<ShopInvoiceSummaryDto[]>([])
   const [webhooks, setWebhooks] = useState<ShopPaymentEventDto[]>([])
+  const [stats, setStats] = useState<ShopStatsResponse | null>(null)
   const [laedt, setLaedt] = useState(true)
   const [reconcileBusy, setReconcileBusy] = useState(false)
   const [reconcileResult, setReconcileResult] = useState<ShopReconciliationDto | null>(null)
@@ -37,14 +39,16 @@ export function ShopBetriebKarten() {
   const laden = async () => {
     setLaedt(true)
     try {
-      const [o, inv, wh] = await Promise.all([
+      const [o, inv, wh, st] = await Promise.all([
         shopAdminOpsApi.listOrders(),
         shopAdminOpsApi.listInvoices(),
         shopAdminOpsApi.listWebhooks(),
+        shopAdminOpsApi.getStats().catch(() => null),
       ])
       setOrders(o)
       setInvoices(inv)
       setWebhooks(wh)
+      setStats(st && typeof st.paid_orders === 'number' ? st : null)
     } catch {
       toast.error(t('settings.shop.betrieb.ladefehler'))
     } finally {
@@ -142,6 +146,43 @@ export function ShopBetriebKarten() {
 
   return (
     <div className="space-y-6">
+      {stats && (
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="msm-card rounded-2xl border border-outline-variant/30 bg-surface-container-low/80 p-4">
+            <p className="text-xs text-on-surface-variant">
+              {t('settings.shop.betrieb.umsatzBrutto')}
+            </p>
+            <p className="mt-1 font-headline text-xl font-bold text-on-surface">
+              {formatEuro(stats.paid_gross_cents)}
+            </p>
+          </div>
+          <div className="msm-card rounded-2xl border border-outline-variant/30 bg-surface-container-low/80 p-4">
+            <p className="text-xs text-on-surface-variant">
+              {t('settings.shop.betrieb.bezahlteOrders')}
+            </p>
+            <p className="mt-1 font-headline text-xl font-bold text-on-surface">
+              {stats.paid_orders} / {stats.total_orders}
+            </p>
+          </div>
+          <div className="msm-card rounded-2xl border border-outline-variant/30 bg-surface-container-low/80 p-4">
+            <p className="text-xs text-on-surface-variant">
+              {t('settings.shop.betrieb.aktiveAbos')}
+            </p>
+            <p className="mt-1 font-headline text-xl font-bold text-on-surface">
+              {stats.active_subscriptions}
+            </p>
+          </div>
+          <div className="msm-card rounded-2xl border border-outline-variant/30 bg-surface-container-low/80 p-4">
+            <p className="text-xs text-on-surface-variant">
+              {t('settings.shop.betrieb.aktiveGutscheine')}
+            </p>
+            <p className="mt-1 font-headline text-xl font-bold text-on-surface">
+              {stats.active_coupons}
+            </p>
+          </div>
+        </div>
+      )}
+
       <section className="msm-card space-y-4 rounded-2xl border border-outline-variant/30 bg-surface-container-low/80 p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">

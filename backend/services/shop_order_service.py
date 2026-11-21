@@ -29,6 +29,7 @@ from models import (
     User,
 )
 from schemas.shop import (
+    ShopAdminManualOrderCreate,
     ShopEntitlementResponse,
     ShopOrderCreate,
     ShopOrderItemResponse,
@@ -191,7 +192,26 @@ def create_order(db: Session, user: User, payload: ShopOrderCreate) -> ShopOrder
     discount = DURATION_DISCOUNTS[payload.months]
     monatlich = int(spec["monatlich"])  # type: ignore[arg-type]
     tax_rate_percent = int(spec["tax_rate_percent"])  # type: ignore[arg-type]
-    brutto = round(monatlich * payload.months * (1 - discount / 100))
+    brutto_vor_gutschein = round(monatlich * payload.months * (1 - discount / 100))
+    coupon_code: str | None = None
+    coupon_discount_cents = 0
+    if payload.coupon_code and payload.coupon_code.strip():
+        from services import shop_coupon_service
+        from services.shop_catalog_service import ShopConfigurationError
+
+        try:
+            coupon, coupon_discount_cents = shop_coupon_service.validate_coupon_for_order(
+                db,
+                payload.coupon_code,
+                kind=str(spec["kind"]),
+                plan_id=spec["plan_id"],  # type: ignore[arg-type]
+                gross_before_coupon_cents=brutto_vor_gutschein,
+            )
+            coupon_code = coupon.code
+        except ShopConfigurationError as exc:
+            raise ShopOrderError(str(exc)) from exc
+
+    brutto = max(0, brutto_vor_gutschein - coupon_discount_cents)
     netto = round(brutto * 100 / (100 + tax_rate_percent))
     steuer = brutto - netto
 
@@ -203,6 +223,8 @@ def create_order(db: Session, user: User, payload: ShopOrderCreate) -> ShopOrder
         billing_interval=str(spec["billing_interval"]),
         months=payload.months,
         discount_percent=discount,
+        coupon_code=coupon_code,
+        coupon_discount_cents=coupon_discount_cents,
         buyer_name=payload.buyer_name,
         buyer_street=payload.buyer_street,
         buyer_postal_code=payload.buyer_postal_code,
@@ -259,6 +281,15 @@ def apply_payment(
         return order
     if order.status != "pending_payment":
         raise ShopOrderError("Bestellung ist nicht zahlbar")
+
+    if order.coupon_code:
+        from services import shop_coupon_service
+        from services.shop_catalog_service import ShopConfigurationError
+
+        try:
+            shop_coupon_service.consume_coupon_redemption(db, order.coupon_code)
+        except ShopConfigurationError as exc:
+            raise ShopOrderError(str(exc)) from exc
 
     jetzt = _now()
     order.status = "paid"
@@ -867,6 +898,70 @@ def order_items(db: Session, order_id: int) -> list[ShopOrderItem]:
     )
 
 
+def create_manual_order(
+    db: Session,
+    payload: ShopAdminManualOrderCreate,
+    *,
+    actor_user_id: int,
+) -> ShopOrder:
+    """Erstellt eine Bestellung durch einen Operator fuer einen Kunden."""
+    target_user = db.query(User).filter(User.id == payload.user_id).first()
+    if target_user is None:
+        raise ShopOrderError("Kunde nicht gefunden")
+
+    order = create_order(
+        db,
+        target_user,
+        ShopOrderCreate(
+            plan_id=payload.plan_id,
+            addon_id=payload.addon_id,
+            months=payload.months,
+            ram_mb=payload.ram_mb,
+            cpu=payload.cpu,
+            slots=payload.slots,
+            coupon_code=payload.coupon_code,
+            buyer_name=payload.buyer_name,
+            buyer_street=payload.buyer_street,
+            buyer_postal_code=payload.buyer_postal_code,
+            buyer_city=payload.buyer_city,
+            buyer_country=payload.buyer_country,
+            buyer_email=payload.buyer_email,
+        ),
+    )
+    order.payment_provider = "manual"
+    if payload.mark_paid:
+        apply_payment(
+            db,
+            order,
+            provider="manual",
+            reference=f"manual-{order.number}",
+            origin="direct",
+        )
+    audit_service.record_privileged_action(
+        db,
+        user_id=actor_user_id,
+        action="shop.order.manual_created",
+        target_type="shop_order",
+        target_id=order.id,
+        details={
+            "number": order.number,
+            "target_user_id": target_user.id,
+            "mark_paid": payload.mark_paid,
+            "note": (payload.note or "").strip()[:200],
+        },
+        origin="direct",
+    )
+    db.commit()
+    if payload.mark_paid:
+        from services import shop_fulfillment_service
+
+        shop_fulfillment_service.sync_order_entitlements(
+            db, order.id, origin="direct"
+        )
+    db.refresh(order)
+    return order
+
+
 def order_response(db: Session, order: ShopOrder) -> ShopOrderResponse:
     return ShopOrderResponse(
         id=order.id,
@@ -876,6 +971,8 @@ def order_response(db: Session, order: ShopOrder) -> ShopOrderResponse:
         billing_interval=order.billing_interval,
         months=order.months,
         discount_percent=order.discount_percent,
+        coupon_code=order.coupon_code,
+        coupon_discount_cents=order.coupon_discount_cents,
         net_cents=order.net_cents,
         tax_cents=order.tax_cents,
         gross_cents=order.gross_cents,

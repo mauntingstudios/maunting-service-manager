@@ -3,7 +3,7 @@ import { Link, useLocation, useParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { ArrowLeft } from 'lucide-react'
 import { Badge, Button, Dropdown, Spinner, Zustandsflaeche } from '@maunting/ui'
-import { shopOrderApi } from '@/api/shop'
+import { shopCatalogApi, shopOrderApi, type ShopCouponPreviewResponse } from '@/api/shop'
 import { SanitizedApiError } from '@/api/client'
 import { useAuthStore } from '@/stores/authStore'
 import { formatEuro, preisAufschluesselung } from '../preis'
@@ -38,6 +38,11 @@ export function ShopKasse() {
   const [plz, setPlz] = useState('')
   const [stadt, setStadt] = useState('')
   const [land, setLand] = useState('DE')
+  const [gutscheinEingabe, setGutscheinEingabe] = useState('')
+  const [gutscheinVorschau, setGutscheinVorschau] =
+    useState<ShopCouponPreviewResponse | null>(null)
+  const [gutscheinFehler, setGutscheinFehler] = useState('')
+  const [gutscheinBusy, setGutscheinBusy] = useState(false)
   const [fehler, setFehler] = useState('')
   const [busy, setBusy] = useState(false)
   const [erfolg, setErfolg] = useState<string | null>(null)
@@ -77,6 +82,37 @@ export function ShopKasse() {
 
   const sprache = i18n.language.startsWith('de') ? 'de' : 'en'
   const preis = preisAufschluesselung(spiel, konfiguration)
+  const gutscheinAbzug = gutscheinVorschau?.valid ? gutscheinVorschau.discount_cents : 0
+  const endSumme = Math.max(0, preis.gesamtCent - gutscheinAbzug)
+
+  const gutscheinPruefen = async () => {
+    const code = gutscheinEingabe.trim().toUpperCase()
+    if (!code || gutscheinBusy) return
+    const previewFn = shopCatalogApi.previewCoupon
+    if (!previewFn) return
+    setGutscheinBusy(true)
+    setGutscheinFehler('')
+    try {
+      const planId = ausgewaehlt?.plan.id ?? null
+      const res = await previewFn({
+        code,
+        kind: 'plan',
+        plan_id: planId && planId > 0 ? planId : null,
+        gross_cents: preis.gesamtCent,
+      })
+      if (res.valid) {
+        setGutscheinVorschau(res)
+      } else {
+        setGutscheinVorschau(null)
+        setGutscheinFehler(res.reason || t('shop.kasse.gutscheinFehler'))
+      }
+    } catch {
+      setGutscheinVorschau(null)
+      setGutscheinFehler(t('shop.kasse.gutscheinFehler'))
+    } finally {
+      setGutscheinBusy(false)
+    }
+  }
 
   const absenden = async (event: FormEvent) => {
     event.preventDefault()
@@ -111,6 +147,7 @@ export function ShopKasse() {
           ram_mb: konfiguration.ramGb * 1024,
           cpu: konfiguration.cpu,
           slots: konfiguration.slots,
+          ...(gutscheinVorschau?.valid ? { coupon_code: gutscheinVorschau.code } : {}),
           buyer_name: name.trim(),
           buyer_street: strasse.trim(),
           buyer_postal_code: plz.trim(),
@@ -361,14 +398,71 @@ export function ShopKasse() {
                 {t('shop.spiel.monate', { count: konfiguration.laufzeitMonate })}
               </dd>
             </div>
+            {gutscheinVorschau?.valid && (
+              <div className="flex justify-between gap-3 text-status-success">
+                <dt>
+                  {t('shop.kasse.gutscheinAbzug', { code: gutscheinVorschau.code })}
+                </dt>
+                <dd>-{formatEuro(gutscheinAbzug)}</dd>
+              </div>
+            )}
           </dl>
+
+          {istAngemeldet && (ausgewaehlt?.plan.id ?? 0) > 0 && (
+            <div className="space-y-2 border-t border-outline-variant/30 pt-3">
+              <label
+                htmlFor="kasse-gutschein"
+                className="block text-xs font-semibold text-on-surface"
+              >
+                {t('shop.kasse.gutscheinLabel')}
+              </label>
+              <div className="flex gap-2">
+                <input
+                  id="kasse-gutschein"
+                  value={gutscheinEingabe}
+                  onChange={(event) =>
+                    setGutscheinEingabe(event.target.value.toUpperCase())
+                  }
+                  placeholder={t('shop.kasse.gutscheinPlatzhalter')}
+                  className="msm-input w-full"
+                />
+                {gutscheinVorschau?.valid ? (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => {
+                      setGutscheinVorschau(null)
+                      setGutscheinEingabe('')
+                    }}
+                  >
+                    {t('shop.kasse.gutscheinEntfernen')}
+                  </Button>
+                ) : (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    disabled={gutscheinBusy || !gutscheinEingabe.trim()}
+                    onClick={() => void gutscheinPruefen()}
+                  >
+                    {t('shop.kasse.gutscheinPruefen')}
+                  </Button>
+                )}
+              </div>
+              {gutscheinFehler && (
+                <p className="text-xs text-status-destructive">{gutscheinFehler}</p>
+              )}
+            </div>
+          )}
+
           <div className="border-t border-outline-variant/30 pt-3">
             <div className="flex items-end justify-between gap-3">
               <span className="text-sm font-semibold text-on-surface">
                 {t('shop.kasse.summe')}
               </span>
               <span className="font-headline text-2xl font-extrabold tabular-nums text-primary">
-                {formatEuro(preis.gesamtCent)}
+                {formatEuro(endSumme)}
               </span>
             </div>
             <p className="mt-1 text-right text-label-sm text-on-surface-variant">

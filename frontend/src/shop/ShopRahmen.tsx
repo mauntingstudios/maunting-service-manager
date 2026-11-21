@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import { Link, Outlet, useLocation } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { PANEL_HOME } from '@/lib/panelWege'
+import { ShopPromoBanner } from './components/ShopPromoBanner'
 import { ShopKopf } from './ShopKopf'
 
 export function ShopRahmen() {
@@ -23,6 +24,7 @@ export function ShopRahmen() {
         {t('shop.fuss.zumInhalt')}
       </a>
 
+      <ShopPromoBanner />
       <ShopKopf />
 
       <main id="shop-inhalt" ref={mainRef} tabIndex={-1} className="outline-none">

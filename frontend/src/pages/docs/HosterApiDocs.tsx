@@ -108,17 +108,43 @@ const HANDOFF_COMMAND = `curl -X POST https://panel.example/api/hoster/v1/handof
   -H "Content-Type: application/json" \\
   -d '{"external_service_id":"SVC-4711","target_path":"/servers/42"}'`
 
+const APPLY_COMMAND = `curl -X POST https://panel.example/api/hoster/v1/apply \\
+  -H "X-MSM-Hoster-Key: $MSM_HOSTER_KEY" \\
+  -H "Idempotency-Key: order-9001-attempt-1" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+        "external_subject": "CUST-1234",
+        "desired_state": "active",
+        "email": "kunde@example.com",
+        "items": [
+          {"external_service_id": "SVC-4711", "kind": "server", "product_key": "mc-8gb", "slots": 24},
+          {"external_service_id": "ADDON-91", "kind": "addon", "addon_slug": "ai-pro"}
+        ]
+      }'`
+
 const ENDPOINTS = [
   ['GET', '/api/hoster/v1/health', 'health'],
+  ['POST', '/api/hoster/v1/apply', 'apply'],
   ['PUT', '/api/hoster/v1/services/{external_service_id}', 'put'],
   ['GET', '/api/hoster/v1/services/{external_service_id}', 'get'],
   ['POST', '/api/hoster/v1/handoffs', 'handoff'],
   ['GET', '/api/hoster/handoff/{token}', 'redeem'],
 ] as const
 
+const APPLY_FIELDS = [
+  'external_subject',
+  'desired_state',
+  'items',
+  'item_kind',
+  'addon_slug',
+  'slots',
+] as const
+
 const REQUEST_FIELDS = ['desired_state', 'external_subject', 'product_key', 'email'] as const
 const RESPONSE_FIELDS = [
   'external_service_id',
+  'item_kind',
+  'addon_slug',
   'desired_state',
   'status',
   'status_code',
@@ -145,6 +171,7 @@ const STATUS_CODES = [
   'install_directory_exists',
   'install_update_already_running',
   'hoster_configuration_error',
+  'hoster_item_kind_mismatch',
   'hoster_role_escalation',
   'hoster_internal_error',
   'product_changed_manual_resize_required',
@@ -269,6 +296,17 @@ export function HosterApiDocs() {
             body: t(`docsHosterApi.endpoints.${key}`),
           }))}
         />
+
+        <h3 className="mt-8 mb-3 font-headline text-title-lg text-on-surface">{t('docsHosterApi.endpoints.applyTitle')}</h3>
+        <p className="mb-4 max-w-3xl text-sm leading-6 text-on-surface-variant">{t('docsHosterApi.endpoints.applyIntro')}</p>
+        <DefinitionTable
+          rows={APPLY_FIELDS.map(field => ({
+            term: field,
+            badge: t(`docsHosterApi.apply.${field}.type`),
+            body: t(`docsHosterApi.apply.${field}.body`),
+          }))}
+        />
+        <CodeBlock code={APPLY_COMMAND} label={t('docsHosterApi.endpoints.applyLabel')} testId="hoster-apply-command" />
 
         <h3 className="mt-8 mb-3 font-headline text-title-lg text-on-surface">{t('docsHosterApi.endpoints.requestTitle')}</h3>
         <p className="mb-4 max-w-3xl text-sm leading-6 text-on-surface-variant">{t('docsHosterApi.endpoints.idempotencyKey')}</p>

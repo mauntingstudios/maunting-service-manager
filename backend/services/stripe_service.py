@@ -110,7 +110,11 @@ def create_checkout_session(order: ShopOrder, item: ShopOrderItem) -> tuple[str,
         ("line_items[0][price_data][currency]", order.currency.lower()),
         (
             "line_items[0][price_data][unit_amount]",
-            str(item.unit_price_cents if abo else order.gross_cents),
+            str(
+                order.gross_cents
+                if order.coupon_discount_cents > 0 or not abo
+                else item.unit_price_cents
+            ),
         ),
         ("line_items[0][price_data][product_data][name]", item.name),
         ("metadata[order_id]", str(order.id)),
@@ -169,6 +173,62 @@ def create_refund(
             "/refunds", data, secret, idempotency_key=idempotency_key
         )
     return _post_form("/refunds", data, secret)
+
+
+def create_coupon_and_promotion_code(
+    *,
+    coupon_id: int,
+    code: str,
+    name: str,
+    discount_type: str,
+    discount_value: int,
+    currency: str = "EUR",
+    max_redemptions: int | None = None,
+    active: bool = True,
+) -> tuple[str, str]:
+    """Legt einen Stripe-Coupon plus Promotion-Code an."""
+    secret = _require_secret()
+    coupon_data: list[tuple[str, str]] = [
+        ("name", name[:40]),
+        ("duration", "once"),
+        ("metadata[shop_coupon_id]", str(coupon_id)),
+    ]
+    if discount_type == "percent":
+        coupon_data.append(("percent_off", str(int(discount_value))))
+    else:
+        coupon_data.append(("amount_off", str(int(discount_value))))
+        coupon_data.append(("currency", currency.lower()))
+
+    created_coupon = _post_form("/coupons", coupon_data, secret)
+    stripe_coupon_id = str(created_coupon.get("id") or "")
+    if not stripe_coupon_id:
+        raise StripeError("Stripe lieferte keine Coupon-ID")
+
+    promo_data: list[tuple[str, str]] = [
+        ("coupon", stripe_coupon_id),
+        ("code", code),
+        ("active", "true" if active else "false"),
+        ("metadata[shop_coupon_id]", str(coupon_id)),
+    ]
+    if max_redemptions is not None:
+        promo_data.append(("max_redemptions", str(int(max_redemptions))))
+
+    created_promo = _post_form("/promotion_codes", promo_data, secret)
+    promo_id = str(created_promo.get("id") or "")
+    if not promo_id:
+        raise StripeError("Stripe lieferte keinen Promotion-Code")
+    return stripe_coupon_id, promo_id
+
+
+def deactivate_promotion_code(promo_code_id: str) -> dict[str, Any]:
+    """Deaktiviert einen bestehenden Stripe-Promotion-Code."""
+    secret = _require_secret()
+    clean_id = _validate_stripe_id(promo_code_id, "Stripe-Promo-Code-ID")
+    return _post_form(
+        f"/promotion_codes/{clean_id}",
+        [("active", "false")],
+        secret,
+    )
 
 
 def _parse_signature_header(header: str) -> tuple[int, list[str]]:

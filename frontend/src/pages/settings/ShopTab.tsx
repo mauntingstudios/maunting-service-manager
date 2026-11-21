@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next'
 import { Badge } from '@maunting/ui'
 import { usePublicSettingsStore } from '@/stores/publicSettingsStore'
 import { ShopAddonsEditor } from './ShopAddonsEditor'
+import { ShopCouponsEditor } from './ShopCouponsEditor'
 import { ShopPlansEditor } from './ShopPlansEditor'
 import { SellerDatenKarte } from './SellerDatenKarte'
 import { StripeZahlungenKarte } from './StripeZahlungenKarte'
@@ -36,6 +37,10 @@ export function ShopTab() {
 
       <div className="border-t border-outline-variant/30 pt-6">
         <ShopAddonsEditor />
+      </div>
+
+      <div className="border-t border-outline-variant/30 pt-6">
+        <ShopCouponsEditor />
       </div>
 
       <div className="border-t border-outline-variant/30 pt-6">

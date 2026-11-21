@@ -17,10 +17,11 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from database import get_db
-from dependencies import get_current_user, require_global, verify_csrf
+from dependencies import get_current_user, verify_csrf
 from models import (
     Server,
     ShopAddon,
+    ShopCoupon,
     ShopEntitlement,
     ShopInvoice,
     ShopOrder,
@@ -35,10 +36,16 @@ from schemas.shop import (
     ShopAddonSwitchResponse,
     ShopAddonUpdate,
     ShopAddonWrite,
+    ShopAdminManualOrderCreate,
     ShopAdminOrderResponse,
     ShopCatalogAddon,
     ShopCatalogPlan,
     ShopCheckoutResponse,
+    ShopCouponPreviewRequest,
+    ShopCouponPreviewResponse,
+    ShopCouponResponse,
+    ShopCouponUpdate,
+    ShopCouponWrite,
     ShopCreditNoteCreate,
     ShopEinvoiceToolchainStatusResponse,
     ShopEntitlementResponse,
@@ -52,6 +59,7 @@ from schemas.shop import (
     ShopPlanResponse,
     ShopPlanUpdate,
     ShopPlanWrite,
+    ShopPublicPromosResponse,
     ShopReconciliationResponse,
     ShopRefundCreate,
     ShopRefundResponse,
@@ -61,6 +69,7 @@ from schemas.shop import (
     ShopServerSlotsResponse,
     ShopServerSlotsUpdate,
     ShopServerSubscriptionResponse,
+    ShopStatsResponse,
     ShopStripeKeysUpdate,
     ShopStripeStatus,
     ShopSubscriptionResponse,
@@ -72,6 +81,7 @@ from services import (
     player_query_service,
     shop_addon_service,
     shop_catalog_service,
+    shop_coupon_service,
     shop_einvoice_toolchain_service,
     shop_fulfillment_service,
     shop_invoice_export_service,
@@ -90,6 +100,20 @@ from services.media_gallery_service import build_webp_response
 router = APIRouter(prefix="/api/shop", tags=["shop"])
 
 
+def _require_shop_perm(*keys: str):
+    """Laesst Owner sowie Inhaber einer der erlaubten Shop-/Settings-Rechte durch."""
+
+    def _dep(
+        user: User = Depends(get_current_user),
+        db: Session = Depends(get_db),
+    ) -> User:
+        if any(permission_service.has_global_permission(db, user, key) for key in keys):
+            return user
+        raise HTTPException(status_code=403, detail="Keine Berechtigung")
+
+    return _dep
+
+
 def _plan_or_404(db: Session, plan_id: int) -> ShopPlan:
     plan = shop_catalog_service.get_plan(db, plan_id)
     if plan is None:
@@ -102,6 +126,13 @@ def _addon_or_404(db: Session, addon_id: int) -> ShopAddon:
     if addon is None:
         raise HTTPException(status_code=404, detail="Add-on nicht gefunden")
     return addon
+
+
+def _coupon_or_404(db: Session, coupon_id: int) -> ShopCoupon:
+    coupon = shop_coupon_service.get_coupon(db, coupon_id)
+    if coupon is None:
+        raise HTTPException(status_code=404, detail="Gutschein nicht gefunden")
+    return coupon
 
 
 def _shop_error(exc: shop_catalog_service.ShopConfigurationError) -> HTTPException:
@@ -132,6 +163,27 @@ def get_catalog_addons(
             db, active_only=True, category=category
         )
     ]
+
+
+@router.get("/promos", response_model=ShopPublicPromosResponse)
+def get_public_promos(db: Session = Depends(get_db)) -> ShopPublicPromosResponse:
+    """Aktive Gutschein-Banner und Produkt-Rabatt-Badges fuer die Storefront."""
+    return shop_coupon_service.get_public_promos(db)
+
+
+@router.post("/coupons/preview", response_model=ShopCouponPreviewResponse)
+def preview_coupon_public(
+    payload: ShopCouponPreviewRequest,
+    db: Session = Depends(get_db),
+) -> ShopCouponPreviewResponse:
+    """Prueft einen Gutscheincode unverbindlich fuer den Checkout."""
+    return shop_coupon_service.preview_coupon(
+        db,
+        code=payload.code,
+        kind=payload.kind,
+        plan_id=payload.plan_id,
+        gross_cents=payload.gross_cents,
+    )
 
 
 @router.get("/artwork/{game_type}")
@@ -307,7 +359,9 @@ def list_my_invoices(
 def export_invoices_admin(
     year: int | None = Query(default=None, ge=2000, le=2100),
     db: Session = Depends(get_db),
-    actor: User = Depends(require_global("panel.settings.read")),
+    actor: User = Depends(
+        _require_shop_perm("shop.invoices.read", "shop.read", "panel.settings.read")
+    ),
 ) -> Response:
     """Exportiert alle Belege als Betriebspruefungs-ZIP (CSV, JSON, PDF, XML)."""
     daten, dateiname = shop_invoice_export_service.build_audit_export_zip(
@@ -363,7 +417,9 @@ def credit_invoice_admin(
     invoice_id: int,
     payload: ShopCreditNoteCreate,
     db: Session = Depends(get_db),
-    actor: User = Depends(require_global("panel.settings.write")),
+    actor: User = Depends(
+        _require_shop_perm("shop.refunds.write", "shop.write", "panel.settings.write")
+    ),
     _: None = Depends(verify_csrf),
 ) -> ShopInvoiceResponse:
     """Storno per Gutschrift; die Originalrechnung bleibt als `void` im Ledger."""
@@ -394,7 +450,7 @@ def credit_invoice_admin(
 
 @router.get("/seller", response_model=ShopSellerSettings)
 def get_seller_settings(
-    _: User = Depends(require_global("panel.settings.read")),
+    _: User = Depends(_require_shop_perm("shop.read", "panel.settings.read")),
 ) -> dict:
     daten = shop_seller_settings_service.read()
     daten["missing_fields"] = shop_seller_settings_service.missing_fields()
@@ -405,7 +461,7 @@ def get_seller_settings(
 def set_seller_settings(
     payload: ShopSellerSettingsUpdate,
     db: Session = Depends(get_db),
-    actor: User = Depends(require_global("panel.settings.write")),
+    actor: User = Depends(_require_shop_perm("shop.write", "panel.settings.write")),
     _: None = Depends(verify_csrf),
 ) -> dict:
     try:
@@ -428,7 +484,7 @@ def set_seller_settings(
 
 @router.get("/stripe/status", response_model=ShopStripeStatus)
 def get_stripe_status(
-    _: User = Depends(require_global("panel.settings.read")),
+    _: User = Depends(_require_shop_perm("shop.read", "panel.settings.read")),
 ) -> dict:
     return stripe_settings_service.status()
 
@@ -437,7 +493,7 @@ def get_stripe_status(
 def set_stripe_keys(
     payload: ShopStripeKeysUpdate,
     db: Session = Depends(get_db),
-    actor: User = Depends(require_global("panel.settings.write")),
+    actor: User = Depends(_require_shop_perm("shop.write", "panel.settings.write")),
     _: None = Depends(verify_csrf),
 ) -> dict:
     """Setzt Stripe-Schluessel; Werte gehen nie zurueck, nur der Status."""
@@ -533,7 +589,9 @@ def refund_order_admin(
     order_id: int,
     payload: ShopRefundCreate,
     db: Session = Depends(get_db),
-    actor: User = Depends(require_global("panel.settings.write")),
+    actor: User = Depends(
+        _require_shop_perm("shop.refunds.write", "shop.write", "panel.settings.write")
+    ),
     _: None = Depends(verify_csrf),
 ) -> ShopRefundResponse:
     """Erstattet eine Bestellung (inkl. Stripe-Refund, Gutschrift & Entzug)."""
@@ -579,7 +637,7 @@ def refund_order_admin(
 @router.post("/reconcile", response_model=ShopReconciliationResponse)
 def reconcile_shop_admin(
     db: Session = Depends(get_db),
-    actor: User = Depends(require_global("panel.settings.write")),
+    actor: User = Depends(_require_shop_perm("shop.write", "panel.settings.write")),
     _: None = Depends(verify_csrf),
 ) -> ShopReconciliationResponse:
     """Abgleich offener Stripe-Sessions, fehlender Rechnungen & Entitlements."""
@@ -607,7 +665,7 @@ def list_my_entitlements(
 def sync_entitlement_admin(
     entitlement_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(require_global("panel.settings.write")),
+    _: User = Depends(_require_shop_perm("shop.write", "panel.settings.write")),
     __: None = Depends(verify_csrf),
 ) -> ShopEntitlementResponse:
     """Synchronisiert ein Entitlement (z. B. Retry nach behobenem Fehler)."""
@@ -625,7 +683,7 @@ def sync_entitlement_admin(
 @router.get("/plans", response_model=list[ShopPlanResponse])
 def list_plans(
     db: Session = Depends(get_db),
-    _: User = Depends(require_global("panel.settings.read")),
+    _: User = Depends(_require_shop_perm("shop.read", "panel.settings.read")),
 ) -> list[ShopPlanResponse]:
     return [
         shop_catalog_service.plan_response(db, plan)
@@ -637,7 +695,7 @@ def list_plans(
 def create_plan(
     payload: ShopPlanWrite,
     db: Session = Depends(get_db),
-    actor: User = Depends(require_global("panel.settings.write")),
+    actor: User = Depends(_require_shop_perm("shop.write", "panel.settings.write")),
     _: None = Depends(verify_csrf),
 ) -> ShopPlanResponse:
     try:
@@ -652,7 +710,7 @@ def update_plan(
     plan_id: int,
     payload: ShopPlanUpdate,
     db: Session = Depends(get_db),
-    actor: User = Depends(require_global("panel.settings.write")),
+    actor: User = Depends(_require_shop_perm("shop.write", "panel.settings.write")),
     _: None = Depends(verify_csrf),
 ) -> ShopPlanResponse:
     plan = _plan_or_404(db, plan_id)
@@ -669,7 +727,7 @@ def update_plan(
 def delete_plan(
     plan_id: int,
     db: Session = Depends(get_db),
-    actor: User = Depends(require_global("panel.settings.write")),
+    actor: User = Depends(_require_shop_perm("shop.write", "panel.settings.write")),
     _: None = Depends(verify_csrf),
 ) -> Response:
     plan = _plan_or_404(db, plan_id)
@@ -683,7 +741,7 @@ def delete_plan(
 @router.get("/addons", response_model=list[ShopAddonResponse])
 def list_addons(
     db: Session = Depends(get_db),
-    _: User = Depends(require_global("panel.settings.read")),
+    _: User = Depends(_require_shop_perm("shop.read", "panel.settings.read")),
 ) -> list[ShopAddonResponse]:
     return [
         shop_addon_service.addon_response(addon)
@@ -695,7 +753,7 @@ def list_addons(
 def create_addon(
     payload: ShopAddonWrite,
     db: Session = Depends(get_db),
-    actor: User = Depends(require_global("panel.settings.write")),
+    actor: User = Depends(_require_shop_perm("shop.write", "panel.settings.write")),
     _: None = Depends(verify_csrf),
 ) -> ShopAddonResponse:
     try:
@@ -710,7 +768,7 @@ def update_addon(
     addon_id: int,
     payload: ShopAddonUpdate,
     db: Session = Depends(get_db),
-    actor: User = Depends(require_global("panel.settings.write")),
+    actor: User = Depends(_require_shop_perm("shop.write", "panel.settings.write")),
     _: None = Depends(verify_csrf),
 ) -> ShopAddonResponse:
     addon = _addon_or_404(db, addon_id)
@@ -725,7 +783,7 @@ def update_addon(
 def delete_addon(
     addon_id: int,
     db: Session = Depends(get_db),
-    actor: User = Depends(require_global("panel.settings.write")),
+    actor: User = Depends(_require_shop_perm("shop.write", "panel.settings.write")),
     _: None = Depends(verify_csrf),
 ) -> Response:
     addon = _addon_or_404(db, addon_id)
@@ -733,12 +791,85 @@ def delete_addon(
     return Response(status_code=204)
 
 
+# ── Panel: Gutscheine & Storefront-Aktionen ──────────────────────────────
+
+
+@router.get("/coupons", response_model=list[ShopCouponResponse])
+def list_coupons(
+    db: Session = Depends(get_db),
+    _: User = Depends(_require_shop_perm("shop.read", "panel.settings.read")),
+) -> list[ShopCouponResponse]:
+    return [
+        shop_coupon_service.coupon_response(row)
+        for row in shop_coupon_service.list_coupons(db)
+    ]
+
+
+@router.post("/coupons", response_model=ShopCouponResponse)
+def create_coupon(
+    payload: ShopCouponWrite,
+    db: Session = Depends(get_db),
+    actor: User = Depends(_require_shop_perm("shop.write", "panel.settings.write")),
+    _: None = Depends(verify_csrf),
+) -> ShopCouponResponse:
+    try:
+        row = shop_coupon_service.create_coupon(db, payload, actor_id=actor.id)
+    except shop_catalog_service.ShopConfigurationError as exc:
+        raise _shop_error(exc) from exc
+    return shop_coupon_service.coupon_response(row)
+
+
+@router.patch("/coupons/{coupon_id}", response_model=ShopCouponResponse)
+def update_coupon(
+    coupon_id: int,
+    payload: ShopCouponUpdate,
+    db: Session = Depends(get_db),
+    actor: User = Depends(_require_shop_perm("shop.write", "panel.settings.write")),
+    _: None = Depends(verify_csrf),
+) -> ShopCouponResponse:
+    row = _coupon_or_404(db, coupon_id)
+    try:
+        updated = shop_coupon_service.update_coupon(db, row, payload, actor_id=actor.id)
+    except shop_catalog_service.ShopConfigurationError as exc:
+        raise _shop_error(exc) from exc
+    return shop_coupon_service.coupon_response(updated)
+
+
+@router.delete("/coupons/{coupon_id}", status_code=204)
+def delete_coupon(
+    coupon_id: int,
+    db: Session = Depends(get_db),
+    actor: User = Depends(_require_shop_perm("shop.write", "panel.settings.write")),
+    _: None = Depends(verify_csrf),
+) -> Response:
+    row = _coupon_or_404(db, coupon_id)
+    shop_coupon_service.delete_coupon(db, row, actor_id=actor.id)
+    return Response(status_code=204)
+
+
+@router.post("/coupons/{coupon_id}/stripe-sync", response_model=ShopCouponResponse)
+def sync_coupon_stripe(
+    coupon_id: int,
+    db: Session = Depends(get_db),
+    actor: User = Depends(_require_shop_perm("shop.write", "panel.settings.write")),
+    _: None = Depends(verify_csrf),
+) -> ShopCouponResponse:
+    row = _coupon_or_404(db, coupon_id)
+    try:
+        synced = shop_coupon_service.sync_coupon_to_stripe(db, row, actor_id=actor.id)
+    except stripe_service.StripeNotConfigured as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except stripe_service.StripeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return shop_coupon_service.coupon_response(synced)
+
+
 @router.post("/plans/{plan_id}/artwork", response_model=ShopPlanResponse)
 async def upload_plan_artwork(
     plan_id: int,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    actor: User = Depends(require_global("panel.settings.write")),
+    actor: User = Depends(_require_shop_perm("shop.write", "panel.settings.write")),
     _: None = Depends(verify_csrf),
 ) -> ShopPlanResponse:
     """Eigenes Spielbild: dieselbe Sanitisierung/Galerie wie Titelbilder."""
@@ -761,7 +892,7 @@ async def upload_plan_artwork(
 def reset_plan_artwork(
     plan_id: int,
     db: Session = Depends(get_db),
-    actor: User = Depends(require_global("panel.settings.write")),
+    actor: User = Depends(_require_shop_perm("shop.write", "panel.settings.write")),
     _: None = Depends(verify_csrf),
 ) -> ShopPlanResponse:
     plan = _plan_or_404(db, plan_id)
@@ -858,7 +989,7 @@ def update_server_slots(
     server_id: int,
     payload: ShopServerSlotsUpdate,
     db: Session = Depends(get_db),
-    actor: User = Depends(require_global("panel.settings.write")),
+    actor: User = Depends(_require_shop_perm("shop.write", "panel.settings.write")),
     _: None = Depends(verify_csrf),
 ) -> ShopServerSlotsResponse:
     """Setzt Spieler-Slots ueber Blueprint-Ziel (`config_wishes` / Runtime-Env)."""
@@ -900,18 +1031,7 @@ def update_server_slots(
     )
 
 
-@router.get("/admin/orders", response_model=list[ShopAdminOrderResponse])
-def list_admin_orders(
-    limit: int = Query(default=50, ge=1, le=200),
-    db: Session = Depends(get_db),
-    _: User = Depends(require_global("panel.settings.read")),
-) -> list[ShopAdminOrderResponse]:
-    orders = (
-        db.query(ShopOrder)
-        .order_by(ShopOrder.created_at.desc(), ShopOrder.id.desc())
-        .limit(limit)
-        .all()
-    )
+def _admin_orders_response(db: Session, orders: list[ShopOrder]) -> list[ShopAdminOrderResponse]:
     if not orders:
         return []
     user_ids = {order.user_id for order in orders}
@@ -946,11 +1066,60 @@ def list_admin_orders(
     return ergebnis
 
 
+@router.get("/admin/stats", response_model=ShopStatsResponse)
+def get_admin_stats(
+    db: Session = Depends(get_db),
+    _: User = Depends(
+        _require_shop_perm("shop.orders.read", "shop.read", "panel.settings.read")
+    ),
+) -> ShopStatsResponse:
+    return shop_coupon_service.get_shop_stats(db)
+
+
+@router.get("/admin/orders", response_model=list[ShopAdminOrderResponse])
+def list_admin_orders(
+    limit: int = Query(default=50, ge=1, le=200),
+    db: Session = Depends(get_db),
+    _: User = Depends(
+        _require_shop_perm("shop.orders.read", "shop.read", "panel.settings.read")
+    ),
+) -> list[ShopAdminOrderResponse]:
+    orders = (
+        db.query(ShopOrder)
+        .order_by(ShopOrder.created_at.desc(), ShopOrder.id.desc())
+        .limit(limit)
+        .all()
+    )
+    return _admin_orders_response(db, orders)
+
+
+@router.post("/admin/orders", response_model=ShopAdminOrderResponse)
+def create_manual_order_admin(
+    payload: ShopAdminManualOrderCreate,
+    db: Session = Depends(get_db),
+    actor: User = Depends(
+        _require_shop_perm("shop.refunds.write", "shop.write", "panel.settings.write")
+    ),
+    _: None = Depends(verify_csrf),
+) -> ShopAdminOrderResponse:
+    """Legt eine manuelle Bestellung fuer einen Kunden an."""
+    try:
+        order = shop_order_service.create_manual_order(
+            db, payload, actor_user_id=actor.id
+        )
+    except shop_order_service.ShopOrderError as exc:
+        status_code = 404 if "nicht gefunden" in str(exc) else 422
+        raise HTTPException(status_code=status_code, detail=str(exc)) from exc
+    return _admin_orders_response(db, [order])[0]
+
+
 @router.get("/admin/invoices", response_model=list[ShopInvoiceSummaryResponse])
 def list_admin_invoices(
     limit: int = Query(default=50, ge=1, le=200),
     db: Session = Depends(get_db),
-    _: User = Depends(require_global("panel.settings.read")),
+    _: User = Depends(
+        _require_shop_perm("shop.invoices.read", "shop.read", "panel.settings.read")
+    ),
 ) -> list[ShopInvoiceSummaryResponse]:
     rechnungen = (
         db.query(ShopInvoice)
@@ -968,7 +1137,9 @@ def list_admin_invoices(
 def download_admin_invoice_pdf(
     invoice_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(require_global("panel.settings.read")),
+    _: User = Depends(
+        _require_shop_perm("shop.invoices.read", "shop.read", "panel.settings.read")
+    ),
 ) -> Response:
     rechnung = db.query(ShopInvoice).filter(ShopInvoice.id == invoice_id).first()
     if rechnung is None:
@@ -980,7 +1151,9 @@ def download_admin_invoice_pdf(
 def download_admin_invoice_xml(
     invoice_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(require_global("panel.settings.read")),
+    _: User = Depends(
+        _require_shop_perm("shop.invoices.read", "shop.read", "panel.settings.read")
+    ),
 ) -> Response:
     rechnung = db.query(ShopInvoice).filter(ShopInvoice.id == invoice_id).first()
     if rechnung is None:
@@ -992,7 +1165,7 @@ def download_admin_invoice_xml(
 def list_admin_webhooks(
     limit: int = Query(default=50, ge=1, le=200),
     db: Session = Depends(get_db),
-    _: User = Depends(require_global("panel.settings.read")),
+    _: User = Depends(_require_shop_perm("shop.read", "panel.settings.read")),
 ) -> list[ShopPaymentEventResponse]:
     events = (
         db.query(ShopPaymentEvent)
@@ -1018,7 +1191,9 @@ def list_admin_webhooks(
     response_model=ShopEinvoiceToolchainStatusResponse,
 )
 def get_einvoice_toolchain_status(
-    _: User = Depends(require_global("panel.settings.read")),
+    _: User = Depends(
+        _require_shop_perm("shop.invoices.read", "shop.read", "panel.settings.read")
+    ),
 ) -> ShopEinvoiceToolchainStatusResponse:
     """Meldet den Status der installierten E-Rechnungs-Toolchain."""
     return ShopEinvoiceToolchainStatusResponse(
@@ -1033,7 +1208,9 @@ def get_einvoice_toolchain_status(
 def validate_admin_invoice(
     invoice_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(require_global("panel.settings.read")),
+    _: User = Depends(
+        _require_shop_perm("shop.invoices.read", "shop.read", "panel.settings.read")
+    ),
     __: None = Depends(verify_csrf),
 ) -> ShopInvoiceValidationResponse:
     """Prueft gespeichertes XML via KoSIT-Validator und PDF via veraPDF."""

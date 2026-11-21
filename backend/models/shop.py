@@ -135,6 +135,10 @@ class ShopOrder(Base):
             name="ck_shop_orders_discount",
         ),
         CheckConstraint(
+            "coupon_discount_cents >= 0",
+            name="ck_shop_orders_coupon_discount",
+        ),
+        CheckConstraint(
             "net_cents >= 0 AND tax_cents >= 0 AND gross_cents >= 0",
             name="ck_shop_orders_cents",
         ),
@@ -157,6 +161,10 @@ class ShopOrder(Base):
     )
     months: Mapped[int] = mapped_column(Integer, nullable=False)
     discount_percent: Mapped[int] = mapped_column(
+        Integer, default=0, nullable=False
+    )
+    coupon_code: Mapped[str | None] = mapped_column(String(48), nullable=True)
+    coupon_discount_cents: Mapped[int] = mapped_column(
         Integer, default=0, nullable=False
     )
 
@@ -254,6 +262,71 @@ class ShopAddon(Base):
 
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, onupdate=_now, nullable=False
+    )
+
+
+class ShopCoupon(Base):
+    """Gutscheine und Storefront-Aktionsrabatte mit optionalem Stripe-Sync."""
+
+    __tablename__ = "shop_coupons"
+    __table_args__ = (
+        UniqueConstraint("code", name="uq_shop_coupons_code"),
+        CheckConstraint(
+            "discount_type IN ('percent', 'fixed_cents')",
+            name="ck_shop_coupons_type",
+        ),
+        CheckConstraint("discount_value > 0", name="ck_shop_coupons_value"),
+        CheckConstraint(
+            "scope IN ('all', 'plans', 'addons')",
+            name="ck_shop_coupons_scope",
+        ),
+        CheckConstraint("min_gross_cents >= 0", name="ck_shop_coupons_min_gross"),
+        CheckConstraint(
+            "max_redemptions IS NULL OR max_redemptions > 0",
+            name="ck_shop_coupons_max_redemptions",
+        ),
+        CheckConstraint(
+            "redemption_count >= 0", name="ck_shop_coupons_redemption_count"
+        ),
+        CheckConstraint(
+            "banner_cooldown_hours >= 0", name="ck_shop_coupons_cooldown"
+        ),
+        Index("ix_shop_coupons_active", "active"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    code: Mapped[str] = mapped_column(String(48), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    promo_text: Mapped[str | None] = mapped_column(String(240), nullable=True)
+    discount_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    discount_value: Mapped[int] = mapped_column(Integer, nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), default="EUR", nullable=False)
+    scope: Mapped[str] = mapped_column(String(16), default="all", nullable=False)
+    target_plan_ids_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    min_gross_cents: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    max_redemptions: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    redemption_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    valid_from: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    valid_until: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    show_badge: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    show_banner: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    banner_cooldown_hours: Mapped[int] = mapped_column(
+        Integer, default=6, nullable=False
+    )
+    stripe_coupon_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    stripe_promotion_code_id: Mapped[str | None] = mapped_column(
+        String(128), nullable=True
+    )
+    active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_now, nullable=False
     )

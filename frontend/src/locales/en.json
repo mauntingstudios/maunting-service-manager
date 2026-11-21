@@ -3603,6 +3603,26 @@
       "title": "Manage hoster integrations",
       "desc": "Configure shop integrations and rotate API keys."
     },
+    "shop_read": {
+      "title": "View shop",
+      "desc": "Read shop settings, plans, add-ons, coupons and webhooks."
+    },
+    "shop_write": {
+      "title": "Manage shop",
+      "desc": "Edit plans, add-ons, coupons, Stripe keys and seller details."
+    },
+    "shop_orders_read": {
+      "title": "View shop orders",
+      "desc": "Inspect shop orders and revenue statistics."
+    },
+    "shop_invoices_read": {
+      "title": "View shop invoices",
+      "desc": "Download invoices, credit notes and audit exports."
+    },
+    "shop_refunds_write": {
+      "title": "Manage shop refunds",
+      "desc": "Issue refunds, credit notes and manual shop orders."
+    },
     "panel_popups_manage": {
       "title": "Manage pop-ups",
       "desc": "Create and manage system announcements for users."
@@ -4694,6 +4714,49 @@
         "kontingentFehler": "This category requires a positive quota value.",
         "rolleFehler": "A role add-on requires selecting a valid role."
       },
+      "coupons": {
+        "titel": "Coupons & promos",
+        "untertitel": "Manage discount codes, storefront product badges and cooldown-based promo banners centrally.",
+        "neu": "New coupon",
+        "bearbeiten": "Edit coupon",
+        "loeschen": "Delete",
+        "loeschenFrage": "Delete coupon \"{{code}}\"? Existing orders retain their snapshot.",
+        "geloescht": "Coupon deleted.",
+        "gespeichert": "Coupon saved.",
+        "fehler": "Could not save coupon.",
+        "laedt": "Loading coupons …",
+        "leer": "No coupons created yet",
+        "leerText": "Create percentage or fixed discounts and optionally enable product badges or a storefront banner.",
+        "aktiv": "Active",
+        "inaktiv": "Inactive",
+        "code": "Coupon code",
+        "name": "Label",
+        "promoText": "Banner message (optional)",
+        "rabattTyp": "Discount type",
+        "typProzent": "Percent (%)",
+        "typFest": "Fixed amount (EUR)",
+        "rabattWertProzent": "Discount percent (1–99)",
+        "rabattWertEuro": "Discount amount (EUR)",
+        "bereich": "Scope",
+        "bereichAlle": "All products",
+        "bereichTarife": "Server plans only",
+        "bereichAddons": "Add-ons only",
+        "mindestbetrag": "Minimum order (EUR)",
+        "maxEinloesungen": "Max redemptions (empty = unlimited)",
+        "cooldown": "Banner cooldown (hours)",
+        "badgeAnzeigen": "Show discount badge in storefront",
+        "bannerAnzeigen": "Display top storefront banner",
+        "einloesungen": "{{count}} used",
+        "einloesungenBegrenzt": "{{count}} / {{max}} used",
+        "stripeSync": "Sync with Stripe",
+        "stripeVerbunden": "Stripe promo active",
+        "stripeErfolg": "Coupon synced with Stripe.",
+        "stripeFehler": "Stripe sync failed.",
+        "codeFehler": "Code must be 3–48 characters long (A–Z, 0–9, _ or -).",
+        "wertFehler": "Please enter a valid discount value.",
+        "speichern": "Save",
+        "abbrechen": "Cancel"
+      },
       "bestellungen": {
         "titel": "Orders",
         "text": "Order list, status and manual actions."
@@ -4728,7 +4791,11 @@
         "gutschriftErfolg": "Credit note issued.",
         "gutschriftFehler": "Could not issue credit note.",
         "webhooksLeer": "No webhook events yet",
-        "webhooksLeerText": "Processed Stripe events appear here."
+        "webhooksLeerText": "Processed Stripe events appear here.",
+        "umsatzBrutto": "Paid revenue",
+        "bezahlteOrders": "Paid orders",
+        "aktiveAbos": "Active subscriptions",
+        "aktiveGutscheine": "Active coupons"
       }
     },
     "cloudflareEnabled": "Cloudflare DNS",
@@ -6577,7 +6644,8 @@
       "abPreis": "from {{preis}} / month",
       "slots_one": "Includes {{count}} players",
       "slots_other": "Includes {{count}} players",
-      "konfigurieren": "Configure"
+      "konfigurieren": "Configure",
+      "rabatt": "-{{wert}}"
     },
     "schritte": {
       "titel": "How it works",
@@ -6653,7 +6721,22 @@
       "land": "Country",
       "adresseHinweis": "This address appears on the invoice.",
       "adresseFehlt": "Please provide name and address for the invoice.",
-      "karteFehlt": "Please enter a demo card number with at least 12 digits."
+      "karteFehlt": "Please enter a demo card number with at least 12 digits.",
+      "gutscheinLabel": "Coupon code",
+      "gutscheinPlatzhalter": "e.g. SUMMER30",
+      "gutscheinPruefen": "Apply",
+      "gutscheinEntfernen": "Remove",
+      "gutscheinAbzug": "Coupon ({{code}})",
+      "gutscheinFehler": "Could not apply coupon."
+    },
+    "promo": {
+      "aktionBadge": "Promo",
+      "codeLabel": "Code",
+      "kopieren": "Copy code",
+      "kopiert": "Code copied",
+      "schliessen": "Dismiss promo",
+      "prozentRabatt": "{{prozent}}% off",
+      "festRabatt": "{{betrag}} off"
     },
     "preis": {
       "grundpreis": "Base price",
@@ -7873,10 +7956,14 @@
     "endpoints": {
       "title": "External API",
       "health": "Verify the API key without changing anything.",
-      "put": "Set the desired contract state. Creates the contract on first call and continues it afterwards.",
+      "apply": "Set the desired state across servers and standalone add-ons in one batch (v2).",
+      "put": "Legacy v1 endpoint for a single server contract. Creates it on first call and reconciles it afterwards.",
       "get": "Query the actual state. Returns 404 if the contract does not exist.",
       "handoff": "Create a one-time link into the customer's panel.",
       "redeem": "Redemption by the customer's browser. No API key — a human is clicking here.",
+      "applyTitle": "Batch apply v2 (POST /apply)",
+      "applyIntro": "All items are validated upfront; unknown products or add-ons abort with 422 before provisioning starts.",
+      "applyLabel": "Batch order (server + add-on)",
       "requestTitle": "Request body (PUT)",
       "idempotencyKey": "external_service_id is the contract identifier from the shop, at most 128 characters. Together with the integration it is unique and serves as the idempotency key.",
       "orderLabel": "Order",
@@ -7884,6 +7971,32 @@
       "responseLabel": "Response",
       "repeatable": "The same call may be sent any number of times. A network retry does not create a second server: provisioning is bound to an idempotency key. Even two simultaneous first calls result in exactly one contract — the loser adopts the winner.",
       "async": "Provisioning is asynchronous: after PUT the status may still be provisioning. The shop should either wait for the service.ready webhook or poll GET at intervals — not in a tight loop."
+    },
+    "apply": {
+      "external_subject": {
+        "type": "string 1–128, required",
+        "body": "Unique customer ID from the billing platform."
+      },
+      "desired_state": {
+        "type": "string, required",
+        "body": "Target state for all items (active, suspended or terminated)."
+      },
+      "items": {
+        "type": "array (1–50), required",
+        "body": "Server and add-on items with their own external_service_id."
+      },
+      "item_kind": {
+        "type": "server | addon",
+        "body": "Determines whether a game server or a server-free add-on is managed."
+      },
+      "addon_slug": {
+        "type": "string 1–64",
+        "body": "Slug of an active standalone shop add-on when kind is addon."
+      },
+      "slots": {
+        "type": "integer 1–1000, optional",
+        "body": "Optional slot limit for slot-capable server blueprints."
+      }
     },
     "request": {
       "desired_state": {
@@ -7907,6 +8020,14 @@
       "external_service_id": {
         "type": "string",
         "body": "The shop's contract identifier."
+      },
+      "item_kind": {
+        "type": "string",
+        "body": "Contract item kind (server or addon)."
+      },
+      "addon_slug": {
+        "type": "string | null",
+        "body": "Slug of the bound standalone add-on when item_kind is addon, otherwise null."
       },
       "desired_state": {
         "type": "string",
@@ -7982,7 +8103,8 @@
       "node_not_found": "The product points at a node that does not exist.",
       "install_directory_exists": "Leftover from an earlier installation.",
       "install_update_already_running": "An installation is already running on the server.",
-      "hoster_configuration_error": "Product, service user or identity is not usable.",
+      "hoster_configuration_error": "Product, add-on, service user or identity is not usable.",
+      "hoster_item_kind_mismatch": "Attempted to address an existing server contract as an add-on or vice versa.",
       "hoster_role_escalation": "The role configured on the product contains permissions the integration's service user does not hold itself. The contract is not carried out.",
       "hoster_internal_error": "Unexpected error, traceable in the panel log.",
       "product_changed_manual_resize_required": "A hint, not an error: plan changed, resources not yet adjusted."

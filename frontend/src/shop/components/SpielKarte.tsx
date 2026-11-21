@@ -7,9 +7,10 @@ import { SpielArtwork } from './SpielArtwork'
 
 interface SpielKarteProps {
   spiel: ShopSpiel
+  rabattLabel?: string | null
 }
 
-export function SpielKarte({ spiel }: SpielKarteProps) {
+export function SpielKarte({ spiel, rabattLabel }: SpielKarteProps) {
   const { t, i18n } = useTranslation()
   const sprache = i18n.language.startsWith('de') ? 'de' : 'en'
 
@@ -27,7 +28,14 @@ export function SpielKarte({ spiel }: SpielKarteProps) {
               {spiel.category}
             </p>
           </div>
-          <Badge variant="info">{t('shop.karte.blueprint')}</Badge>
+          <div className="flex flex-wrap items-center justify-end gap-1.5">
+            {rabattLabel && (
+              <Badge variant="success">
+                {t('shop.karte.rabatt', { wert: rabattLabel })}
+              </Badge>
+            )}
+            <Badge variant="info">{t('shop.karte.blueprint')}</Badge>
+          </div>
         </div>
         <p className="line-clamp-2 text-sm text-on-surface-variant">
           {spiel.beschreibung[sprache]}

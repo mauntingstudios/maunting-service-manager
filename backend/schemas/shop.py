@@ -10,6 +10,8 @@ from pydantic import BaseModel, Field, model_validator
 ArtworkMode = Literal["steam", "custom", "none"]
 BillingInterval = Literal["month"]
 AddonCategory = Literal["ai_quota", "slots", "backups", "storage", "role"]
+CouponDiscountType = Literal["percent", "fixed_cents"]
+CouponScope = Literal["all", "plans", "addons"]
 
 
 class ShopPlanWrite(BaseModel):
@@ -213,6 +215,7 @@ class ShopOrderCreate(BaseModel):
     ram_mb: int | None = Field(None, ge=0, le=4_194_304)
     cpu: int | None = Field(None, ge=0, le=10_000)
     slots: int | None = Field(None, ge=0, le=100_000)
+    coupon_code: str | None = Field(None, max_length=48)
 
     # Rechnungsanschrift; ohne sie wird keine Rechnung ausgestellt.
     buyer_name: str | None = Field(None, max_length=160)
@@ -227,6 +230,153 @@ class ShopOrderCreate(BaseModel):
         if bool(self.plan_id is not None) == bool(self.addon_id is not None):
             raise ValueError("Genau plan_id oder addon_id muss angegeben sein")
         return self
+
+
+class ShopAdminManualOrderCreate(BaseModel):
+    """Manuelle Admin-Bestellung fuer einen Kunden (Gutschrift/Kulanz/Rechnung)."""
+
+    user_id: int = Field(..., ge=1)
+    plan_id: int | None = Field(None, ge=1)
+    addon_id: int | None = Field(None, ge=1)
+    months: OrderMonths = 1
+    ram_mb: int | None = Field(None, ge=0, le=4_194_304)
+    cpu: int | None = Field(None, ge=0, le=10_000)
+    slots: int | None = Field(None, ge=0, le=100_000)
+    coupon_code: str | None = Field(None, max_length=48)
+    mark_paid: bool = True
+    note: str | None = Field(None, max_length=300)
+
+    buyer_name: str | None = Field(None, max_length=160)
+    buyer_street: str | None = Field(None, max_length=160)
+    buyer_postal_code: str | None = Field(None, max_length=16)
+    buyer_city: str | None = Field(None, max_length=120)
+    buyer_country: str | None = Field(None, pattern=r"^[A-Z]{2}$")
+    buyer_email: str | None = Field(None, max_length=254)
+
+    @model_validator(mode="after")
+    def _validate_target(self) -> "ShopAdminManualOrderCreate":
+        if bool(self.plan_id is not None) == bool(self.addon_id is not None):
+            raise ValueError("Genau plan_id oder addon_id muss angegeben sein")
+        return self
+
+
+class ShopCouponWrite(BaseModel):
+    code: str = Field(..., min_length=3, max_length=48)
+    name: str = Field(..., min_length=1, max_length=128)
+    promo_text: str | None = Field(None, max_length=240)
+    discount_type: CouponDiscountType = "percent"
+    discount_value: int = Field(..., ge=1, le=100_000_000)
+    currency: str = Field("EUR", min_length=3, max_length=3)
+    scope: CouponScope = "all"
+    target_plan_ids: list[int] = Field(default_factory=list, max_length=200)
+    min_gross_cents: int = Field(0, ge=0, le=100_000_000)
+    max_redemptions: int | None = Field(None, ge=1, le=1_000_000)
+    valid_from: datetime | None = None
+    valid_until: datetime | None = None
+    show_badge: bool = False
+    show_banner: bool = False
+    banner_cooldown_hours: int = Field(6, ge=0, le=720)
+    active: bool = True
+
+
+class ShopCouponUpdate(BaseModel):
+    code: str | None = Field(None, min_length=3, max_length=48)
+    name: str | None = Field(None, min_length=1, max_length=128)
+    promo_text: str | None = Field(None, max_length=240)
+    discount_type: CouponDiscountType | None = None
+    discount_value: int | None = Field(None, ge=1, le=100_000_000)
+    currency: str | None = Field(None, min_length=3, max_length=3)
+    scope: CouponScope | None = None
+    target_plan_ids: list[int] | None = Field(None, max_length=200)
+    min_gross_cents: int | None = Field(None, ge=0, le=100_000_000)
+    max_redemptions: int | None = Field(None, ge=1, le=1_000_000)
+    valid_from: datetime | None = None
+    valid_until: datetime | None = None
+    show_badge: bool | None = None
+    show_banner: bool | None = None
+    banner_cooldown_hours: int | None = Field(None, ge=0, le=720)
+    active: bool | None = None
+
+
+class ShopCouponResponse(BaseModel):
+    id: int
+    code: str
+    name: str
+    promo_text: str | None
+    discount_type: CouponDiscountType
+    discount_value: int
+    currency: str
+    scope: CouponScope
+    target_plan_ids: list[int]
+    min_gross_cents: int
+    max_redemptions: int | None
+    redemption_count: int
+    valid_from: datetime | None
+    valid_until: datetime | None
+    show_badge: bool
+    show_banner: bool
+    banner_cooldown_hours: int
+    stripe_coupon_id: str | None
+    stripe_promotion_code_id: str | None
+    active: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class ShopCouponPreviewRequest(BaseModel):
+    code: str = Field(..., min_length=1, max_length=48)
+    kind: Literal["plan", "addon"] = "plan"
+    plan_id: int | None = Field(None, ge=1)
+    gross_cents: int = Field(..., ge=0, le=100_000_000)
+
+
+class ShopCouponPreviewResponse(BaseModel):
+    valid: bool
+    code: str
+    discount_type: CouponDiscountType | None = None
+    discount_value: int | None = None
+    discount_cents: int = 0
+    final_gross_cents: int
+    reason: str | None = None
+
+
+class ShopPublicBannerPromo(BaseModel):
+    code: str
+    name: str
+    promo_text: str | None
+    discount_type: CouponDiscountType
+    discount_value: int
+    scope: CouponScope
+    cooldown_hours: int
+    valid_until: datetime | None = None
+
+
+class ShopPublicBadgePromo(BaseModel):
+    code: str
+    name: str
+    discount_type: CouponDiscountType
+    discount_value: int
+    scope: CouponScope
+    target_plan_ids: list[int]
+
+
+class ShopPublicPromosResponse(BaseModel):
+    banner: ShopPublicBannerPromo | None = None
+    badges: list[ShopPublicBadgePromo] = Field(default_factory=list)
+
+
+class ShopStatsResponse(BaseModel):
+    total_orders: int
+    paid_orders: int
+    pending_orders: int
+    refunded_orders: int
+    paid_gross_cents: int
+    paid_net_cents: int
+    refunded_gross_cents: int
+    active_subscriptions: int
+    active_addon_subscriptions: int
+    active_coupons: int
+    coupon_redemptions: int
 
 
 class ShopOrderItemResponse(BaseModel):
@@ -255,6 +405,8 @@ class ShopOrderResponse(BaseModel):
     billing_interval: str
     months: int
     discount_percent: int
+    coupon_code: str | None = None
+    coupon_discount_cents: int = 0
     net_cents: int
     tax_cents: int
     gross_cents: int

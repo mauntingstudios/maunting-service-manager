@@ -166,6 +166,14 @@ GLOBAL_PERMISSIONS: tuple[PermissionDef, ...] = (
     # oder Produkte umkonfigurieren zu duerfen.
     PermissionDef("panel.hoster.read",          "panel",   "Hoster-Integrationen und Verträge einsehen"),
     PermissionDef("panel.hoster.write",         "panel",   "Hoster-Integrationen, Produkte und Schlüssel verwalten"),
+    # Nativer Shop (Phase 3.4). Erlauben feingranularen Betrieb ohne volles
+    # panel.settings.write; bestehende Inhaber von panel.settings.* behalten
+    # aus Kompatibilitaetsgruenden weiter Zugriff.
+    PermissionDef("shop.read",                  "panel",   "Shop-Einstellungen, Tarife, Add-ons und Gutscheine einsehen"),
+    PermissionDef("shop.write",                 "panel",   "Shop-Tarife, Add-ons, Gutscheine und Einstellungen verwalten"),
+    PermissionDef("shop.orders.read",           "panel",   "Shop-Bestellungen und Umsätze einsehen"),
+    PermissionDef("shop.invoices.read",         "panel",   "Shop-Rechnungen und Betriebsprüfungs-Export einsehen"),
+    PermissionDef("shop.refunds.write",         "panel",   "Shop-Erstattungen, Gutschriften und manuelle Bestellungen ausführen"),
     PermissionDef("calendar.use",               "panel",   "Kalender verwenden"),
     PermissionDef("notes.use",                  "panel",   "Notizen verwenden"),
     PermissionDef("cloudflare.manage",          "system",  "Cloudflare DNS verwalten"),

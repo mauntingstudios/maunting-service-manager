@@ -3603,6 +3603,26 @@
       "title": "Hoster-Integrationen verwalten",
       "desc": "Shop-Integrationen anlegen, bearbeiten und API-Keys rotieren."
     },
+    "shop_read": {
+      "title": "Shop einsehen",
+      "desc": "Shop-Einstellungen, Tarife, Add-ons, Gutscheine und Webhooks lesen."
+    },
+    "shop_write": {
+      "title": "Shop verwalten",
+      "desc": "Tarife, Add-ons, Gutscheine, Stripe-Schlüssel und Verkäuferdaten bearbeiten."
+    },
+    "shop_orders_read": {
+      "title": "Shop-Bestellungen einsehen",
+      "desc": "Bestellungen und Umsatzübersichten des Shops lesen."
+    },
+    "shop_invoices_read": {
+      "title": "Shop-Rechnungen einsehen",
+      "desc": "Rechnungen, Gutschriften und Betriebsprüfungs-Export abrufen."
+    },
+    "shop_refunds_write": {
+      "title": "Shop-Erstattungen verwalten",
+      "desc": "Bestellungen erstatten, Gutschriften ausstellen und manuelle Bestellungen anlegen."
+    },
     "panel_popups_manage": {
       "title": "Pop-ups verwalten",
       "desc": "Systemweite Ankündigungen für Benutzer anlegen und bearbeiten."
@@ -4694,6 +4714,49 @@
         "kontingentFehler": "Für diese Kategorie muss ein positives Kontingent angegeben werden.",
         "rolleFehler": "Für ein Rollen-Add-on muss eine gültige Rolle gewählt werden."
       },
+      "coupons": {
+        "titel": "Gutscheine & Aktionen",
+        "untertitel": "Rabattcodes, Produkt-Badges auf der Startseite und zeitgesteuerte Aktionsbanner zentral pflegen.",
+        "neu": "Neuer Gutschein",
+        "bearbeiten": "Gutschein bearbeiten",
+        "loeschen": "Löschen",
+        "loeschenFrage": "Gutschein „{{code}}“ wirklich löschen? Bereits verbuchte Bestellungen behalten ihren Beleg.",
+        "geloescht": "Gutschein gelöscht.",
+        "gespeichert": "Gutschein gespeichert.",
+        "fehler": "Gutschein konnte nicht gespeichert werden.",
+        "laedt": "Gutscheine werden geladen …",
+        "leer": "Noch keine Gutscheine angelegt",
+        "leerText": "Erstelle Prozent- oder Festbetrag-Gutscheine und aktiviere auf Wunsch Produkt-Badges oder ein Storefront-Banner.",
+        "aktiv": "Aktiv",
+        "inaktiv": "Inaktiv",
+        "code": "Gutscheincode",
+        "name": "Bezeichnung",
+        "promoText": "Aktions-Hinweis im Banner (optional)",
+        "rabattTyp": "Rabatt-Art",
+        "typProzent": "Prozent (%)",
+        "typFest": "Festbetrag (EUR)",
+        "rabattWertProzent": "Rabatt in Prozent (1–99)",
+        "rabattWertEuro": "Rabattbetrag (EUR)",
+        "bereich": "Geltungsbereich",
+        "bereichAlle": "Alle Produkte",
+        "bereichTarife": "Nur Server-Tarife",
+        "bereichAddons": "Nur Add-ons",
+        "mindestbetrag": "Mindestbestellwert (EUR)",
+        "maxEinloesungen": "Max. Einlösungen (leer = unbegrenzt)",
+        "cooldown": "Banner-Cooldown (Stunden)",
+        "badgeAnzeigen": "Rabatt-Badge in der Storefront anzeigen",
+        "bannerAnzeigen": "Oben als Storefront-Banner einblenden",
+        "einloesungen": "{{count}} eingelöst",
+        "einloesungenBegrenzt": "{{count}} / {{max}} eingelöst",
+        "stripeSync": "Mit Stripe abgleichen",
+        "stripeVerbunden": "Stripe-Promo aktiv",
+        "stripeErfolg": "Gutschein mit Stripe synchronisiert.",
+        "stripeFehler": "Stripe-Synchronisierung fehlgeschlagen.",
+        "codeFehler": "Der Code braucht 3–48 Zeichen (A–Z, 0–9, _ oder -).",
+        "wertFehler": "Bitte einen gültigen Rabattwert angeben.",
+        "speichern": "Speichern",
+        "abbrechen": "Abbrechen"
+      },
       "bestellungen": {
         "titel": "Bestellungen",
         "text": "Order-Liste, Status und manuelle Aktionen."
@@ -4728,7 +4791,11 @@
         "gutschriftErfolg": "Gutschrift ausgestellt.",
         "gutschriftFehler": "Gutschrift konnte nicht ausgestellt werden.",
         "webhooksLeer": "Noch keine Webhook-Ereignisse",
-        "webhooksLeerText": "Verarbeitete Stripe-Ereignisse erscheinen hier."
+        "webhooksLeerText": "Verarbeitete Stripe-Ereignisse erscheinen hier.",
+        "umsatzBrutto": "Bezahlter Umsatz",
+        "bezahlteOrders": "Bezahlte Orders",
+        "aktiveAbos": "Aktive Abos",
+        "aktiveGutscheine": "Aktive Gutscheine"
       }
     },
     "cloudflareEnabled": "Cloudflare DNS",
@@ -6577,7 +6644,8 @@
       "abPreis": "ab {{preis}} / Monat",
       "slots_one": "{{count}} Spieler inklusive",
       "slots_other": "{{count}} Spieler inklusive",
-      "konfigurieren": "Konfigurieren"
+      "konfigurieren": "Konfigurieren",
+      "rabatt": "-{{wert}}"
     },
     "schritte": {
       "titel": "So läuft es",
@@ -6653,7 +6721,22 @@
       "land": "Land",
       "adresseHinweis": "Diese Anschrift steht auf der Rechnung.",
       "adresseFehlt": "Bitte Name und Anschrift für die Rechnung angeben.",
-      "karteFehlt": "Bitte eine Demo-Kartennummer mit mindestens 12 Ziffern angeben."
+      "karteFehlt": "Bitte eine Demo-Kartennummer mit mindestens 12 Ziffern angeben.",
+      "gutscheinLabel": "Gutscheincode",
+      "gutscheinPlatzhalter": "z. B. SOMMER30",
+      "gutscheinPruefen": "Einlösen",
+      "gutscheinEntfernen": "Entfernen",
+      "gutscheinAbzug": "Gutschein ({{code}})",
+      "gutscheinFehler": "Gutschein konnte nicht angewendet werden."
+    },
+    "promo": {
+      "aktionBadge": "Aktion",
+      "codeLabel": "Code",
+      "kopieren": "Code kopieren",
+      "kopiert": "Code kopiert",
+      "schliessen": "Hinweis ausblenden",
+      "prozentRabatt": "{{prozent}} % Rabatt",
+      "festRabatt": "{{betrag}} Rabatt"
     },
     "preis": {
       "grundpreis": "Grundpreis",
@@ -7873,10 +7956,14 @@
     "endpoints": {
       "title": "Externe API",
       "health": "API-Key prüfen, ohne etwas zu ändern.",
-      "put": "Gewünschten Vertragszustand setzen. Legt den Vertrag beim ersten Mal an und führt ihn danach fort.",
+      "apply": "Gewünschten Zustand für Server und eigenständige Add-ons gemeinsam setzen (v2).",
+      "put": "Bisheriger v1-Endpunkt für einzelne Serververträge. Legt den Vertrag beim ersten Mal an und führt ihn danach fort.",
       "get": "Tatsächlichen Zustand abfragen. Antwortet mit 404, wenn der Vertrag nicht existiert.",
       "handoff": "Einmal-Link in das Panel des Kunden erzeugen.",
       "redeem": "Einlösung durch den Browser des Kunden. Kein API-Key — hier klickt ein Mensch.",
+      "applyTitle": "Sammelauftrag v2 (POST /apply)",
+      "applyIntro": "Alle Positionen werden vorab geprüft; unbekannte Produkte oder Add-ons brechen mit 422 ab, bevor ein Server entsteht.",
+      "applyLabel": "Batch-Bestellung (Server + Add-on)",
       "requestTitle": "Request-Body (PUT)",
       "idempotencyKey": "external_service_id ist die Vertragskennung aus dem Shop, maximal 128 Zeichen. Zusammen mit der Integration ist sie eindeutig und dient als Idempotenzschlüssel.",
       "orderLabel": "Bestellung",
@@ -7884,6 +7971,32 @@
       "responseLabel": "Antwort",
       "repeatable": "Derselbe Aufruf darf beliebig oft gesendet werden. Ein Netzwerk-Retry erzeugt keinen zweiten Server: die Provisionierung ist an einen Idempotency-Key gebunden. Auch zwei gleichzeitige Erstaufrufe führen zu genau einem Vertrag — der Verlierer übernimmt den Gewinner.",
       "async": "Die Provisionierung läuft asynchron: nach PUT kann status noch provisioning sein. Der Shop sollte entweder auf den Webhook service.ready warten oder in Abständen GET aufrufen — nicht in einer engen Schleife."
+    },
+    "apply": {
+      "external_subject": {
+        "type": "string 1–128, Pflicht",
+        "body": "Eindeutige Kunden-ID aus dem Shop."
+      },
+      "desired_state": {
+        "type": "string, Pflicht",
+        "body": "Zielzustand für alle Positionen (active, suspended oder terminated)."
+      },
+      "items": {
+        "type": "array (1–50), Pflicht",
+        "body": "Server- und Add-on-Positionen mit eigener external_service_id."
+      },
+      "item_kind": {
+        "type": "server | addon",
+        "body": "Bestimmt, ob ein Spielserver oder ein Add-on ohne Serverprovisionierung verwaltet wird."
+      },
+      "addon_slug": {
+        "type": "string 1–64",
+        "body": "Slug eines aktiven eigenständigen Shop-Add-ons bei kind = addon."
+      },
+      "slots": {
+        "type": "integer 1–1000, optional",
+        "body": "Optionales Slot-Limit für slot-fähige Server-Blueprints."
+      }
     },
     "request": {
       "desired_state": {
@@ -7907,6 +8020,14 @@
       "external_service_id": {
         "type": "string",
         "body": "Die Vertragskennung des Shops."
+      },
+      "item_kind": {
+        "type": "string",
+        "body": "Vertragsart (server oder addon)."
+      },
+      "addon_slug": {
+        "type": "string | null",
+        "body": "Slug des gebundenen Add-ons bei item_kind = addon, sonst null."
       },
       "desired_state": {
         "type": "string",
@@ -7982,7 +8103,8 @@
       "node_not_found": "Das Produkt verweist auf eine Node, die es nicht gibt.",
       "install_directory_exists": "Rückstand einer früheren Installation.",
       "install_update_already_running": "Auf dem Server läuft bereits eine Installation.",
-      "hoster_configuration_error": "Produkt, Dienstbenutzer oder Identität sind nicht nutzbar.",
+      "hoster_configuration_error": "Produkt, Add-on, Dienstbenutzer oder Identität sind nicht nutzbar.",
+      "hoster_item_kind_mismatch": "Bestehender Server-Vertrag wurde als Add-on angesprochen (oder umgekehrt).",
       "hoster_role_escalation": "Die im Produkt hinterlegte Rolle enthält Rechte, die der Dienstbenutzer der Integration selbst nicht hat. Der Vertrag wird nicht umgesetzt.",
       "hoster_internal_error": "Unerwarteter Fehler, im Panel-Log nachvollziehbar.",
       "product_changed_manual_resize_required": "Hinweis, kein Fehler: Tarif gewechselt, Ressourcen noch nicht angepasst."

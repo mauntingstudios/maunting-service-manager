@@ -34,12 +34,16 @@ describe('HosterApiDocs', () => {
 
     for (const path of [
       '/api/hoster/v1/health',
+      '/api/hoster/v1/apply',
       '/api/hoster/v1/services/{external_service_id}',
       '/api/hoster/v1/handoffs',
       '/api/hoster/handoff/{token}',
     ]) {
       expect(screen.getAllByText(path).length).toBeGreaterThan(0)
     }
+    expect(screen.getAllByText('hoster_item_kind_mismatch').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('item_kind').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('addon_slug').length).toBeGreaterThan(0)
   })
 
   it('documents every webhook event name', () => {
