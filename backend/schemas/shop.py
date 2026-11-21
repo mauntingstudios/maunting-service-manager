@@ -5,10 +5,11 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 ArtworkMode = Literal["steam", "custom", "none"]
 BillingInterval = Literal["month"]
+AddonCategory = Literal["ai_quota", "slots", "backups", "storage", "role"]
 
 
 class ShopPlanWrite(BaseModel):
@@ -112,6 +113,90 @@ class ShopPlanResponse(BaseModel):
     artwork: ShopArtworkResponse
 
 
+class ShopAddonWrite(BaseModel):
+    slug: str = Field(..., min_length=2, max_length=64)
+    name: str = Field(..., min_length=1, max_length=128)
+    description: str | None = Field(None, max_length=4096)
+    category: AddonCategory
+    price_cents: int = Field(..., ge=0, le=100_000_000)
+    currency: str = Field("EUR", min_length=3, max_length=3)
+    billing_interval: BillingInterval = "month"
+    tax_rate_percent: int = Field(19, ge=0, le=100)
+
+    extra_slots: int | None = Field(None, ge=0, le=100_000)
+    extra_storage_mb: int | None = Field(None, ge=0, le=100_000_000)
+    extra_backups: int | None = Field(None, ge=0, le=10_000)
+    extra_ai_tokens: int | None = Field(None, ge=0, le=1_000_000_000)
+    role_id: int | None = Field(None, ge=1)
+
+    active: bool = True
+    sort_order: int = Field(0, ge=-100_000, le=100_000)
+
+
+class ShopAddonUpdate(BaseModel):
+    slug: str | None = Field(None, min_length=2, max_length=64)
+    name: str | None = Field(None, min_length=1, max_length=128)
+    description: str | None = Field(None, max_length=4096)
+    category: AddonCategory | None = None
+    price_cents: int | None = Field(None, ge=0, le=100_000_000)
+    currency: str | None = Field(None, min_length=3, max_length=3)
+    billing_interval: BillingInterval | None = None
+    tax_rate_percent: int | None = Field(None, ge=0, le=100)
+
+    extra_slots: int | None = Field(None, ge=0, le=100_000)
+    extra_storage_mb: int | None = Field(None, ge=0, le=100_000_000)
+    extra_backups: int | None = Field(None, ge=0, le=10_000)
+    extra_ai_tokens: int | None = Field(None, ge=0, le=1_000_000_000)
+    role_id: int | None = Field(None, ge=1)
+
+    active: bool | None = None
+    sort_order: int | None = Field(None, ge=-100_000, le=100_000)
+
+
+class ShopAddonResponse(BaseModel):
+    id: int
+    slug: str
+    name: str
+    description: str | None
+    category: AddonCategory
+    price_cents: int
+    currency: str
+    billing_interval: str
+    tax_rate_percent: int
+    extra_slots: int | None
+    extra_storage_mb: int | None
+    extra_backups: int | None
+    extra_ai_tokens: int | None
+    role_id: int | None
+    active: bool
+    sort_order: int
+    created_at: datetime
+    updated_at: datetime
+
+
+class ShopCatalogAddon(BaseModel):
+    """Oeffentliche Sicht auf eigenstaendige Add-ons ohne interne Rollen-ID."""
+
+    id: int
+    slug: str
+    name: str
+    description: str | None
+    category: AddonCategory
+    price_cents: int
+    currency: str
+    billing_interval: str
+    tax_rate_percent: int
+    extra_slots: int | None
+    extra_storage_mb: int | None
+    extra_backups: int | None
+    extra_ai_tokens: int | None
+    grants_role: bool = False
+
+
+class ShopAddonSwitchRequest(BaseModel):
+    target_addon_id: int = Field(..., ge=1)
+
+
 OrderMonths = Literal[1, 3, 12]
 OrderStatus = Literal["pending_payment", "paid", "cancelled", "refunded", "failed"]
 SubscriptionStatus = Literal["active", "past_due", "cancelled"]
@@ -120,9 +205,10 @@ EntitlementStatus = Literal["active", "suspended", "revoked"]
 
 
 class ShopOrderCreate(BaseModel):
-    """Kaufwunsch: Tarif plus gewaehlte Ressourcen. Preise kommen vom Server."""
+    """Kaufwunsch: Tarif plus gewaehlte Ressourcen oder eigenstaendiges Add-on."""
 
-    plan_id: int = Field(..., ge=1)
+    plan_id: int | None = Field(None, ge=1)
+    addon_id: int | None = Field(None, ge=1)
     months: OrderMonths = 1
     ram_mb: int | None = Field(None, ge=0, le=4_194_304)
     cpu: int | None = Field(None, ge=0, le=10_000)
@@ -136,10 +222,18 @@ class ShopOrderCreate(BaseModel):
     buyer_country: str | None = Field(None, pattern=r"^[A-Z]{2}$")
     buyer_email: str | None = Field(None, max_length=254)
 
+    @model_validator(mode="after")
+    def _validate_target(self) -> "ShopOrderCreate":
+        if bool(self.plan_id is not None) == bool(self.addon_id is not None):
+            raise ValueError("Genau plan_id oder addon_id muss angegeben sein")
+        return self
+
 
 class ShopOrderItemResponse(BaseModel):
     id: int
     kind: Literal["plan", "addon"]
+    plan_id: int | None = None
+    addon_id: int | None = None
     game_type: str
     name: str
     quantity: int
@@ -173,6 +267,8 @@ class ShopOrderResponse(BaseModel):
 
 class ShopSubscriptionResponse(BaseModel):
     id: int
+    plan_id: int | None = None
+    addon_id: int | None = None
     game_type: str
     name: str
     status: SubscriptionStatus
@@ -283,12 +379,21 @@ class ShopInvoiceResponse(ShopInvoiceSummaryResponse):
 class ShopEntitlementResponse(BaseModel):
     id: int
     kind: EntitlementKind
+    addon_id: int | None = None
     label: str
     status: EntitlementStatus
     server_id: int | None = None
     provisioning_status: str | None = None
     provisioning_error: str | None = None
     created_at: datetime
+
+
+class ShopAddonSwitchResponse(BaseModel):
+    subscription: ShopSubscriptionResponse
+    entitlement: ShopEntitlementResponse
+    previous_addon_id: int | None = None
+    new_addon_id: int
+    role_changed: bool = False
 
 
 class ShopRefundCreate(BaseModel):

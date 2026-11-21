@@ -198,7 +198,7 @@ def _sync_customer_roles(
         db.query(ShopEntitlement)
         .filter(
             ShopEntitlement.user_id == user.id,
-            ShopEntitlement.kind == "role",
+            ShopEntitlement.kind.in_(("role", "addon")),
         )
         .order_by(ShopEntitlement.id.asc())
         .all()
@@ -227,8 +227,12 @@ def _sync_customer_roles(
                 if ent.granted_role_id is not None:
                     kandidaten.add(ent.granted_role_id)
                     ent.granted_role_id = None
-                ent.provisioning_status = "failed"
-                ent.provisioning_error = "shop_role_missing"
+                if ent.kind == "addon":
+                    ent.provisioning_status = "ready"
+                    ent.provisioning_error = None
+                else:
+                    ent.provisioning_status = "failed"
+                    ent.provisioning_error = "shop_role_missing"
                 continue
             try:
                 ensure_shop_role_allowed(db, ent.role_id)
@@ -602,7 +606,9 @@ def sync_order_entitlements(
         return []
 
     server_ids = [ent.id for ent in entitlements if ent.kind == "server"]
-    user_ids = sorted({ent.user_id for ent in entitlements if ent.kind == "role"})
+    user_ids = sorted(
+        {ent.user_id for ent in entitlements if ent.kind in ("role", "addon")}
+    )
 
     for ent_id in server_ids:
         ent = (
@@ -636,6 +642,25 @@ def sync_order_entitlements(
     )
 
 
+def sync_user_roles(
+    db: Session,
+    user_id: int,
+    *,
+    actor_user_id: int | None = None,
+    origin: ActorOrigin = "direct",
+) -> None:
+    """Gleicht alle Rollen- und Add-on-Entitlements eines Nutzers additiv ab."""
+    owner = _active_owner(db) if actor_user_id is None else None
+    _sync_customer_roles(
+        db,
+        user_id,
+        actor_user_id=actor_user_id if actor_user_id is not None else (owner.id if owner is not None else None),
+        correlation_id=str(uuid4()),
+        origin=origin,
+    )
+    db.commit()
+
+
 def sync_entitlement(
     db: Session, entitlement_id: int, *, origin: ActorOrigin = "direct"
 ) -> ShopEntitlement | None:
@@ -653,16 +678,8 @@ def sync_entitlement(
         _sync_server_entitlement(
             db, ent, origin=origin, correlation_id=correlation_id
         )
-    elif ent.kind == "role":
-        owner = _active_owner(db)
-        _sync_customer_roles(
-            db,
-            ent.user_id,
-            actor_user_id=owner.id if owner is not None else None,
-            correlation_id=correlation_id,
-            origin=origin,
-        )
-        db.commit()
+    elif ent.kind in ("role", "addon"):
+        sync_user_roles(db, ent.user_id, origin=origin)
 
     return (
         db.query(ShopEntitlement)

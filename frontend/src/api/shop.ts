@@ -96,6 +96,72 @@ export interface ShopPlanWrite {
   sort_order?: number
 }
 
+export type ShopAddonCategory = 'ai_quota' | 'slots' | 'backups' | 'storage' | 'role'
+
+export interface ShopAddon {
+  id: number
+  slug: string
+  name: string
+  description: string | null
+  category: ShopAddonCategory
+  price_cents: number
+  currency: string
+  billing_interval: string
+  tax_rate_percent: number
+  extra_slots: number | null
+  extra_storage_mb: number | null
+  extra_backups: number | null
+  extra_ai_tokens: number | null
+  role_id: number | null
+  active: boolean
+  sort_order: number
+  created_at: string
+  updated_at: string
+}
+
+export interface ShopAddonWrite {
+  slug: string
+  name: string
+  description: string | null
+  category: ShopAddonCategory
+  price_cents: number
+  currency: string
+  billing_interval: 'month'
+  tax_rate_percent: number
+  extra_slots: number | null
+  extra_storage_mb: number | null
+  extra_backups: number | null
+  extra_ai_tokens: number | null
+  role_id: number | null
+  active: boolean
+  sort_order: number
+}
+
+export interface ShopCatalogAddon {
+  id: number
+  slug: string
+  name: string
+  description: string | null
+  category: ShopAddonCategory
+  price_cents: number
+  currency: string
+  billing_interval: string
+  tax_rate_percent: number
+  extra_slots: number | null
+  extra_storage_mb: number | null
+  extra_backups: number | null
+  extra_ai_tokens: number | null
+  grants_role: boolean
+}
+
+export interface ShopAddonSwitchResponse {
+  subscription: ShopSubscriptionDto
+  entitlement: ShopEntitlementDto
+  previous_addon_id: number | null
+  new_addon_id: number
+  role_changed: boolean
+}
+
 export const shopAdminApi = {
   listPlans: () => api<ShopPlan[]>('/shop/plans'),
   createPlan: (payload: ShopPlanWrite) =>
@@ -120,10 +186,27 @@ export const shopAdminApi = {
   },
   resetArtwork: (id: number) =>
     api<ShopPlan>(`/shop/plans/${id}/artwork`, { method: 'DELETE' }),
+  listAddons: () => api<ShopAddon[]>('/shop/addons'),
+  createAddon: (payload: ShopAddonWrite) =>
+    api<ShopAddon>('/shop/addons', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  updateAddon: (id: number, payload: Partial<ShopAddonWrite>) =>
+    api<ShopAddon>(`/shop/addons/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    }),
+  deleteAddon: (id: number) =>
+    api<void>(`/shop/addons/${id}`, { method: 'DELETE' }),
 }
 
 export const shopCatalogApi = {
   getCatalog: () => api<ShopCatalogPlan[]>('/shop/catalog'),
+  listAddons: (category?: ShopAddonCategory) =>
+    api<ShopCatalogAddon[]>(
+      category ? `/shop/catalog/addons?category=${encodeURIComponent(category)}` : '/shop/catalog/addons',
+    ),
 }
 
 export type ShopOrderStatus =
@@ -136,6 +219,8 @@ export type ShopOrderStatus =
 export interface ShopOrderItemDto {
   id: number
   kind: 'plan' | 'addon'
+  plan_id?: number | null
+  addon_id?: number | null
   game_type: string
   name: string
   quantity: number
@@ -168,7 +253,8 @@ export interface ShopOrderDto {
 }
 
 export interface ShopOrderCreate {
-  plan_id: number
+  plan_id?: number | null
+  addon_id?: number | null
   months: 1 | 3 | 12
   ram_mb?: number | null
   cpu?: number | null
@@ -183,6 +269,8 @@ export interface ShopOrderCreate {
 
 export interface ShopSubscriptionDto {
   id: number
+  plan_id?: number | null
+  addon_id?: number | null
   game_type: string
   name: string
   status: 'active' | 'past_due' | 'cancelled'
@@ -197,6 +285,7 @@ export interface ShopSubscriptionDto {
 export interface ShopEntitlementDto {
   id: number
   kind: 'server' | 'role' | 'addon'
+  addon_id?: number | null
   label: string
   status: 'active' | 'suspended' | 'revoked'
   server_id: number | null
@@ -220,6 +309,11 @@ export const shopOrderApi = {
       method: 'POST',
     }),
   listSubscriptions: () => api<ShopSubscriptionDto[]>('/shop/subscriptions'),
+  switchAddon: (subscriptionId: number | string, targetAddonId: number) =>
+    api<ShopAddonSwitchResponse>(`/shop/subscriptions/${subscriptionId}/addon-switch`, {
+      method: 'POST',
+      body: JSON.stringify({ target_addon_id: targetAddonId }),
+    }),
   cancelSubscription: (id: number | string) =>
     api<ShopSubscriptionDto>(`/shop/subscriptions/${id}/cancel`, {
       method: 'POST',

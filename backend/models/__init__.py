@@ -127,6 +127,7 @@ from .hoster import (
     HosterWebhookDelivery,
 )
 from .shop import (
+    ShopAddon,
     ShopCreditNoteSequence,
     ShopEntitlement,
     ShopInvoice,
@@ -179,7 +180,7 @@ __all__ = [
     "E2eeMessage", "E2eeMessageReaction", "DirectChatMember",
     "UserE2eeDevice", "PushSubscription",
     "ChatGroup", "ChatGroupMember", "ChatGroupConfig", "ChatGroupInfo", "ChatGroupBackground", "ChatStory", "DirectChat", "ChatMedia",
-    "ShopPlan", "ShopOrder", "ShopOrderItem", "ShopSubscription", "ShopEntitlement", "ShopPaymentEvent",
+    "ShopAddon", "ShopPlan", "ShopOrder", "ShopOrderItem", "ShopSubscription", "ShopEntitlement", "ShopPaymentEvent",
     "ShopInvoice", "ShopInvoiceLine", "ShopInvoiceSequence", "ShopCreditNoteSequence",
 ]  # noqa: E501
 

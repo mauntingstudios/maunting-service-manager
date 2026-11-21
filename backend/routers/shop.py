@@ -20,6 +20,7 @@ from database import get_db
 from dependencies import get_current_user, require_global, verify_csrf
 from models import (
     Server,
+    ShopAddon,
     ShopEntitlement,
     ShopInvoice,
     ShopOrder,
@@ -29,7 +30,13 @@ from models import (
     User,
 )
 from schemas.shop import (
+    ShopAddonResponse,
+    ShopAddonSwitchRequest,
+    ShopAddonSwitchResponse,
+    ShopAddonUpdate,
+    ShopAddonWrite,
     ShopAdminOrderResponse,
+    ShopCatalogAddon,
     ShopCatalogPlan,
     ShopCheckoutResponse,
     ShopCreditNoteCreate,
@@ -63,6 +70,7 @@ from services import (
     audit_service,
     permission_service,
     player_query_service,
+    shop_addon_service,
     shop_catalog_service,
     shop_einvoice_toolchain_service,
     shop_fulfillment_service,
@@ -89,6 +97,13 @@ def _plan_or_404(db: Session, plan_id: int) -> ShopPlan:
     return plan
 
 
+def _addon_or_404(db: Session, addon_id: int) -> ShopAddon:
+    addon = shop_addon_service.get_addon(db, addon_id)
+    if addon is None:
+        raise HTTPException(status_code=404, detail="Add-on nicht gefunden")
+    return addon
+
+
 def _shop_error(exc: shop_catalog_service.ShopConfigurationError) -> HTTPException:
     return HTTPException(status_code=422, detail=str(exc))
 
@@ -102,6 +117,20 @@ def get_catalog(db: Session = Depends(get_db)) -> list[ShopCatalogPlan]:
     return [
         shop_catalog_service.catalog_plan(db, plan)
         for plan in shop_catalog_service.list_plans(db, active_only=True)
+    ]
+
+
+@router.get("/catalog/addons", response_model=list[ShopCatalogAddon])
+def get_catalog_addons(
+    category: str | None = Query(default=None),
+    db: Session = Depends(get_db),
+) -> list[ShopCatalogAddon]:
+    """Aktive Add-ons ohne Anmeldung. Keine interne Rollen-ID."""
+    return [
+        shop_addon_service.catalog_addon(addon)
+        for addon in shop_addon_service.list_addons(
+            db, active_only=True, category=category
+        )
     ]
 
 
@@ -448,6 +477,28 @@ def list_my_subscriptions(
 
 
 @router.post(
+    "/subscriptions/{subscription_id}/addon-switch",
+    response_model=ShopAddonSwitchResponse,
+)
+def switch_my_addon_subscription(
+    subscription_id: int,
+    payload: ShopAddonSwitchRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    _: None = Depends(verify_csrf),
+) -> ShopAddonSwitchResponse:
+    """Wechselt ein aktives Add-on-Abo auf ein anderes aktives Add-on."""
+    try:
+        return shop_addon_service.switch_addon_subscription(
+            db, user, subscription_id, payload.target_addon_id
+        )
+    except shop_addon_service.ShopAddonNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except shop_addon_service.ShopAddonSwitchError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post(
     "/subscriptions/{subscription_id}/cancel",
     response_model=ShopSubscriptionResponse,
 )
@@ -623,6 +674,62 @@ def delete_plan(
 ) -> Response:
     plan = _plan_or_404(db, plan_id)
     shop_catalog_service.delete_plan(db, plan, actor_id=actor.id)
+    return Response(status_code=204)
+
+
+# ── Panel: Eigenstaendige Add-ons verwalten ──────────────────────────────
+
+
+@router.get("/addons", response_model=list[ShopAddonResponse])
+def list_addons(
+    db: Session = Depends(get_db),
+    _: User = Depends(require_global("panel.settings.read")),
+) -> list[ShopAddonResponse]:
+    return [
+        shop_addon_service.addon_response(addon)
+        for addon in shop_addon_service.list_addons(db)
+    ]
+
+
+@router.post("/addons", response_model=ShopAddonResponse)
+def create_addon(
+    payload: ShopAddonWrite,
+    db: Session = Depends(get_db),
+    actor: User = Depends(require_global("panel.settings.write")),
+    _: None = Depends(verify_csrf),
+) -> ShopAddonResponse:
+    try:
+        addon = shop_addon_service.create_addon(db, payload, actor_id=actor.id)
+    except shop_catalog_service.ShopConfigurationError as exc:
+        raise _shop_error(exc) from exc
+    return shop_addon_service.addon_response(addon)
+
+
+@router.patch("/addons/{addon_id}", response_model=ShopAddonResponse)
+def update_addon(
+    addon_id: int,
+    payload: ShopAddonUpdate,
+    db: Session = Depends(get_db),
+    actor: User = Depends(require_global("panel.settings.write")),
+    _: None = Depends(verify_csrf),
+) -> ShopAddonResponse:
+    addon = _addon_or_404(db, addon_id)
+    try:
+        updated = shop_addon_service.update_addon(db, addon, payload, actor_id=actor.id)
+    except shop_catalog_service.ShopConfigurationError as exc:
+        raise _shop_error(exc) from exc
+    return shop_addon_service.addon_response(updated)
+
+
+@router.delete("/addons/{addon_id}", status_code=204)
+def delete_addon(
+    addon_id: int,
+    db: Session = Depends(get_db),
+    actor: User = Depends(require_global("panel.settings.write")),
+    _: None = Depends(verify_csrf),
+) -> Response:
+    addon = _addon_or_404(db, addon_id)
+    shop_addon_service.delete_addon(db, addon, actor_id=actor.id)
     return Response(status_code=204)
 
 

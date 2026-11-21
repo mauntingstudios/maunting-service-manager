@@ -189,6 +189,79 @@ class ShopOrder(Base):
     )
 
 
+class ShopAddon(Base):
+    """Eigenstaendiges Shop-Add-on ohne Pflicht zu einem Spielserver.
+
+    Jede Zeile definiert entweder ein Kontingent (KI-Tokens, Slots, Backups,
+    Speicher) oder eine kundengebundene Rolle. Preise und Kategorien bleiben
+    unter ``shop_addons``, sodass sie unabhaengig von Server-Tarifen gekauft,
+    gewechselt und gekuendigt werden koennen.
+    """
+
+    __tablename__ = "shop_addons"
+    __table_args__ = (
+        UniqueConstraint("slug", name="uq_shop_addons_slug"),
+        CheckConstraint(
+            "category IN ('ai_quota', 'slots', 'backups', 'storage', 'role')",
+            name="ck_shop_addons_category",
+        ),
+        CheckConstraint("price_cents >= 0", name="ck_shop_addons_price"),
+        CheckConstraint(
+            "billing_interval IN ('month')", name="ck_shop_addons_interval"
+        ),
+        CheckConstraint(
+            "tax_rate_percent >= 0 AND tax_rate_percent <= 100",
+            name="ck_shop_addons_tax",
+        ),
+        CheckConstraint(
+            "extra_slots IS NULL OR extra_slots >= 0",
+            name="ck_shop_addons_extra_slots",
+        ),
+        CheckConstraint(
+            "extra_storage_mb IS NULL OR extra_storage_mb >= 0",
+            name="ck_shop_addons_extra_storage",
+        ),
+        CheckConstraint(
+            "extra_backups IS NULL OR extra_backups >= 0",
+            name="ck_shop_addons_extra_backups",
+        ),
+        CheckConstraint(
+            "extra_ai_tokens IS NULL OR extra_ai_tokens >= 0",
+            name="ck_shop_addons_extra_ai",
+        ),
+        Index("ix_shop_addons_cat_active", "category", "active"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    slug: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    category: Mapped[str] = mapped_column(String(32), nullable=False)
+    price_cents: Mapped[int] = mapped_column(Integer, nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), default="EUR", nullable=False)
+    billing_interval: Mapped[str] = mapped_column(
+        String(16), default="month", nullable=False
+    )
+    tax_rate_percent: Mapped[int] = mapped_column(Integer, default=19, nullable=False)
+
+    extra_slots: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    extra_storage_mb: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    extra_backups: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    extra_ai_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    role_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("roles.id", ondelete="SET NULL"), nullable=True
+    )
+
+    active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, onupdate=_now, nullable=False
+    )
+
+
 class ShopOrderItem(Base):
     """Preis- und Konfigurations-Snapshot einer Bestellposition."""
 
@@ -208,6 +281,9 @@ class ShopOrderItem(Base):
     kind: Mapped[str] = mapped_column(String(16), default="plan", nullable=False)
     plan_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("shop_plans.id", ondelete="SET NULL"), nullable=True
+    )
+    addon_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("shop_addons.id", ondelete="SET NULL"), nullable=True
     )
     game_type: Mapped[str] = mapped_column(String(64), nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -257,6 +333,9 @@ class ShopSubscription(Base):
     )
     plan_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("shop_plans.id", ondelete="SET NULL"), nullable=True
+    )
+    addon_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("shop_addons.id", ondelete="SET NULL"), nullable=True
     )
     game_type: Mapped[str] = mapped_column(String(64), nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -353,6 +432,9 @@ class ShopEntitlement(Base):
     label: Mapped[str] = mapped_column(String(255), nullable=False)
     plan_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("shop_plans.id", ondelete="SET NULL"), nullable=True
+    )
+    addon_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("shop_addons.id", ondelete="SET NULL"), nullable=True
     )
     role_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("roles.id", ondelete="SET NULL"), nullable=True

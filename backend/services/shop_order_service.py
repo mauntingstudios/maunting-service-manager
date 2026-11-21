@@ -18,6 +18,7 @@ from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 
 from models import (
+    ShopAddon,
     ShopEntitlement,
     ShopInvoice,
     ShopOrder,
@@ -114,7 +115,7 @@ def _item_label(plan: ShopPlan, ram_mb: int | None, slots: int | None) -> str:
     return " · ".join(teile)
 
 
-def create_order(db: Session, user: User, payload: ShopOrderCreate) -> ShopOrder:
+def _resolve_plan_spec(db: Session, payload: ShopOrderCreate) -> dict[str, object]:
     plan = (
         db.query(ShopPlan)
         .filter(ShopPlan.id == payload.plan_id, ShopPlan.active.is_(True))
@@ -132,19 +133,74 @@ def create_order(db: Session, user: User, payload: ShopOrderCreate) -> ShopOrder
     slots = _check_resource(
         payload.slots, plan.slots_included, plan.slots_max, plan.slots_step, "Slots"
     )
+    return {
+        "kind": "plan",
+        "plan_id": plan.id,
+        "addon_id": None,
+        "game_type": plan.game_type,
+        "name": _item_label(plan, ram_mb, slots),
+        "currency": plan.currency,
+        "billing_interval": plan.billing_interval,
+        "tax_rate_percent": plan.tax_rate_percent,
+        "monatlich": _monthly_gross(plan, ram_mb, cpu, slots),
+        "ram_mb": ram_mb,
+        "cpu": cpu,
+        "slots": slots,
+    }
+
+
+def _resolve_addon_spec(db: Session, payload: ShopOrderCreate) -> dict[str, object]:
+    if (
+        payload.ram_mb is not None
+        or payload.cpu is not None
+        or payload.slots is not None
+    ):
+        raise ShopOrderError(
+            "Add-on-Bestellungen nehmen keine Server-Ressourcen entgegen"
+        )
+    addon = (
+        db.query(ShopAddon)
+        .filter(ShopAddon.id == payload.addon_id, ShopAddon.active.is_(True))
+        .first()
+    )
+    if addon is None:
+        raise ShopOrderError("Add-on ist nicht verfuegbar")
+    return {
+        "kind": "addon",
+        "plan_id": None,
+        "addon_id": addon.id,
+        "game_type": f"addon:{addon.category}",
+        "name": addon.name,
+        "currency": addon.currency,
+        "billing_interval": addon.billing_interval,
+        "tax_rate_percent": addon.tax_rate_percent,
+        "monatlich": addon.price_cents,
+        "ram_mb": None,
+        "cpu": None,
+        "slots": addon.extra_slots,
+    }
+
+
+def create_order(db: Session, user: User, payload: ShopOrderCreate) -> ShopOrder:
+    spec = (
+        _resolve_plan_spec(db, payload)
+        if payload.plan_id is not None
+        else _resolve_addon_spec(db, payload)
+    )
 
     discount = DURATION_DISCOUNTS[payload.months]
-    monatlich = _monthly_gross(plan, ram_mb, cpu, slots)
+    monatlich = int(spec["monatlich"])  # type: ignore[arg-type]
+    tax_rate_percent = int(spec["tax_rate_percent"])  # type: ignore[arg-type]
     brutto = round(monatlich * payload.months * (1 - discount / 100))
-    netto = round(brutto * 100 / (100 + plan.tax_rate_percent))
+    netto = round(brutto * 100 / (100 + tax_rate_percent))
     steuer = brutto - netto
 
     order = ShopOrder(
         number="",  # wird nach dem Flush aus der ID gesetzt
         user_id=user.id,
         status="pending_payment",
-        currency=plan.currency,
-        billing_interval=plan.billing_interval,
+        currency=str(spec["currency"]),
+        billing_interval=str(spec["billing_interval"]),
         months=payload.months,
         discount_percent=discount,
         buyer_name=payload.buyer_name,
@@ -165,19 +221,20 @@ def create_order(db: Session, user: User, payload: ShopOrderCreate) -> ShopOrder
     db.add(
         ShopOrderItem(
             order_id=order.id,
-            kind="plan",
-            plan_id=plan.id,
-            game_type=plan.game_type,
-            name=_item_label(plan, ram_mb, slots),
+            kind=str(spec["kind"]),
+            plan_id=spec["plan_id"],  # type: ignore[arg-type]
+            addon_id=spec["addon_id"],  # type: ignore[arg-type]
+            game_type=str(spec["game_type"]),
+            name=str(spec["name"]),
             quantity=1,
             unit_price_cents=monatlich,
-            tax_rate_percent=plan.tax_rate_percent,
+            tax_rate_percent=tax_rate_percent,
             net_cents=netto,
             tax_cents=steuer,
             gross_cents=brutto,
-            ram_mb=ram_mb,
-            cpu=cpu,
-            slots=slots,
+            ram_mb=spec["ram_mb"],  # type: ignore[arg-type]
+            cpu=spec["cpu"],  # type: ignore[arg-type]
+            slots=spec["slots"],  # type: ignore[arg-type]
         )
     )
     db.commit()
@@ -269,16 +326,50 @@ def _grant_entitlements(db: Session, order: ShopOrder, jetzt: datetime) -> None:
                     order_id=order.id,
                     order_item_id=item.id,
                     plan_id=item.plan_id,
+                    addon_id=item.addon_id,
                     game_type=item.game_type,
                     name=item.name,
                     status="active",
                     billing_interval=order.billing_interval,
-                    monthly_gross_cents=max(1, round(item.gross_cents / order.months)),
+                    monthly_gross_cents=(
+                        max(1, round(item.gross_cents / order.months))
+                        if item.gross_cents > 0
+                        else 0
+                    ),
                     tax_rate_percent=item.tax_rate_percent,
                     started_at=jetzt,
                     current_period_end=_add_months(jetzt, order.months),
                 )
             )
+
+        if item.kind == "addon":
+            addon = (
+                db.query(ShopAddon).filter(ShopAddon.id == item.addon_id).first()
+                if item.addon_id is not None
+                else None
+            )
+            addon_frei = (
+                db.query(ShopEntitlement)
+                .filter(
+                    ShopEntitlement.order_item_id == item.id,
+                    ShopEntitlement.kind == "addon",
+                )
+                .first()
+            )
+            if addon_frei is None:
+                db.add(
+                    ShopEntitlement(
+                        user_id=order.user_id,
+                        order_id=order.id,
+                        order_item_id=item.id,
+                        kind="addon",
+                        label=item.name,
+                        addon_id=item.addon_id,
+                        role_id=addon.role_id if addon is not None else None,
+                        slots=item.slots,
+                    )
+                )
+            continue
 
         server_frei = (
             db.query(ShopEntitlement)
@@ -796,6 +887,8 @@ def order_response(db: Session, order: ShopOrder) -> ShopOrderResponse:
             ShopOrderItemResponse(
                 id=item.id,
                 kind=item.kind,
+                plan_id=item.plan_id,
+                addon_id=item.addon_id,
                 game_type=item.game_type,
                 name=item.name,
                 quantity=item.quantity,
@@ -816,6 +909,8 @@ def order_response(db: Session, order: ShopOrder) -> ShopOrderResponse:
 def subscription_response(row: ShopSubscription) -> ShopSubscriptionResponse:
     return ShopSubscriptionResponse(
         id=row.id,
+        plan_id=row.plan_id,
+        addon_id=row.addon_id,
         game_type=row.game_type,
         name=row.name,
         status=row.status,
@@ -832,6 +927,7 @@ def entitlement_response(row: ShopEntitlement) -> ShopEntitlementResponse:
     return ShopEntitlementResponse(
         id=row.id,
         kind=row.kind,
+        addon_id=row.addon_id,
         label=row.label,
         status=row.status,
         server_id=row.server_id,
