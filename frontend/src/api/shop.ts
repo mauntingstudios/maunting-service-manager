@@ -1,4 +1,5 @@
 import { api, apiUrl } from './client'
+export { apiUrl } from './client'
 
 export type ShopArtworkSource = 'steam' | 'custom' | 'none' | 'panorama'
 export type ShopArtworkMode = 'steam' | 'custom' | 'none'
@@ -7,6 +8,14 @@ export interface ShopArtwork {
   source: ShopArtworkSource
   url: string | null
   version: string | null
+}
+
+export interface ShopGalleryItem {
+  id: string
+  source: 'custom' | 'steam'
+  url: string
+  is_primary: boolean
+  wallpaper_id: number | null
 }
 
 export interface ShopPlan {
@@ -319,6 +328,14 @@ export const shopAdminApi = {
   },
   resetArtwork: (id: number) =>
     api<ShopPlan>(`/shop/plans/${id}/artwork`, { method: 'DELETE' }),
+  deleteArtworkItem: (id: number, wallpaperId: number) =>
+    api<ShopPlan>(`/shop/plans/${id}/artwork/${wallpaperId}`, {
+      method: 'DELETE',
+    }),
+  activateArtworkItem: (id: number, wallpaperId: number) =>
+    api<ShopPlan>(`/shop/plans/${id}/artwork/${wallpaperId}/activate`, {
+      method: 'POST',
+    }),
   listAddons: () => api<ShopAddon[]>('/shop/addons'),
   createAddon: (payload: ShopAddonWrite) =>
     api<ShopAddon>('/shop/addons', {
@@ -351,6 +368,10 @@ export const shopAdminApi = {
 
 export const shopCatalogApi = {
   getCatalog: () => api<ShopCatalogPlan[]>('/shop/catalog'),
+  getGallery: (gameType: string) =>
+    api<ShopGalleryItem[]>(
+      `/shop/artwork/${encodeURIComponent(gameType)}/gallery`,
+    ),
   listAddons: (category?: ShopAddonCategory) =>
     api<ShopCatalogAddon[]>(
       category ? `/shop/catalog/addons?category=${encodeURIComponent(category)}` : '/shop/catalog/addons',

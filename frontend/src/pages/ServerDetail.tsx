@@ -22,6 +22,7 @@ import {
   RotateCcw,
   Shield,
   Sliders,
+  SlidersHorizontal,
   Square,
   Star,
   Terminal,
@@ -43,6 +44,7 @@ import { ModManager } from "./ModManager";
 import { Backups } from "./Backups";
 import { ServerConsolePanel } from "@/components/server/ServerConsolePanel";
 import { ServerRestartPanel } from "@/components/server/ServerRestartPanel";
+import { ServerVariablesTab } from "@/components/server/ServerVariablesTab";
 import { AuthSetupBanner } from "@/components/server/AuthSetupBanner";
 import { ServerConnectChip } from "@/components/server/ServerConnectChip";
 import { ServerStatusIcon } from "@/components/server/ServerStatusBlocks";
@@ -94,6 +96,7 @@ import { meldeErrungenschaft } from "@/lib/errungenschaft";
 type TabKey =
   | "deployments"
   | "frontend_settings"
+  | "variables"
   | "files"
   | "console"
   | "exec"
@@ -108,6 +111,7 @@ type TabKey =
 const VALID_TABS: TabKey[] = [
   "deployments",
   "frontend_settings",
+  "variables",
   "files",
   "console",
   "exec",
@@ -495,6 +499,7 @@ export function ServerDetail() {
     const filterPreviewTabs = (candidate: ServerDetailTab<TabKey>[]) => {
       if (!isRolePreviewActive) return candidate
       const allowedByTab: Partial<Record<TabKey, boolean>> = {
+        variables: canViewInPreview,
         files: canReadFilesInPreview,
         console: canReadConsoleInPreview,
         exec: canExecInPreview,
@@ -514,6 +519,7 @@ export function ServerDetail() {
         { key: "files", label: t("tabs.files"), icon: FileText },
         { key: "backups", label: t("tabs.backups"), icon: HardDrive },
         { key: "frontend_settings", label: t("tabs.frontendSettings"), icon: Sliders },
+        { key: "variables", label: t("tabs.variables"), icon: SlidersHorizontal },
         { key: "console", label: t("tabs.console"), icon: Terminal, secondary: true },
         {
           key: "restarts",
@@ -556,6 +562,9 @@ export function ServerDetail() {
       ...(isDatabaseServer ? [{ key: "databases" as TabKey, label: t("tabs.databases"), icon: Database }] : []),
       { key: "files", label: t("tabs.files"), icon: FileText },
       { key: "console", label: t("tabs.console"), icon: Terminal },
+      ...(!isDatabaseServer
+        ? [{ key: "variables" as TabKey, label: t("tabs.variables"), icon: Sliders }]
+        : []),
     ];
     // v1.4.7+: Exec-Tab nur anzeigen, wenn der Server-Blueprint Exec aktiviert
     // hat (runtime.enableExec=true). Backend erzwungen das nochmal beim
@@ -1496,6 +1505,16 @@ export function ServerDetail() {
             )}
             {activeTab === "files" && <FileManager serverId={serverId} />}
             {activeTab === "console" && <ServerConsolePanel serverId={serverId} />}
+            {activeTab === "variables" && !isDatabaseServer && (
+              <ServerVariablesTab
+                serverId={serverId}
+                canEdit={canWriteServerConfig}
+                onOpenFiles={() => setActiveTab("files")}
+                onRestart={
+                  showRestartAction ? () => void doAction("restart") : undefined
+                }
+              />
+            )}
             {activeTab === "exec" && gameInfo?.enable_exec && (
               <ServerConsolePanel serverId={serverId} mode="exec" />
             )}

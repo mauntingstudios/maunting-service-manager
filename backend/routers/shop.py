@@ -57,6 +57,7 @@ from schemas.shop import (
     ShopCreditNoteCreate,
     ShopEinvoiceToolchainStatusResponse,
     ShopEntitlementResponse,
+    ShopGalleryItem,
     ShopHandoffRequest,
     ShopHandoffResponse,
     ShopInvoiceResponse,
@@ -218,6 +219,50 @@ def preview_coupon_public(
         kind=payload.kind,
         plan_id=payload.plan_id,
         gross_cents=payload.gross_cents,
+    )
+
+
+@router.get("/artwork/{game_type}/gallery", response_model=list[ShopGalleryItem])
+def get_artwork_gallery(
+    game_type: str,
+    db: Session = Depends(get_db),
+) -> list[ShopGalleryItem]:
+    """Liefert alle verfuegbaren Galeriebilder (Custom + Steam-Screenshots)."""
+    try:
+        items = wallpaper_service.resolve_game_gallery(db, game_type)
+    except wallpaper_service.WallpaperValidationError as exc:
+        raise HTTPException(status_code=400, detail=exc.message) from exc
+    return [
+        ShopGalleryItem(
+            id=item.id,
+            source=item.source,
+            url=item.url,
+            is_primary=item.is_primary,
+            wallpaper_id=item.wallpaper_id,
+        )
+        for item in items
+    ]
+
+
+@router.get("/artwork/{game_type}/gallery/{item_id}")
+def get_artwork_gallery_item(
+    game_type: str,
+    item_id: str,
+    db: Session = Depends(get_db),
+    if_none_match: str | None = Header(default=None),
+) -> Response:
+    """Liefert ein einzelnes Galeriebild (WebP, versioniert/gecacht)."""
+    try:
+        bild = wallpaper_service.gallery_item_bytes(db, game_type, item_id)
+    except wallpaper_service.WallpaperValidationError as exc:
+        raise HTTPException(status_code=400, detail=exc.message) from exc
+    if bild is None:
+        raise HTTPException(status_code=404, detail="Kein Galeriebild vorhanden")
+    return build_webp_response(
+        data=bild,
+        etag=f'"{game_type}-{item_id}"',
+        if_none_match=if_none_match,
+        versioned=True,
     )
 
 
@@ -1021,6 +1066,45 @@ def reset_plan_artwork(
     plan = _plan_or_404(db, plan_id)
     plan = shop_catalog_service.reset_plan_artwork(db, plan, actor_id=actor.id)
     return shop_catalog_service.plan_response(db, plan)
+
+
+@router.delete("/plans/{plan_id}/artwork/{wallpaper_id}", response_model=ShopPlanResponse)
+def delete_plan_artwork_item(
+    plan_id: int,
+    wallpaper_id: int,
+    db: Session = Depends(get_db),
+    actor: User = Depends(_require_shop_perm("shop.write", "panel.settings.write")),
+    _: None = Depends(verify_csrf),
+) -> ShopPlanResponse:
+    plan = _plan_or_404(db, plan_id)
+    try:
+        aktualisiert = shop_catalog_service.delete_plan_gallery_item(
+            db, plan, wallpaper_id, actor_id=actor.id
+        )
+    except shop_catalog_service.ShopConfigurationError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return shop_catalog_service.plan_response(db, aktualisiert)
+
+
+@router.post(
+    "/plans/{plan_id}/artwork/{wallpaper_id}/activate",
+    response_model=ShopPlanResponse,
+)
+def activate_plan_artwork_item(
+    plan_id: int,
+    wallpaper_id: int,
+    db: Session = Depends(get_db),
+    actor: User = Depends(_require_shop_perm("shop.write", "panel.settings.write")),
+    _: None = Depends(verify_csrf),
+) -> ShopPlanResponse:
+    plan = _plan_or_404(db, plan_id)
+    try:
+        aktualisiert = shop_catalog_service.activate_plan_gallery_item(
+            db, plan, wallpaper_id, actor_id=actor.id
+        )
+    except shop_catalog_service.ShopConfigurationError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return shop_catalog_service.plan_response(db, aktualisiert)
 
 
 # ── Server-Abo-Zuordnung & Panel-Betriebsansichten ───────────────────────

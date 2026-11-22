@@ -1,0 +1,69 @@
+{
+  "version": 1,
+  "meta": {
+    "id": "lavalink",
+    "name": "Lavalink v4 (Musik-Node)",
+    "game": "Lavalink",
+    "edition": "v4",
+    "category": "bot",
+    "author": "Maunting Studios",
+    "description": "Eigenständiger Audio-Streaming-Node für Discord-Musikbots auf Basis von Lavalink v4 Alpine."
+  },
+  "runtime": {
+    "image": "ghcr.io/lavalink-devs/lavalink:4-alpine",
+    "workdir": "/opt/Lavalink/plugins",
+    "env": {
+      "SERVER_PORT": "{WEB_PORT}",
+      "LOGGING_LEVEL_ROOT": "INFO"
+    },
+    "startup": "--server.port={WEB_PORT}",
+    "stopGracePeriodSeconds": 15,
+    "startupCheckSeconds": 5.0
+  },
+  "ports": [
+    {
+      "name": "web",
+      "protocol": "tcp"
+    }
+  ],
+  "source": {
+    "type": "dockerOnly",
+    "steam": null,
+    "http": null
+  },
+  "mods": null,
+  "health": {
+    "process": {},
+    "port": {
+      "protocol": "tcp",
+      "port": "{{WEB_PORT}}",
+      "interval": "30s",
+      "failure_threshold": 3
+    }
+  },
+  "backup": null,
+  "variables": [
+    {
+      "key": "LAVALINK_SERVER_PASSWORD",
+      "label": "Node-Passwort",
+      "description": "Client-Passwort für Bots, die sich mit diesem Lavalink-Node verbinden.",
+      "group": "security",
+      "type": "secret",
+      "default": "",
+      "required": true,
+      "placeholder": "Sicheres Passwort vergeben"
+    },
+    {
+      "key": "LOGGING_LEVEL_ROOT",
+      "label": "Log-Stufe",
+      "group": "performance",
+      "type": "select",
+      "default": "INFO",
+      "options": [
+        { "value": "INFO", "label": "Standard (INFO)" },
+        { "value": "WARN", "label": "Nur Warnungen (WARN)" },
+        { "value": "DEBUG", "label": "Diagnose (DEBUG)" }
+      ]
+    }
+  ]
+}

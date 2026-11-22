@@ -1,0 +1,88 @@
+{
+  "version": 1,
+  "meta": {
+    "id": "discord_bot_python",
+    "name": "Discord Bot (Python 3.12)",
+    "game": "Discord Bot",
+    "edition": "Python 3.12",
+    "category": "bot",
+    "author": "Maunting Studios",
+    "description": "Discord-Bot-Umgebung mit Python 3.12. Unterstützt Datei-Uploads über den Datei-Tab oder automatisches Laden aus einem GitHub-Repository inklusive requirements.txt."
+  },
+  "runtime": {
+    "image": "python:3.12-slim-bookworm",
+    "workdir": "/data",
+    "env": {
+      "PYTHONUNBUFFERED": "1",
+      "GIT_BRANCH": "main",
+      "BOT_ENTRY_FILE": "bot.py"
+    },
+    "startup": "python3 /data/_msm_boot.py",
+    "seedFiles": [
+      {
+        "file": "_msm_boot.py",
+        "content": "import json\nimport os\nfrom pathlib import Path\nimport shlex\nimport shutil\nimport subprocess\nimport sys\nimport urllib.parse\nimport urllib.request\nimport zipfile\n\nROOT = Path('/data')\nrepo_url = os.environ.get('GIT_REPO_URL', '').strip()\nbranch = os.environ.get('GIT_BRANCH', 'main').strip() or 'main'\nentry_file = os.environ.get('BOT_ENTRY_FILE', 'bot.py').strip() or 'bot.py'\ncustom_cmd = os.environ.get('START_COMMAND', '').strip()\n\n\ndef sync_github_repo():\n    if not repo_url:\n        return\n    parsed = urllib.parse.urlparse(repo_url)\n    if parsed.scheme != 'https' or parsed.hostname not in ('github.com', 'www.github.com'):\n        print('[MSM] Nur öffentliche GitHub-HTTPS-URLs werden unterstützt.', file=sys.stderr)\n        sys.exit(1)\n    parts = [p for p in parsed.path.rstrip('/').removesuffix('.git').split('/') if p]\n    if len(parts) < 2:\n        print('[MSM] Ungültige Repository-URL.', file=sys.stderr)\n        sys.exit(1)\n    marker = ROOT / '.msm_repo_state.json'\n    desired = repo_url + '@' + branch\n    if marker.is_file():\n        try:\n            if json.loads(marker.read_text(encoding='utf-8')).get('source') == desired:\n                return\n        except Exception:\n            pass\n    archive_url = (\n        'https://github.com/'\n        + urllib.parse.quote(parts[0])\n        + '/'\n        + urllib.parse.quote(parts[1])\n        + '/archive/refs/heads/'\n        + urllib.parse.quote(branch)\n        + '.zip'\n    )\n    print('[MSM] Lade Repository ' + parts[0] + '/' + parts[1] + ' (' + branch + ') ...')\n    zip_path = Path('/tmp/msm-py-bot.zip')\n    with urllib.request.urlopen(archive_url, timeout=30) as resp:\n        zip_path.write_bytes(resp.read())\n    with zipfile.ZipFile(zip_path) as zf:\n        for member in zf.infolist():\n            rel_parts = Path(member.filename).parts[1:]\n            if not rel_parts:\n                continue\n            target = (ROOT / Path(*rel_parts)).resolve()\n            if not target.is_relative_to(ROOT.resolve()):\n                continue\n            if member.is_dir():\n                target.mkdir(parents=True, exist_ok=True)\n            else:\n                target.parent.mkdir(parents=True, exist_ok=True)\n                with zf.open(member) as src, target.open('wb') as dst:\n                    shutil.copyfileobj(src, dst)\n    zip_path.unlink(missing_ok=True)\n    marker.write_text(json.dumps(dict(source=desired)), encoding='utf-8')\n\n\nsync_github_repo()\n\nreq_file = ROOT / 'requirements.txt'\ndeps_marker = ROOT / '.msm_pip_installed'\nif req_file.is_file() and not deps_marker.exists():\n    print('[MSM] Installiere Python-Abhängigkeiten aus requirements.txt ...')\n    subprocess.check_call([\n        sys.executable,\n        '-m',\n        'pip',\n        'install',\n        '--no-cache-dir',\n        '--break-system-packages',\n        '-r',\n        str(req_file),\n    ])\n    deps_marker.write_text('ok', encoding='utf-8')\n\nif custom_cmd:\n    argv = shlex.split(custom_cmd)\n    os.execvp(argv[0], argv)\n\ntarget = (ROOT / entry_file).resolve()\nif not target.is_relative_to(ROOT.resolve()) or not target.is_file():\n    print('[MSM] Keine Bot-Dateien gefunden. Lade deinen Bot im Datei-Tab hoch oder hinterlege GIT_REPO_URL unter Start & Variablen.')\n    sys.exit(1)\n\nos.execv(sys.executable, [sys.executable, str(target)])\n"
+      }
+    ],
+    "stopGracePeriodSeconds": 15,
+    "startupCheckSeconds": 5.0
+  },
+  "ports": [],
+  "source": {
+    "type": "dockerOnly",
+    "steam": null,
+    "http": null
+  },
+  "mods": null,
+  "health": {
+    "process": {}
+  },
+  "backup": null,
+  "variables": [
+    {
+      "key": "DISCORD_TOKEN",
+      "label": "Discord Bot Token",
+      "description": "Token aus dem Discord Developer Portal. Wird DIS-verschlüsselt abgelegt.",
+      "group": "security",
+      "type": "secret",
+      "default": "",
+      "required": true,
+      "placeholder": "Token einfügen"
+    },
+    {
+      "key": "GIT_REPO_URL",
+      "label": "GitHub-Repository-URL",
+      "description": "Optional: lädt ein öffentliches GitHub-Projekt automatisch beim Start.",
+      "group": "deployment",
+      "type": "git_url",
+      "default": "",
+      "placeholder": "https://github.com/benutzer/mein-python-bot"
+    },
+    {
+      "key": "GIT_BRANCH",
+      "label": "Git-Branch",
+      "group": "deployment",
+      "type": "string",
+      "default": "main",
+      "pattern": "^[A-Za-z0-9._/-]{1,128}$"
+    },
+    {
+      "key": "BOT_ENTRY_FILE",
+      "label": "Startdatei",
+      "description": "Relativer Pfad zum Python-Startskript.",
+      "group": "general",
+      "type": "string",
+      "default": "bot.py",
+      "pattern": "^[A-Za-z0-9._/-]{1,128}$"
+    },
+    {
+      "key": "START_COMMAND",
+      "label": "Eigener Start-Befehl",
+      "description": "Überschreibt die automatische Erkennung (optional).",
+      "group": "general",
+      "type": "string",
+      "default": "",
+      "placeholder": "z. B. python3 -m mybot"
+    }
+  ]
+}

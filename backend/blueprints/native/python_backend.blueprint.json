@@ -52,5 +52,52 @@
       "failure_threshold": 3
     }
   },
-  "backup": null
+  "backup": null,
+  "variables": [
+    {
+      "key": "PYTHON_ENV",
+      "label": "Laufzeit-Umgebung",
+      "group": "general",
+      "type": "select",
+      "default": "production",
+      "options": [
+        { "value": "production", "label": "Produktion (production)", "badge": "Empfohlen" },
+        { "value": "development", "label": "Entwicklung (development)" }
+      ]
+    },
+    {
+      "key": "START_COMMAND",
+      "label": "Start-Befehl",
+      "description": "Optionaler Startbefehl, falls nicht main.py oder app.py verwendet wird.",
+      "group": "deployment",
+      "type": "string",
+      "default": "",
+      "placeholder": "z. B. uvicorn app.main:app"
+    },
+    {
+      "key": "GIT_REPO_URL",
+      "label": "GitHub-Repository-URL",
+      "description": "Optionale öffentliche HTTPS-URL eines GitHub-Repositories.",
+      "group": "deployment",
+      "type": "git_url",
+      "default": "",
+      "placeholder": "https://github.com/benutzer/mein-python-backend"
+    },
+    {
+      "key": "GIT_BRANCH",
+      "label": "Git-Branch",
+      "group": "deployment",
+      "type": "string",
+      "default": "main",
+      "pattern": "^[A-Za-z0-9._/-]{1,128}$"
+    },
+    {
+      "key": "APP_SECRET",
+      "label": "Anwendungs-Secret",
+      "description": "Optionaler API- oder Session-Schlüssel (DIS-verschlüsselt).",
+      "group": "security",
+      "type": "secret",
+      "default": ""
+    }
+  ]
 }

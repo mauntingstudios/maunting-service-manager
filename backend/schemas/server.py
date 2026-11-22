@@ -344,3 +344,51 @@ class ServerStatusResponse(BaseModel):
     server_file_update_available: bool = False
     server_file_update_reason: str | None = None
     mod_updates_available: list[dict] = Field(default_factory=list)
+
+
+class ServerVariableOptionOut(BaseModel):
+    value: str
+    label: str
+    badge: str | None = None
+
+
+class ServerVariableItemOut(BaseModel):
+    key: str
+    label: str
+    description: str | None = None
+    group: str
+    type: Literal["select", "string", "number", "boolean", "secret", "git_url"]
+    default: str
+    value: str
+    is_set: bool
+    has_override: bool
+    options: list[ServerVariableOptionOut] = Field(default_factory=list)
+    allow_custom: bool = False
+    placeholder: str | None = None
+    required: bool = False
+    customer_editable: bool = True
+    min: float | None = None
+    max: float | None = None
+    pattern: str | None = None
+    requires_restart: bool = True
+
+
+class ServerVariablesResponse(BaseModel):
+    server_id: int
+    game_type: str
+    blueprint_name: str
+    has_variables: bool
+    is_running: bool
+    source_type: str | None = None
+    upload_hint: str | None = None
+    variables: list[ServerVariableItemOut] = Field(default_factory=list)
+
+
+class ServerVariablesUpdateRequest(BaseModel):
+    values: dict[str, str | None] = Field(default_factory=dict, max_length=64)
+
+
+class ServerVariablesUpdateResponse(BaseModel):
+    variables: ServerVariablesResponse
+    changed_keys: list[str] = Field(default_factory=list)
+    restart_recommended: bool = False

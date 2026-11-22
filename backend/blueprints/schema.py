@@ -1875,6 +1875,117 @@ class BlueprintFrontend(BaseModel):
         return v
 
 
+_FORBIDDEN_VARIABLE_KEYS: frozenset[str] = _FORBIDDEN_ENV_KEYS | frozenset({
+    "PATH",
+    "HOME",
+    "SHELL",
+    "USER",
+    "UID",
+    "GID",
+    "IFS",
+})
+_VARIABLE_GROUP_RE = re.compile(r"^[a-z][a-z0-9_-]{0,63}$")
+_RUNTIME_PORT_TOKEN_RE = re.compile(r"\{[A-Z0-9_]*_PORT\}")
+
+
+class BlueprintVariableType(str, Enum):
+    SELECT = "select"
+    STRING = "string"
+    NUMBER = "number"
+    BOOLEAN = "boolean"
+    SECRET = "secret"
+    GIT_URL = "git_url"
+
+
+class BlueprintVariableOption(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    value: str = Field(min_length=1, max_length=256)
+    label: str = Field(min_length=1, max_length=128)
+    badge: str | None = Field(default=None, max_length=48)
+
+
+class BlueprintVariable(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    key: str = Field(min_length=1, max_length=64)
+    label: str = Field(min_length=1, max_length=128)
+    description: str | None = Field(default=None, max_length=512)
+    group: str = Field(default="general", min_length=1, max_length=64)
+    type: BlueprintVariableType = BlueprintVariableType.STRING
+    default: str = Field(default="", max_length=1024)
+    options: list[BlueprintVariableOption] = Field(default_factory=list, max_length=64)
+    allowCustom: bool = False
+    placeholder: str | None = Field(default=None, max_length=256)
+    required: bool = False
+    customerEditable: bool = True
+    min: float | None = None
+    max: float | None = None
+    pattern: str | None = Field(default=None, max_length=256)
+    requiresRestart: bool = True
+
+    @field_validator("key")
+    @classmethod
+    def _check_key(cls, v: str) -> str:
+        cleaned = v.strip()
+        if not _ENV_KEY_RE.fullmatch(cleaned):
+            raise ValueError(
+                f"Variablen-Schluessel '{v}' muss dem Muster [A-Z][A-Z0-9_]* entsprechen."
+            )
+        if cleaned in _FORBIDDEN_VARIABLE_KEYS or cleaned.startswith(("DOCKER_", "MSM_")):
+            raise ValueError(
+                f"Variablen-Schluessel '{cleaned}' ist aus Sicherheitsgruenden gesperrt."
+            )
+        return cleaned
+
+    @field_validator("group")
+    @classmethod
+    def _check_group(cls, v: str) -> str:
+        cleaned = v.strip().lower()
+        if not _VARIABLE_GROUP_RE.fullmatch(cleaned):
+            raise ValueError(
+                f"Variablen-Gruppe '{v}' muss klein geschrieben sein (z. B. version, gameplay)."
+            )
+        return cleaned
+
+    @field_validator("default")
+    @classmethod
+    def _check_default(cls, v: str) -> str:
+        if "\x00" in v or "\r" in v or "\n" in v:
+            raise ValueError("Variablen-Default darf keine Zeilenumbrueche oder NUL-Bytes enthalten.")
+        return v
+
+    @field_validator("pattern")
+    @classmethod
+    def _check_pattern(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        if "\x00" in v:
+            raise ValueError("Regex-Muster darf kein NUL-Byte enthalten.")
+        try:
+            re.compile(v)
+        except re.error as exc:
+            raise ValueError(f"Ungueltiges Regex-Muster in variables[].pattern: {exc}") from exc
+        return v
+
+    @model_validator(mode="after")
+    def _check_variable_rules(self) -> "BlueprintVariable":
+        if (
+            self.type == BlueprintVariableType.SELECT
+            and not self.options
+            and not self.allowCustom
+        ):
+            raise ValueError(
+                f"Variable '{self.key}' (type=select) braucht mindestens eine Option oder allowCustom=true."
+            )
+        option_vals = [opt.value for opt in self.options]
+        if len(option_vals) != len(set(option_vals)):
+            raise ValueError(f"Variable '{self.key}' enthaelt doppelte option-Werte.")
+        if self.min is not None and self.max is not None and self.min > self.max:
+            raise ValueError(f"Variable '{self.key}': min darf nicht groesser als max sein.")
+        return self
+
+
 class Blueprint(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
@@ -1892,6 +2003,7 @@ class Blueprint(BaseModel):
     recovery: BlueprintRecovery | None = None
     backups: BlueprintBackups | None = None
     players: BlueprintPlayers | None = None
+    variables: list[BlueprintVariable] = Field(default_factory=list, max_length=64)
 
 
     @field_validator("version")
@@ -1952,6 +2064,19 @@ class Blueprint(BaseModel):
             raise ValueError(
                 "Der 'frontend'-Block ist nur bei meta.category='frontend' erlaubt."
             )
+        seen_var_keys: set[str] = set()
+        runtime_env = self.runtime.env or {}
+        for var in self.variables:
+            if var.key in seen_var_keys:
+                raise ValueError(f"Doppelter Variablen-Schluessel '{var.key}' im Blueprint.")
+            seen_var_keys.add(var.key)
+            env_default = runtime_env.get(var.key)
+            if isinstance(env_default, str) and (
+                "{BIND_IP}" in env_default or _RUNTIME_PORT_TOKEN_RE.search(env_default)
+            ):
+                raise ValueError(
+                    f"Variable '{var.key}' kollidiert mit einem port- oder bind-gebundenen Wert in runtime.env."
+                )
         return self
 
 

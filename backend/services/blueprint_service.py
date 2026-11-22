@@ -100,6 +100,7 @@ AENDERBARE_PFADE = (
     "source.github.subPath",
     "source.steam.branch",
     "source.http.url",
+    "variables",
 )
 
 

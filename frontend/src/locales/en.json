@@ -4211,6 +4211,7 @@
   "tabs": {
     "deployments": "Deployments",
     "frontendSettings": "Frontend",
+    "variables": "Startup & variables",
     "files": "Files",
     "console": "Console",
     "exec": "Exec",
@@ -4222,6 +4223,48 @@
     "abo": "Plan & subscription",
     "memory": "Server knowledge",
     "ai": "Singra"
+  },
+  "serverVariables": {
+    "fehlerTitel": "Failed to load variables",
+    "ladeFehler": "Server variables could not be loaded right now.",
+    "leerTitel": "No startup variables defined",
+    "leerText": "This server type has no configurable startup or environment variables.",
+    "uploadBannerTitel": "Upload your files or connect GitHub",
+    "uploadBannerText": "Upload your bot or application files in the Files tab, or provide a public GitHub repository URL below.",
+    "dateiTabOeffnen": "Open Files tab",
+    "neustartHinweisTitel": "Restart recommended",
+    "neustartHinweisText": "Updated startup and environment variables take effect after restarting the running server.",
+    "jetztNeustarten": "Restart now",
+    "nurLeseHinweis": "Read-only view. Editing variables requires the server configuration permission.",
+    "nurBetreiber": "Operator only",
+    "gesetzt": "Configured",
+    "angepasst": "Customized",
+    "aktiviert": "Enabled",
+    "deaktiviert": "Disabled",
+    "eigenerWert": "Custom value …",
+    "eigenerWertPlatzhalter": "Enter custom value",
+    "wirdGeloescht": "Will be removed on save",
+    "secretMaskiertPlatzhalter": "Stored secret remains unchanged",
+    "secretPlatzhalter": "Enter new secret value",
+    "secretAnzeigen": "Show input",
+    "secretVerbergen": "Hide input",
+    "zahlenBereich": "Allowed range: {{min}} to {{max}}",
+    "feldZuruecksetzen": "Reset {{label}}",
+    "ungespeicherteAenderungen_one": "1 unsaved change",
+    "ungespeicherteAenderungen_other": "{{count}} unsaved changes",
+    "verwerfen": "Discard",
+    "speichern": "Save changes",
+    "speichert": "Saving …",
+    "gespeichert": "Variables saved.",
+    "speicherFehler": "Variables could not be saved.",
+    "gruppen": {
+      "version": "Version & build",
+      "general": "General",
+      "deployment": "Code & deployment",
+      "gameplay": "Gameplay",
+      "performance": "Performance & logs",
+      "security": "Security & credentials"
+    }
   },
   "frontendDeployments": {
     "production": "Production",
@@ -4688,7 +4731,16 @@
         "laedt": "Loading plans …",
         "pflichtfelder": "Game and plan name are required.",
         "maxFehler": "The maximum must not be below the included value.",
-        "steuerFehler": "The tax rate must be between 0 and 100."
+        "steuerFehler": "The tax rate must be between 0 and 100.",
+        "galerieTitel": "Gallery & preview",
+        "bilderHinzufuegen": "Add images",
+        "galerieLaedt": "Loading gallery …",
+        "galerieLeer": "No images configured yet.",
+        "quelleCustom": "Custom image",
+        "quelleSteam": "Steam",
+        "alsCoverSetzen": "Use as primary cover",
+        "bildEntfernen": "Remove image",
+        "galerieBildGeloescht": "Gallery image removed."
       },
       "addons": {
         "titel": "Add-ons",
@@ -6891,6 +6943,13 @@
       "festRabatt": "{{betrag}} off",
       "endetIn": "Ends in",
       "naechste": "Show next promo"
+    },
+    "galerie": {
+      "zurueck": "Previous image",
+      "weiter": "Next image",
+      "vorschauLeiste": "Image thumbnails",
+      "bildAuswaehlen": "Show image {{index}}",
+      "bildAlt": "{{name}} – view {{index}}"
     },
     "preis": {
       "grundpreis": "Base price",

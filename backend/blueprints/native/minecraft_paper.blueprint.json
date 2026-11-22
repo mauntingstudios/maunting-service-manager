@@ -126,5 +126,86 @@
     },
     "queryProtocol": "minecraft_slp",
     "queryPortRole": "game"
-  }
+  },
+  "variables": [
+    {
+      "key": "VERSION",
+      "label": "Minecraft-Version",
+      "description": "Paper-Build für die gewählte Minecraft-Version. 'LATEST' nutzt den aktuellen Release.",
+      "group": "version",
+      "type": "select",
+      "default": "LATEST",
+      "allowCustom": true,
+      "placeholder": "z. B. 1.21.10",
+      "pattern": "^(LATEST|SNAPSHOT|[0-9]+(\\.[0-9]+){1,2}(?:-[A-Za-z0-9._-]+)?)$",
+      "options": [
+        { "value": "LATEST", "label": "Aktuellste Version (LATEST)", "badge": "Empfohlen" },
+        { "value": "1.21.10", "label": "Minecraft 1.21.10" },
+        { "value": "1.21.8", "label": "Minecraft 1.21.8" },
+        { "value": "1.21.4", "label": "Minecraft 1.21.4" },
+        { "value": "1.20.6", "label": "Minecraft 1.20.6" },
+        { "value": "1.20.4", "label": "Minecraft 1.20.4" },
+        { "value": "1.19.4", "label": "Minecraft 1.19.4" },
+        { "value": "1.16.5", "label": "Minecraft 1.16.5 (Legacy)" }
+      ]
+    },
+    {
+      "key": "DIFFICULTY",
+      "label": "Schwierigkeit",
+      "group": "gameplay",
+      "type": "select",
+      "default": "normal",
+      "options": [
+        { "value": "peaceful", "label": "Friedlich" },
+        { "value": "easy", "label": "Einfach" },
+        { "value": "normal", "label": "Normal" },
+        { "value": "hard", "label": "Schwer" }
+      ]
+    },
+    {
+      "key": "MODE",
+      "label": "Spielmodus",
+      "group": "gameplay",
+      "type": "select",
+      "default": "survival",
+      "options": [
+        { "value": "survival", "label": "Überleben" },
+        { "value": "creative", "label": "Kreativ" },
+        { "value": "adventure", "label": "Abenteuer" },
+        { "value": "spectator", "label": "Zuschauer" }
+      ]
+    },
+    {
+      "key": "PVP",
+      "label": "Spieler gegen Spieler (PvP)",
+      "group": "gameplay",
+      "type": "boolean",
+      "default": "true"
+    },
+    {
+      "key": "ONLINE_MODE",
+      "label": "Mojang-Authentifizierung (Online-Mode)",
+      "description": "Überprüft Spieler-Accounts gegen Mojang. Bei BungeeCord/Velocity-Proxies auf false setzen.",
+      "group": "security",
+      "type": "boolean",
+      "default": "true"
+    },
+    {
+      "key": "VIEW_DISTANCE",
+      "label": "Sichtweite (Chunks)",
+      "group": "performance",
+      "type": "number",
+      "default": "10",
+      "min": 3,
+      "max": 32
+    },
+    {
+      "key": "MOTD",
+      "label": "Server-Nachricht (MOTD)",
+      "group": "general",
+      "type": "string",
+      "default": "Ein Maunting Paper-Server",
+      "placeholder": "Willkommen auf unserem Server"
+    }
+  ]
 }

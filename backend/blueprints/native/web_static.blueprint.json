@@ -52,5 +52,36 @@
       "index.html",
       "assets"
     ]
-  }
+  },
+  "variables": [
+    {
+      "key": "SITE_TITLE",
+      "label": "Seitentitel",
+      "group": "general",
+      "type": "string",
+      "default": "Meine Website",
+      "placeholder": "Meine App"
+    },
+    {
+      "key": "CACHE_CONTROL",
+      "label": "Cache-Richtlinie",
+      "description": "Cache-Header für statische Assets.",
+      "group": "performance",
+      "type": "select",
+      "default": "public, max-age=3600",
+      "options": [
+        { "value": "public, max-age=3600", "label": "1 Stunde (Standard)" },
+        { "value": "public, max-age=86400", "label": "24 Stunden" },
+        { "value": "no-cache", "label": "Kein Cache (no-cache)" }
+      ]
+    },
+    {
+      "key": "SPA_FALLBACK",
+      "label": "Single-Page-App-Routing (SPA-Fallback)",
+      "description": "Leitet unbekannte Pfade für React-/Vue-Router auf index.html weiter.",
+      "group": "general",
+      "type": "boolean",
+      "default": "true"
+    }
+  ]
 }

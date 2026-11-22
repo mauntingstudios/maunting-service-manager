@@ -5,7 +5,7 @@ import { ArrowLeft } from 'lucide-react'
 import { Badge, Dropdown, Spinner, Zustandsflaeche } from '@maunting/ui'
 import { shopCatalogApi } from '@/api/shop'
 import { still } from '@/lib/still'
-import { SpielArtwork } from '../components/SpielArtwork'
+import { SpielGalerie } from '../components/SpielGalerie'
 import { Konfigurator } from '../components/Konfigurator'
 import { PreisPanel } from '../components/PreisPanel'
 import { formatEuro } from '../preis'
@@ -119,7 +119,7 @@ export function ShopSpiel() {
       <div className="mt-5 grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
         <div className="space-y-5">
           <div className="overflow-hidden rounded-2xl border border-outline-variant/30">
-            <SpielArtwork spiel={aktuellesSpiel} priority />
+            <SpielGalerie spiel={aktuellesSpiel} priority />
           </div>
 
           <div>

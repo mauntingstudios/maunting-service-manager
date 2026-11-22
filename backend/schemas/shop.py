@@ -730,3 +730,11 @@ class ShopAvailabilityResponse(BaseModel):
     available_nodes: int = 0
     max_ram_mb: int | None = None
     max_cpu: int | None = None
+
+
+class ShopGalleryItem(BaseModel):
+    id: str
+    source: Literal["custom", "steam"]
+    url: str
+    is_primary: bool
+    wallpaper_id: int | None = None

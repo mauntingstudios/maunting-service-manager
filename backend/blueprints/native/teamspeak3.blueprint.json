@@ -1,0 +1,79 @@
+{
+  "version": 1,
+  "meta": {
+    "id": "teamspeak3",
+    "name": "TeamSpeak 3 Server",
+    "game": "TeamSpeak",
+    "edition": "TeamSpeak 3",
+    "category": "voice_server",
+    "author": "Maunting Studios",
+    "description": "Klassischer TeamSpeak-3-Voiceserver mit ServerQuery und Dateitransfer. Der erste Privilege-Key erscheint beim ersten Start in den Server-Logs."
+  },
+  "runtime": {
+    "image": "teamspeak:latest",
+    "workdir": "/var/ts3server",
+    "env": {
+      "TS3SERVER_LICENSE": "accept",
+      "TS3SERVER_QUERY_PROTOCOLS": "raw,ssh"
+    },
+    "startup": "default_voice_port={VOICE_PORT} query_port={QUERY_PORT} filetransfer_port={CUSTOM_PORT_1} filetransfer_ip=0.0.0.0",
+    "stopGracePeriodSeconds": 20,
+    "startupCheckSeconds": 5.0
+  },
+  "ports": [
+    {
+      "name": "voice",
+      "protocol": "udp"
+    },
+    {
+      "name": "custom",
+      "protocol": "tcp"
+    },
+    {
+      "name": "query",
+      "protocol": "tcp"
+    }
+  ],
+  "source": {
+    "type": "dockerOnly",
+    "steam": null,
+    "http": null
+  },
+  "mods": null,
+  "health": {
+    "process": {},
+    "port": {
+      "protocol": "tcp",
+      "port": "{{QUERY_PORT}}",
+      "interval": "30s",
+      "failure_threshold": 3
+    }
+  },
+  "backup": null,
+  "variables": [
+    {
+      "key": "TS3SERVER_LICENSE",
+      "label": "TeamSpeak-Lizenzbestimmung",
+      "description": "Muss für den Start akzeptiert werden (TeamSpeak End User License Agreement).",
+      "group": "general",
+      "type": "select",
+      "default": "accept",
+      "options": [
+        { "value": "accept", "label": "Akzeptiert (accept)" }
+      ]
+    },
+    {
+      "key": "TS3SERVER_QUERY_PROTOCOLS",
+      "label": "ServerQuery-Protokolle",
+      "description": "Aktive Schnittstellen für Bots, Web-Panels und Verwaltungstools.",
+      "group": "security",
+      "type": "select",
+      "default": "raw,ssh",
+      "options": [
+        { "value": "raw,ssh", "label": "Raw + SSH (Standard)" },
+        { "value": "ssh", "label": "Nur SSH (verschlüsselt)", "badge": "Sicher" },
+        { "value": "raw", "label": "Nur Raw (Telnet)" }
+      ]
+    }
+  ]
+}

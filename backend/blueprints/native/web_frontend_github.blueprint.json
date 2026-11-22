@@ -62,5 +62,45 @@
     "includePaths": [
       "current"
     ]
-  }
+  },
+  "variables": [
+    {
+      "key": "NODE_ENV",
+      "label": "Build-Umgebung",
+      "group": "general",
+      "type": "select",
+      "default": "production",
+      "options": [
+        { "value": "production", "label": "Produktion (production)", "badge": "Empfohlen" },
+        { "value": "development", "label": "Entwicklung (development)" }
+      ]
+    },
+    {
+      "key": "BUILD_COMMAND",
+      "label": "Build-Befehl",
+      "description": "Befehl zum Erzeugen des Produktions-Builds.",
+      "group": "deployment",
+      "type": "string",
+      "default": "npm run build",
+      "placeholder": "npm run build"
+    },
+    {
+      "key": "OUTPUT_DIR",
+      "label": "Ausgabe-Ordner",
+      "description": "Zielverzeichnis mit den fertigen statischen Dateien.",
+      "group": "deployment",
+      "type": "string",
+      "default": "dist",
+      "pattern": "^[A-Za-z0-9._/-]{1,64}$"
+    },
+    {
+      "key": "PUBLIC_API_URL",
+      "label": "Öffentliche API-URL",
+      "description": "Basis-URL des zugehörigen Backends für Frontend-Builds.",
+      "group": "general",
+      "type": "string",
+      "default": "",
+      "placeholder": "https://api.example.com"
+    }
+  ]
 }

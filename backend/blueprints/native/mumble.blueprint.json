@@ -1,0 +1,86 @@
+{
+  "version": 1,
+  "meta": {
+    "id": "mumble",
+    "name": "Mumble (Murmur) Server",
+    "game": "Mumble",
+    "category": "voice_server",
+    "author": "Maunting Studios",
+    "description": "Quelloffener Voice-Server mit geringer Latenz und Opus-Audio über mumblevoip/mumble-server."
+  },
+  "runtime": {
+    "image": "mumblevoip/mumble-server:latest",
+    "workdir": "/data",
+    "env": {
+      "MUMBLE_CONFIG_PORT": "{VOICE_PORT}",
+      "MUMBLE_CONFIG_USERS": "50",
+      "MUMBLE_CONFIG_WELCOMETEXT": "Willkommen auf dem Mumble-Server"
+    },
+    "startup": "/usr/bin/mumble-server -fg",
+    "stopGracePeriodSeconds": 15,
+    "startupCheckSeconds": 4.0
+  },
+  "ports": [
+    {
+      "name": "voice",
+      "protocol": "tcp"
+    },
+    {
+      "name": "voice",
+      "protocol": "udp"
+    }
+  ],
+  "source": {
+    "type": "dockerOnly",
+    "steam": null,
+    "http": null
+  },
+  "mods": null,
+  "health": {
+    "process": {},
+    "port": {
+      "protocol": "tcp",
+      "port": "{{VOICE_PORT}}",
+      "interval": "30s",
+      "failure_threshold": 3
+    }
+  },
+  "backup": null,
+  "variables": [
+    {
+      "key": "MUMBLE_SUPERUSER_PASSWORD",
+      "label": "SuperUser-Passwort",
+      "description": "Admin-Passwort für den eingebauten SuperUser-Account.",
+      "group": "security",
+      "type": "secret",
+      "default": "",
+      "placeholder": "Passwort vergeben"
+    },
+    {
+      "key": "MUMBLE_CONFIG_SERVER_PASSWORD",
+      "label": "Server-Beitrittspasswort",
+      "description": "Optionales Passwort für alle Nutzer beim Verbinden.",
+      "group": "security",
+      "type": "secret",
+      "default": "",
+      "placeholder": "Leer lassen für offenen Server"
+    },
+    {
+      "key": "MUMBLE_CONFIG_WELCOMETEXT",
+      "label": "Begrüßungstext",
+      "group": "general",
+      "type": "string",
+      "default": "Willkommen auf dem Mumble-Server",
+      "placeholder": "Nachricht beim Verbinden"
+    },
+    {
+      "key": "MUMBLE_CONFIG_USERS",
+      "label": "Maximale Nutzeranzahl",
+      "group": "performance",
+      "type": "number",
+      "default": "50",
+      "min": 2,
+      "max": 1000
+    }
+  ]
+}

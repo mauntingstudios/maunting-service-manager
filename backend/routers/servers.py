@@ -13,7 +13,17 @@ from sqlalchemy.orm import Session
 from database import SessionLocal
 from database import get_db
 from models import Server, User
-from schemas import ServerCreate, ServerCreateResponse, ServerResponse, ServerUpdate, ServerStatusResponse, WallpaperGalleryItem
+from schemas import (
+    ServerCreate,
+    ServerCreateResponse,
+    ServerResponse,
+    ServerUpdate,
+    ServerStatusResponse,
+    ServerVariablesResponse,
+    ServerVariablesUpdateRequest,
+    ServerVariablesUpdateResponse,
+    WallpaperGalleryItem,
+)
 from schemas.postgres import PostgresOneTimeCredential
 from dependencies import (
     get_current_user,
@@ -22,7 +32,7 @@ from dependencies import (
     verify_csrf,
     ws_origin_erlaubt,
 )
-from services import audit_service, permission_service, postgres_service, wallpaper_service
+from services import audit_service, permission_service, postgres_service, server_variables_service, wallpaper_service
 from services.media_gallery_service import build_webp_response
 from games import get_plugin
 from games.base import container_name_for, _console_log_path, _append_console_log
@@ -1151,3 +1161,54 @@ def delete_server_wallpaper(
         commit=True,
     )
     return {"deleted": True}
+
+
+@router.get("/{server_id}/variables", response_model=ServerVariablesResponse)
+def get_server_variables(
+    server_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> ServerVariablesResponse:
+    """Liefert Blueprint-Variablen und aktuelle Overrides (Secrets immer maskiert)."""
+    require_server_permission(user, server_id, db, "server.view")
+    server = db.query(Server).filter(Server.id == server_id).first()
+    if not server:
+        raise HTTPException(status_code=404, detail="Server nicht gefunden")
+    return server_variables_service.get_server_variables(db, server)
+
+
+@router.put("/{server_id}/variables", response_model=ServerVariablesUpdateResponse)
+def update_server_variables(
+    server_id: int,
+    payload: ServerVariablesUpdateRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    _: None = Depends(verify_csrf),
+) -> ServerVariablesUpdateResponse:
+    """Speichert erlaubte Server-Variablen DIS-verschluesselt in ServerRuntimeEnv."""
+    require_server_permission(user, server_id, db, "server.config.write")
+    server = db.query(Server).filter(Server.id == server_id).first()
+    if not server:
+        raise HTTPException(status_code=404, detail="Server nicht gefunden")
+    is_operator = (
+        permission_service.has_global_permission(db, user, "panel.settings.write")
+        or permission_service.has_global_permission(db, user, "blueprints.write")
+    )
+    try:
+        result = server_variables_service.update_server_variables(
+            db, server, payload.values, is_operator=is_operator
+        )
+    except server_variables_service.ServerVariableValidationError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+    if result.changed_keys:
+        audit_service.record_privileged_action(
+            db,
+            user_id=user.id,
+            action="server.variables.updated",
+            target_type="server",
+            target_id=server_id,
+            details={"changed_keys": result.changed_keys},
+            commit=True,
+        )
+    return result

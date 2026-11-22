@@ -238,6 +238,58 @@ def reset_plan_artwork(db: Session, plan: ShopPlan, *, actor_id: int) -> ShopPla
     return plan
 
 
+def delete_plan_gallery_item(
+    db: Session, plan: ShopPlan, wallpaper_id: int, *, actor_id: int
+) -> ShopPlan:
+    """Entfernt ein einzelnes hochgeladenes Galeriebild eines Tarif-Spiels."""
+    items = wallpaper_service.get_gallery(db, plan.game_type)
+    if not any(item.id == wallpaper_id for item in items):
+        raise ShopConfigurationError("Galeriebild fuer dieses Spiel nicht gefunden")
+    wallpaper_service.delete_wallpaper(db, plan.game_type, wallpaper_id)
+    remaining = wallpaper_service.get_gallery(db, plan.game_type)
+    if remaining and not any(item.is_active for item in remaining) and plan.artwork_mode == "custom":
+        wallpaper_service.set_active_wallpaper(db, plan.game_type, remaining[0].id)
+    elif not remaining and plan.artwork_mode == "custom":
+        has_steam = (
+            wallpaper_service.artwork_app_id_for_blueprint(
+                wallpaper_service._blueprint_for_game_type(plan.game_type)
+            )
+            is not None
+        )
+        plan.artwork_mode = "steam" if has_steam else "none"
+    _audit(
+        db,
+        actor_id,
+        "shop.plan.artwork.deleted",
+        plan,
+        {"wallpaper_id": wallpaper_id},
+    )
+    db.commit()
+    db.refresh(plan)
+    return plan
+
+
+def activate_plan_gallery_item(
+    db: Session, plan: ShopPlan, wallpaper_id: int, *, actor_id: int
+) -> ShopPlan:
+    """Markiert ein vorhandenes Galeriebild als primaeres Tarif-Cover."""
+    items = wallpaper_service.get_gallery(db, plan.game_type)
+    if not any(item.id == wallpaper_id for item in items):
+        raise ShopConfigurationError("Galeriebild fuer dieses Spiel nicht gefunden")
+    wallpaper_service.set_active_wallpaper(db, plan.game_type, wallpaper_id)
+    plan.artwork_mode = "custom"
+    _audit(
+        db,
+        actor_id,
+        "shop.plan.artwork.activated",
+        plan,
+        {"wallpaper_id": wallpaper_id},
+    )
+    db.commit()
+    db.refresh(plan)
+    return plan
+
+
 def _artwork(db: Session, plan: ShopPlan) -> ShopArtworkResponse:
     descriptor = wallpaper_service.resolve_plan_artwork(
         db,

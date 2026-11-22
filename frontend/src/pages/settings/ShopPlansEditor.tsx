@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ChangeEvent } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Pencil, Plus, RotateCcw, Trash2, Upload } from 'lucide-react'
+import { Check, Pencil, Plus, RotateCcw, Trash2, Upload } from 'lucide-react'
 import {
   Badge,
   Button,
@@ -17,12 +17,16 @@ import {
 } from '@maunting/ui'
 import { api } from '@/api/client'
 import {
+  apiUrl,
   shopAdminApi,
+  shopCatalogApi,
   type ShopArtworkMode,
+  type ShopGalleryItem,
   type ShopPlan,
   type ShopPlanWrite,
 } from '@/api/shop'
 import { useHasPermission } from '@/hooks/useHasPermission'
+import { still } from '@/lib/still'
 import { confirm } from '@/stores/confirmStore'
 import { toast } from '@/stores/toastStore'
 import type { GameInfo } from '@/types'
@@ -234,7 +238,29 @@ export function ShopPlansEditor() {
   const [draft, setDraft] = useState<Draft>(LEER)
   const [busy, setBusy] = useState(false)
   const [uploadPlan, setUploadPlan] = useState<ShopPlan | null>(null)
+  const [galerie, setGalerie] = useState<ShopGalleryItem[]>([])
+  const [galerieBusy, setGalerieBusy] = useState(false)
   const dateiRef = useRef<HTMLInputElement>(null)
+
+  const galerieLaden = (gameType: string) => {
+    setGalerieBusy(true)
+    void shopCatalogApi
+      .getGallery(gameType)
+      .then(setGalerie)
+      .catch((error: unknown) => {
+        still(error, 'shop.plans.galerie')
+        setGalerie([])
+      })
+      .finally(() => setGalerieBusy(false))
+  }
+
+  useEffect(() => {
+    if (dialogOffen && editing) {
+      galerieLaden(editing.game_type)
+    } else {
+      setGalerie([])
+    }
+  }, [dialogOffen, editing])
 
   const laden = () => {
     void shopAdminApi
@@ -330,17 +356,51 @@ export function ShopPlansEditor() {
   }
 
   const dateiGewaehlt = async (event: ChangeEvent<HTMLInputElement>) => {
-    const datei = event.target.files?.[0]
+    const dateien = Array.from(event.target.files ?? [])
     event.target.value = ''
-    if (!datei || !uploadPlan) return
+    if (dateien.length === 0 || !uploadPlan) return
+    const zielPlan = uploadPlan
     try {
-      await shopAdminApi.uploadArtwork(uploadPlan.id, datei)
+      for (let i = dateien.length - 1; i >= 0; i -= 1) {
+        await shopAdminApi.uploadArtwork(zielPlan.id, dateien[i])
+      }
       toast.success(t('settings.shop.plans.bildGespeichert'))
       laden()
+      if (dialogOffen && editing?.game_type === zielPlan.game_type) {
+        galerieLaden(zielPlan.game_type)
+      }
     } catch (error: unknown) {
       toast.error(error instanceof Error ? error.message : t('settings.shop.plans.fehler'))
     } finally {
       setUploadPlan(null)
+    }
+  }
+
+  const galerieBildAktivieren = async (plan: ShopPlan, wallpaperId: number) => {
+    setGalerieBusy(true)
+    try {
+      await shopAdminApi.activateArtworkItem(plan.id, wallpaperId)
+      toast.success(t('settings.shop.plans.bildGespeichert'))
+      laden()
+      galerieLaden(plan.game_type)
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : t('settings.shop.plans.fehler'))
+    } finally {
+      setGalerieBusy(false)
+    }
+  }
+
+  const galerieBildLoeschen = async (plan: ShopPlan, wallpaperId: number) => {
+    setGalerieBusy(true)
+    try {
+      await shopAdminApi.deleteArtworkItem(plan.id, wallpaperId)
+      toast.success(t('settings.shop.plans.galerieBildGeloescht'))
+      laden()
+      galerieLaden(plan.game_type)
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : t('settings.shop.plans.fehler'))
+    } finally {
+      setGalerieBusy(false)
     }
   }
 
@@ -471,6 +531,7 @@ export function ShopPlansEditor() {
       <input
         ref={dateiRef}
         type="file"
+        multiple
         accept="image/png,image/jpeg,image/webp"
         className="sr-only"
         onChange={(event) => void dateiGewaehlt(event)}
@@ -601,6 +662,91 @@ export function ShopPlansEditor() {
                 />
               </label>
             </div>
+
+            {editing && (
+              <div className="space-y-3 rounded-xl border border-outline-variant/30 bg-surface-container/60 p-3.5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-xs font-medium uppercase tracking-wider text-on-surface-variant">
+                    {t('settings.shop.plans.galerieTitel')}
+                  </span>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    className="gap-1.5"
+                    onClick={() => bildWaehlen(editing)}
+                    disabled={!canWrite || galerieBusy}
+                  >
+                    <Upload className="h-3.5 w-3.5" aria-hidden="true" />
+                    {t('settings.shop.plans.bilderHinzufuegen')}
+                  </Button>
+                </div>
+
+                {galerieBusy && galerie.length === 0 ? (
+                  <div className="flex items-center gap-2 py-2 text-xs text-on-surface-variant">
+                    <Spinner className="h-3.5 w-3.5" />
+                    <span>{t('settings.shop.plans.galerieLaedt')}</span>
+                  </div>
+                ) : galerie.length === 0 ? (
+                  <p className="text-xs text-on-surface-variant">
+                    {t('settings.shop.plans.galerieLeer')}
+                  </p>
+                ) : (
+                  <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
+                    {galerie.map((item) => (
+                      <div
+                        key={item.id}
+                        className={`group relative overflow-hidden rounded-lg border ${
+                          item.is_primary
+                            ? 'border-primary ring-1 ring-primary/40'
+                            : 'border-outline-variant/30'
+                        } bg-surface-container-low`}
+                      >
+                        <img
+                          src={apiUrl(item.url)}
+                          alt=""
+                          width={320}
+                          height={180}
+                          loading="lazy"
+                          className="aspect-[16/9] w-full object-cover"
+                        />
+                        <div className="flex items-center justify-between gap-1 px-2 py-1.5 text-xs">
+                          <Badge variant={item.source === 'custom' ? 'info' : 'default'}>
+                            {item.source === 'custom'
+                              ? t('settings.shop.plans.quelleCustom')
+                              : t('settings.shop.plans.quelleSteam')}
+                          </Badge>
+                          {item.wallpaper_id != null && (
+                            <div className="flex items-center gap-1">
+                              {!item.is_primary && (
+                                <button
+                                  type="button"
+                                  onClick={() => void galerieBildAktivieren(editing, item.wallpaper_id!)}
+                                  disabled={!canWrite || galerieBusy}
+                                  aria-label={t('settings.shop.plans.alsCoverSetzen')}
+                                  className="grid h-6 w-6 place-items-center rounded-md border border-outline-variant/30 bg-surface-container text-on-surface hover:border-primary hover:text-primary"
+                                >
+                                  <Check className="h-3 w-3" aria-hidden="true" />
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => void galerieBildLoeschen(editing, item.wallpaper_id!)}
+                                disabled={!canWrite || galerieBusy}
+                                aria-label={t('settings.shop.plans.bildEntfernen')}
+                                className="grid h-6 w-6 place-items-center rounded-md border border-outline-variant/30 bg-surface-container text-on-surface hover:border-status-destructive/50 hover:text-status-destructive"
+                              >
+                                <Trash2 className="h-3 w-3" aria-hidden="true" />
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
 
             <p className="text-xs leading-relaxed text-on-surface-variant">
               {t('settings.shop.plans.bildHinweis')}

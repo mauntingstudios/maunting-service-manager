@@ -1,0 +1,81 @@
+{
+  "version": 1,
+  "meta": {
+    "id": "teamspeak6",
+    "name": "TeamSpeak 6 Server",
+    "game": "TeamSpeak",
+    "edition": "TeamSpeak 6",
+    "category": "voice_server",
+    "author": "Maunting Studios",
+    "description": "Aktueller TeamSpeak-6-Voiceserver (offizielles Server-Image). Der erste Privilege-Key erscheint beim ersten Start in der Konsole."
+  },
+  "runtime": {
+    "image": "teamspeaksystems/teamspeak6-server:latest",
+    "workdir": "/var/tsserver",
+    "env": {
+      "TSSERVER_LICENSE_ACCEPTED": "accept",
+      "TSSERVER_DEFAULT_PORT": "{VOICE_PORT}",
+      "TSSERVER_FILE_TRANSFER_PORT": "{CUSTOM_PORT_1}",
+      "TSSERVER_QUERY_SSH_PORT": "{QUERY_PORT}",
+      "TSSERVER_LOG_LEVEL": "INFO"
+    },
+    "startup": "tsserver",
+    "stopGracePeriodSeconds": 20,
+    "startupCheckSeconds": 5.0
+  },
+  "ports": [
+    {
+      "name": "voice",
+      "protocol": "udp"
+    },
+    {
+      "name": "custom",
+      "protocol": "tcp"
+    },
+    {
+      "name": "query",
+      "protocol": "tcp"
+    }
+  ],
+  "source": {
+    "type": "dockerOnly",
+    "steam": null,
+    "http": null
+  },
+  "mods": null,
+  "health": {
+    "process": {},
+    "port": {
+      "protocol": "tcp",
+      "port": "{{QUERY_PORT}}",
+      "interval": "30s",
+      "failure_threshold": 3
+    }
+  },
+  "backup": null,
+  "variables": [
+    {
+      "key": "TSSERVER_LICENSE_ACCEPTED",
+      "label": "TeamSpeak-Lizenzbestimmung",
+      "description": "Bestätigung der TeamSpeak-6-Serverlizenz für den Start.",
+      "group": "general",
+      "type": "select",
+      "default": "accept",
+      "options": [
+        { "value": "accept", "label": "Akzeptiert (accept)" }
+      ]
+    },
+    {
+      "key": "TSSERVER_LOG_LEVEL",
+      "label": "Log-Detailgrad",
+      "group": "performance",
+      "type": "select",
+      "default": "INFO",
+      "options": [
+        { "value": "INFO", "label": "Standard (INFO)" },
+        { "value": "WARNING", "label": "Nur Warnungen & Fehler (WARNING)" },
+        { "value": "DEBUG", "label": "Diagnose (DEBUG)" }
+      ]
+    }
+  ]
+}

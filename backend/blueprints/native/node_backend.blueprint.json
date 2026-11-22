@@ -57,5 +57,52 @@
       "failure_threshold": 3
     }
   },
-  "backup": null
+  "backup": null,
+  "variables": [
+    {
+      "key": "NODE_ENV",
+      "label": "Laufzeit-Umgebung",
+      "group": "general",
+      "type": "select",
+      "default": "production",
+      "options": [
+        { "value": "production", "label": "Produktion (production)", "badge": "Empfohlen" },
+        { "value": "development", "label": "Entwicklung (development)" }
+      ]
+    },
+    {
+      "key": "START_COMMAND",
+      "label": "Start-Befehl",
+      "description": "Optionaler eigener Startbefehl, falls nicht 'npm start' oder index.js genutzt wird.",
+      "group": "deployment",
+      "type": "string",
+      "default": "",
+      "placeholder": "z. B. node dist/server.js"
+    },
+    {
+      "key": "GIT_REPO_URL",
+      "label": "GitHub-Repository-URL",
+      "description": "Optionale öffentliche HTTPS-URL eines GitHub-Repositories (Vibe-Coding / AI-App).",
+      "group": "deployment",
+      "type": "git_url",
+      "default": "",
+      "placeholder": "https://github.com/benutzer/mein-backend"
+    },
+    {
+      "key": "GIT_BRANCH",
+      "label": "Git-Branch",
+      "group": "deployment",
+      "type": "string",
+      "default": "main",
+      "pattern": "^[A-Za-z0-9._/-]{1,128}$"
+    },
+    {
+      "key": "APP_SECRET",
+      "label": "Anwendungs-Secret",
+      "description": "Optionales Secret (z. B. JWT- oder API-Schlüssel), wird mit DIS AES-256-GCM verschlüsselt.",
+      "group": "security",
+      "type": "secret",
+      "default": ""
+    }
+  ]
 }

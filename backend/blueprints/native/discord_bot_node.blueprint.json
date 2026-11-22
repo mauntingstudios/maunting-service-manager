@@ -1,0 +1,99 @@
+{
+  "version": 1,
+  "meta": {
+    "id": "discord_bot_node",
+    "name": "Discord Bot (Node.js 22)",
+    "game": "Discord Bot",
+    "edition": "Node.js 22",
+    "category": "bot",
+    "author": "Maunting Studios",
+    "description": "Discord-Bot-Umgebung mit Node.js 22 LTS. Unterstützt eigene Datei-Uploads über den Datei-Tab oder automatisches Laden aus einem GitHub-Repository."
+  },
+  "runtime": {
+    "image": "node:22-bookworm-slim",
+    "workdir": "/data",
+    "env": {
+      "NODE_ENV": "production",
+      "GIT_BRANCH": "main",
+      "BOT_ENTRY_FILE": "index.js"
+    },
+    "startup": "node /data/_msm_boot.mjs",
+    "seedFiles": [
+      {
+        "file": "_msm_boot.mjs",
+        "content": "import { spawnSync, spawn } from 'node:child_process';\nimport fs from 'node:fs';\nimport path from 'node:path';\n\nconst ROOT = '/data';\nconst repoUrl = (process.env.GIT_REPO_URL || '').trim();\nconst branch = (process.env.GIT_BRANCH || 'main').trim() || 'main';\nconst entryFile = (process.env.BOT_ENTRY_FILE || 'index.js').trim() || 'index.js';\nconst customCmd = (process.env.START_COMMAND || '').trim();\n\nasync function syncGitHubRepo() {\n  if (!repoUrl) return;\n  const parsed = new URL(repoUrl);\n  if (parsed.protocol !== 'https:' || (parsed.hostname !== 'github.com' && parsed.hostname !== 'www.github.com')) {\n    console.error('[MSM] Nur öffentliche GitHub-HTTPS-URLs werden unterstützt.');\n    process.exit(1);\n  }\n  const parts = parsed.pathname.replace(/^\\/|\\.git$|\\/$/g, '').split('/').filter(Boolean);\n  if (parts.length < 2) {\n    console.error('[MSM] Ungültige Repository-URL.');\n    process.exit(1);\n  }\n  const markerPath = path.join(ROOT, '.msm_repo_state.json');\n  const desired = repoUrl + '@' + branch;\n  if (fs.existsSync(markerPath)) {\n    try {\n      const prev = JSON.parse(fs.readFileSync(markerPath, 'utf8'));\n      if (prev.source === desired) return;\n    } catch {\n      // neu synchronisieren\n    }\n  }\n  const archiveUrl = 'https://github.com/' + encodeURIComponent(parts[0]) + '/' + encodeURIComponent(parts[1]) + '/archive/refs/heads/' + encodeURIComponent(branch) + '.tar.gz';\n  console.log('[MSM] Lade Repository ' + parts[0] + '/' + parts[1] + ' (' + branch + ') ...');\n  const resp = await fetch(archiveUrl);\n  if (!resp.ok) {\n    console.error('[MSM] Download fehlgeschlagen: HTTP ' + String(resp.status));\n    process.exit(1);\n  }\n  const tarPath = '/tmp/msm-bot-repo.tar.gz';\n  fs.writeFileSync(tarPath, Buffer.from(await resp.arrayBuffer()));\n  const res = spawnSync('tar', ['-xzf', tarPath, '-C', ROOT, '--strip-components=1'], { stdio: 'inherit' });\n  fs.rmSync(tarPath, { force: true });\n  if (res.status !== 0) process.exit(res.status || 1);\n  fs.writeFileSync(markerPath, JSON.stringify({ source: desired }));\n}\n\nawait syncGitHubRepo();\n\nconst pkgPath = path.join(ROOT, 'package.json');\nif (fs.existsSync(pkgPath) && !fs.existsSync(path.join(ROOT, 'node_modules'))) {\n  console.log('[MSM] Installiere npm-Abhängigkeiten ...');\n  const inst = spawnSync('npm', ['install', '--omit=dev'], { cwd: ROOT, stdio: 'inherit' });\n  if (inst.status !== 0) process.exit(inst.status || 1);\n}\n\nlet cmd = null;\nif (customCmd) {\n  cmd = customCmd.split(/\\s+/).filter(Boolean);\n} else if (fs.existsSync(pkgPath)) {\n  try {\n    const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));\n    if (pkg.scripts && pkg.scripts.start) {\n      cmd = ['npm', 'start'];\n    }\n  } catch {\n    // Fallback auf BOT_ENTRY_FILE\n  }\n}\n\nif (!cmd) {\n  const resolved = path.resolve(ROOT, entryFile);\n  if (!resolved.startsWith(ROOT + path.sep) || !fs.existsSync(resolved)) {\n    console.log('[MSM] Keine Bot-Dateien gefunden. Lade deinen Bot im Datei-Tab hoch oder hinterlege GIT_REPO_URL unter Start & Variablen.');\n    process.exit(1);\n  }\n  cmd = ['node', resolved];\n}\n\nconst child = spawn(cmd[0], cmd.slice(1), { cwd: ROOT, stdio: 'inherit' });\nchild.on('exit', (code) => process.exit(code == null ? 0 : code));\nprocess.on('SIGTERM', () => child.kill('SIGTERM'));\nprocess.on('SIGINT', () => child.kill('SIGINT'));\n"
+      }
+    ],
+    "stopGracePeriodSeconds": 15,
+    "startupCheckSeconds": 5.0
+  },
+  "ports": [],
+  "source": {
+    "type": "dockerOnly",
+    "steam": null,
+    "http": null
+  },
+  "mods": null,
+  "health": {
+    "process": {}
+  },
+  "backup": null,
+  "variables": [
+    {
+      "key": "DISCORD_TOKEN",
+      "label": "Discord Bot Token",
+      "description": "Token aus dem Discord Developer Portal. Wird DIS-verschlüsselt abgelegt.",
+      "group": "security",
+      "type": "secret",
+      "default": "",
+      "required": true,
+      "placeholder": "Token einfügen"
+    },
+    {
+      "key": "GIT_REPO_URL",
+      "label": "GitHub-Repository-URL",
+      "description": "Optional: lädt ein öffentliches GitHub-Projekt automatisch beim Start.",
+      "group": "deployment",
+      "type": "git_url",
+      "default": "",
+      "placeholder": "https://github.com/benutzer/mein-discord-bot"
+    },
+    {
+      "key": "GIT_BRANCH",
+      "label": "Git-Branch",
+      "group": "deployment",
+      "type": "string",
+      "default": "main",
+      "pattern": "^[A-Za-z0-9._/-]{1,128}$"
+    },
+    {
+      "key": "BOT_ENTRY_FILE",
+      "label": "Startdatei",
+      "description": "Relativer Pfad zur Hauptdatei, falls kein 'start'-Skript in package.json steht.",
+      "group": "general",
+      "type": "string",
+      "default": "index.js",
+      "pattern": "^[A-Za-z0-9._/-]{1,128}$"
+    },
+    {
+      "key": "START_COMMAND",
+      "label": "Eigener Start-Befehl",
+      "description": "Überschreibt die automatische Erkennung (optional).",
+      "group": "general",
+      "type": "string",
+      "default": "",
+      "placeholder": "z. B. node dist/bot.js"
+    },
+    {
+      "key": "NODE_ENV",
+      "label": "Node-Umgebung",
+      "group": "performance",
+      "type": "select",
+      "default": "production",
+      "options": [
+        { "value": "production", "label": "Produktion (production)", "badge": "Empfohlen" },
+        { "value": "development", "label": "Entwicklung (development)" }
+      ]
+    }
+  ]
+}

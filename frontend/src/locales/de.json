@@ -4386,6 +4386,7 @@
   "tabs": {
     "deployments": "Deployments",
     "frontendSettings": "Frontend",
+    "variables": "Start & Variablen",
     "files": "Dateimanager",
     "console": "Konsole",
     "exec": "Exec",
@@ -4397,6 +4398,48 @@
     "abo": "Abo & Tarif",
     "memory": "Serverwissen",
     "ai": "Singra"
+  },
+  "serverVariables": {
+    "fehlerTitel": "Variablen konnten nicht geladen werden",
+    "ladeFehler": "Die Server-Variablen sind momentan nicht erreichbar.",
+    "leerTitel": "Keine Start-Variablen hinterlegt",
+    "leerText": "Für diesen Servertyp sind keine anpassbaren Start- oder Umgebungsvariablen definiert.",
+    "uploadBannerTitel": "Eigenen Code hochladen oder GitHub verknüpfen",
+    "uploadBannerText": "Lade deine Projektdateien direkt im Datei-Tab hoch oder gib weiter unten eine öffentliche GitHub-Repository-URL an.",
+    "dateiTabOeffnen": "Datei-Tab öffnen",
+    "neustartHinweisTitel": "Neustart empfohlen",
+    "neustartHinweisText": "Geänderte Start- und Umgebungsvariablen greifen bei laufendem Server erst nach einem Neustart.",
+    "jetztNeustarten": "Jetzt neu starten",
+    "nurLeseHinweis": "Du siehst die aktuelle Konfiguration im Lesemodus. Zum Bearbeiten wird das Recht „Konfiguration“ benötigt.",
+    "nurBetreiber": "Betreiber",
+    "gesetzt": "Gesetzt",
+    "angepasst": "Angepasst",
+    "aktiviert": "Aktiviert",
+    "deaktiviert": "Deaktiviert",
+    "eigenerWert": "Eigener Wert …",
+    "eigenerWertPlatzhalter": "Eigenen Wert eingeben",
+    "wirdGeloescht": "Wird beim Speichern entfernt",
+    "secretMaskiertPlatzhalter": "Gespeichertes Secret bleibt unverändert",
+    "secretPlatzhalter": "Neuen geheimen Wert eingeben",
+    "secretAnzeigen": "Eingabe anzeigen",
+    "secretVerbergen": "Eingabe verbergen",
+    "zahlenBereich": "Zulässiger Bereich: {{min}} bis {{max}}",
+    "feldZuruecksetzen": "{{label}} zurücksetzen",
+    "ungespeicherteAenderungen_one": "1 ungespeicherte Änderung",
+    "ungespeicherteAenderungen_other": "{{count}} ungespeicherte Änderungen",
+    "verwerfen": "Verwerfen",
+    "speichern": "Änderungen speichern",
+    "speichert": "Wird gespeichert …",
+    "gespeichert": "Variablen gespeichert.",
+    "speicherFehler": "Variablen konnten nicht gespeichert werden.",
+    "gruppen": {
+      "version": "Version & Build",
+      "general": "Allgemein",
+      "deployment": "Code & Deployment",
+      "gameplay": "Spielregeln",
+      "performance": "Leistung & Logs",
+      "security": "Sicherheit & Zugangsdaten"
+    }
   },
   "frontendDeployments": {
     "production": "Produktion",
@@ -4688,7 +4731,16 @@
         "laedt": "Tarife werden geladen …",
         "pflichtfelder": "Spiel und Tarifname sind Pflicht.",
         "maxFehler": "Das Maximum darf nicht unter dem enthaltenen Wert liegen.",
-        "steuerFehler": "Der Steuersatz muss zwischen 0 und 100 liegen."
+        "steuerFehler": "Der Steuersatz muss zwischen 0 und 100 liegen.",
+        "galerieTitel": "Galerie & Vorschau",
+        "bilderHinzufuegen": "Bilder hinzufügen",
+        "galerieLaedt": "Galerie wird geladen …",
+        "galerieLeer": "Noch keine Bilder hinterlegt.",
+        "quelleCustom": "Eigenes Bild",
+        "quelleSteam": "Steam",
+        "alsCoverSetzen": "Als Titelbild verwenden",
+        "bildEntfernen": "Bild entfernen",
+        "galerieBildGeloescht": "Galeriebild entfernt."
       },
       "addons": {
         "titel": "Add-ons",
@@ -6891,6 +6943,13 @@
       "festRabatt": "{{betrag}} Rabatt",
       "endetIn": "Endet in",
       "naechste": "Nächste Aktion anzeigen"
+    },
+    "galerie": {
+      "zurueck": "Vorheriges Bild",
+      "weiter": "Nächstes Bild",
+      "vorschauLeiste": "Bildauswahl",
+      "bildAuswaehlen": "Bild {{index}} anzeigen",
+      "bildAlt": "{{name}} – Ansicht {{index}}"
     },
     "preis": {
       "grundpreis": "Grundpreis",
