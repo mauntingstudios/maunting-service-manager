@@ -89,17 +89,24 @@ curl -sS https://panel.example/api/hoster/v1/health \
 | Methode | Pfad | Zweck |
 | --- | --- | --- |
 | `GET` | `/api/hoster/v1/health` | API-Key prüfen, ohne etwas zu ändern |
+| `GET` | `/api/hoster/v1/catalog` | Aktive Shop-Tarife (inkl. Artwork, Galerie, Kapazität und Blueprint-Variablen) sowie Add-ons abrufen |
 | `POST` | `/api/hoster/v1/apply` | Gewünschten Zustand für Server und Add-ons gemeinsam setzen (v2) |
 | `PUT` | `/api/hoster/v1/services/{external_service_id}` | Bisheriger v1-Einzelendpunkt für Serververträge (bleibt erhalten) |
 | `GET` | `/api/hoster/v1/services/{external_service_id}` | Tatsächlichen Zustand abfragen |
 | `POST` | `/api/hoster/v1/handoffs` | Einmal-Link in das Panel des Kunden erzeugen |
 | `GET` | `/api/hoster/handoff/{token}` | Einlösung durch den Browser des Kunden (kein API-Key) |
 
+### `GET /api/hoster/v1/catalog`
+
+Liefert alle aktiven `plans` (Tarife) und `addons` aus **Einstellungen → Shop**. Externe Shops übernehmen darüber Preise, Ressourcengrenzen, Live-Node-Verfügbarkeit, Artwork- und Galerie-URLs, kundenseitige Start-Variablen (`variables[]`) sowie Add-on-Kontingente (`role_quota` inkl. KI-Projekt-Limits), ohne Produkte ein zweites Mal pflegen zu müssen.
+
+Jeder Tarif enthält `plan_id` und `product_key` (`"plan:<id>"`). Beide Kennungen werden von `POST /api/hoster/v1/apply` und `PUT /api/hoster/v1/services/{external_service_id}` akzeptiert.
+
 ### `POST /api/hoster/v1/apply` (Hoster-API v2)
 
 Nimmt für eine externe Kundenkennung (`external_subject`) einen Sammelauftrag aus Servern (`kind: "server"`) und eigenständigen Add-ons (`kind: "addon"`) entgegen. Über einen optionalen Header `Idempotency-Key` lässt sich der Sammelauftrag im Audit-Log eindeutig zuordnen.
 
-Alle Positionen werden vorab geprüft: unbekannte `product_key`- oder `addon_slug`-Werte, doppelte `external_service_id`-Einträge im selben Batch, ungültige `slots` oder ein Typwechsel (`server` ↔ `addon`) brechen vor der Provisionierung mit `422` ab.
+Alle Positionen werden vorab geprüft: unbekannte `plan_id`-, `product_key`- oder `addon_slug`-Werte, unzulässige RAM-/CPU-/Slot-Werte, ungültige Start-Variablen, doppelte `external_service_id`-Einträge im selben Batch oder ein Typwechsel (`server` ↔ `addon`) brechen vor der Provisionierung mit `422` ab.
 
 **Request-Body**
 
@@ -111,8 +118,12 @@ Alle Positionen werden vorab geprüft: unbekannte `product_key`- oder `addon_slu
 | `items` | `array` (1–50) | ja | Liste aus Server- oder Add-on-Positionen |
 | `items[].external_service_id` | `string` (1–128) | ja | Eindeutige Positionskennung je Integration |
 | `items[].kind` | `string` | nein | `server` (Standard) oder `addon` |
-| `items[].product_key` | `string` (1–128) | bei neuem `server` | Produktkennung des Server-Tarifs |
+| `items[].plan_id` | `integer` | bei neuem `server` (oder `product_key`) | ID eines aktiven Shop-Tarifs (`kind: "server"` nur) |
+| `items[].product_key` | `string` (1–128) | bei neuem `server` (oder `plan_id`) | `"plan:<id>"` aus `/catalog` oder Legacy-Produktkennung |
+| `items[].ram_mb` | `integer` (128–4194304) | nein | Optionale RAM-Vorgabe innerhalb von `[ram_included_mb, ram_max_mb]` |
+| `items[].cpu_percent` | `integer` (10–6400) | nein | Optionale CPU-Vorgabe innerhalb der Tarifgrenzen |
 | `items[].slots` | `integer` (1–1000) | nein | Optionales Slot-Limit für slot-fähige Server-Blueprints |
+| `items[].variables` | `object` (`string -> string`) | nein | Optionale Start-Variablen (`customer_editable: true`, DIS-verschlüsselt) |
 | `items[].addon_slug` | `string` (1–64) | bei neuem `addon` | Slug eines aktiven eigenständigen Shop-Add-ons |
 | `items[].desired_state` | `string` | nein | Optionaler Zielzustand je Einzelposition |
 
@@ -134,7 +145,12 @@ der Integration ist sie eindeutig und dient als Idempotenzschlüssel.
 | --- | --- | --- | --- |
 | `desired_state` | `string` | ja | `active`, `suspended` oder `terminated` |
 | `external_subject` | `string` (1–128) | ja | Kunden-ID **aus dem Shop**. Die feste Zuordnung läuft über diese ID, nicht über die E-Mail — sonst bräche eine E-Mail-Änderung des Kunden die Verknüpfung. |
-| `product_key` | `string` (1–128) | bei Neuanlage | Shop-Produktkennung. MSM bildet sie auf Blueprint und Ressourcenpaket ab. Bei einem bestehenden Vertrag löst ein abweichender Wert einen Tarifwechsel aus. |
+| `plan_id` | `integer` | bei Neuanlage (oder `product_key`) | ID eines aktiven Shop-Tarifs aus MSM. |
+| `product_key` | `string` (1–128) | bei Neuanlage (oder `plan_id`) | `"plan:<id>"` aus `/catalog` oder Legacy-Produktkennung. Bei einem bestehenden Vertrag löst ein abweichender Wert einen Tarifwechsel aus. |
+| `ram_mb` | `integer` (128–4194304) | nein | RAM-Vorgabe innerhalb von `[ram_included_mb, ram_max_mb]`. |
+| `cpu_percent` | `integer` (10–6400) | nein | CPU-Vorgabe innerhalb der Tarifgrenzen. |
+| `slots` | `integer` (1–1000) | nein | Slot-Limit innerhalb der Tarifgrenzen. |
+| `variables` | `object` (`string -> string`) | nein | Kundenseitig bearbeitbare Start-Variablen (`DIS`-verschlüsselt). |
 | `email` | `string` (≤255) | nein | Wird nur für die Erstanlage des Panel-Benutzers verwendet. MSM übernimmt **niemals** ein Shop-Passwort. |
 
 **Beispiel**
@@ -157,6 +173,7 @@ curl -X PUT https://panel.example/api/hoster/v1/services/SVC-4711 \
 | --- | --- | --- |
 | `external_service_id` | `string` | Die Vertragskennung des Shops |
 | `item_kind` | `string` | Vertragsart (`server` oder `addon`) |
+| `plan_id` | `integer \| null` | Verknüpfte Shop-Tarif-ID bei Buchung über den Shop-Katalog, sonst `null` |
 | `addon_slug` | `string \| null` | Slug des gebundenen Add-ons bei `item_kind: "addon"`, sonst `null` |
 | `desired_state` | `string` | Zuletzt gemeldeter Zielzustand |
 | `status` | `string` | Tatsächlicher Zustand — siehe [Zustandsmodell](#zustandsmodell) |

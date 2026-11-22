@@ -4,6 +4,7 @@ from .role_ai_limit import RoleAiLimit
 from .role_ai_model_access import RoleAiModelAccess
 from .role_vault_quota import RoleVaultQuota
 from .role_frontend_quota import RoleFrontendBuildQuota
+from .role_ai_project_quota import RoleAiProjectQuota
 from .frontend_deployment import FrontendDeployment
 from .frontend_settings import FrontendSettings
 from .ai_usage_event import AiUsageEvent
@@ -154,7 +155,7 @@ from .singra_test_run import SingraTestRun
 from .game_wallpaper import GameWallpaper
 
 __all__ = [
-    "User", "UserRole", "RoleAiLimit", "RoleAiModelAccess", "RoleVaultQuota", "AiUsageEvent", "OperationTask",
+    "User", "UserRole", "RoleAiLimit", "RoleAiModelAccess", "RoleVaultQuota", "RoleFrontendBuildQuota", "RoleAiProjectQuota", "AiUsageEvent", "OperationTask",
     "AiProvider", "AiConversation", "AiMessage", "AiProject", "AiProjectFile", "AiMcpServer", "AiActionProposal",
     "AiMemoryBegriff", "AiMemoryBeleg", "AiMemoryEntry", "AiMemoryPflege", "AiMemoryPreference", "AiMemoryTopic", "AiMemoryVersion",
     "AiSkill", "AiAttachment",

@@ -23,12 +23,13 @@ from schemas.hoster import (
     HosterApplyItemResult,
     HosterApplyRequest,
     HosterApplyResponse,
+    HosterCatalogResponse,
     HosterDesiredStateRequest,
     HosterHandoffRequest,
     HosterHandoffResponse,
     HosterServiceResponse,
 )
-from services import hoster_handoff_service, hoster_integration_service
+from services import hoster_catalog_service, hoster_handoff_service, hoster_integration_service
 from services.hoster_integration_service import (
     API_KEY_HEADER,
     HosterConfigurationError,
@@ -51,6 +52,16 @@ def current_integration(
 ) -> HosterIntegration:
     """Loest den API-Key in genau eine aktive Integration auf."""
     return hoster_integration_service.authenticate(db, api_key)
+
+
+@router.get("/catalog", response_model=HosterCatalogResponse)
+def get_catalog(
+    db: Session = Depends(get_db),
+    integration: HosterIntegration = Depends(current_integration),
+) -> HosterCatalogResponse:
+    """Liefert alle aktiven Shop-Tarife (inkl. Artwork, Galerie & Variablen) und Add-ons."""
+    _ = integration
+    return hoster_catalog_service.build_hoster_catalog(db)
 
 
 @router.post("/apply", response_model=HosterApplyResponse)
@@ -108,6 +119,11 @@ def put_desired_state(
             desired_state=payload.desired_state,
             external_subject=payload.external_subject,
             product_key=payload.product_key,
+            plan_id=payload.plan_id,
+            ram_mb=payload.ram_mb,
+            cpu_percent=payload.cpu_percent,
+            slots=payload.slots,
+            variables=payload.variables,
             email=payload.email,
         )
     except HosterConfigurationError as exc:

@@ -1,18 +1,26 @@
-import { ChevronRight, Code2, Folder, GitBranch, Layers, Plus } from 'lucide-react'
-import type { AiProject } from '@/api/ai'
+import { ChevronRight, Code2, Folder, GitBranch, HardDrive, Layers, Plus } from 'lucide-react'
+import type { AiProject, AiProjectQuotaSummary } from '@/api/ai'
 import { Button } from '@maunting/ui'
 
 interface SingraProjectListProps {
   projects: AiProject[]
+  quota?: AiProjectQuotaSummary | null
   onSelectProject: (projectId: string) => void
   onOpenCreate: () => void
 }
 
 export function SingraProjectList({
   projects,
+  quota,
   onSelectProject,
   onOpenCreate,
 }: SingraProjectListProps) {
+  const projectLimitReached =
+    Boolean(quota) &&
+    !quota?.unlimited_projects &&
+    (quota?.max_projects ?? 0) > 0 &&
+    (quota?.project_count ?? projects.length) >= (quota?.max_projects ?? 0)
+
   return (
     <div className="flex flex-1 min-h-0 flex-col overflow-y-auto p-4 sm:p-6">
       <div className="mx-auto w-full max-w-4xl space-y-5">
@@ -25,16 +33,36 @@ export function SingraProjectList({
               </h2>
               <span className="rounded-full bg-surface-container-high px-2.5 py-0.5 text-xs font-medium text-on-surface-variant">
                 {projects.length}
+                {quota && !quota.unlimited_projects && quota.max_projects > 0 ? ` / ${quota.max_projects}` : ''}
               </span>
             </div>
             <p className="mt-1 text-xs sm:text-sm text-on-surface-variant">
               Wähle ein Projekt aus, um deine Unterhaltungen, Dateien und die Vorschau zu öffnen.
             </p>
+            {quota && (
+              <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-on-surface-variant">
+                <span className="inline-flex items-center gap-1.5">
+                  <HardDrive className="h-3.5 w-3.5 text-primary" aria-hidden="true" />
+                  <span>
+                    Speicher: {quota.used_mb} MB
+                    {quota.unlimited_storage || quota.max_storage_mb <= 0
+                      ? ' (unbegrenzt)'
+                      : ` / ${quota.max_storage_mb} MB`}
+                  </span>
+                </span>
+                {projectLimitReached && (
+                  <span className="text-status-warning font-medium">
+                    Projektlimit erreicht
+                  </span>
+                )}
+              </div>
+            )}
           </div>
           <Button
             type="button"
             size="sm"
             onClick={onOpenCreate}
+            disabled={projectLimitReached}
             className="rounded-full px-4"
           >
             <Plus className="h-4 w-4" aria-hidden="true" />

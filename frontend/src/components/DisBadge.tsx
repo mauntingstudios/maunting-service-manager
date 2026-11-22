@@ -10,7 +10,7 @@ export interface DisBadgeProps {
 
 const cn = (...classes: any[]) => classes.filter(Boolean).join(' ');
 
-export const DisBadge = ({ size = 24, showText = true, className, textClassName }: DisBadgeProps) => {
+export const DisBadge = ({ size = 14, showText = true, className, textClassName }: DisBadgeProps) => {
   const { t } = useTranslation()
   return (
     <a
@@ -19,12 +19,12 @@ export const DisBadge = ({ size = 24, showText = true, className, textClassName 
       rel="noopener noreferrer"
       aria-label={`Defensive Integration Shield (${t('common.opensInNewTab')})`}
       className={cn(
-        'inline-flex items-center gap-2 rounded-full border border-ice-300/10 bg-ice-500/10 px-2 py-0.5 backdrop-blur-sm transition-all hover:bg-ice-500/25 hover:border-ice-300/25 cursor-pointer',
+        'inline-flex items-center gap-1.5 text-xs text-on-surface-variant/65 hover:text-on-surface transition-colors cursor-pointer',
         className,
       )}
     >
       <span
-        className="inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full border border-ice-300/20 bg-black/40 shadow-sm"
+        className="inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full opacity-75"
         style={{ width: size, height: size }}
       >
         <img
@@ -39,7 +39,7 @@ export const DisBadge = ({ size = 24, showText = true, className, textClassName 
         />
       </span>
       {showText && (
-        <span className={cn('text-label-sm font-semibold uppercase tracking-[0.18em] text-ice-200/80', textClassName)}>
+        <span className={cn('text-xs font-normal tracking-normal', textClassName)}>
           Powered by DIS
         </span>
       )}

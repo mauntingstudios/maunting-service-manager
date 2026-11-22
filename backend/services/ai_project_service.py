@@ -227,6 +227,9 @@ def create_project(
     clean_name = (name or "").strip()
     if not clean_name:
         raise AiProjectError("Projektname darf nicht leer sein")
+    from services import ai_project_quota_service
+
+    ai_project_quota_service.check_can_create_project(db, user)
     if team_id is not None:
         member = (
             db.query(TeamMember)
@@ -447,7 +450,13 @@ def list_project_files(db: Session, user: User, project_id: str) -> list[AiProje
         return q.all()
 
 
-def _sync_workspace_files_to_db(db: Session, project: AiProject, ws: Path) -> None:
+def _sync_workspace_files_to_db(
+    db: Session,
+    project: AiProject,
+    ws: Path,
+    *,
+    enforce_quota: bool = False,
+) -> None:
     """Synchronisiert Dateien aus dem Sandbox-Verzeichnis in die verschluesselte DB."""
     if not ws.exists() or not ws.is_dir():
         return
@@ -464,6 +473,8 @@ def _sync_workspace_files_to_db(db: Session, project: AiProject, ws: Path) -> No
             existing.pop(p, None)
             changed = True
 
+    pending_new: list[tuple[str, str, int]] = []
+    added_bytes = 0
     count = 0
     for root, dirs, files in os.walk(ws):
         dirs[:] = [
@@ -493,18 +504,31 @@ def _sync_workspace_files_to_db(db: Session, project: AiProject, ws: Path) -> No
                     continue
                 if rel not in existing:
                     text = fpath.read_text(encoding="utf-8", errors="replace")
-                    row = AiProjectFile(
-                        id=str(uuid4()),
-                        project_id=project.id,
-                        path=rel,
-                        content=text,
-                        size_bytes=len(text.encode("utf-8")),
-                    )
-                    db.add(row)
-                    changed = True
+                    size_b = len(text.encode("utf-8"))
+                    pending_new.append((rel, text, size_b))
+                    added_bytes += size_b
                 count += 1
             except OSError:
                 continue
+
+    if enforce_quota and added_bytes > 0:
+        from services import ai_project_quota_service
+
+        owner = db.get(User, project.user_id)
+        if owner is not None:
+            ai_project_quota_service.check_can_write_bytes(db, owner, added_bytes)
+
+    for rel, text, size_b in pending_new:
+        db.add(
+            AiProjectFile(
+                id=str(uuid4()),
+                project_id=project.id,
+                path=rel,
+                content=text,
+                size_bytes=size_b,
+            )
+        )
+        changed = True
     if changed:
         db.commit()
 
@@ -606,13 +630,22 @@ def write_project_file(
         .first()
     )
     old_content: str | None = None
+    old_size_bytes = 0
     if row is not None:
         old_content = row.content
+        old_size_bytes = int(row.size_bytes or 0)
     elif disk_file.is_file():
         try:
             old_content = disk_file.read_text(encoding="utf-8", errors="replace")
         except OSError:
             old_content = None
+
+    delta_bytes = max(0, len(encoded) - old_size_bytes)
+    if delta_bytes > 0:
+        from services import ai_project_quota_service
+
+        quota_owner = db.get(User, project.user_id) or user
+        ai_project_quota_service.check_can_write_bytes(db, quota_owner, delta_bytes)
 
     try:
         disk_file.parent.mkdir(parents=True, exist_ok=True)

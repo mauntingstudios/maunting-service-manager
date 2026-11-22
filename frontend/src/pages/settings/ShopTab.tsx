@@ -28,6 +28,10 @@ export function ShopTab() {
         </Badge>
       </div>
 
+      <p className="rounded-xl border border-outline-variant/30 bg-surface-container-low/40 px-4 py-2.5 text-xs text-on-surface-variant">
+        {t('settings.shop.unifiedHint')}
+      </p>
+
       <StripeZahlungenKarte />
       <SellerDatenKarte />
 

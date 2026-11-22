@@ -143,6 +143,7 @@ GLOBAL_PERMISSIONS: tuple[PermissionDef, ...] = (
     PermissionDef("ai.notes.use",              "ai",      "Eigene Notizen über die KI verwenden (Notizen durch KI lesen/erstellen/bearbeiten)"),
     PermissionDef("ai.coding.use",             "ai",      "KI-Programmierung verwenden (Code generieren und in der Sandbox ausführen)"),
     PermissionDef("ai.projects.manage",        "ai",      "KI-Projekte und Sandboxes verwalten"),
+    PermissionDef("ai.projects.preview",       "ai",      "Live-Vorschau (Dev-Server) in KI-Projekten starten"),
     PermissionDef("ai.mcp.manage",             "ai",      "Eigene MCP-Server und externe KI-Werkzeuge verwalten"),
     # Dokumente: Modulzugang und KI-Freigabe sind getrennte Entscheidungen.
     # `docs.use` oeffnet das Modul; `ai.docs.use` erlaubt Singra zusaetzlich,

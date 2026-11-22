@@ -3389,6 +3389,11 @@
     "confirmDelete": "Rolle wirklich löschen?",
     "adminLocked": "Die Admin-Rolle besitzt feste Vollberechtigung und kann nicht bearbeitet werden.",
     "noRoles": "Keine Rollen vorhanden.",
+    "aiProjectQuota": {
+      "maxProjects": "Max. KI-Projekte (0 = unbegrenzt)",
+      "maxStorageMb": "Max. KI-Projektspeicher in MB (0 = unbegrenzt)",
+      "hint": "Gilt separat vom KI-Token-Limit. Bei mehreren Rollen gilt jeweils der höchste Wert."
+    },
     "systemNames": {
       "admin": "Admin",
       "user": "User"
@@ -3576,6 +3581,10 @@
     "ai_projects_manage": {
       "title": "KI-Projekte & Sandboxes verwalten",
       "desc": "Erlaubt das Anlegen, Konfigurieren und Löschen von Singra-Projekten sowie das Verwalten von Projektdateien."
+    },
+    "ai_projects_preview": {
+      "title": "Live-Vorschau in KI-Projekten starten",
+      "desc": "Erlaubt das Starten der isolierten Dev-Sandbox und Live-Vorschau im Projekt-Editor."
     },
     "ai_mcp_manage": {
       "title": "Eigene MCP-Server verwalten",
@@ -4617,9 +4626,41 @@
     "shopEnabledHint": "Zeigt die öffentliche Storefront unter `/`. Aus schaltet sie ab und führt direkt ins Panel.",
     "externalShopUrl": "Externe Shop-URL",
     "externalShopUrlHint": "Optionales Ziel für den Shop-Link im Panel, solange der native Shop ausgeschaltet ist.",
+    "branding": {
+      "title": "Whitelabeling & Branding",
+      "subtitle": "Eigener Markenname, KI-Identität und eigene Logos für Panel und Shop.",
+      "brandName": "Marken- / Produktname",
+      "brandTagline": "Kurzbeschreibung / Slogan",
+      "brandTaglinePlaceholder": "z. B. Gamehosting & Cloud-Server",
+      "aiName": "Name der KI",
+      "aiEmail": "KI-Git-E-Mail (Fallback)",
+      "logoMode": "Standard-Logo",
+      "logoModeDefault": "MSM Standard-Logo",
+      "logoModeCustom": "Eigenes Logo verwenden",
+      "seasonLogoMode": "Saisonale Logos",
+      "seasonModeDefault": "MSM Saison-Logos",
+      "seasonModeCustom": "Eigene Saison-Logos",
+      "seasonModeDisabled": "Saison-Logo-Wechsel deaktivieren",
+      "slots": {
+        "default": "Standard-Logo",
+        "birthday": "Jubiläum",
+        "halloween": "Halloween",
+        "christmas": "Weihnachten"
+      },
+      "customActive": "Eigenes WebP hinterlegt",
+      "standardActive": "Standard aktiv",
+      "uploadLogo": "Hochladen",
+      "removeLogo": "Logo entfernen",
+      "logoUploaded": "Logo gespeichert.",
+      "logoUploadFailed": "Logo konnte nicht gespeichert werden.",
+      "logoRemoved": "Eigenes Logo entfernt.",
+      "logoRemoveFailed": "Logo konnte nicht entfernt werden.",
+      "accentHint": "Akzentfarben bleiben im Design-System fest definiert, damit Lesbarkeit und Kontrast erhalten bleiben."
+    },
     "shop": {
       "titel": "Nativer Shop",
       "untertitel": "Storefront, Tarife, Stripe-Zahlungen, Rechnungs-Ledger und Server-Provisionierung.",
+      "unifiedHint": "Alle hier gepflegten Tarife, Add-ons, Bilder und Start-Variablen gelten sowohl für den nativen Shop als auch über GET /api/hoster/v1/catalog für angebundene Hoster-Shops.",
       "demo": "Phase 1 · Demo",
       "aktiv": "Shop aktiv",
       "inaktiv": "Shop aus",
@@ -8042,7 +8083,8 @@
       "aiDocsDesc": "Kopiere diese Vorlage und übergib sie deiner bevorzugten KI (ChatGPT, Claude, Singra), um mit 1 Klick deinen Stripe-Webhook-Server zu generieren.",
       "copyAiPrompt": "KI-Prompt kopieren",
       "copiedAiPrompt": "KI-Prompt in die Zwischenablage kopiert!",
-      "noProductsHint": "Bitte lege zuerst mindestens ein Produkt an, um einen Testkauf zu starten."
+      "selectTarget": "Tarif oder Produkt für den Test-Kauf",
+      "noProductsHint": "Lege zuerst unter Einstellungen → Shop einen aktiven Tarif an (oder nutze ein bestehendes Legacy-Produkt), um Test-Käufe zu simulieren."
     },
     "updated": "Anbindung aktualisiert",
     "deleted": "Integration entfernt",
@@ -8061,6 +8103,11 @@
       "active": "Aktiv"
     },
     "products": {
+      "unifiedTitle": "Tarife & Add-ons kommen aus dem Shop-Katalog",
+      "unifiedDescription": "Alle Server-Tarife, Add-ons, Bilder und Start-Variablen werden zentral unter Einstellungen → Shop gepflegt und über GET /api/hoster/v1/catalog ausgeliefert.",
+      "openShopSettings": "Zu Einstellungen → Shop",
+      "legacyTitle": "Bestehende Legacy-Produktzuordnungen",
+      "legacyHint": "Diese früher angelegten Produktkennungen bleiben aus Kompatibilitätsgründen aktiv und können bei Bedarf entfernt werden.",
       "title": "Produktzuordnung",
       "description": "Ordnet eine Shop-Produktkennung einem Blueprint und einem Ressourcenpaket zu. Der Shop muss keine internen MSM-Details kennen.",
       "empty": "Noch keine Produkte zugeordnet.",

@@ -31,14 +31,57 @@ class ServerVariableValidationError(ValueError):
         self.status_code = status_code
 
 
-def _resolve_blueprint(server: Server) -> Blueprint | None:
-    plugin = get_plugin(server.game_type)
+def _resolve_blueprint_for_game_type(game_type: str) -> Blueprint | None:
+    plugin = get_plugin(game_type)
     if plugin is None or not hasattr(plugin, "get_blueprint"):
         return None
     try:
         return plugin.get_blueprint()
     except Exception:
         return None
+
+
+def _resolve_blueprint(server: Server) -> Blueprint | None:
+    return _resolve_blueprint_for_game_type(server.game_type)
+
+
+def validate_blueprint_variables(
+    game_type: str,
+    values: dict[str, str | None],
+    *,
+    is_operator: bool = False,
+) -> None:
+    """Prueft Blueprint-Variablen-Overrides vor der Server-Provisionierung."""
+    if not values:
+        return
+    blueprint = _resolve_blueprint_for_game_type(game_type)
+    if blueprint is None or not blueprint.variables:
+        raise ServerVariableValidationError(
+            "Fuer diesen Servertyp sind keine Start-Variablen definiert."
+        )
+    by_key = {var.key: var for var in blueprint.variables}
+    runtime_env = dict(blueprint.runtime.env or {})
+    for key, raw_val in values.items():
+        if key not in by_key:
+            raise ServerVariableValidationError(f"Unbekannte Variable '{key}'.")
+        var = by_key[key]
+        if not var.customerEditable and not is_operator:
+            raise ServerVariableValidationError(
+                f"Variable '{var.label}' darf nur von Administratoren geaendert werden.",
+                status_code=403,
+            )
+        if raw_val is None:
+            fallback_val = str(runtime_env.get(key, var.default))
+            if var.required and not fallback_val:
+                raise ServerVariableValidationError(
+                    f"'{var.label}' ist ein Pflichtfeld und kann nicht geleert werden."
+                )
+            continue
+        if var.type == BlueprintVariableType.SECRET and raw_val == "":
+            if var.required and not str(runtime_env.get(key, var.default)):
+                raise ServerVariableValidationError(f"'{var.label}' ist ein Pflichtfeld.")
+            continue
+        _validate_value_for_variable(var, raw_val)
 
 
 def _validate_git_url(raw_url: str, label: str) -> str:

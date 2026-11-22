@@ -118,7 +118,27 @@ export interface AiProjectEnvironmentState {
   }
 }
 
+export interface AiProjectRentedTargetServer {
+  id: number
+  name: string
+  game_type: string
+  status: string
+  role_hint: 'frontend' | 'backend' | 'bot' | string
+}
+
+export interface AiProjectQuotaSummary {
+  max_projects: number
+  max_storage_mb: number
+  max_storage_bytes: number
+  unlimited_projects: boolean
+  unlimited_storage: boolean
+  project_count: number
+  used_bytes: number
+  used_mb: number
+}
+
 export interface AiProjectPublishOptions {
+  mode?: 'operator' | 'rented_server'
   nodes: Array<{
     id: number
     name: string
@@ -126,7 +146,7 @@ export interface AiProjectPublishOptions {
     public_bind_ip?: string | null
   }>
   chosen_node_id: number | null
-  chosen_node_name: string
+  chosen_node_name: string | null
   public_ips: Array<{
     ip: string
     interface: string
@@ -134,7 +154,7 @@ export interface AiProjectPublishOptions {
     is_private: boolean
     is_link_local: boolean
   }>
-  default_ip: string
+  default_ip: string | null
   cloudflare_configured: boolean
   cloudflare_zones: Array<{
     id: string
@@ -142,21 +162,31 @@ export interface AiProjectPublishOptions {
     status: string
   }>
   github_configured: boolean
+  target_servers?: AiProjectRentedTargetServer[]
 }
 
 export interface AiProjectPublishResult {
   ok: boolean
+  status?: string
   project_id: string
   deployment_id?: string | null
   task_id?: string | null
   phase?: string
-  server_id: number
+  server_id?: number | null
   frontend_server_id?: number | null
   backend_server_id?: number | null
-  node_id: string
-  node_name: string
+  node_id?: string | null
+  node_name?: string | null
   mode?: string
-  published_files: number
+  published_files?: number
+  deployed_servers?: Array<{
+    server_id: number
+    server_name: string
+    game_type: string
+    role: string
+    files_written: number
+    task_id?: string | null
+  }>
   migrations_applied?: number
   release_count?: number
   version?: number
@@ -166,7 +196,7 @@ export interface AiProjectPublishResult {
   api_path?: string
   database_provisioned?: boolean
   published_at?: string
-  environment: AiProjectEnvironmentState
+  environment?: AiProjectEnvironmentState
 }
 
 export interface AiCrossProjectComponent {

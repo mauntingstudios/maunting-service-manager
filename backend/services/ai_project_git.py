@@ -237,7 +237,7 @@ def git_clone_or_pull(
                 stderr_clean = stderr_clean.replace(effective_token, "***")
             raise AiProjectError(f"Git-Pull fehlgeschlagen: {stderr_clean[:400]}")
 
-    _sync_workspace_files_to_db(db, project, ws)
+    _sync_workspace_files_to_db(db, project, ws, enforce_quota=True)
     return git_status(db, user, project.id)
 
 
@@ -276,7 +276,7 @@ def git_commit_and_push(
             _run_git(["remote", "add", "origin", project.git_repo_url], cwd=ws, env=env, text=False, timeout=10)
 
     _run_git(["add", "-A"], cwd=ws, env=env, text=False, timeout=15)
-    commit_res = _run_git(["commit", "-m", commit_msg], cwd=ws, env=env, timeout=15)
+    commit_res = _run_git(["-c", "commit.gpgsign=false", "commit", "-m", commit_msg], cwd=ws, env=env, timeout=15)
     push_output = ""
     if push and project.git_repo_url:
         clean_auth_url = _clean_git_remote_url(project.git_repo_url, project.git_provider) if effective_token else project.git_repo_url

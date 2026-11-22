@@ -6,7 +6,7 @@ from database import get_db
 from dependencies import get_current_user, require_global, verify_csrf
 from models import RoleFrontendBuildQuota, User
 from schemas import RoleCreate, RoleResponse, RoleUpdate
-from services import rechtevergabe_service, role_service
+from services import ai_project_quota_service, rechtevergabe_service, role_service
 
 router = APIRouter(prefix="/api/roles", tags=["roles"])
 
@@ -174,3 +174,45 @@ def set_role_frontend_quota(
     row.max_previews_per_server = req.max_previews_per_server
     db.commit()
     return req
+
+
+class RoleAiProjectQuotaPayload(BaseModel):
+    max_projects: int = Field(default=3, ge=0, le=1000)
+    max_storage_mb: int = Field(default=256, ge=0, le=102400)
+
+
+@router.get("/{role_id}/ai-project-quota", response_model=RoleAiProjectQuotaPayload)
+def get_role_ai_project_quota(
+    role_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+) -> RoleAiProjectQuotaPayload:
+    role = role_service.get_role(db, role_id)
+    if not role:
+        raise HTTPException(status_code=404, detail="Rolle nicht gefunden")
+    quota = ai_project_quota_service.get_role_quota(db, role_id)
+    return RoleAiProjectQuotaPayload(**quota)
+
+
+@router.put("/{role_id}/ai-project-quota", response_model=RoleAiProjectQuotaPayload)
+def set_role_ai_project_quota(
+    role_id: int,
+    req: RoleAiProjectQuotaPayload,
+    db: Session = Depends(get_db),
+    _actor: User = Depends(require_global("roles.manage")),
+    __: None = Depends(verify_csrf),
+) -> RoleAiProjectQuotaPayload:
+    role = role_service.get_role(db, role_id)
+    if not role:
+        raise HTTPException(status_code=404, detail="Rolle nicht gefunden")
+    row = ai_project_quota_service.upsert_role_quota(
+        db,
+        role_id,
+        max_projects=req.max_projects,
+        max_storage_mb=req.max_storage_mb,
+    )
+    db.commit()
+    return RoleAiProjectQuotaPayload(
+        max_projects=row.max_projects,
+        max_storage_mb=row.max_storage_mb,
+    )

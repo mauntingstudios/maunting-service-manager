@@ -14,6 +14,7 @@ import type {
   AiProjectGitStatus,
   AiProjectPublishOptions,
   AiProjectPublishResult,
+  AiProjectQuotaSummary,
   AiProjectWrite,
   SingraDeploymentItem,
   SingraTestRunItem,
@@ -128,12 +129,16 @@ export const projectsApi = {
       api_path?: string | null
       bind_ip?: string | null
       merge_to_main?: boolean
+      target_server_id?: number | null
+      frontend_server_id?: number | null
+      backend_server_id?: number | null
     },
   ) =>
     api<AiProjectPublishResult>(
       `/ai/projects/${encodeURIComponent(projectId)}/publish`,
       { method: 'POST', body: JSON.stringify(payload) },
     ),
+  getProjectQuota: () => api<AiProjectQuotaSummary>('/ai/projects/quota'),
   getPublishOptions: (projectId: string, nodeId?: string | null) =>
     api<AiProjectPublishOptions>(
       `/ai/projects/${encodeURIComponent(projectId)}/publish-options${nodeId ? `?node_id=${encodeURIComponent(nodeId)}` : ''}`,

@@ -11,7 +11,14 @@ from sqlalchemy.orm import Session
 from database import get_db
 from dependencies import require_global, verify_csrf
 from models import User
-from services import ai_project_service
+from services import (
+    ai_project_publish,
+    ai_project_quota_service,
+    ai_project_service,
+    permission_service,
+)
+from services.ai_project_publish import AiProjectPublishGuardError
+from services.ai_project_quota_service import AiProjectQuotaError
 from services.ai_project_service import AiProjectError
 
 router = APIRouter(prefix="/api/ai/projects", tags=["ai-projects"])
@@ -117,6 +124,9 @@ class AiProjectPublishPayload(BaseModel):
     api_path: str | None = Field(default=None, max_length=120)
     bind_ip: str | None = Field(default=None, max_length=64)
     merge_to_main: bool = False
+    target_server_id: int | None = Field(default=None, ge=1)
+    frontend_server_id: int | None = Field(default=None, ge=1)
+    backend_server_id: int | None = Field(default=None, ge=1)
 
 
 class AiProjectCommandPayload(BaseModel):
@@ -182,6 +192,14 @@ def list_projects(
     return [AiProjectResponse.model_validate(r) for r in rows]
 
 
+@router.get("/quota")
+def get_project_quota(
+    db: Session = Depends(get_db),
+    user: User = Depends(require_global("ai.projects.manage")),
+) -> dict[str, object]:
+    return ai_project_quota_service.get_quota_summary(db, user)
+
+
 @router.post("", response_model=AiProjectResponse, status_code=status.HTTP_201_CREATED)
 def create_project(
     payload: AiProjectCreatePayload,
@@ -196,6 +214,14 @@ def create_project(
             **payload.model_dump(),
         )
         return AiProjectResponse.model_validate(row)
+    except AiProjectQuotaError as exc:
+        raise HTTPException(
+            status_code=403, detail={"code": exc.code, "message": str(exc)}
+        ) from exc
+    except AiProjectQuotaError as exc:
+        raise HTTPException(
+            status_code=403, detail={"code": exc.code, "message": str(exc)}
+        ) from exc
     except AiProjectError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -229,6 +255,10 @@ def update_project(
             **payload.model_dump(exclude_unset=True),
         )
         return AiProjectResponse.model_validate(row)
+    except AiProjectQuotaError as exc:
+        raise HTTPException(
+            status_code=403, detail={"code": exc.code, "message": str(exc)}
+        ) from exc
     except AiProjectError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -281,6 +311,10 @@ def write_project_file(
         resp = AiProjectFileResponse.model_validate(row)
         resp.diff = getattr(row, "_last_diff", None)
         return resp
+    except AiProjectQuotaError as exc:
+        raise HTTPException(
+            status_code=403, detail={"code": exc.code, "message": str(exc)}
+        ) from exc
     except AiProjectError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -296,6 +330,10 @@ def delete_project_file(
     try:
         ai_project_service.delete_project_file(db, user, project_id, path)
         return Response(status_code=status.HTTP_204_NO_CONTENT)
+    except AiProjectQuotaError as exc:
+        raise HTTPException(
+            status_code=403, detail={"code": exc.code, "message": str(exc)}
+        ) from exc
     except AiProjectError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -316,6 +354,10 @@ def execute_project_command(
             payload.command,
             timeout_seconds=payload.timeout_seconds,
         )
+    except AiProjectQuotaError as exc:
+        raise HTTPException(
+            status_code=403, detail={"code": exc.code, "message": str(exc)}
+        ) from exc
     except AiProjectError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -328,6 +370,10 @@ def get_project_agents_rules(
 ) -> dict[str, object]:
     try:
         return ai_project_service.get_project_agents_rules(db, user, project_id)
+    except AiProjectQuotaError as exc:
+        raise HTTPException(
+            status_code=403, detail={"code": exc.code, "message": str(exc)}
+        ) from exc
     except AiProjectError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -340,6 +386,10 @@ def get_project_git_status(
 ) -> dict[str, object]:
     try:
         return ai_project_service.git_status(db, user, project_id)
+    except AiProjectQuotaError as exc:
+        raise HTTPException(
+            status_code=403, detail={"code": exc.code, "message": str(exc)}
+        ) from exc
     except AiProjectError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -362,6 +412,10 @@ def sync_project_git(
             provider=payload.provider,
             token=payload.token,
         )
+    except AiProjectQuotaError as exc:
+        raise HTTPException(
+            status_code=403, detail={"code": exc.code, "message": str(exc)}
+        ) from exc
     except AiProjectError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -383,6 +437,10 @@ def commit_project_git(
             push=payload.push,
             token=payload.token,
         )
+    except AiProjectQuotaError as exc:
+        raise HTTPException(
+            status_code=403, detail={"code": exc.code, "message": str(exc)}
+        ) from exc
     except AiProjectError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -406,6 +464,10 @@ def create_project_git_repo(
             provider=payload.provider,
             token=payload.token,
         )
+    except AiProjectQuotaError as exc:
+        raise HTTPException(
+            status_code=403, detail={"code": exc.code, "message": str(exc)}
+        ) from exc
     except AiProjectError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -418,6 +480,10 @@ def get_project_environment(
 ) -> dict[str, object]:
     try:
         return ai_project_service.get_project_environment(db, user, project_id)
+    except AiProjectQuotaError as exc:
+        raise HTTPException(
+            status_code=403, detail={"code": exc.code, "message": str(exc)}
+        ) from exc
     except AiProjectError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -434,6 +500,10 @@ def switch_project_environment(
         return ai_project_service.switch_project_environment(
             db, user, project_id, payload.environment
         )
+    except AiProjectQuotaError as exc:
+        raise HTTPException(
+            status_code=403, detail={"code": exc.code, "message": str(exc)}
+        ) from exc
     except AiProjectError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -448,6 +518,24 @@ async def get_project_publish_options(
     from models import Node
     from services import network_interfaces_service, cloudflare_service
     from services.node_client import NodeClient
+
+    github_configured = bool(ai_project_service.resolve_git_token_for_user(db, user, "github"))
+    can_create_servers = permission_service.has_global_permission(db, user, "servers.create")
+    target_servers = ai_project_publish.list_rented_publish_targets(db, user)
+
+    if not can_create_servers:
+        return {
+            "mode": "rented_server",
+            "nodes": [],
+            "chosen_node_id": None,
+            "chosen_node_name": None,
+            "public_ips": [],
+            "default_ip": None,
+            "cloudflare_configured": False,
+            "cloudflare_zones": [],
+            "github_configured": github_configured,
+            "target_servers": target_servers,
+        }
 
     all_nodes = db.query(Node).all()
     nodes_data = [
@@ -518,9 +606,8 @@ async def get_project_publish_options(
         except Exception:
             pass
 
-    github_configured = bool(ai_project_service.resolve_git_token_for_user(db, user, "github"))
-
     return {
+        "mode": "operator",
         "nodes": nodes_data,
         "chosen_node_id": target_node.id if target_node else None,
         "chosen_node_name": target_node.name if target_node else "Lokaler Node",
@@ -529,6 +616,7 @@ async def get_project_publish_options(
         "cloudflare_configured": cf_configured,
         "cloudflare_zones": cf_zones,
         "github_configured": github_configured,
+        "target_servers": target_servers,
     }
 
 
@@ -544,6 +632,10 @@ def ensure_project_dev_database(
         if not res:
             return {"ok": False, "message": "Keine Datenbank-Dateien oder SQL-Schema im Projekt vorhanden."}
         return {"ok": True, **res}
+    except AiProjectQuotaError as exc:
+        raise HTTPException(
+            status_code=403, detail={"code": exc.code, "message": str(exc)}
+        ) from exc
     except AiProjectError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -570,7 +662,18 @@ def publish_project_to_production(
             api_path=payload.api_path,
             bind_ip=payload.bind_ip,
             merge_to_main=payload.merge_to_main,
+            target_server_id=payload.target_server_id,
+            frontend_server_id=payload.frontend_server_id,
+            backend_server_id=payload.backend_server_id,
         )
+    except AiProjectPublishGuardError as exc:
+        raise HTTPException(
+            status_code=403, detail={"code": exc.code, "message": str(exc)}
+        ) from exc
+    except AiProjectQuotaError as exc:
+        raise HTTPException(
+            status_code=403, detail={"code": exc.code, "message": str(exc)}
+        ) from exc
     except AiProjectError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -583,6 +686,10 @@ def list_project_production_files(
 ) -> list[dict[str, object]]:
     try:
         return ai_project_service.list_production_files(db, user, project_id)
+    except AiProjectQuotaError as exc:
+        raise HTTPException(
+            status_code=403, detail={"code": exc.code, "message": str(exc)}
+        ) from exc
     except AiProjectError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -603,6 +710,10 @@ def search_project_reusable_components(
             query=query,
             limit=limit,
         )
+    except AiProjectQuotaError as exc:
+        raise HTTPException(
+            status_code=403, detail={"code": exc.code, "message": str(exc)}
+        ) from exc
     except AiProjectError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -620,6 +731,10 @@ def inspect_project_preview(
         return ai_project_service.inspect_project_preview(
             db, user, project_id, viewports=vps, interactions=inter
         )
+    except AiProjectQuotaError as exc:
+        raise HTTPException(
+            status_code=403, detail={"code": exc.code, "message": str(exc)}
+        ) from exc
     except AiProjectError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -632,10 +747,22 @@ def start_project_dev_environment(
     user: User = Depends(require_global("ai.projects.manage")),
     _: None = Depends(verify_csrf),
 ) -> dict[str, object]:
+    if not permission_service.has_global_permission(db, user, "ai.projects.preview"):
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": "preview_permission_required",
+                "message": "Für die Live-Vorschau im Projekt-Editor wird die Berechtigung ai.projects.preview benötigt.",
+            },
+        )
     from services.singra import dev_env
     try:
         opts = payload.model_dump() if payload else {}
         return dev_env.start_dev_environment(db, user, project_id, options=opts)
+    except AiProjectQuotaError as exc:
+        raise HTTPException(
+            status_code=403, detail={"code": exc.code, "message": str(exc)}
+        ) from exc
     except AiProjectError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -650,6 +777,10 @@ def stop_project_dev_environment(
     from services.singra import dev_env
     try:
         return dev_env.stop_dev_environment(db, user, project_id)
+    except AiProjectQuotaError as exc:
+        raise HTTPException(
+            status_code=403, detail={"code": exc.code, "message": str(exc)}
+        ) from exc
     except AiProjectError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -663,6 +794,10 @@ def get_project_dev_environment_status(
     from services.singra import dev_env
     try:
         return dev_env.get_dev_environment_status(db, user, project_id)
+    except AiProjectQuotaError as exc:
+        raise HTTPException(
+            status_code=403, detail={"code": exc.code, "message": str(exc)}
+        ) from exc
     except AiProjectError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -676,6 +811,10 @@ def run_project_tests(
 ) -> dict[str, object]:
     try:
         return ai_project_service.verify_project_sandbox(db, user, project_id)
+    except AiProjectQuotaError as exc:
+        raise HTTPException(
+            status_code=403, detail={"code": exc.code, "message": str(exc)}
+        ) from exc
     except AiProjectError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -728,6 +867,10 @@ def git_create_or_checkout_branch(
 ) -> dict[str, object]:
     try:
         return ai_project_service.git_branch(db, user, project_id, branch_name=payload.branch)
+    except AiProjectQuotaError as exc:
+        raise HTTPException(
+            status_code=403, detail={"code": exc.code, "message": str(exc)}
+        ) from exc
     except AiProjectError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -750,6 +893,10 @@ def git_open_pull_request(
             target_branch=payload.target_branch,
             token=payload.token,
         )
+    except AiProjectQuotaError as exc:
+        raise HTTPException(
+            status_code=403, detail={"code": exc.code, "message": str(exc)}
+        ) from exc
     except AiProjectError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -763,6 +910,10 @@ def git_merge_branch_to_main(
 ) -> dict[str, object]:
     try:
         return ai_project_service.merge_to_main(db, user, project_id)
+    except AiProjectQuotaError as exc:
+        raise HTTPException(
+            status_code=403, detail={"code": exc.code, "message": str(exc)}
+        ) from exc
     except AiProjectError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

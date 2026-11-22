@@ -25,6 +25,7 @@ import {
   RotateCcw,
   Save,
   Send,
+  ShoppingBag,
   Sparkles,
   Trash2,
   XCircle,
@@ -35,19 +36,18 @@ import {
   type HosterDelivery,
   type HosterIntegration,
   type HosterProduct,
-  type HosterProductWrite,
   type HosterService,
   type HosterSimulationResponse,
 } from '@/api/hoster'
-import { rbacApi } from '@/api/rbac'
+import { shopAdminApi, type ShopPlan } from '@/api/shop'
+import { still } from '@/lib/still'
 import { api, SanitizedApiError } from '@/api/client'
 import { Button, NumberStepper, Switch, buttonClasses } from '@maunting/ui'
 import { Dropdown } from '@maunting/ui'
 import { SecretOnce } from '@/components/app/SecretOnce'
 import { confirm } from '@/stores/confirmStore'
 import { toast } from '@/stores/toastStore'
-import type { Role } from '@/types/permissions'
-import type { GameInfo, User } from '@/types'
+import type { User } from '@/types'
 
 import { Spinner } from '@maunting/ui'
 /**
@@ -63,18 +63,6 @@ function handoffPath(url: string): string {
   } catch {
     return url
   }
-}
-
-const EMPTY_PRODUCT: HosterProductWrite = {
-  external_product_key: '',
-  game_type: '',
-  ram_limit_mb: null,
-  cpu_limit_percent: null,
-  disk_limit_gb: null,
-  node_id: null,
-  backup_interval_hours: null,
-  role_id: null,
-  enabled: true,
 }
 
 export function HosterTab({ canWrite }: { canWrite: boolean }) {
@@ -561,234 +549,85 @@ function IntegrationEditForm({
 
 function ProductSection({ integrationId, canWrite }: { integrationId: number; canWrite: boolean }) {
   const { t } = useTranslation()
-  const [products, setProducts] = useState<HosterProduct[]>([])
-  const [roles, setRoles] = useState<Role[]>([])
-  const [games, setGames] = useState<GameInfo[]>([])
-  const [draft, setDraft] = useState<HosterProductWrite>(EMPTY_PRODUCT)
+  const [legacyProducts, setLegacyProducts] = useState<HosterProduct[]>([])
   const [busy, setBusy] = useState(false)
 
-  // Derselbe Katalog, gegen den die Server-Erstellung validiert
-  // (`product.game_type` wird 1:1 zu `ServerCreate.game_type`). Einmal holen
-  // reicht; faellt der Load aus, bleibt unten die Texteingabe als Rueckfall.
-  useEffect(() => {
-    let active = true
-    api<GameInfo[]>('/system/games')
-      .then((rows) => { if (active) setGames(Array.isArray(rows) ? rows : []) })
-      .catch(() => { if (active) setGames([]) })
-    return () => { active = false }
-  }, [])
-
-  const load = useCallback(() => {
+  const loadLegacy = useCallback(() => {
     hosterApi
       .listProducts(integrationId)
-      .then(setProducts)
+      .then(setLegacyProducts)
       .catch((error: unknown) => {
-        toast.error(error instanceof SanitizedApiError ? error.message : t('hoster.errors.load'))
+        still(error, 'hoster.legacyProducts')
+        setLegacyProducts([])
       })
-  }, [integrationId, t])
+  }, [integrationId])
 
-  useEffect(load, [load])
+  useEffect(loadLegacy, [loadLegacy])
 
-  // Die Rollenliste ist Beiwerk: sie fuellt ein optionales Feld. Faellt sie aus,
-  // bleibt der Rest der Sektion bedienbar — deshalb hier kein Toast, sondern
-  // eine leere Auswahl.
-  useEffect(() => {
-    let active = true
-    rbacApi
-      .listRoles()
-      .then((rows) => { if (active) setRoles(rows) })
-      .catch(() => { if (active) setRoles([]) })
-    return () => { active = false }
-  }, [])
-
-  const sortedRoles = [...roles].sort((a, b) => a.name.localeCompare(b.name))
-
-  // Ohne geladene Liste bleibt die Kennung stehen: "keine Rolle" waere an der
-  // Stelle eine Falschaussage.
-  const roleLabel = (roleId: number | null) => {
-    if (roleId === null) return t('hoster.products.roleNone')
-    return roles.find((role) => role.id === roleId)?.name ?? `#${roleId}`
-  }
-
-  const save = async () => {
-    if (!canWrite || busy) return
-    setBusy(true)
-    try {
-      await hosterApi.saveProduct(integrationId, draft)
-      setDraft(EMPTY_PRODUCT)
-      load()
-      toast.success(t('hoster.products.saved'))
-    } catch (error: unknown) {
-      toast.error(error instanceof SanitizedApiError ? error.message : t('hoster.errors.save'))
-    } finally {
-      setBusy(false)
-    }
+  const openShopSettings = () => {
+    window.dispatchEvent(new CustomEvent('msm:open-settings-tab', { detail: { tab: 'shop' } }))
   }
 
   return (
     <div className="msm-card space-y-4 p-6">
-      <h4 className="font-headline text-base font-semibold text-on-surface">{t('hoster.products.title')}</h4>
-      <p className="text-sm text-on-surface-variant">{t('hoster.products.description')}</p>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="space-y-1 max-w-2xl">
+          <h4 className="font-headline text-base font-semibold text-on-surface">
+            {t('hoster.products.unifiedTitle')}
+          </h4>
+          <p className="text-sm text-on-surface-variant">
+            {t('hoster.products.unifiedDescription')}
+          </p>
+        </div>
+        <Button type="button" variant="secondary" onClick={openShopSettings}>
+          <ShoppingBag className="h-4 w-4" aria-hidden="true" />
+          {t('hoster.products.openShopSettings')}
+        </Button>
+      </div>
 
-      {products.length === 0 && (
-        <p className="text-sm text-on-surface-variant">{t('hoster.products.empty')}</p>
-      )}
-      <ul className="space-y-2">
-        {products.map((product) => (
-          <li
-            key={product.id}
-            className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-outline-variant/40 p-3 text-sm"
-          >
-            <span className="font-medium text-on-surface">{product.external_product_key}</span>
-            <span className="text-on-surface-variant">
-              {product.game_type} · {product.ram_limit_mb ?? '—'} MB · {product.cpu_limit_percent ?? '—'} %
-              {' · '}{roleLabel(product.role_id)}
-            </span>
-            {canWrite && (
-              <Button
-                type="button"
-                variant="ghost"
-                disabled={busy}
-                onClick={() => {
-                  setBusy(true)
-                  hosterApi
-                    .deleteProduct(integrationId, product.id)
-                    .then(() => { load(); toast.success(t('hoster.products.deleted')) })
-                    .catch((error: unknown) => {
-                      toast.error(error instanceof SanitizedApiError ? error.message : t('hoster.errors.delete'))
-                    })
-                    .finally(() => setBusy(false))
-                }}
+      {legacyProducts.length > 0 && (
+        <details className="rounded-xl border border-outline-variant/40 bg-surface-container-low/40 p-4">
+          <summary className="cursor-pointer text-sm font-medium text-on-surface select-none">
+            {t('hoster.products.legacyTitle')} ({legacyProducts.length})
+          </summary>
+          <p className="mt-2 text-xs text-on-surface-variant">{t('hoster.products.legacyHint')}</p>
+          <ul className="mt-3 space-y-2">
+            {legacyProducts.map((product) => (
+              <li
+                key={product.id}
+                className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-outline-variant/40 p-3 text-sm"
               >
-                <Trash2 className="h-4 w-4" aria-hidden="true" />
-              </Button>
-            )}
-          </li>
-        ))}
-      </ul>
-
-      {canWrite && (
-        <form
-          className="grid grid-cols-1 gap-4 md:grid-cols-2"
-          onSubmit={(event) => { event.preventDefault(); void save() }}
-        >
-          <Field
-            label={t('hoster.products.key')}
-            value={draft.external_product_key}
-            onChange={(external_product_key) => setDraft({ ...draft, external_product_key })}
-            hint={t('hoster.products.keyHint')}
-          />
-          {games.length > 0 ? (
-            <label className="space-y-1.5">
-              <span className="block text-xs font-semibold uppercase tracking-wider text-on-surface-variant">
-                {t('hoster.products.gameType')}
-              </span>
-              <Dropdown
-                value={draft.game_type || null}
-                onChange={(game_type) => setDraft({ ...draft, game_type })}
-                searchable
-                placeholder={t('hoster.products.gameType')}
-                options={games.map((g) => ({ value: g.id, label: g.name, hint: g.id }))}
-                aria-label={t('hoster.products.gameType')}
-                data-testid="hoster-product-game-select"
-              />
-              <p className="text-xs text-on-surface-variant">{t('hoster.products.gameTypeHint')}</p>
-            </label>
-          ) : (
-            <Field
-              label={t('hoster.products.gameType')}
-              value={draft.game_type}
-              onChange={(game_type) => setDraft({ ...draft, game_type })}
-              hint={t('hoster.products.gameTypeHint')}
-            />
-          )}
-          {/* Eine Erklaerung fuer alle drei Grenzen: dreimal derselbe Satz waere
-              nur laenger, nicht klarer. */}
-          <p className="text-xs text-on-surface-variant md:col-span-2">{t('hoster.products.limitsHint')}</p>
-          <label className="space-y-1.5">
-            <span className="block text-xs font-semibold uppercase tracking-wider text-on-surface-variant">
-              {t('hoster.products.ram')}
-            </span>
-            <NumberStepper
-              value={draft.ram_limit_mb === null ? '' : String(draft.ram_limit_mb)}
-              onValueChange={(value) => setDraft({ ...draft, ram_limit_mb: value ? Number(value) : null })}
-              min={512}
-              max={4194304}
-              step={512}
-            />
-          </label>
-          <label className="space-y-1.5">
-            <span className="block text-xs font-semibold uppercase tracking-wider text-on-surface-variant">
-              {t('hoster.products.cpu')}
-            </span>
-            <NumberStepper
-              value={draft.cpu_limit_percent === null ? '' : String(draft.cpu_limit_percent)}
-              onValueChange={(value) => setDraft({ ...draft, cpu_limit_percent: value ? Number(value) : null })}
-              min={10}
-              max={3200}
-              step={10}
-            />
-          </label>
-          <label className="space-y-1.5">
-            <span className="block text-xs font-semibold uppercase tracking-wider text-on-surface-variant">
-              {t('hoster.products.disk')}
-            </span>
-            <NumberStepper
-              value={draft.disk_limit_gb === null ? '' : String(draft.disk_limit_gb)}
-              onValueChange={(value) => setDraft({ ...draft, disk_limit_gb: value ? Number(value) : null })}
-              min={1}
-              max={1048576}
-              step={1}
-            />
-          </label>
-          <label className="space-y-1.5">
-            <span className="block text-xs font-semibold uppercase tracking-wider text-on-surface-variant">
-              {t('hoster.products.backupInterval')}
-            </span>
-            <NumberStepper
-              value={draft.backup_interval_hours === null ? '' : String(draft.backup_interval_hours)}
-              onValueChange={(value) => setDraft({ ...draft, backup_interval_hours: value ? Number(value) : null })}
-              min={1}
-              max={8760}
-              step={1}
-            />
-            <p className="text-xs text-on-surface-variant">{t('hoster.products.backupIntervalHint')}</p>
-          </label>
-          <label className="space-y-1.5">
-            <span className="block text-xs font-semibold uppercase tracking-wider text-on-surface-variant">
-              {t('hoster.products.role')}
-            </span>
-            <Dropdown
-              value={draft.role_id === null ? '' : String(draft.role_id)}
-              onChange={(value) => setDraft({
-                ...draft,
-                role_id: value ? Number(value) : null,
-              })}
-              options={[
-                { value: '', label: t('hoster.products.roleNone') },
-                ...sortedRoles.map((role) => ({ value: String(role.id), label: role.name })),
-              ]}
-              aria-label={t('hoster.products.role')}
-              data-testid="hoster-product-role-select"
-            />
-            <p className="text-xs text-on-surface-variant">{t('hoster.products.roleHint')}</p>
-          </label>
-          <div className="md:col-span-2 flex items-center justify-between gap-4">
-            <label className="flex items-center gap-3 text-sm text-on-surface">
-              <span>{t('hoster.products.enabled')}</span>
-              <Switch
-                checked={draft.enabled}
-                onCheckedChange={(enabled) => setDraft({ ...draft, enabled })}
-              />
-            </label>
-            <Button
-              type="submit"
-              disabled={busy || !draft.external_product_key.trim() || !draft.game_type.trim()}
-            >
-              <Save className="h-4 w-4" aria-hidden="true" />{t('hoster.products.save')}
-            </Button>
-          </div>
-        </form>
+                <span className="font-medium text-on-surface">{product.external_product_key}</span>
+                <span className="text-on-surface-variant">
+                  {product.game_type} · {product.ram_limit_mb ?? '—'} MB · {product.cpu_limit_percent ?? '—'} %
+                </span>
+                {canWrite && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    disabled={busy}
+                    aria-label={t('common.delete')}
+                    onClick={() => {
+                      setBusy(true)
+                      hosterApi
+                        .deleteProduct(integrationId, product.id)
+                        .then(() => {
+                          loadLegacy()
+                          toast.success(t('hoster.products.deleted'))
+                        })
+                        .catch((error: unknown) => {
+                          toast.error(error instanceof SanitizedApiError ? error.message : t('hoster.errors.delete'))
+                        })
+                        .finally(() => setBusy(false))
+                    }}
+                  >
+                    <Trash2 className="h-4 w-4" aria-hidden="true" />
+                  </Button>
+                )}
+              </li>
+            ))}
+          </ul>
+        </details>
       )}
     </div>
   )
@@ -902,9 +741,10 @@ function SimulatorSection({
   onRefresh: () => Promise<void>
 }) {
   const { t } = useTranslation()
+  const [plans, setPlans] = useState<ShopPlan[]>([])
   const [products, setProducts] = useState<HosterProduct[]>([])
   const [services, setServices] = useState<HosterService[]>([])
-  const [selectedProductKey, setSelectedProductKey] = useState<string>('')
+  const [selectedTarget, setSelectedTarget] = useState<string>('')
   const [selectedServiceId, setSelectedServiceId] = useState<string>('')
   const [busyAction, setBusyAction] = useState<string | null>(null)
   const [simResult, setSimResult] = useState<HosterSimulationResponse | null>(null)
@@ -913,26 +753,38 @@ function SimulatorSection({
 
   const reloadData = useCallback(async () => {
     try {
-      const [pList, sList] = await Promise.all([
+      const [planList, pList, sList] = await Promise.all([
+        shopAdminApi.listPlans().catch((err: unknown) => {
+          still(err, 'hoster.simulator.plans')
+          return [] as ShopPlan[]
+        }),
         hosterApi.listProducts(integration.id),
         hosterApi.listServices(integration.id),
       ])
+      const activePlans = planList.filter((pl) => pl.active)
+      setPlans(activePlans)
       setProducts(pList)
       setServices(sList)
-      if (pList.length > 0 && !selectedProductKey) {
-        setSelectedProductKey(pList[0].external_product_key)
+      if (!selectedTarget) {
+        if (activePlans.length > 0) {
+          setSelectedTarget(`plan:${activePlans[0].id}`)
+        } else if (pList.length > 0) {
+          setSelectedTarget(`legacy:${pList[0].external_product_key}`)
+        }
       }
       if (sList.length > 0 && !selectedServiceId) {
         setSelectedServiceId(sList[0].external_service_id)
       }
-    } catch {
-      // Ignored in simulator
+    } catch (err: unknown) {
+      still(err, 'hoster.simulator.reload')
     }
-  }, [integration.id, selectedProductKey, selectedServiceId])
+  }, [integration.id, selectedTarget, selectedServiceId])
 
   useEffect(() => {
     void reloadData()
   }, [reloadData])
+
+  const hasOrderTargets = plans.length > 0 || products.length > 0
 
   const runSimulation = async (
     action: 'order' | 'suspend' | 'reactivate' | 'terminate' | 'test_webhook'
@@ -940,9 +792,12 @@ function SimulatorSection({
     if (!canWrite || busyAction) return
     setBusyAction(action)
     try {
+      const planId = selectedTarget.startsWith('plan:') ? Number(selectedTarget.slice(5)) : undefined
+      const legacyKey = selectedTarget.startsWith('legacy:') ? selectedTarget.slice(7) : undefined
       const res = await hosterApi.simulate(integration.id, {
         action,
-        product_key: selectedProductKey || undefined,
+        plan_id: Number.isFinite(planId) ? planId : undefined,
+        product_key: legacyKey || undefined,
         external_service_id: selectedServiceId || undefined,
       })
       setSimResult(res)
@@ -985,20 +840,23 @@ function SimulatorSection({
   }
 
   const panelOrigin = window.location.origin
-  const exampleProductKey = products[0]?.external_product_key || 'mc-8gb'
+  const examplePlanId = plans[0]?.id
+  const exampleProductKey = examplePlanId ? `plan:${examplePlanId}` : (products[0]?.external_product_key || 'plan:1')
 
   const aiStripePrompt = `Hier sind die technischen Eckdaten meines MSM (Maunting Service Manager) Backends für meine Shop-Anbindung:
 - Panel Host API: ${panelOrigin}/api/hoster/v1
+- Katalog-Abruf: GET ${panelOrigin}/api/hoster/v1/catalog
 - Integration Slug: "${integration.slug}"
 - API-Key Header: X-MSM-Hoster-Key (im MSM-Panel generiert)
 - Webhook Secret Header: X-MSM-Signature (HMAC-SHA256 mit X-MSM-Timestamp)
-- Beispiel-Produktkennung: "${exampleProductKey}"
+- Beispiel-Tarifkennung: "${exampleProductKey}"
 
-Bitte erstelle mir einen vollständigen, sauberen und produktionsreifen Stripe Webhook Handler (in Node.js mit Express oder Python mit FastAPI), der:
-1. Das Stripe Event 'checkout.session.completed' abfängt und via PUT ${panelOrigin}/api/hoster/v1/services/{subscription_or_session_id} mit dem Header "X-MSM-Hoster-Key: <MEIN_KEY>" und Body {"desired_state": "active", "external_subject": customer_id, "product_key": "${exampleProductKey}", "email": customer_email} den Gameserver im Panel anlegt.
-2. Einen Einmal-Login-Link via POST ${panelOrigin}/api/hoster/v1/handoffs mit {"external_service_id": "{subscription_or_session_id}"} erzeugt und dem Kunden anzeigt.
-3. Bei 'customer.subscription.deleted' den Status via PUT ${panelOrigin}/api/hoster/v1/services/{subscription_id} auf {"desired_state": "terminated"} setzt.
-4. Bei 'invoice.payment_failed' den Status auf {"desired_state": "suspended"} setzt.`
+Bitte erstelle mir einen sauberen, produktionsreifen Stripe Webhook Handler (Node.js mit Express oder Python mit FastAPI), der:
+1. Alle aktiven Tarife, Add-ons, Bilder und Start-Variablen über GET ${panelOrigin}/api/hoster/v1/catalog lädt.
+2. Bei 'checkout.session.completed' über POST ${panelOrigin}/api/hoster/v1/apply mit Header "X-MSM-Hoster-Key: <MEIN_KEY>" den gewünschten Zustand {"external_subject": customer_id, "desired_state": "active", "email": customer_email, "items": [{"external_service_id": subscription_id, "kind": "server", "product_key": "${exampleProductKey}"}]} im Panel anlegt.
+3. Einen Einmal-Login-Link via POST ${panelOrigin}/api/hoster/v1/handoffs mit {"external_service_id": "{subscription_id}"} erzeugt und dem Kunden anzeigt.
+4. Bei 'customer.subscription.deleted' den Status über POST ${panelOrigin}/api/hoster/v1/apply auf {"desired_state": "terminated"} setzt.
+5. Bei 'invoice.payment_failed' den Status auf {"desired_state": "suspended"} setzt.`
 
   const copyAiPrompt = async () => {
     try {
@@ -1072,7 +930,28 @@ Bitte erstelle mir einen vollständigen, sauberen und produktionsreifen Stripe W
         </div>
       )}
 
-      {products.length === 0 && (
+      {hasOrderTargets ? (
+        <div className="max-w-sm">
+          <label className="block font-label-md text-label-md text-on-surface-variant mb-1.5 uppercase tracking-wider">
+            {t('hoster.simulator.selectTarget')}
+          </label>
+          <Dropdown
+            value={selectedTarget || null}
+            onChange={(val) => setSelectedTarget(val)}
+            options={[
+              ...plans.map((pl) => ({
+                value: `plan:${pl.id}`,
+                label: `${pl.name} (${pl.game_type})`,
+              })),
+              ...products.map((p) => ({
+                value: `legacy:${p.external_product_key}`,
+                label: `Legacy: ${p.external_product_key} (${p.game_type})`,
+              })),
+            ]}
+            aria-label={t('hoster.simulator.selectTarget')}
+          />
+        </div>
+      ) : (
         <div className="rounded-lg border border-outline-variant/30 bg-surface-container-low/50 p-3 text-xs text-status-warning/90">
           {t('hoster.simulator.noProductsHint')}
         </div>
@@ -1083,7 +962,7 @@ Bitte erstelle mir einen vollständigen, sauberen und produktionsreifen Stripe W
         <Button
           type="button"
           variant="secondary"
-          disabled={!canWrite || Boolean(busyAction) || products.length === 0}
+          disabled={!canWrite || Boolean(busyAction) || !hasOrderTargets}
           onClick={() => void runSimulation('order')}
           className="h-11 justify-center gap-2 text-xs font-medium border-status-success/20 hover:border-status-success/50 hover:bg-status-success/10"
         >

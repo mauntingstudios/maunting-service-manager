@@ -1,8 +1,9 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { hosterApi, type HosterIntegration, type HosterProduct } from '@/api/hoster'
+import { shopAdminApi, type ShopPlan } from '@/api/shop'
 import { rbacApi } from '@/api/rbac'
 import { api } from '@/api/client'
 import type { Role } from '@/types/permissions'
@@ -42,6 +43,12 @@ vi.mock('@/api/hoster', () => ({
 vi.mock('@/api/rbac', () => ({
   rbacApi: {
     listRoles: vi.fn(),
+  },
+}))
+
+vi.mock('@/api/shop', () => ({
+  shopAdminApi: {
+    listPlans: vi.fn(),
   },
 }))
 
@@ -119,6 +126,7 @@ describe('HosterTab', () => {
       hint: '...9999',
     })
     vi.mocked(rbacApi.listRoles).mockReset().mockResolvedValue(roles)
+    vi.mocked(shopAdminApi.listPlans).mockReset().mockResolvedValue([])
   })
 
   it('shows only the hint, never a stored secret', async () => {
@@ -221,97 +229,67 @@ describe('HosterTab', () => {
     expect(screen.queryByTestId('hoster-service-user-select')).not.toBeInTheDocument()
   })
 
-  it('explains every field of the product form', async () => {
+  it('points to unified Shop settings and dispatches tab navigation event', async () => {
+    const dispatchSpy = vi.spyOn(window, 'dispatchEvent')
     renderTab()
 
-    expect(await screen.findByText(/Die Produktkennung, die der Shop beim Bestellen mitschickt/)).toBeInTheDocument()
-    expect(screen.getByText(/Blueprint aus der Registry/)).toBeInTheDocument()
-    expect(screen.getByText(/Ressourcenpaket dieses Tarifs/)).toBeInTheDocument()
-    expect(screen.getByText(/Automatisches Backup-Intervall/)).toBeInTheDocument()
-    expect(screen.getByText(/über sie laufen unter anderem die KI-Kontingente/)).toBeInTheDocument()
-  })
+    const btn = await screen.findByRole('button', { name: /Zu Einstellungen/ })
+    expect(screen.getByText('Tarife & Add-ons kommen aus dem Shop-Katalog')).toBeInTheDocument()
+    fireEvent.click(btn)
 
-  it('offers the roles of the panel and sends the chosen one with the product', async () => {
-    renderTab()
-
-    // Das DNA-Dropdown oeffnet per Klick; die Eintraege stammen aus
-    // rbacApi.listRoles() und stehen alphabetisch hinter der Leer-Option.
-    const roleDropdown = await screen.findByTestId('hoster-product-role-select')
-    fireEvent.click(roleDropdown)
-    await waitFor(() => expect(screen.getAllByRole('option')).toHaveLength(3))
-    expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual([
-      'Keine Zusatzrolle',
-      'Basis',
-      'Premium',
-    ])
-    fireEvent.click(screen.getByRole('option', { name: 'Premium' }))
-
-    fireEvent.change(screen.getByLabelText(/Produktkennung im Shop/), { target: { value: 'gold' } })
-    // Der Spielekatalog kommt aus /system/games — dieselbe Quelle wie die
-    // Server-Erstellung — und schreibt die technische Kennung in game_type.
-    fireEvent.click(screen.getByTestId('hoster-product-game-select'))
-    fireEvent.click(await screen.findByRole('option', { name: /Minecraft/ }))
-    fireEvent.click(screen.getByRole('button', { name: 'Produkt speichern' }))
-
-    await waitFor(() =>
-      expect(hosterApi.saveProduct).toHaveBeenCalledWith(3, {
-        external_product_key: 'gold',
-        game_type: 'minecraft',
-        ram_limit_mb: null,
-        cpu_limit_percent: null,
-        disk_limit_gb: null,
-        node_id: null,
-        backup_interval_hours: null,
-        role_id: 5,
-        enabled: true,
+    expect(dispatchSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'msm:open-settings-tab',
+        detail: { tab: 'shop' },
       }),
     )
+    dispatchSpy.mockRestore()
   })
 
-  /**
-   * Die Rollenliste ist Beiwerk. Faellt sie aus, bleibt die Produktsektion
-   * bedienbar — ein Nebenaufruf darf nicht den ganzen Reiter lahmlegen.
-   */
-  it('keeps the product section usable when the role list fails to load', async () => {
-    vi.mocked(rbacApi.listRoles).mockReset().mockRejectedValue(new Error('rollen weg'))
+  it('shows legacy product mappings collapsed when legacy rows exist and allows deletion', async () => {
     vi.mocked(hosterApi.listProducts).mockReset().mockResolvedValue([product])
+    vi.mocked(hosterApi.deleteProduct).mockReset().mockResolvedValue(undefined as any)
     renderTab()
 
-    // Ohne Liste bleibt die Kennung stehen: "Keine Zusatzrolle" waere hier eine
-    // Falschaussage — das Produkt hat sehr wohl eine Rolle.
-    expect(await screen.findByText(/#5/)).toBeInTheDocument()
-    await waitFor(() => expect(rbacApi.listRoles).toHaveBeenCalled())
-    fireEvent.click(screen.getByTestId('hoster-product-role-select'))
-    expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual([
-      'Keine Zusatzrolle',
-    ])
-    fireEvent.click(screen.getByRole('option', { name: 'Keine Zusatzrolle' }))
+    expect(await screen.findByText(/Bestehende Legacy-Produktzuordnungen \(1\)/)).toBeInTheDocument()
+    const legacyRow = screen.getByText('gold').closest('li')
+    expect(legacyRow).not.toBeNull()
+    fireEvent.click(within(legacyRow!).getByRole('button', { name: 'Löschen' }))
+    await waitFor(() => expect(hosterApi.deleteProduct).toHaveBeenCalledWith(3, 11))
+  })
 
-    fireEvent.change(screen.getByLabelText(/Produktkennung im Shop/), { target: { value: 'silber' } })
-    fireEvent.click(screen.getByTestId('hoster-product-game-select'))
-    fireEvent.click(await screen.findByRole('option', { name: /Minecraft/ }))
-    fireEvent.click(screen.getByRole('button', { name: 'Produkt speichern' }))
+  it('lets the sandbox simulator select and trigger orders for ShopPlans', async () => {
+    const sandboxIntegration: HosterIntegration = {
+      ...integration,
+      is_sandbox: true,
+    }
+    const samplePlan: Partial<ShopPlan> = {
+      id: 42,
+      name: 'Minecraft Starter',
+      game_type: 'minecraft_paper',
+      active: true,
+    }
+    vi.mocked(hosterApi.listIntegrations).mockReset().mockResolvedValue([sandboxIntegration])
+    vi.mocked(shopAdminApi.listPlans).mockReset().mockResolvedValue([samplePlan as ShopPlan])
+    vi.mocked(hosterApi.simulate).mockReset().mockResolvedValue({
+      ok: true,
+      action: 'order',
+      message: 'Test-Kauf erfolgreich simuliert (Minecraft Starter).',
+    })
+
+    renderTab()
+
+    await waitFor(() => expect(screen.getByText(/Minecraft Starter \(minecraft_paper\)/)).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: 'Test-Kauf' }))
 
     await waitFor(() =>
-      expect(hosterApi.saveProduct).toHaveBeenCalledWith(
+      expect(hosterApi.simulate).toHaveBeenCalledWith(
         3,
-        expect.objectContaining({ external_product_key: 'silber', role_id: null, game_type: 'minecraft' }),
+        expect.objectContaining({
+          action: 'order',
+          plan_id: 42,
+        }),
       ),
     )
-  })
-
-  /**
-   * Der Spielekatalog ist Beiwerk wie die Rollenliste: faellt /system/games
-   * aus, rendert die Sektion die Texteingabe als Rueckfall — ein Nebenaufruf
-   * darf die Produktanlage nicht blockieren.
-   */
-  it('falls back to the text input when the game catalog fails to load', async () => {
-    vi.mocked(api).mockReset().mockRejectedValue(new Error('katalog weg'))
-    renderTab()
-
-    const input = await screen.findByLabelText(/Blueprint \/ Spieltyp/)
-    fireEvent.change(input, { target: { value: 'minecraft' } })
-    expect((input as HTMLInputElement).value).toBe('minecraft')
-    expect(screen.queryByTestId('hoster-product-game-select')).not.toBeInTheDocument()
   })
 })

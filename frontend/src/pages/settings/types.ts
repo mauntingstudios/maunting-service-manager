@@ -2,6 +2,14 @@ import { DEFAULT_SEASONAL_SETTINGS, type SeasonMode } from '@/season/typen'
 
 export type SupportWidgetProvider = 'singra' | 'crisp' | 'tawk' | 'custom'
 
+export type BrandLogoSlot = 'default' | 'birthday' | 'halloween' | 'christmas'
+
+export interface BrandLogoSlotInfo {
+  configured: boolean
+  version: string | null
+  url: string | null
+}
+
 export interface PanelSettings {
   panel_url: string
   smtp_host: string
@@ -74,6 +82,13 @@ export interface PanelSettings {
   rate_limit_global: number
   /** Ob eingehende Verbindungen von localhost auf allen Ports via CORS erlaubt sind */
   allow_localhost_connections: boolean
+  brand_name: string
+  brand_tagline: string
+  brand_ai_name: string
+  brand_ai_email: string
+  brand_logo_mode: 'default' | 'custom'
+  brand_season_logo_mode: 'default' | 'custom' | 'disabled'
+  brand_logos: Partial<Record<BrandLogoSlot, BrandLogoSlotInfo>>
 }
 
 /** Erlaubte Bereiche — spiegeln backend/services/rate_limit_settings.py */
@@ -152,4 +167,11 @@ export const EMPTY_PANEL_SETTINGS: PanelSettings = {
   rate_limit_auth: RATE_LIMIT_AUTH_DEFAULT,
   rate_limit_global: RATE_LIMIT_GLOBAL_DEFAULT,
   allow_localhost_connections: false,
+  brand_name: '',
+  brand_tagline: '',
+  brand_ai_name: '',
+  brand_ai_email: '',
+  brand_logo_mode: 'default',
+  brand_season_logo_mode: 'default',
+  brand_logos: {},
 }

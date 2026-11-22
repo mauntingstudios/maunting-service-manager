@@ -11,6 +11,7 @@ import { Dropdown } from '@maunting/ui'
 import { Switch } from '@maunting/ui'
 import { normalizePanelLanguage } from '@/config/panelLocales'
 import { PanelSettings, EMPTY_PANEL_SETTINGS } from './types'
+import { BrandingSettings } from './BrandingSettings'
 import { SeasonalSettings } from './SeasonalSettings'
 import { usePublicSettingsStore } from '@/stores/publicSettingsStore'
 
@@ -143,6 +144,12 @@ export function GeneralTab() {
           external_shop_url: settings.external_shop_url,
           vault_enabled: settings.vault_enabled,
           cloudflare_enabled: settings.cloudflare_enabled,
+          brand_name: settings.brand_name,
+          brand_tagline: settings.brand_tagline,
+          brand_ai_name: settings.brand_ai_name,
+          brand_ai_email: settings.brand_ai_email,
+          brand_logo_mode: settings.brand_logo_mode,
+          brand_season_logo_mode: settings.brand_season_logo_mode,
           ...saisonalAlsPayload(settings),
         }),
       })
@@ -159,6 +166,32 @@ export function GeneralTab() {
         browser_download_enabled: settings.browser_download_enabled,
         story_fable_download_enabled: settings.story_fable_download_enabled,
         seasonal: saisonalAlsStore(settings),
+        branding: {
+          name: settings.brand_name.trim() || 'Maunting Service Manager',
+          custom_name: settings.brand_name.trim(),
+          tagline: settings.brand_tagline.trim(),
+          ai_name: settings.brand_ai_name.trim() || 'Singra',
+          logo_mode: settings.brand_logo_mode,
+          season_logo_mode: settings.brand_season_logo_mode,
+          logo_url:
+            settings.brand_logo_mode === 'custom'
+              ? (settings.brand_logos?.default?.url ?? null)
+              : null,
+          season_logos: {
+            birthday:
+              settings.brand_season_logo_mode === 'custom'
+                ? (settings.brand_logos?.birthday?.url ?? null)
+                : null,
+            halloween:
+              settings.brand_season_logo_mode === 'custom'
+                ? (settings.brand_logos?.halloween?.url ?? null)
+                : null,
+            christmas:
+              settings.brand_season_logo_mode === 'custom'
+                ? (settings.brand_logos?.christmas?.url ?? null)
+                : null,
+          },
+        },
       })
       void usePublicSettingsStore.getState().refresh()
     } catch (err: any) {
@@ -454,6 +487,12 @@ export function GeneralTab() {
             </div>
           </div>
         </div>
+
+        <BrandingSettings
+          settings={settings}
+          canWrite={canWrite}
+          onChange={(patch) => setSettings((prev) => ({ ...prev, ...patch }))}
+        />
 
         <SeasonalSettings
           settings={settings}

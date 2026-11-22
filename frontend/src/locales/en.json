@@ -3389,6 +3389,11 @@
     "confirmDelete": "Really delete this role?",
     "adminLocked": "The admin role has fixed full permissions and cannot be edited.",
     "noRoles": "No roles available.",
+    "aiProjectQuota": {
+      "maxProjects": "Max AI projects (0 = unlimited)",
+      "maxStorageMb": "Max AI project storage in MB (0 = unlimited)",
+      "hint": "Separate from AI token budgets. With multiple roles, the highest limit wins."
+    },
     "systemNames": {
       "admin": "Admin",
       "user": "User"
@@ -3576,6 +3581,10 @@
     "ai_projects_manage": {
       "title": "Manage AI projects & sandboxes",
       "desc": "Create, configure, and delete Singra projects and manage project files."
+    },
+    "ai_projects_preview": {
+      "title": "Launch live preview in AI projects",
+      "desc": "Start the isolated dev sandbox and live preview inside the project editor."
     },
     "ai_mcp_manage": {
       "title": "Manage custom MCP servers",
@@ -4617,9 +4626,41 @@
     "shopEnabledHint": "Shows the public storefront at `/`. Off hides it and sends visitors straight to the panel.",
     "externalShopUrl": "External shop URL",
     "externalShopUrlHint": "Optional destination for the shop link in the panel while the native shop is off.",
+    "branding": {
+      "title": "White-labeling & branding",
+      "subtitle": "Custom brand name, AI identity, and custom logos for the panel and storefront.",
+      "brandName": "Brand / product name",
+      "brandTagline": "Tagline",
+      "brandTaglinePlaceholder": "e.g. Managed game hosting",
+      "aiName": "AI name",
+      "aiEmail": "AI Git email (fallback)",
+      "logoMode": "Default logo",
+      "logoModeDefault": "MSM default logo",
+      "logoModeCustom": "Use custom logo",
+      "seasonLogoMode": "Seasonal logos",
+      "seasonModeDefault": "MSM seasonal logos",
+      "seasonModeCustom": "Custom seasonal logos",
+      "seasonModeDisabled": "Disable seasonal logo swap",
+      "slots": {
+        "default": "Default logo",
+        "birthday": "Anniversary",
+        "halloween": "Halloween",
+        "christmas": "Christmas"
+      },
+      "customActive": "Custom WebP configured",
+      "standardActive": "Using default",
+      "uploadLogo": "Upload",
+      "removeLogo": "Remove logo",
+      "logoUploaded": "Logo saved.",
+      "logoUploadFailed": "Could not save logo.",
+      "logoRemoved": "Custom logo removed.",
+      "logoRemoveFailed": "Could not remove logo.",
+      "accentHint": "Accent colors remain fixed in the design system to preserve contrast and accessibility."
+    },
     "shop": {
       "titel": "Native shop",
       "untertitel": "Storefront, plans, Stripe payments, invoice ledger and server provisioning.",
+      "unifiedHint": "All plans, add-ons, images, and start variables configured here serve both the native storefront and external hoster integrations via GET /api/hoster/v1/catalog.",
       "demo": "Phase 1 · Demo",
       "aktiv": "Shop active",
       "inaktiv": "Shop off",
@@ -8042,7 +8083,8 @@
       "aiDocsDesc": "Copy this template and give it to your favorite AI (ChatGPT, Claude, Singra) to generate your Stripe webhook server with 1 click.",
       "copyAiPrompt": "Copy AI prompt",
       "copiedAiPrompt": "AI Prompt copied to clipboard!",
-      "noProductsHint": "Please map at least one product first before simulating an order."
+      "selectTarget": "Plan or product for test order",
+      "noProductsHint": "Create an active plan under Settings → Shop first (or keep an existing legacy product) to simulate test orders."
     },
     "updated": "Integration updated",
     "deleted": "Integration removed",
@@ -8061,6 +8103,11 @@
       "active": "Active"
     },
     "products": {
+      "unifiedTitle": "Plans & add-ons come from the Shop catalog",
+      "unifiedDescription": "All server plans, add-ons, artwork, and start variables are managed once under Settings → Shop and exposed through GET /api/hoster/v1/catalog.",
+      "openShopSettings": "Go to Settings → Shop",
+      "legacyTitle": "Existing legacy product mappings",
+      "legacyHint": "Previously created product SKUs remain active for backward compatibility and can be removed when migrated.",
       "title": "Product mapping",
       "description": "Maps a shop product key to a blueprint and a resource package. The shop does not need to know internal MSM details.",
       "empty": "No products mapped yet.",

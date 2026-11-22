@@ -29,7 +29,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from database import Base
 
 if TYPE_CHECKING:
-    from models.shop import ShopAddon
+    from models.shop import ShopAddon, ShopPlan
 
 
 def hash_token(value: str) -> str:
@@ -202,6 +202,9 @@ class HosterService(Base):
     product_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("hoster_products.id", ondelete="SET NULL"), nullable=True
     )
+    shop_plan_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("shop_plans.id", ondelete="SET NULL"), nullable=True
+    )
     addon_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("shop_addons.id", ondelete="SET NULL"), nullable=True
     )
@@ -238,6 +241,7 @@ class HosterService(Base):
 
     identity: Mapped["HosterIdentity"] = relationship("HosterIdentity", lazy="joined")
     product: Mapped["HosterProduct | None"] = relationship("HosterProduct", lazy="joined")
+    shop_plan: Mapped["ShopPlan | None"] = relationship("ShopPlan", lazy="joined")
     addon: Mapped["ShopAddon | None"] = relationship("ShopAddon", lazy="joined")
 
 

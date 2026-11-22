@@ -30,8 +30,10 @@ import {
   type AiProjectFile,
   type AiProjectGitStatus,
   type AiProjectPublishOptions,
+  type AiProjectQuotaSummary,
   type AiProjectWrite,
 } from '@/api/ai'
+import { useHasPermission } from '@/hooks/useHasPermission'
 import { api, SanitizedApiError } from '@/api/client'
 import { still } from '@/lib/still'
 import { SingraVisualInspectionModal } from './SingraVisualInspectionModal'
@@ -70,7 +72,9 @@ export function SingraProjectsView({
   initialProjectId,
   onOpenProjectChat,
 }: SingraProjectsViewProps) {
+  const canStartDevPreview = useHasPermission('ai.projects.preview')
   const [projects, setProjects] = useState<AiProject[]>([])
+  const [projectQuota, setProjectQuota] = useState<AiProjectQuotaSummary | null>(null)
   const [teams, setTeams] = useState<Team[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(initialProjectId ?? null)
   const [projectOpen, setProjectOpen] = useState<boolean>(Boolean(initialProjectId))
@@ -137,6 +141,7 @@ export function SingraProjectsView({
     Array<{ id: string; name: string; status?: string }>
   >([])
   const [selectedNodeId, setSelectedNodeId] = useState<string>('__auto__')
+  const [selectedTargetServerId, setSelectedTargetServerId] = useState<string>('')
   const [releaseNotes, setReleaseNotes] = useState('')
   const [publishing, setPublishing] = useState(false)
   const [publishDomainMode, setPublishDomainMode] = useState<'ip' | 'cloudflare' | 'external'>('ip')
@@ -382,15 +387,35 @@ export function SingraProjectsView({
     }
   }
 
+  const refreshQuota = useCallback(async () => {
+    try {
+      const q = await aiApi.getProjectQuota()
+      setProjectQuota(q)
+    } catch (err: unknown) {
+      still(err, 'singra.projects.quota')
+    }
+  }, [])
+
   const loadProjects = useCallback(async () => {
     setLoading(true)
     try {
-      const [projRows, teamRows, nodeRows] = await Promise.all([
+      const [projRows, teamRows, nodeRows, quotaData] = await Promise.all([
         aiApi.listProjects(),
-        teamsApi.list().catch(() => [] as Team[]),
-        api<Array<{ id: string; name: string; status?: string }>>('/nodes').catch(() => []),
+        teamsApi.list().catch((err: unknown) => {
+          still(err, 'singra.projects.teams')
+          return [] as Team[]
+        }),
+        api<Array<{ id: string; name: string; status?: string }>>('/nodes').catch((err: unknown) => {
+          still(err, 'singra.projects.nodes')
+          return []
+        }),
+        aiApi.getProjectQuota().catch((err: unknown) => {
+          still(err, 'singra.projects.quota')
+          return null
+        }),
       ])
       setProjects(projRows)
+      setProjectQuota(quotaData)
       setTeams(teamRows.filter((t) => !t.is_personal))
       setAvailableNodes(nodeRows)
       if (nodeRows.length > 0) {
@@ -709,6 +734,9 @@ export function SingraProjectsView({
         .getPublishOptions(selectedId, selectedNodeId === '__auto__' ? undefined : selectedNodeId)
         .then((opts) => {
           setPublishOptions(opts)
+          if (opts.target_servers && opts.target_servers.length > 0 && !selectedTargetServerId) {
+            setSelectedTargetServerId(String(opts.target_servers[0].id))
+          }
           if (!publishBindIp && opts.default_ip) {
             setPublishBindIp(opts.default_ip)
           }
@@ -716,9 +744,11 @@ export function SingraProjectsView({
             setPublishCfZoneId(opts.cloudflare_zones[0].id)
           }
         })
-        .catch(() => {})
+        .catch((err: unknown) => {
+          still(err, 'singra.projects.publishOptions')
+        })
     }
-  }, [publishModalOpen, selectedId, selectedNodeId, publishBindIp, publishCfZoneId])
+  }, [publishModalOpen, selectedId, selectedNodeId, publishBindIp, publishCfZoneId, selectedTargetServerId])
 
   useEffect(() => {
     if (publishDomainMode === 'cloudflare' && publishOptions?.cloudflare_zones) {
@@ -1198,6 +1228,7 @@ export function SingraProjectsView({
         backend_proxy_url: publishBackendProxyUrl.trim() || null,
         bind_ip: publishBindIp.trim() || null,
         merge_to_main: publishMergeToMain,
+        target_server_id: selectedTargetServerId ? Number(selectedTargetServerId) : null,
       })
       if (res.environment) {
         setEnvState(res.environment)
@@ -1208,13 +1239,18 @@ export function SingraProjectsView({
       }
       const prodFiles = await aiApi
         .listProjectProductionFiles(selectedProject.id)
-        .catch(() => [])
+        .catch((err: unknown) => {
+          still(err, 'singra.projects.productionFiles')
+          return []
+        })
       setProductionFiles(prodFiles)
       setPreviewEnv('production')
       setPublishModalOpen(false)
       setReleaseNotes('')
       toast.success(
-        `Bereitstellung gestartet (Phase: ${res.phase || 'Snapshot'}). Phasen-Fortschritt wird überwacht.`,
+        res.mode === 'rented_server'
+          ? 'Projekt auf deinen gewählten Server übertragen und Neustart ausgelöst.'
+          : `Bereitstellung gestartet (Phase: ${res.phase || 'Snapshot'}). Phasen-Fortschritt wird überwacht.`,
       )
     } catch (err: unknown) {
       toast.error(
@@ -1251,9 +1287,11 @@ export function SingraProjectsView({
       {!projectOpen || !selectedProject ? (
         <SingraProjectList
           projects={projects}
+          quota={projectQuota}
           onSelectProject={(projectId) => {
             setSelectedId(projectId)
             setProjectOpen(true)
+            void refreshQuota()
           }}
           onOpenCreate={() => setCreateOpen(true)}
         />
@@ -1623,6 +1661,7 @@ export function SingraProjectsView({
                   onFixPreviewWithSingra={() => void handleFixPreviewWithSingra()}
                   onStartDevSandbox={() => void handleStartDevSandbox()}
                   onStopDevSandbox={() => void handleStopDevSandbox()}
+                  canStartDevPreview={canStartDevPreview}
                   onOpenProjectChat={onOpenProjectChat}
                 />
               )}
@@ -1642,16 +1681,18 @@ export function SingraProjectsView({
                           </span>
                         </div>
                       </div>
-                      <Button
-                        type="button"
-                        size="sm"
-                        className="h-7 text-xs px-3 gap-1 rounded-full"
-                        onClick={handleStartDevSandbox}
-                        disabled={devStatusLoading}
-                      >
-                        {devStatusLoading ? <Spinner className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5 shrink-0" />}
-                        <span>Dev-Sandbox starten</span>
-                      </Button>
+                      {canStartDevPreview && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="h-7 text-xs px-3 gap-1 rounded-full"
+                          onClick={handleStartDevSandbox}
+                          disabled={devStatusLoading}
+                        >
+                          {devStatusLoading ? <Spinner className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5 shrink-0" />}
+                          <span>Dev-Sandbox starten</span>
+                        </Button>
+                      )}
                     </div>
                   )}
                   {envState?.dev?.dev_has_db && envState.dev.dev_server_id && envState.dev.dev_database_id ? (
@@ -1802,6 +1843,8 @@ export function SingraProjectsView({
         selectedNodeId={selectedNodeId}
         setSelectedNodeId={setSelectedNodeId}
         availableNodes={availableNodes}
+        selectedTargetServerId={selectedTargetServerId}
+        setSelectedTargetServerId={setSelectedTargetServerId}
         publishBindIp={publishBindIp}
         setPublishBindIp={setPublishBindIp}
         publishOptions={publishOptions}

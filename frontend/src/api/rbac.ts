@@ -9,6 +9,11 @@ import type {
 } from '@/types/permissions'
 import type { User } from '@/types'
 
+export interface RoleAiProjectQuota {
+  max_projects: number
+  max_storage_mb: number
+}
+
 export const rbacApi = {
   catalog: () => api<PermissionCatalog>('/permissions/catalog'),
   me: () => api<MePermissions>('/permissions/me'),
@@ -21,6 +26,13 @@ export const rbacApi = {
     api<Role>(`/roles/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
   deleteRole: (id: number) =>
     api<void>(`/roles/${id}`, { method: 'DELETE' }),
+  getRoleAiProjectQuota: (id: number) =>
+    api<RoleAiProjectQuota>(`/roles/${id}/ai-project-quota`),
+  setRoleAiProjectQuota: (id: number, body: RoleAiProjectQuota) =>
+    api<RoleAiProjectQuota>(`/roles/${id}/ai-project-quota`, {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    }),
 
   assignRole: (userId: number, roleId: number | null) =>
     api<void>(`/admin/users/${userId}/role`, {

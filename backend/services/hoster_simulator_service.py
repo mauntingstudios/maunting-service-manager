@@ -20,6 +20,7 @@ from models import (
     HosterService,
     HosterWebhookDelivery,
     Server,
+    ShopPlan,
     User,
 )
 from schemas.hoster import (
@@ -84,19 +85,47 @@ def simulate_event(
         )
 
     if action == "order":
-        product = None
-        if req.product_key:
-            product = (
-                db.query(HosterProduct)
-                .filter(
-                    HosterProduct.integration_id == integration.id,
-                    HosterProduct.external_product_key == req.product_key,
-                )
+        chosen_plan: ShopPlan | None = None
+        chosen_product: HosterProduct | None = None
+
+        if req.plan_id is not None:
+            chosen_plan = (
+                db.query(ShopPlan)
+                .filter(ShopPlan.id == req.plan_id, ShopPlan.active.is_(True))
                 .first()
             )
-        if product is None:
-            # Nimm das erste aktivierte Produkt
-            product = (
+            if chosen_plan is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail="Shop-Tarif nicht gefunden oder deaktiviert.",
+                )
+        elif req.product_key:
+            key = req.product_key.strip()
+            if key.startswith("plan:") and key[5:].isdigit():
+                chosen_plan = (
+                    db.query(ShopPlan)
+                    .filter(ShopPlan.id == int(key[5:]), ShopPlan.active.is_(True))
+                    .first()
+                )
+            else:
+                chosen_product = (
+                    db.query(HosterProduct)
+                    .filter(
+                        HosterProduct.integration_id == integration.id,
+                        HosterProduct.external_product_key == key,
+                    )
+                    .first()
+                )
+
+        if chosen_plan is None and chosen_product is None:
+            chosen_plan = (
+                db.query(ShopPlan)
+                .filter(ShopPlan.active.is_(True))
+                .order_by(ShopPlan.sort_order.asc(), ShopPlan.id.asc())
+                .first()
+            )
+        if chosen_plan is None and chosen_product is None:
+            chosen_product = (
                 db.query(HosterProduct)
                 .filter(
                     HosterProduct.integration_id == integration.id,
@@ -104,16 +133,21 @@ def simulate_event(
                 )
                 .first()
             )
-        if product is None:
+        if chosen_plan is None and chosen_product is None:
             raise HTTPException(
                 status_code=400,
-                detail="Kein Produkt fuer diese Integration gefunden. Bitte lege zuerst ein Produkt an.",
+                detail="Kein aktiver Shop-Tarif und kein Produkt fuer diese Integration gefunden.",
             )
 
         suffix = uuid4().hex[:6].upper()
         service_id = req.external_service_id or f"SIM-SVC-{suffix}"
         cust_subject = f"SIM-CUST-{suffix}"
         cust_email = req.email or f"sim-{suffix.lower()}@example.com"
+        target_label = (
+            f"{chosen_plan.name} (plan:{chosen_plan.id})"
+            if chosen_plan is not None
+            else chosen_product.external_product_key  # type: ignore[union-attr]
+        )
 
         service = hoster_service_lifecycle.apply_desired_state(
             db,
@@ -121,7 +155,10 @@ def simulate_event(
             external_service_id=service_id,
             desired_state="active",
             external_subject=cust_subject,
-            product_key=product.external_product_key,
+            plan_id=chosen_plan.id if chosen_plan is not None else None,
+            product_key=(
+                chosen_product.external_product_key if chosen_product is not None else None
+            ),
             email=cust_email,
         )
 
@@ -143,7 +180,7 @@ def simulate_event(
         return HosterSimulationResponse(
             ok=True,
             action="order",
-            message=f"Test-Kauf erfolgreich simuliert ({product.external_product_key}).",
+            message=f"Test-Kauf erfolgreich simuliert ({target_label}).",
             service=_service_response(service),
             handoff_url=handoff_url,
         )
@@ -172,6 +209,7 @@ def simulate_event(
         )
 
     identity = service.identity
+    plan_id = service.shop_plan_id
     product_key = service.product.external_product_key if service.product else None
     external_subject = (
         identity.external_subject_hint
@@ -187,6 +225,7 @@ def simulate_event(
             desired_state="suspended",
             external_subject=external_subject,
             product_key=product_key,
+            plan_id=plan_id,
         )
         return HosterSimulationResponse(
             ok=True,
@@ -203,6 +242,7 @@ def simulate_event(
             desired_state="active",
             external_subject=external_subject,
             product_key=product_key,
+            plan_id=plan_id,
         )
         return HosterSimulationResponse(
             ok=True,
@@ -219,6 +259,7 @@ def simulate_event(
             desired_state="terminated",
             external_subject=external_subject,
             product_key=product_key,
+            plan_id=plan_id,
         )
         return HosterSimulationResponse(
             ok=True,

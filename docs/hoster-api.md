@@ -80,17 +80,24 @@ curl -sS https://panel.example/api/hoster/v1/health \
 | Method | Endpoint | Purpose |
 |---|---|---|
 | `GET` | `/api/hoster/v1/health` | Validate integration API key without side effects |
+| `GET` | `/api/hoster/v1/catalog` | Fetch active shop plans (incl. artwork, gallery, capacity, and blueprint variables) and add-ons |
 | `POST` | `/api/hoster/v1/apply` | Declare desired state across one or more servers and standalone add-ons in one batch |
 | `PUT` | `/api/hoster/v1/services/{external_service_id}` | Legacy alias for declaring desired state on a single server contract |
 | `GET` | `/api/hoster/v1/services/{external_service_id}` | Query current real-world status |
 | `POST` | `/api/hoster/v1/handoffs` | Generate single-use authenticated login handoff |
 | `GET` | `/api/hoster/handoff/{token}` | Public redirection consumed by customer's browser (no key required) |
 
+### `GET /api/hoster/v1/catalog`
+
+Returns all active `plans` and `addons` configured under **Settings → Shop**. External billing platforms use this endpoint to mirror prices, included hardware bounds, live node availability, artwork/gallery URLs, customizable blueprint start variables (`variables[]`), and add-on quotas (`role_quota`, including `max_projects`, `max_storage_mb`, and AI token caps) without maintaining a second product catalog in MSM.
+
+Each plan exposes `plan_id` and `product_key` (`"plan:<id>"`). You can pass either `plan_id` or `product_key` in `POST /api/hoster/v1/apply` and `PUT /api/hoster/v1/services/{external_service_id}`.
+
 ### `POST /api/hoster/v1/apply` (Hoster API v2)
 
 Applies the desired contract state for a customer subject and an array of server and standalone add-on `items` in a single idempotent request. Optionally supply an `Idempotency-Key` header for batch trace correlation.
 
-All items are validated upfront before any provisioning runs: unknown product keys, unknown or inactive `addon_slug` values, duplicate `external_service_id` entries in the batch, invalid slot limits, or kind mismatches return `422 Unprocessable` without partial provisioning.
+All items are validated upfront before any provisioning runs: unknown `plan_id` / `product_key` or inactive `addon_slug` values, out-of-range RAM/CPU/slot requests, invalid start variables, duplicate `external_service_id` entries in the batch, or kind mismatches return `422 Unprocessable` without partial provisioning.
 
 #### Request Body
 
@@ -102,8 +109,12 @@ All items are validated upfront before any provisioning runs: unknown product ke
 | `items` | `array` (1–50) | Yes | List of server or standalone add-on items. |
 | `items[].external_service_id` | `string` (1–128) | Yes | Unique subscription or item reference per integration. |
 | `items[].kind` | `string` | No | `server` (default) or `addon`. Cannot be changed for an existing contract. |
-| `items[].product_key` | `string` (1–128) | For new `server` | Store product SKU (`kind: "server"` only). |
+| `items[].plan_id` | `integer` | For new `server` (or `product_key`) | ID of an active Shop plan configured in MSM. |
+| `items[].product_key` | `string` (1–128) | For new `server` (or `plan_id`) | `"plan:<id>"` from `/catalog` or a legacy integration SKU (`kind: "server"` only). |
+| `items[].ram_mb` | `integer` (128–4194304) | No | Optional RAM allocation within the plan's `[ram_included_mb, ram_max_mb]` bounds (`kind: "server"` only). |
+| `items[].cpu_percent` | `integer` (10–6400) | No | Optional CPU allocation within the plan's included/max bounds (`kind: "server"` only). |
 | `items[].slots` | `integer` (1–1000) | No | Optional slot override for slot-capable server blueprints (`kind: "server"` only). |
+| `items[].variables` | `object` (`string -> string`) | No | Optional blueprint start-variable overrides (`customer_editable: true`, encrypted at rest via DIS; `kind: "server"` only). |
 | `items[].addon_slug` | `string` (1–64) | For new `addon` | Slug of an active standalone shop add-on (`kind: "addon"` only). |
 | `items[].desired_state` | `string` | No | Per-item override (`active`, `suspended`, `terminated`). Defaults to batch `desired_state`. |
 
@@ -122,8 +133,12 @@ curl -X POST https://panel.example/api/hoster/v1/apply \
           {
             "external_service_id": "SVC-4711",
             "kind": "server",
-            "product_key": "mc-8gb",
-            "slots": 24
+            "plan_id": 12,
+            "ram_mb": 8192,
+            "slots": 24,
+            "variables": {
+              "EULA": "TRUE"
+            }
           },
           {
             "external_service_id": "ADDON-91",
@@ -150,7 +165,12 @@ Submits the desired contract state for a service instance. Creates the service c
 |---|---|---|---|
 | `desired_state` | `string` | Yes | Target state: `active`, `suspended`, or `terminated`. |
 | `external_subject` | `string` (1–128) | Yes | Customer ID **from the billing system**. Identity mappings bind to this ID rather than email addresses to safeguard against account disconnection during email changes. |
-| `product_key` | `string` (1–128) | Initial creation | Store product SKU/key. MSM maps this to a blueprint and hardware profile. For existing contracts, a modified key initiates an automatic tier upgrade/downgrade. |
+| `plan_id` | `integer` | Initial creation (or `product_key`) | ID of an active Shop plan configured in MSM. |
+| `product_key` | `string` (1–128) | Initial creation (or `plan_id`) | `"plan:<id>"` from `/catalog` or legacy store product SKU. For existing contracts, a modified value initiates a tier change. |
+| `ram_mb` | `integer` (128–4194304) | Optional | RAM allocation within the plan's `[ram_included_mb, ram_max_mb]` bounds. |
+| `cpu_percent` | `integer` (10–6400) | Optional | CPU allocation within the plan's included/max bounds. |
+| `slots` | `integer` (1–1000) | Optional | Slot limit for slot-capable blueprints within the plan's bounds. |
+| `variables` | `object` (`string -> string`) | Optional | Start-variable overrides (`customer_editable: true`, encrypted at rest via DIS). |
 | `email` | `string` (≤255) | Optional | Utilized strictly for provisioning the user account during initial creation. MSM **never** accepts or stores billing platform passwords. |
 
 #### Example Call
@@ -173,6 +193,7 @@ curl -X PUT https://panel.example/api/hoster/v1/services/SVC-4711 \
 |---|---|---|
 | `external_service_id` | `string` | The external reference submitted by the store |
 | `item_kind` | `string` | Contract item kind (`server` or `addon`) |
+| `plan_id` | `integer \| null` | Linked Shop plan ID when provisioned from the unified Shop catalog, otherwise `null` |
 | `addon_slug` | `string \| null` | Slug of the bound standalone add-on when `item_kind` is `addon`, otherwise `null` |
 | `desired_state` | `string` | The latest registered desired target state |
 | `status` | `string` | Real-world state — see [State Machine](#state-machine) |

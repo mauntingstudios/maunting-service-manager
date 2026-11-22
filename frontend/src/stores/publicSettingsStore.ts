@@ -6,6 +6,32 @@ import {
   type SeasonalSettings,
 } from '@/season/typen'
 
+export interface PublicBrandingSettings {
+  name: string
+  custom_name: string
+  tagline: string
+  ai_name: string
+  logo_mode: 'default' | 'custom'
+  season_logo_mode: 'default' | 'custom' | 'disabled'
+  logo_url: string | null
+  season_logos: Record<'birthday' | 'halloween' | 'christmas', string | null>
+}
+
+export const DEFAULT_PUBLIC_BRANDING: PublicBrandingSettings = {
+  name: 'Maunting Service Manager',
+  custom_name: '',
+  tagline: '',
+  ai_name: 'Singra',
+  logo_mode: 'default',
+  season_logo_mode: 'default',
+  logo_url: null,
+  season_logos: {
+    birthday: null,
+    halloween: null,
+    christmas: null,
+  },
+}
+
 export interface PublicSettings {
   /** Kanonische Panel-Adresse, z. B. fuer Einladungslinks. Leer heisst unkonfiguriert. */
   panel_url: string
@@ -22,6 +48,7 @@ export interface PublicSettings {
   shop_enabled: boolean
   external_shop_url: string
   seasonal: SeasonalSettings
+  branding: PublicBrandingSettings
 }
 
 export const DEFAULT_PUBLIC_SETTINGS: PublicSettings = {
@@ -39,6 +66,74 @@ export const DEFAULT_PUBLIC_SETTINGS: PublicSettings = {
   shop_enabled: false,
   external_shop_url: '',
   seasonal: DEFAULT_SEASONAL_SETTINGS,
+  branding: DEFAULT_PUBLIC_BRANDING,
+}
+
+function istSichereLogoUrl(wert: unknown): wert is string {
+  if (typeof wert !== 'string' || !wert.trim()) return false
+  const trimmed = wert.trim()
+  if (trimmed.startsWith('/api/settings/public/branding/logo/')) return true
+  return istHttpAdresse(trimmed)
+}
+
+function normalisiereBranding(
+  raw: unknown,
+  fallback: PublicBrandingSettings = DEFAULT_PUBLIC_BRANDING,
+): PublicBrandingSettings {
+  if (!raw || typeof raw !== 'object') return fallback
+  const r = raw as Record<string, unknown>
+  const custom_name = typeof r.custom_name === 'string' ? r.custom_name.trim() : fallback.custom_name
+  const name =
+    typeof r.name === 'string' && r.name.trim()
+      ? r.name.trim()
+      : custom_name || DEFAULT_PUBLIC_BRANDING.name
+  const tagline = typeof r.tagline === 'string' ? r.tagline.trim() : fallback.tagline
+  const ai_name =
+    typeof r.ai_name === 'string' && r.ai_name.trim()
+      ? r.ai_name.trim()
+      : fallback.ai_name
+  const logo_mode =
+    r.logo_mode === 'custom' || r.logo_mode === 'default'
+      ? r.logo_mode
+      : fallback.logo_mode
+  const season_logo_mode =
+    r.season_logo_mode === 'custom' ||
+    r.season_logo_mode === 'default' ||
+    r.season_logo_mode === 'disabled'
+      ? r.season_logo_mode
+      : fallback.season_logo_mode
+  const logo_url =
+    r.logo_url === null
+      ? null
+      : istSichereLogoUrl(r.logo_url)
+        ? r.logo_url.trim()
+        : fallback.logo_url
+
+  const rawSeasons =
+    r.season_logos && typeof r.season_logos === 'object'
+      ? (r.season_logos as Record<string, unknown>)
+      : null
+  const pickSeason = (key: 'birthday' | 'halloween' | 'christmas'): string | null => {
+    if (!rawSeasons || !(key in rawSeasons)) return fallback.season_logos[key]
+    const v = rawSeasons[key]
+    if (v === null) return null
+    return istSichereLogoUrl(v) ? v.trim() : fallback.season_logos[key]
+  }
+
+  return {
+    name,
+    custom_name,
+    tagline,
+    ai_name,
+    logo_mode,
+    season_logo_mode,
+    logo_url,
+    season_logos: {
+      birthday: pickSeason('birthday'),
+      halloween: pickSeason('halloween'),
+      christmas: pickSeason('christmas'),
+    },
+  }
 }
 
 function istHttpAdresse(wert: unknown): wert is string {
@@ -112,6 +207,7 @@ function loadCachedSettings(): PublicSettings {
           ? parsed.external_shop_url.replace(/\/+$/, '')
           : DEFAULT_PUBLIC_SETTINGS.external_shop_url,
         seasonal: normalisiereSaison(parsed.seasonal),
+        branding: normalisiereBranding(parsed.branding),
       }
     }
     return DEFAULT_PUBLIC_SETTINGS
@@ -210,6 +306,7 @@ export const usePublicSettingsStore = create<PublicSettingsState>((set, get) => 
           // aelteren API-Antwort, bleibt die bisherige Einstellung stehen;
           // kaputte Einzelfelder fallen ebenso einzeln zurueck.
           seasonal: normalisiereSaison(remote.seasonal, get().seasonal),
+          branding: normalisiereBranding(remote.branding, get().branding),
         }
         saveCachedSettings(aktualisiert)
         set({ ...aktualisiert, isLoading: false, error: null })
@@ -253,6 +350,9 @@ export const usePublicSettingsStore = create<PublicSettingsState>((set, get) => 
         seasonal: partial.seasonal
           ? normalisiereSaison(partial.seasonal, get().seasonal)
           : get().seasonal,
+        branding: partial.branding
+          ? normalisiereBranding(partial.branding, get().branding)
+          : get().branding,
       }
       saveCachedSettings(updated)
       set({ ...updated })

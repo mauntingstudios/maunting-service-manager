@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import { Eye, Plus, Trash2, Pencil, X } from 'lucide-react'
-import { rbacApi } from '@/api/rbac'
+import { rbacApi, type RoleAiProjectQuota } from '@/api/rbac'
 import { toast } from '@/stores/toastStore'
 import { confirm } from '@/stores/confirmStore'
 import { useHasPermission } from '@/hooks/useHasPermission'
@@ -48,6 +48,7 @@ interface RoleFormProps {
     permissions: string[],
     color?: string,
     icon?: string | null,
+    aiProjectQuota?: RoleAiProjectQuota,
   ) => Promise<void>
   onCancel: () => void
 }
@@ -62,7 +63,32 @@ function RoleForm({ catalog, initial, onSubmit, onCancel }: RoleFormProps) {
   const [selected, setSelected] = useState<Set<string>>(
     new Set(initial?.permissions ?? []),
   )
+  const [maxProjects, setMaxProjects] = useState<number>(3)
+  const [maxStorageMb, setMaxStorageMb] = useState<number>(256)
   const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    if (!initial?.id) {
+      setMaxProjects(3)
+      setMaxStorageMb(256)
+      return
+    }
+    let active = true
+    rbacApi
+      .getRoleAiProjectQuota(initial.id)
+      .then((q) => {
+        if (!active) return
+        setMaxProjects(q.max_projects)
+        setMaxStorageMb(q.max_storage_mb)
+      })
+      .catch((err: unknown) => {
+        if (!active) return
+        void err
+      })
+    return () => {
+      active = false
+    }
+  }, [initial?.id])
 
   const allPerms = useMemo(() => [
     ...catalog.global_permissions,
@@ -79,6 +105,7 @@ function RoleForm({ catalog, initial, onSubmit, onCancel }: RoleFormProps) {
         Array.from(selected).sort(),
         color,
         icon || null,
+        { max_projects: maxProjects, max_storage_mb: maxStorageMb },
       )
     } finally {
       setSaving(false)
@@ -162,6 +189,30 @@ function RoleForm({ catalog, initial, onSubmit, onCancel }: RoleFormProps) {
         maxLength={255}
       />
 
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 rounded-xl border border-outline-variant/30 bg-surface-container-low/40 p-4">
+        <Input
+          label={t('roles.aiProjectQuota.maxProjects')}
+          type="number"
+          min={0}
+          max={1000}
+          value={String(maxProjects)}
+          onChange={(e) => setMaxProjects(Math.max(0, Number(e.target.value) || 0))}
+          disabled={saving || isAdminRole}
+        />
+        <Input
+          label={t('roles.aiProjectQuota.maxStorageMb')}
+          type="number"
+          min={0}
+          max={102400}
+          value={String(maxStorageMb)}
+          onChange={(e) => setMaxStorageMb(Math.max(0, Number(e.target.value) || 0))}
+          disabled={saving || isAdminRole}
+        />
+        <p className="md:col-span-2 text-xs text-on-surface-variant">
+          {t('roles.aiProjectQuota.hint')}
+        </p>
+      </div>
+
       <div className="space-y-2">
         <span className="block font-label-md text-label-md text-on-surface-variant uppercase tracking-wider">
           {t('roles.permissions')} ({selected.size})
@@ -223,9 +274,13 @@ export function Roles() {
     permissions: string[],
     color?: string,
     icon?: string | null,
+    aiProjectQuota?: RoleAiProjectQuota,
   ) => {
     try {
-      await rbacApi.createRole({ name, description, permissions, color, icon })
+      const created = await rbacApi.createRole({ name, description, permissions, color, icon })
+      if (aiProjectQuota) {
+        await rbacApi.setRoleAiProjectQuota(created.id, aiProjectQuota)
+      }
       toast.success(t('roles.created'))
       setCreating(false)
       await refresh()
@@ -241,6 +296,7 @@ export function Roles() {
     permissions: string[],
     color?: string,
     icon?: string | null,
+    aiProjectQuota?: RoleAiProjectQuota,
   ) => {
     try {
       await rbacApi.updateRole(role.id, {
@@ -250,6 +306,9 @@ export function Roles() {
         color,
         icon,
       })
+      if (aiProjectQuota && !(role.is_system && role.name === 'admin')) {
+        await rbacApi.setRoleAiProjectQuota(role.id, aiProjectQuota)
+      }
       toast.success(t('roles.updated'))
       setEditing(null)
       await refresh()
@@ -436,7 +495,7 @@ export function Roles() {
         <RoleForm
           catalog={catalog}
           initial={editing}
-          onSubmit={(n, d, p, c, i) => handleUpdate(editing, n, d, p, c, i)}
+          onSubmit={(n, d, p, c, i, q) => handleUpdate(editing, n, d, p, c, i, q)}
           onCancel={() => setEditing(null)}
         />
       )}

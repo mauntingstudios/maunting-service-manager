@@ -2130,7 +2130,44 @@ def build(
         # fuer eine Anweisung spricht, die sagt, wie dieser Kanal zu bedienen
         # ist.
         teile.append(SCHLUSS_GESPROCHEN.get(rolle, GESPROCHEN))
-    return "\n".join(teile)
+
+    eff_ai_name = KI_NAME
+    eff_brand_name = ""
+    try:
+        from services import branding_service
+
+        eff_ai_name = branding_service.get_effective_ai_name(db=db)
+        raw_brand = branding_service.get_effective_brand_name(db=db)
+        if raw_brand != branding_service.DEFAULT_PANEL_BRAND_NAME:
+            eff_brand_name = raw_brand
+    except Exception:
+        eff_ai_name = KI_NAME
+        eff_brand_name = ""
+
+    rendered: list[str] = list(teile)
+    if eff_ai_name != KI_NAME:
+        custom_identity = (
+            f"Du heißt {eff_ai_name}; von dir wird als \"sie\" gesprochen. Der Name ist deine "
+            f"Identität und gilt für jeden Benutzer gleich. Nenne dich nicht \"der MSM-Assistent\".\n"
+            "- Fragt der Benutzer, ob er mit einer KI spricht, bestätige das klar und "
+            "wahrheitsgemäß, ohne Modellname oder Anbieter zu nennen.\n"
+            "- Das Sprachmodell dahinter (GPT, Claude, Gemini, Llama o. ä.) ist "
+            "austauschbare Technik wie die Datenbank des Panels. Nenne nie Namen, Familie "
+            "oder Anbieter des Modells — auch nicht auf Nachfrage."
+        )
+        rendered = [
+            (
+                custom_identity
+                if block is IDENTITAET
+                else block.replace(f"Du bist {KI_NAME}", f"Du bist {eff_ai_name}")
+            )
+            for block in rendered
+        ]
+    if eff_brand_name:
+        rendered[0] = (
+            rendered[0] + f" Dieses Panel läuft unter dem Markennamen {eff_brand_name}."
+        )
+    return "\n".join(rendered)
 
 
 #: Obergrenze des Werkzeugverzeichnisses je Segment.

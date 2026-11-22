@@ -4,7 +4,7 @@ from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlparse
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, Header, HTTPException, UploadFile
 from pydantic import BaseModel, Field, StrictInt
 from sqlalchemy.orm import Session
 
@@ -27,7 +27,8 @@ from schemas.panel_settings import (
     SEASON_WINDOW_DEFAULTS,
 )
 from models import User
-from services import audit_service, vault_blob_service
+from services import audit_service, branding_service, vault_blob_service
+from services.media_gallery_service import build_webp_response
 from services.panel_settings_service import PanelSettingsService, docs_enabled
 from services.rate_limit_settings import (
     KEY_AUTH as RATE_LIMIT_AUTH_KEY,
@@ -253,6 +254,7 @@ def get_settings(db: Session = Depends(get_db), _=Depends(require_global("panel.
         "rate_limit_auth": resolve_auth_limit(all_db.get(RATE_LIMIT_AUTH_KEY, "")),
         "rate_limit_global": resolve_global_limit(all_db.get(RATE_LIMIT_GLOBAL_KEY, "")),
         "allow_localhost_connections": all_db.get("allow_localhost_connections", "false") == "true",
+        **branding_service.get_branding_settings(all_db),
     }
 
 
@@ -302,6 +304,7 @@ def get_public_settings() -> dict:
                 "end": seasonal["season_christmas_end"],
             },
         },
+        "branding": branding_service.get_public_branding(all_db),
     }
 
 
@@ -480,6 +483,36 @@ async def update_settings(
                 value = validate_global_limit(value)
             except ValueError as exc:
                 raise HTTPException(status_code=400, detail=str(exc)) from exc
+        if key in ("brand_name", "brand_tagline", "brand_ai_name"):
+            text_val = str(value)
+            if "\r" in text_val or "\n" in text_val or "\x00" in text_val:
+                raise HTTPException(status_code=400, detail="Ungueltige Zeichen in Branding-Einstellung")
+            cleaned = text_val.strip()
+            max_len = 64 if key == "brand_name" else (160 if key == "brand_tagline" else 40)
+            if len(cleaned) > max_len:
+                raise HTTPException(status_code=400, detail="Branding-Text ist zu lang")
+            PanelSettingsService.set(key, cleaned, db=db)
+            continue
+        if key == "brand_ai_email":
+            email_val = str(value).strip()
+            if "\r" in email_val or "\n" in email_val or "\x00" in email_val or len(email_val) > 254:
+                raise HTTPException(status_code=400, detail="Ungueltige KI-E-Mail-Adresse")
+            if email_val and not re.fullmatch(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email_val):
+                raise HTTPException(status_code=400, detail="Ungueltige KI-E-Mail-Adresse")
+            PanelSettingsService.set(key, email_val, db=db)
+            continue
+        if key == "brand_logo_mode":
+            mode = str(value).strip().lower()
+            if mode not in branding_service.BRAND_LOGO_MODES:
+                raise HTTPException(status_code=400, detail="Ungueltiger Logo-Modus")
+            PanelSettingsService.set(key, mode, db=db)
+            continue
+        if key == "brand_season_logo_mode":
+            mode = str(value).strip().lower()
+            if mode not in branding_service.BRAND_SEASON_LOGO_MODES:
+                raise HTTPException(status_code=400, detail="Ungueltiger Saison-Logo-Modus")
+            PanelSettingsService.set(key, mode, db=db)
+            continue
         if _is_masked(str(value)):
             continue
         if key == "smtp_password":
@@ -522,7 +555,7 @@ async def update_settings(
     # Theme-Wechsel gehoert in denselben Echtzeit-Kanal wie Notizen und
     # Kalender: die gekoppelten Apps laden daraufhin /settings/public neu,
     # ohne dass ein App-Update oder Neustart noetig ist.
-    if any(key.startswith("season") for key in data):
+    if any(key.startswith("season") or key.startswith("brand_") for key in data):
         SyncEventService.publish({"entity": "theme", "action": "changed"})
     return {"message": "Einstellungen gespeichert"}
 
@@ -997,3 +1030,77 @@ async def test_singra_webhook(
         return {"valid": False, "message": err}
     await handle_verified_payload(db, event_type="webhook_test", payload=payload)
     return {"valid": True, "message": "Webhook-Signatur und Verarbeitung OK"}
+
+
+@router.get("/public/branding/logo/{slot}")
+def get_public_branding_logo(
+    slot: str,
+    v: str | None = None,
+    if_none_match: str | None = Header(None),
+):
+    """Liefert ein hinterlegtes Whitelabel-Logo (WebP) fuer den angegebenen Slot."""
+    try:
+        found = branding_service.branding_logo_bytes(slot)
+    except branding_service.BrandingValidationError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    if found is None:
+        raise HTTPException(status_code=404, detail="Kein eigenes Logo fuer diesen Slot")
+    data, version = found
+    return build_webp_response(
+        data=data,
+        etag=f'"{version}"',
+        if_none_match=if_none_match,
+        versioned=bool(v),
+    )
+
+
+@router.post("/branding/logo/{slot}")
+async def upload_branding_logo(
+    slot: str,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_global("panel.settings.write")),
+    __=Depends(verify_csrf),
+) -> dict:
+    """Laedt ein eigenes Whitelabel-Logo (JPEG/PNG/WebP) hoch und speichert es als WebP."""
+    raw = await file.read(branding_service.BRAND_LOGO_MAX_BYTES + 1)
+    try:
+        result = branding_service.upload_branding_logo(db, slot, raw)
+    except branding_service.BrandingValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    audit_service.record_privileged_action(
+        db,
+        user_id=user.id,
+        action="panel.branding.logo.upload",
+        target_type="setting",
+        target_id=f"brand_logo:{result['slot']}",
+        commit=True,
+    )
+    SyncEventService.publish({"entity": "theme", "action": "changed"})
+    return result
+
+
+@router.delete("/branding/logo/{slot}")
+def delete_branding_logo(
+    slot: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_global("panel.settings.write")),
+    __=Depends(verify_csrf),
+) -> dict:
+    """Entfernt ein eigenes Whitelabel-Logo und setzt den Slot auf Standard zurueck."""
+    try:
+        branding_service.delete_branding_logo(db, slot)
+    except branding_service.BrandingValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    audit_service.record_privileged_action(
+        db,
+        user_id=user.id,
+        action="panel.branding.logo.delete",
+        target_type="setting",
+        target_id=f"brand_logo:{slot}",
+        commit=True,
+    )
+    SyncEventService.publish({"entity": "theme", "action": "changed"})
+    return {"message": "Logo entfernt"}

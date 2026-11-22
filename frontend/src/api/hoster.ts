@@ -60,6 +60,9 @@ export type HosterProductWrite = Omit<HosterProduct, 'id' | 'integration_id'>
 
 export interface HosterService {
   external_service_id: string
+  item_kind?: 'server' | 'addon'
+  plan_id?: number | null
+  addon_slug?: string | null
   desired_state: 'active' | 'suspended' | 'terminated'
   status: string
   status_code: string | null
@@ -85,6 +88,7 @@ export interface HosterDelivery {
 export interface HosterSimulationRequest {
   action: 'order' | 'suspend' | 'reactivate' | 'terminate' | 'test_webhook'
   product_key?: string
+  plan_id?: number
   external_service_id?: string
   email?: string
 }

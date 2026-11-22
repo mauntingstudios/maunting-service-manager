@@ -11,6 +11,7 @@ export function ShopRahmen() {
   const location = useLocation()
   const mainRef = useRef<HTMLElement>(null)
   const shopEnabled = usePublicSettingsStore((s) => s.shop_enabled)
+  const customBrand = usePublicSettingsStore((s) => s.branding?.custom_name || '')
 
   useEffect(() => {
     mainRef.current?.focus()
@@ -37,7 +38,11 @@ export function ShopRahmen() {
 
       <footer className="mt-auto border-t border-outline-variant/30 bg-surface-container-low/40">
         <div className="mx-auto flex max-w-7xl flex-col gap-2 px-4 py-8 text-xs text-on-surface-variant sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8">
-          <p>{t('shop.fuss.hinweis')}</p>
+          <p>
+            {customBrand
+              ? `${customBrand} · Bereitgestellt mit MSM von Maunting Studios`
+              : t('shop.fuss.hinweis')}
+          </p>
           <nav className="flex flex-wrap gap-4" aria-label={t('shop.fuss.navigation')}>
             <Link to="/privacy" className="hover:text-on-surface">
               {t('shop.fuss.datenschutz')}

@@ -36,6 +36,7 @@ from models import (
     Server,
     ShopAddon,
     ShopEntitlement,
+    ShopPlan,
     User,
 )
 from schemas import ServerCreate
@@ -165,6 +166,7 @@ def service_response(row: HosterService) -> HosterServiceResponse:
     return HosterServiceResponse(
         external_service_id=row.external_service_id,
         item_kind=row.item_kind,  # type: ignore[arg-type]
+        plan_id=row.shop_plan_id,
         addon_slug=row.addon.slug if row.addon is not None else None,
         desired_state=row.desired_state,
         status=row.status,
@@ -241,6 +243,7 @@ def _borne_role(
     service: HosterService,
     product: HosterProduct | None,
     addon: ShopAddon | None = None,
+    shop_plan: ShopPlan | None = None,
 ) -> int | None:
     """Welche Rolle dieser eine Vertrag gerade traegt — ``None``, wenn keine.
 
@@ -264,6 +267,9 @@ def _borne_role(
         if resolved_addon is None:
             return service.granted_role_id
         return resolved_addon.role_id
+    resolved_plan = shop_plan if shop_plan is not None else getattr(service, "shop_plan", None)
+    if resolved_plan is not None:
+        return resolved_plan.role_id
     if product is None:
         return service.granted_role_id
     return product.role_id
@@ -318,11 +324,12 @@ def _apply_customer_role(db: Session, service: HosterService) -> None:
     # damit ein Vertrag mit geloeschtem Produkt (`product_id` faellt auf NULL)
     # nicht aus der Betrachtung faellt und seine Rolle unentziehbar wird.
     zeilen = (
-        db.query(HosterService, HosterProduct, ShopAddon)
+        db.query(HosterService, HosterProduct, ShopAddon, ShopPlan)
         .select_from(HosterService)
         .join(HosterIdentity, HosterIdentity.id == HosterService.identity_id)
         .outerjoin(HosterProduct, HosterProduct.id == HosterService.product_id)
         .outerjoin(ShopAddon, ShopAddon.id == HosterService.addon_id)
+        .outerjoin(ShopPlan, ShopPlan.id == HosterService.shop_plan_id)
         .filter(HosterIdentity.user_id == user.id)
         .all()
     )
@@ -330,8 +337,8 @@ def _apply_customer_role(db: Session, service: HosterService) -> None:
     soll: set[int] = set()
     kandidaten: set[int] = set()
     eigene_rolle: int | None = None
-    for zeile, produkt, addon in zeilen:
-        getragen = _borne_role(zeile, produkt, addon)
+    for zeile, produkt, addon, plan in zeilen:
+        getragen = _borne_role(zeile, produkt, addon, plan)
         if zeile.id == service.id:
             eigene_rolle = getragen
         if getragen is not None:
@@ -381,22 +388,52 @@ def _apply_customer_role(db: Session, service: HosterService) -> None:
 
 
 def _provision(
-    db: Session, *, integration: HosterIntegration, service: HosterService
+    db: Session,
+    *,
+    integration: HosterIntegration,
+    service: HosterService,
+    ram_mb: int | None = None,
+    cpu_percent: int | None = None,
 ) -> None:
     """Erstellt den Server ueber den gemeinsamen Provisionierungsservice."""
     from services.server_provisioning_service import provision_server
 
+    plan = service.shop_plan
     product = service.product
-    if product is None or not product.enabled:
+    if plan is not None:
+        if not plan.active:
+            raise HosterConfigurationError("Shop-Tarif ist unbekannt oder deaktiviert")
+        from services.node_capacity import normalize_cpu_limit_percent
+
+        game_type = plan.game_type
+        eff_ram = ram_mb if ram_mb is not None else plan.ram_included_mb
+        eff_cpu = (
+            cpu_percent
+            if cpu_percent is not None
+            else normalize_cpu_limit_percent(plan.cpu_included)
+        )
+        eff_disk = None
+        eff_node_id = plan.node_id
+        backup_hours = None
+    elif product is not None:
+        if not product.enabled:
+            raise HosterConfigurationError("Produkt ist unbekannt oder deaktiviert")
+        game_type = product.game_type
+        eff_ram = ram_mb if ram_mb is not None else product.ram_limit_mb
+        eff_cpu = cpu_percent if cpu_percent is not None else product.cpu_limit_percent
+        eff_disk = product.disk_limit_gb
+        eff_node_id = product.node_id
+        backup_hours = product.backup_interval_hours
+    else:
         raise HosterConfigurationError("Produkt ist unbekannt oder deaktiviert")
 
     request = ServerCreate(
         name=_server_name(service.external_service_id),
-        game_type=product.game_type,
-        cpu_limit_percent=product.cpu_limit_percent,
-        ram_limit_mb=product.ram_limit_mb,
-        disk_limit_gb=product.disk_limit_gb,
-        node_id=product.node_id,
+        game_type=game_type,
+        cpu_limit_percent=eff_cpu,
+        ram_limit_mb=eff_ram,
+        disk_limit_gb=eff_disk,
+        node_id=eff_node_id,
     )
     _set_status(service, "provisioning")
     service.status_code = None
@@ -422,13 +459,13 @@ def _provision(
     _set_status(service, "ready")
     service.status_code = None
     _grant_customer_permissions(db, service)
-    if product.backup_interval_hours:
+    if backup_hours:
         server = db.query(Server).filter(Server.id == result.server.id).first()
         if server is not None:
-            server.backup_interval_hours = product.backup_interval_hours
+            server.backup_interval_hours = backup_hours
             from services.scheduler_service import schedule_backup
 
-            schedule_backup(server.id, product.backup_interval_hours)
+            schedule_backup(server.id, backup_hours)
 
 
 def _lifecycle(
@@ -463,14 +500,50 @@ def _resolve_active_addon(db: Session, addon_slug: str) -> ShopAddon:
     return addon
 
 
-def _validate_slots_for_product(product: HosterProduct | None, slots: int | None) -> None:
-    if slots is None:
-        return
-    if product is None:
-        raise HosterConfigurationError("Ohne aktives Produkt koennen keine Slots gesetzt werden")
+def _resolve_plan_and_product(
+    db: Session,
+    integration: HosterIntegration,
+    *,
+    plan_id: int | None,
+    product_key: str | None,
+) -> tuple[ShopPlan | None, HosterProduct | None]:
+    if plan_id is not None:
+        if product_key is not None:
+            norm = normalize_external_id(product_key, label="Produktkennung")
+            if norm != f"plan:{plan_id}":
+                raise HosterConfigurationError("plan_id und product_key widersprechen sich")
+        plan = (
+            db.query(ShopPlan)
+            .filter(ShopPlan.id == plan_id, ShopPlan.active.is_(True))
+            .first()
+        )
+        if plan is None:
+            raise HosterConfigurationError("Shop-Tarif ist unbekannt oder deaktiviert")
+        return plan, None
+
+    if product_key is not None:
+        norm = normalize_external_id(product_key, label="Produktkennung")
+        if norm.startswith("plan:"):
+            raw_id = norm[5:]
+            if not raw_id.isdigit() or int(raw_id) <= 0:
+                raise HosterConfigurationError("Ungueltige Tarif-Kennung")
+            plan = (
+                db.query(ShopPlan)
+                .filter(ShopPlan.id == int(raw_id), ShopPlan.active.is_(True))
+                .first()
+            )
+            if plan is None:
+                raise HosterConfigurationError("Shop-Tarif ist unbekannt oder deaktiviert")
+            return plan, None
+        return None, get_product(db, integration, norm)
+
+    return None, None
+
+
+def _validate_slots_for_game_type(game_type: str, slots: int) -> None:
     from services import shop_slot_service
 
-    players = shop_slot_service.get_blueprint_players(product.game_type)
+    players = shop_slot_service.get_blueprint_players(game_type)
     if players is None:
         raise HosterConfigurationError(
             "Dieser Blueprint unterstuetzt keine konfigurierbaren Spieler-Slots"
@@ -479,6 +552,101 @@ def _validate_slots_for_product(product: HosterProduct | None, slots: int | None
         raise HosterConfigurationError(
             f"Spieler-Slots muessen zwischen {players.min} und {players.max} liegen"
         )
+
+
+def _validate_server_item_params(
+    *,
+    plan: ShopPlan | None,
+    product: HosterProduct | None,
+    ram_mb: int | None,
+    cpu_percent: int | None,
+    slots: int | None,
+    variables: dict[str, str] | None,
+) -> int | None:
+    """Prueft Ressourcen- und Variablenparameter gegen Tarif/Produkt und Blueprint."""
+    if plan is not None:
+        game_type = plan.game_type
+        if ram_mb is not None:
+            if plan.ram_included_mb is not None and ram_mb < plan.ram_included_mb:
+                raise HosterConfigurationError(
+                    "Angeforderter RAM liegt unter dem enthaltenen Tarif-Wert"
+                )
+            max_ram = plan.ram_max_mb if plan.ram_max_mb is not None else plan.ram_included_mb
+            if max_ram is not None and ram_mb > max_ram:
+                raise HosterConfigurationError(
+                    "Angeforderter RAM uebersteigt das Tarif-Maximum"
+                )
+        if cpu_percent is not None:
+            from services.node_capacity import normalize_cpu_limit_percent
+
+            min_cpu = normalize_cpu_limit_percent(plan.cpu_included)
+            max_cpu = (
+                normalize_cpu_limit_percent(plan.cpu_max)
+                if plan.cpu_max is not None
+                else min_cpu
+            )
+            if min_cpu is not None and cpu_percent < min_cpu:
+                raise HosterConfigurationError(
+                    "Angeforderte CPU liegt unter dem enthaltenen Tarif-Wert"
+                )
+            if max_cpu is not None and cpu_percent > max_cpu:
+                raise HosterConfigurationError(
+                    "Angeforderte CPU uebersteigt das Tarif-Maximum"
+                )
+        eff_slots = slots if slots is not None else plan.slots_included
+        if eff_slots is not None:
+            _validate_slots_for_game_type(game_type, eff_slots)
+        if slots is not None:
+            if plan.slots_included is not None and slots < plan.slots_included:
+                raise HosterConfigurationError(
+                    "Angeforderte Slots liegen unter dem enthaltenen Tarif-Wert"
+                )
+            max_slots = (
+                plan.slots_max if plan.slots_max is not None else plan.slots_included
+            )
+            if max_slots is not None and slots > max_slots:
+                raise HosterConfigurationError(
+                    "Angeforderte Slots uebersteigen das Tarif-Maximum"
+                )
+    elif product is not None:
+        game_type = product.game_type
+        if ram_mb is not None and product.ram_limit_mb is not None and ram_mb > product.ram_limit_mb:
+            raise HosterConfigurationError(
+                "Angeforderter RAM uebersteigt das Produkt-Maximum"
+            )
+        if (
+            cpu_percent is not None
+            and product.cpu_limit_percent is not None
+            and cpu_percent > product.cpu_limit_percent
+        ):
+            raise HosterConfigurationError(
+                "Angeforderte CPU uebersteigt das Produkt-Maximum"
+            )
+        eff_slots = slots
+        if eff_slots is not None:
+            _validate_slots_for_game_type(game_type, eff_slots)
+    else:
+        if slots is not None:
+            raise HosterConfigurationError(
+                "Ohne aktives Produkt koennen keine Slots gesetzt werden"
+            )
+        if variables:
+            raise HosterConfigurationError(
+                "Ohne aktives Produkt koennen keine Variablen gesetzt werden"
+            )
+        return None
+
+    if variables:
+        from services import server_variables_service
+
+        try:
+            server_variables_service.validate_blueprint_variables(
+                game_type, dict(variables), is_operator=False
+            )
+        except server_variables_service.ServerVariableValidationError as exc:
+            raise HosterConfigurationError(str(exc)) from exc
+
+    return eff_slots
 
 
 def _apply_slots_on_server(db: Session, server_id: int | None, slots: int | None) -> None:
@@ -495,6 +663,25 @@ def _apply_slots_on_server(db: Session, server_id: int | None, slots: int | None
         raise HosterConfigurationError(str(exc)) from exc
 
 
+def _apply_variables_on_server(
+    db: Session, server_id: int | None, variables: dict[str, str] | None
+) -> None:
+    if server_id is None or not variables:
+        return
+    from services import server_variables_service
+
+    server = db.query(Server).filter(Server.id == server_id).first()
+    if server is None:
+        return
+    db.flush()
+    try:
+        server_variables_service.update_server_variables(
+            db, server, dict(variables), is_operator=False
+        )
+    except server_variables_service.ServerVariableValidationError as exc:
+        raise HosterConfigurationError(str(exc)) from exc
+
+
 def apply_desired_state(
     db: Session,
     *,
@@ -502,9 +689,13 @@ def apply_desired_state(
     external_service_id: str,
     desired_state: str,
     external_subject: str,
-    product_key: str | None,
-    email: str | None = None,
+    product_key: str | None = None,
+    plan_id: int | None = None,
+    ram_mb: int | None = None,
+    cpu_percent: int | None = None,
     slots: int | None = None,
+    variables: dict[str, str] | None = None,
+    email: str | None = None,
     correlation_id: str | None = None,
 ) -> HosterService:
     """Bringt einen Server-Vertrag in den vom Shop gewuenschten Zustand.
@@ -524,6 +715,7 @@ def apply_desired_state(
             "Service-Kennung gehoert zu einem Add-on-Vertrag und kann nicht als Server genutzt werden"
         )
 
+    eff_slots: int | None = slots
     if service is None:
         if desired_state == "terminated":
             # Eine Kuendigung fuer einen nie angelegten Vertrag ist kein Fehler:
@@ -532,17 +724,29 @@ def apply_desired_state(
         identity = resolve_identity(
             db, integration=integration, external_subject=external_subject, email=email
         )
-        if not product_key:
-            raise HosterConfigurationError("Fuer einen neuen Service wird eine Produktkennung benoetigt")
-        product = get_product(db, integration, product_key)
+        if plan_id is None and not product_key:
+            raise HosterConfigurationError(
+                "Fuer einen neuen Service wird plan_id oder product_key benoetigt"
+            )
+        plan, product = _resolve_plan_and_product(
+            db, integration, plan_id=plan_id, product_key=product_key
+        )
         if desired_state != "terminated":
-            _validate_slots_for_product(product, slots)
+            eff_slots = _validate_server_item_params(
+                plan=plan,
+                product=product,
+                ram_mb=ram_mb,
+                cpu_percent=cpu_percent,
+                slots=slots,
+                variables=variables,
+            )
         service = HosterService(
             integration_id=integration.id,
             external_service_id=key,
             identity_id=identity.id,
             item_kind="server",
-            product_id=product.id,
+            product_id=product.id if product is not None else None,
+            shop_plan_id=plan.id if plan is not None else None,
             desired_state=desired_state,
             status="pending",
             correlation_id=correlation_id or str(uuid4()),
@@ -567,25 +771,38 @@ def apply_desired_state(
             # keinerlei Anhaltspunkt, was mit seiner Bestellung passiert ist.
             db.commit()
             db.refresh(service)
-    elif product_key:
-        # Tarifwechsel: das Produkt wird uebernommen. Ressourcenaenderungen an
-        # einem bereits laufenden Server bleiben eine bewusste Operator-Aktion,
-        # weil sie den Server neu starten muessen.
-        product = get_product(db, integration, product_key)
+    elif plan_id is not None or product_key:
+        # Tarifwechsel: das Produkt bzw. der Shop-Plan wird uebernommen.
+        # Ressourcenaenderungen an einem bereits laufenden Server bleiben eine
+        # bewusste Operator-Aktion, weil sie den Server neu starten muessen.
+        plan, product = _resolve_plan_and_product(
+            db, integration, plan_id=plan_id, product_key=product_key
+        )
         if desired_state != "terminated":
-            _validate_slots_for_product(product, slots)
-        if service.product_id != product.id:
-            # Die Beziehung setzen, nicht nur den Fremdschluessel: `product` ist
-            # `lazy="joined"` und beim Laden dieses Vertrags bereits gefuellt.
-            # Eine Zuweisung an `product_id` allein laesst das Attribut auf dem
-            # alten Produkt stehen, und die Session laeuft ohne Autoflush — die
-            # Eskalationspruefung weiter unten pruefte dann die Rolle des ALTEN
-            # Tarifs, waehrend `_apply_customer_role` (nach eigenem `flush`)
-            # bereits die des neuen vergibt. Genau daneben.
+            eff_slots = _validate_server_item_params(
+                plan=plan,
+                product=product,
+                ram_mb=ram_mb,
+                cpu_percent=cpu_percent,
+                slots=slots,
+                variables=variables,
+            )
+        new_product_id = product.id if product is not None else None
+        new_plan_id = plan.id if plan is not None else None
+        if service.product_id != new_product_id or service.shop_plan_id != new_plan_id:
+            # Die Beziehungen setzen, nicht nur die Fremdschluessel (`lazy="joined"`).
             service.product = product
+            service.shop_plan = plan
             service.status_code = "product_changed_manual_resize_required"
     elif desired_state != "terminated":
-        _validate_slots_for_product(service.product, slots)
+        eff_slots = _validate_server_item_params(
+            plan=service.shop_plan,
+            product=service.product,
+            ram_mb=ram_mb,
+            cpu_percent=cpu_percent,
+            slots=slots,
+            variables=variables,
+        )
 
     service.desired_state = desired_state
     service.updated_at = _now()
@@ -595,18 +812,30 @@ def apply_desired_state(
             # Ganz zu Beginn und vor jeder Aenderung: eine Produktrolle, die die
             # Integration gar nicht vergeben darf, ist eine Fehlkonfiguration —
             # und die darf keinen halb fertigen Server hinterlassen.
+            role_to_check = (
+                service.shop_plan.role_id
+                if service.shop_plan
+                else (service.product.role_id if service.product else None)
+            )
             ensure_role_is_delegatable(
                 db,
                 integration=integration,
-                role_id=service.product.role_id if service.product else None,
+                role_id=role_to_check,
             )
             if service.server_id is None:
-                _provision(db, integration=integration, service=service)
+                _provision(
+                    db,
+                    integration=integration,
+                    service=service,
+                    ram_mb=ram_mb,
+                    cpu_percent=cpu_percent,
+                )
             else:
                 _set_status(service, "ready")
                 service.terminate_after = None
                 _grant_customer_permissions(db, service)
-            _apply_slots_on_server(db, service.server_id, slots)
+            _apply_slots_on_server(db, service.server_id, eff_slots)
+            _apply_variables_on_server(db, service.server_id, variables)
             _apply_customer_role(db, service)
         elif desired_state == "suspended":
             # Gesperrt heisst: Server aus, Kundenrechte entzogen, Daten bleiben.
@@ -835,16 +1064,29 @@ def apply_batch(
             raise HosterConfigurationError("Unbekannter Service")
 
         if item.kind == "server":
-            if item.product_key:
-                product = get_product(db, integration, item.product_key)
+            if item.plan_id is not None or item.product_key:
+                plan, product = _resolve_plan_and_product(
+                    db,
+                    integration,
+                    plan_id=item.plan_id,
+                    product_key=item.product_key,
+                )
             elif existing is not None:
+                plan = existing.shop_plan
                 product = existing.product
             else:
                 raise HosterConfigurationError(
-                    "Fuer einen neuen Service wird eine Produktkennung benoetigt"
+                    "Fuer einen neuen Service wird plan_id oder product_key benoetigt"
                 )
             if effective_state != "terminated":
-                _validate_slots_for_product(product, item.slots)
+                _validate_server_item_params(
+                    plan=plan,
+                    product=product,
+                    ram_mb=item.ram_mb,
+                    cpu_percent=item.cpu_percent,
+                    slots=item.slots,
+                    variables=item.variables,
+                )
         else:
             if item.addon_slug:
                 _resolve_active_addon(db, item.addon_slug)
@@ -864,8 +1106,12 @@ def apply_batch(
                 desired_state=effective_state,
                 external_subject=payload.external_subject,
                 product_key=item.product_key,
+                plan_id=item.plan_id,
+                ram_mb=item.ram_mb,
+                cpu_percent=item.cpu_percent,
                 email=payload.email,
                 slots=item.slots,
+                variables=item.variables,
                 correlation_id=batch_correlation_id,
             )
         else:

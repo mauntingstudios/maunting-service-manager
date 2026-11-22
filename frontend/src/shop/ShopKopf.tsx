@@ -23,6 +23,8 @@ export function ShopKopf() {
   const { isAuthenticated, user, logout } = useAuthStore()
   const canUseAi = useHasPermission('ai.chat.use')
   const shopEnabled = usePublicSettingsStore((s) => s.shop_enabled)
+  const customBrand = usePublicSettingsStore((s) => s.branding?.custom_name || '')
+  const shopBrandTitle = customBrand ? `${customBrand} Shop` : 'MSM Shop'
 
   const abmelden = async () => {
     await logout()
@@ -83,7 +85,7 @@ export function ShopKopf() {
             aria-label={t('shop.kopf.startseite')}
           >
             <Logo size="sm" />
-            <span className="font-headline text-sm font-bold text-primary">MSM Shop</span>
+            <span className="font-headline text-sm font-bold text-primary">{shopBrandTitle}</span>
           </Link>
 
           {shopEnabled && (

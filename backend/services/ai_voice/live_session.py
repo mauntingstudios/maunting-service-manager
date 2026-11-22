@@ -163,8 +163,20 @@ def live_anweisungen(tools: list[dict], sprache: str, memory: str = "", lage: st
     ins Backend (`backend_anweisungen`).
     """
     faehigkeiten = "\n".join(zeile for zeile in map(_faehigkeit, tools) if zeile)
+    try:
+        from services import branding_service
+
+        ai_name = branding_service.get_effective_ai_name()
+    except Exception:
+        ai_name = ai_prompt.KI_NAME
+    identitaet_block = ai_prompt.IDENTITAET
+    if ai_name != ai_prompt.KI_NAME:
+        identitaet_block = (
+            f"Du heißt {ai_name}; von dir wird als \"sie\" gesprochen. Der Name ist deine "
+            "Identität. Nenne nie Modellname oder Anbieter des Sprachmodells."
+        )
     return "\n\n".join((
-        f"Du bist {ai_prompt.KI_NAME}, die Stimme eines Gameserver-Panels. "
+        f"Du bist {ai_name}, die Stimme eines Gameserver-Panels. "
         "Hinter dir arbeitet ein Backend mit den Werkzeugen des Panels: Server, Logs, "
         "Konfigurationen, Mods, Netzwerk und Nodes, dazu Notizen, Kalender, Karten und "
         "Websuche. Ganz normale Fragen beantwortest du selbst.\n"
@@ -176,7 +188,7 @@ def live_anweisungen(tools: list[dict], sprache: str, memory: str = "", lage: st
         # Wer sie ist, woher der Name kommt und dass das Modell dahinter nie
         # genannt wird: derselbe Block wie im getippten Chat. Die Stimme
         # beantwortet "Wie heisst du?" selbst, ohne das Backend.
-        ai_prompt.IDENTITAET,
+        identitaet_block,
         "Backchannel policy: Nutze Rückmeldelaute sparsam. Bestätige natürlich, ohne mit "
         "der eigentlichen Antwort zu konkurrieren.",
         "Interruption policy: Hör auf zu sprechen, wenn der Benutzer dich unterbricht, "

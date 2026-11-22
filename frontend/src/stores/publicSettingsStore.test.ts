@@ -188,5 +188,69 @@ describe('publicSettingsStore', () => {
     expect(state.notes_enabled).toBe(false)
     expect(state.calendar_enabled).toBe(true)
   })
+
+  it('normalisiert Branding-Einstellungen im Cache mit sicheren Fallbacks', () => {
+    localStorage.setItem(
+      'msm_cached_public_settings',
+      JSON.stringify({
+        ...DEFAULT_PUBLIC_SETTINGS,
+        branding: {
+          name: '',
+          custom_name: 'CloudForge',
+          tagline: 'Hosting ohne Ballast',
+          ai_name: 'ForgeBot',
+          logo_mode: 'custom',
+          season_logo_mode: 'custom',
+          logo_url: '/api/settings/public/branding/logo/default?v=2',
+          season_logos: {
+            birthday: 'javascript:alert(1)',
+            halloween: 'https://cdn.example.com/halloween.webp',
+            christmas: null,
+          },
+        },
+      }),
+    )
+
+    usePublicSettingsStore.getState().initFromCache()
+
+    const { branding } = usePublicSettingsStore.getState()
+    expect(branding.name).toBe('CloudForge')
+    expect(branding.custom_name).toBe('CloudForge')
+    expect(branding.tagline).toBe('Hosting ohne Ballast')
+    expect(branding.ai_name).toBe('ForgeBot')
+    expect(branding.logo_mode).toBe('custom')
+    expect(branding.season_logo_mode).toBe('custom')
+    expect(branding.logo_url).toBe('/api/settings/public/branding/logo/default?v=2')
+    expect(branding.season_logos.birthday).toBeNull()
+    expect(branding.season_logos.halloween).toBe('https://cdn.example.com/halloween.webp')
+    expect(branding.season_logos.christmas).toBeNull()
+  })
+
+  it('lehnt unsichere Branding-Logo-URLs ab und faellt auf Standardwerte zurueck', () => {
+    localStorage.setItem(
+      'msm_cached_public_settings',
+      JSON.stringify({
+        ...DEFAULT_PUBLIC_SETTINGS,
+        branding: {
+          logo_mode: 'invalid',
+          season_logo_mode: 'invalid',
+          logo_url: 'javascript:alert(1)',
+          season_logos: {
+            birthday: 'data:text/html,<script>',
+          },
+        },
+      }),
+    )
+
+    usePublicSettingsStore.getState().initFromCache()
+
+    const { branding } = usePublicSettingsStore.getState()
+    expect(branding.name).toBe(DEFAULT_PUBLIC_SETTINGS.branding.name)
+    expect(branding.ai_name).toBe(DEFAULT_PUBLIC_SETTINGS.branding.ai_name)
+    expect(branding.logo_mode).toBe('default')
+    expect(branding.season_logo_mode).toBe('default')
+    expect(branding.logo_url).toBeNull()
+    expect(branding.season_logos.birthday).toBeNull()
+  })
 })
 

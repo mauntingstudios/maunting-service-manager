@@ -1,4 +1,5 @@
 import type { FormEvent } from 'react'
+import { Link } from 'react-router-dom'
 import {
   AlertTriangle,
   CheckCircle2,
@@ -7,6 +8,7 @@ import {
   Globe,
   Rocket,
   Server as ServerIcon,
+  ShoppingBag,
 } from 'lucide-react'
 import {
   aiApi,
@@ -43,6 +45,8 @@ export interface SingraPublishModalProps {
   selectedNodeId: string
   setSelectedNodeId: (id: string) => void
   availableNodes: Array<{ id: string; name: string; status?: string }>
+  selectedTargetServerId?: string
+  setSelectedTargetServerId?: (id: string) => void
   publishBindIp: string
   setPublishBindIp: (ip: string) => void
   publishOptions: AiProjectPublishOptions | null
@@ -81,6 +85,8 @@ export function SingraPublishModal({
   selectedNodeId,
   setSelectedNodeId,
   availableNodes,
+  selectedTargetServerId = '',
+  setSelectedTargetServerId,
   publishBindIp,
   setPublishBindIp,
   publishOptions,
@@ -102,6 +108,10 @@ export function SingraPublishModal({
   onSubmitDirect,
   onGuidedPublish,
 }: SingraPublishModalProps) {
+  const isRentedMode = publishOptions?.mode === 'rented_server'
+  const targetServers = publishOptions?.target_servers ?? []
+  const missingRentedServer = isRentedMode && (targetServers.length === 0 || !selectedTargetServerId)
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
@@ -115,11 +125,91 @@ export function SingraPublishModal({
             </span>
           </DialogTitle>
           <DialogDescription>
-            Übernimmt deinen aktuellen Entwicklungsstand auf eine Node, führt ausstehende PostgreSQL-Migrationen aus und stellt das Projekt im Server-Dashboard bereit.
+            {isRentedMode
+              ? 'Überträgt den aktuellen Projektstand auf deinen ausgewählten gemieteten Web- oder Bot-Server und startet ihn anschließend neu.'
+              : 'Übernimmt deinen aktuellen Entwicklungsstand auf eine Node, führt ausstehende PostgreSQL-Migrationen aus und stellt das Projekt im Server-Dashboard bereit.'}
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={onSubmitDirect} className="space-y-4 p-6">
-          <div className="rounded-xl border border-outline-variant/25 bg-surface-container-low/50 p-3.5 space-y-2 text-xs">
+          {isRentedMode ? (
+            <div className="space-y-4">
+              {targetServers.length > 0 ? (
+                <div>
+                  <label className="block text-xs font-medium text-on-surface-variant mb-1">
+                    Gemieteter Ziel-Server
+                  </label>
+                  <Dropdown
+                    value={selectedTargetServerId}
+                    onChange={(val) => setSelectedTargetServerId?.(val)}
+                    options={targetServers.map((srv) => ({
+                      value: String(srv.id),
+                      label: `${srv.name} (${srv.game_type})`,
+                    }))}
+                    aria-label="Gemieteten Ziel-Server auswählen"
+                  />
+                  <p className="mt-1 text-xs text-on-surface-variant">
+                    Unterstützt werden deine gemieteten Web- und Bot-Server mit Schreibrechten.
+                  </p>
+                </div>
+              ) : (
+                <div className="rounded-xl border border-status-warning/30 bg-status-warning/10 p-4 space-y-3 text-xs">
+                  <div className="flex items-start gap-2.5 text-on-surface">
+                    <AlertTriangle className="h-4 w-4 text-status-warning shrink-0 mt-0.5" aria-hidden="true" />
+                    <div className="space-y-1">
+                      <p className="font-semibold">Kein passender Server gemietet</p>
+                      <p className="text-on-surface-variant">
+                        Für die Veröffentlichung eines KI-Projekts wird ein aktiver Frontend-, Backend- oder Bot-Server benötigt.
+                      </p>
+                    </div>
+                  </div>
+                  <Link
+                    to="/shop"
+                    onClick={() => onOpenChange(false)}
+                    className="inline-flex items-center gap-1.5 rounded-full bg-primary px-3.5 py-1.5 font-medium text-on-primary hover:opacity-90 transition-opacity"
+                  >
+                    <ShoppingBag className="h-3.5 w-3.5" aria-hidden="true" />
+                    <span>Zum Shop</span>
+                  </Link>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-medium text-on-surface-variant mb-1">
+                  Release-Notiz (optional)
+                </label>
+                <Input
+                  value={releaseNotes}
+                  onChange={(e) => setReleaseNotes(e.target.value)}
+                  placeholder="z. B. Startseite aktualisiert"
+                  aria-label="Release-Notiz"
+                />
+              </div>
+
+              {selectedProject?.git_repo_url && (
+                <label className="flex items-center gap-2 text-xs text-on-surface cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={publishMergeToMain}
+                    onChange={(e) => setPublishMergeToMain(e.target.checked)}
+                    className="rounded border-outline-variant text-primary focus:ring-primary"
+                  />
+                  <span>Änderungen bei Veröffentlichung in den main-Branch mergen</span>
+                </label>
+              )}
+
+              <div className="flex flex-wrap items-center justify-end gap-2.5 pt-4 border-t border-outline-variant/20">
+                <Button type="button" variant="ghost" size="sm" onClick={() => onOpenChange(false)}>
+                  Abbrechen
+                </Button>
+                <Button type="submit" size="sm" disabled={publishing || missingRentedServer}>
+                  <Rocket className="h-3.5 w-3.5" aria-hidden="true" />
+                  <span>{publishing ? 'Veröffentlicht…' : 'Auf Server veröffentlichen'}</span>
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="rounded-xl border border-outline-variant/25 bg-surface-container-low/50 p-3.5 space-y-2 text-xs">
             <div className="flex items-center justify-between">
               <span className="text-on-surface-variant flex items-center gap-1.5">
                 <Database className="h-3.5 w-3.5 text-primary" />
@@ -477,6 +567,8 @@ export function SingraPublishModal({
               <span>Mit Singra online schalten</span>
             </Button>
           </div>
+          </>
+          )}
         </form>
       </DialogContent>
     </Dialog>

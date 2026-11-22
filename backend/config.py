@@ -132,6 +132,9 @@ class Settings(BaseSettings):
     # Team-Medien (Profilbilder & Banner, streng von Server-Wallpapers getrennt):
     # team_media_dir/{team_id}/{avatar|banner}/. Dev/Test via MSM_TEAM_MEDIA_DIR.
     team_media_dir: str = "/opt/msm/team-media"
+    # Eigene Whitelabel-Logos (default, birthday, halloween, christmas) als WebP.
+    # Dev/Test via MSM_BRANDING_DIR ueberschreibbar (z. B. tmp_path).
+    branding_dir: str = "/opt/msm/branding"
     local_agent_env_file: str = "/opt/msm/msm-agent/.env"
     # Direkter Enrollment-/Handshake-Token fuer den lokalen Agent (bei 3-User-Isolation
     # kann msm die msm-agent/.env nicht direkt lesen; install.sh setzt ihn hier).

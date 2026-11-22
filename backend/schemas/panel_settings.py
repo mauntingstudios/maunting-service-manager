@@ -1,6 +1,9 @@
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+BrandLogoMode = Literal["default", "custom"]
+BrandSeasonLogoMode = Literal["default", "custom", "disabled"]
 
 # Die beiden Panelsprachen. Das Panel schickt seit jeher nur diese zwei — es
 # leitet den Wert durch `normalizePanelLanguage` —, aber als freies `str` war
@@ -97,6 +100,14 @@ class PanelSettingsResponse(BaseModel):
     rate_limit_auth: int = 10
     rate_limit_global: int = 100
     allow_localhost_connections: bool = False
+    # Whitelabeling & Branding (Akzentfarben bleiben fest im Design-System).
+    brand_name: str = ""
+    brand_tagline: str = ""
+    brand_ai_name: str = ""
+    brand_ai_email: str = ""
+    brand_logo_mode: BrandLogoMode = "default"
+    brand_season_logo_mode: BrandSeasonLogoMode = "default"
+    brand_logos: dict[str, dict[str, Any]] = Field(default_factory=dict)
 
 
 class PanelSettingsUpdate(BaseModel):
@@ -150,6 +161,12 @@ class PanelSettingsUpdate(BaseModel):
     rate_limit_auth: int | None = None
     rate_limit_global: int | None = None
     allow_localhost_connections: bool | None = None
+    brand_name: str | None = None
+    brand_tagline: str | None = None
+    brand_ai_name: str | None = None
+    brand_ai_email: str | None = None
+    brand_logo_mode: BrandLogoMode | None = None
+    brand_season_logo_mode: BrandSeasonLogoMode | None = None
     confirm_password: str | None = None
     confirm_otp_code: str | None = None
     confirm_passkey: dict | None = None

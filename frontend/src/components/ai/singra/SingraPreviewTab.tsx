@@ -74,6 +74,7 @@ export interface SingraPreviewTabProps {
   onFixPreviewWithSingra: () => void
   onStartDevSandbox: () => void
   onStopDevSandbox: () => void
+  canStartDevPreview?: boolean
   onOpenProjectChat: (projectId: string, conversationId?: string) => void
 }
 
@@ -118,6 +119,7 @@ export function SingraPreviewTab({
   onFixPreviewWithSingra,
   onStartDevSandbox,
   onStopDevSandbox,
+  canStartDevPreview = true,
   onOpenProjectChat,
 }: SingraPreviewTabProps) {
   return (
@@ -417,7 +419,7 @@ export function SingraPreviewTab({
                         <Pause className="h-3.5 w-3.5 shrink-0" />
                         <span>Sandbox pausieren</span>
                       </Button>
-                    ) : (
+                    ) : canStartDevPreview ? (
                       <Button
                         type="button"
                         size="sm"
@@ -428,6 +430,10 @@ export function SingraPreviewTab({
                         {devStatusLoading ? <Spinner className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5 shrink-0" />}
                         <span>Sandbox starten</span>
                       </Button>
+                    ) : (
+                      <span className="text-xs text-on-surface-variant">
+                        Live-Vorschau nicht freigeschaltet
+                      </span>
                     )}
                   </div>
                 </div>
