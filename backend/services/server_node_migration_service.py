@@ -211,6 +211,16 @@ def migrate_server_to_node(
             server.id,
             target.id,
         )
+        try:
+            from services import server_dns_service
+
+            server_dns_service.sync_server_subdomain_on_migration(db, server)
+        except Exception:
+            logger.debug(
+                "Cloudflare-Subdomain-Sync nach Migration uebersprungen (server_id=%s)",
+                server.id,
+                exc_info=True,
+            )
         return {
             "ok": True,
             "server_id": server.id,

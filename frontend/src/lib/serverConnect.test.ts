@@ -100,4 +100,16 @@ describe('resolveServerConnect', () => {
     })
     expect(ipv6.primary?.address).toBe('[2001:db8::42]:25565')
   })
+
+  it('prefers public_hostname over public_bind_ip when configured', () => {
+    const res = resolveServerConnect({
+      public_hostname: 'srv7.play.example.gg',
+      public_bind_ip: '198.51.100.4',
+      game_port: 25565,
+      query_port: null,
+      rcon_port: null,
+    })
+    expect(res.host).toBe('srv7.play.example.gg')
+    expect(res.primary?.address).toBe('srv7.play.example.gg:25565')
+  })
 })

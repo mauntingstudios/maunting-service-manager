@@ -163,6 +163,18 @@ def apply_agent_metrics(node: Node, metrics: dict[str, Any] | None) -> None:
             node.cpu_percent = float(metrics["cpu_percent"])
         except (TypeError, ValueError):
             pass
+    if metrics.get("cpu_steal_percent") is not None:
+        try:
+            steal = float(metrics["cpu_steal_percent"])
+            if steal >= 0.0:
+                node.cpu_steal_percent = round(steal, 2)
+        except (TypeError, ValueError):
+            pass
+    ram_type = metrics.get("ram_type")
+    if isinstance(ram_type, str) and not getattr(node, "ram_type", None):
+        cleaned_ram = ram_type.strip()
+        if cleaned_ram:
+            node.ram_type = cleaned_ram[:32]
     if metrics.get("ram_used_bytes") is not None:
         try:
             node.ram_used = int(metrics["ram_used_bytes"]) // (1024 * 1024)
@@ -317,7 +329,9 @@ def node_out_dict(
         metrics = {
             "cpu_count": getattr(node, "cpu_total", None),
             "cpu_percent": cpu_percent,
+            "cpu_steal_percent": getattr(node, "cpu_steal_percent", None),
             "cpu_model": getattr(node, "cpu_model", None),
+            "ram_type": getattr(node, "ram_type", None),
             "ram_percent": (ram_used_bytes / ram_total_bytes * 100) if ram_total_bytes else 0.0,
             "ram_total_bytes": ram_total_bytes,
             "ram_used_bytes": ram_used_bytes,
@@ -338,6 +352,10 @@ def node_out_dict(
         "tls_fingerprint": getattr(node, "tls_fingerprint", None) or None,
         "cpu_total": node.cpu_total,
         "cpu_model": getattr(node, "cpu_model", None),
+        "location_label": getattr(node, "location_label", None),
+        "ram_type": getattr(node, "ram_type", None),
+        "storage_type": getattr(node, "storage_type", None),
+        "cpu_steal_percent": getattr(node, "cpu_steal_percent", None),
         "ram_total": node.ram_total,
         "disk_total": node.disk_total,
         "disk_used": getattr(node, "disk_used", None),

@@ -37,6 +37,7 @@ export function formatCpuLabel(wert: number, sprache: 'de' | 'en' = 'de'): strin
 export function preisAufschluesselung(
   spiel: ShopSpiel,
   konfiguration: Konfiguration,
+  aboRabattProzent = 0,
 ): PreisAufschluesselung {
   const ramStep = spiel.ramStepGb && spiel.ramStepGb > 0 ? spiel.ramStepGb : 1
   const cpuStep = spiel.cpuStep && spiel.cpuStep > 0 ? spiel.cpuStep : 1
@@ -52,7 +53,11 @@ export function preisAufschluesselung(
     spiel.preisProSlotCent
   const kiCent = konfiguration.kiZugang ? spiel.kiZugangCent : 0
   const monatCent = spiel.grundpreisCent + ramCent + cpuCent + slotsCent + kiCent
-  const rabattProzent = RABATT_PROZENT[konfiguration.laufzeitMonate]
+  const modus = konfiguration.abrechnungsModus ?? 'prepaid'
+  let rabattProzent = RABATT_PROZENT[konfiguration.laufzeitMonate]
+  if (modus === 'subscription' && konfiguration.laufzeitMonate === 1 && aboRabattProzent > 0) {
+    rabattProzent = Math.min(50, rabattProzent + aboRabattProzent)
+  }
   const gesamtCent = Math.round(
     monatCent * konfiguration.laufzeitMonate * (1 - rabattProzent / 100),
   )

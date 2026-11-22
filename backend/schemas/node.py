@@ -37,6 +37,9 @@ class NodeUpdate(BaseModel):
     host: str | None = Field(default=None, min_length=1, max_length=255)
     auth_token: str | None = Field(default=None, min_length=16, max_length=512)
     tls_fingerprint: str | None = Field(default=None, max_length=128)
+    location_label: str | None = Field(default=None, max_length=120)
+    ram_type: str | None = Field(default=None, max_length=32)
+    storage_type: str | None = Field(default=None, max_length=64)
 
     @field_validator("name", mode="before")
     @classmethod
@@ -47,6 +50,14 @@ class NodeUpdate(BaseModel):
         if not name:
             raise ValueError("name darf nicht leer sein")
         return name
+
+    @field_validator("location_label", "ram_type", "storage_type", mode="before")
+    @classmethod
+    def _trim_optional_metadata(cls, value: object) -> str | None:
+        if value is None:
+            return None
+        cleaned = str(value).strip()
+        return cleaned or None
 
     @field_validator("tls_fingerprint", mode="before")
     @classmethod
@@ -70,6 +81,10 @@ class NodeOut(BaseModel):
     tls_fingerprint: str | None = None
     cpu_total: float | None = None
     cpu_model: str | None = None
+    location_label: str | None = None
+    ram_type: str | None = None
+    storage_type: str | None = None
+    cpu_steal_percent: float | None = None
     ram_total: int | None = None
     disk_total: int | None = None
     disk_used: int | None = None

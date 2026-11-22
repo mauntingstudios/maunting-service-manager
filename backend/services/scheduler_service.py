@@ -765,10 +765,16 @@ async def _background_update_check_task() -> None:
                     try:
                         fresh = st_db.query(Server).filter(Server.id == server_id).first()
                         current_status = fresh.status if fresh else None
+                        auto_paused = bool(getattr(fresh, "auto_update_paused", False)) if fresh else False
                     finally:
                         st_db.close()
 
-                    if fresh and current_status not in ("running", "starting", "stopping"):
+                    if auto_paused:
+                        _append_console_log(
+                            server_id,
+                            "[MSM] Autonome Workshop-Mod-Updates pausiert (Update-Pinning aktiv).\n",
+                        )
+                    elif fresh and current_status not in ("running", "starting", "stopping"):
                         from services.install_update_lock_service import (
                             try_acquire_install_update_lock,
                             release_install_update_lock,
@@ -784,6 +790,17 @@ async def _background_update_check_task() -> None:
                             )
                         else:
                             try:
+                                def _pre_backup_sync() -> None:
+                                    from services.server_lifecycle_service import _run_pre_update_backup
+                                    b_db = SessionLocal()
+                                    try:
+                                        b_srv = b_db.query(Server).filter(Server.id == server_id).first()
+                                        if b_srv is not None:
+                                            _run_pre_update_backup(b_db, b_srv, reason="scheduler_mod")
+                                    finally:
+                                        b_db.close()
+
+                                await asyncio.to_thread(_pre_backup_sync)
                                 mod_res = await asyncio.to_thread(
                                     plugin.perform_workshop_mod_updates,
                                     server,

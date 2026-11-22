@@ -9,6 +9,9 @@ interface PreisPanelProps {
   konfiguration: Konfiguration
   onWeiter?: () => void
   verfuegbar?: boolean
+  aboRabattProzent?: number
+  erstattungTage?: number
+  erstattungHinweis?: string
 }
 
 export function PreisPanel({
@@ -16,9 +19,12 @@ export function PreisPanel({
   konfiguration,
   onWeiter,
   verfuegbar = true,
+  aboRabattProzent = 0,
+  erstattungTage = 0,
+  erstattungHinweis = '',
 }: PreisPanelProps) {
   const { t } = useTranslation()
-  const preis = preisAufschluesselung(spiel, konfiguration)
+  const preis = preisAufschluesselung(spiel, konfiguration, aboRabattProzent)
 
   const zeilen = [
     { label: t('shop.preis.grundpreis'), cent: preis.grundpreisCent },
@@ -48,7 +54,9 @@ export function PreisPanel({
 
       {preis.rabattProzent > 0 && (
         <p className="rounded-lg border border-primary/30 bg-primary/10 px-3 py-2 text-xs text-primary">
-          {t('shop.preis.rabatt', { prozent: preis.rabattProzent })}
+          {(konfiguration.abrechnungsModus ?? 'prepaid') === 'subscription' && aboRabattProzent > 0
+            ? t('shop.preis.aboRabatt', { prozent: preis.rabattProzent })
+            : t('shop.preis.rabatt', { prozent: preis.rabattProzent })}
         </p>
       )}
 
@@ -100,6 +108,24 @@ export function PreisPanel({
       <p className="text-center text-label-sm leading-relaxed text-on-surface-variant">
         {t('shop.spiel.stripeHinweis')}
       </p>
+
+      <div className="space-y-1 border-t border-outline-variant/25 pt-3 text-label-sm leading-relaxed text-on-surface-variant">
+        <p>
+          {(konfiguration.abrechnungsModus ?? 'prepaid') === 'prepaid'
+            ? t('shop.kasse.prepaidHinweis')
+            : t('shop.kasse.aboHinweis')}
+        </p>
+        {spiel.geschaetzteSetupSekunden != null && spiel.geschaetzteSetupSekunden > 0 && (
+          <p>{t('shop.spiel.setupDauer', { sekunden: spiel.geschaetzteSetupSekunden })}</p>
+        )}
+        <p>{t('shop.spiel.datensicherheitHinweis')}</p>
+        {erstattungTage > 0 && (
+          <p className="text-on-surface">
+            {t('shop.spiel.erstattungGarantie', { tage: erstattungTage })}
+            {erstattungHinweis ? ` ${erstattungHinweis}` : ''}
+          </p>
+        )}
+      </div>
     </aside>
   )
 }

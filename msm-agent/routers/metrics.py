@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import platform
 from pathlib import Path
 from typing import Any
@@ -38,11 +39,32 @@ def _read_cpu_model() -> str | None:
         return None
 
 
+def _read_cpu_steal_percent() -> float | None:
+    """Return Linux CPU steal percentage if supported, else None."""
+    try:
+        times = psutil.cpu_times_percent(interval=None)
+        steal = getattr(times, "steal", None)
+        if steal is None or isinstance(steal, bool):
+            return None
+        return round(max(0.0, float(steal)), 2)
+    except Exception:
+        return None
+
+
+def _read_ram_type() -> str | None:
+    """Return optional operator-declared RAM type (never fabricate DDR5)."""
+    raw = (os.environ.get("MSM_NODE_RAM_TYPE") or "").strip()
+    if not raw:
+        return None
+    return raw[:32]
+
+
 @router.get("/metrics")
 def metrics() -> dict[str, Any]:
     """Return host CPU/RAM/disk and coarse network counters."""
     cpu_count = psutil.cpu_count(logical=True) or 0
     cpu_percent = psutil.cpu_percent(interval=0.1)
+    cpu_steal_percent = _read_cpu_steal_percent()
     mem = psutil.virtual_memory()
     try:
         disk = psutil.disk_usage(str(settings.servers_path()))
@@ -63,7 +85,9 @@ def metrics() -> dict[str, Any]:
     return {
         "cpu_count": cpu_count,
         "cpu_percent": cpu_percent,
+        "cpu_steal_percent": cpu_steal_percent,
         "cpu_model": _read_cpu_model(),
+        "ram_type": _read_ram_type(),
         "ram_total_bytes": int(mem.total),
         "ram_used_bytes": int(mem.used),
         "ram_percent": float(mem.percent),

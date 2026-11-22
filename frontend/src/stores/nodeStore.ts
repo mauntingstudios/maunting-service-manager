@@ -30,6 +30,9 @@ interface NodeState {
       host?: string
       auth_token?: string
       tls_fingerprint?: string
+      location_label?: string | null
+      ram_type?: string | null
+      storage_type?: string | null
     },
   ) => Promise<Node>
   deleteNode: (id: number) => Promise<void>

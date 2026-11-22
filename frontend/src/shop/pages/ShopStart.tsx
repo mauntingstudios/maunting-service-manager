@@ -27,6 +27,7 @@ import {
   type ShopAddonCategory,
   type ShopCatalogAddon,
   type ShopPublicBadgePromo,
+  type ShopPublicNodeStatusDto,
 } from '@/api/shop'
 import { useHasPermission } from '@/hooks/useHasPermission'
 import { still } from '@/lib/still'
@@ -67,6 +68,23 @@ export function ShopStart() {
   const [filter, setFilter] = useState<KatalogFilter>('alle')
   const [badges, setBadges] = useState<ShopPublicBadgePromo[]>([])
   const [ausgewaehltesHeroId, setAusgewaehltesHeroId] = useState<string | null>(null)
+  const [nodeStatuses, setNodeStatuses] = useState<ShopPublicNodeStatusDto[]>([])
+
+  useEffect(() => {
+    let aktiv = true
+    const fetchNodes = shopCatalogApi.getNodeStatus
+    if (!fetchNodes) return
+    fetchNodes()
+      .then((rows) => {
+        if (aktiv && Array.isArray(rows)) setNodeStatuses(rows)
+      })
+      .catch((err) => {
+        still(err, 'ShopStart.getNodeStatus')
+      })
+    return () => {
+      aktiv = false
+    }
+  }, [])
 
   useEffect(() => {
     if (!location.hash) return
@@ -396,6 +414,66 @@ export function ShopStart() {
           </div>
         </div>
       </section>
+
+      {nodeStatuses.length > 0 && (
+        <section
+          aria-label={t('shop.nodeStatus.titel')}
+          className="mx-auto max-w-7xl px-4 pt-10 sm:px-6 lg:px-8"
+        >
+          <div className="msm-card rounded-2xl border border-outline-variant/30 bg-surface-container-low/80 p-5">
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <div>
+                <h2 className="font-headline text-base font-bold text-on-surface">
+                  {t('shop.nodeStatus.titel')}
+                </h2>
+                <p className="text-xs text-on-surface-variant">
+                  {t('shop.nodeStatus.untertitel')}
+                </p>
+              </div>
+            </div>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {nodeStatuses.map((node) => {
+                const isOffline = node.load_level === 'offline' || node.status !== 'online'
+                const isFull = !isOffline && (node.load_level === 'full' || node.load_level === 'high' || !node.accepting_orders)
+                const badgeVariant = isOffline ? 'destructive' : isFull ? 'warning' : 'success'
+                const badgeLabel = isOffline
+                  ? t('shop.nodeStatus.offline')
+                  : isFull
+                    ? t('shop.nodeStatus.belegt')
+                    : t('shop.nodeStatus.frei')
+                return (
+                  <div
+                    key={node.id}
+                    className="flex flex-col justify-between gap-2 rounded-xl border border-outline-variant/30 bg-surface-container p-3.5"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-on-surface">
+                          {node.location_label || node.name}
+                        </p>
+                        {node.location_label && node.location_label !== node.name && (
+                          <p className="truncate text-xs text-on-surface-variant">{node.name}</p>
+                        )}
+                      </div>
+                      <Badge variant={badgeVariant}>{badgeLabel}</Badge>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-on-surface-variant">
+                      {node.cpu_model && <span>{node.cpu_model}</span>}
+                      {node.ram_type && <span>{node.ram_type}</span>}
+                      {node.storage_type && <span>{node.storage_type}</span>}
+                      {node.ram_free_percent != null && (
+                        <span className="font-medium text-on-surface">
+                          {t('shop.nodeStatus.ramFreiProzent', { percent: Math.round(node.ram_free_percent) })}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        </section>
+      )}
 
       <section id="shop-spiele" className="mx-auto max-w-7xl px-4 py-14 sm:px-6 lg:px-8">
         <div className="mx-auto max-w-2xl text-center">

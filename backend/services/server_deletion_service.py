@@ -212,6 +212,16 @@ def delete_server_completely(db: Session, *, server_id: int, actor: ActorContext
                 raise _fail("server_console_log_delete_failed") from exc
 
     # ── 6. Datenbankzeile entfernen (Cascade raeumt Rechte, Mods, Backups) ─
+    try:
+        from services import server_dns_service
+
+        server_dns_service.cleanup_server_subdomain(db, server)
+    except Exception:
+        logger.debug(
+            "Cloudflare-Subdomain-Cleanup vor Server-Delete uebersprungen (server_id=%s)",
+            server.id,
+            exc_info=True,
+        )
     audit_service.record_privileged_action(
         db,
         user_id=principal.id,

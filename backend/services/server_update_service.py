@@ -22,6 +22,7 @@ _RESOURCE_FIELDS = frozenset({"cpu_limit_percent", "ram_limit_mb", "disk_limit_g
 _CONFIG_FIELDS = frozenset({
     "name",
     "auto_restart",
+    "auto_update_paused",
     "restart_interval_hours",
     "restart_time_utc",
     "restart_times_utc",
@@ -420,6 +421,13 @@ def execute_server_update(
         from services.server_lifecycle_service import sync_desired_state_to_agent
 
         sync_desired_state_to_agent(db, server)
+        if getattr(server, "public_hostname", None):
+            try:
+                from services import server_dns_service
+
+                server_dns_service.sync_server_subdomain_on_migration(db, server)
+            except Exception:
+                pass
 
     data = _srv._server_response(server, db)
     data.is_hoster_managed = _srv.permission_service.is_hoster_customer_server(db, server_id)

@@ -3,7 +3,12 @@ import { Link, useLocation, useParams, useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { ArrowLeft, ExternalLink, LogIn, ShieldCheck, UserPlus } from 'lucide-react'
 import { Badge, Button, Dropdown, Spinner, Zustandsflaeche } from '@maunting/ui'
-import { shopCatalogApi, shopOrderApi, type ShopCouponPreviewResponse } from '@/api/shop'
+import {
+  shopCatalogApi,
+  shopOrderApi,
+  type ShopCouponPreviewResponse,
+  type ShopPublicPolicyDto,
+} from '@/api/shop'
 import { SanitizedApiError } from '@/api/client'
 import { still } from '@/lib/still'
 import { useAuthStore } from '@/stores/authStore'
@@ -57,6 +62,23 @@ export function ShopKasse() {
   const [fehler, setFehler] = useState('')
   const [busy, setBusy] = useState(false)
   const [erfolg, setErfolg] = useState<string | null>(null)
+  const [publicPolicy, setPublicPolicy] = useState<ShopPublicPolicyDto | null>(null)
+
+  useEffect(() => {
+    let aktiv = true
+    const fetchPolicy = shopCatalogApi.getPublicPolicy
+    if (!fetchPolicy) return
+    fetchPolicy()
+      .then((policy) => {
+        if (aktiv) setPublicPolicy(policy)
+      })
+      .catch((err) => {
+        still(err, 'ShopKasse.getPublicPolicy')
+      })
+    return () => {
+      aktiv = false
+    }
+  }, [])
 
   useEffect(() => {
     if (istAngemeldet && user?.email && !email) {
@@ -70,7 +92,11 @@ export function ShopKasse() {
       return Math.round(addon.price_cents * addonMonate * (1 - rabatt / 100))
     }
     if (spiel && konfiguration) {
-      return preisAufschluesselung(spiel, konfiguration).gesamtCent
+      return preisAufschluesselung(
+        spiel,
+        konfiguration,
+        publicPolicy?.subscription_discount_percent ?? 0,
+      ).gesamtCent
     }
     return 0
   })()
@@ -188,8 +214,10 @@ export function ShopKasse() {
     setBusy(true)
 
     try {
+      const billingMode = istAddon ? 'prepaid' : (konfiguration!.abrechnungsModus ?? 'prepaid')
       const baseOrderPayload = {
         months: istAddon ? addonMonate : konfiguration!.laufzeitMonate,
+        billing_mode: billingMode,
         ...(gutscheinVorschau?.valid ? { coupon_code: gutscheinVorschau.code } : {}),
         buyer_name: name.trim(),
         buyer_street: strasse.trim(),
@@ -447,6 +475,20 @@ export function ShopKasse() {
                 {t('shop.kasse.zahlungsHinweis')}
               </p>
 
+              <div className="rounded-xl border border-outline-variant/30 bg-surface-container/60 px-3.5 py-2.5 text-xs leading-relaxed text-on-surface-variant space-y-1">
+                <p className="font-medium text-on-surface">
+                  {istAddon || (konfiguration?.abrechnungsModus ?? 'prepaid') === 'prepaid'
+                    ? t('shop.kasse.prepaidHinweis')
+                    : t('shop.kasse.aboHinweis')}
+                </p>
+                {(publicPolicy?.refund_guarantee_days ?? 0) > 0 && (
+                  <p>
+                    {t('shop.kasse.erstattungHinweis', { tage: publicPolicy!.refund_guarantee_days })}
+                    {publicPolicy?.refund_policy_note ? ` ${publicPolicy.refund_policy_note}` : ''}
+                  </p>
+                )}
+              </div>
+
               {fehler && (
                 <p role="alert" className="text-sm font-medium text-status-destructive">
                   {fehler}
@@ -512,6 +554,14 @@ export function ShopKasse() {
                   <div className="flex justify-between gap-3">
                     <dt className="text-on-surface-variant">{t('shop.kasse.slots')}</dt>
                     <dd className="text-on-surface">{konfiguration.slots}</dd>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <dt className="text-on-surface-variant">{t('shop.kasse.zahlungsartLabel')}</dt>
+                    <dd className="text-on-surface">
+                      {(konfiguration.abrechnungsModus ?? 'prepaid') === 'prepaid'
+                        ? t('shop.konto.abos.typPrepaid')
+                        : t('shop.konto.abos.typAbo')}
+                    </dd>
                   </div>
                   <div className="flex justify-between gap-3">
                     <dt className="text-on-surface-variant">{t('shop.kasse.laufzeit')}</dt>

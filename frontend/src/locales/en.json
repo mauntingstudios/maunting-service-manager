@@ -2528,6 +2528,12 @@
       "manual": "Set up manually",
       "manualHint": "For custom agent or network configurations"
     },
+    "locationLabel": "Location label",
+    "locationPlaceholder": "e.g. Frankfurt DE · Datacenter 2",
+    "ramType": "RAM type (optional)",
+    "ramTypePlaceholder": "e.g. DDR5 ECC",
+    "storageType": "Storage type (optional)",
+    "storageTypePlaceholder": "e.g. NVMe SSD",
     "status": {
       "online": "Online",
       "unknown": "Unknown",
@@ -3336,6 +3342,13 @@
       "user": "Master user"
     },
     "databasePort": "Database port",
+    "cpuStealLabel": "CPU steal",
+    "ramPeakLabel": "RAM peak",
+    "autoUpdatePausedLabel": "Pause auto-updates (mod protection)",
+    "autoUpdatePausedHint": "Skips automatic game and mod updates on start. Missing initial files are still installed.",
+    "autoUpdatePausedSaved": "Update setting saved.",
+    "diagnoseWithSingra": "Analyze with Singra",
+    "singraCrashPrompt": "My server \"{{name}}\" ({{game}}) is in an error state ({{status}}). Please analyze likely causes from the recent console/crash logs and configuration, and suggest concrete steps to fix it.",
     "kind": {
       "application": "Application",
       "database": "Database server",
@@ -4728,7 +4741,17 @@
         "dunningReminderDaysHint": "Comma-separated days before permanent deletion, e.g. 7, 4, 1.",
         "speichern": "Save retention settings",
         "gespeichert": "Retention settings saved.",
-        "fehler": "Could not save retention settings."
+        "fehler": "Could not save retention settings.",
+        "subscriptionDiscountPercent": "Subscription discount (%)",
+        "subscriptionDiscountPercentHint": "Optional percentage discount (0 to 50) when customers actively choose the monthly subscription over prepaid.",
+        "refundGuaranteeDays": "Money-back guarantee (days)",
+        "refundGuaranteeDaysHint": "Days allowed for refunds to the original payment method (0 hides the guarantee notice).",
+        "refundPolicyNote": "Refund policy note",
+        "refundPolicyNoteHint": "Short notice displayed at checkout explaining refund terms without forced store credit.",
+        "autoSubdomainEnabled": "Automatically create Cloudflare subdomain",
+        "autoSubdomainEnabledHint": "Creates A/AAAA and SRV records via Cloudflare on shop provisioning and updates them on node migration.",
+        "autoSubdomainZone": "Subdomain zone (Cloudflare domain)",
+        "autoSubdomainZoneHint": "Base domain for automatic server subdomains, e.g. play.yourdomain.gg."
       },
       "zahlungen": {
         "titel": "Payments",
@@ -4933,7 +4956,13 @@
         "umsatzBrutto": "Paid revenue",
         "bezahlteOrders": "Paid orders",
         "aktiveAbos": "Active subscriptions",
-        "aktiveGutscheine": "Active coupons"
+        "aktiveGutscheine": "Active coupons",
+        "betreiberAnsichtBadge": "Operator accounting · All customer receipts",
+        "filterAlle": "All",
+        "filterRechnungen": "Shop invoices",
+        "filterGutschriften": "Credit notes",
+        "typShopRechnung": "Shop invoice",
+        "typHosterApi": "Hoster API"
       }
     },
     "cloudflareEnabled": "Cloudflare DNS",
@@ -6743,6 +6772,14 @@
     "restoreModalWarning": "WARNING: This script stops the MSM panel service and overwrites the database and configuration files! The files in the vault (/opt/msm/vault-blobs) are not part of the backup. If that directory is from a different point in time, vault files are lost."
   },
   "shop": {
+    "nodeStatus": {
+      "titel": "Live node utilization by location",
+      "untertitel": "Real-time capacities of our active nodes shown before checkout.",
+      "frei": "Capacity available",
+      "belegt": "High load",
+      "offline": "Maintenance / Offline",
+      "ramFreiProzent": "{{percent}}% RAM free"
+    },
     "kopf": {
       "startseite": "Back to shop home",
       "navigation": "Shop navigation",
@@ -6939,7 +6976,25 @@
       "ausverkauftText": "Not enough RAM or CPU is currently available on an active node for this configuration.",
       "stripeHinweis": "Secure payment via Stripe · Automatic provisioning right after payment.",
       "nichtGefundenTitel": "Game not found",
-      "nichtGefundenText": "This item is not available in the current catalog."
+      "nichtGefundenText": "This item is not available in the current catalog.",
+      "zahlungsart": "Billing",
+      "prepaidTitel": "Prepaid (expires automatically)",
+      "prepaidHinweis": "No automatic renewal and no cancellation deadline. Extend only when you want to.",
+      "aboTitel": "Subscription (auto-renew)",
+      "aboRabattBadge": "-{{prozent}}%",
+      "aboHinweis": "Renews automatically each month and can be cancelled anytime before the period ends.",
+      "aboHinweisMitRabatt": "Monthly subscription with {{prozent}}% recurring discount. Cancel anytime before the period ends.",
+      "aboIntervallHinweis": "Subscriptions are billed on a fixed 1-month cycle.",
+      "inklusiveTitel": "Always €0.00 included",
+      "inklusiveDdos": "DDoS protection",
+      "inklusiveBackups": "Automatic backups (incl. pre-update)",
+      "inklusiveGameSwitch": "Instant game switch",
+      "inklusiveSftp": "SFTP & file manager",
+      "inklusiveKonsole": "Live console & subdomain",
+      "ramEmpfehlung": "Guideline for {{ram}} GB RAM and {{cpu}} vCPU: approx. {{spieler}} concurrent players (unmodded).",
+      "setupDauer": "Estimated setup time: approx. {{sekunden}}s",
+      "erstattungGarantie": "{{tage}}-day money-back guarantee to your original payment method.",
+      "datensicherheitHinweis": "Automatic backup before updates and world export anytime without lock-in."
     },
     "kasse": {
       "titel": "Checkout",
@@ -6989,7 +7044,11 @@
       "gutscheinPruefen": "Apply",
       "gutscheinEntfernen": "Remove",
       "gutscheinAbzug": "Coupon ({{code}})",
-      "gutscheinFehler": "Could not apply coupon."
+      "gutscheinFehler": "Could not apply coupon.",
+      "zahlungsartLabel": "Billing mode",
+      "prepaidHinweis": "Prepaid: expires automatically, no cancellation needed.",
+      "aboHinweis": "Subscription: monthly renewal, cancel anytime in your account.",
+      "erstattungHinweis": "Refund policy: within {{tage}} days directly to your original payment method."
     },
     "promo": {
       "aktionBadge": "Promo",
@@ -7019,6 +7078,8 @@
       "proMonat": "per month",
       "gesamt": "Total",
       "rabatt": "{{prozent}}% term discount",
+      "aboRabatt": "{{prozent}}% subscription discount",
+      "einmalig": "Prepaid (one-time)",
       "inklusiveSteuer": "incl. applicable VAT"
     },
     "konto": {
@@ -7062,7 +7123,9 @@
         "xml": "XRechnung XML",
         "gutschrift": "Credit note",
         "grund": "Reason: {{grund}}",
-        "xrechnungHinweis": "Invoices are issued as XRechnung XML (EN 16931); the PDF is the readable copy."
+        "xrechnungHinweis": "Invoices are issued as XRechnung XML (EN 16931); the PDF is the readable copy.",
+        "kontextBadge": "My customer account · Personal receipts",
+        "typRechnung": "Shop invoice"
       },
       "zahlungsmethoden": {
         "titel": "Payment methods",
@@ -7105,7 +7168,18 @@
         "loeschungAm": "Scheduled for deletion after {{datum}}",
         "zahlungsfristBis": "Payment due until {{datum}} before server removal",
         "zahlungsmethodePruefen": "Update payment method",
-        "sofortLoeschungZumLaufzeitende": "Cancels at period end (no grace retention)"
+        "sofortLoeschungZumLaufzeitende": "Cancels at period end (no grace retention)",
+        "typPrepaid": "Prepaid",
+        "typAbo": "Subscription",
+        "verlaengern": "Extend by 1 month",
+        "verlaengernLaeuft": "Opening extension …",
+        "verlaengernFehler": "Could not start extension.",
+        "verlaengertErfolg": "Period extended by 1 month.",
+        "weltBackupsLaden": "Download world backup",
+        "weltBackupsSchliessen": "Hide backups",
+        "weltBackupsLeer": "No downloadable world backups are currently available.",
+        "weltBackupsFehler": "Could not load backups.",
+        "weltBackupHerunterladen": "Download backup"
       },
       "status": {
         "draft": "Draft",

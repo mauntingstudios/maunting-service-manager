@@ -7,6 +7,7 @@ const hoisted = vi.hoisted(() => ({
   getCatalog: vi.fn(),
   listAddons: vi.fn(),
   checkAvailability: vi.fn(),
+  getPublicPolicy: vi.fn(),
 }))
 
 vi.mock('@/api/shop', async (importOriginal) => {
@@ -17,6 +18,7 @@ vi.mock('@/api/shop', async (importOriginal) => {
       getCatalog: hoisted.getCatalog,
       listAddons: hoisted.listAddons,
       checkAvailability: hoisted.checkAvailability,
+      getPublicPolicy: hoisted.getPublicPolicy,
     },
   }
 })
@@ -83,6 +85,15 @@ describe('ShopSpiel', () => {
       max_ram_mb: 16384,
       max_cpu: 4,
     })
+    hoisted.getPublicPolicy.mockReset().mockResolvedValue({
+      default_billing_mode: 'prepaid',
+      subscription_discount_percent: 12,
+      refund_guarantee_days: 14,
+      refund_policy_note: 'Direkt auf die ursprüngliche Zahlungsart.',
+      cancel_grace_days: 7,
+      auto_subdomain_enabled: false,
+      auto_subdomain_zone: '',
+    })
   })
 
   it('zeigt das Spiel und reicht Konfiguration plus Coupon/App-Return weiter', async () => {
@@ -128,5 +139,42 @@ describe('ShopSpiel', () => {
     expect(
       screen.getByRole('button', { name: i18n.t('shop.spiel.keineKapazitaetButton') }),
     ).toBeDisabled()
+  })
+
+  it('waehlt Prepaid standardmaessig, zeigt keinen erfundenen RAM-Typ und aktiviert Abo-Rabatt beim Umschalten', async () => {
+    zeige('/shop/palworld')
+    expect(await screen.findByText(i18n.t('shop.spiel.inklusiveTitel'))).toBeInTheDocument()
+
+    // Kein DDR5-Label solange hardware_ram_type fehlt
+    expect(screen.queryByText(/DDR5/)).not.toBeInTheDocument()
+    expect(screen.getByText(i18n.t('shop.spiel.ram'))).toBeInTheDocument()
+
+    const prepaidBtn = screen.getByRole('button', {
+      name: (name) => name.includes(i18n.t('shop.spiel.prepaidTitel')),
+    })
+    const aboBtn = screen.getByRole('button', {
+      name: (name) => name.includes(i18n.t('shop.spiel.aboTitel')),
+    })
+    expect(prepaidBtn).toHaveAttribute('aria-pressed', 'true')
+    expect(aboBtn).toHaveAttribute('aria-pressed', 'false')
+
+    expect(
+      await screen.findByText(new RegExp(i18n.t('shop.spiel.erstattungGarantie', { tage: 14 }))),
+    ).toBeInTheDocument()
+
+    fireEvent.click(aboBtn)
+    expect(aboBtn).toHaveAttribute('aria-pressed', 'true')
+    expect(
+      screen.getByRole('button', { name: i18n.t('shop.spiel.monate', { count: 3 }) }),
+    ).toBeDisabled()
+    expect(
+      screen.getByText(i18n.t('shop.preis.aboRabatt', { prozent: 12 })),
+    ).toBeInTheDocument()
+  })
+
+  it('zeigt echten Hardware-RAM-Typ an wenn vorhanden', async () => {
+    hoisted.getCatalog.mockResolvedValue([{ ...PALWORLD_PLAN, hardware_ram_type: 'DDR5 ECC' }])
+    zeige('/shop/palworld')
+    expect(await screen.findByText(`${i18n.t('shop.spiel.ram')} · DDR5 ECC`)).toBeInTheDocument()
   })
 })

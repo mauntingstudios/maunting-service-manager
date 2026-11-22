@@ -3,6 +3,7 @@ export { apiUrl } from './client'
 
 export type ShopArtworkSource = 'steam' | 'custom' | 'none' | 'panorama'
 export type ShopArtworkMode = 'steam' | 'custom' | 'none'
+export type ShopBillingMode = 'prepaid' | 'subscription'
 
 export interface ShopArtwork {
   source: ShopArtworkSource
@@ -81,6 +82,42 @@ export interface ShopCatalogPlan {
   availability_reason?: string | null
   max_available_ram_mb?: number | null
   max_available_cpu?: number | null
+  hardware_cpu_model?: string | null
+  hardware_ram_type?: string | null
+  hardware_storage_type?: string | null
+  estimated_setup_seconds?: number
+}
+
+export interface ShopPublicNodeStatusDto {
+  id: number
+  name: string
+  location_label: string | null
+  status: string
+  cpu_model: string | null
+  ram_type: string | null
+  storage_type: string | null
+  ram_free_percent: number | null
+  load_level: 'low' | 'medium' | 'high' | 'full' | 'offline'
+  accepting_orders: boolean
+}
+
+export interface ShopPublicPolicyDto {
+  default_billing_mode: ShopBillingMode
+  subscription_discount_percent: number
+  refund_guarantee_days: number
+  refund_policy_note: string
+  cancel_grace_days: number
+  auto_subdomain_enabled: boolean
+  auto_subdomain_zone: string
+}
+
+export interface ShopGraceBackupDto {
+  id: number
+  name: string
+  size_mb: number | null
+  created_at: string
+  encrypted: boolean
+  downloadable: boolean
 }
 
 export interface ShopAvailabilityResponse {
@@ -368,6 +405,8 @@ export const shopAdminApi = {
 
 export const shopCatalogApi = {
   getCatalog: () => api<ShopCatalogPlan[]>('/shop/catalog'),
+  getNodeStatus: () => api<ShopPublicNodeStatusDto[]>('/shop/nodes/status'),
+  getPublicPolicy: () => api<ShopPublicPolicyDto>('/shop/public-policy'),
   getGallery: (gameType: string) =>
     api<ShopGalleryItem[]>(
       `/shop/artwork/${encodeURIComponent(gameType)}/gallery`,
@@ -429,6 +468,8 @@ export interface ShopOrderDto {
   status: ShopOrderStatus
   currency: string
   billing_interval: string
+  billing_mode?: ShopBillingMode
+  extend_subscription_id?: number | null
   months: number
   discount_percent: number
   coupon_code?: string | null
@@ -447,6 +488,7 @@ export interface ShopOrderCreate {
   plan_id?: number | null
   addon_id?: number | null
   months: 1 | 3 | 12
+  billing_mode?: ShopBillingMode
   ram_mb?: number | null
   cpu?: number | null
   slots?: number | null
@@ -467,6 +509,7 @@ export interface ShopSubscriptionDto {
   name: string
   status: 'active' | 'past_due' | 'cancelled'
   billing_interval: string
+  billing_mode?: ShopBillingMode
   monthly_gross_cents: number
   tax_rate_percent: number
   started_at: string
@@ -511,6 +554,11 @@ export interface ShopLifecycleSettingsDto {
   unpaid_delete_days: number
   allow_customer_immediate_delete: boolean
   dunning_reminder_days: number[]
+  subscription_discount_percent?: number
+  refund_guarantee_days?: number
+  refund_policy_note?: string
+  auto_subdomain_enabled?: boolean
+  auto_subdomain_zone?: string
 }
 
 export const shopOrderApi = {
@@ -547,7 +595,16 @@ export const shopOrderApi = {
       method: 'POST',
       ...(payload ? { body: JSON.stringify(payload) } : {}),
     }),
+  extendSubscription: (id: number | string, months: 1 | 3 | 12 = 1) =>
+    api<ShopOrderDto>(`/shop/subscriptions/${id}/extend`, {
+      method: 'POST',
+      body: JSON.stringify({ months }),
+    }),
   listEntitlements: () => api<ShopEntitlementDto[]>('/shop/entitlements'),
+  listEntitlementBackups: (id: number | string) =>
+    api<ShopGraceBackupDto[]>(`/shop/entitlements/${id}/backups`),
+  entitlementBackupDownloadUrl: (entitlementId: number | string, backupId: number | string) =>
+    apiUrl(`/api/shop/entitlements/${entitlementId}/backups/${backupId}/download`),
   purgeEntitlementNow: (id: number | string, confirmServerName: string) =>
     api<ShopEntitlementDto>(`/shop/entitlements/${id}/purge-now`, {
       method: 'POST',

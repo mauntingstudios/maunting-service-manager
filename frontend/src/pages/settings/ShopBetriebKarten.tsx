@@ -34,6 +34,7 @@ export function ShopBetriebKarten() {
   const [refundReason, setRefundReason] = useState('')
   const [creditInvoiceId, setCreditInvoiceId] = useState<number | null>(null)
   const [creditReason, setCreditReason] = useState('')
+  const [invoiceFilter, setInvoiceFilter] = useState<'alle' | 'invoice' | 'credit_note'>('alle')
   const [busyId, setBusyId] = useState<string | null>(null)
 
   const laden = async () => {
@@ -330,9 +331,12 @@ export function ShopBetriebKarten() {
               <ReceiptText className="h-4 w-4" aria-hidden="true" />
             </span>
             <div>
-              <h3 className="font-headline text-base font-semibold text-on-surface">
-                {t('settings.shop.rechnungen.titel')}
-              </h3>
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="font-headline text-base font-semibold text-on-surface">
+                  {t('settings.shop.rechnungen.titel')}
+                </h3>
+                <Badge variant="info">{t('settings.shop.betrieb.betreiberAnsichtBadge')}</Badge>
+              </div>
               <p className="text-xs text-on-surface-variant">
                 {t('settings.shop.rechnungen.text')}
               </p>
@@ -347,6 +351,28 @@ export function ShopBetriebKarten() {
           </a>
         </div>
 
+        {!laedt && invoices.length > 0 && (
+          <div className="flex flex-wrap gap-2" role="group" aria-label={t('settings.shop.rechnungen.titel')}>
+            {(
+              [
+                ['alle', t('settings.shop.betrieb.filterAlle')],
+                ['invoice', t('settings.shop.betrieb.filterRechnungen')],
+                ['credit_note', t('settings.shop.betrieb.filterGutschriften')],
+              ] as const
+            ).map(([wert, label]) => (
+              <Button
+                key={wert}
+                type="button"
+                variant={invoiceFilter === wert ? 'primary' : 'secondary'}
+                size="sm"
+                onClick={() => setInvoiceFilter(wert)}
+              >
+                {label}
+              </Button>
+            ))}
+          </div>
+        )}
+
         {laedt ? (
           <Spinner size="sm" />
         ) : invoices.length === 0 ? (
@@ -357,17 +383,26 @@ export function ShopBetriebKarten() {
           />
         ) : (
           <div className="space-y-3">
-            {invoices.map((inv) => (
+            {invoices
+              .filter((inv) => invoiceFilter === 'alle' || inv.type === invoiceFilter)
+              .map((inv) => (
               <div
                 key={inv.id}
                 className="space-y-2 rounded-xl border border-outline-variant/30 bg-surface-container p-3"
               >
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="text-sm">
+                  <div className="flex flex-wrap items-center gap-2 text-sm">
                     <span className="font-semibold text-on-surface">{inv.number}</span>
-                    <span className="ml-2 text-xs text-on-surface-variant">
+                    <span className="text-xs text-on-surface-variant">
                       {inv.order_number} · {inv.issued_at.slice(0, 10)}
                     </span>
+                    <Badge variant={inv.order_number.startsWith('H-') ? 'warning' : 'default'}>
+                      {inv.order_number.startsWith('H-')
+                        ? t('settings.shop.betrieb.typHosterApi')
+                        : inv.type === 'credit_note'
+                          ? t('settings.shop.betrieb.typGutschrift')
+                          : t('settings.shop.betrieb.typShopRechnung')}
+                    </Badge>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     <Badge variant={inv.status === 'issued' ? 'success' : 'default'}>

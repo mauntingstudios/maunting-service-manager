@@ -26,15 +26,21 @@ export interface ShopSpiel {
   preisProSlotCent: number
   kiZugangCent: number
   verfuegbar?: boolean
+  hardwareCpuModel?: string | null
+  hardwareRamType?: string | null
+  hardwareStorageType?: string | null
+  geschaetzteSetupSekunden?: number
 }
 
 export type LaufzeitMonate = 1 | 3 | 12
+export type AbrechnungsModus = 'prepaid' | 'subscription'
 
 export interface Konfiguration {
   ramGb: number
   cpu: number
   slots: number
   laufzeitMonate: LaufzeitMonate
+  abrechnungsModus?: AbrechnungsModus
   mods: boolean
   kiZugang: boolean
 }
@@ -62,6 +68,7 @@ export function standardKonfiguration(spiel: ShopSpiel): Konfiguration {
     cpu: spiel.standardCpu,
     slots: spiel.standardSlots,
     laufzeitMonate: 1,
+    abrechnungsModus: 'prepaid',
     mods: false,
     kiZugang: false,
   }

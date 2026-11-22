@@ -126,6 +126,9 @@ export function AdminNodes({ ohneHintergrund = false }: { ohneHintergrund?: bool
     host: '',
     auth_token: '',
     tls_fingerprint: '',
+    location_label: '',
+    ram_type: '',
+    storage_type: '',
   })
 
   const [searchVal, setSearchVal] = useState('')
@@ -192,7 +195,15 @@ export function AdminNodes({ ohneHintergrund = false }: { ohneHintergrund?: bool
 
   const openManualCreate = () => {
     setEditing(null)
-    setForm({ name: '', host: 'https://', auth_token: '', tls_fingerprint: '' })
+    setForm({
+      name: '',
+      host: 'https://',
+      auth_token: '',
+      tls_fingerprint: '',
+      location_label: '',
+      ram_type: '',
+      storage_type: '',
+    })
     setShowEnrollment(false)
     setShowForm(true)
   }
@@ -204,6 +215,9 @@ export function AdminNodes({ ohneHintergrund = false }: { ohneHintergrund?: bool
       host: node.host,
       auth_token: '',
       tls_fingerprint: node.tls_fingerprint || '',
+      location_label: node.location_label || '',
+      ram_type: node.ram_type || '',
+      storage_type: node.storage_type || '',
     })
     setShowForm(true)
   }
@@ -218,9 +232,15 @@ export function AdminNodes({ ohneHintergrund = false }: { ohneHintergrund?: bool
           host?: string
           auth_token?: string
           tls_fingerprint?: string
+          location_label?: string | null
+          ram_type?: string | null
+          storage_type?: string | null
         } = {
           name: form.name.trim(),
           host: form.host.trim(),
+          location_label: form.location_label.trim() || null,
+          ram_type: form.ram_type.trim() || null,
+          storage_type: form.storage_type.trim() || null,
         }
         if (form.auth_token.trim()) {
           payload.auth_token = form.auth_token.trim()
@@ -248,7 +268,15 @@ export function AdminNodes({ ohneHintergrund = false }: { ohneHintergrund?: bool
         toast.success(t('nodes.created'))
       }
       setShowForm(false)
-      setForm({ name: '', host: '', auth_token: '', tls_fingerprint: '' })
+      setForm({
+        name: '',
+        host: '',
+        auth_token: '',
+        tls_fingerprint: '',
+        location_label: '',
+        ram_type: '',
+        storage_type: '',
+      })
       setEditing(null)
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : t('common.error'))
@@ -464,6 +492,34 @@ export function AdminNodes({ ohneHintergrund = false }: { ohneHintergrund?: bool
                   autoComplete="off"
                 />
               </div>
+              {editing && (
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                  <Input
+                    label={t('nodes.locationLabel')}
+                    value={form.location_label}
+                    onChange={(e) => setForm({ ...form, location_label: e.target.value })}
+                    placeholder={t('nodes.locationPlaceholder')}
+                    maxLength={120}
+                    autoComplete="off"
+                  />
+                  <Input
+                    label={t('nodes.ramType')}
+                    value={form.ram_type}
+                    onChange={(e) => setForm({ ...form, ram_type: e.target.value })}
+                    placeholder={t('nodes.ramTypePlaceholder')}
+                    maxLength={60}
+                    autoComplete="off"
+                  />
+                  <Input
+                    label={t('nodes.storageType')}
+                    value={form.storage_type}
+                    onChange={(e) => setForm({ ...form, storage_type: e.target.value })}
+                    placeholder={t('nodes.storageTypePlaceholder')}
+                    maxLength={60}
+                    autoComplete="off"
+                  />
+                </div>
+              )}
               <div>
                 <Input
                   label={t('nodes.tlsFingerprint')}
@@ -556,6 +612,24 @@ export function AdminNodes({ ohneHintergrund = false }: { ohneHintergrund?: bool
 
                       <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-on-surface-variant">
                         <span>{t('nodes.serverCount', { count: node.server_count })}</span>
+                        {node.location_label && (
+                          <>
+                            <span aria-hidden="true" className="text-outline">·</span>
+                            <span>{node.location_label}</span>
+                          </>
+                        )}
+                        {node.ram_type && (
+                          <>
+                            <span aria-hidden="true" className="text-outline">·</span>
+                            <span>{node.ram_type}</span>
+                          </>
+                        )}
+                        {node.storage_type && (
+                          <>
+                            <span aria-hidden="true" className="text-outline">·</span>
+                            <span>{node.storage_type}</span>
+                          </>
+                        )}
                         {metrics.cpuCores != null && (
                           <>
                             <span aria-hidden="true" className="text-outline">·</span>

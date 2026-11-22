@@ -1,4 +1,4 @@
-import { useId, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   Check,
@@ -23,6 +23,7 @@ export interface ServerRuntimeMetrics {
   ram_mb?: number | null
   disk_used_mb?: number | null
   uptime_seconds?: number | null
+  node_cpu_steal_percent?: number | null
 }
 
 interface ServerTechnikPanelProps {
@@ -72,8 +73,18 @@ export function ServerTechnikPanel({
   const { t } = useTranslation()
   const [networkOpen, setNetworkOpen] = useState(false)
   const [containerCopied, setContainerCopied] = useState(false)
+  const [ramPeakMb, setRamPeakMb] = useState<number | null>(null)
   const networkTriggerRef = useRef<HTMLButtonElement>(null)
   const networkPanelId = useId()
+
+  useEffect(() => {
+    setRamPeakMb(null)
+  }, [server.id])
+
+  useEffect(() => {
+    if (status?.ram_mb == null) return
+    setRamPeakMb((prev) => (prev == null || status.ram_mb! > prev ? status.ram_mb! : prev))
+  }, [status?.ram_mb])
 
   const fallbackPorts = [
     { role: 'game', port: server.game_port, protocol: 'udp' },
@@ -181,6 +192,22 @@ export function ServerTechnikPanel({
                 <span className="inline-flex items-center gap-1">
                   <Clock className="h-3 w-3 shrink-0" aria-hidden="true" />
                   <UptimeDisplay server={server} label="" compact />
+                </span>
+              </>
+            ) : null}
+            {status?.node_cpu_steal_percent != null ? (
+              <>
+                <span aria-hidden="true" className="text-outline">·</span>
+                <span data-testid="server-cpu-steal">
+                  {t('servers.cpuStealLabel')}: {status.node_cpu_steal_percent.toFixed(1)}%
+                </span>
+              </>
+            ) : null}
+            {ramPeakMb != null ? (
+              <>
+                <span aria-hidden="true" className="text-outline">·</span>
+                <span data-testid="server-ram-peak">
+                  {t('servers.ramPeakLabel')}: {formatMb(ramPeakMb)}
                 </span>
               </>
             ) : null}
@@ -300,12 +327,17 @@ export function ServerTechnikPanel({
             <div className="min-w-0">
               <dt className="text-xs text-on-surface-variant">{t('serverDetail.hostIpLabel')}</dt>
               <dd className="mt-0.5 font-headline text-body-md text-primary break-all">
-                {server.public_bind_ip || (
+                {server.public_hostname || server.public_bind_ip || (
                   <span className="text-xs font-body-md text-status-warning">
                     {t('servers.bindIp.unset')}
                   </span>
                 )}
               </dd>
+              {server.public_hostname && server.public_bind_ip && (
+                <p className="mt-0.5 text-xs text-on-surface-variant break-all">
+                  {server.public_bind_ip}
+                </p>
+              )}
             </div>
           </dl>
 

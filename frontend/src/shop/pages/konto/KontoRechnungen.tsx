@@ -40,9 +40,12 @@ export function KontoRechnungen() {
 
   return (
     <div className="space-y-3">
-      <h2 className="font-headline text-lg font-bold text-on-surface">
-        {t('shop.konto.rechnungen.titel')}
-      </h2>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="font-headline text-lg font-bold text-on-surface">
+          {t('shop.konto.rechnungen.titel')}
+        </h2>
+        <Badge variant="info">{t('shop.konto.rechnungen.kontextBadge')}</Badge>
+      </div>
       <p className="text-xs text-on-surface-variant">
         {t('shop.konto.rechnungen.xrechnungHinweis')}
       </p>
@@ -68,11 +71,14 @@ export function KontoRechnungen() {
               {invoice.type === 'credit_note' ? (
                 <Badge variant="info">{t('shop.konto.rechnungen.gutschrift')}</Badge>
               ) : (
-                <Badge variant={invoice.status === 'issued' ? 'success' : 'default'}>
-                  {invoice.status === 'issued'
-                    ? t('shop.konto.status.invoicePaid')
-                    : t('shop.konto.status.invoiceVoid')}
-                </Badge>
+                <>
+                  <Badge variant="default">{t('shop.konto.rechnungen.typRechnung')}</Badge>
+                  <Badge variant={invoice.status === 'issued' ? 'success' : 'default'}>
+                    {invoice.status === 'issued'
+                      ? t('shop.konto.status.invoicePaid')
+                      : t('shop.konto.status.invoiceVoid')}
+                  </Badge>
+                </>
               )}
               <span className="font-headline text-sm font-bold tabular-nums text-primary">
                 {invoice.type === 'credit_note' ? '−' : ''}

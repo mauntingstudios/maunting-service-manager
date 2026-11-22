@@ -29,6 +29,10 @@ class Node(Base):
     cpu_total: Mapped[float | None] = mapped_column(Float, nullable=True)
     # Human-readable CPU model from agent inventory (e.g. "AMD EPYC 7763…").
     cpu_model: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    location_label: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    ram_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    storage_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    cpu_steal_percent: Mapped[float | None] = mapped_column(Float, nullable=True)
     ram_total: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     disk_total: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     cpu_percent: Mapped[float | None] = mapped_column(Float, nullable=True)

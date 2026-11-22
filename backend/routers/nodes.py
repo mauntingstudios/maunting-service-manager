@@ -650,6 +650,12 @@ def update_node(
 
     if body.name is not None:
         node.name = body.name.strip()
+    if "location_label" in body.model_fields_set:
+        node.location_label = body.location_label
+    if "ram_type" in body.model_fields_set:
+        node.ram_type = body.ram_type
+    if "storage_type" in body.model_fields_set:
+        node.storage_type = body.storage_type
 
     has_fp_field = "tls_fingerprint" in body.model_fields_set
     new_fp = body.tls_fingerprint if has_fp_field else node.tls_fingerprint

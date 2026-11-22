@@ -1,3 +1,4 @@
+import { SanitizedApiError } from '@/api/client'
 import {
   shopOrderApi,
   type ShopEntitlementDto,
@@ -5,6 +6,7 @@ import {
 } from '@/api/shop'
 import type {
   Entitlement,
+  GraceBackup,
   Order,
   PaymentMethod,
   ShopSettings,
@@ -22,7 +24,13 @@ export interface ShopApi {
   getOrder(id: string): Promise<Order | undefined>
   listSubscriptions(): Promise<Subscription[]>
   cancelSubscription(id: string, options?: CancelSubscriptionOptions): Promise<Subscription>
+  extendSubscription?(
+    id: string,
+    months?: 1 | 3 | 12,
+  ): Promise<{ orderNumber: string; checkoutUrl?: string }>
   listEntitlements(): Promise<Entitlement[]>
+  listEntitlementBackups?(id: string): Promise<GraceBackup[]>
+  entitlementBackupDownloadUrl?(entitlementId: string, backupId: number): string
   purgeEntitlementNow(id: string, confirmServerName: string): Promise<Entitlement>
   listPaymentMethods(): Promise<PaymentMethod[]>
   getSettings(): Promise<ShopSettings>
@@ -34,6 +42,7 @@ function subscriptionAusApi(dto: ShopSubscriptionDto): Subscription {
     bezeichnung: dto.name,
     status: dto.status,
     intervall: 'month',
+    billingMode: dto.billing_mode ?? 'subscription',
     naechsteZahlung: dto.current_period_end.slice(0, 10),
     preisCent: dto.monthly_gross_cents,
     cancelAtPeriodEnd: dto.cancel_at_period_end,
@@ -118,6 +127,30 @@ export const shopApi: ShopApi = {
   },
   listEntitlements: async () =>
     (await shopOrderApi.listEntitlements()).map(entitlementAusApi),
+  extendSubscription: async (id, months = 1) => {
+    const order = await shopOrderApi.extendSubscription(id, months)
+    try {
+      const stripe = await shopOrderApi.checkout(order.id)
+      return { orderNumber: order.number, checkoutUrl: stripe.checkout_url }
+    } catch (error) {
+      if (!(error instanceof SanitizedApiError) || error.status !== 409) {
+        throw error
+      }
+    }
+    const paid = await shopOrderApi.payDemo(order.id)
+    return { orderNumber: paid.number }
+  },
+  listEntitlementBackups: async (id) =>
+    (await shopOrderApi.listEntitlementBackups(id)).map((row) => ({
+      id: row.id,
+      name: row.name,
+      sizeMb: row.size_mb,
+      createdAt: row.created_at,
+      encrypted: row.encrypted,
+      downloadable: row.downloadable,
+    })),
+  entitlementBackupDownloadUrl: (entitlementId, backupId) =>
+    shopOrderApi.entitlementBackupDownloadUrl(entitlementId, backupId),
   purgeEntitlementNow: async (id, confirmServerName) =>
     entitlementAusApi(await shopOrderApi.purgeEntitlementNow(id, confirmServerName)),
   listPaymentMethods: async () => [],

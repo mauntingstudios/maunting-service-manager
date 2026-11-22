@@ -108,6 +108,10 @@ function spielAusPlan(plan: ShopCatalogPlan): ShopSpiel {
     preisProSlotCent: plan.price_per_slot_step_cents,
     kiZugangCent: 0,
     verfuegbar: plan.available !== false,
+    hardwareCpuModel: plan.hardware_cpu_model ?? null,
+    hardwareRamType: plan.hardware_ram_type ?? null,
+    hardwareStorageType: plan.hardware_storage_type ?? null,
+    geschaetzteSetupSekunden: plan.estimated_setup_seconds ?? 120,
   }
 }
 

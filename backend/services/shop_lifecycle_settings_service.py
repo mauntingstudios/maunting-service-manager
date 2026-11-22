@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import TYPE_CHECKING
 
 from sqlalchemy.orm import Session
@@ -17,12 +18,22 @@ DEFAULT_UNPAID_AUTO_DELETE_ENABLED = True
 DEFAULT_UNPAID_DELETE_DAYS = 30
 DEFAULT_ALLOW_CUSTOMER_IMMEDIATE_DELETE = True
 DEFAULT_DUNNING_REMINDER_DAYS: list[int] = [7, 4, 1]
+DEFAULT_SUBSCRIPTION_DISCOUNT_PERCENT = 0
+DEFAULT_REFUND_GUARANTEE_DAYS = 0
+DEFAULT_REFUND_POLICY_NOTE = ""
+DEFAULT_AUTO_SUBDOMAIN_ENABLED = False
+DEFAULT_AUTO_SUBDOMAIN_ZONE = ""
 
 _K_CANCEL_GRACE = "shop_lifecycle_cancel_grace_days"
 _K_UNPAID_ENABLED = "shop_lifecycle_unpaid_auto_delete_enabled"
 _K_UNPAID_DAYS = "shop_lifecycle_unpaid_delete_days"
 _K_ALLOW_IMMEDIATE = "shop_lifecycle_allow_customer_immediate_delete"
 _K_REMINDERS = "shop_lifecycle_dunning_reminder_days"
+_K_SUB_DISCOUNT = "shop_policy_subscription_discount_percent"
+_K_REFUND_DAYS = "shop_policy_refund_guarantee_days"
+_K_REFUND_NOTE = "shop_policy_refund_policy_note"
+_K_AUTO_SUBDOMAIN_ENABLED = "shop_policy_auto_subdomain_enabled"
+_K_AUTO_SUBDOMAIN_ZONE = "shop_policy_auto_subdomain_zone"
 
 
 class LifecycleSettingsError(ValueError):
@@ -43,6 +54,14 @@ def _parse_bool(raw: str | None, default: bool) -> bool:
     if raw is None or raw == "":
         return default
     return str(raw).strip().lower() == "true"
+
+
+_DOMAIN_ZONE_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$")
+
+
+def _normalize_zone(raw: object) -> str:
+    cleaned = str(raw or "").strip().lower().lstrip(".")
+    return cleaned[:128]
 
 
 def _parse_reminders(raw: str | None) -> list[int]:
@@ -100,6 +119,37 @@ def read(db: Session | None = None) -> dict[str, object]:
             PanelSettingsService.get(
                 _K_REMINDERS, json.dumps(DEFAULT_DUNNING_REMINDER_DAYS), db=db
             )
+        ),
+        "subscription_discount_percent": _parse_int(
+            PanelSettingsService.get(
+                _K_SUB_DISCOUNT, str(DEFAULT_SUBSCRIPTION_DISCOUNT_PERCENT), db=db
+            ),
+            DEFAULT_SUBSCRIPTION_DISCOUNT_PERCENT,
+            min_v=0,
+            max_v=50,
+        ),
+        "refund_guarantee_days": _parse_int(
+            PanelSettingsService.get(
+                _K_REFUND_DAYS, str(DEFAULT_REFUND_GUARANTEE_DAYS), db=db
+            ),
+            DEFAULT_REFUND_GUARANTEE_DAYS,
+            min_v=0,
+            max_v=30,
+        ),
+        "refund_policy_note": (
+            PanelSettingsService.get(_K_REFUND_NOTE, DEFAULT_REFUND_POLICY_NOTE, db=db)
+            or ""
+        )[:280],
+        "auto_subdomain_enabled": _parse_bool(
+            PanelSettingsService.get(
+                _K_AUTO_SUBDOMAIN_ENABLED,
+                "true" if DEFAULT_AUTO_SUBDOMAIN_ENABLED else "false",
+                db=db,
+            ),
+            DEFAULT_AUTO_SUBDOMAIN_ENABLED,
+        ),
+        "auto_subdomain_zone": _normalize_zone(
+            PanelSettingsService.get(_K_AUTO_SUBDOMAIN_ZONE, DEFAULT_AUTO_SUBDOMAIN_ZONE, db=db)
         ),
     }
 
@@ -170,19 +220,72 @@ def update(values: dict[str, object], db: Session | None = None) -> dict[str, ob
         if "dunning_reminder_days" in values and values["dunning_reminder_days"] is not None
         else list(current["dunning_reminder_days"])  # type: ignore[arg-type]
     )
-
-    if any(day >= next_unpaid_days for day in next_reminders) and next_unpaid_days <= 365:
-        # Erinnerungsstufen sollten innerhalb oder maximal am Start des Countdowns liegen;
-        # wir belassen es zulaessig (dann feuert die Stufe direkt beim Start) und
-        # dokumentieren den Bereich 1..365 konsistent.
-        pass
+    next_sub_discount = (
+        _validate_int_field(
+            values["subscription_discount_percent"],
+            label="Abo-Rabatt (%)",
+            min_v=0,
+            max_v=50,
+        )
+        if "subscription_discount_percent" in values and values["subscription_discount_percent"] is not None
+        else int(current["subscription_discount_percent"])  # type: ignore[arg-type]
+    )
+    next_refund_days = (
+        _validate_int_field(
+            values["refund_guarantee_days"],
+            label="Geld-zurück-Frist (Tage)",
+            min_v=0,
+            max_v=30,
+        )
+        if "refund_guarantee_days" in values and values["refund_guarantee_days"] is not None
+        else int(current["refund_guarantee_days"])  # type: ignore[arg-type]
+    )
+    next_refund_note = (
+        str(values["refund_policy_note"]).strip()[:280]
+        if "refund_policy_note" in values and values["refund_policy_note"] is not None
+        else str(current["refund_policy_note"] or "")
+    )
+    next_subdomain_enabled = (
+        bool(values["auto_subdomain_enabled"])
+        if "auto_subdomain_enabled" in values and values["auto_subdomain_enabled"] is not None
+        else bool(current["auto_subdomain_enabled"])
+    )
+    next_subdomain_zone = (
+        _normalize_zone(values["auto_subdomain_zone"])
+        if "auto_subdomain_zone" in values and values["auto_subdomain_zone"] is not None
+        else str(current["auto_subdomain_zone"] or "")
+    )
+    if next_subdomain_zone and not _DOMAIN_ZONE_RE.fullmatch(next_subdomain_zone):
+        raise LifecycleSettingsError("Subdomain-Zone muss ein gueltiger Domainname sein (z. B. host.deinedomain.de)")
 
     PanelSettingsService.set(_K_CANCEL_GRACE, str(next_grace))
     PanelSettingsService.set(_K_UNPAID_ENABLED, "true" if next_unpaid_enabled else "false")
     PanelSettingsService.set(_K_UNPAID_DAYS, str(next_unpaid_days))
     PanelSettingsService.set(_K_ALLOW_IMMEDIATE, "true" if next_immediate else "false")
     PanelSettingsService.set(_K_REMINDERS, json.dumps(next_reminders))
+    PanelSettingsService.set(_K_SUB_DISCOUNT, str(next_sub_discount))
+    PanelSettingsService.set(_K_REFUND_DAYS, str(next_refund_days))
+    PanelSettingsService.set(_K_REFUND_NOTE, next_refund_note)
+    PanelSettingsService.set(_K_AUTO_SUBDOMAIN_ENABLED, "true" if next_subdomain_enabled else "false")
+    PanelSettingsService.set(_K_AUTO_SUBDOMAIN_ZONE, next_subdomain_zone)
     return read(db=db)
+
+
+def subscription_discount_percent(db: Session | None = None) -> int:
+    return int(read(db=db)["subscription_discount_percent"])  # type: ignore[arg-type]
+
+
+def public_policy(db: Session | None = None) -> dict[str, object]:
+    cfg = read(db=db)
+    return {
+        "default_billing_mode": "prepaid",
+        "subscription_discount_percent": cfg["subscription_discount_percent"],
+        "refund_guarantee_days": cfg["refund_guarantee_days"],
+        "refund_policy_note": cfg["refund_policy_note"],
+        "cancel_grace_days": cfg["cancel_grace_days"],
+        "auto_subdomain_enabled": cfg["auto_subdomain_enabled"],
+        "auto_subdomain_zone": cfg["auto_subdomain_zone"],
+    }
 
 
 def cancel_grace_days(db: Session | None = None) -> int:

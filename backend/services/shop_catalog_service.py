@@ -20,6 +20,7 @@ from schemas.shop import (
     ShopPlanResponse,
     ShopPlanUpdate,
     ShopPlanWrite,
+    ShopPublicNodeStatusResponse,
 )
 from services import audit_service, wallpaper_service
 
@@ -335,6 +336,20 @@ def plan_response(db: Session, plan: ShopPlan) -> ShopPlanResponse:
     )
 
 
+def _estimate_setup_seconds(blueprint: Any) -> int:
+    category = str(getattr(getattr(blueprint, "meta", None), "category", "") or "").lower()
+    src_type = str(getattr(getattr(blueprint, "source", None), "type", "") or "").lower()
+    if "database" in category or "dockeronly" in src_type:
+        return 20
+    if "voice" in category:
+        return 30
+    if "http" in src_type or "github" in src_type:
+        return 60
+    if "steam" in src_type or "steam" in category:
+        return 180
+    return 120
+
+
 def _game_meta(game_type: str) -> dict[str, Any]:
     from games import get_plugin
 
@@ -350,7 +365,99 @@ def _game_meta(game_type: str) -> dict[str, Any]:
         "supports_mods": bool(mods.supportsMods),
         "supports_workshop": bool(mods.supportsSteamWorkshop),
         "supports_slots": getattr(blueprint, "players", None) is not None,
+        "estimated_setup_seconds": _estimate_setup_seconds(blueprint),
     }
+
+
+def _plan_hardware_summary(db: Session, plan: ShopPlan) -> tuple[str | None, str | None, str | None]:
+    from services.node_placement_service import OFFLINE_NODE_STATUSES
+
+    if plan.node_id is not None:
+        node = db.query(Node).filter(Node.id == plan.node_id).first()
+        if node is None:
+            return None, None, None
+        return (
+            getattr(node, "cpu_model", None) or None,
+            getattr(node, "ram_type", None) or None,
+            getattr(node, "storage_type", None) or None,
+        )
+
+    nodes = [
+        n
+        for n in db.query(Node).order_by(Node.id.asc()).all()
+        if (n.status or "").strip().lower() not in OFFLINE_NODE_STATUSES
+    ]
+    if not nodes:
+        return None, None, None
+
+    def _unanimous(attr: str) -> str | None:
+        vals = {
+            str(getattr(n, attr, None) or "").strip() or None
+            for n in nodes
+        }
+        vals.discard(None)
+        if len(vals) == 1 and all((str(getattr(n, attr, None) or "").strip() or None) is not None for n in nodes):
+            return next(iter(vals))
+        return None
+
+    return (
+        _unanimous("cpu_model"),
+        _unanimous("ram_type"),
+        _unanimous("storage_type"),
+    )
+
+
+def public_node_statuses(db: Session) -> list[ShopPublicNodeStatusResponse]:
+    """Oeffentliche Node-Kapazitaets- & Hardware-Statusliste ohne IPs/Secrets."""
+    from services.node_capacity import normalize_ram_mb
+    from services.node_placement_service import OFFLINE_NODE_STATUSES, evaluate_node_capacity, _reserved_ram_mb
+
+    nodes = db.query(Node).order_by(Node.id.asc()).all()
+    out: list[ShopPublicNodeStatusResponse] = []
+    for node in nodes:
+        status_norm = (node.status or "unknown").strip().lower()
+        check = evaluate_node_capacity(db, node)
+
+        ram_free_pct: int | None = None
+        total_ram = normalize_ram_mb(node.ram_total)
+        if total_ram is not None and check.remaining_ram_mb is not None:
+            alloc_budget = max(0, total_ram - _reserved_ram_mb())
+            if alloc_budget > 0:
+                ram_free_pct = max(0, min(100, round(check.remaining_ram_mb * 100 / alloc_budget)))
+            else:
+                ram_free_pct = 0
+
+        if status_norm in OFFLINE_NODE_STATUSES:
+            load_level = "offline"
+            accepting = False
+        elif not check.fits or (ram_free_pct is not None and ram_free_pct < 5):
+            load_level = "full"
+            accepting = False
+        elif ram_free_pct is not None and ram_free_pct < 25:
+            load_level = "high"
+            accepting = True
+        elif ram_free_pct is not None and ram_free_pct < 60:
+            load_level = "medium"
+            accepting = True
+        else:
+            load_level = "low"
+            accepting = True
+
+        out.append(
+            ShopPublicNodeStatusResponse(
+                id=node.id,
+                name=node.name,
+                location_label=getattr(node, "location_label", None) or None,
+                status=node.status or "unknown",
+                cpu_model=getattr(node, "cpu_model", None) or None,
+                ram_type=getattr(node, "ram_type", None) or None,
+                storage_type=getattr(node, "storage_type", None) or None,
+                ram_free_percent=ram_free_pct,
+                load_level=load_level,  # type: ignore[arg-type]
+                accepting_orders=accepting,
+            )
+        )
+    return out
 
 
 def catalog_plan(db: Session, plan: ShopPlan) -> ShopCatalogPlan:
@@ -358,6 +465,7 @@ def catalog_plan(db: Session, plan: ShopPlan) -> ShopCatalogPlan:
 
     meta = _game_meta(plan.game_type)
     availability = node_placement_service.check_plan_availability(db, plan)
+    cpu_model, ram_type, storage_type = _plan_hardware_summary(db, plan)
     return ShopCatalogPlan(
         id=plan.id,
         game_type=plan.game_type,
@@ -390,4 +498,8 @@ def catalog_plan(db: Session, plan: ShopPlan) -> ShopCatalogPlan:
         availability_reason=availability.reason,
         max_available_ram_mb=availability.max_ram_mb,
         max_available_cpu=availability.max_cpu,
+        hardware_cpu_model=cpu_model,
+        hardware_ram_type=ram_type,
+        hardware_storage_type=storage_type,
+        estimated_setup_seconds=int(meta.get("estimated_setup_seconds") or 120),
     )

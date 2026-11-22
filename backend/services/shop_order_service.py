@@ -215,7 +215,16 @@ def create_order(
         else _resolve_addon_spec(db, payload)
     )
 
+    billing_mode = (
+        "prepaid"
+        if getattr(payload, "billing_mode", "subscription") == "prepaid"
+        else "subscription"
+    )
     discount = DURATION_DISCOUNTS[payload.months]
+    if billing_mode == "subscription" and payload.months == 1:
+        sub_disc = shop_lifecycle_settings_service.subscription_discount_percent(db=db)
+        if sub_disc > 0:
+            discount = min(50, discount + sub_disc)
     monatlich = int(spec["monatlich"])  # type: ignore[arg-type]
     tax_rate_percent = int(spec["tax_rate_percent"])  # type: ignore[arg-type]
     brutto_vor_gutschein = round(monatlich * payload.months * (1 - discount / 100))
@@ -247,6 +256,7 @@ def create_order(
         status="pending_payment",
         currency=str(spec["currency"]),
         billing_interval=str(spec["billing_interval"]),
+        billing_mode=billing_mode,
         months=payload.months,
         discount_percent=discount,
         coupon_code=coupon_code,
@@ -322,7 +332,10 @@ def apply_payment(
     order.paid_at = jetzt
     order.payment_provider = provider
     order.payment_reference = reference
-    _grant_entitlements(db, order, jetzt)
+    if getattr(order, "extend_subscription_id", None) is not None:
+        _apply_subscription_extension(db, order, jetzt)
+    else:
+        _grant_entitlements(db, order, jetzt)
     # Die Test- und Produktions-Session laeuft ohne Autoflush; der Webhook
     # braucht die frischen Abo-/Entitlement-Zeilen fuer seine Zuordnung.
     db.flush()
@@ -363,6 +376,43 @@ def mark_demo_paid(db: Session, order: ShopOrder) -> ShopOrder:
     return order
 
 
+def _apply_subscription_extension(
+    db: Session, order: ShopOrder, jetzt: datetime
+) -> None:
+    target_sub = (
+        db.query(ShopSubscription)
+        .filter(
+            ShopSubscription.id == order.extend_subscription_id,
+            ShopSubscription.user_id == order.user_id,
+        )
+        .first()
+    )
+    if target_sub is None:
+        raise ShopOrderError("Ziel-Abo zur Verlaengerung nicht gefunden")
+
+    ents = (
+        db.query(ShopEntitlement)
+        .filter(ShopEntitlement.order_item_id == target_sub.order_item_id)
+        .all()
+    )
+    if any(getattr(ent, "provisioning_status", None) == "purged" for ent in ents):
+        raise ShopOrderError(
+            "Server wurde bereits endgueltig geloescht und kann nicht verlaengert werden"
+        )
+
+    end = target_sub.current_period_end
+    if end.tzinfo is None:
+        end = end.replace(tzinfo=timezone.utc)
+    base = end if end > jetzt else jetzt
+    target_sub.current_period_end = _add_months(base, order.months)
+    target_sub.status = "active"
+    target_sub.cancel_at_period_end = (
+        getattr(target_sub, "billing_mode", "subscription") == "prepaid"
+    )
+    target_sub.delete_server_on_end = False
+    _set_entitlements_status(db, target_sub, "active")
+
+
 def _grant_entitlements(db: Session, order: ShopOrder, jetzt: datetime) -> None:
     items = (
         db.query(ShopOrderItem)
@@ -370,6 +420,7 @@ def _grant_entitlements(db: Session, order: ShopOrder, jetzt: datetime) -> None:
         .order_by(ShopOrderItem.id.asc())
         .all()
     )
+    billing_mode = getattr(order, "billing_mode", "subscription")
     for item in items:
         vorhanden = (
             db.query(ShopSubscription)
@@ -388,6 +439,7 @@ def _grant_entitlements(db: Session, order: ShopOrder, jetzt: datetime) -> None:
                     name=item.name,
                     status="active",
                     billing_interval=order.billing_interval,
+                    billing_mode=billing_mode,
                     monthly_gross_cents=(
                         max(1, round(item.gross_cents / order.months))
                         if item.gross_cents > 0
@@ -396,6 +448,7 @@ def _grant_entitlements(db: Session, order: ShopOrder, jetzt: datetime) -> None:
                     tax_rate_percent=item.tax_rate_percent,
                     started_at=jetzt,
                     current_period_end=_add_months(jetzt, order.months),
+                    cancel_at_period_end=(billing_mode == "prepaid"),
                 )
             )
 
@@ -901,6 +954,116 @@ def cancel_subscription(
     return subscription
 
 
+def extend_subscription(
+    db: Session,
+    user: User,
+    subscription: ShopSubscription,
+    *,
+    months: int = 1,
+) -> ShopOrder:
+    """Erstellt eine Prepaid-Verlaengerungsbestellung ohne Datenverlust."""
+    if months not in DURATION_DISCOUNTS:
+        raise ShopOrderError("Ungueltige Laufzeit fuer die Verlaengerung")
+
+    ents = (
+        db.query(ShopEntitlement)
+        .filter(ShopEntitlement.order_item_id == subscription.order_item_id)
+        .all()
+    )
+    if any(getattr(ent, "provisioning_status", None) == "purged" for ent in ents):
+        raise ShopOrderError(
+            "Server wurde bereits endgueltig geloescht und kann nicht verlaengert werden"
+        )
+
+    has_suspended_or_revoked = any(
+        ent.status in ("suspended", "revoked") for ent in ents
+    )
+    if (
+        getattr(subscription, "billing_mode", "subscription") == "subscription"
+        and subscription.status == "active"
+        and not subscription.cancel_at_period_end
+        and not has_suspended_or_revoked
+    ):
+        raise ShopOrderError("Aktives wiederkehrendes Abo verlaengert sich automatisch")
+
+    orig_item = (
+        db.query(ShopOrderItem)
+        .filter(ShopOrderItem.id == subscription.order_item_id)
+        .first()
+    )
+    orig_order = (
+        db.query(ShopOrder).filter(ShopOrder.id == subscription.order_id).first()
+    )
+
+    monatlich = (
+        int(orig_item.unit_price_cents)
+        if orig_item is not None
+        else int(subscription.monthly_gross_cents)
+    )
+    tax_rate = (
+        int(orig_item.tax_rate_percent)
+        if orig_item is not None
+        else int(subscription.tax_rate_percent)
+    )
+    discount = DURATION_DISCOUNTS[months]
+    brutto = max(0, round(monatlich * months * (1 - discount / 100)))
+    netto = round(brutto * 100 / (100 + tax_rate))
+    steuer = brutto - netto
+
+    order = ShopOrder(
+        number="",
+        user_id=user.id,
+        status="pending_payment",
+        currency=orig_order.currency if orig_order is not None else "EUR",
+        billing_interval=subscription.billing_interval,
+        billing_mode="prepaid",
+        extend_subscription_id=subscription.id,
+        months=months,
+        discount_percent=discount,
+        coupon_code=None,
+        coupon_discount_cents=0,
+        buyer_name=orig_order.buyer_name if orig_order is not None else None,
+        buyer_street=orig_order.buyer_street if orig_order is not None else None,
+        buyer_postal_code=(
+            orig_order.buyer_postal_code if orig_order is not None else None
+        ),
+        buyer_city=orig_order.buyer_city if orig_order is not None else None,
+        buyer_country=orig_order.buyer_country if orig_order is not None else None,
+        buyer_email=orig_order.buyer_email if orig_order is not None else None,
+        net_cents=netto,
+        tax_cents=steuer,
+        gross_cents=brutto,
+        payment_provider="demo",
+    )
+    db.add(order)
+    db.flush()
+    order.number = f"MSM-{_now().year}-{order.id:06d}"
+
+    item_kind = orig_item.kind if orig_item is not None else ("addon" if subscription.addon_id else "plan")
+    db.add(
+        ShopOrderItem(
+            order_id=order.id,
+            kind=item_kind,
+            plan_id=subscription.plan_id,
+            addon_id=subscription.addon_id,
+            game_type=subscription.game_type,
+            name=f"{subscription.name} (+{months} Mon.)",
+            quantity=1,
+            unit_price_cents=monatlich,
+            tax_rate_percent=tax_rate,
+            net_cents=netto,
+            tax_cents=steuer,
+            gross_cents=brutto,
+            ram_mb=orig_item.ram_mb if orig_item is not None else None,
+            cpu=orig_item.cpu if orig_item is not None else None,
+            slots=orig_item.slots if orig_item is not None else None,
+        )
+    )
+    db.commit()
+    db.refresh(order)
+    return order
+
+
 def refund_order(
     db: Session,
     order: ShopOrder,
@@ -1101,6 +1264,8 @@ def order_response(db: Session, order: ShopOrder) -> ShopOrderResponse:
         status=order.status,
         currency=order.currency,
         billing_interval=order.billing_interval,
+        billing_mode=getattr(order, "billing_mode", "subscription"),
+        extend_subscription_id=getattr(order, "extend_subscription_id", None),
         months=order.months,
         discount_percent=order.discount_percent,
         coupon_code=order.coupon_code,
@@ -1169,6 +1334,7 @@ def subscription_response(
         name=row.name,
         status=row.status,
         billing_interval=row.billing_interval,
+        billing_mode=getattr(row, "billing_mode", "subscription"),
         monthly_gross_cents=row.monthly_gross_cents,
         tax_rate_percent=row.tax_rate_percent,
         started_at=row.started_at,

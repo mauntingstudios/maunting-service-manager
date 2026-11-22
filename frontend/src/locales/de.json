@@ -2528,6 +2528,12 @@
       "manual": "Manuell einrichten",
       "manualHint": "Für abweichende Agent- oder Netzwerk-Konfigurationen"
     },
+    "locationLabel": "Standort-Bezeichnung",
+    "locationPlaceholder": "z. B. Frankfurt DE · Rechenzentrum 2",
+    "ramType": "RAM-Typ (optional)",
+    "ramTypePlaceholder": "z. B. DDR5 ECC",
+    "storageType": "Storage-Typ (optional)",
+    "storageTypePlaceholder": "z. B. NVMe SSD",
     "status": {
       "online": "Online",
       "unknown": "Unbekannt",
@@ -3336,6 +3342,13 @@
       "user": "Master-Benutzer"
     },
     "databasePort": "Datenbank-Port",
+    "cpuStealLabel": "CPU-Steal",
+    "ramPeakLabel": "RAM-Peak",
+    "autoUpdatePausedLabel": "Auto-Updates pausieren (Mod-Schutz)",
+    "autoUpdatePausedHint": "Verhindert automatische Spiel- und Mod-Updates beim Start. Eine fehlende Erstinstallation wird trotzdem ausgeführt.",
+    "autoUpdatePausedSaved": "Update-Einstellung gespeichert.",
+    "diagnoseWithSingra": "Mit Singra analysieren",
+    "singraCrashPrompt": "Mein Server \"{{name}}\" ({{game}}) befindet sich im Fehlerstatus ({{status}}). Bitte analysiere mögliche Ursachen anhand der letzten Konsolen-/Crash-Logs sowie der Konfiguration und nenne konkrete Lösungsschritte.",
     "kind": {
       "application": "Anwendung",
       "database": "Datenbankserver",
@@ -4728,7 +4741,17 @@
         "dunningReminderDaysHint": "Kommagetrennte Tage vor der automatischen Löschung, z. B. 7, 4, 1 (bis hin zu »Morgen wird dein Server gelöscht«).",
         "speichern": "Fristen speichern",
         "gespeichert": "Löschfristen gespeichert.",
-        "fehler": "Löschfristen konnten nicht gespeichert werden."
+        "fehler": "Löschfristen konnten nicht gespeichert werden.",
+        "subscriptionDiscountPercent": "Abo-Rabatt (%)",
+        "subscriptionDiscountPercentHint": "Optionaler Rabatt in Prozent (0 bis 50), wenn Kunden im Konfigurator aktiv das monatliche Abo statt Prepaid wählen.",
+        "refundGuaranteeDays": "Geld-zurück-Garantie (Tage)",
+        "refundGuaranteeDaysHint": "Tage für Erstattungen auf die ursprüngliche Zahlungsart (0 blendet den Garantie-Hinweis aus).",
+        "refundPolicyNote": "Hinweis zur Erstattungsregel",
+        "refundPolicyNoteHint": "Kurzer Hinweistext im Checkout, z. B. Bedingungen für Erstattungen ohne Shop-Guthaben-Zwang.",
+        "autoSubdomainEnabled": "Cloudflare-Subdomain automatisch anlegen",
+        "autoSubdomainEnabledHint": "Erstellt beim Shop-Provisioning einen A/AAAA- und SRV-Eintrag über Cloudflare und aktualisiert ihn bei Node-Umzügen.",
+        "autoSubdomainZone": "Subdomain-Zone (Cloudflare-Domain)",
+        "autoSubdomainZoneHint": "Basisdomain für automatische Server-Subdomains, z. B. play.deinedomain.gg."
       },
       "zahlungen": {
         "titel": "Zahlungen",
@@ -4933,7 +4956,13 @@
         "umsatzBrutto": "Bezahlter Umsatz",
         "bezahlteOrders": "Bezahlte Orders",
         "aktiveAbos": "Aktive Abos",
-        "aktiveGutscheine": "Aktive Gutscheine"
+        "aktiveGutscheine": "Aktive Gutscheine",
+        "betreiberAnsichtBadge": "Betreiber-Buchhaltung · Alle Kundenbelege",
+        "filterAlle": "Alle",
+        "filterRechnungen": "Shop-Rechnungen",
+        "filterGutschriften": "Gutschriften",
+        "typShopRechnung": "Shop-Rechnung",
+        "typHosterApi": "Hoster-API"
       }
     },
     "cloudflareEnabled": "Cloudflare DNS",
@@ -6743,6 +6772,14 @@
     "restoreModalWarning": "WARNUNG: Dieses Skript stoppt den MSM-Panel-Dienst und überschreibt die Datenbank und Konfigurationsdateien! Die Dateien im Tresor (/opt/msm/vault-blobs) sind nicht im Backup. Stammt das Verzeichnis von einem anderen Stand, gehen Tresor-Dateien verloren."
   },
   "shop": {
+    "nodeStatus": {
+      "titel": "Live-Node-Auslastung pro Standort",
+      "untertitel": "Ehrliche Echtzeit-Kapazitäten unserer aktiven Nodes vor dem Kauf.",
+      "frei": "Kapazität frei",
+      "belegt": "Ausgelastet",
+      "offline": "Wartung / Offline",
+      "ramFreiProzent": "{{percent}} % RAM frei"
+    },
     "kopf": {
       "startseite": "Zur Shop-Startseite",
       "navigation": "Shop-Navigation",
@@ -6939,7 +6976,25 @@
       "ausverkauftText": "Für diese Konfiguration steht aktuell nicht genügend RAM oder CPU auf einer aktiven Node zur Verfügung.",
       "stripeHinweis": "Sichere Zahlung über Stripe · Automatische Bereitstellung direkt nach Zahlungseingang.",
       "nichtGefundenTitel": "Spiel nicht gefunden",
-      "nichtGefundenText": "Dieses Angebot ist im aktuellen Katalog nicht verfügbar."
+      "nichtGefundenText": "Dieses Angebot ist im aktuellen Katalog nicht verfügbar.",
+      "zahlungsart": "Abrechnung",
+      "prepaidTitel": "Prepaid (läuft automatisch aus)",
+      "prepaidHinweis": "Keine automatische Verlängerung und keine Kündigungsfrist. Du verlängerst nur, wenn du möchtest.",
+      "aboTitel": "Abo (automatische Verlängerung)",
+      "aboRabattBadge": "-{{prozent}} %",
+      "aboHinweis": "Verlängert sich monatlich automatisch und ist jederzeit zum Laufzeitende kündbar.",
+      "aboHinweisMitRabatt": "Monatliches Abo mit {{prozent}} % Dauerrabatt. Jederzeit zum Laufzeitende kündbar.",
+      "aboIntervallHinweis": "Abos werden fest im 1-Monats-Rhythmus abgerechnet.",
+      "inklusiveTitel": "Immer 0,00 € inklusive",
+      "inklusiveDdos": "DDoS-Schutz",
+      "inklusiveBackups": "Automatische Backups (inkl. Pre-Update)",
+      "inklusiveGameSwitch": "Instant Game-Switch",
+      "inklusiveSftp": "SFTP & Dateimanager",
+      "inklusiveKonsole": "Live-Konsole & Subdomain",
+      "ramEmpfehlung": "Richtwert für {{ram}} GB RAM und {{cpu}} vCPU: ca. {{spieler}} gleichzeitige Spieler (ohne Mods).",
+      "setupDauer": "Geschätzte Einrichtung: ca. {{sekunden}} s",
+      "erstattungGarantie": "{{tage}} Tage Geld-zurück-Regel auf die ursprüngliche Zahlungsart.",
+      "datensicherheitHinweis": "Automatische Sicherung vor Updates und jederzeitiger Welt-Export ohne Lock-in."
     },
     "kasse": {
       "titel": "Kasse",
@@ -6989,7 +7044,11 @@
       "gutscheinPruefen": "Einlösen",
       "gutscheinEntfernen": "Entfernen",
       "gutscheinAbzug": "Gutschein ({{code}})",
-      "gutscheinFehler": "Gutschein konnte nicht angewendet werden."
+      "gutscheinFehler": "Gutschein konnte nicht angewendet werden.",
+      "zahlungsartLabel": "Zahlungsart",
+      "prepaidHinweis": "Prepaid: läuft automatisch aus, keine Kündigung nötig.",
+      "aboHinweis": "Abo: monatliche Verlängerung, jederzeit im Konto kündbar.",
+      "erstattungHinweis": "Erstattungsregel: Innerhalb von {{tage}} Tagen direkt auf deine ursprüngliche Zahlungsmethode."
     },
     "promo": {
       "aktionBadge": "Aktion",
@@ -7019,6 +7078,8 @@
       "proMonat": "pro Monat",
       "gesamt": "Gesamt",
       "rabatt": "{{prozent}} % Laufzeitrabatt",
+      "aboRabatt": "{{prozent}} % Abo-Rabatt",
+      "einmalig": "Prepaid (einmalig)",
       "inklusiveSteuer": "inkl. gesetzlicher USt."
     },
     "konto": {
@@ -7062,7 +7123,9 @@
         "xml": "XRechnung-XML",
         "gutschrift": "Gutschrift",
         "grund": "Grund: {{grund}}",
-        "xrechnungHinweis": "Rechnungen werden als XRechnung-XML (EN 16931) ausgestellt; das PDF ist die lesbare Kopie."
+        "xrechnungHinweis": "Rechnungen werden als XRechnung-XML (EN 16931) ausgestellt; das PDF ist die lesbare Kopie.",
+        "kontextBadge": "Mein Kundenkonto · Persönliche Belege",
+        "typRechnung": "Shop-Rechnung"
       },
       "zahlungsmethoden": {
         "titel": "Zahlungsmethoden",
@@ -7105,7 +7168,18 @@
         "loeschungAm": "Geplante Löschung ab {{datum}}",
         "zahlungsfristBis": "Zahlungsfrist bis {{datum}} – danach wird der Server gelöscht",
         "zahlungsmethodePruefen": "Zahlungsmethode prüfen",
-        "sofortLoeschungZumLaufzeitende": "Kündigung vorgemerkt (Löschung bei Ablauf)"
+        "sofortLoeschungZumLaufzeitende": "Kündigung vorgemerkt (Löschung bei Ablauf)",
+        "typPrepaid": "Prepaid",
+        "typAbo": "Abo",
+        "verlaengern": "Um 1 Monat verlängern",
+        "verlaengernLaeuft": "Verlängerung wird geöffnet …",
+        "verlaengernFehler": "Verlängerung konnte nicht gestartet werden.",
+        "verlaengertErfolg": "Laufzeit erfolgreich um 1 Monat verlängert.",
+        "weltBackupsLaden": "Welt-Backup laden",
+        "weltBackupsSchliessen": "Backups ausblenden",
+        "weltBackupsLeer": "Aktuell sind keine herunterladbaren Welt-Backups vorhanden.",
+        "weltBackupsFehler": "Backups konnten nicht geladen werden.",
+        "weltBackupHerunterladen": "Backup laden"
       },
       "status": {
         "draft": "Entwurf",

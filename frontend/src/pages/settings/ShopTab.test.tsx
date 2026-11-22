@@ -151,10 +151,17 @@ describe('ShopTab', () => {
     expect(await screen.findByText(i18n.t('settings.shop.stripe.nichtKonfiguriert'))).toBeInTheDocument()
     expect(await screen.findByText('MSM-2026-000007')).toBeInTheDocument()
     expect(await screen.findByText('RE-2026-0003')).toBeInTheDocument()
+    expect(screen.getByText(i18n.t('settings.shop.betrieb.betreiberAnsichtBadge'))).toBeInTheDocument()
+    expect(screen.getByText(i18n.t('settings.shop.betrieb.typShopRechnung'))).toBeInTheDocument()
     expect(await screen.findByText('evt_test_99')).toBeInTheDocument()
     expect(
       screen.getByRole('link', { name: i18n.t('settings.shop.betrieb.pruefExport') }),
     ).toHaveAttribute('href', expect.stringContaining('/api/shop/invoices/export'))
+
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('settings.shop.betrieb.filterGutschriften') }))
+    expect(screen.queryByText('RE-2026-0003')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('settings.shop.betrieb.filterAlle') }))
+    expect(screen.getByText('RE-2026-0003')).toBeInTheDocument()
 
     fireEvent.click(
       screen.getByRole('button', { name: i18n.t('settings.shop.betrieb.abgleichStarten') }),
@@ -165,6 +172,21 @@ describe('ShopTab', () => {
 
     const graceInput = screen.getByLabelText(i18n.t('settings.shop.lifecycle.cancelGraceDays'))
     fireEvent.change(graceInput, { target: { value: '14' } })
+    const discountInput = screen.getByLabelText(
+      i18n.t('settings.shop.lifecycle.subscriptionDiscountPercent'),
+    )
+    fireEvent.change(discountInput, { target: { value: '12' } })
+    const refundDaysInput = screen.getByLabelText(
+      i18n.t('settings.shop.lifecycle.refundGuaranteeDays'),
+    )
+    fireEvent.change(refundDaysInput, { target: { value: '14' } })
+    fireEvent.click(
+      screen.getByRole('switch', { name: i18n.t('settings.shop.lifecycle.autoSubdomainEnabled') }),
+    )
+    const zoneInput = screen.getByLabelText(
+      i18n.t('settings.shop.lifecycle.autoSubdomainZone'),
+    )
+    fireEvent.change(zoneInput, { target: { value: 'play.example.gg' } })
     fireEvent.click(
       screen.getByRole('button', { name: i18n.t('settings.shop.lifecycle.speichern') }),
     )
@@ -174,6 +196,20 @@ describe('ShopTab', () => {
         expect.objectContaining({
           method: 'PUT',
           body: expect.stringContaining('"cancel_grace_days":14'),
+        }),
+      )
+      expect(apiMock).toHaveBeenCalledWith(
+        '/shop/admin/lifecycle-settings',
+        expect.objectContaining({
+          method: 'PUT',
+          body: expect.stringContaining('"subscription_discount_percent":12'),
+        }),
+      )
+      expect(apiMock).toHaveBeenCalledWith(
+        '/shop/admin/lifecycle-settings',
+        expect.objectContaining({
+          method: 'PUT',
+          body: expect.stringContaining('"auto_subdomain_zone":"play.example.gg"'),
         }),
       )
     })

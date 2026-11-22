@@ -142,6 +142,10 @@ class ShopOrder(Base):
             "net_cents >= 0 AND tax_cents >= 0 AND gross_cents >= 0",
             name="ck_shop_orders_cents",
         ),
+        CheckConstraint(
+            "billing_mode IN ('prepaid', 'subscription')",
+            name="ck_shop_orders_billing_mode",
+        ),
         Index("ix_shop_orders_user_created", "user_id", "created_at"),
     )
 
@@ -158,6 +162,14 @@ class ShopOrder(Base):
     currency: Mapped[str] = mapped_column(String(3), default="EUR", nullable=False)
     billing_interval: Mapped[str] = mapped_column(
         String(16), default="month", nullable=False
+    )
+    billing_mode: Mapped[str] = mapped_column(
+        String(16), default="subscription", server_default="subscription", nullable=False
+    )
+    extend_subscription_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("shop_subscriptions.id", ondelete="SET NULL"),
+        nullable=True,
     )
     months: Mapped[int] = mapped_column(Integer, nullable=False)
     discount_percent: Mapped[int] = mapped_column(
@@ -387,6 +399,10 @@ class ShopSubscription(Base):
             "billing_interval IN ('month')",
             name="ck_shop_subscriptions_interval",
         ),
+        CheckConstraint(
+            "billing_mode IN ('prepaid', 'subscription')",
+            name="ck_shop_subscriptions_billing_mode",
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
@@ -417,6 +433,9 @@ class ShopSubscription(Base):
     )
     billing_interval: Mapped[str] = mapped_column(
         String(16), default="month", nullable=False
+    )
+    billing_mode: Mapped[str] = mapped_column(
+        String(16), default="subscription", server_default="subscription", nullable=False
     )
     monthly_gross_cents: Mapped[int] = mapped_column(Integer, nullable=False)
     tax_rate_percent: Mapped[int] = mapped_column(Integer, nullable=False)

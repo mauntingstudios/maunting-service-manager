@@ -412,6 +412,53 @@ def _run_pre_start_backup_if_enabled(db: Session, server: Server, *, context: st
         )
 
 
+def _run_pre_update_backup(db: Session, server: Server, *, reason: str) -> None:
+    """Erstellt vor automatischen Spiel-/Mod-Updates ein Pre-Update-Backup."""
+    from models import Backup
+    from services.backup_orchestrator import create_server_backup
+    from services.node_capacity import should_delegate_node_fs_to_agent
+
+    if not should_delegate_node_fs_to_agent(getattr(server, "node", None)):
+        if not getattr(server, "install_dir", None) or not os.path.isdir(server.install_dir):
+            return
+
+    last = (
+        db.query(Backup)
+        .filter(Backup.server_id == server.id)
+        .order_by(Backup.created_at.desc())
+        .first()
+    )
+    if last and last.created_at is not None:
+        created = last.created_at
+        if created.tzinfo is None:
+            created = created.replace(tzinfo=timezone.utc)
+        age_min = (_utcnow() - created.astimezone(timezone.utc)).total_seconds() / 60.0
+        if age_min < _PRE_START_BACKUP_SKIP_MINUTES:
+            return
+
+    _append_console_log(
+        server.id,
+        f"[MSM] Erstelle automatisches Pre-Update-Backup ({reason})...\n",
+    )
+    try:
+        create_server_backup(
+            server.id, db, name=f"pre_update_{reason}", timeout_seconds=300
+        )
+        _append_console_log(
+            server.id, "[MSM] Pre-Update-Backup abgeschlossen.\n"
+        )
+    except Exception as exc:
+        _append_console_log(
+            server.id,
+            f"[MSM] Pre-Update-Backup fehlgeschlagen ({_safe_error_message(exc)}).\n",
+        )
+        logger.warning(
+            "Pre-Update-Backup fehlgeschlagen für Server %s (%s)",
+            server.id,
+            type(exc).__name__,
+        )
+
+
 def reset_lifecycle_jobs_for_tests() -> None:
     with _ACTIVE_JOBS_LOCK:
         _ACTIVE_JOBS.clear()
@@ -1049,12 +1096,29 @@ def _run_start(
 
     update_lock_acquired = False
     install_status_active = False
+    updates_paused = bool(getattr(server, "auto_update_paused", False))
+    is_missing_install = (
+        isinstance(server_update_check, dict)
+        and server_update_check.get("reason") == "missing"
+    )
+    file_update_wanted = _server_file_update_needed(server_update_check) and (
+        is_missing_install or not updates_paused
+    )
+    mod_update_wanted = bool(mod_updates) and not updates_paused
+    if updates_paused and (
+        (_server_file_update_needed(server_update_check) and not is_missing_install)
+        or mod_updates
+    ):
+        _append_console_log(
+            server.id,
+            "[MSM] Automatische Spiel-/Mod-Updates übersprungen (Update-Pinning aktiv).\n",
+        )
     transient_messages = {
         "Server-Dateien werden installiert...",
         "Aktualisiere Server-Dateien / Mods vor dem Start...",
     }
     try:
-        if _server_file_update_needed(server_update_check) or mod_updates:
+        if file_update_wanted or mod_update_wanted:
             update_lock_acquired = try_acquire_install_update_lock(server.id, "start_update", node_id=server.node_id)
             if not update_lock_acquired:
                 raise HTTPException(
@@ -1064,7 +1128,7 @@ def _run_start(
                         "message": f"errors.{INSTALL_UPDATE_ALREADY_RUNNING}",
                     },
                 )
-            if isinstance(server_update_check, dict) and server_update_check.get("reason") == "missing":
+            if is_missing_install:
                 server.status = "installing"
                 server.status_message = "Server-Dateien werden installiert..."
                 install_status_active = True
@@ -1075,9 +1139,13 @@ def _run_start(
             except Exception:
                 db.rollback()
 
-        _run_server_file_update_if_needed(server, plugin, "start", update_check=server_update_check)
+        if not is_missing_install and (file_update_wanted or mod_update_wanted):
+            _run_pre_update_backup(db, server, reason="start")
 
-        if mod_updates:
+        if file_update_wanted:
+            _run_server_file_update_if_needed(server, plugin, "start", update_check=server_update_check)
+
+        if mod_update_wanted:
             _append_console_log(
                 server.id,
                 f"[MSM] {len(mod_updates)} Workshop-Mod(s) beim Start erkannt - "
@@ -1245,8 +1313,25 @@ def _run_restart(
         logger.warning("Updater-Check beim Restart von Server %s fehlgeschlagen: %s", server.id, exc)
 
     update_lock_acquired = False
+    updates_paused = bool(getattr(server, "auto_update_paused", False))
+    is_missing_install = (
+        isinstance(server_update_check, dict)
+        and server_update_check.get("reason") == "missing"
+    )
+    file_update_wanted = _server_file_update_needed(server_update_check) and (
+        is_missing_install or not updates_paused
+    )
+    mod_update_wanted = bool(mod_updates) and not updates_paused
+    if updates_paused and (
+        (_server_file_update_needed(server_update_check) and not is_missing_install)
+        or mod_updates
+    ):
+        _append_console_log(
+            server.id,
+            "[MSM] Automatische Spiel-/Mod-Updates bei Restart übersprungen (Update-Pinning aktiv).\n",
+        )
     try:
-        if _server_file_update_needed(server_update_check) or bool(mod_updates):
+        if file_update_wanted or mod_update_wanted:
             update_lock_acquired = try_acquire_install_update_lock(server.id, "restart_update", node_id=server.node_id)
             if not update_lock_acquired:
                 raise HTTPException(
@@ -1266,9 +1351,13 @@ def _run_restart(
         if "error" in stop_result:
             raise HTTPException(status_code=500, detail=stop_result["error"])
 
-        _run_server_file_update_if_needed(server, plugin, "restart", update_check=server_update_check)
+        if not is_missing_install and (file_update_wanted or mod_update_wanted):
+            _run_pre_update_backup(db, server, reason="restart")
 
-        if mod_updates:
+        if file_update_wanted:
+            _run_server_file_update_if_needed(server, plugin, "restart", update_check=server_update_check)
+
+        if mod_update_wanted:
             _append_console_log(
                 server.id,
                 f"[MSM] {len(mod_updates)} Workshop-Mod(s) benötigen Update/Installation. "

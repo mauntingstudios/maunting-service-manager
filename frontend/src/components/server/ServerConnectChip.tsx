@@ -7,7 +7,9 @@ import { toast } from '@/stores/toastStore'
 import type { Server } from '@/types'
 
 interface ServerConnectChipProps {
-  server: Pick<Server, 'public_bind_ip' | 'ports' | 'game_port' | 'query_port' | 'rcon_port'>
+  server: Pick<Server, 'public_bind_ip' | 'ports' | 'game_port' | 'query_port' | 'rcon_port'> & {
+    public_hostname?: string | null
+  }
   compact?: boolean
   className?: string
 }

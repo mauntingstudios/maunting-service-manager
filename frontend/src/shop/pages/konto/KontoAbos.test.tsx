@@ -1,17 +1,26 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { SanitizedApiError } from '@/api/client'
 
 const {
   cancelSubscriptionMock,
   listSubscriptionsMock,
   listEntitlementsMock,
   purgeEntitlementNowMock,
+  extendSubscriptionMock,
+  checkoutMock,
+  payDemoMock,
+  listEntitlementBackupsMock,
 } = vi.hoisted(() => ({
   cancelSubscriptionMock: vi.fn(),
   listSubscriptionsMock: vi.fn(),
   listEntitlementsMock: vi.fn(),
   purgeEntitlementNowMock: vi.fn(),
+  extendSubscriptionMock: vi.fn(),
+  checkoutMock: vi.fn(),
+  payDemoMock: vi.fn(),
+  listEntitlementBackupsMock: vi.fn(),
 }))
 
 vi.mock('@/api/shop', async (importOriginal) => {
@@ -24,6 +33,10 @@ vi.mock('@/api/shop', async (importOriginal) => {
       cancelSubscription: cancelSubscriptionMock,
       listEntitlements: listEntitlementsMock,
       purgeEntitlementNow: purgeEntitlementNowMock,
+      extendSubscription: extendSubscriptionMock,
+      checkout: checkoutMock,
+      payDemo: payDemoMock,
+      listEntitlementBackups: listEntitlementBackupsMock,
     },
   }
 })
@@ -34,6 +47,10 @@ describe('KontoAbos', () => {
   beforeEach(() => {
     cancelSubscriptionMock.mockReset()
     purgeEntitlementNowMock.mockReset()
+    extendSubscriptionMock.mockReset()
+    checkoutMock.mockReset()
+    payDemoMock.mockReset()
+    listEntitlementBackupsMock.mockReset().mockResolvedValue([])
     listSubscriptionsMock.mockResolvedValue([
       {
         id: 1,
@@ -252,5 +269,73 @@ describe('KontoAbos', () => {
         confirm_server_name: 'Mein-Palworld',
       })
     })
+  })
+
+  it('unterstuetzt 1-Klick-Verlaengerung bei Prepaid und Welt-Backup-Download in der Schonfrist', async () => {
+    listSubscriptionsMock.mockResolvedValueOnce([
+      {
+        id: 1,
+        game_type: 'palworld',
+        name: 'Palworld · Standard · 8 GB',
+        status: 'active',
+        billing_interval: 'month',
+        billing_mode: 'prepaid',
+        monthly_gross_cents: 699,
+        tax_rate_percent: 19,
+        started_at: '2026-11-21T10:00:00+00:00',
+        current_period_end: '2026-12-21T10:00:00+00:00',
+        cancel_at_period_end: false,
+      },
+    ])
+    listEntitlementsMock.mockResolvedValueOnce([
+      {
+        id: 10,
+        kind: 'server',
+        label: 'Palworld · Standard · 8 GB',
+        status: 'suspended',
+        server_id: 42,
+        server_name: 'Mein-Palworld',
+        provisioning_status: 'suspended',
+        provisioning_error: null,
+        purge_after: '2026-12-20T10:00:00+00:00',
+        purge_reason: 'cancelled',
+        created_at: '2026-11-21T10:00:00+00:00',
+      },
+    ])
+    extendSubscriptionMock.mockResolvedValueOnce({ id: 99, number: 'MSM-2026-000099' })
+    checkoutMock.mockRejectedValueOnce(new SanitizedApiError('Kein Stripe', { status: 409 }))
+    payDemoMock.mockResolvedValueOnce({ id: 99, number: 'MSM-2026-000099' })
+    listEntitlementBackupsMock.mockResolvedValueOnce([
+      {
+        id: 77,
+        name: 'pre_update_backup.tar.gz',
+        size_mb: 120,
+        created_at: '2026-11-21T12:00:00+00:00',
+        encrypted: false,
+        downloadable: true,
+      },
+    ])
+
+    render(
+      <MemoryRouter>
+        <KontoAbos />
+      </MemoryRouter>,
+    )
+
+    expect(await screen.findByText('Prepaid')).toBeInTheDocument()
+    const extendBtn = screen.getByRole('button', { name: 'Um 1 Monat verlängern' })
+    fireEvent.click(extendBtn)
+
+    await waitFor(() => {
+      expect(extendSubscriptionMock).toHaveBeenCalledWith('1', 1)
+    })
+    expect(await screen.findByText('Laufzeit erfolgreich um 1 Monat verlängert.')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Welt-Backup laden' }))
+    expect(await screen.findByText(/pre_update_backup\.tar\.gz/)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Backup laden' })).toHaveAttribute(
+      'href',
+      expect.stringContaining('/api/shop/entitlements/10/backups/77/download'),
+    )
   })
 })

@@ -6,6 +6,7 @@ import { SanitizedApiError } from '@/api/client'
 import { shopApi } from '../../api/shopApi'
 import type {
   Entitlement,
+  GraceBackup,
   Subscription,
   SubscriptionDeletionMode,
 } from '../../api/types'
@@ -21,7 +22,64 @@ export function KontoAbos() {
   const [purgeEntId, setPurgeEntId] = useState<string | null>(null)
   const [purgeConfirmName, setPurgeConfirmName] = useState('')
   const [laufendPurgeId, setLaufendPurgeId] = useState<string | null>(null)
+  const [extendingAboId, setExtendingAboId] = useState<string | null>(null)
+  const [verlaengertInfo, setVerlaengertInfo] = useState<string | null>(null)
+  const [openBackupsEntId, setOpenBackupsEntId] = useState<string | null>(null)
+  const [backupsByEnt, setBackupsByEnt] = useState<Record<string, GraceBackup[]>>({})
+  const [backupsLoadingId, setBackupsLoadingId] = useState<string | null>(null)
+  const [backupsErrorId, setBackupsErrorId] = useState<string | null>(null)
   const [fehler, setFehler] = useState<string | null>(null)
+
+  const neuladen = async () => {
+    const [subscriptions, entitlements] = await Promise.all([
+      shopApi.listSubscriptions(),
+      shopApi.listEntitlements(),
+    ])
+    setAbos({ subscriptions, entitlements })
+  }
+
+  async function verlaengernAusfuehren(abo: Subscription) {
+    if (!shopApi.extendSubscription || extendingAboId) return
+    setFehler(null)
+    setVerlaengertInfo(null)
+    setExtendingAboId(abo.id)
+    try {
+      const ergebnis = await shopApi.extendSubscription(abo.id, 1)
+      if (ergebnis.checkoutUrl) {
+        window.location.assign(ergebnis.checkoutUrl)
+        return
+      }
+      await neuladen()
+      setVerlaengertInfo(t('shop.konto.abos.verlaengertErfolg'))
+    } catch (error) {
+      setFehler(
+        error instanceof SanitizedApiError
+          ? error.message
+          : t('shop.konto.abos.verlaengernFehler'),
+      )
+    } finally {
+      setExtendingAboId(null)
+    }
+  }
+
+  async function toggleBackups(entId: string) {
+    if (openBackupsEntId === entId) {
+      setOpenBackupsEntId(null)
+      return
+    }
+    setOpenBackupsEntId(entId)
+    if (backupsByEnt[entId] || !shopApi.listEntitlementBackups) return
+    setBackupsErrorId(null)
+    setBackupsLoadingId(entId)
+    try {
+      const rows = await shopApi.listEntitlementBackups(entId)
+      setBackupsByEnt((prev) => ({ ...prev, [entId]: rows }))
+    } catch {
+      setBackupsErrorId(entId)
+    } finally {
+      setBackupsLoadingId(null)
+    }
+  }
 
   useEffect(() => {
     let aktiv = true
@@ -140,6 +198,11 @@ export function KontoAbos() {
         <h2 className="font-headline text-lg font-bold text-on-surface">
           {t('shop.konto.abos.titel')}
         </h2>
+        {verlaengertInfo && (
+          <p role="status" className="text-sm text-status-success">
+            {verlaengertInfo}
+          </p>
+        )}
         {fehler && (
           <p role="alert" className="text-sm text-status-destructive">
             {fehler}
@@ -163,6 +226,11 @@ export function KontoAbos() {
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-3">
+                  <Badge variant="default">
+                    {(abo.billingMode ?? 'subscription') === 'prepaid'
+                      ? t('shop.konto.abos.typPrepaid')
+                      : t('shop.konto.abos.typAbo')}
+                  </Badge>
                   {abo.cancelAtPeriodEnd && abo.status !== 'cancelled' && (
                     <Badge variant="warning">
                       {abo.deleteServerOnEnd
@@ -180,6 +248,20 @@ export function KontoAbos() {
                   <span className="font-headline text-sm font-bold tabular-nums text-primary">
                     {formatEuro(abo.preisCent)}
                   </span>
+                  {abo.status !== 'cancelled' &&
+                    (abo.billingMode === 'prepaid' || abo.cancelAtPeriodEnd) &&
+                    shopApi.extendSubscription && (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        disabled={extendingAboId === abo.id}
+                        onClick={() => void verlaengernAusfuehren(abo)}
+                      >
+                        {extendingAboId === abo.id
+                          ? t('shop.konto.abos.verlaengernLaeuft')
+                          : t('shop.konto.abos.verlaengern')}
+                      </Button>
+                    )}
                   {abo.status !== 'cancelled' && !abo.cancelAtPeriodEnd && bestaetigeAboId !== abo.id && (
                     <Button
                       variant="secondary"
@@ -354,6 +436,20 @@ export function KontoAbos() {
                         {t('shop.konto.abos.serverOeffnen')}
                       </Link>
                     )}
+                  {entitlement.art === 'server' &&
+                    entitlement.serverId != null &&
+                    !isPurged &&
+                    shopApi.listEntitlementBackups && (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => void toggleBackups(entitlement.id)}
+                      >
+                        {openBackupsEntId === entitlement.id
+                          ? t('shop.konto.abos.weltBackupsSchliessen')
+                          : t('shop.konto.abos.weltBackupsLaden')}
+                      </Button>
+                    )}
                   {entitlement.status === 'suspended' &&
                     entitlement.purgeReason === 'unpaid' && (
                       <Link
@@ -406,6 +502,42 @@ export function KontoAbos() {
                   </Badge>
                 </div>
               </div>
+
+              {openBackupsEntId === entitlement.id && (
+                <div className="space-y-2 rounded-xl border border-outline-variant/30 bg-surface-container p-3 text-xs">
+                  {backupsLoadingId === entitlement.id ? (
+                    <p className="text-on-surface-variant">{t('common.loading')}</p>
+                  ) : backupsErrorId === entitlement.id ? (
+                    <p role="alert" className="text-status-destructive">
+                      {t('shop.konto.abos.weltBackupsFehler')}
+                    </p>
+                  ) : (backupsByEnt[entitlement.id] ?? []).filter((b) => b.downloadable).length === 0 ? (
+                    <p className="text-on-surface-variant">{t('shop.konto.abos.weltBackupsLeer')}</p>
+                  ) : (
+                    <ul className="space-y-1.5">
+                      {(backupsByEnt[entitlement.id] ?? [])
+                        .filter((b) => b.downloadable)
+                        .map((backup) => (
+                          <li key={backup.id} className="flex flex-wrap items-center justify-between gap-2">
+                            <span className="font-medium text-on-surface">
+                              {backup.name}
+                              {backup.sizeMb != null ? ` (${backup.sizeMb} MB)` : ''}
+                            </span>
+                            {shopApi.entitlementBackupDownloadUrl && (
+                              <a
+                                href={shopApi.entitlementBackupDownloadUrl(entitlement.id, backup.id)}
+                                download
+                                className="rounded-lg border border-primary/30 bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary hover:bg-primary/20"
+                              >
+                                {t('shop.konto.abos.weltBackupHerunterladen')}
+                              </a>
+                            )}
+                          </li>
+                        ))}
+                    </ul>
+                  )}
+                </div>
+              )}
 
               {purgeEntId === entitlement.id && entitlement.serverName && (
                 <div className="space-y-2 rounded-xl border border-status-destructive/30 bg-status-destructive/10 p-3 text-xs">

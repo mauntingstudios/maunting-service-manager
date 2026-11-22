@@ -191,6 +191,17 @@ class Server(Base):
     def rcon_port(self, val: int | None) -> None:
         self.set_port("rcon", val, "tcp")
 
+    # Update-Pinning: schützt gemoddete Server vor automatischen Spiel-Updates.
+    auto_update_paused: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false", nullable=False
+    )
+
+    # Stabile öffentliche Verbindungs-Subdomain & Cloudflare-DNS-Referenzen (Phase 6).
+    public_hostname: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    cloudflare_zone_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    cloudflare_a_record_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    cloudflare_srv_record_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
     # Optional: bestimmte Host-IP, an die Container-Ports gebunden werden.
     # None = alle Interfaces (Docker-Default 0.0.0.0). Empfehlung im UI:
     # NUR setzen, wenn der Host mehrere externe IPs hat.

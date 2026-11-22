@@ -112,9 +112,12 @@ export function serverStatusClasses(status: string | undefined): string {
  * ein nutzerseitiger Port (database, web, game, voice, query, peer, custom) vorhanden ist.
  */
 export function resolveServerConnect(
-  server: Pick<Server, 'public_bind_ip' | 'ports' | 'game_port' | 'query_port' | 'rcon_port'>,
+  server: Pick<Server, 'public_bind_ip' | 'ports' | 'game_port' | 'query_port' | 'rcon_port'> & {
+    public_hostname?: string | null
+  },
 ): ResolvedServerConnect {
-  const host = normalizeConnectHost(server.public_bind_ip)
+  const host =
+    normalizeConnectHost(server.public_hostname) ?? normalizeConnectHost(server.public_bind_ip)
   const rawPorts: Array<{ role: string; port: number; protocol: string }> = []
   const seen = new Set<string>()
 

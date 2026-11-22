@@ -7,6 +7,7 @@ const hoisted = vi.hoisted(() => ({
   getCatalog: vi.fn(),
   listAddons: vi.fn(),
   getPromos: vi.fn(),
+  getNodeStatus: vi.fn(),
 }))
 
 vi.mock('@/api/shop', async (importOriginal) => {
@@ -17,6 +18,7 @@ vi.mock('@/api/shop', async (importOriginal) => {
       getCatalog: hoisted.getCatalog,
       listAddons: hoisted.listAddons,
       getPromos: hoisted.getPromos,
+      getNodeStatus: hoisted.getNodeStatus,
     },
   }
 })
@@ -123,6 +125,7 @@ describe('ShopStart', () => {
   beforeEach(() => {
     hoisted.getCatalog.mockReset().mockResolvedValue(SAMPLE_PLANS)
     hoisted.listAddons.mockReset().mockResolvedValue(SAMPLE_ADDONS)
+    hoisted.getNodeStatus.mockReset().mockResolvedValue([])
     hoisted.getPromos.mockReset().mockResolvedValue({
       banner: null,
       banners: [],
@@ -187,5 +190,27 @@ describe('ShopStart', () => {
     const badges = await screen.findAllByText(i18n.t('shop.karte.ausverkauft'))
     expect(badges.length).toBeGreaterThan(0)
     expect(badges.some((el) => el.className.includes('bg-background/95'))).toBe(true)
+  })
+
+  it('zeigt Live-Node-Auslastung ohne interne IPs im Shop', async () => {
+    hoisted.getNodeStatus.mockResolvedValue([
+      {
+        id: 1,
+        name: 'eu-fra-01',
+        location_label: 'Frankfurt DE · RZ 2',
+        status: 'online',
+        cpu_model: 'AMD EPYC 7763',
+        ram_type: 'DDR5 ECC',
+        storage_type: 'NVMe SSD',
+        ram_free_percent: 64,
+        load_level: 'low',
+        accepting_orders: true,
+      },
+    ])
+    zeige()
+    expect(await screen.findByText('Frankfurt DE · RZ 2')).toBeInTheDocument()
+    expect(screen.getByText('DDR5 ECC')).toBeInTheDocument()
+    expect(screen.getByText('NVMe SSD')).toBeInTheDocument()
+    expect(screen.getByText(i18n.t('shop.nodeStatus.ramFreiProzent', { percent: 64 }))).toBeInTheDocument()
   })
 })

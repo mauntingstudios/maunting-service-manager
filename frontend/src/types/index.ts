@@ -58,6 +58,8 @@ export interface Server {
   // (z.B. Hytale OAuth-Refresh expired). UI rendert dann einen Warn-Banner.
   auth_required: boolean
   auto_restart: boolean
+  auto_update_paused?: boolean
+  public_hostname?: string | null
   restart_interval_hours: number | null
   restart_time_utc: string | null
   restart_times_utc: string | null
@@ -167,6 +169,10 @@ export interface Node {
   cpu_total: number | null
   /** Host CPU model string from agent inventory (e.g. "AMD EPYC 7763…"). */
   cpu_model?: string | null
+  location_label?: string | null
+  ram_type?: string | null
+  storage_type?: string | null
+  cpu_steal_percent?: number | null
   ram_total: number | null
   disk_total: number | null
   disk_used?: number | null
@@ -186,7 +192,9 @@ export interface Node {
   metrics?: {
     cpu_count?: number
     cpu_percent?: number
+    cpu_steal_percent?: number | null
     cpu_model?: string | null
+    ram_type?: string | null
     ram_total_bytes?: number
     ram_used_bytes?: number
     ram_percent?: number

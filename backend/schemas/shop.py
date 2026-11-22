@@ -213,6 +213,7 @@ class ShopAddonSwitchRequest(BaseModel):
 
 
 OrderMonths = Literal[1, 3, 12]
+BillingMode = Literal["prepaid", "subscription"]
 OrderStatus = Literal["pending_payment", "paid", "cancelled", "refunded", "failed"]
 SubscriptionStatus = Literal["active", "past_due", "cancelled"]
 EntitlementKind = Literal["server", "role", "addon"]
@@ -225,6 +226,7 @@ class ShopOrderCreate(BaseModel):
     plan_id: int | None = Field(None, ge=1)
     addon_id: int | None = Field(None, ge=1)
     months: OrderMonths = 1
+    billing_mode: BillingMode = "subscription"
     ram_mb: int | None = Field(None, ge=0, le=4_194_304)
     cpu: int | None = Field(None, ge=0, le=10_000)
     slots: int | None = Field(None, ge=0, le=100_000)
@@ -417,6 +419,8 @@ class ShopOrderResponse(BaseModel):
     status: OrderStatus
     currency: str
     billing_interval: str
+    billing_mode: BillingMode = "subscription"
+    extend_subscription_id: int | None = None
     months: int
     discount_percent: int
     coupon_code: str | None = None
@@ -439,6 +443,7 @@ class ShopSubscriptionResponse(BaseModel):
     name: str
     status: SubscriptionStatus
     billing_interval: str
+    billing_mode: BillingMode = "subscription"
     monthly_gross_cents: int
     tax_rate_percent: int
     started_at: datetime
@@ -448,6 +453,10 @@ class ShopSubscriptionResponse(BaseModel):
     server_entitlement_id: int | None = None
     server_name: str | None = None
     can_immediate_delete: bool = False
+
+
+class ShopSubscriptionExtendRequest(BaseModel):
+    months: OrderMonths = 1
 
 
 class ShopSubscriptionCancelRequest(BaseModel):
@@ -461,16 +470,55 @@ class ShopEntitlementPurgeRequest(BaseModel):
     confirm_server_name: str = Field(..., min_length=1, max_length=128)
 
 
+class ShopGraceBackupItem(BaseModel):
+    id: int
+    name: str
+    size_mb: float | None = None
+    created_at: datetime
+    encrypted: bool = False
+    downloadable: bool = False
+
+
 class ShopLifecycleSettingsPayload(BaseModel):
     cancel_grace_days: int = Field(7, ge=0, le=365)
     unpaid_auto_delete_enabled: bool = True
     unpaid_delete_days: int = Field(30, ge=1, le=365)
     allow_customer_immediate_delete: bool = True
     dunning_reminder_days: list[int] = Field(default_factory=lambda: [7, 4, 1], max_length=10)
+    subscription_discount_percent: int = Field(0, ge=0, le=50)
+    refund_guarantee_days: int = Field(0, ge=0, le=30)
+    refund_policy_note: str = Field("", max_length=280)
+    auto_subdomain_enabled: bool = False
+    auto_subdomain_zone: str = Field("", max_length=128)
 
 
 class ShopLifecycleSettingsResponse(ShopLifecycleSettingsPayload):
     pass
+
+
+class ShopPublicPolicyResponse(BaseModel):
+    default_billing_mode: BillingMode = "prepaid"
+    subscription_discount_percent: int = 0
+    refund_guarantee_days: int = 0
+    refund_policy_note: str = ""
+    cancel_grace_days: int = 7
+    auto_subdomain_enabled: bool = False
+    auto_subdomain_zone: str = ""
+
+
+class ShopPublicNodeStatusResponse(BaseModel):
+    """Oeffentliche, nicht-sensitive Kapazitaets- und Hardware-Uebersicht."""
+
+    id: int
+    name: str
+    location_label: str | None = None
+    status: str
+    cpu_model: str | None = None
+    ram_type: str | None = None
+    storage_type: str | None = None
+    ram_free_percent: int | None = None
+    load_level: Literal["low", "medium", "high", "full", "offline"]
+    accepting_orders: bool
 
 
 class ShopCheckoutRequest(BaseModel):
@@ -748,6 +796,10 @@ class ShopCatalogPlan(BaseModel):
     availability_reason: str | None = None
     max_available_ram_mb: int | None = None
     max_available_cpu: int | None = None
+    hardware_cpu_model: str | None = None
+    hardware_ram_type: str | None = None
+    hardware_storage_type: str | None = None
+    estimated_setup_seconds: int = 120
 
 
 class ShopAvailabilityRequest(BaseModel):

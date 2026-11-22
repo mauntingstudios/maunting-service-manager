@@ -198,6 +198,7 @@ class ServerCreate(BaseModel):
 class ServerUpdate(BaseModel):
     name: str | None = Field(None, min_length=1, max_length=128)
     auto_restart: bool | None = None
+    auto_update_paused: bool | None = None
     restart_interval_hours: int | None = Field(None, ge=1, le=168)
     restart_time_utc: str | None = Field(None, pattern=r"^([01]\d|2[0-3]):([0-5]\d)$")
     restart_times_utc: str | None = Field(None, max_length=256)
@@ -253,6 +254,8 @@ class ServerResponse(BaseModel):
     # Default False (kein laufender Auth-Flow) ist sicher fuer view-only User.
     auth_required: bool = False
     auto_restart: bool
+    auto_update_paused: bool = False
+    public_hostname: str | None = None
     restart_interval_hours: int | None
     restart_time_utc: str | None
     restart_times_utc: str | None
@@ -338,6 +341,7 @@ class ServerStatusResponse(BaseModel):
     disk_limit_gb: int | None = None
     disk_used_mb: int | None = None
     disk_free_mb: int | None = None
+    node_cpu_steal_percent: float | None = None
 
     # Update availability for frontend badge (wired from plugin checks).
     # Defaults ensure schema is robust; actual values populated in router.

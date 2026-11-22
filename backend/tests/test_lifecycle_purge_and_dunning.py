@@ -168,6 +168,11 @@ def test_lifecycle_settings_admin_crud_and_validation(
         "unpaid_delete_days": 30,
         "allow_customer_immediate_delete": True,
         "dunning_reminder_days": [7, 4, 1],
+        "subscription_discount_percent": 0,
+        "refund_guarantee_days": 0,
+        "refund_policy_note": "",
+        "auto_subdomain_enabled": False,
+        "auto_subdomain_zone": "",
     }
 
     headers = {"X-CSRF-Token": csrf_token or ""}
@@ -218,6 +223,11 @@ def test_lifecycle_settings_admin_crud_and_validation(
         "unpaid_delete_days": 21,
         "allow_customer_immediate_delete": False,
         "dunning_reminder_days": [7, 3, 1],
+        "subscription_discount_percent": 0,
+        "refund_guarantee_days": 0,
+        "refund_policy_note": "",
+        "auto_subdomain_enabled": False,
+        "auto_subdomain_zone": "",
     }
 
 

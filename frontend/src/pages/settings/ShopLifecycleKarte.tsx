@@ -16,6 +16,11 @@ const DEFAULT_SETTINGS: ShopLifecycleSettingsDto = {
   unpaid_delete_days: 30,
   allow_customer_immediate_delete: true,
   dunning_reminder_days: [7, 4, 1],
+  subscription_discount_percent: 0,
+  refund_guarantee_days: 0,
+  refund_policy_note: '',
+  auto_subdomain_enabled: false,
+  auto_subdomain_zone: '',
 }
 
 function parseReminderList(raw: string): number[] {
@@ -45,7 +50,7 @@ export function ShopLifecycleKarte() {
       .then((werte) => {
         if (!aktiv) return
         if (werte && typeof werte.cancel_grace_days === 'number') {
-          setDaten(werte)
+          setDaten({ ...DEFAULT_SETTINGS, ...werte })
           setReminderInput((werte.dunning_reminder_days ?? []).join(', '))
         }
         setLaedt(false)
@@ -199,6 +204,112 @@ export function ShopLifecycleKarte() {
             <p className="text-xs text-on-surface-variant">
               {t('settings.shop.lifecycle.allowCustomerImmediateDeleteHint')}
             </p>
+          </div>
+        </div>
+
+        <div className="grid gap-4 pt-2 sm:grid-cols-2">
+          <div className="space-y-1.5">
+            <label className="block space-y-1.5">
+              <span className="block text-sm font-semibold text-on-surface">
+                {t('settings.shop.lifecycle.subscriptionDiscountPercent')}
+              </span>
+              <Input
+                type="number"
+                min={0}
+                max={50}
+                value={String(daten.subscription_discount_percent ?? 0)}
+                onChange={(e) =>
+                  setDaten((alt) => ({
+                    ...alt,
+                    subscription_discount_percent: Math.max(0, Math.min(50, Number(e.target.value) || 0)),
+                  }))
+                }
+              />
+            </label>
+            <p className="text-xs text-on-surface-variant">
+              {t('settings.shop.lifecycle.subscriptionDiscountPercentHint')}
+            </p>
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="block space-y-1.5">
+              <span className="block text-sm font-semibold text-on-surface">
+                {t('settings.shop.lifecycle.refundGuaranteeDays')}
+              </span>
+              <Input
+                type="number"
+                min={0}
+                max={30}
+                value={String(daten.refund_guarantee_days ?? 0)}
+                onChange={(e) =>
+                  setDaten((alt) => ({
+                    ...alt,
+                    refund_guarantee_days: Math.max(0, Math.min(30, Number(e.target.value) || 0)),
+                  }))
+                }
+              />
+            </label>
+            <p className="text-xs text-on-surface-variant">
+              {t('settings.shop.lifecycle.refundGuaranteeDaysHint')}
+            </p>
+          </div>
+        </div>
+
+        <div className="space-y-1.5">
+          <label className="block space-y-1.5">
+            <span className="block text-sm font-semibold text-on-surface">
+              {t('settings.shop.lifecycle.refundPolicyNote')}
+            </span>
+            <Input
+              value={daten.refund_policy_note ?? ''}
+              maxLength={300}
+              onChange={(e) =>
+                setDaten((alt) => ({ ...alt, refund_policy_note: e.target.value }))
+              }
+            />
+          </label>
+          <p className="text-xs text-on-surface-variant">
+            {t('settings.shop.lifecycle.refundPolicyNoteHint')}
+          </p>
+        </div>
+
+        <div className="flex items-start gap-3">
+          <Switch
+            checked={Boolean(daten.auto_subdomain_enabled)}
+            onCheckedChange={(checked) =>
+              setDaten((alt) => ({ ...alt, auto_subdomain_enabled: checked }))
+            }
+            aria-label={t('settings.shop.lifecycle.autoSubdomainEnabled')}
+          />
+          <div className="flex-1 space-y-2">
+            <div>
+              <span className="block text-sm font-medium text-on-surface">
+                {t('settings.shop.lifecycle.autoSubdomainEnabled')}
+              </span>
+              <p className="text-xs text-on-surface-variant">
+                {t('settings.shop.lifecycle.autoSubdomainEnabledHint')}
+              </p>
+            </div>
+            {daten.auto_subdomain_enabled && (
+              <div className="space-y-1.5">
+                <label className="block space-y-1.5">
+                  <span className="block text-sm font-semibold text-on-surface">
+                    {t('settings.shop.lifecycle.autoSubdomainZone')}
+                  </span>
+                  <Input
+                    value={daten.auto_subdomain_zone ?? ''}
+                    maxLength={120}
+                    placeholder="play.deinedomain.gg"
+                    onChange={(e) =>
+                      setDaten((alt) => ({ ...alt, auto_subdomain_zone: e.target.value }))
+                    }
+                  />
+                </label>
+                <p className="text-xs text-on-surface-variant">
+                  {t('settings.shop.lifecycle.autoSubdomainZoneHint')}
+                </p>
+              </div>
+            )}
           </div>
         </div>
       </div>

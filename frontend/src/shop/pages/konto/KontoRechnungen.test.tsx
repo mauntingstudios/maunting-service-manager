@@ -30,6 +30,7 @@ vi.mock('@/api/shop', async (importOriginal) => {
   }
 })
 
+import i18n from '@/i18n'
 import { KontoRechnungen } from './KontoRechnungen'
 
 describe('KontoRechnungen', () => {
@@ -37,6 +38,8 @@ describe('KontoRechnungen', () => {
     render(<KontoRechnungen />)
 
     expect(await screen.findByText('RE-2026-0009')).toBeInTheDocument()
+    expect(screen.getByText(i18n.t('shop.konto.rechnungen.kontextBadge'))).toBeInTheDocument()
+    expect(screen.getByText(i18n.t('shop.konto.rechnungen.typRechnung'))).toBeInTheDocument()
     expect(screen.getByText(/10,89/)).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /PDF/ })).toHaveAttribute(
       'href',

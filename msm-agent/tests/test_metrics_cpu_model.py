@@ -51,9 +51,41 @@ def test_metrics_payload_includes_cpu_model_key() -> None:
         ),
         patch.object(metrics_mod.docker_service, "ping", return_value=False),
         patch.object(metrics_mod, "_read_cpu_model", return_value="Test CPU"),
+        patch.object(metrics_mod.psutil, "cpu_times_percent", return_value=MagicMock(steal=1.75)),
     ):
         payload = metrics_mod.metrics()
 
     assert payload["cpu_model"] == "Test CPU"
     assert payload["cpu_count"] == 4
+    assert payload["cpu_steal_percent"] == 1.75
+    assert payload["ram_type"] is None
     assert "ram_total_bytes" in payload
+
+
+def test_metrics_ram_type_and_steal_graceful_fallback(monkeypatch) -> None:
+    monkeypatch.setenv("MSM_NODE_RAM_TYPE", "DDR5")
+    with (
+        patch.object(metrics_mod.psutil, "cpu_count", return_value=8),
+        patch.object(metrics_mod.psutil, "cpu_percent", return_value=5.0),
+        patch.object(metrics_mod.psutil, "cpu_times_percent", side_effect=RuntimeError("no steal")),
+        patch.object(
+            metrics_mod.psutil,
+            "virtual_memory",
+            return_value=MagicMock(total=16 * 1024**3, used=4 * 1024**3, percent=25.0),
+        ),
+        patch.object(
+            metrics_mod.psutil,
+            "disk_usage",
+            return_value=MagicMock(total=100 * 1024**3, used=40 * 1024**3, percent=40.0),
+        ),
+        patch.object(
+            metrics_mod.psutil,
+            "net_io_counters",
+            return_value=MagicMock(bytes_sent=1, bytes_recv=2),
+        ),
+        patch.object(metrics_mod.docker_service, "ping", return_value=False),
+    ):
+        payload = metrics_mod.metrics()
+
+    assert payload["cpu_steal_percent"] is None
+    assert payload["ram_type"] == "DDR5"

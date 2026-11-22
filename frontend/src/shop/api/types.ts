@@ -59,6 +59,7 @@ export interface Subscription {
   bezeichnung: string
   status: 'active' | 'past_due' | 'cancelled'
   intervall: 'month'
+  billingMode?: 'prepaid' | 'subscription'
   naechsteZahlung: string
   preisCent: number
   cancelAtPeriodEnd?: boolean
@@ -66,6 +67,15 @@ export interface Subscription {
   serverEntitlementId?: number | null
   serverName?: string | null
   canImmediateDelete?: boolean
+}
+
+export interface GraceBackup {
+  id: number
+  name: string
+  sizeMb: number | null
+  createdAt: string
+  encrypted: boolean
+  downloadable: boolean
 }
 
 export interface Entitlement {

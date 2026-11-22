@@ -172,9 +172,10 @@ def create_checkout_session(
         f"{base}/shop/{item.game_type}?checkout=abgebrochen",
     )
 
-    # Monatliche Laufzeit wird ein echtes Stripe-Abo (Renewal-Ereignisse
-    # treiben Abo und Dunning). Vorausbezahlte 3/12 Monate bleiben Einmalkauf.
-    abo = order.months == 1
+    # Monatliche Abos nutzen Stripe-Subscription (Renewal + Dunning); Prepaid und
+    # mehr-monatige Laufzeiten nutzen Einmalzahlung ohne Auto-Verlaengerung.
+    billing_mode = getattr(order, "billing_mode", "subscription")
+    abo = order.months == 1 and billing_mode == "subscription"
     if stripe_promotion_code_id:
         unit_amount = order.gross_cents + order.coupon_discount_cents
     elif order.coupon_discount_cents > 0 or not abo:

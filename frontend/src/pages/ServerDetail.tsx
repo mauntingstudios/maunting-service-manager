@@ -92,6 +92,7 @@ import { AiMemoryManager } from "@/components/ai/AiMemoryManager";
 import type { GameInfo, Server } from "@/types";
 import { mapBlueprintPorts } from "@/utils/portRoles";
 import { formatPortRoleLabel } from "@/lib/serverConnect";
+import { entwurfUebergeben } from "@/lib/aiEntwurf";
 import { meldeErrungenschaft } from "@/lib/errungenschaft";
 type TabKey =
   | "deployments"
@@ -248,7 +249,9 @@ export function ServerDetail() {
   // entscheidet nur, ob die Knoepfe zum Aendern dabei sind; lesen darf
   // jeder, der bis hierher gekommen ist.
   const canUseAiMemory = useHasPermission("ai.memory.use");
+  const canUseAiChat = useHasPermission("ai.chat.use");
   const canWriteServerConfig = useHasPermission("server.config.write", serverId);
+  const [savingAutoUpdatePaused, setSavingAutoUpdatePaused] = useState(false);
   const preview = useRolePreviewStore((s) => s.preview);
   const isRolePreviewActive = preview !== null;
   const canViewInPreview = useHasPermission("server.view", serverId);
@@ -948,6 +951,35 @@ export function ServerDetail() {
   const closeResourceEditor = () => setShowEditResource(false);
   const onResourceSaved = () => void fetchAll();
 
+  const handleToggleAutoUpdatePaused = async (paused: boolean) => {
+    if (!serverId || savingAutoUpdatePaused) return;
+    setSavingAutoUpdatePaused(true);
+    try {
+      await api(`/servers/${serverId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ auto_update_paused: paused }),
+      });
+      await fetchAll();
+      toast.success(t("servers.autoUpdatePausedSaved"));
+    } catch (err: unknown) {
+      const raw = err instanceof Error ? err.message : String(err);
+      toast.error(t(raw, { defaultValue: raw }) || t("common.error"));
+    } finally {
+      setSavingAutoUpdatePaused(false);
+    }
+  };
+
+  const handleDiagnoseWithSingra = () => {
+    entwurfUebergeben(
+      t("servers.singraCrashPrompt", {
+        name: server.name,
+        game: gameName(server.game_type),
+        status: effectiveStatus,
+      }),
+    );
+    navigate("/ai");
+  };
+
   // KISS: Install vs Reinstall Button-Logik + Update-Badge (genau nach Spec)
   // - Keine Server-Dateien (awaiting_files oder Disk <= 0) → servers.install
   // - Sobald Dateien da → servers.reinstall
@@ -1443,6 +1475,27 @@ export function ServerDetail() {
         </div>
       )}
 
+      {effectiveStatus === "error" && canUseAiChat && (
+        <div className="msm-card p-4 border-status-destructive/40 bg-status-destructive/5 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="w-5 h-5 text-status-destructive flex-shrink-0 mt-0.5" />
+            <p className="font-body-md text-sm text-on-surface-variant">
+              {server.status_message || t(`servers.status.${effectiveStatus}`, { defaultValue: effectiveStatus })}
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={handleDiagnoseWithSingra}
+            className="inline-flex items-center gap-2"
+          >
+            <Brain className="w-4 h-4" aria-hidden="true" />
+            {t("servers.diagnoseWithSingra")}
+          </Button>
+        </div>
+      )}
+
       {guardianSyncError && (
         <div className="msm-card p-4 border-status-destructive/40 bg-status-destructive/5 flex items-start gap-3">
           <AlertTriangle className="w-5 h-5 text-status-destructive flex-shrink-0 mt-0.5" />
@@ -1522,11 +1575,29 @@ export function ServerDetail() {
               <ModManager serverId={serverId} gameInfo={gameInfo} />
             )}
             {activeTab === "restarts" && (
-              <ServerRestartPanel
-                server={server}
-                serverId={serverId}
-                onSaved={fetchAll}
-              />
+              <div className="space-y-4">
+                <div className="msm-card p-4 border-outline flex items-start justify-between gap-4">
+                  <div className="space-y-1">
+                    <span className="block font-headline text-sm font-semibold text-on-surface">
+                      {t("servers.autoUpdatePausedLabel")}
+                    </span>
+                    <p className="text-xs text-on-surface-variant">
+                      {t("servers.autoUpdatePausedHint")}
+                    </p>
+                  </div>
+                  <Switch
+                    checked={Boolean(server.auto_update_paused)}
+                    onCheckedChange={(checked) => void handleToggleAutoUpdatePaused(checked)}
+                    disabled={!canWriteServerConfig || savingAutoUpdatePaused || isLifecycleBusy}
+                    aria-label={t("servers.autoUpdatePausedLabel")}
+                  />
+                </div>
+                <ServerRestartPanel
+                  server={server}
+                  serverId={serverId}
+                  onSaved={fetchAll}
+                />
+              </div>
             )}
             {activeTab === "backups" && <Backups serverId={serverId} />}
             {activeTab === "databases" && <DatabaseManager serverId={serverId} dedicated={isDatabaseServer} />}

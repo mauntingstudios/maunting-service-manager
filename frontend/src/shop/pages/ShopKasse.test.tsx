@@ -176,6 +176,7 @@ describe('ShopKasse', () => {
     expect(hoisted.createOrder).toHaveBeenCalledWith({
       plan_id: 7,
       months: 1,
+      billing_mode: 'prepaid',
       ram_mb: 8192,
       cpu: 2,
       slots: 8,

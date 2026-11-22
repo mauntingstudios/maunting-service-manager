@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 from urllib.parse import urlencode
 
@@ -15,7 +16,7 @@ from fastapi import (
     Request,
     UploadFile,
 )
-from fastapi.responses import Response
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -59,6 +60,7 @@ from schemas.shop import (
     ShopEntitlementPurgeRequest,
     ShopEntitlementResponse,
     ShopGalleryItem,
+    ShopGraceBackupItem,
     ShopHandoffRequest,
     ShopHandoffResponse,
     ShopInvoiceResponse,
@@ -73,6 +75,8 @@ from schemas.shop import (
     ShopPlanResponse,
     ShopPlanUpdate,
     ShopPlanWrite,
+    ShopPublicNodeStatusResponse,
+    ShopPublicPolicyResponse,
     ShopPublicPromosResponse,
     ShopReconciliationResponse,
     ShopRefundCreate,
@@ -87,6 +91,7 @@ from schemas.shop import (
     ShopStripeKeysUpdate,
     ShopStripeStatus,
     ShopSubscriptionCancelRequest,
+    ShopSubscriptionExtendRequest,
     ShopSubscriptionResponse,
     ShopXRechnungValidationResult,
 )
@@ -167,6 +172,24 @@ def get_catalog(db: Session = Depends(get_db)) -> list[ShopCatalogPlan]:
         shop_catalog_service.catalog_plan(db, plan)
         for plan in shop_catalog_service.list_plans(db, active_only=True)
     ]
+
+
+@router.get("/nodes/status", response_model=list[ShopPublicNodeStatusResponse])
+def get_public_node_status(
+    db: Session = Depends(get_db),
+) -> list[ShopPublicNodeStatusResponse]:
+    """Oeffentliche Node-Auslastung und echte Hardware-Angaben ohne IPs/Tokens."""
+    return shop_catalog_service.public_node_statuses(db)
+
+
+@router.get("/public-policy", response_model=ShopPublicPolicyResponse)
+def get_public_policy(
+    db: Session = Depends(get_db),
+) -> ShopPublicPolicyResponse:
+    """Oeffentliche Abrechnungs- und Erstattungsregeln des Betreibers."""
+    return ShopPublicPolicyResponse(
+        **shop_lifecycle_settings_service.public_policy(db=db)
+    )
 
 
 @router.post("/availability", response_model=ShopAvailabilityResponse)
@@ -768,6 +791,32 @@ def cancel_my_subscription(
     return shop_order_service.subscription_response(abo, db=db)
 
 
+@router.post(
+    "/subscriptions/{subscription_id}/extend",
+    response_model=ShopOrderResponse,
+)
+def extend_my_subscription(
+    subscription_id: int,
+    payload: ShopSubscriptionExtendRequest | None = None,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    _: None = Depends(verify_csrf),
+) -> ShopOrderResponse:
+    """Erstellt eine Prepaid-Verlaengerungsbestellung fuer ein eigenes Abo."""
+    abo = shop_order_service.get_subscription(db, user.id, subscription_id)
+    if abo is None:
+        raise HTTPException(status_code=404, detail="Abo nicht gefunden")
+    months = payload.months if payload is not None else 1
+    try:
+        order = shop_order_service.extend_subscription(
+            db, user, abo, months=months
+        )
+    except shop_order_service.ShopOrderError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return shop_order_service.order_response(db, order)
+
+
 @router.post("/orders/{order_id}/refund", response_model=ShopRefundResponse)
 def refund_order_admin(
     order_id: int,
@@ -872,6 +921,115 @@ def purge_my_cancelled_server(
         db.rollback()
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     return shop_order_service.entitlement_response(ent, db=db)
+
+
+@router.get(
+    "/entitlements/{entitlement_id}/backups",
+    response_model=list[ShopGraceBackupItem],
+)
+def list_my_entitlement_backups(
+    entitlement_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> list[ShopGraceBackupItem]:
+    """Listet Backups eines eigenen Shop-Servers (auch waehrend der Schonfrist)."""
+    from models import Backup
+
+    ent = (
+        db.query(ShopEntitlement)
+        .filter(
+            ShopEntitlement.id == entitlement_id,
+            ShopEntitlement.user_id == user.id,
+            ShopEntitlement.kind == "server",
+        )
+        .first()
+    )
+    if ent is None:
+        raise HTTPException(status_code=404, detail="Freischaltung nicht gefunden")
+    if ent.provisioning_status == "purged" or ent.server_id is None:
+        raise HTTPException(
+            status_code=409,
+            detail="Server wurde bereits endgueltig geloescht",
+        )
+
+    rows = (
+        db.query(Backup)
+        .filter(Backup.server_id == ent.server_id)
+        .order_by(Backup.created_at.desc(), Backup.id.desc())
+        .all()
+    )
+    return [
+        ShopGraceBackupItem(
+            id=row.id,
+            name=row.name,
+            size_mb=row.size_mb,
+            created_at=row.created_at,
+            encrypted=bool(getattr(row, "encrypted", False)),
+            downloadable=bool(
+                (row.filename and ".." not in row.filename and os.path.isfile(row.filename))
+                or getattr(row, "s3_key", None)
+            ),
+        )
+        for row in rows
+    ]
+
+
+@router.get("/entitlements/{entitlement_id}/backups/{backup_id}/download")
+def download_my_entitlement_backup(
+    entitlement_id: int,
+    backup_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> Response:
+    """Welt-Export-Download fuer den Besitzer (inkl. waehrend der Schonfrist vor Loeschung)."""
+    from models import Backup
+
+    ent = (
+        db.query(ShopEntitlement)
+        .filter(
+            ShopEntitlement.id == entitlement_id,
+            ShopEntitlement.user_id == user.id,
+            ShopEntitlement.kind == "server",
+        )
+        .first()
+    )
+    if ent is None:
+        raise HTTPException(status_code=404, detail="Freischaltung nicht gefunden")
+    if ent.provisioning_status == "purged" or ent.server_id is None:
+        raise HTTPException(
+            status_code=409,
+            detail="Server wurde bereits endgueltig geloescht",
+        )
+
+    backup = (
+        db.query(Backup)
+        .filter(Backup.id == backup_id, Backup.server_id == ent.server_id)
+        .first()
+    )
+    if backup is None:
+        raise HTTPException(status_code=404, detail="Backup nicht gefunden")
+
+    ext = ".enc" if getattr(backup, "encrypted", False) else ".tar.gz"
+    safe_name = f"server-{ent.server_id}-backup-{backup.id}{ext}"
+
+    if backup.filename and ".." not in backup.filename and os.path.isfile(backup.filename):
+        return FileResponse(
+            backup.filename,
+            media_type="application/octet-stream",
+            filename=safe_name,
+        )
+
+    if getattr(backup, "s3_key", None):
+        from services.s3_service import S3Service
+
+        stream = S3Service.download_stream(backup.s3_key, bucket=backup.s3_bucket)
+        return StreamingResponse(
+            stream,
+            media_type="application/octet-stream",
+            headers={"Content-Disposition": f'attachment; filename="{safe_name}"'},
+        )
+
+    raise HTTPException(status_code=404, detail="Backup-Datei nicht mehr vorhanden")
 
 
 @router.post(

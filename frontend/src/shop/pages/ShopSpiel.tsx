@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { ArrowLeft } from 'lucide-react'
 import { Badge, Dropdown, Spinner, Zustandsflaeche } from '@maunting/ui'
-import { shopCatalogApi } from '@/api/shop'
+import { shopCatalogApi, type ShopPublicPolicyDto } from '@/api/shop'
 import { still } from '@/lib/still'
 import { SpielGalerie } from '../components/SpielGalerie'
 import { Konfigurator } from '../components/Konfigurator'
@@ -27,6 +27,23 @@ export function ShopSpiel() {
     spiel ? standardKonfiguration(spiel) : null,
   )
   const [kapazitaetFrei, setKapazitaetFrei] = useState<boolean | null>(null)
+  const [publicPolicy, setPublicPolicy] = useState<ShopPublicPolicyDto | null>(null)
+
+  useEffect(() => {
+    let aktiv = true
+    const fetchPolicy = shopCatalogApi.getPublicPolicy
+    if (!fetchPolicy) return
+    fetchPolicy()
+      .then((policy) => {
+        if (aktiv) setPublicPolicy(policy)
+      })
+      .catch((err) => {
+        still(err, 'ShopSpiel.getPublicPolicy')
+      })
+    return () => {
+      aktiv = false
+    }
+  }, [])
   const aktuelleKonfiguration =
     konfiguration ?? (ausgewaehlt ? standardKonfiguration(ausgewaehlt.spiel) : null)
 
@@ -165,6 +182,7 @@ export function ShopSpiel() {
             spiel={aktuellesSpiel}
             konfiguration={aktuelleKonfiguration}
             onChange={setKonfiguration}
+            aboRabattProzent={publicPolicy?.subscription_discount_percent ?? 0}
           />
         </div>
 
@@ -173,6 +191,9 @@ export function ShopSpiel() {
           konfiguration={aktuelleKonfiguration}
           verfuegbar={verfuegbar}
           onWeiter={weiter}
+          aboRabattProzent={publicPolicy?.subscription_discount_percent ?? 0}
+          erstattungTage={publicPolicy?.refund_guarantee_days ?? 0}
+          erstattungHinweis={publicPolicy?.refund_policy_note ?? ''}
         />
       </div>
     </section>

@@ -470,6 +470,18 @@ def _sync_server_entitlement(
                         correlation_id=correlation_id,
                     )
                     db.commit()
+                    try:
+                        from services import server_dns_service
+
+                        server_dns_service.provision_server_subdomain(
+                            db, result.server
+                        )
+                    except Exception:
+                        logger.debug(
+                            "Subdomain-Provisionierung uebersprungen (server_id=%s)",
+                            result.server.id,
+                            exc_info=True,
+                        )
             except HTTPException as exc:
                 db.rollback()
                 _mark_server_failed(
@@ -603,9 +615,22 @@ def sync_order_entitlements(
 ) -> list[ShopEntitlement]:
     """Synchronisiert alle Server- und Rollen-Entitlements einer Bestellung."""
     correlation_id = str(uuid4())
+    effective_order_id = order_id
+    order = db.query(ShopOrder).filter(ShopOrder.id == order_id).first()
+    if order is not None and getattr(order, "extend_subscription_id", None) is not None:
+        from models import ShopSubscription
+
+        target_sub = (
+            db.query(ShopSubscription)
+            .filter(ShopSubscription.id == order.extend_subscription_id)
+            .first()
+        )
+        if target_sub is not None:
+            effective_order_id = target_sub.order_id
+
     entitlements = (
         db.query(ShopEntitlement)
-        .filter(ShopEntitlement.order_id == order_id)
+        .filter(ShopEntitlement.order_id == effective_order_id)
         .order_by(ShopEntitlement.id.asc())
         .all()
     )
@@ -643,7 +668,7 @@ def sync_order_entitlements(
 
     return (
         db.query(ShopEntitlement)
-        .filter(ShopEntitlement.order_id == order_id)
+        .filter(ShopEntitlement.order_id == effective_order_id)
         .order_by(ShopEntitlement.id.asc())
         .all()
     )
