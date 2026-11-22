@@ -152,6 +152,7 @@ der Integration ist sie eindeutig und dient als Idempotenzschlüssel.
 | `slots` | `integer` (1–1000) | nein | Slot-Limit innerhalb der Tarifgrenzen. |
 | `variables` | `object` (`string -> string`) | nein | Kundenseitig bearbeitbare Start-Variablen (`DIS`-verschlüsselt). |
 | `email` | `string` (≤255) | nein | Wird nur für die Erstanlage des Panel-Benutzers verwendet. MSM übernimmt **niemals** ein Shop-Passwort. |
+| `purge_immediately` | `boolean` (`false`) | nein | Bei `desired_state: "terminated"` wird die hinterlegte `terminate_grace_days`-Schonfrist übersprungen und der Server sofort zur Löschung vorgemerkt. |
 
 **Beispiel**
 
@@ -226,9 +227,9 @@ vorübergehend auseinanderlaufen — genau dafür gibt es zwei Felder.
 
 | `desired_state` | Bedeutung |
 | --- | --- |
-| `active` | Vertrag läuft. Server wird bei Bedarf erstellt, Kundenrechte werden gesetzt. |
-| `suspended` | Zahlungssperre. Server wird gestoppt, Kundenrechte werden entzogen. **Der Panelaccount bleibt bestehen**, Daten bleiben erhalten, eine spätere Entsperrung ist möglich. |
-| `terminated` | Kündigung. Server wird gestoppt und eine Frist gesetzt. **Es wird nichts sofort gelöscht.** |
+| `active` | Vertrag läuft. Server wird bei Bedarf erstellt, Kundenrechte werden gesetzt. Ein laufender Lösch-Countdown (`terminate_after`) wird sofort aufgehoben. |
+| `suspended` | Zahlungssperre. Server wird gestoppt, Kundenrechte werden entzogen, Daten bleiben erhalten. Gleichzeitig startet die konfigurierte Frist bei Zahlungsverzug (`unpaid_delete_days` pro Integration oder Shop-Standard; `0` = aus) mit gestaffelten E-Mail-Erinnerungen bis zur Löschung. |
+| `terminated` | Kündigung. Server wird gestoppt und nach Ablauf der `terminate_grace_days`-Schonfrist gelöscht (oder sofort, wenn `purge_immediately: true` gesendet wird). |
 
 **Tatsächliche Zustände** (von MSM gesetzt, jeder erzeugt einen Webhook `service.<status>`):
 

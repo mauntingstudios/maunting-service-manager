@@ -90,6 +90,17 @@ def _get_json(path: str, secret: str) -> dict[str, Any]:
     return response.json()
 
 
+def _delete_json(path: str, secret: str) -> dict[str, Any]:
+    response = httpx.delete(
+        f"{STRIPE_API_BASE}{path}",
+        headers={"Authorization": f"Bearer {secret}"},
+        timeout=STRIPE_TIMEOUT_SECONDS,
+    )
+    if response.status_code >= 400:
+        raise StripeError("Stripe-Kuendigung fehlgeschlagen")
+    return response.json()
+
+
 def _panel_base() -> str:
     return (settings.panel_url or "").rstrip("/")
 
@@ -221,6 +232,13 @@ def cancel_subscription_at_period_end(subscription_id: str) -> dict[str, Any]:
         [("cancel_at_period_end", "true")],
         secret,
     )
+
+
+def cancel_subscription_immediately(subscription_id: str) -> dict[str, Any]:
+    """Beendet ein Stripe-Abo sofort unwiderruflich."""
+    secret = _require_secret()
+    clean_id = _validate_stripe_id(subscription_id, "Stripe-Abo-ID")
+    return _delete_json(f"/subscriptions/{clean_id}", secret)
 
 
 def create_refund(

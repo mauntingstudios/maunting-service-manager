@@ -153,6 +153,7 @@ from .server_runtime_env import ServerRuntimeEnv
 from .singra_deployment import SingraDeployment
 from .singra_test_run import SingraTestRun
 from .game_wallpaper import GameWallpaper
+from .lifecycle_notice import LifecycleDeletionNotice
 
 __all__ = [
     "User", "UserRole", "RoleAiLimit", "RoleAiModelAccess", "RoleVaultQuota", "RoleFrontendBuildQuota", "RoleAiProjectQuota", "AiUsageEvent", "OperationTask",
@@ -184,5 +185,6 @@ __all__ = [
     "ChatGroup", "ChatGroupMember", "ChatGroupConfig", "ChatGroupInfo", "ChatGroupBackground", "ChatStory", "DirectChat", "ChatMedia",
     "ShopAddon", "ShopCoupon", "ShopPlan", "ShopOrder", "ShopOrderItem", "ShopSubscription", "ShopEntitlement", "ShopPaymentEvent",
     "ShopInvoice", "ShopInvoiceLine", "ShopInvoiceSequence", "ShopCreditNoteSequence",
+    "LifecycleDeletionNotice",
 ]  # noqa: E501
 

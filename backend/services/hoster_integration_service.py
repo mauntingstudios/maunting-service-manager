@@ -140,6 +140,7 @@ def create_integration(
     service_user_id: int,
     webhook_url: str | None,
     terminate_grace_days: int,
+    unpaid_delete_days: int | None = None,
 ) -> tuple[HosterIntegration, str]:
     """Legt eine Integration an und gibt den einmaligen Klartext-API-Key zurueck."""
     clean_name = (name or "").strip()
@@ -147,6 +148,8 @@ def create_integration(
         raise HosterConfigurationError("Name der Integration ist leer oder zu lang")
     if not 0 <= terminate_grace_days <= 365:
         raise HosterConfigurationError("Kuendigungsfrist muss zwischen 0 und 365 Tagen liegen")
+    if unpaid_delete_days is not None and not 0 <= unpaid_delete_days <= 365:
+        raise HosterConfigurationError("Zahlungsverzug-Loeschfrist muss zwischen 0 und 365 Tagen liegen")
     service_user = require_service_user(db, service_user_id)
     api_key = generate_api_key()
     integration = HosterIntegration(
@@ -159,6 +162,7 @@ def create_integration(
         api_key_hint=_hint(api_key),
         webhook_url=validate_webhook_url(webhook_url),
         terminate_grace_days=terminate_grace_days,
+        unpaid_delete_days=unpaid_delete_days,
     )
     db.add(integration)
     try:

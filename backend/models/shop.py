@@ -434,6 +434,9 @@ class ShopSubscription(Base):
     cancel_at_period_end: Mapped[bool] = mapped_column(
         Boolean, default=False, nullable=False
     )
+    delete_server_on_end: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_now, nullable=False
     )
@@ -481,9 +484,14 @@ class ShopEntitlement(Base):
         ),
         CheckConstraint(
             "provisioning_status IS NULL OR provisioning_status IN "
-            "('pending', 'provisioning', 'ready', 'suspended', 'revoked', 'failed')",
+            "('pending', 'provisioning', 'ready', 'suspended', 'revoked', 'failed', 'purged')",
             name="ck_shop_entitlements_provisioning_status",
         ),
+        CheckConstraint(
+            "purge_reason IS NULL OR purge_reason IN ('voluntary_cancel', 'unpaid', 'refund')",
+            name="ck_shop_entitlements_purge_reason",
+        ),
+        Index("ix_shop_entitlements_purge_after", "status", "purge_after"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
@@ -534,6 +542,17 @@ class ShopEntitlement(Base):
         DateTime(timezone=True), default=_now, nullable=False
     )
     revoked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    suspended_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    purge_after: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    purge_reason: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    purge_cycle_token: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    purged_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
 

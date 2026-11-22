@@ -444,6 +444,33 @@ class ShopSubscriptionResponse(BaseModel):
     started_at: datetime
     current_period_end: datetime
     cancel_at_period_end: bool
+    delete_server_on_end: bool = False
+    server_entitlement_id: int | None = None
+    server_name: str | None = None
+    can_immediate_delete: bool = False
+
+
+class ShopSubscriptionCancelRequest(BaseModel):
+    deletion_mode: Literal["grace_period", "end_of_period_immediate", "immediate"] = (
+        "grace_period"
+    )
+    confirm_server_name: str | None = Field(None, max_length=128)
+
+
+class ShopEntitlementPurgeRequest(BaseModel):
+    confirm_server_name: str = Field(..., min_length=1, max_length=128)
+
+
+class ShopLifecycleSettingsPayload(BaseModel):
+    cancel_grace_days: int = Field(7, ge=0, le=365)
+    unpaid_auto_delete_enabled: bool = True
+    unpaid_delete_days: int = Field(30, ge=1, le=365)
+    allow_customer_immediate_delete: bool = True
+    dunning_reminder_days: list[int] = Field(default_factory=lambda: [7, 4, 1], max_length=10)
+
+
+class ShopLifecycleSettingsResponse(ShopLifecycleSettingsPayload):
+    pass
 
 
 class ShopCheckoutRequest(BaseModel):
@@ -566,8 +593,13 @@ class ShopEntitlementResponse(BaseModel):
     label: str
     status: EntitlementStatus
     server_id: int | None = None
+    server_name: str | None = None
     provisioning_status: str | None = None
     provisioning_error: str | None = None
+    purge_after: datetime | None = None
+    purge_reason: str | None = None
+    purged_at: datetime | None = None
+    can_customer_purge_now: bool = False
     created_at: datetime
 
 

@@ -56,6 +56,7 @@ from schemas.shop import (
     ShopCouponWrite,
     ShopCreditNoteCreate,
     ShopEinvoiceToolchainStatusResponse,
+    ShopEntitlementPurgeRequest,
     ShopEntitlementResponse,
     ShopGalleryItem,
     ShopHandoffRequest,
@@ -63,6 +64,8 @@ from schemas.shop import (
     ShopInvoiceResponse,
     ShopInvoiceSummaryResponse,
     ShopInvoiceValidationResponse,
+    ShopLifecycleSettingsPayload,
+    ShopLifecycleSettingsResponse,
     ShopOrderCreate,
     ShopOrderResponse,
     ShopPaymentEventResponse,
@@ -83,11 +86,13 @@ from schemas.shop import (
     ShopStatsResponse,
     ShopStripeKeysUpdate,
     ShopStripeStatus,
+    ShopSubscriptionCancelRequest,
     ShopSubscriptionResponse,
     ShopXRechnungValidationResult,
 )
 from services import (
     audit_service,
+    lifecycle_purge_service,
     permission_service,
     player_query_service,
     shop_addon_service,
@@ -97,6 +102,7 @@ from services import (
     shop_fulfillment_service,
     shop_invoice_export_service,
     shop_invoice_service,
+    shop_lifecycle_settings_service,
     shop_order_service,
     node_placement_service,
     shop_reconciliation_service,
@@ -695,7 +701,7 @@ def list_my_subscriptions(
     user: User = Depends(get_current_user),
 ) -> list[ShopSubscriptionResponse]:
     return [
-        shop_order_service.subscription_response(row)
+        shop_order_service.subscription_response(row, db=db)
         for row in shop_order_service.list_subscriptions(db, user.id)
     ]
 
@@ -728,18 +734,28 @@ def switch_my_addon_subscription(
 )
 def cancel_my_subscription(
     subscription_id: int,
+    payload: ShopSubscriptionCancelRequest | None = None,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
     _: None = Depends(verify_csrf),
 ) -> ShopSubscriptionResponse:
-    """Merkt ein eigenes Abo zum Laufzeitende als gekuendigt vor."""
+    """Kuendigt ein eigenes Abo zum Laufzeitende oder loescht den Server sofort."""
     abo = shop_order_service.get_subscription(db, user.id, subscription_id)
     if abo is None:
         raise HTTPException(status_code=404, detail="Abo nicht gefunden")
+    mode = payload.deletion_mode if payload is not None else "grace_period"
+    confirm_name = payload.confirm_server_name if payload is not None else None
     try:
         abo = shop_order_service.cancel_subscription(
-            db, abo, actor_user_id=user.id
+            db,
+            abo,
+            actor_user_id=user.id,
+            deletion_mode=mode,
+            confirm_server_name=confirm_name,
         )
+    except lifecycle_purge_service.LifecyclePurgeError as exc:
+        db.rollback()
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
     except (
         shop_order_service.ShopOrderError,
         stripe_service.StripeNotConfigured,
@@ -749,7 +765,7 @@ def cancel_my_subscription(
     except stripe_service.StripeError as exc:
         db.rollback()
         raise HTTPException(status_code=502, detail=str(exc)) from exc
-    return shop_order_service.subscription_response(abo)
+    return shop_order_service.subscription_response(abo, db=db)
 
 
 @router.post("/orders/{order_id}/refund", response_model=ShopRefundResponse)
@@ -821,9 +837,41 @@ def list_my_entitlements(
     user: User = Depends(get_current_user),
 ) -> list[ShopEntitlementResponse]:
     return [
-        shop_order_service.entitlement_response(row)
+        shop_order_service.entitlement_response(row, db=db)
         for row in shop_order_service.list_entitlements(db, user.id)
     ]
+
+
+@router.post(
+    "/entitlements/{entitlement_id}/purge-now",
+    response_model=ShopEntitlementResponse,
+)
+def purge_my_cancelled_server(
+    entitlement_id: int,
+    payload: ShopEntitlementPurgeRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    _: None = Depends(verify_csrf),
+) -> ShopEntitlementResponse:
+    """Loescht den eigenen freiwillig gekuendigten Server vor Fristablauf sofort."""
+    try:
+        ent = lifecycle_purge_service.customer_purge_own_server(
+            db,
+            user=user,
+            entitlement_id=entitlement_id,
+            confirm_server_name=payload.confirm_server_name,
+            origin="direct",
+        )
+    except lifecycle_purge_service.LifecyclePurgeError as exc:
+        db.rollback()
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except stripe_service.StripeNotConfigured as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except stripe_service.StripeError as exc:
+        db.rollback()
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return shop_order_service.entitlement_response(ent, db=db)
 
 
 @router.post(
@@ -1433,3 +1481,43 @@ def validate_admin_invoice(
         xrechnung=ShopXRechnungValidationResult(**xrechnung),
         pdfa3=ShopPdfa3ValidationResult(**pdfa3),
     )
+
+
+@router.get(
+    "/admin/lifecycle-settings",
+    response_model=ShopLifecycleSettingsResponse,
+)
+def get_shop_lifecycle_settings(
+    db: Session = Depends(get_db),
+    _: User = Depends(_require_shop_perm("shop.read", "panel.settings.read")),
+) -> ShopLifecycleSettingsResponse:
+    """Liest die vom Betreiber konfigurierten Loeschfristen und Mahnstufen."""
+    return ShopLifecycleSettingsResponse(**shop_lifecycle_settings_service.read(db=db))
+
+
+@router.put(
+    "/admin/lifecycle-settings",
+    response_model=ShopLifecycleSettingsResponse,
+)
+def update_shop_lifecycle_settings(
+    payload: ShopLifecycleSettingsPayload,
+    db: Session = Depends(get_db),
+    actor: User = Depends(_require_shop_perm("shop.write", "panel.settings.write")),
+    _: None = Depends(verify_csrf),
+) -> ShopLifecycleSettingsResponse:
+    """Aktualisiert Loeschfristen, Kunden-Sofortloeschung und Mahnstufen."""
+    try:
+        updated = shop_lifecycle_settings_service.update(payload.model_dump(), db=db)
+    except shop_lifecycle_settings_service.LifecycleSettingsError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    audit_service.record_privileged_action(
+        db,
+        user_id=actor.id,
+        action="shop.lifecycle_settings.updated",
+        target_type="panel_setting",
+        target_id="shop_lifecycle",
+        details=updated,
+        origin="direct",
+    )
+    db.commit()
+    return ShopLifecycleSettingsResponse(**updated)

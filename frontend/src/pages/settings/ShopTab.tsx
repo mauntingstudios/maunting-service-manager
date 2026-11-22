@@ -5,6 +5,7 @@ import { ShopAddonsEditor } from './ShopAddonsEditor'
 import { ShopCouponsEditor } from './ShopCouponsEditor'
 import { ShopPlansEditor } from './ShopPlansEditor'
 import { SellerDatenKarte } from './SellerDatenKarte'
+import { ShopLifecycleKarte } from './ShopLifecycleKarte'
 import { StripeZahlungenKarte } from './StripeZahlungenKarte'
 import { ShopBetriebKarten } from './ShopBetriebKarten'
 
@@ -34,6 +35,7 @@ export function ShopTab() {
 
       <StripeZahlungenKarte />
       <SellerDatenKarte />
+      <ShopLifecycleKarte />
 
       <div className="border-t border-outline-variant/30 pt-6">
         <ShopPlansEditor />

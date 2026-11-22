@@ -347,6 +347,7 @@ function IntegrationForm({
   const [serviceUserId, setServiceUserId] = useState('')
   const [webhookUrl, setWebhookUrl] = useState('')
   const [graceDays, setGraceDays] = useState('7')
+  const [unpaidDeleteDays, setUnpaidDeleteDays] = useState('')
   const [isSandbox, setIsSandbox] = useState(false)
   const [users, setUsers] = useState<User[]>([])
   const [loadingUsers, setLoadingUsers] = useState(true)
@@ -394,6 +395,9 @@ function IntegrationForm({
             service_user_id: Number(serviceUserId),
             webhook_url: webhookUrl.trim() || null,
             terminate_grace_days: Number(graceDays) || 0,
+            unpaid_delete_days: unpaidDeleteDays.trim()
+              ? Math.max(0, Math.min(365, Number(unpaidDeleteDays) || 0))
+              : null,
           })
           .then((secret) => onCreated(secret.value))
           .catch((error: unknown) => {
@@ -442,6 +446,14 @@ function IntegrationForm({
           <NumberStepper value={graceDays} onValueChange={setGraceDays} min={0} max={365} step={1} />
           <p className="text-xs text-on-surface-variant">{t('hoster.graceDaysHint')}</p>
         </label>
+        <Field
+          label={t('hoster.unpaidDeleteDays')}
+          value={unpaidDeleteDays}
+          onChange={setUnpaidDeleteDays}
+          type="number"
+          placeholder={t('hoster.unpaidDeletePlaceholder')}
+          hint={t('hoster.unpaidDeleteDaysHint')}
+        />
         <SandboxSchalter checked={isSandbox} onCheckedChange={setIsSandbox} />
       </fieldset>
       <div className="flex flex-wrap justify-end gap-2">
@@ -482,6 +494,9 @@ function IntegrationEditForm({
   const { t } = useTranslation()
   const [webhookUrl, setWebhookUrl] = useState(integration.webhook_url ?? '')
   const [graceDays, setGraceDays] = useState(String(integration.terminate_grace_days))
+  const [unpaidDeleteDays, setUnpaidDeleteDays] = useState(
+    integration.unpaid_delete_days != null ? String(integration.unpaid_delete_days) : '',
+  )
   const [enabled, setEnabled] = useState(integration.enabled)
   const [isSandbox, setIsSandbox] = useState(integration.is_sandbox ?? false)
   const [saving, setSaving] = useState(false)
@@ -497,6 +512,9 @@ function IntegrationEditForm({
           .updateIntegration(integration.id, {
             webhook_url: webhookUrl.trim() || null,
             terminate_grace_days: Number(graceDays) || 0,
+            unpaid_delete_days: unpaidDeleteDays.trim()
+              ? Math.max(0, Math.min(365, Number(unpaidDeleteDays) || 0))
+              : null,
             enabled,
             is_sandbox: isSandbox,
           })
@@ -526,6 +544,14 @@ function IntegrationEditForm({
           <NumberStepper value={graceDays} onValueChange={setGraceDays} min={0} max={365} step={1} />
           <p className="text-xs text-on-surface-variant">{t('hoster.graceDaysHint')}</p>
         </label>
+        <Field
+          label={t('hoster.unpaidDeleteDays')}
+          value={unpaidDeleteDays}
+          onChange={setUnpaidDeleteDays}
+          type="number"
+          placeholder={t('hoster.unpaidDeletePlaceholder')}
+          hint={t('hoster.unpaidDeleteDaysHint')}
+        />
         {/* Der Dienstbenutzer laesst sich hier nicht wechseln — was an ihm
             haengt, gehoert trotzdem sichtbar erklaert. */}
         <div className="md:col-span-2 rounded-xl border border-outline-variant/40 bg-surface-container-low/35 p-4">

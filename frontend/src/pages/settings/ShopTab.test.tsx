@@ -116,6 +116,18 @@ describe('ShopTab', () => {
           },
         ]
       }
+      if (pfad.includes('/shop/admin/lifecycle-settings')) {
+        if (init?.method === 'PUT') {
+          return JSON.parse(String(init.body ?? '{}'))
+        }
+        return {
+          cancel_grace_days: 7,
+          unpaid_auto_delete_enabled: true,
+          unpaid_delete_days: 30,
+          allow_customer_immediate_delete: true,
+          dunning_reminder_days: [7, 4, 1],
+        }
+      }
       if (pfad.includes('/shop/reconcile') && init?.method === 'POST') {
         return {
           orders_checked: 1,
@@ -149,6 +161,21 @@ describe('ShopTab', () => {
     )
     await waitFor(() => {
       expect(apiMock).toHaveBeenCalledWith('/shop/reconcile', { method: 'POST' })
+    })
+
+    const graceInput = screen.getByLabelText(i18n.t('settings.shop.lifecycle.cancelGraceDays'))
+    fireEvent.change(graceInput, { target: { value: '14' } })
+    fireEvent.click(
+      screen.getByRole('button', { name: i18n.t('settings.shop.lifecycle.speichern') }),
+    )
+    await waitFor(() => {
+      expect(apiMock).toHaveBeenCalledWith(
+        '/shop/admin/lifecycle-settings',
+        expect.objectContaining({
+          method: 'PUT',
+          body: expect.stringContaining('"cancel_grace_days":14'),
+        }),
+      )
     })
   })
 })

@@ -472,6 +472,10 @@ export interface ShopSubscriptionDto {
   started_at: string
   current_period_end: string
   cancel_at_period_end: boolean
+  delete_server_on_end?: boolean
+  server_entitlement_id?: number | null
+  server_name?: string | null
+  can_immediate_delete?: boolean
 }
 
 export interface ShopEntitlementDto {
@@ -481,9 +485,32 @@ export interface ShopEntitlementDto {
   label: string
   status: 'active' | 'suspended' | 'revoked'
   server_id: number | null
+  server_name?: string | null
   provisioning_status: string | null
   provisioning_error: string | null
+  purge_after?: string | null
+  purge_reason?: 'voluntary_cancel' | 'unpaid' | 'refund' | string | null
+  purged_at?: string | null
+  can_customer_purge_now?: boolean
   created_at: string
+}
+
+export type SubscriptionDeletionMode =
+  | 'grace_period'
+  | 'end_of_period_immediate'
+  | 'immediate'
+
+export interface ShopSubscriptionCancelPayload {
+  deletion_mode: SubscriptionDeletionMode
+  confirm_server_name?: string | null
+}
+
+export interface ShopLifecycleSettingsDto {
+  cancel_grace_days: number
+  unpaid_auto_delete_enabled: boolean
+  unpaid_delete_days: number
+  allow_customer_immediate_delete: boolean
+  dunning_reminder_days: number[]
 }
 
 export const shopOrderApi = {
@@ -512,11 +539,20 @@ export const shopOrderApi = {
       method: 'POST',
       body: JSON.stringify({ target_addon_id: targetAddonId }),
     }),
-  cancelSubscription: (id: number | string) =>
+  cancelSubscription: (
+    id: number | string,
+    payload?: ShopSubscriptionCancelPayload,
+  ) =>
     api<ShopSubscriptionDto>(`/shop/subscriptions/${id}/cancel`, {
       method: 'POST',
+      ...(payload ? { body: JSON.stringify(payload) } : {}),
     }),
   listEntitlements: () => api<ShopEntitlementDto[]>('/shop/entitlements'),
+  purgeEntitlementNow: (id: number | string, confirmServerName: string) =>
+    api<ShopEntitlementDto>(`/shop/entitlements/${id}/purge-now`, {
+      method: 'POST',
+      body: JSON.stringify({ confirm_server_name: confirmServerName }),
+    }),
   getServerSubscription: (serverId: number | string) =>
     api<ShopServerSubscriptionDto>(`/shop/servers/${serverId}/subscription`),
   getServerPlayers: (serverId: number | string) =>
@@ -723,4 +759,11 @@ export const shopAdminOpsApi = {
   adminInvoiceXmlUrl: (id: number) => apiUrl(`/api/shop/admin/invoices/${id}/xml`),
   listWebhooks: (limit = 50) =>
     api<ShopPaymentEventDto[]>(`/shop/admin/webhooks?limit=${limit}`),
+  getLifecycleSettings: () =>
+    api<ShopLifecycleSettingsDto>('/shop/admin/lifecycle-settings'),
+  updateLifecycleSettings: (payload: ShopLifecycleSettingsDto) =>
+    api<ShopLifecycleSettingsDto>('/shop/admin/lifecycle-settings', {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    }),
 }

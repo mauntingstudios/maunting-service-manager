@@ -49,6 +49,11 @@ export interface Order {
   rechnungId?: string
 }
 
+export type SubscriptionDeletionMode =
+  | 'grace_period'
+  | 'end_of_period_immediate'
+  | 'immediate'
+
 export interface Subscription {
   id: string
   bezeichnung: string
@@ -57,6 +62,10 @@ export interface Subscription {
   naechsteZahlung: string
   preisCent: number
   cancelAtPeriodEnd?: boolean
+  deleteServerOnEnd?: boolean
+  serverEntitlementId?: number | null
+  serverName?: string | null
+  canImmediateDelete?: boolean
 }
 
 export interface Entitlement {
@@ -65,7 +74,12 @@ export interface Entitlement {
   bezeichnung: string
   status: 'active' | 'suspended' | 'revoked'
   serverId?: number
+  serverName?: string | null
   provisioningStatus?: string | null
+  purgeAfter?: string | null
+  purgeReason?: string | null
+  purgedAt?: string | null
+  canCustomerPurgeNow?: boolean
 }
 
 export interface PaymentMethod {

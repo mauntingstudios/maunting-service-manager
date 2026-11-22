@@ -359,6 +359,9 @@ def _sync_server_entitlement(
     owner = _active_owner(db)
     actor_user_id = owner.id if owner is not None else None
 
+    if ent.provisioning_status == "purged":
+        return
+
     if ent.status == "active":
         if ent.server_id is None:
             order = (

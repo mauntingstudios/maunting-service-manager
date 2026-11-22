@@ -41,7 +41,13 @@ from models import (
 )
 from schemas import ServerCreate
 from schemas.hoster import HosterApplyRequest, HosterServiceResponse
-from services import audit_service, permission_service, role_service
+from services import (
+    audit_service,
+    lifecycle_purge_service,
+    permission_service,
+    role_service,
+    shop_lifecycle_settings_service,
+)
 from services.actor_context import ActorContext
 from services.hoster_integration_service import (
     HosterConfigurationError,
@@ -697,6 +703,7 @@ def apply_desired_state(
     variables: dict[str, str] | None = None,
     email: str | None = None,
     correlation_id: str | None = None,
+    purge_immediately: bool = False,
 ) -> HosterService:
     """Bringt einen Server-Vertrag in den vom Shop gewuenschten Zustand.
 
@@ -832,31 +839,57 @@ def apply_desired_state(
                 )
             else:
                 _set_status(service, "ready")
-                service.terminate_after = None
                 _grant_customer_permissions(db, service)
+            service.terminate_after = None
+            service.suspended_at = None
+            service.purge_reason = None
+            service.purge_cycle_token = None
             _apply_slots_on_server(db, service.server_id, eff_slots)
             _apply_variables_on_server(db, service.server_id, variables)
             _apply_customer_role(db, service)
         elif desired_state == "suspended":
-            # Gesperrt heisst: Server aus, Kundenrechte entzogen, Daten bleiben.
-            # Der Panelaccount des Kunden bleibt ausdruecklich bestehen.
+            # Gesperrt heisst: Server aus, Kundenrechte entzogen, Daten bleiben
+            # bis zum konfigurierten Zahlungsverzugs-Limit. Der Panelaccount
+            # des Kunden bleibt ausdruecklich bestehen.
+            current = _now()
             if service.server_id is not None:
                 _lifecycle(db, integration=integration, service=service, operation="stop")
                 permission_service.set_user_server_permissions(
                     db, service.identity.user_id, service.server_id, [], granted_by=None
                 )
             _apply_customer_role(db, service)
+            if service.suspended_at is None:
+                service.suspended_at = current
+            service.purge_reason = "unpaid"
+            if not service.purge_cycle_token:
+                service.purge_cycle_token = str(uuid4())
+            unpaid_days = shop_lifecycle_settings_service.resolve_hoster_unpaid_delete_days(
+                integration, db=db
+            )
+            if unpaid_days > 0:
+                if service.terminate_after is None:
+                    service.terminate_after = current + timedelta(days=unpaid_days)
+            else:
+                service.terminate_after = None
             _set_status(service, "suspended")
         else:
-            # Kuendigung: sperren und eine Frist setzen. Es wird hier bewusst
-            # nichts geloescht — das uebernimmt spaeter der Aufraeumlauf.
+            # Kuendigung: sperren und Schonfrist setzen (oder sofort zum Loeschen
+            # freigeben, wenn `purge_immediately` uebermittelt wurde).
+            current = _now()
             if service.server_id is not None:
                 _lifecycle(db, integration=integration, service=service, operation="stop")
                 permission_service.set_user_server_permissions(
                     db, service.identity.user_id, service.server_id, [], granted_by=None
                 )
             _apply_customer_role(db, service)
-            service.terminate_after = _now() + timedelta(days=integration.terminate_grace_days)
+            service.purge_reason = "voluntary_cancel"
+            if not service.purge_cycle_token:
+                service.purge_cycle_token = str(uuid4())
+            service.terminate_after = (
+                current
+                if purge_immediately
+                else current + timedelta(days=integration.terminate_grace_days)
+            )
             _set_status(
                 service, "terminating" if service.server_id is not None else "terminated"
             )
@@ -1113,6 +1146,7 @@ def apply_batch(
                 slots=item.slots,
                 variables=item.variables,
                 correlation_id=batch_correlation_id,
+                purge_immediately=item.purge_immediately,
             )
         else:
             svc = apply_addon_desired_state(
@@ -1191,24 +1225,26 @@ def _notify(db: Session, *, integration: HosterIntegration, service: HosterServi
 
 
 def purge_terminated_services(db: Session, *, now: datetime | None = None) -> int:
-    """Loescht Server gekuendigter Vertraege nach Ablauf der Frist.
+    """Loescht Server gekuendigter oder wegen Zahlungsverzug abgelaufener Vertraege.
 
-    Bewusst als eigener Lauf und nicht im Kuendigungsaufruf: eine Kuendigung
-    soll nicht in derselben Sekunde alle Daten vernichten. Der Betreiber
-    bestimmt die Frist je Integration.
-
-    Die Produktrolle wird hier nicht mehr angefasst — sie ist seit der
-    Kuendigung entzogen, nicht erst seit Fristablauf.
+    Bewusst als eigener Lauf: eine Kuendigung oder Zahlungssperre vernichtet
+    nicht sofort alle Daten, sondern erst nach Ablauf von `terminate_after`.
     """
+    from sqlalchemy import or_
+
     current = now or _now()
     due = (
         db.query(HosterService)
         .filter(
-            HosterService.desired_state == "terminated",
-            HosterService.status == "terminating",
+            or_(
+                HosterService.status == "terminating",
+                (HosterService.status == "suspended")
+                & (HosterService.purge_reason == "unpaid"),
+            ),
             HosterService.terminate_after.isnot(None),
             HosterService.terminate_after <= current,
         )
+        .with_for_update(of=HosterService, skip_locked=True)
         .all()
     )
     purged = 0
@@ -1222,6 +1258,18 @@ def purge_terminated_services(db: Session, *, now: datetime | None = None) -> in
             continue
         server_id = service.server_id
         try:
+            if service.desired_state == "active":
+                continue
+            if (
+                server_id is not None
+                and lifecycle_purge_service.has_other_active_contract_for_server(
+                    db, server_id, exclude_hoster_service_id=service.id
+                )
+            ):
+                service.terminate_after = None
+                db.commit()
+                continue
+
             if server_id is not None:
                 from services.server_deletion_service import delete_server_completely
 
@@ -1233,15 +1281,20 @@ def purge_terminated_services(db: Session, *, now: datetime | None = None) -> in
                     actor=_actor(db, integration, service.correlation_id),
                 )
             service.server_id = None
+            service.desired_state = "terminated"
             _set_status(service, "terminated")
             service.status_code = None
+            service.terminate_after = None
+            service.purged_at = current
             service.updated_at = current
+            _apply_customer_role(db, service)
             _record(
                 db,
                 integration=integration,
                 service=service,
                 action="hoster.service.terminated",
                 succeeded=True,
+                extra={"reason": service.purge_reason or "voluntary_cancel"},
             )
             db.commit()
             _notify(db, integration=integration, service=service)
@@ -1249,7 +1302,7 @@ def purge_terminated_services(db: Session, *, now: datetime | None = None) -> in
         except Exception:
             db.rollback()
             logger.warning(
-                "Gekuendigter Hoster-Service konnte nicht geloescht werden (service_id=%s)",
+                "Abgelaufener Hoster-Service konnte nicht geloescht werden (service_id=%s)",
                 service.id,
             )
     return purged

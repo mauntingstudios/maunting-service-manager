@@ -172,6 +172,7 @@ Submits the desired contract state for a service instance. Creates the service c
 | `slots` | `integer` (1–1000) | Optional | Slot limit for slot-capable blueprints within the plan's bounds. |
 | `variables` | `object` (`string -> string`) | Optional | Start-variable overrides (`customer_editable: true`, encrypted at rest via DIS). |
 | `email` | `string` (≤255) | Optional | Utilized strictly for provisioning the user account during initial creation. MSM **never** accepts or stores billing platform passwords. |
+| `purge_immediately` | `boolean` (default `false`) | Optional | When `desired_state` is `terminated`, skips the configured `terminate_grace_days` grace period and marks `terminate_after` immediately. |
 
 #### Example Call
 
@@ -237,9 +238,9 @@ Provisioning occurs asynchronously in the background. Following a `PUT`, `status
 
 | State | Behavior |
 |---|---|
-| `active` | Contract is in good standing. The server is created and started; user management grants permissions. |
-| `suspended` | Billing suspension (e.g. overdue invoice). The server is stopped; customer permissions are revoked. **The customer's panel account and all world data remain intact.** Instances can be un-suspended instantly upon payment. |
-| `terminated` | Contract canceled. The server is stopped and scheduled for deletion after a configurable retention grace period. **Data is not erased immediately.** |
+| `active` | Contract is in good standing. The server is created and started; user management grants permissions. Any running suspension/deletion countdown (`terminate_after`) is cancelled. |
+| `suspended` | Billing suspension (e.g. overdue invoice). The server is stopped; customer permissions are revoked. **The customer's panel account and all world data remain intact.** An operator-configured `unpaid_delete_days` countdown starts (panel default or integration override; `0` disables auto-deletion) and sends staged e-mail reminders before final removal. |
+| `terminated` | Contract canceled. The server is stopped and scheduled for deletion after `terminate_grace_days` (or immediately when `purge_immediately: true` is sent). |
 
 ### Real-World Operating States (`status`)
 

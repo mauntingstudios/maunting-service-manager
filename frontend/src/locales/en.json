@@ -4713,6 +4713,23 @@
         "gespeichert": "Seller details saved.",
         "fehler": "Seller details could not be saved."
       },
+      "lifecycle": {
+        "titel": "Retention periods & payment reminders",
+        "text": "Controls how long cancelled or unpaid servers remain on disk and on which days staged reminder emails are sent before permanent removal.",
+        "cancelGraceDays": "Grace period after cancellation (days)",
+        "cancelGraceDaysHint": "Keeps cancelled servers stopped on disk for this many days before automatic removal. 0 removes them immediately after expiry.",
+        "unpaidAutoDelete": "Auto-delete unpaid servers",
+        "unpaidAutoDeleteHint": "Automatically removes servers stuck on payment hold once the unpaid deadline passes (applies to native shop and as hoster API default).",
+        "unpaidDeleteDays": "Unpaid deletion deadline (days)",
+        "unpaidDeleteDaysHint": "Days after payment suspension before the server and its files are permanently deleted.",
+        "allowCustomerImmediateDelete": "Allow customer immediate deletion",
+        "allowCustomerImmediateDeleteHint": "Lets customers permanently delete their own voluntarily cancelled servers after typing the server name.",
+        "dunningReminderDays": "Email reminder stages (days before deletion)",
+        "dunningReminderDaysHint": "Comma-separated days before permanent deletion, e.g. 7, 4, 1.",
+        "speichern": "Save retention settings",
+        "gespeichert": "Retention settings saved.",
+        "fehler": "Could not save retention settings."
+      },
       "zahlungen": {
         "titel": "Payments",
         "text": "Stripe Checkout, keys and webhook."
@@ -7073,7 +7090,22 @@
         "kuendigenBestaetigen": "Confirm cancellation",
         "abbrechen": "Cancel",
         "kuendigungVorgemerkt": "Cancels at period end",
-        "kuendigenFehler": "Could not cancel subscription."
+        "kuendigenFehler": "Could not cancel subscription.",
+        "modusGrace": "Keep until period end + grace period",
+        "modusGraceHinweis": "After the billing period ends, the server remains stopped during the operator's retention period before final removal.",
+        "modusEndOfPeriod": "Delete immediately after period end (skip grace period)",
+        "modusImmediate": "Cancel subscription and delete server immediately",
+        "modusImmediateHinweis": "Ends the subscription right away and permanently removes this server and its files from disk.",
+        "sofortLoeschenWarnung": "Warning: This server and all of its files, worlds and backups will be deleted immediately and cannot be recovered. No automatic refund is issued for the remaining billing days.",
+        "serverNameBestaetigenLabel": "Type the exact server name ({{name}}) to confirm:",
+        "jetztSofortLoeschen": "Delete immediately",
+        "sofortLoeschenBestaetigen": "Delete server permanently",
+        "sofortLoeschenFehler": "Could not delete the server immediately.",
+        "endgueltigGeloescht": "Permanently deleted",
+        "loeschungAm": "Scheduled for deletion after {{datum}}",
+        "zahlungsfristBis": "Payment due until {{datum}} before server removal",
+        "zahlungsmethodePruefen": "Update payment method",
+        "sofortLoeschungZumLaufzeitende": "Cancels at period end (no grace retention)"
       },
       "status": {
         "draft": "Draft",
@@ -8057,6 +8089,9 @@
     "apiKeyHint": "The shop authenticates against /api/hoster/v1 with it. MSM stores only a hash — after creation the key cannot be retrieved again, only rotated.",
     "graceDays": "Retention after termination (days)",
     "graceDaysHint": "After a termination, servers and data are kept for this many days before the cleanup run deletes them for good. 0 releases them for deletion immediately, more than 365 days is not possible.",
+    "unpaidDeleteDays": "Unpaid deletion deadline (days)",
+    "unpaidDeleteDaysHint": "Optional per-integration override: leave empty to use the shop default, or set 0 to disable auto-deletion on payment suspension.",
+    "unpaidDeletePlaceholder": "Use shop default",
     "notConfigured": "Not configured",
     "rotateApiKey": "Rotate API key",
     "rotateWebhookSecret": "Rotate webhook secret",

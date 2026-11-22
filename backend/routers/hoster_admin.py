@@ -75,6 +75,7 @@ def _integration_response(row: HosterIntegration) -> HosterIntegrationResponse:
         service_user_id=row.service_user_id,
         webhook_url=row.webhook_url,
         terminate_grace_days=row.terminate_grace_days,
+        unpaid_delete_days=row.unpaid_delete_days,
         api_key_hint=row.api_key_hint,
         webhook_secret_configured=bool(row.webhook_secret_encrypted),
         webhook_secret_hint=row.webhook_secret_hint,
@@ -148,6 +149,7 @@ def create_integration(
             service_user_id=payload.service_user_id,
             webhook_url=payload.webhook_url,
             terminate_grace_days=payload.terminate_grace_days,
+            unpaid_delete_days=payload.unpaid_delete_days,
         )
         audit_service.record_privileged_action(
             db,
@@ -189,6 +191,8 @@ def update_integration(
         for field in ("name", "enabled", "is_sandbox", "terminate_grace_days"):
             if field in values and values[field] is not None:
                 setattr(integration, field, values[field])
+        if "unpaid_delete_days" in values:
+            integration.unpaid_delete_days = values["unpaid_delete_days"]
         audit_service.record_privileged_action(
             db,
             user_id=actor.id,

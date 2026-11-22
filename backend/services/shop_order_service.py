@@ -13,11 +13,12 @@ Entitlements und bleiben eigene Schritte.
 from __future__ import annotations
 
 import calendar
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
 
 from models import (
+    Server,
     ShopAddon,
     ShopEntitlement,
     ShopInvoice,
@@ -36,7 +37,7 @@ from schemas.shop import (
     ShopOrderResponse,
     ShopSubscriptionResponse,
 )
-from services import audit_service
+from services import audit_service, lifecycle_purge_service, shop_lifecycle_settings_service
 
 
 # Laufzeitrabatt in Prozent; muss zur Preisanzeige im Frontend passen.
@@ -553,7 +554,11 @@ def _subscription_for_invoice(
 
 
 def _set_entitlements_status(
-    db: Session, subscription: ShopSubscription, status: str
+    db: Session,
+    subscription: ShopSubscription,
+    status: str,
+    *,
+    reason: str | None = None,
 ) -> None:
     jetzt = _now()
     zeilen = (
@@ -563,7 +568,24 @@ def _set_entitlements_status(
     )
     for zeile in zeilen:
         zeile.status = status
-        zeile.revoked_at = jetzt if status == "revoked" else None
+        if status == "revoked":
+            zeile.revoked_at = zeile.revoked_at or jetzt
+            eff_reason = reason or (
+                "voluntary_cancel" if subscription.cancel_at_period_end else "unpaid"
+            )
+            lifecycle_purge_service.mark_entitlement_revoked(
+                zeile,
+                reason=eff_reason,
+                now=jetzt,
+                immediate=bool(subscription.delete_server_on_end and eff_reason == "voluntary_cancel"),
+                db=db,
+            )
+        elif status == "suspended":
+            zeile.revoked_at = None
+            lifecycle_purge_service.mark_entitlement_suspended(zeile, now=jetzt, db=db)
+        else:
+            zeile.revoked_at = None
+            lifecycle_purge_service.clear_entitlement_purge(zeile)
 
 
 def _map_subscription_status(value: object) -> str | None:
@@ -645,9 +667,10 @@ def _handle_subscription_changed(db: Session, obj: dict, deleted: bool) -> int |
             abo.current_period_end = ende
 
     if abo.status == "cancelled":
-        _set_entitlements_status(db, abo, "revoked")
+        grund = "voluntary_cancel" if abo.cancel_at_period_end else "unpaid"
+        _set_entitlements_status(db, abo, "revoked", reason=grund)
     elif abo.status == "past_due" and obj.get("status") == "unpaid":
-        _set_entitlements_status(db, abo, "suspended")
+        _set_entitlements_status(db, abo, "suspended", reason="unpaid")
     elif abo.status == "active":
         _set_entitlements_status(db, abo, "active")
     return abo.order_id
@@ -767,20 +790,100 @@ def get_subscription(
 
 
 def cancel_subscription(
-    db: Session, subscription: ShopSubscription, *, actor_user_id: int
+    db: Session,
+    subscription: ShopSubscription,
+    *,
+    actor_user_id: int,
+    deletion_mode: str = "grace_period",
+    confirm_server_name: str | None = None,
 ) -> ShopSubscription:
-    """Merkt ein Abo zum Laufzeitende als gekuendigt vor (inkl. Stripe)."""
+    """Kuendigt ein Abo zum Laufzeitende oder loescht verknuepfte Server sofort.
+
+    ``deletion_mode`` steuert das Server-Schicksal bei freiwilliger Kuendigung:
+    - ``grace_period``: Server bleibt nach Laufzeitende waehrend der Betreiber-Schonfrist.
+    - ``end_of_period_immediate``: Server wird am Laufzeitende ohne Schonfrist geloescht.
+    - ``immediate``: Abo und eigener Server werden sofort nach Namensbestaetigung geloescht.
+    """
+    from services import stripe_service
+
+    if deletion_mode not in ("grace_period", "end_of_period_immediate", "immediate"):
+        raise ShopOrderError("Unbekannter Loeschmodus")
+
+    if deletion_mode == "immediate":
+        if not shop_lifecycle_settings_service.allow_customer_immediate_delete(db=db):
+            raise ShopOrderError("Sofortloeschung durch Kunden ist vom Betreiber deaktiviert")
+
+        server_ent = (
+            db.query(ShopEntitlement)
+            .filter(
+                ShopEntitlement.order_item_id == subscription.order_item_id,
+                ShopEntitlement.user_id == subscription.user_id,
+                ShopEntitlement.kind == "server",
+                ShopEntitlement.server_id.isnot(None),
+                ShopEntitlement.provisioning_status != "purged",
+            )
+            .first()
+        )
+        if server_ent is not None:
+            user = db.query(User).filter(User.id == subscription.user_id).first()
+            if user is None:
+                raise ShopOrderError("Kunde nicht gefunden")
+            if subscription.status == "cancelled":
+                raise ShopOrderError("Abo ist bereits gekuendigt")
+            subscription.cancel_at_period_end = True
+            subscription.delete_server_on_end = True
+            db.flush()
+            lifecycle_purge_service.customer_purge_own_server(
+                db,
+                user=user,
+                entitlement_id=server_ent.id,
+                confirm_server_name=confirm_server_name or "",
+                origin="direct",
+            )
+            db.refresh(subscription)
+            return subscription
+
+        # Reines Add-on / Rollen-Abo ohne Server
+        if subscription.status == "cancelled":
+            raise ShopOrderError("Abo ist bereits gekuendigt")
+        if subscription.provider_reference:
+            stripe_service.cancel_subscription_immediately(
+                subscription.provider_reference
+            )
+        subscription.status = "cancelled"
+        subscription.cancel_at_period_end = True
+        subscription.delete_server_on_end = True
+        _set_entitlements_status(db, subscription, "revoked", reason="voluntary_cancel")
+        audit_service.record_privileged_action(
+            db,
+            user_id=actor_user_id,
+            action="shop.subscription.cancelled_immediately",
+            target_type="shop_subscription",
+            target_id=subscription.id,
+            details={
+                "order_id": subscription.order_id,
+                "provider_reference": subscription.provider_reference,
+            },
+        )
+        db.commit()
+        from services import shop_fulfillment_service
+
+        shop_fulfillment_service.sync_user_roles(
+            db, subscription.user_id, actor_user_id=actor_user_id, origin="direct"
+        )
+        db.refresh(subscription)
+        return subscription
+
     if subscription.status == "cancelled":
         raise ShopOrderError("Abo ist bereits gekuendigt")
-    if subscription.cancel_at_period_end:
-        return subscription
-    if subscription.provider_reference:
-        from services import stripe_service
 
+    want_delete_on_end = deletion_mode == "end_of_period_immediate"
+    if not subscription.cancel_at_period_end and subscription.provider_reference:
         stripe_service.cancel_subscription_at_period_end(
             subscription.provider_reference
         )
     subscription.cancel_at_period_end = True
+    subscription.delete_server_on_end = want_delete_on_end
     audit_service.record_privileged_action(
         db,
         user_id=actor_user_id,
@@ -790,6 +893,7 @@ def cancel_subscription(
         details={
             "order_id": subscription.order_id,
             "provider_reference": subscription.provider_reference,
+            "deletion_mode": deletion_mode,
         },
     )
     db.commit()
@@ -863,6 +967,9 @@ def refund_order(
     for ent in entitlements:
         ent.status = "revoked"
         ent.revoked_at = jetzt
+        lifecycle_purge_service.mark_entitlement_revoked(
+            ent, reason="refund", now=jetzt
+        )
 
     from services import shop_invoice_service
 
@@ -1028,7 +1135,32 @@ def order_response(db: Session, order: ShopOrder) -> ShopOrderResponse:
     )
 
 
-def subscription_response(row: ShopSubscription) -> ShopSubscriptionResponse:
+def subscription_response(
+    row: ShopSubscription, db: Session | None = None
+) -> ShopSubscriptionResponse:
+    server_ent_id: int | None = None
+    server_name: str | None = None
+    can_immediate = False
+    if db is not None:
+        server_ent = (
+            db.query(ShopEntitlement)
+            .filter(
+                ShopEntitlement.order_item_id == row.order_item_id,
+                ShopEntitlement.kind == "server",
+                ShopEntitlement.server_id.isnot(None),
+                ShopEntitlement.provisioning_status != "purged",
+            )
+            .first()
+        )
+        if server_ent is not None and server_ent.server_id is not None:
+            server_ent_id = server_ent.id
+            srv = db.query(Server).filter(Server.id == server_ent.server_id).first()
+            if srv is not None:
+                server_name = srv.name
+            can_immediate = (
+                shop_lifecycle_settings_service.allow_customer_immediate_delete(db=db)
+                and server_ent.status != "suspended"
+            )
     return ShopSubscriptionResponse(
         id=row.id,
         plan_id=row.plan_id,
@@ -1042,10 +1174,23 @@ def subscription_response(row: ShopSubscription) -> ShopSubscriptionResponse:
         started_at=row.started_at,
         current_period_end=row.current_period_end,
         cancel_at_period_end=row.cancel_at_period_end,
+        delete_server_on_end=bool(getattr(row, "delete_server_on_end", False)),
+        server_entitlement_id=server_ent_id,
+        server_name=server_name,
+        can_immediate_delete=can_immediate,
     )
 
 
-def entitlement_response(row: ShopEntitlement) -> ShopEntitlementResponse:
+def entitlement_response(
+    row: ShopEntitlement, db: Session | None = None
+) -> ShopEntitlementResponse:
+    server_name: str | None = None
+    can_purge_now = False
+    if db is not None and row.server_id is not None:
+        srv = db.query(Server).filter(Server.id == row.server_id).first()
+        if srv is not None:
+            server_name = srv.name
+        can_purge_now = lifecycle_purge_service.can_customer_purge_entitlement(db, row)
     return ShopEntitlementResponse(
         id=row.id,
         kind=row.kind,
@@ -1053,7 +1198,12 @@ def entitlement_response(row: ShopEntitlement) -> ShopEntitlementResponse:
         label=row.label,
         status=row.status,
         server_id=row.server_id,
+        server_name=server_name,
         provisioning_status=row.provisioning_status,
         provisioning_error=row.provisioning_error,
+        purge_after=getattr(row, "purge_after", None),
+        purge_reason=getattr(row, "purge_reason", None),
+        purged_at=getattr(row, "purged_at", None),
+        can_customer_purge_now=can_purge_now,
         created_at=row.created_at,
     )

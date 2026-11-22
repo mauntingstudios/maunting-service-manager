@@ -24,6 +24,7 @@ class HosterIntegrationWrite(BaseModel):
     service_user_id: int = Field(..., ge=1)
     webhook_url: str | None = Field(None, max_length=2048)
     terminate_grace_days: int = Field(7, ge=0, le=365)
+    unpaid_delete_days: int | None = Field(None, ge=0, le=365)
 
 
 class HosterIntegrationUpdate(BaseModel):
@@ -33,6 +34,7 @@ class HosterIntegrationUpdate(BaseModel):
     service_user_id: int | None = Field(None, ge=1)
     webhook_url: str | None = Field(None, max_length=2048)
     terminate_grace_days: int | None = Field(None, ge=0, le=365)
+    unpaid_delete_days: int | None = Field(None, ge=0, le=365)
 
 
 class HosterIntegrationResponse(BaseModel):
@@ -44,6 +46,7 @@ class HosterIntegrationResponse(BaseModel):
     service_user_id: int
     webhook_url: str | None
     terminate_grace_days: int
+    unpaid_delete_days: int | None = None
     api_key_hint: str | None
     webhook_secret_configured: bool
     webhook_secret_hint: str | None
@@ -240,6 +243,7 @@ class HosterDesiredStateRequest(BaseModel):
     slots: int | None = Field(None, ge=1, le=1000)
     variables: dict[str, str] | None = None
     email: str | None = Field(None, max_length=255)
+    purge_immediately: bool = False
 
 
 class HosterHandoffRequest(BaseModel):
@@ -267,6 +271,7 @@ class HosterApplyItem(BaseModel):
     slots: int | None = Field(None, ge=1, le=1000)
     variables: dict[str, str] | None = None
     desired_state: Literal["active", "suspended", "terminated"] | None = None
+    purge_immediately: bool = False
 
     @model_validator(mode="after")
     def _validate_item_fields(self) -> "HosterApplyItem":

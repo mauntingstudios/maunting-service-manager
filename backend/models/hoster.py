@@ -54,6 +54,10 @@ class HosterIntegration(Base):
             "terminate_grace_days >= 0 AND terminate_grace_days <= 365",
             name="ck_hoster_integrations_grace",
         ),
+        CheckConstraint(
+            "unpaid_delete_days IS NULL OR (unpaid_delete_days >= 0 AND unpaid_delete_days <= 365)",
+            name="ck_hoster_integrations_unpaid_delete",
+        ),
         UniqueConstraint("slug", name="uq_hoster_integrations_slug"),
         UniqueConstraint("api_key_hash", name="uq_hoster_integrations_api_key"),
     )
@@ -77,6 +81,9 @@ class HosterIntegration(Base):
     # Nach einer Kuendigung bleibt der Service so viele Tage erhalten, bevor er
     # geloescht werden darf. 0 bedeutet: sofort loeschbar.
     terminate_grace_days: Mapped[int] = mapped_column(Integer, default=7, nullable=False)
+    # Optionaler Override fuer automatische Loeschung bei Zahlungsverzug
+    # (`suspended`): None = globaler Shop-Standard, 0 = deaktiviert, 1..365 = Tage.
+    unpaid_delete_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_now, nullable=False
     )
@@ -182,6 +189,10 @@ class HosterService(Base):
             "'failed', 'terminating', 'terminated')",
             name="ck_hoster_services_status",
         ),
+        CheckConstraint(
+            "purge_reason IS NULL OR purge_reason IN ('voluntary_cancel', 'unpaid')",
+            name="ck_hoster_services_purge_reason",
+        ),
         UniqueConstraint(
             "integration_id", "external_service_id", name="uq_hoster_services_external_id"
         ),
@@ -230,6 +241,14 @@ class HosterService(Base):
     # Fruehestens ab diesem Zeitpunkt darf ein gekuendigter Service geloescht
     # werden. Eine Kuendigung vernichtet also nicht sofort alle Daten.
     terminate_after: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    suspended_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    purge_reason: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    purge_cycle_token: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    purged_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(

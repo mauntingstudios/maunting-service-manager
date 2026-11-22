@@ -17,6 +17,7 @@ export interface HosterIntegration {
   service_user_id: number
   webhook_url: string | null
   terminate_grace_days: number
+  unpaid_delete_days?: number | null
   api_key_hint: string | null
   webhook_secret_configured: boolean
   webhook_secret_hint: string | null
@@ -32,6 +33,7 @@ export interface HosterIntegrationWrite {
   service_user_id: number
   webhook_url: string | null
   terminate_grace_days: number
+  unpaid_delete_days?: number | null
 }
 
 export interface HosterSecret {

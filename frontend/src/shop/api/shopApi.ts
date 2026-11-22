@@ -1,18 +1,29 @@
-import { shopOrderApi, type ShopSubscriptionDto } from '@/api/shop'
+import {
+  shopOrderApi,
+  type ShopEntitlementDto,
+  type ShopSubscriptionDto,
+} from '@/api/shop'
 import type {
   Entitlement,
   Order,
   PaymentMethod,
   ShopSettings,
   Subscription,
+  SubscriptionDeletionMode,
 } from './types'
+
+export interface CancelSubscriptionOptions {
+  deletionMode?: SubscriptionDeletionMode
+  confirmServerName?: string
+}
 
 export interface ShopApi {
   listOrders(): Promise<Order[]>
   getOrder(id: string): Promise<Order | undefined>
   listSubscriptions(): Promise<Subscription[]>
-  cancelSubscription(id: string): Promise<Subscription>
+  cancelSubscription(id: string, options?: CancelSubscriptionOptions): Promise<Subscription>
   listEntitlements(): Promise<Entitlement[]>
+  purgeEntitlementNow(id: string, confirmServerName: string): Promise<Entitlement>
   listPaymentMethods(): Promise<PaymentMethod[]>
   getSettings(): Promise<ShopSettings>
 }
@@ -26,6 +37,26 @@ function subscriptionAusApi(dto: ShopSubscriptionDto): Subscription {
     naechsteZahlung: dto.current_period_end.slice(0, 10),
     preisCent: dto.monthly_gross_cents,
     cancelAtPeriodEnd: dto.cancel_at_period_end,
+    deleteServerOnEnd: dto.delete_server_on_end ?? false,
+    serverEntitlementId: dto.server_entitlement_id ?? null,
+    serverName: dto.server_name ?? null,
+    canImmediateDelete: dto.can_immediate_delete ?? false,
+  }
+}
+
+function entitlementAusApi(dto: ShopEntitlementDto): Entitlement {
+  return {
+    id: String(dto.id),
+    art: dto.kind === 'role' ? 'rolle' : dto.kind,
+    bezeichnung: dto.label,
+    status: dto.status,
+    serverId: dto.server_id ?? undefined,
+    serverName: dto.server_name ?? null,
+    provisioningStatus: dto.provisioning_status,
+    purgeAfter: dto.purge_after ?? null,
+    purgeReason: dto.purge_reason ?? null,
+    purgedAt: dto.purged_at ?? null,
+    canCustomerPurgeNow: dto.can_customer_purge_now ?? false,
   }
 }
 
@@ -71,17 +102,24 @@ export const shopApi: ShopApi = {
   },
   listSubscriptions: async () =>
     (await shopOrderApi.listSubscriptions()).map(subscriptionAusApi),
-  cancelSubscription: async (id) =>
-    subscriptionAusApi(await shopOrderApi.cancelSubscription(id)),
+  cancelSubscription: async (id, options) => {
+    const mode = options?.deletionMode ?? 'grace_period'
+    if (mode === 'grace_period') {
+      return subscriptionAusApi(await shopOrderApi.cancelSubscription(id))
+    }
+    return subscriptionAusApi(
+      await shopOrderApi.cancelSubscription(id, {
+        deletion_mode: mode,
+        ...(options?.confirmServerName
+          ? { confirm_server_name: options.confirmServerName }
+          : {}),
+      }),
+    )
+  },
   listEntitlements: async () =>
-    (await shopOrderApi.listEntitlements()).map((dto) => ({
-      id: String(dto.id),
-      art: dto.kind === 'role' ? 'rolle' : dto.kind,
-      bezeichnung: dto.label,
-      status: dto.status,
-      serverId: dto.server_id ?? undefined,
-      provisioningStatus: dto.provisioning_status,
-    })),
+    (await shopOrderApi.listEntitlements()).map(entitlementAusApi),
+  purgeEntitlementNow: async (id, confirmServerName) =>
+    entitlementAusApi(await shopOrderApi.purgeEntitlementNow(id, confirmServerName)),
   listPaymentMethods: async () => [],
   getSettings: async () => MOCK_SETTINGS,
 }

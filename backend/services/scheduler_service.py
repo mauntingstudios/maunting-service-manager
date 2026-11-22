@@ -1291,18 +1291,31 @@ def _run_hoster_maintenance_sync() -> None:
 
     from database import SessionLocal
 
+    log = logging.getLogger(__name__)
     db = SessionLocal()
     try:
         from services.hoster_service_lifecycle import purge_terminated_services
         from services.hoster_webhook_service import deliver_pending
-
-        deliver_pending(db)
-        purge_terminated_services(db)
-    except Exception as exc:
-        db.rollback()
-        logging.getLogger(__name__).warning(
-            "Hoster-Wartungslauf fehlgeschlagen: %s", type(exc).__name__
+        from services.lifecycle_purge_service import (
+            process_unpaid_deletion_reminders,
+            purge_expired_shop_entitlements,
         )
+
+        for step_name, step_fn in (
+            ("deliver_pending", deliver_pending),
+            ("purge_terminated_services", purge_terminated_services),
+            ("process_unpaid_deletion_reminders", process_unpaid_deletion_reminders),
+            ("purge_expired_shop_entitlements", purge_expired_shop_entitlements),
+        ):
+            try:
+                step_fn(db)
+            except Exception as exc:
+                db.rollback()
+                log.warning(
+                    "Wartungsschritt %s fehlgeschlagen: %s",
+                    step_name,
+                    type(exc).__name__,
+                )
     finally:
         db.close()
 

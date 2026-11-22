@@ -11,6 +11,7 @@ import aiosmtplib
 from email.message import EmailMessage
 
 from config import settings
+from datetime import datetime, timezone
 from services.panel_settings_service import PanelSettingsService
 
 _log = logging.getLogger("msm.email")
@@ -1689,4 +1690,98 @@ Maunting Service Manager
                 "content_type": "application/pdf",
             }],
         )
+
+    @staticmethod
+    async def send_server_deletion_warning_email(
+        to: str,
+        customer_name: str,
+        server_name: str,
+        days_remaining: int,
+        purge_at: datetime,
+        payment_url: str | None = None,
+    ) -> bool:
+        """Sendet eine gestaffelte Zahlungserinnerung vor automatischer Server-Loeschung."""
+        from services.branding_service import get_effective_brand_name
+
+        brand_name = get_effective_brand_name()
+        days_clamped = max(1, int(days_remaining))
+        if days_clamped == 1:
+            subject = f"Wichtig: Morgen wird dein Server {server_name} gelöscht"
+            headline = "Morgen wird dein Server gelöscht"
+            urgency = (
+                f"die Zahlung für deinen Server <strong>{EmailService.html_text(server_name)}</strong> "
+                "ist weiterhin offen. Ohne Zahlungseingang wird der Server morgen endgültig gelöscht."
+            )
+            urgency_text = (
+                f'Die Zahlung für deinen Server "{server_name}" ist weiterhin offen. '
+                "Ohne Zahlungseingang wird der Server morgen endgültig gelöscht."
+            )
+        elif days_clamped == 7:
+            subject = f"Erinnerung: In einer Woche wird dein Server {server_name} gelöscht"
+            headline = "In einer Woche wird dein Server gelöscht"
+            urgency = (
+                f"für deinen Server <strong>{EmailService.html_text(server_name)}</strong> liegt eine "
+                "Zahlungssperre vor. Begleiche die offene Zahlung innerhalb der nächsten 7 Tage, um alle Daten zu behalten."
+            )
+            urgency_text = (
+                f'Für deinen Server "{server_name}" liegt eine Zahlungssperre vor. '
+                "Begleiche die offene Zahlung innerhalb der nächsten 7 Tage, um alle Daten zu behalten."
+            )
+        else:
+            subject = f"Erinnerung: In {days_clamped} Tagen wird dein Server {server_name} gelöscht"
+            headline = f"In {days_clamped} Tagen wird dein Server gelöscht"
+            urgency = (
+                f"dein Server <strong>{EmailService.html_text(server_name)}</strong> ist wegen ausstehender Zahlung "
+                f"gesperrt und wird in {days_clamped} Tagen endgültig gelöscht."
+            )
+            urgency_text = (
+                f'Dein Server "{server_name}" ist wegen ausstehender Zahlung gesperrt '
+                f"und wird in {days_clamped} Tagen endgültig gelöscht."
+            )
+
+        purge_utc = purge_at if purge_at.tzinfo else purge_at.replace(tzinfo=timezone.utc)
+        purge_label = purge_utc.astimezone(timezone.utc).strftime("%d.%m.%Y um %H:%M UTC")
+        anrede_name = customer_name.strip() or "Kundin / Kunde"
+        base = (settings.panel_url or "").rstrip("/")
+        target_url = payment_url or (f"{base}/konto/abos" if base else "/konto/abos")
+
+        body = f"""Hallo {anrede_name},
+
+{urgency_text}
+
+Server: {server_name}
+Restzeit bis zur Löschung: {days_clamped} {"Tag" if days_clamped == 1 else "Tage"}
+Geplanter Löschzeitpunkt: {purge_label}
+
+Alle Serverdaten und Welten bleiben vollständig erhalten, sobald der offene Betrag rechtzeitig bezahlt wird:
+{target_url}
+
+{brand_name}
+"""
+        bausteine = [
+            EmailService._kategorie("Zahlungserinnerung"),
+            EmailService._ueberschrift(headline),
+            EmailService._anrede(EmailService.html_text(anrede_name)),
+            EmailService._absatz(urgency),
+            EmailService._fakten([
+                ("Server", server_name),
+                ("Restzeit", f"{days_clamped} {'Tag' if days_clamped == 1 else 'Tage'}"),
+                ("Löschzeitpunkt", purge_label),
+            ]),
+        ]
+        if target_url.startswith(("http://", "https://")):
+            bausteine.append(
+                EmailService._cta_button(html.escape(target_url, quote=True), "Zahlung jetzt begleichen")
+            )
+        bausteine.append(
+            EmailService._kleingedruckt(
+                "Alle Serverdaten bleiben erhalten, sobald die Zahlung vor dem Löschzeitpunkt eingeht."
+            )
+        )
+        email_html = EmailService._base_template(
+            subject,
+            "\n".join(bausteine),
+            urgency_text,
+        )
+        return await EmailService.send_email(to, subject, body, email_html)
 

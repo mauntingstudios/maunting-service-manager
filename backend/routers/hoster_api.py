@@ -125,6 +125,7 @@ def put_desired_state(
             slots=payload.slots,
             variables=payload.variables,
             email=payload.email,
+            purge_immediately=payload.purge_immediately,
         )
     except HosterConfigurationError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc

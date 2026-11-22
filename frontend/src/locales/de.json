@@ -4713,6 +4713,23 @@
         "gespeichert": "Verkäuferdaten gespeichert.",
         "fehler": "Verkäuferdaten konnten nicht gespeichert werden."
       },
+      "lifecycle": {
+        "titel": "Löschfristen & Zahlungserinnerungen",
+        "text": "Legt fest, wie lange gekündigte oder unbezahlte Server gespeichert bleiben und an welchen Tagen vor der endgültigen Löschung per E-Mail erinnert wird.",
+        "cancelGraceDays": "Schonfrist nach Kündigung (Tage)",
+        "cancelGraceDaysHint": "Nach Vertragsende bleibt der Server so viele Tage gestoppt erhalten, bevor der Aufräumlauf ihn löscht. 0 löscht direkt nach Ablauf.",
+        "unpaidAutoDelete": "Unbezahlte Server automatisch löschen",
+        "unpaidAutoDeleteHint": "Beendet den Speicherverbrauch gesperrter Server automatisch nach Ablauf der Zahlungsfrist (gilt im nativen Shop und als Standard für die Hoster-API).",
+        "unpaidDeleteDays": "Löschfrist bei Zahlungsverzug (Tage)",
+        "unpaidDeleteDaysHint": "Anzahl der Tage nach Zahlungssperre, bis der Server endgültig von der Festplatte entfernt wird.",
+        "allowCustomerImmediateDelete": "Sofortlöschung durch Kunden erlauben",
+        "allowCustomerImmediateDeleteHint": "Kunden dürfen eigene freiwillig gekündigte Server per Namensbestätigung vor Ablauf der Schonfrist selbst löschen.",
+        "dunningReminderDays": "E-Mail-Erinnerungsstufen (Tage vor Löschung)",
+        "dunningReminderDaysHint": "Kommagetrennte Tage vor der automatischen Löschung, z. B. 7, 4, 1 (bis hin zu »Morgen wird dein Server gelöscht«).",
+        "speichern": "Fristen speichern",
+        "gespeichert": "Löschfristen gespeichert.",
+        "fehler": "Löschfristen konnten nicht gespeichert werden."
+      },
       "zahlungen": {
         "titel": "Zahlungen",
         "text": "Stripe Checkout, Schlüssel und Webhook."
@@ -7073,7 +7090,22 @@
         "kuendigenBestaetigen": "Kündigung bestätigen",
         "abbrechen": "Abbrechen",
         "kuendigungVorgemerkt": "Zum Laufzeitende gekündigt",
-        "kuendigenFehler": "Kündigung konnte nicht gespeichert werden."
+        "kuendigenFehler": "Kündigung konnte nicht gespeichert werden.",
+        "modusGrace": "Bis Laufzeitende + Schonfrist behalten",
+        "modusGraceHinweis": "Der Server bleibt nach Vertragsende während der Betreiber-Schonfrist gestoppt gespeichert und kann bei Bedarf reaktiviert werden.",
+        "modusEndOfPeriod": "Nach Laufzeitende sofort ohne Schonfrist löschen",
+        "modusImmediate": "Abo und Server sofort unwiderruflich löschen",
+        "modusImmediateHinweis": "Beendet das Abo sofort und löscht diesen Server samt aller Daten unwiderruflich von der Festplatte.",
+        "sofortLoeschenWarnung": "Achtung: Dieser Server und alle seine Dateien, Welten und Backups werden sofort und unwiderruflich gelöscht. Für die verbleibende Restlaufzeit erfolgt keine automatische Erstattung.",
+        "serverNameBestaetigenLabel": "Zur Bestätigung den exakten Servernamen ({{name}}) eingeben:",
+        "jetztSofortLoeschen": "Jetzt sofort löschen",
+        "sofortLoeschenBestaetigen": "Server endgültig löschen",
+        "sofortLoeschenFehler": "Server konnte nicht sofort gelöscht werden.",
+        "endgueltigGeloescht": "Endgültig gelöscht",
+        "loeschungAm": "Geplante Löschung ab {{datum}}",
+        "zahlungsfristBis": "Zahlungsfrist bis {{datum}} – danach wird der Server gelöscht",
+        "zahlungsmethodePruefen": "Zahlungsmethode prüfen",
+        "sofortLoeschungZumLaufzeitende": "Kündigung vorgemerkt (Löschung bei Ablauf)"
       },
       "status": {
         "draft": "Entwurf",
@@ -8057,6 +8089,9 @@
     "apiKeyHint": "Damit authentifiziert sich der Shop gegen /api/hoster/v1. MSM speichert nur einen Hash — nach dem Anlegen ist der Schlüssel nicht mehr abrufbar, nur rotierbar.",
     "graceDays": "Aufbewahrung nach Kündigung (Tage)",
     "graceDaysHint": "Nach einer Kündigung bleiben Server und Daten so viele Tage erhalten, bevor der Aufräumlauf sie endgültig löscht. 0 gibt sie sofort zum Löschen frei, mehr als 365 Tage sind nicht möglich.",
+    "unpaidDeleteDays": "Löschfrist bei Zahlungsverzug (Tage)",
+    "unpaidDeleteDaysHint": "Optionaler Wert je Integration: leer übernimmt die Shop-Standardfrist, 0 schaltet die automatische Löschung bei Zahlungssperre aus.",
+    "unpaidDeletePlaceholder": "Shop-Standard übernehmen",
     "notConfigured": "Nicht konfiguriert",
     "rotateApiKey": "API-Key rotieren",
     "rotateWebhookSecret": "Webhook-Secret rotieren",

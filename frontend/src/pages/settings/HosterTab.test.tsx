@@ -172,6 +172,7 @@ describe('HosterTab', () => {
       expect(hosterApi.updateIntegration).toHaveBeenCalledWith(3, {
         webhook_url: 'https://shop.example/hooks/neu',
         terminate_grace_days: 7,
+        unpaid_delete_days: null,
         enabled: true,
         is_sandbox: false,
       }),
