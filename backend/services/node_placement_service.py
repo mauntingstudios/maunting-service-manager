@@ -11,6 +11,7 @@ from models import Node, ShopPlan
 from services.node_capacity import (
     allocatable_cpu_percent,
     allocatable_disk_gb,
+    normalize_cpu_limit_percent,
     normalize_ram_mb,
     ram_headroom_mb,
     sum_allocated_cpu_percent,
@@ -210,10 +211,8 @@ def check_plan_availability(
 ) -> PlanAvailability:
     eff_ram = ram_mb if ram_mb is not None else plan.ram_included_mb
     eff_cpu_cores = cpu_cores if cpu_cores is not None else plan.cpu_included
-    cpu_percent = (
-        int(eff_cpu_cores) * 100
-        if eff_cpu_cores is not None and int(eff_cpu_cores) > 0
-        else None
+    cpu_percent = normalize_cpu_limit_percent(
+        int(eff_cpu_cores) if eff_cpu_cores is not None else None
     )
 
     if plan.node_id is None:
@@ -252,7 +251,15 @@ def check_plan_availability(
 
     online_checks = [c for c in checks if c.reason != "node_offline"]
     ram_caps = [c.remaining_ram_mb for c in online_checks if c.remaining_ram_mb is not None]
-    cpu_caps = [c.remaining_cpu_percent // 100 for c in online_checks if c.remaining_cpu_percent is not None]
+    uses_percent_unit = (
+        (plan.cpu_included is not None and int(plan.cpu_included) > 32)
+        or (plan.cpu_max is not None and int(plan.cpu_max) > 32)
+    )
+    cpu_caps = [
+        (c.remaining_cpu_percent if uses_percent_unit else c.remaining_cpu_percent // 100)
+        for c in online_checks
+        if c.remaining_cpu_percent is not None
+    ]
 
     max_ram: int | None = max(ram_caps) if ram_caps else None
     if max_ram is not None and plan.ram_max_mb is not None:

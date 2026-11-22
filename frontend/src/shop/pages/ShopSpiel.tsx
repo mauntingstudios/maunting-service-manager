@@ -123,12 +123,19 @@ export function ShopSpiel() {
           </div>
 
           <div>
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="info">{aktuellesSpiel.category}</Badge>
-              {aktuellesSpiel.tags.map((tag) => (
-                <Badge key={tag}>{tag}</Badge>
-              ))}
-            </div>
+            {aktuellesSpiel.tags.length > 0 && (
+              <div className="flex flex-wrap items-center gap-2">
+                {aktuellesSpiel.tags.map((tag) => (
+                  <Badge key={tag} variant="info">
+                    {tag === 'Mods'
+                      ? t('shop.spiel.modsInklusive')
+                      : tag === 'Workshop'
+                        ? t('shop.spiel.workshopInklusive')
+                        : tag}
+                  </Badge>
+                ))}
+              </div>
+            )}
             <h1 className="mt-4 font-headline text-3xl font-extrabold tracking-tight text-on-surface sm:text-4xl">
               {aktuellesSpiel.name}
             </h1>

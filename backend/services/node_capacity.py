@@ -99,6 +99,25 @@ def allocatable_ram_mb(node: Node, allocated_mb: int) -> int | None:
 # ── CPU capacity accounting ────────────────────────────────────────────────
 
 
+def normalize_cpu_limit_percent(value: int | None) -> int | None:
+    """Normalizes plan/order CPU values to percent (100 = 1 core).
+
+    Backward-compatible rule:
+    - None or <= 0 -> None
+    - 1..32 -> whole vCores (value * 100, e.g. 2 -> 200%)
+    - >= 33 -> already percent (e.g. 150 -> 150%, 250 -> 250%)
+    """
+    if value is None:
+        return None
+    try:
+        v = int(value)
+    except (TypeError, ValueError):
+        return None
+    if v <= 0:
+        return None
+    return v * 100 if v <= 32 else v
+
+
 def sum_allocated_cpu_percent(
     db: Session,
     node_id: int,

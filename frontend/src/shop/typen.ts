@@ -14,12 +14,15 @@ export interface ShopSpiel {
   grundpreisCent: number
   ramStufenGb: number[]
   standardRamGb: number
+  ramStepGb?: number
   preisProGbCent: number
   cpuStufen: number[]
   standardCpu: number
+  cpuStep?: number
   preisProKernCent: number
   slotStufen: number[]
   standardSlots: number
+  slotStep?: number
   preisProSlotCent: number
   kiZugangCent: number
   verfuegbar?: boolean

@@ -11,16 +11,45 @@ export const RABATT_PROZENT: Record<LaufzeitMonate, number> = {
   12: 20,
 }
 
+export function cpuZuProzent(wert: number): number {
+  if (!Number.isFinite(wert) || wert <= 0) return 0
+  return wert <= 32 ? Math.round(wert * 100) : Math.round(wert)
+}
+
+export function formatCpuLabel(wert: number, sprache: 'de' | 'en' = 'de'): string {
+  const prozent = cpuZuProzent(wert)
+  if (prozent <= 0) return '—'
+  const kerne = prozent / 100
+  const kerneText = kerne.toLocaleString(sprache === 'de' ? 'de-DE' : 'en-US', {
+    maximumFractionDigits: 2,
+  })
+  const einheit =
+    sprache === 'de'
+      ? kerne === 1
+        ? 'Kern'
+        : 'Kerne'
+      : kerne === 1
+        ? 'Core'
+        : 'Cores'
+  return `${kerneText} ${einheit} (${prozent} %)`
+}
+
 export function preisAufschluesselung(
   spiel: ShopSpiel,
   konfiguration: Konfiguration,
 ): PreisAufschluesselung {
+  const ramStep = spiel.ramStepGb && spiel.ramStepGb > 0 ? spiel.ramStepGb : 1
+  const cpuStep = spiel.cpuStep && spiel.cpuStep > 0 ? spiel.cpuStep : 1
+  const slotStep = spiel.slotStep && spiel.slotStep > 0 ? spiel.slotStep : 1
   const ramCent =
-    Math.max(0, konfiguration.ramGb - spiel.standardRamGb) * spiel.preisProGbCent
+    Math.floor(Math.max(0, konfiguration.ramGb - spiel.standardRamGb) / ramStep) *
+    spiel.preisProGbCent
   const cpuCent =
-    Math.max(0, konfiguration.cpu - spiel.standardCpu) * spiel.preisProKernCent
+    Math.floor(Math.max(0, konfiguration.cpu - spiel.standardCpu) / cpuStep) *
+    spiel.preisProKernCent
   const slotsCent =
-    Math.max(0, konfiguration.slots - spiel.standardSlots) * spiel.preisProSlotCent
+    Math.floor(Math.max(0, konfiguration.slots - spiel.standardSlots) / slotStep) *
+    spiel.preisProSlotCent
   const kiCent = konfiguration.kiZugang ? spiel.kiZugangCent : 0
   const monatCent = spiel.grundpreisCent + ramCent + cpuCent + slotsCent + kiCent
   const rabattProzent = RABATT_PROZENT[konfiguration.laufzeitMonate]

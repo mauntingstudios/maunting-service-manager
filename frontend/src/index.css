@@ -1103,8 +1103,14 @@ dialog::backdrop {
   contain-intrinsic-size: auto none auto 84px;
 }
 
+.msm-shop-deferred {
+  content-visibility: auto;
+  contain-intrinsic-size: auto none auto 480px;
+}
+
 @supports not (content-visibility: auto) {
-  .msm-deferred-card {
+  .msm-deferred-card,
+  .msm-shop-deferred {
     contain: layout style paint;
   }
 }

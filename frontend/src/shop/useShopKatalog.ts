@@ -48,6 +48,25 @@ function stufen(
   return werte
 }
 
+function cpuStufenFuer(
+  inklusive: number | null,
+  maximum: number | null,
+  schritt: number | null,
+): number[] {
+  const start = inklusive ?? 1
+  const ende = maximum ?? Math.max(start, start > 32 ? 400 : 4)
+  let schrittweite = schritt && schritt > 0 ? schritt : 1
+  // Falls bei aelteren Prozent-Tarifen noch step=1 in der DB steht, lesbare 50%-Schritte zeigen.
+  if (start > 32 && schrittweite === 1 && ende - start >= 50) {
+    schrittweite = 50
+  }
+  const werte = stufen(start, ende, schrittweite, [1, 2, 4])
+  if (ende > werte[werte.length - 1] && (ende - start) % (schritt && schritt > 0 ? schritt : 1) === 0) {
+    werte.push(ende)
+  }
+  return werte
+}
+
 function spielAusPlan(plan: ShopCatalogPlan): ShopSpiel {
   const ramIncludedGb =
     plan.ram_included_mb === null ? null : Math.max(1, Math.round(plan.ram_included_mb / 1024))
@@ -56,7 +75,7 @@ function spielAusPlan(plan: ShopCatalogPlan): ShopSpiel {
   const ramStepGb =
     plan.ram_step_mb === null ? null : Math.max(1, Math.round(plan.ram_step_mb / 1024))
   const ramStufen = stufen(ramIncludedGb, ramMaxGb, ramStepGb, [4, 8, 16])
-  const cpuStufen = stufen(plan.cpu_included, plan.cpu_max, plan.cpu_step, [1, 2, 4])
+  const cpuStufen = cpuStufenFuer(plan.cpu_included, plan.cpu_max, plan.cpu_step)
   const slotStufen = stufen(plan.slots_included, plan.slots_max, plan.slots_step, [4, 8, 16])
   const text = plan.game_description || plan.description || plan.name
   const tags: string[] = []
@@ -77,12 +96,15 @@ function spielAusPlan(plan: ShopCatalogPlan): ShopSpiel {
     grundpreisCent: plan.price_cents,
     ramStufenGb: ramStufen,
     standardRamGb: ramIncludedGb ?? ramStufen[0],
+    ramStepGb: ramStepGb ?? 1,
     preisProGbCent: plan.price_per_ram_step_cents,
     cpuStufen,
     standardCpu: plan.cpu_included ?? cpuStufen[0],
+    cpuStep: plan.cpu_step > 0 ? plan.cpu_step : 1,
     preisProKernCent: plan.price_per_cpu_step_cents,
     slotStufen,
     standardSlots: plan.slots_included ?? slotStufen[0],
+    slotStep: plan.slots_step > 0 ? plan.slots_step : 1,
     preisProSlotCent: plan.price_per_slot_step_cents,
     kiZugangCent: 0,
     verfuegbar: plan.available !== false,

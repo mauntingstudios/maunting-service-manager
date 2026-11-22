@@ -155,6 +155,17 @@ class ShopAddonUpdate(BaseModel):
     sort_order: int | None = Field(None, ge=-100_000, le=100_000)
 
 
+class ShopRoleBenefits(BaseModel):
+    role_name: str
+    vault_quota_bytes: int | None = None
+    ai_daily_tokens: int | None = None
+    ai_weekly_tokens: int | None = None
+    ai_monthly_tokens: int | None = None
+    ai_realtime_minutes: int | None = None
+    ai_dictation_minutes: int | None = None
+    ai_model_count: int = 0
+
+
 class ShopAddonResponse(BaseModel):
     id: int
     slug: str
@@ -170,6 +181,7 @@ class ShopAddonResponse(BaseModel):
     extra_backups: int | None
     extra_ai_tokens: int | None
     role_id: int | None
+    role_benefits: ShopRoleBenefits | None = None
     active: bool
     sort_order: int
     created_at: datetime
@@ -193,6 +205,7 @@ class ShopCatalogAddon(BaseModel):
     extra_backups: int | None
     extra_ai_tokens: int | None
     grants_role: bool = False
+    role_benefits: ShopRoleBenefits | None = None
 
 
 class ShopAddonSwitchRequest(BaseModel):

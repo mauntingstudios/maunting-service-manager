@@ -193,7 +193,7 @@ def get_catalog_addons(
 ) -> list[ShopCatalogAddon]:
     """Aktive Add-ons ohne Anmeldung. Keine interne Rollen-ID."""
     return [
-        shop_addon_service.catalog_addon(addon)
+        shop_addon_service.catalog_addon(addon, db)
         for addon in shop_addon_service.list_addons(
             db, active_only=True, category=category
         )
@@ -867,7 +867,7 @@ def list_addons(
     _: User = Depends(_require_shop_perm("shop.read", "panel.settings.read")),
 ) -> list[ShopAddonResponse]:
     return [
-        shop_addon_service.addon_response(addon)
+        shop_addon_service.addon_response(addon, db)
         for addon in shop_addon_service.list_addons(db)
     ]
 
@@ -883,7 +883,7 @@ def create_addon(
         addon = shop_addon_service.create_addon(db, payload, actor_id=actor.id)
     except shop_catalog_service.ShopConfigurationError as exc:
         raise _shop_error(exc) from exc
-    return shop_addon_service.addon_response(addon)
+    return shop_addon_service.addon_response(addon, db)
 
 
 @router.patch("/addons/{addon_id}", response_model=ShopAddonResponse)
@@ -899,7 +899,7 @@ def update_addon(
         updated = shop_addon_service.update_addon(db, addon, payload, actor_id=actor.id)
     except shop_catalog_service.ShopConfigurationError as exc:
         raise _shop_error(exc) from exc
-    return shop_addon_service.addon_response(updated)
+    return shop_addon_service.addon_response(updated, db)
 
 
 @router.delete("/addons/{addon_id}", status_code=204)

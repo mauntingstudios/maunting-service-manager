@@ -1,5 +1,7 @@
 import { useTranslation } from 'react-i18next'
-import { Dropdown, Switch } from '@maunting/ui'
+import { Check, Wrench } from 'lucide-react'
+import { Dropdown } from '@maunting/ui'
+import { formatCpuLabel } from '../preis'
 import type { Konfiguration, LaufzeitMonate, ShopSpiel } from '../typen'
 
 interface KonfiguratorProps {
@@ -11,21 +13,23 @@ interface KonfiguratorProps {
 const LAUFZEITEN: LaufzeitMonate[] = [1, 3, 12]
 
 export function Konfigurator({ spiel, konfiguration, onChange }: KonfiguratorProps) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
+  const sprache = i18n.language.startsWith('de') ? 'de' : 'en'
 
   const setze = <K extends keyof Konfiguration>(feld: K, wert: Konfiguration[K]) => {
     onChange({ ...konfiguration, [feld]: wert })
   }
 
   const ramOptionen = spiel.ramStufenGb.map((gb) => ({ value: String(gb), label: `${gb} GB` }))
-  const cpuOptionen = spiel.cpuStufen.map((kerne) => ({
-    value: String(kerne),
-    label: `${kerne} ${kerne === 1 ? t('shop.spiel.kern') : t('shop.spiel.kerne')}`,
+  const cpuOptionen = spiel.cpuStufen.map((wert) => ({
+    value: String(wert),
+    label: formatCpuLabel(wert, sprache),
   }))
   const slotOptionen = spiel.slotStufen.map((slots) => ({
     value: String(slots),
     label: `${slots} ${t('shop.spiel.spieler')}`,
   }))
+  const zeigtModInklusiv = spiel.unterstuetztMods || spiel.unterstuetztWorkshop
 
   return (
     <section className="msm-card space-y-6 rounded-2xl border border-outline-variant/30 bg-surface-container-low/80 p-5">
@@ -97,44 +101,22 @@ export function Konfigurator({ spiel, konfiguration, onChange }: KonfiguratorPro
         </div>
       </div>
 
-      <div className="space-y-3 border-t border-outline-variant/30 pt-4">
-        <label className="flex items-center justify-between gap-4">
-          <span>
-            <span className="block text-sm font-semibold text-on-surface">
-              {t('shop.spiel.mods')}
+      {zeigtModInklusiv && (
+        <div className="flex flex-wrap items-center gap-3 border-t border-outline-variant/30 pt-4">
+          {spiel.unterstuetztMods && (
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-status-running/35 bg-status-running/10 px-3 py-1 text-xs font-semibold text-status-running">
+              <Check className="h-3.5 w-3.5" aria-hidden="true" />
+              {t('shop.spiel.modsInklusive')}
             </span>
-            <span className="block text-xs text-on-surface-variant">
-              {spiel.unterstuetztMods
-                ? t('shop.spiel.modsHinweis')
-                : t('shop.spiel.modsNichtVerfuegbar')}
+          )}
+          {spiel.unterstuetztWorkshop && (
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/35 bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
+              <Wrench className="h-3.5 w-3.5" aria-hidden="true" />
+              {t('shop.spiel.workshopInklusive')}
             </span>
-          </span>
-          <Switch
-            checked={konfiguration.mods}
-            onCheckedChange={(wert) => setze('mods', wert)}
-            disabled={!spiel.unterstuetztMods}
-            aria-label={t('shop.spiel.mods')}
-          />
-        </label>
-
-        {spiel.kiZugangCent > 0 && (
-          <label className="flex items-center justify-between gap-4">
-            <span>
-              <span className="block text-sm font-semibold text-on-surface">
-                {t('shop.spiel.ki')}
-              </span>
-              <span className="block text-xs text-on-surface-variant">
-                {t('shop.spiel.kiHinweis')}
-              </span>
-            </span>
-            <Switch
-              checked={konfiguration.kiZugang}
-              onCheckedChange={(wert) => setze('kiZugang', wert)}
-              aria-label={t('shop.spiel.ki')}
-            />
-          </label>
-        )}
-      </div>
+          )}
+        </div>
+      )}
     </section>
   )
 }

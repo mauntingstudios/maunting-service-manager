@@ -2,19 +2,31 @@
 
 from __future__ import annotations
 
+import json
 import re
 from typing import Any
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from models import ShopAddon, ShopEntitlement, ShopOrderItem, ShopSubscription, User
+from models import (
+    Role,
+    RoleAiLimit,
+    RoleAiModelAccess,
+    RoleVaultQuota,
+    ShopAddon,
+    ShopEntitlement,
+    ShopOrderItem,
+    ShopSubscription,
+    User,
+)
 from schemas.shop import (
     ShopAddonResponse,
     ShopAddonSwitchResponse,
     ShopAddonUpdate,
     ShopAddonWrite,
     ShopCatalogAddon,
+    ShopRoleBenefits,
 )
 from services import audit_service, shop_fulfillment_service, shop_order_service
 from services.shop_catalog_service import ShopConfigurationError
@@ -98,10 +110,10 @@ def _validate_addon_values(
         )
 
     category_checks = (
-        ("ai_quota", extra_ai_tokens > 0, "KI-Kontingent muss groesser als 0 sein"),
+        ("ai_quota", extra_ai_tokens > 0 or effective_role_id is not None, "KI-Kontingent muss groesser als 0 sein"),
         ("slots", extra_slots > 0, "Extra-Slots muessen groesser als 0 sein"),
         ("backups", extra_backups > 0, "Extra-Backups muessen groesser als 0 sein"),
-        ("storage", extra_storage_mb > 0, "Extra-Speicher muss groesser als 0 sein"),
+        ("storage", extra_storage_mb > 0 or effective_role_id is not None, "Extra-Speicher muss groesser als 0 sein"),
         ("role", effective_role_id is not None, "Rollen-Add-on benoetigt eine gueltige Rolle"),
     )
     for cat_key, ok, message in category_checks:
@@ -208,7 +220,46 @@ def delete_addon(db: Session, addon: ShopAddon, *, actor_id: int) -> None:
     db.commit()
 
 
-def addon_response(addon: ShopAddon) -> ShopAddonResponse:
+def resolve_role_benefits(db: Session, role_id: int | None) -> ShopRoleBenefits | None:
+    """Liest die realen Tresor- und KI-Kontingente der verknuepften globalen Rolle."""
+    if role_id is None:
+        return None
+    role = db.query(Role).filter(Role.id == role_id).first()
+    if role is None:
+        return None
+    vault_row = db.query(RoleVaultQuota).filter(RoleVaultQuota.role_id == role_id).first()
+    ai_row = db.query(RoleAiLimit).filter(RoleAiLimit.role_id == role_id).first()
+    ai_model_count = 0
+    if ai_row is not None and not ai_row.allow_all_models:
+        access_rows = (
+            db.query(RoleAiModelAccess)
+            .filter(RoleAiModelAccess.role_id == role_id)
+            .all()
+        )
+        for ar in access_rows:
+            if not ar.allow_all and ar.allowed_models_json:
+                try:
+                    parsed = json.loads(ar.allowed_models_json)
+                    if isinstance(parsed, list):
+                        ai_model_count += sum(1 for item in parsed if str(item).strip())
+                except Exception:
+                    pass
+            elif ar.allow_all:
+                ai_model_count += 1
+    return ShopRoleBenefits(
+        role_name=role.name,
+        vault_quota_bytes=vault_row.quota_bytes if vault_row is not None else None,
+        ai_daily_tokens=ai_row.daily_token_limit if ai_row is not None else None,
+        ai_weekly_tokens=ai_row.weekly_token_limit if ai_row is not None else None,
+        ai_monthly_tokens=ai_row.monthly_token_limit if ai_row is not None else None,
+        ai_realtime_minutes=ai_row.monthly_realtime_minutes_limit if ai_row is not None else None,
+        ai_dictation_minutes=ai_row.monthly_dictation_minutes_limit if ai_row is not None else None,
+        ai_model_count=ai_model_count,
+    )
+
+
+def addon_response(addon: ShopAddon, db: Session | None = None) -> ShopAddonResponse:
+    role_benefits = resolve_role_benefits(db, addon.role_id) if db is not None else None
     return ShopAddonResponse(
         id=addon.id,
         slug=addon.slug,
@@ -224,6 +275,7 @@ def addon_response(addon: ShopAddon) -> ShopAddonResponse:
         extra_backups=addon.extra_backups,
         extra_ai_tokens=addon.extra_ai_tokens,
         role_id=addon.role_id,
+        role_benefits=role_benefits,
         active=addon.active,
         sort_order=addon.sort_order,
         created_at=addon.created_at,
@@ -231,7 +283,8 @@ def addon_response(addon: ShopAddon) -> ShopAddonResponse:
     )
 
 
-def catalog_addon(addon: ShopAddon) -> ShopCatalogAddon:
+def catalog_addon(addon: ShopAddon, db: Session | None = None) -> ShopCatalogAddon:
+    role_benefits = resolve_role_benefits(db, addon.role_id) if db is not None else None
     return ShopCatalogAddon(
         id=addon.id,
         slug=addon.slug,
@@ -247,6 +300,7 @@ def catalog_addon(addon: ShopAddon) -> ShopCatalogAddon:
         extra_backups=addon.extra_backups,
         extra_ai_tokens=addon.extra_ai_tokens,
         grants_role=addon.role_id is not None,
+        role_benefits=role_benefits,
     )
 
 

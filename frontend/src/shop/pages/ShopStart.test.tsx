@@ -29,8 +29,8 @@ const SAMPLE_PLANS = [
     game_type: 'palworld',
     game_name: 'Palworld',
     game_description: 'Kreaturen sammeln und gemeinsam überleben.',
-    game_category: 'Survival',
-    supports_mods: true,
+    game_category: 'steam_game',
+    supports_mods: false,
     supports_workshop: false,
     name: 'Palworld Standard',
     description: null,
@@ -42,9 +42,9 @@ const SAMPLE_PLANS = [
     ram_max_mb: 16384,
     ram_step_mb: 1024,
     price_per_ram_step_cents: 90,
-    cpu_included: 2,
-    cpu_max: 4,
-    cpu_step: 1,
+    cpu_included: 150,
+    cpu_max: 300,
+    cpu_step: 50,
     price_per_cpu_step_cents: 150,
     slots_included: 8,
     slots_max: 32,
@@ -57,7 +57,7 @@ const SAMPLE_PLANS = [
     game_type: 'rust',
     game_name: 'Rust',
     game_description: 'PvP-Survival-Welt.',
-    game_category: 'PvP',
+    game_category: 'steam_game',
     supports_mods: true,
     supports_workshop: true,
     name: 'Rust Starter',
@@ -70,9 +70,9 @@ const SAMPLE_PLANS = [
     ram_max_mb: 32768,
     ram_step_mb: 1024,
     price_per_ram_step_cents: 90,
-    cpu_included: 2,
-    cpu_max: 6,
-    cpu_step: 1,
+    cpu_included: 200,
+    cpu_max: 600,
+    cpu_step: 100,
     price_per_cpu_step_cents: 150,
     slots_included: 50,
     slots_max: 200,
@@ -85,19 +85,29 @@ const SAMPLE_PLANS = [
 const SAMPLE_ADDONS = [
   {
     id: 10,
-    slug: 'ai-pro',
-    name: 'Singra KI-Kontingent Pro',
-    description: 'Mehr KI-Tokens direkt im Chat.',
-    category: 'ai_quota' as const,
-    price_cents: 499,
+    slug: 'pro-paket',
+    name: 'Singra & Tresor Pro',
+    description: 'Mehr KI-Tokens und Tresorspeicher direkt ueber deine Rolle.',
+    category: 'role' as const,
+    price_cents: 799,
     currency: 'EUR',
     billing_interval: 'month',
     tax_rate_percent: 19,
     extra_slots: null,
     extra_storage_mb: null,
     extra_backups: null,
-    extra_ai_tokens: 500000,
+    extra_ai_tokens: null,
     grants_role: true,
+    role_benefits: {
+      role_name: 'Pro-Kunde',
+      vault_quota_bytes: 50 * 1024 * 1024 * 1024,
+      ai_daily_tokens: null,
+      ai_weekly_tokens: null,
+      ai_monthly_tokens: 500000,
+      ai_realtime_minutes: 60,
+      ai_dictation_minutes: null,
+      ai_model_count: 3,
+    },
   },
 ]
 
@@ -129,28 +139,32 @@ describe('ShopStart', () => {
     })
   })
 
-  it('zeigt Hero, echte Spiele-Karten und Add-ons aus der API ohne Demo-Banner', async () => {
+  it('zeigt Hero, echte Spiele-Karten ohne steam_game-Enum und rollenbasierte Add-ons', async () => {
     zeige()
     expect(
       screen.getByRole('heading', { level: 1, name: i18n.t('shop.hero.titel') }),
     ).toBeInTheDocument()
     expect(await screen.findByRole('heading', { name: 'Palworld' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Rust' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'Singra KI-Kontingent Pro' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Singra & Tresor Pro' })).toBeInTheDocument()
+    expect(screen.getByText(/50 GB Tresorspeicher inklusive/)).toBeInTheDocument()
+    expect(screen.getByText(/500\.000 KI-Tokens im Monat/)).toBeInTheDocument()
     expect(screen.getByText(i18n.t('shop.hero.statusTitel'))).toBeInTheDocument()
-    expect(screen.getByText(i18n.t('shop.shortcuts.konto.titel'))).toBeInTheDocument()
+    expect(screen.getAllByText(i18n.t('shop.shortcuts.konto.titel')).length).toBeGreaterThan(0)
+    expect(screen.getByText(i18n.t('shop.katalogBand.titel', { count: 2 }))).toBeInTheDocument()
+    expect(screen.queryByText('steam_game')).toBeNull()
     expect(screen.queryByText(i18n.t('shop.demo.badge'))).toBeNull()
   })
 
-  it('filtert die Sammlung ueber Suche und Kategorie-Pills', async () => {
+  it('filtert die Sammlung ueber Suche und Filter-Tabs', async () => {
     zeige()
     await screen.findByRole('heading', { name: 'Palworld' })
 
-    fireEvent.click(screen.getByRole('button', { name: 'PvP' }))
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('shop.sammlung.mitMods') }))
     expect(screen.getByRole('heading', { name: 'Rust' })).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Palworld' })).toBeNull()
 
-    fireEvent.click(screen.getByRole('button', { name: i18n.t('shop.sammlung.alleKategorien') }))
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('shop.sammlung.alleSpiele') }))
     fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'palworld' } })
     expect(screen.getByRole('heading', { name: 'Palworld' })).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Rust' })).toBeNull()
@@ -165,11 +179,13 @@ describe('ShopStart', () => {
     ).toBeInTheDocument()
   })
 
-  it('kennzeichnet nicht verfuegbare Tarife mit Ausverkauft-Badge', async () => {
+  it('kennzeichnet nicht verfuegbare Tarife mit kontrastreichem Ausverkauft-Badge', async () => {
     hoisted.getCatalog.mockResolvedValue([
       { ...SAMPLE_PLANS[0], available: false, availability_reason: 'insufficient_node_cpu' },
     ])
     zeige()
-    expect(await screen.findByText(i18n.t('shop.karte.ausverkauft'))).toBeInTheDocument()
+    const badges = await screen.findAllByText(i18n.t('shop.karte.ausverkauft'))
+    expect(badges.length).toBeGreaterThan(0)
+    expect(badges.some((el) => el.className.includes('bg-background/95'))).toBe(true)
   })
 })

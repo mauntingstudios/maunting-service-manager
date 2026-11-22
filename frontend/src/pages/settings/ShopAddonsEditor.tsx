@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Pencil, Plus, Trash2 } from 'lucide-react'
+import { Check, Pencil, Plus, ShieldCheck, Trash2 } from 'lucide-react'
 import {
   Badge,
   Button,
@@ -15,18 +15,41 @@ import {
   Switch,
   Zustandsflaeche,
 } from '@maunting/ui'
+import { api } from '@/api/client'
 import { rbacApi } from '@/api/rbac'
 import {
   shopAdminApi,
   type ShopAddon,
   type ShopAddonCategory,
   type ShopAddonWrite,
+  type ShopRoleBenefits,
 } from '@/api/shop'
 import { useHasPermission } from '@/hooks/useHasPermission'
+import { still } from '@/lib/still'
+import { formatAddonBenefits } from '@/shop/addonBenefits'
 import { formatEuro } from '@/shop/preis'
 import { confirm } from '@/stores/confirmStore'
 import { toast } from '@/stores/toastStore'
 import type { Role } from '@/types/permissions'
+
+interface VaultQuotaRow {
+  role_id: number
+  role_name: string
+  quota_bytes: number | null
+}
+
+interface AiLimitRow {
+  role_id: number
+  role_name: string
+  configured: boolean
+  daily_token_limit: number | null
+  weekly_token_limit: number | null
+  monthly_token_limit: number | null
+  monthly_realtime_minutes_limit: number | null
+  monthly_dictation_minutes_limit: number | null
+  allow_all_models: boolean
+  model_access?: Array<{ allow_all: boolean; allowed_models: string[] }>
+}
 
 interface AddonDraft {
   name: string
@@ -50,24 +73,24 @@ const LEER: AddonDraft = {
   name: '',
   slug: '',
   description: '',
-  category: 'ai_quota',
+  category: 'role',
   priceEuro: '4.99',
   taxRate: '19',
   extraSlots: '',
   extraStorageMb: '',
   extraBackups: '',
-  extraAiTokens: '100000',
+  extraAiTokens: '',
   roleId: '',
   sortOrder: '0',
   active: true,
 }
 
 const KATEGORIE_REIHENFOLGE: ShopAddonCategory[] = [
+  'role',
   'ai_quota',
+  'storage',
   'slots',
   'backups',
-  'storage',
-  'role',
 ]
 
 function nameZuSlug(text: string): string {
@@ -149,6 +172,10 @@ function pruefeDraft(draft: AddonDraft): string | null {
   if (zahl(draft.priceEuro) === null) return 'price'
   const tax = zahl(draft.taxRate)
   if (tax === null || tax < 0 || tax > 100) return 'tax'
+  if (draft.category === 'role') {
+    return draft.roleId ? null : 'role'
+  }
+  if (draft.roleId) return null
   if (draft.category === 'ai_quota' && (zahl(draft.extraAiTokens) ?? 0) <= 0) {
     return 'quota'
   }
@@ -161,19 +188,19 @@ function pruefeDraft(draft: AddonDraft): string | null {
   if (draft.category === 'storage' && (zahl(draft.extraStorageMb) ?? 0) <= 0) {
     return 'quota'
   }
-  if (draft.category === 'role' && !draft.roleId) {
-    return 'role'
-  }
   return null
 }
 
 export function ShopAddonsEditor() {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
+  const sprache = i18n.language.startsWith('de') ? 'de' : 'en'
   const canWriteSettings = useHasPermission('panel.settings.write')
   const canWriteShop = useHasPermission('shop.write')
   const canWrite = canWriteSettings || canWriteShop
   const [addons, setAddons] = useState<ShopAddon[] | null>(null)
   const [roles, setRoles] = useState<Role[]>([])
+  const [vaultQuotas, setVaultQuotas] = useState<VaultQuotaRow[]>([])
+  const [aiLimits, setAiLimits] = useState<AiLimitRow[]>([])
   const [dialogOffen, setDialogOffen] = useState(false)
   const [editing, setEditing] = useState<ShopAddon | null>(null)
   const [draft, setDraft] = useState<AddonDraft>(LEER)
@@ -193,12 +220,59 @@ export function ShopAddonsEditor() {
     void rbacApi
       .listRoles()
       .then(setRoles)
-      .catch(() => setRoles([]))
+      .catch((err: unknown) => {
+        still(err, 'shopAddonsEditor.roles')
+        setRoles([])
+      })
+    void api<VaultQuotaRow[]>('/settings/tresor-speicher')
+      .then((rows) => setVaultQuotas(Array.isArray(rows) ? rows : []))
+      .catch((err: unknown) => {
+        still(err, 'shopAddonsEditor.vaultQuotas')
+        setVaultQuotas([])
+      })
+    void api<AiLimitRow[]>('/ai/settings/role-limits')
+      .then((rows) => setAiLimits(Array.isArray(rows) ? rows : []))
+      .catch((err: unknown) => {
+        still(err, 'shopAddonsEditor.aiLimits')
+        setAiLimits([])
+      })
   }
 
   useEffect(() => {
     laden()
   }, [])
+
+  const liveBenefitsByRoleId = useMemo(() => {
+    const map = new Map<number, ShopRoleBenefits>()
+    const vaultMap = new Map(vaultQuotas.map((row) => [row.role_id, row]))
+    const aiMap = new Map(aiLimits.map((row) => [row.role_id, row]))
+    for (const role of roles) {
+      if (role.is_system) continue
+      const vaultRow = vaultMap.get(role.id)
+      const aiRow = aiMap.get(role.id)
+      let modelCount = 0
+      if (aiRow && !aiRow.allow_all_models && Array.isArray(aiRow.model_access)) {
+        for (const access of aiRow.model_access) {
+          if (!access.allow_all && Array.isArray(access.allowed_models)) {
+            modelCount += access.allowed_models.filter((m) => String(m).trim()).length
+          } else if (access.allow_all) {
+            modelCount += 1
+          }
+        }
+      }
+      map.set(role.id, {
+        role_name: role.name,
+        vault_quota_bytes: vaultRow?.quota_bytes ?? null,
+        ai_daily_tokens: aiRow?.daily_token_limit ?? null,
+        ai_weekly_tokens: aiRow?.weekly_token_limit ?? null,
+        ai_monthly_tokens: aiRow?.monthly_token_limit ?? null,
+        ai_realtime_minutes: aiRow?.monthly_realtime_minutes_limit ?? null,
+        ai_dictation_minutes: aiRow?.monthly_dictation_minutes_limit ?? null,
+        ai_model_count: modelCount,
+      })
+    }
+    return map
+  }, [roles, vaultQuotas, aiLimits])
 
   const kategorieLabel = (category: ShopAddonCategory) => {
     switch (category) {
@@ -221,29 +295,28 @@ export function ShopAddonsEditor() {
   }
 
   const effektText = (addon: ShopAddon): string => {
-    const teile: string[] = []
-    if (addon.extra_ai_tokens) {
-      teile.push(`+${addon.extra_ai_tokens.toLocaleString()} ${t('settings.shop.addons.einheitTokens')}`)
-    }
-    if (addon.extra_slots) {
-      teile.push(`+${addon.extra_slots} ${t('settings.shop.addons.einheitSlots')}`)
-    }
-    if (addon.extra_backups) {
-      teile.push(`+${addon.extra_backups} ${t('settings.shop.addons.einheitBackups')}`)
-    }
-    if (addon.extra_storage_mb) {
-      teile.push(`+${addon.extra_storage_mb.toLocaleString()} MB`)
-    }
-    const rolle = rollenName(addon.role_id)
-    if (rolle) {
-      teile.push(rolle)
-    }
+    const benefits =
+      addon.role_benefits ??
+      (addon.role_id !== null ? liveBenefitsByRoleId.get(addon.role_id) ?? null : null)
+    const teile = formatAddonBenefits(
+      {
+        ...addon,
+        grants_role: addon.role_id !== null,
+        role_benefits: benefits,
+      },
+      t,
+      sprache,
+    )
     return teile.join(' · ') || addon.slug
   }
 
   const oeffneNeu = () => {
+    const standardRolle = roles.find((role) => !role.is_system)
     setEditing(null)
-    setDraft(LEER)
+    setDraft({
+      ...LEER,
+      roleId: standardRolle ? String(standardRolle.id) : '',
+    })
     setSlugManuell(false)
     setDialogOffen(true)
   }
@@ -356,6 +429,20 @@ export function ShopAddonsEditor() {
     })
   }
 
+  const selectedRoleId = draft.roleId ? Number(draft.roleId) : null
+  const selectedRoleBenefits =
+    selectedRoleId !== null
+      ? liveBenefitsByRoleId.get(selectedRoleId) ??
+        (editing?.role_id === selectedRoleId ? editing.role_benefits ?? null : null)
+      : null
+  const selectedBenefitLines = selectedRoleBenefits
+    ? formatAddonBenefits(
+        { category: 'role', grants_role: true, role_benefits: selectedRoleBenefits },
+        t,
+        sprache,
+      )
+    : []
+
   return (
     <section className="space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -411,9 +498,7 @@ export function ShopAddonsEditor() {
                           : t('settings.shop.addons.inaktiv')}
                       </Badge>
                       <Badge variant="info">{kategorieLabel(addon.category)}</Badge>
-                      {rollenLabel && (
-                        <Badge variant="default">{rollenLabel}</Badge>
-                      )}
+                      {rollenLabel && <Badge variant="default">{rollenLabel}</Badge>}
                     </div>
                     <p className="mt-1 text-xs text-on-surface-variant">
                       {effektText(addon)} · {formatEuro(addon.price_cents)} /{' '}
@@ -509,49 +594,8 @@ export function ShopAddonsEditor() {
               />
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-2">
-              {draft.category === 'ai_quota' && (
-                <Input
-                  label={t('settings.shop.addons.extraAiTokens')}
-                  type="number"
-                  min="1"
-                  inputMode="numeric"
-                  value={draft.extraAiTokens}
-                  onChange={(event) => setze('extraAiTokens', event.target.value)}
-                />
-              )}
-              {draft.category === 'slots' && (
-                <Input
-                  label={t('settings.shop.addons.extraSlots')}
-                  type="number"
-                  min="1"
-                  inputMode="numeric"
-                  value={draft.extraSlots}
-                  onChange={(event) => setze('extraSlots', event.target.value)}
-                />
-              )}
-              {draft.category === 'backups' && (
-                <Input
-                  label={t('settings.shop.addons.extraBackups')}
-                  type="number"
-                  min="1"
-                  inputMode="numeric"
-                  value={draft.extraBackups}
-                  onChange={(event) => setze('extraBackups', event.target.value)}
-                />
-              )}
-              {draft.category === 'storage' && (
-                <Input
-                  label={t('settings.shop.addons.extraStorageMb')}
-                  type="number"
-                  min="1"
-                  inputMode="numeric"
-                  value={draft.extraStorageMb}
-                  onChange={(event) => setze('extraStorageMb', event.target.value)}
-                />
-              )}
-
-              <label className="space-y-1.5">
+            <div className="space-y-3 rounded-xl border border-outline-variant/30 bg-surface-container/60 p-4">
+              <label className="block space-y-1.5">
                 <span className="block text-sm font-medium text-on-surface">
                   {t('settings.shop.addons.rolle')}
                 </span>
@@ -562,6 +606,77 @@ export function ShopAddonsEditor() {
                   aria-label={t('settings.shop.addons.rolle')}
                 />
               </label>
+
+              {draft.roleId && (
+                <div className="space-y-2 rounded-lg border border-outline-variant/25 bg-surface-container-low/70 p-3">
+                  <div className="flex items-center gap-2 text-xs font-semibold text-on-surface">
+                    <ShieldCheck className="h-4 w-4 text-primary" aria-hidden="true" />
+                    <span>{t('settings.shop.addons.rollenVorschauTitel')}</span>
+                  </div>
+                  {selectedBenefitLines.length > 0 ? (
+                    <ul className="space-y-1 text-xs text-on-surface-variant">
+                      {selectedBenefitLines.map((zeile) => (
+                        <li key={zeile} className="flex items-center gap-1.5">
+                          <Check className="h-3.5 w-3.5 shrink-0 text-status-running" aria-hidden="true" />
+                          <span>{zeile}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-xs text-on-surface-variant">
+                      {t('settings.shop.addons.rollenVorschauLeer')}
+                    </p>
+                  )}
+                  <p className="text-label-sm text-on-surface-variant">
+                    {t('settings.shop.addons.rollenHinweis')}
+                  </p>
+                </div>
+              )}
+
+              {draft.category !== 'role' && (
+                <div className="pt-1">
+                  {draft.category === 'ai_quota' && (
+                    <Input
+                      label={t('settings.shop.addons.extraAiTokens')}
+                      type="number"
+                      min="1"
+                      inputMode="numeric"
+                      value={draft.extraAiTokens}
+                      onChange={(event) => setze('extraAiTokens', event.target.value)}
+                    />
+                  )}
+                  {draft.category === 'slots' && (
+                    <Input
+                      label={t('settings.shop.addons.extraSlots')}
+                      type="number"
+                      min="1"
+                      inputMode="numeric"
+                      value={draft.extraSlots}
+                      onChange={(event) => setze('extraSlots', event.target.value)}
+                    />
+                  )}
+                  {draft.category === 'backups' && (
+                    <Input
+                      label={t('settings.shop.addons.extraBackups')}
+                      type="number"
+                      min="1"
+                      inputMode="numeric"
+                      value={draft.extraBackups}
+                      onChange={(event) => setze('extraBackups', event.target.value)}
+                    />
+                  )}
+                  {draft.category === 'storage' && (
+                    <Input
+                      label={t('settings.shop.addons.extraStorageMb')}
+                      type="number"
+                      min="1"
+                      inputMode="numeric"
+                      value={draft.extraStorageMb}
+                      onChange={(event) => setze('extraStorageMb', event.target.value)}
+                    />
+                  )}
+                </div>
+              )}
             </div>
 
             <div className="grid gap-3 sm:grid-cols-2">

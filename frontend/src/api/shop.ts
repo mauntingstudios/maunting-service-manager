@@ -111,6 +111,17 @@ export interface ShopPlanWrite {
 
 export type ShopAddonCategory = 'ai_quota' | 'slots' | 'backups' | 'storage' | 'role'
 
+export interface ShopRoleBenefits {
+  role_name: string
+  vault_quota_bytes: number | null
+  ai_daily_tokens: number | null
+  ai_weekly_tokens: number | null
+  ai_monthly_tokens: number | null
+  ai_realtime_minutes: number | null
+  ai_dictation_minutes: number | null
+  ai_model_count: number
+}
+
 export interface ShopAddon {
   id: number
   slug: string
@@ -126,6 +137,7 @@ export interface ShopAddon {
   extra_backups: number | null
   extra_ai_tokens: number | null
   role_id: number | null
+  role_benefits?: ShopRoleBenefits | null
   active: boolean
   sort_order: number
   created_at: string
@@ -165,6 +177,7 @@ export interface ShopCatalogAddon {
   extra_backups: number | null
   extra_ai_tokens: number | null
   grants_role: boolean
+  role_benefits?: ShopRoleBenefits | null
 }
 
 export interface ShopAddonSwitchResponse {

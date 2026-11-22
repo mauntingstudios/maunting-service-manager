@@ -31,6 +31,31 @@ vi.mock('@/api/rbac', () => ({
   },
 }))
 
+vi.mock('@/api/client', () => ({
+  api: vi.fn(async (path: string) => {
+    if (path === '/settings/tresor-speicher') {
+      return [{ role_id: 12, role_name: 'Supporter Plus', quota_bytes: 50 * 1024 * 1024 * 1024 }]
+    }
+    if (path === '/ai/settings/role-limits') {
+      return [
+        {
+          role_id: 12,
+          role_name: 'Supporter Plus',
+          configured: true,
+          daily_token_limit: null,
+          weekly_token_limit: null,
+          monthly_token_limit: 250000,
+          monthly_realtime_minutes_limit: null,
+          monthly_dictation_minutes_limit: null,
+          allow_all_models: true,
+          model_access: [],
+        },
+      ]
+    }
+    return []
+  }),
+}))
+
 import { ShopAddonsEditor } from './ShopAddonsEditor'
 
 describe('ShopAddonsEditor', () => {
@@ -42,7 +67,7 @@ describe('ShopAddonsEditor', () => {
         slug: 'ai-pro',
         name: 'KI Pro Paket',
         description: 'Mehr KI-Budget im Monat',
-        category: 'ai_quota',
+        category: 'role',
         price_cents: 999,
         currency: 'EUR',
         billing_interval: 'month',
@@ -50,8 +75,18 @@ describe('ShopAddonsEditor', () => {
         extra_slots: null,
         extra_storage_mb: null,
         extra_backups: null,
-        extra_ai_tokens: 250000,
+        extra_ai_tokens: null,
         role_id: 12,
+        role_benefits: {
+          role_name: 'Supporter Plus',
+          vault_quota_bytes: 50 * 1024 * 1024 * 1024,
+          ai_daily_tokens: null,
+          ai_weekly_tokens: null,
+          ai_monthly_tokens: 250000,
+          ai_realtime_minutes: null,
+          ai_dictation_minutes: null,
+          ai_model_count: 0,
+        },
         active: true,
         sort_order: 1,
         created_at: '2026-11-21T00:00:00+00:00',
@@ -79,10 +114,12 @@ describe('ShopAddonsEditor', () => {
     createAddonMock.mockResolvedValue({})
   })
 
-  it('listet eigenstaendige Add-ons und speichert ein neues Add-on im Dialog', async () => {
+  it('listet rollenbasierte Add-ons mit Tresor/KI-Vorschau und legt neues Rollen-Paket an', async () => {
     render(<ShopAddonsEditor />)
     expect(await screen.findByText('KI Pro Paket')).toBeInTheDocument()
     expect(screen.getByText(/9,99/)).toBeInTheDocument()
+    expect(screen.getByText(/50 GB Tresorspeicher inklusive/)).toBeInTheDocument()
+    expect(screen.getByText(/250\.000 KI-Tokens im Monat/)).toBeInTheDocument()
     expect(screen.getByText('Supporter Plus')).toBeInTheDocument()
 
     fireEvent.click(
@@ -102,8 +139,8 @@ describe('ShopAddonsEditor', () => {
         expect.objectContaining({
           name: 'KI Starter',
           slug: 'ki-starter',
-          category: 'ai_quota',
-          extra_ai_tokens: 100000,
+          category: 'role',
+          role_id: 12,
         }),
       )
     })

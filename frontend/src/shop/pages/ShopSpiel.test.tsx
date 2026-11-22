@@ -28,7 +28,7 @@ const PALWORLD_PLAN = {
   game_type: 'palworld',
   game_name: 'Palworld',
   game_description: 'Testbeschreibung',
-  game_category: 'Survival',
+  game_category: 'steam_game',
   supports_mods: true,
   supports_workshop: true,
   name: 'Standard',
@@ -41,9 +41,9 @@ const PALWORLD_PLAN = {
   ram_max_mb: 16384,
   ram_step_mb: 1024,
   price_per_ram_step_cents: 90,
-  cpu_included: 2,
-  cpu_max: 4,
-  cpu_step: 1,
+  cpu_included: 150,
+  cpu_max: 300,
+  cpu_step: 50,
   price_per_cpu_step_cents: 150,
   slots_included: 8,
   slots_max: 32,
@@ -90,6 +90,10 @@ describe('ShopSpiel', () => {
     expect(
       await screen.findByRole('heading', { level: 1, name: 'Palworld' }),
     ).toBeInTheDocument()
+    expect(screen.getByText('1,5 Kerne (150 %)')).toBeInTheDocument()
+    expect(screen.getAllByText(i18n.t('shop.spiel.modsInklusive')).length).toBeGreaterThan(0)
+    expect(screen.getByText(i18n.t('shop.spiel.stripeHinweis'))).toBeInTheDocument()
+    expect(screen.queryByText('steam_game')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: i18n.t('shop.spiel.weiterKasse') }))
     const ziel = screen.getByTestId('kasse')
     expect(ziel).toHaveTextContent('palworld')

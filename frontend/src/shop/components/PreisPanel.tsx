@@ -98,7 +98,7 @@ export function PreisPanel({
       )}
 
       <p className="text-center text-label-sm leading-relaxed text-on-surface-variant">
-        {t('shop.spiel.demoHinweis')}
+        {t('shop.spiel.stripeHinweis')}
       </p>
     </aside>
   )

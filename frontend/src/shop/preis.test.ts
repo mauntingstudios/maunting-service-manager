@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { formatEuro, preisAufschluesselung, RABATT_PROZENT } from './preis'
+import {
+  cpuZuProzent,
+  formatCpuLabel,
+  formatEuro,
+  preisAufschluesselung,
+  RABATT_PROZENT,
+} from './preis'
 import { SHOP_SPIELE } from './mockKatalog'
 import { standardKonfiguration } from './typen'
 
@@ -34,6 +40,30 @@ describe('Shop-Preislogik', () => {
         preis.slotsCent +
         preis.kiCent,
     )
+  })
+
+  it('wendet Schrittgroessen bei Prozent-CPU korrekt an', () => {
+    const tarif = {
+      ...palworld,
+      standardCpu: 150,
+      cpuStufen: [150, 200, 250, 300],
+      cpuStep: 50,
+      preisProKernCent: 150,
+    }
+    const preis = preisAufschluesselung(tarif, {
+      ...standardKonfiguration(tarif),
+      cpu: 250,
+    })
+    expect(preis.cpuCent).toBe(2 * 150)
+  })
+
+  it('wandelt Kerne und Prozentwerte lesbar um', () => {
+    expect(cpuZuProzent(1)).toBe(100)
+    expect(cpuZuProzent(2)).toBe(200)
+    expect(cpuZuProzent(150)).toBe(150)
+    expect(formatCpuLabel(1, 'de')).toBe('1 Kern (100 %)')
+    expect(formatCpuLabel(150, 'de')).toBe('1,5 Kerne (150 %)')
+    expect(formatCpuLabel(150, 'en')).toBe('1.5 Cores (150 %)')
   })
 
   it('wendet den Laufzeitrabatt auf die Gesamtsumme an', () => {

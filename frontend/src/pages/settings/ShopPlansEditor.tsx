@@ -26,7 +26,7 @@ import { useHasPermission } from '@/hooks/useHasPermission'
 import { confirm } from '@/stores/confirmStore'
 import { toast } from '@/stores/toastStore'
 import type { GameInfo } from '@/types'
-import { formatEuro } from '@/shop/preis'
+import { formatCpuLabel, formatEuro } from '@/shop/preis'
 
 interface Draft {
   gameType: string
@@ -93,8 +93,8 @@ const LEER: Draft = {
   ramIncludedGb: '4',
   ramMaxGb: '16',
   pricePerRamGbEuro: '0.90',
-  cpuIncluded: '2',
-  cpuMax: '4',
+  cpuIncluded: '150',
+  cpuMax: '400',
   pricePerCpuEuro: '1.50',
   slotsIncluded: '8',
   slotsMax: '32',
@@ -149,12 +149,29 @@ function planZuDraft(plan: ShopPlan): Draft {
   }
 }
 
-function draftZuPayload(draft: Draft): ShopPlanWrite {
+function berechneCpuSchritt(
+  cpuIncluded: number | null,
+  cpuMax: number | null,
+  vorherigerSchritt?: number,
+): number {
+  const prozentModus =
+    (cpuIncluded !== null && cpuIncluded > 32) || (cpuMax !== null && cpuMax > 32)
+  if (!prozentModus) return 1
+  if (vorherigerSchritt && vorherigerSchritt > 1) return vorherigerSchritt
+  const diff = cpuIncluded !== null && cpuMax !== null ? Math.max(0, cpuMax - cpuIncluded) : 0
+  if (diff === 0 || diff % 50 === 0) return 50
+  if (diff % 25 === 0) return 25
+  if (diff % 10 === 0) return 10
+  return 1
+}
+
+function draftZuPayload(draft: Draft, editing: ShopPlan | null): ShopPlanWrite {
   const ramIncluded = gbInMb(draft.ramIncludedGb)
   const ramMax = gbInMb(draft.ramMaxGb)
   const ramStep = ramIncluded === null && ramMax === null ? null : 1024
   const cpuIncluded = zahl(draft.cpuIncluded)
   const cpuMax = zahl(draft.cpuMax)
+  const cpuStep = berechneCpuSchritt(cpuIncluded, cpuMax, editing?.cpu_step)
   const slotsIncluded = zahl(draft.slotsIncluded)
   const slotsMax = zahl(draft.slotsMax)
 
@@ -172,7 +189,7 @@ function draftZuPayload(draft: Draft): ShopPlanWrite {
     price_per_ram_step_cents: euroInCent(draft.pricePerRamGbEuro),
     cpu_included: cpuIncluded,
     cpu_max: cpuMax,
-    cpu_step: 1,
+    cpu_step: cpuStep,
     price_per_cpu_step_cents: euroInCent(draft.pricePerCpuEuro),
     slots_included: slotsIncluded,
     slots_max: slotsMax,
@@ -205,7 +222,8 @@ function prüfeDraft(draft: Draft): string | null {
 }
 
 export function ShopPlansEditor() {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
+  const sprache = i18n.language.startsWith('de') ? 'de' : 'en'
   const canWriteSettings = useHasPermission('panel.settings.write')
   const canWriteShop = useHasPermission('shop.write')
   const canWrite = canWriteSettings || canWriteShop
@@ -271,7 +289,7 @@ export function ShopPlansEditor() {
     }
     setBusy(true)
     try {
-      const payload = draftZuPayload(draft)
+      const payload = draftZuPayload(draft, editing)
       if (editing) {
         await shopAdminApi.updatePlan(editing.id, payload)
       } else {
@@ -395,6 +413,9 @@ export function ShopPlansEditor() {
                   </div>
                   <p className="mt-1 text-xs text-on-surface-variant">
                     {gameName(plan.game_type)} · {formatEuro(plan.price_cents)} / Monat
+                    {plan.cpu_included !== null
+                      ? ` · ${formatCpuLabel(plan.cpu_included, sprache)}`
+                      : ''}
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
@@ -507,32 +528,48 @@ export function ShopPlansEditor() {
                 {t('settings.shop.plans.ressourcenGrenzen')}
               </p>
               {RESSOURCEN.map((ressource) => (
-                <div key={ressource.id} className="grid gap-3 sm:grid-cols-3">
-                  <Input
-                    label={t(ressource.includedKey)}
-                    type="number"
-                    min="0"
-                    inputMode="numeric"
-                    value={draft[ressource.includedFeld]}
-                    onChange={(event) => setze(ressource.includedFeld, event.target.value)}
-                  />
-                  <Input
-                    label={t(ressource.maxKey)}
-                    type="number"
-                    min="0"
-                    inputMode="numeric"
-                    value={draft[ressource.maxFeld]}
-                    onChange={(event) => setze(ressource.maxFeld, event.target.value)}
-                  />
-                  <Input
-                    label={t(ressource.preisKey)}
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    inputMode="decimal"
-                    value={draft[ressource.preisFeld]}
-                    onChange={(event) => setze(ressource.preisFeld, event.target.value)}
-                  />
+                <div key={ressource.id} className="space-y-1.5">
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    <Input
+                      label={t(ressource.includedKey)}
+                      type="number"
+                      min="0"
+                      inputMode="numeric"
+                      value={draft[ressource.includedFeld]}
+                      onChange={(event) => setze(ressource.includedFeld, event.target.value)}
+                    />
+                    <Input
+                      label={t(ressource.maxKey)}
+                      type="number"
+                      min="0"
+                      inputMode="numeric"
+                      value={draft[ressource.maxFeld]}
+                      onChange={(event) => setze(ressource.maxFeld, event.target.value)}
+                    />
+                    <Input
+                      label={t(ressource.preisKey)}
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      inputMode="decimal"
+                      value={draft[ressource.preisFeld]}
+                      onChange={(event) => setze(ressource.preisFeld, event.target.value)}
+                    />
+                  </div>
+                  {ressource.id === 'cpu' && (
+                    <p className="text-label-sm text-on-surface-variant">
+                      {t('settings.shop.plans.cpuProzentHinweis', {
+                        vorschau: draft.cpuIncluded
+                          ? formatCpuLabel(Number(draft.cpuIncluded) || 0, sprache)
+                          : '—',
+                        schritt: berechneCpuSchritt(
+                          zahl(draft.cpuIncluded),
+                          zahl(draft.cpuMax),
+                          editing?.cpu_step,
+                        ),
+                      })}
+                    </p>
+                  )}
                 </div>
               ))}
             </div>

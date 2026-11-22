@@ -31,6 +31,7 @@ from models import (
 from schemas import ServerCreate
 from services import audit_service, permission_service, role_service
 from services.actor_context import ActorContext, ActorOrigin
+from services.node_capacity import normalize_cpu_limit_percent
 from services.hoster_service_lifecycle import (
     CUSTOMER_SERVER_PERMISSIONS,
     _borne_role,
@@ -388,11 +389,8 @@ def _sync_server_entitlement(
                 else None
             )
             ram_limit = ent.ram_mb if ent.ram_mb and ent.ram_mb >= 512 else None
-            cpu_limit = (
-                min(3200, max(10, ent.cpu * 100))
-                if ent.cpu and ent.cpu > 0
-                else None
-            )
+            raw_cpu_pct = normalize_cpu_limit_percent(ent.cpu)
+            cpu_limit = min(6400, max(10, raw_cpu_pct)) if raw_cpu_pct else None
             req = ServerCreate(
                 name=f"shop-{order.number}-{ent.id}"[:128],
                 game_type=item.game_type,

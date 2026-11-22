@@ -7,7 +7,7 @@ import { shopCatalogApi, shopOrderApi, type ShopCouponPreviewResponse } from '@/
 import { SanitizedApiError } from '@/api/client'
 import { still } from '@/lib/still'
 import { useAuthStore } from '@/stores/authStore'
-import { formatEuro, preisAufschluesselung, RABATT_PROZENT } from '../preis'
+import { formatCpuLabel, formatEuro, preisAufschluesselung, RABATT_PROZENT } from '../preis'
 import { standardKonfiguration, type KassenEntwurf, type LaufzeitMonate } from '../typen'
 import { useShopKatalog } from '../useShopKatalog'
 
@@ -507,7 +507,7 @@ export function ShopKasse() {
                   </div>
                   <div className="flex justify-between gap-3">
                     <dt className="text-on-surface-variant">{t('shop.kasse.cpu')}</dt>
-                    <dd className="text-on-surface">{konfiguration.cpu}</dd>
+                    <dd className="text-on-surface">{formatCpuLabel(konfiguration.cpu, sprache)}</dd>
                   </div>
                   <div className="flex justify-between gap-3">
                     <dt className="text-on-surface-variant">{t('shop.kasse.slots')}</dt>
