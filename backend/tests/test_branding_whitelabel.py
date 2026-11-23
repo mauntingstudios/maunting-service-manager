@@ -62,7 +62,7 @@ def test_branding_settings_update_and_public_payload(
     assert branding["name"] == "CloudCraft Hosting"
     assert branding["custom_name"] == "CloudCraft Hosting"
     assert branding["tagline"] == "Fast Game Servers"
-    assert branding["ai_name"] == "Nova"
+    assert branding["ai_name"] == "Singra"
     assert branding["season_logo_mode"] == "disabled"
     assert "accent_color" not in branding
 
@@ -141,7 +141,6 @@ def test_ai_prompt_keeps_default_and_respects_custom_branding(db: Session):
 
     custom_prompt = ai_prompt.build(db=db)
     ai_label = branding_service.get_effective_ai_name(db=db)
-    assert f"Du bist {ai_label}" in custom_prompt
-    assert f"Du heißt {ai_label}" in custom_prompt
+    assert ai_label == "Singra"
+    assert "Du heißt Singra" in custom_prompt
     assert "AstraHost" in custom_prompt
-    assert "kommt von Singularität" not in custom_prompt

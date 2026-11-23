@@ -217,7 +217,7 @@ describe('publicSettingsStore', () => {
     expect(branding.name).toBe('CloudForge')
     expect(branding.custom_name).toBe('CloudForge')
     expect(branding.tagline).toBe('Hosting ohne Ballast')
-    expect(branding.ai_name).toBe('ForgeBot')
+    expect(branding.ai_name).toBe('Singra')
     expect(branding.logo_mode).toBe('custom')
     expect(branding.season_logo_mode).toBe('custom')
     expect(branding.logo_url).toBe('/api/settings/public/branding/logo/default?v=2')

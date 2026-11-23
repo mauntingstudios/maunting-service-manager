@@ -81,8 +81,7 @@ def _slot_file_exists(slot: str) -> bool:
 
 
 def get_effective_ai_name(db: Session | None = None) -> str:
-    raw = PanelSettingsService.get("brand_ai_name", "", db=db).strip()
-    return raw or DEFAULT_AI_NAME
+    return DEFAULT_AI_NAME
 
 
 def get_effective_ai_email(db: Session | None = None) -> str:
@@ -99,7 +98,7 @@ def get_branding_settings(all_db: dict[str, str] | None = None) -> dict[str, Any
     data = all_db if all_db is not None else PanelSettingsService.get_all()
     brand_name = data.get("brand_name", "")
     brand_tagline = data.get("brand_tagline", "")
-    brand_ai_name = data.get("brand_ai_name", "")
+    brand_ai_name = DEFAULT_AI_NAME
     brand_ai_email = data.get("brand_ai_email", "")
     brand_logo_mode = _normalize_logo_mode(data.get("brand_logo_mode"))
     brand_season_logo_mode = _normalize_season_logo_mode(data.get("brand_season_logo_mode"))
@@ -152,7 +151,7 @@ def get_public_branding(all_db: dict[str, str] | None = None) -> dict[str, Any]:
         "name": custom_name or DEFAULT_PANEL_BRAND_NAME,
         "custom_name": custom_name,
         "tagline": state["brand_tagline"].strip(),
-        "ai_name": state["brand_ai_name"].strip() or DEFAULT_AI_NAME,
+        "ai_name": DEFAULT_AI_NAME,
         "logo_mode": logo_mode,
         "season_logo_mode": season_logo_mode,
         "logo_url": default_url,

@@ -121,15 +121,6 @@ export function BrandingSettings({ settings, canWrite, onChange }: BrandingSetti
           placeholder={t('settings.branding.brandTaglinePlaceholder')}
         />
         <Input
-          label={t('settings.branding.aiName')}
-          type="text"
-          value={settings.brand_ai_name}
-          onChange={(e) => onChange({ brand_ai_name: e.target.value })}
-          disabled={!canWrite}
-          maxLength={40}
-          placeholder="Singra"
-        />
-        <Input
           label={t('settings.branding.aiEmail')}
           type="email"
           value={settings.brand_ai_email}

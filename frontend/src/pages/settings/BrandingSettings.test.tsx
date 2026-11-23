@@ -49,10 +49,7 @@ describe('BrandingSettings', () => {
     fireEvent.change(brandInput, { target: { value: 'NordCloud' } })
     expect(onChange).toHaveBeenCalledWith({ brand_name: 'NordCloud' })
 
-    const aiInput = screen.getByLabelText('Name der KI')
-    fireEvent.change(aiInput, { target: { value: 'NordBot' } })
-    expect(onChange).toHaveBeenCalledWith({ brand_ai_name: 'NordBot' })
-
+    expect(screen.queryByLabelText('Name der KI')).toBeNull()
     expect(container.querySelector('input[type="color"]')).toBeNull()
     expect(screen.queryByLabelText(/Akzentfarbe/i)).toBeNull()
   })
@@ -133,7 +130,7 @@ describe('BrandingSettings', () => {
     )
 
     expect(screen.getByLabelText('Marken- / Produktname')).toBeDisabled()
-    expect(screen.getByLabelText('Name der KI')).toBeDisabled()
+    expect(screen.queryByLabelText('Name der KI')).toBeNull()
     expect(screen.queryByLabelText(/Hochladen/i)).toBeNull()
   })
 })

@@ -88,10 +88,7 @@ function normalisiereBranding(
       ? r.name.trim()
       : custom_name || DEFAULT_PUBLIC_BRANDING.name
   const tagline = typeof r.tagline === 'string' ? r.tagline.trim() : fallback.tagline
-  const ai_name =
-    typeof r.ai_name === 'string' && r.ai_name.trim()
-      ? r.ai_name.trim()
-      : fallback.ai_name
+  const ai_name = DEFAULT_PUBLIC_BRANDING.ai_name
   const logo_mode =
     r.logo_mode === 'custom' || r.logo_mode === 'default'
       ? r.logo_mode

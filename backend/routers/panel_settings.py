@@ -483,12 +483,14 @@ async def update_settings(
                 value = validate_global_limit(value)
             except ValueError as exc:
                 raise HTTPException(status_code=400, detail=str(exc)) from exc
-        if key in ("brand_name", "brand_tagline", "brand_ai_name"):
+        if key == "brand_ai_name":
+            continue
+        if key in ("brand_name", "brand_tagline"):
             text_val = str(value)
             if "\r" in text_val or "\n" in text_val or "\x00" in text_val:
                 raise HTTPException(status_code=400, detail="Ungueltige Zeichen in Branding-Einstellung")
             cleaned = text_val.strip()
-            max_len = 64 if key == "brand_name" else (160 if key == "brand_tagline" else 40)
+            max_len = 64 if key == "brand_name" else 160
             if len(cleaned) > max_len:
                 raise HTTPException(status_code=400, detail="Branding-Text ist zu lang")
             PanelSettingsService.set(key, cleaned, db=db)
