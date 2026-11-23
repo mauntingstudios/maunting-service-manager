@@ -48,6 +48,62 @@ describe('ShopTab', () => {
           missing_fields: ['name'],
         }
       }
+      if (pfad === '/shop/plans') {
+        return [
+          {
+            id: 1,
+            game_type: 'palworld',
+            name: 'Palworld Tarif',
+            description: null,
+            price_cents: 699,
+            currency: 'EUR',
+            billing_interval: 'month',
+            tax_rate_percent: 19,
+            ram_included_mb: 8192,
+            ram_max_mb: 16384,
+            ram_step_mb: 1024,
+            price_per_ram_step_cents: 90,
+            cpu_included: 200,
+            cpu_max: 400,
+            cpu_step: 50,
+            price_per_cpu_step_cents: 150,
+            slots_included: 8,
+            slots_max: 32,
+            slots_step: 1,
+            price_per_slot_step_cents: 30,
+            node_id: null,
+            role_id: null,
+            artwork_mode: 'steam',
+            active: true,
+            sort_order: 0,
+            created_at: '2026-11-20T00:00:00+00:00',
+            updated_at: '2026-11-20T00:00:00+00:00',
+            artwork: {
+              source: 'steam',
+              url: '/api/shop/artwork/palworld?v=steam-1623730',
+              version: 'steam-1623730',
+            },
+          },
+        ]
+      }
+      if (pfad === '/system/games') {
+        return [{ id: 'palworld', name: 'Palworld' }]
+      }
+      if (pfad.includes('/shop/admin/stats')) {
+        return {
+          total_orders: 1,
+          paid_orders: 1,
+          pending_orders: 0,
+          refunded_orders: 0,
+          paid_gross_cents: 699,
+          paid_net_cents: 587,
+          refunded_gross_cents: 0,
+          active_subscriptions: 1,
+          active_addon_subscriptions: 0,
+          active_coupons: 0,
+          coupon_redemptions: 0,
+        }
+      }
       if (pfad.includes('/shop/admin/orders')) {
         return [
           {
@@ -144,16 +200,58 @@ describe('ShopTab', () => {
     })
   })
 
-  it('zeigt echte Bestellungen, Rechnungen mit Export, Webhooks und Abgleich-Aktion', async () => {
+  it('strukturiert den Shop in 5 klare Tabs und deckt Uebersicht, Sortiment, Bestellungen, Buchhaltung und Einrichtung ab', async () => {
     render(<ShopTab />)
 
     expect(screen.getByRole('heading', { name: i18n.t('settings.shop.titel') })).toBeInTheDocument()
+
+    // Alle 5 Haupt-Tabs vorhanden
+    const tabs = screen.getAllByRole('tab')
+    expect(tabs.map((tab) => tab.textContent)).toEqual([
+      i18n.t('settings.shop.tabs.overview'),
+      i18n.t('settings.shop.tabs.catalog'),
+      i18n.t('settings.shop.tabs.orders'),
+      i18n.t('settings.shop.tabs.accounting'),
+      i18n.t('settings.shop.tabs.setup'),
+    ])
+
+    // 1. Übersicht: Einrichtungsstatus + letzte Bestellungen
     expect(await screen.findByText(i18n.t('settings.shop.stripe.nichtKonfiguriert'))).toBeInTheDocument()
+    expect(await screen.findByText(i18n.t('settings.shop.seller.unvollstaendig'))).toBeInTheDocument()
+    expect(await screen.findByText(i18n.t('settings.shop.overview.tarifeAktiv', { count: 1 }))).toBeInTheDocument()
     expect(await screen.findByText('MSM-2026-000007')).toBeInTheDocument()
+
+    // 2. Sortiment: Sub-Tabs + Produkt-Regal
+    fireEvent.click(screen.getByRole('tab', { name: i18n.t('settings.shop.tabs.catalog') }))
+    expect(screen.getByRole('tab', { name: i18n.t('settings.shop.catalogTabs.plans') })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: i18n.t('settings.shop.catalogTabs.addons') })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: i18n.t('settings.shop.catalogTabs.coupons') })).toBeInTheDocument()
+    expect(await screen.findByText('Palworld Tarif')).toBeInTheDocument()
+
+    // 3. Bestellungen: Liste + Stripe-Abgleich
+    fireEvent.click(screen.getByRole('tab', { name: i18n.t('settings.shop.tabs.orders') }))
+    expect(await screen.findByText('MSM-2026-000007')).toBeInTheDocument()
+    expect(
+      screen.getAllByText(i18n.t('settings.shop.betrieb.status.paid')).length,
+    ).toBeGreaterThanOrEqual(2)
+    expect(
+      screen.getByText(
+        `${i18n.t('settings.shop.betrieb.freischaltungArt.server')} · ${i18n.t('settings.shop.betrieb.freischaltung.ready')}`,
+      ),
+    ).toBeInTheDocument()
+
+    fireEvent.click(
+      screen.getByRole('button', { name: i18n.t('settings.shop.betrieb.abgleichStarten') }),
+    )
+    await waitFor(() => {
+      expect(apiMock).toHaveBeenCalledWith('/shop/reconcile', { method: 'POST' })
+    })
+
+    // 4. Rechnungen & Buchhaltung: Rechnungen + Filter + Export + Verkäuferdaten
+    fireEvent.click(screen.getByRole('tab', { name: i18n.t('settings.shop.tabs.accounting') }))
     expect(await screen.findByText('RE-2026-0003')).toBeInTheDocument()
     expect(screen.getByText(i18n.t('settings.shop.betrieb.betreiberAnsichtBadge'))).toBeInTheDocument()
     expect(screen.getByText(i18n.t('settings.shop.betrieb.typShopRechnung'))).toBeInTheDocument()
-    expect(await screen.findByText('evt_test_99')).toBeInTheDocument()
     expect(
       screen.getByRole('link', { name: i18n.t('settings.shop.betrieb.pruefExport') }),
     ).toHaveAttribute('href', expect.stringContaining('/api/shop/invoices/export'))
@@ -162,13 +260,11 @@ describe('ShopTab', () => {
     expect(screen.queryByText('RE-2026-0003')).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: i18n.t('settings.shop.betrieb.filterAlle') }))
     expect(screen.getByText('RE-2026-0003')).toBeInTheDocument()
+    expect(await screen.findByText(i18n.t('settings.shop.seller.titel'))).toBeInTheDocument()
 
-    fireEvent.click(
-      screen.getByRole('button', { name: i18n.t('settings.shop.betrieb.abgleichStarten') }),
-    )
-    await waitFor(() => {
-      expect(apiMock).toHaveBeenCalledWith('/shop/reconcile', { method: 'POST' })
-    })
+    // 5. Einrichtung & Regeln: Stripe + Löschfristen + aufklappbare Webhooks
+    fireEvent.click(screen.getByRole('tab', { name: i18n.t('settings.shop.tabs.setup') }))
+    expect(await screen.findByText(i18n.t('settings.shop.stripe.nichtKonfiguriert'))).toBeInTheDocument()
 
     const graceInput = screen.getByLabelText(i18n.t('settings.shop.lifecycle.cancelGraceDays'))
     fireEvent.change(graceInput, { target: { value: '14' } })
@@ -213,5 +309,9 @@ describe('ShopTab', () => {
         }),
       )
     })
+
+    // Technisches Webhook-Protokoll lässt sich aufklappen
+    fireEvent.click(screen.getByText(i18n.t('settings.shop.betrieb.webhooksAufklappen')))
+    expect(await screen.findByText('evt_test_99')).toBeInTheDocument()
   })
 })

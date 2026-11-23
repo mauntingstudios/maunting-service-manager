@@ -38,7 +38,7 @@ function parseReminderList(raw: string): number[] {
   return Array.from(seen).sort((a, b) => b - a).slice(0, 10)
 }
 
-export function ShopLifecycleKarte() {
+export function ShopLifecycleKarte({ flat = false }: { flat?: boolean } = {}) {
   const { t } = useTranslation()
   const [daten, setDaten] = useState<ShopLifecycleSettingsDto>(DEFAULT_SETTINGS)
   const [reminderInput, setReminderInput] = useState('7, 4, 1')
@@ -90,7 +90,13 @@ export function ShopLifecycleKarte() {
   }
 
   return (
-    <section className="msm-card rounded-2xl border border-outline-variant/30 bg-surface-container-low/80 p-5">
+    <section
+      className={
+        flat
+          ? 'space-y-4'
+          : 'msm-card rounded-2xl border border-outline-variant/30 bg-surface-container-low/80 p-5'
+      }
+    >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex items-center gap-2">
           <span className="grid h-9 w-9 place-items-center rounded-xl bg-primary/15 text-primary">

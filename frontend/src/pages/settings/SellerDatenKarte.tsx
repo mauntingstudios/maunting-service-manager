@@ -12,7 +12,12 @@ const LAND_OPTIONEN = [
   { value: 'CH', label: 'Schweiz' },
 ]
 
-export function SellerDatenKarte() {
+export interface SellerDatenKarteProps {
+  flat?: boolean
+  onSaved?: (daten: ShopSellerSettingsDto) => void
+}
+
+export function SellerDatenKarte({ flat = false, onSaved }: SellerDatenKarteProps = {}) {
   const { t } = useTranslation()
   const [daten, setDaten] = useState<ShopSellerSettingsDto | null>(null)
   const [laedt, setLaedt] = useState(true)
@@ -25,6 +30,7 @@ export function SellerDatenKarte() {
       .then((werte) => {
         if (aktiv) {
           setDaten(werte)
+          onSaved?.(werte)
           setLaedt(false)
         }
       })
@@ -47,6 +53,7 @@ export function SellerDatenKarte() {
       const { missing_fields: _ignored, ...payload } = daten
       const neu = await shopSellerApi.set(payload)
       setDaten(neu)
+      onSaved?.(neu)
       toast.success(t('settings.shop.seller.gespeichert'))
     } catch (error) {
       toast.error(
@@ -62,7 +69,13 @@ export function SellerDatenKarte() {
   const fehlt = daten?.missing_fields.length ?? 0
 
   return (
-    <section className="msm-card rounded-2xl border border-outline-variant/30 bg-surface-container-low/80 p-5">
+    <section
+      className={
+        flat
+          ? 'space-y-4'
+          : 'msm-card rounded-2xl border border-outline-variant/30 bg-surface-container-low/80 p-5'
+      }
+    >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex items-center gap-2">
           <span className="grid h-9 w-9 place-items-center rounded-xl bg-primary/15 text-primary">

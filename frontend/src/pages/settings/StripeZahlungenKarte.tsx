@@ -13,7 +13,12 @@ function modusKey(mode: ShopStripeStatusDto['mode']): string {
   return 'settings.shop.stripe.modusUnbekannt'
 }
 
-export function StripeZahlungenKarte() {
+export interface StripeZahlungenKarteProps {
+  flat?: boolean
+  onStatusChange?: (status: ShopStripeStatusDto) => void
+}
+
+export function StripeZahlungenKarte({ flat = false, onStatusChange }: StripeZahlungenKarteProps = {}) {
   const { t } = useTranslation()
   const [status, setStatus] = useState<ShopStripeStatusDto | null>(null)
   const [laedt, setLaedt] = useState(true)
@@ -29,6 +34,7 @@ export function StripeZahlungenKarte() {
       .then((daten) => {
         if (!aktiv) return
         setStatus(daten)
+        onStatusChange?.(daten)
         setPublishableKey(daten.publishable_key ?? '')
         setLaedt(false)
       })
@@ -50,6 +56,7 @@ export function StripeZahlungenKarte() {
         ...(publishableKey.trim() ? { publishable_key: publishableKey.trim() } : {}),
       })
       setStatus(neu)
+      onStatusChange?.(neu)
       setSecretKey('')
       setWebhookSecret('')
       setPublishableKey(neu.publishable_key ?? '')
@@ -68,7 +75,13 @@ export function StripeZahlungenKarte() {
   const konfiguriert = status?.configured === true
 
   return (
-    <section className="msm-card rounded-2xl border border-outline-variant/30 bg-surface-container-low/80 p-5">
+    <section
+      className={
+        flat
+          ? 'space-y-4'
+          : 'msm-card rounded-2xl border border-outline-variant/30 bg-surface-container-low/80 p-5'
+      }
+    >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex items-center gap-2">
           <span className="grid h-9 w-9 place-items-center rounded-xl bg-primary/15 text-primary">

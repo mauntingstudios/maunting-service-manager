@@ -4681,8 +4681,35 @@
     },
     "shop": {
       "titel": "Native shop",
-      "untertitel": "Storefront, plans, Stripe payments, invoice ledger and server provisioning.",
+      "untertitel": "Manage your catalog, orders, invoices, and payment settings in one place.",
       "unifiedHint": "All plans, add-ons, images, and start variables configured here serve both the native storefront and external hoster integrations via GET /api/hoster/v1/catalog.",
+      "tabs": {
+        "aria": "Shop sections",
+        "overview": "Overview",
+        "catalog": "Catalog",
+        "orders": "Orders",
+        "accounting": "Invoices & accounting",
+        "setup": "Setup & rules"
+      },
+      "catalogTabs": {
+        "aria": "Catalog sections",
+        "plans": "Games & plans",
+        "addons": "Add-ons",
+        "coupons": "Coupons & promos"
+      },
+      "overview": {
+        "checkTitel": "Setup status",
+        "checkStripe": "Payments (Stripe)",
+        "checkSeller": "Billing details",
+        "checkCatalog": "Catalog",
+        "tarifeAktiv": "{{count}} active",
+        "keineTarife": "No active plan yet",
+        "letzteBestellungen": "Recent orders",
+        "alleAnzeigen": "View all orders",
+        "einrichten": "Set up",
+        "pruefen": "Review",
+        "verwalten": "Manage"
+      },
       "demo": "Phase 1 · Demo",
       "aktiv": "Shop active",
       "inaktiv": "Shop off",
@@ -4772,7 +4799,7 @@
       },
       "rechnungen": {
         "titel": "Invoices",
-        "text": "Number range, tax rates, mandatory fields and retention."
+        "text": "All issued invoices and credit notes as PDF, XRechnung, or audit export."
       },
       "produkte": {
         "titel": "Products & plans",
@@ -4838,7 +4865,26 @@
         "lifetimePreis": "Lifetime price (EUR, optional)",
         "lifetimePreisPlatzhalter": "e.g. 149.00 (blank = hidden)",
         "lifetimePreisHinweis": "Leave blank unless offering a one-time lifetime option for this server plan.",
-        "allowGameSwitch": "Allow instant game switch (Gamecloud)"
+        "allowGameSwitch": "Allow instant game switch (Gamecloud)",
+        "suchePlatzhalter": "Search by game or plan …",
+        "filterAlle": "All",
+        "filterAktiv": "Live",
+        "filterInaktiv": "Hidden",
+        "ansichtRegal": "Shelf view",
+        "ansichtListe": "List view",
+        "imRegal": "Live",
+        "ausgeblendet": "Hidden",
+        "statusAktualisiert": "Status updated.",
+        "regalNeuTitel": "Add product to shelf",
+        "regalNeuText": "Pick a game, set pricing and resources.",
+        "lifetimeKurz": "Lifetime",
+        "gameSwitchKurz": "Game switch",
+        "keineTreffer": "No matching plans",
+        "keineTrefferText": "Try adjusting your filter or search.",
+        "tabBasis": "Basics & pricing",
+        "tabRessourcen": "Resources",
+        "tabBilder": "Artwork & gallery",
+        "galerieErstNachSpeichern": "Custom images can be uploaded right after saving. Until then, the selected artwork mode applies."
       },
       "addons": {
         "titel": "Add-ons",
@@ -4937,7 +4983,7 @@
       },
       "bestellungen": {
         "titel": "Orders",
-        "text": "Order list, status and manual actions."
+        "text": "Customer purchases, payment status, refunds, and server setup."
       },
       "webhooks": {
         "titel": "Webhooks",
@@ -4945,7 +4991,7 @@
       },
       "betrieb": {
         "ladefehler": "Could not load shop records.",
-        "abgleichStarten": "Run reconciliation",
+        "abgleichStarten": "Sync with Stripe",
         "abgleichErfolg": "Shop reconciliation finished.",
         "abgleichFehler": "Shop reconciliation failed.",
         "abgleichErgebnis": "Checked: {{geprueft}} · Newly paid: {{bezahlt}} · Invoices: {{rechnungen}} · Syncs: {{entitlements}}",
@@ -4979,7 +5025,41 @@
         "filterRechnungen": "Shop invoices",
         "filterGutschriften": "Credit notes",
         "typShopRechnung": "Shop invoice",
-        "typHosterApi": "Hoster API"
+        "typHosterApi": "Hoster API",
+        "sucheBestellungen": "Search order number or customer …",
+        "sucheRechnungen": "Search invoice or order number …",
+        "filterBezahlt": "Paid",
+        "filterOffen": "Pending",
+        "filterErstattet": "Refunded / failed",
+        "keineTrefferOrders": "No matching orders",
+        "keineTrefferRechnungen": "No matching receipts",
+        "keineTrefferText": "Try adjusting your filter or search.",
+        "status": {
+          "paid": "Paid",
+          "pending_payment": "Awaiting payment",
+          "failed": "Failed",
+          "refunded": "Refunded",
+          "expired": "Expired",
+          "cancelled": "Cancelled"
+        },
+        "belegStatus": {
+          "issued": "Issued",
+          "void": "Void"
+        },
+        "freischaltung": {
+          "ready": "Ready",
+          "active": "Active",
+          "pending": "Setting up",
+          "failed": "Setup failed"
+        },
+        "freischaltungArt": {
+          "server": "Server",
+          "addon": "Add-on",
+          "role": "Role"
+        },
+        "webhooksAufklappen": "Technical payment log (Stripe webhooks)",
+        "rechnungsAbsenderTitel": "Invoice sender & tax details",
+        "rechnungsAbsenderText": "These details appear automatically on every issued invoice and credit note."
       }
     },
     "cloudflareEnabled": "Cloudflare DNS",

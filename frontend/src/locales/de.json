@@ -4681,8 +4681,35 @@
     },
     "shop": {
       "titel": "Nativer Shop",
-      "untertitel": "Storefront, Tarife, Stripe-Zahlungen, Rechnungs-Ledger und Server-Provisionierung.",
+      "untertitel": "Sortiment, Bestellungen, Rechnungen und Zahlungseinstellungen an einem Ort.",
       "unifiedHint": "Alle hier gepflegten Tarife, Add-ons, Bilder und Start-Variablen gelten sowohl für den nativen Shop als auch über GET /api/hoster/v1/catalog für angebundene Hoster-Shops.",
+      "tabs": {
+        "aria": "Shop-Bereiche",
+        "overview": "Übersicht",
+        "catalog": "Sortiment",
+        "orders": "Bestellungen",
+        "accounting": "Rechnungen & Buchhaltung",
+        "setup": "Einrichtung & Regeln"
+      },
+      "catalogTabs": {
+        "aria": "Sortiment-Bereiche",
+        "plans": "Spiele & Tarife",
+        "addons": "Zusatzpakete",
+        "coupons": "Gutscheine & Aktionen"
+      },
+      "overview": {
+        "checkTitel": "Einrichtungsstatus",
+        "checkStripe": "Zahlungen (Stripe)",
+        "checkSeller": "Rechnungsangaben",
+        "checkCatalog": "Sortiment",
+        "tarifeAktiv": "{{count}} aktiv",
+        "keineTarife": "Noch kein Tarif aktiv",
+        "letzteBestellungen": "Letzte Bestellungen",
+        "alleAnzeigen": "Alle Bestellungen",
+        "einrichten": "Einrichten",
+        "pruefen": "Prüfen",
+        "verwalten": "Verwalten"
+      },
       "demo": "Phase 1 · Demo",
       "aktiv": "Shop aktiv",
       "inaktiv": "Shop aus",
@@ -4772,7 +4799,7 @@
       },
       "rechnungen": {
         "titel": "Rechnungen",
-        "text": "Nummernkreis, Steuersätze, Pflichtangaben und Aufbewahrung."
+        "text": "Alle ausgestellten Rechnungen und Gutschriften als PDF, XRechnung oder Prüfexport."
       },
       "produkte": {
         "titel": "Produkte & Pläne",
@@ -4838,7 +4865,26 @@
         "lifetimePreis": "Lifetime-Preis (EUR, optional)",
         "lifetimePreisPlatzhalter": "z. B. 149.00 (leer = ausgeblendet)",
         "lifetimePreisHinweis": "Leer lassen, um keinen Einmal-Kauf ohne laufende Monatskosten anzubieten.",
-        "allowGameSwitch": "Instant Game-Switch (Gamecloud) erlauben"
+        "allowGameSwitch": "Instant Game-Switch (Gamecloud) erlauben",
+        "suchePlatzhalter": "Nach Spiel oder Tarif suchen …",
+        "filterAlle": "Alle",
+        "filterAktiv": "Im Angebot",
+        "filterInaktiv": "Ausgeblendet",
+        "ansichtRegal": "Regalansicht",
+        "ansichtListe": "Listenansicht",
+        "imRegal": "Im Angebot",
+        "ausgeblendet": "Ausgeblendet",
+        "statusAktualisiert": "Status aktualisiert.",
+        "regalNeuTitel": "Neues Produkt ins Regal stellen",
+        "regalNeuText": "Spiel wählen, Preis und Ressourcen festlegen.",
+        "lifetimeKurz": "Lifetime",
+        "gameSwitchKurz": "Game-Switch",
+        "keineTreffer": "Keine passenden Tarife",
+        "keineTrefferText": "Filter oder Suchbegriff anpassen.",
+        "tabBasis": "Grunddaten & Preis",
+        "tabRessourcen": "Ressourcen",
+        "tabBilder": "Bilder & Galerie",
+        "galerieErstNachSpeichern": "Eigene Bilder lassen sich direkt nach dem Anlegen hochladen. Bis dahin wird das ausgewählte Artwork verwendet."
       },
       "addons": {
         "titel": "Add-ons",
@@ -4937,7 +4983,7 @@
       },
       "bestellungen": {
         "titel": "Bestellungen",
-        "text": "Order-Liste, Status und manuelle Aktionen."
+        "text": "Kundenkäufe, Zahlungsstatus, Erstattungen und Server-Freischaltungen."
       },
       "webhooks": {
         "titel": "Webhooks",
@@ -4945,7 +4991,7 @@
       },
       "betrieb": {
         "ladefehler": "Shop-Daten konnten nicht geladen werden.",
-        "abgleichStarten": "Abgleich starten",
+        "abgleichStarten": "Mit Stripe abgleichen",
         "abgleichErfolg": "Shop-Abgleich abgeschlossen.",
         "abgleichFehler": "Shop-Abgleich fehlgeschlagen.",
         "abgleichErgebnis": "Geprüft: {{geprueft}} · Neu bezahlt: {{bezahlt}} · Rechnungen: {{rechnungen}} · Syncs: {{entitlements}}",
@@ -4979,7 +5025,41 @@
         "filterRechnungen": "Shop-Rechnungen",
         "filterGutschriften": "Gutschriften",
         "typShopRechnung": "Shop-Rechnung",
-        "typHosterApi": "Hoster-API"
+        "typHosterApi": "Hoster-API",
+        "sucheBestellungen": "Bestellnummer oder Kunde suchen …",
+        "sucheRechnungen": "Rechnungs- oder Bestellnummer suchen …",
+        "filterBezahlt": "Bezahlt",
+        "filterOffen": "Offen",
+        "filterErstattet": "Erstattet / Fehlgeschlagen",
+        "keineTrefferOrders": "Keine passenden Bestellungen",
+        "keineTrefferRechnungen": "Keine passenden Belege",
+        "keineTrefferText": "Filter oder Suchbegriff anpassen.",
+        "status": {
+          "paid": "Bezahlt",
+          "pending_payment": "Zahlung offen",
+          "failed": "Fehlgeschlagen",
+          "refunded": "Erstattet",
+          "expired": "Abgelaufen",
+          "cancelled": "Storniert"
+        },
+        "belegStatus": {
+          "issued": "Ausgestellt",
+          "void": "Storniert"
+        },
+        "freischaltung": {
+          "ready": "Bereit",
+          "active": "Aktiv",
+          "pending": "Wird eingerichtet",
+          "failed": "Freischaltung fehlgeschlagen"
+        },
+        "freischaltungArt": {
+          "server": "Server",
+          "addon": "Zusatzpaket",
+          "role": "Rolle"
+        },
+        "webhooksAufklappen": "Technisches Zahlungsprotokoll (Stripe-Webhooks)",
+        "rechnungsAbsenderTitel": "Rechnungsabsender & Steuerdaten",
+        "rechnungsAbsenderText": "Diese Angaben erscheinen automatisch auf jeder ausgestellten Rechnung und Gutschrift."
       }
     },
     "cloudflareEnabled": "Cloudflare DNS",
