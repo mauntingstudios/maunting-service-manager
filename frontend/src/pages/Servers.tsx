@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useNavigate, useOutletContext } from 'react-router-dom'
+import { Link, useNavigate, useOutletContext } from 'react-router-dom'
 import type { ShellOutletKontext } from '@/components/layout/Shell'
 import { api } from '@/api/client'
 import { toast } from '@/stores/toastStore'
 import { confirm } from '@/stores/confirmStore'
 import { useHostInterfaces } from '@/hooks/useHostInterfaces'
-import { useHasPermission } from '@/hooks/useHasPermission'
+import { useHasPermission, useIsOwner } from '@/hooks/useHasPermission'
+import { usePublicSettingsStore } from '@/stores/publicSettingsStore'
 import { sortServersByPriority, useServerPreferencesStore } from '@/stores/serverPreferencesStore'
 import { filterVisibleServersInPreview, useRolePreviewStore } from '@/stores/rolePreviewStore'
 import type { Server, GameInfo, PostgresCredential, ServerCreateResult, Node } from '@/types'
@@ -18,6 +19,7 @@ import { ServerCard } from '@/components/server/ServerCard'
 import { ServerStatusBlocks, useLazySlice } from '@/components/server/ServerStatusBlocks'
 import {
   Button,
+  buttonClasses,
   Checkbox,
   Dialog,
   DialogContent,
@@ -60,6 +62,9 @@ export function Servers({ ohneHintergrund = false }: { ohneHintergrund?: boolean
   const navigate = useNavigate()
   const canCreateServer = useHasPermission('servers.create')
   const canCreateDatabaseServer = useHasPermission('servers.create.database')
+  const canViewHosterCustomers = useHasPermission('servers.hoster_customers.view')
+  const isOwner = useIsOwner()
+  const shopEnabled = usePublicSettingsStore((s) => s.shop_enabled)
   const [servers, setServers] = useState<Server[]>([])
   const [games, setGames] = useState<GameInfo[]>([])
   const [nodes, setNodes] = useState<Node[]>([])
@@ -367,13 +372,14 @@ export function Servers({ ohneHintergrund = false }: { ohneHintergrund?: boolean
     [servers, preview],
   )
 
-  // Datengetrieben statt rechtegetrieben: das Backend liefert Kundenserver nur
-  // an Berechtigte — wer keine bekommt, sieht auch keine Tabs. Eine eigene
-  // Permission-Abfrage hier waere eine zweite, driftende Wahrheit.
+  // Hoster-Tabs nur für Betreiber (Owner oder `servers.hoster_customers.view`),
+  // wenn tatsächlich Kundenserver vorliegen. Shop-Kunden sehen ihre Mietserver
+  // direkt ohne leere "Eigene Server | Kundenserver"-Leiste.
   const ownServers = visibleServers.filter((s) => !s.is_hoster_managed)
   const customerServers = visibleServers.filter((s) => s.is_hoster_managed)
   const hasCustomerServers = customerServers.length > 0
-  const baseShownServers = hasCustomerServers
+  const showCustomerTabs = hasCustomerServers && (isOwner || canViewHosterCustomers)
+  const baseShownServers = showCustomerTabs
     ? activeTab === 'customers'
       ? customerServers
       : ownServers
@@ -393,18 +399,14 @@ export function Servers({ ohneHintergrund = false }: { ohneHintergrund?: boolean
     sentinelRef: shownServersSentinelRef,
   } = useLazySlice(shownServers, 24)
 
-  // Der Shop-Kunde besitzt oft nur seinen Vertragsserver — auch fuer ihn traegt
-  // der eigene Server das Flag. Er soll nach dem Login nicht vor einem leeren
-  // "Eigene Server"-Tab stehen; die Erstauswahl folgt einmalig den Daten,
-  // danach gehoert der Tab dem Nutzer.
   const tabInitialized = useRef(false)
   useEffect(() => {
     if (loading || tabInitialized.current) return
     tabInitialized.current = true
-    if (hasCustomerServers && ownServers.length === 0) {
+    if (showCustomerTabs && ownServers.length === 0) {
       setActiveTab('customers')
     }
-  }, [loading, hasCustomerServers, ownServers.length])
+  }, [loading, showCustomerTabs, ownServers.length])
 
   if (loading) {
     return (
@@ -480,12 +482,21 @@ export function Servers({ ohneHintergrund = false }: { ohneHintergrund?: boolean
             {t('servers.noServers')}
           </h3>
           <p className="font-body-md text-sm text-on-surface-variant">
-            {t('servers.createHint')}
+            {!canCreateServer && shopEnabled
+              ? t('dashboard.rentFirstServerHint')
+              : t('servers.createHint')}
           </p>
+          {!canCreateServer && shopEnabled && (
+            <div className="mt-4">
+              <Link to="/" className={buttonClasses('primary')}>
+                {t('servers.configureInShop')}
+              </Link>
+            </div>
+          )}
         </div>
       )}
 
-      {hasCustomerServers && (
+      {showCustomerTabs && (
         <TabBar
           tabs={[
             { id: 'own' as const, labelKey: 'servers.tabs.own', icon: ServerIcon },

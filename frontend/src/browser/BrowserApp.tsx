@@ -31,6 +31,7 @@ import { teamTresorAutoSperrQuelle, useTeamVaultStore } from '@/desktop/vault/te
 import { useAutoSperre } from '@/hooks/useAutoSperre'
 import { useMessengerSperreBereitschaft } from '@/hooks/useMessengerSperre'
 import { useFensterRahmen } from '@/hooks/useFensterRahmen'
+import { useHasPermission } from '@/hooks/useHasPermission'
 import { usePresenceAndActivity } from '@/hooks/usePresenceAndActivity'
 import { useAuthStore } from '@/stores/authStore'
 import { usePublicSettingsStore } from '@/stores/publicSettingsStore'
@@ -132,7 +133,9 @@ function Wurzel() {
   const stand = useSitzung((s) => s.stand)
   const gekoppelt = istGekoppelt(stand)
   const angemeldet = stand === 'an'
-  const social = usePublicSettingsStore((s) => s.social_enabled)
+  const socialEnabled = usePublicSettingsStore((s) => s.social_enabled)
+  const canUseMessenger = useHasPermission('messenger.use')
+  const social = socialEnabled && canUseMessenger
   const tresorOffen = useVaultStore((s) => s.isUnlocked)
   const teamTresorOffen = useTeamVaultStore((s) => s.isUnlocked)
   const anruf = useCallStore((s) => s.state !== 'idle')
@@ -396,7 +399,7 @@ function Wurzel() {
     >
       {/* Dieselbe Meldestelle wie in Web und MSS: Zahl, Ton und Toast. */}
       {angemeldet && <ServerIncidentNotifier />}
-      {angemeldet && <FreundschaftsWache />}
+      {angemeldet && social && <FreundschaftsWache />}
       {/* Bei geschlossenem Messenger hält Pontis das Gerätepostfach offen. */}
       {angemeldet && social && gekoppelt && !messengerOffen && <MessengerHintergrund />}
       {handy ? (

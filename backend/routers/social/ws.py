@@ -16,6 +16,7 @@ from starlette.websockets import WebSocketDisconnect
 from database import SessionLocal
 from dependencies import get_current_user_for_ws, ws_session_familie, ws_subprotokoll
 from models import ChatGroupMember, DirectChatMember, User
+from services import permission_service
 from services.social.messages_service import ack_messages, mark_read, send_message
 from services.social_service import SocialService
 from services.sync_event_service import SyncEventService
@@ -86,6 +87,12 @@ async def social_websocket(websocket: WebSocket) -> None:
     with SessionLocal() as db:
         try:
             user = get_current_user_for_ws(websocket, db)
+            SocialService.assert_social_enabled(db)
+            if not permission_service.has_global_permission(db, user, "messenger.use"):
+                raise HTTPException(
+                    status_code=403,
+                    detail="Sie haben keine Berechtigung für den Messenger (messenger.use).",
+                )
             user_id = user.id
             user_username = user.username
         except HTTPException as exc:

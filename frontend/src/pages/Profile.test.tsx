@@ -3,14 +3,10 @@ import { MemoryRouter, useLocation } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { Profile } from './Profile'
 import i18n from '@/i18n'
+import { usePermissionsStore } from '@/stores/permissionsStore'
 import { usePublicSettingsStore } from '@/stores/publicSettingsStore'
 
 vi.mock('@/api/client', () => ({ api: vi.fn() }))
-vi.mock('@/hooks/useHasPermission', async () => {
-  const { useState } = await import('react')
-  // Ein Hook-Ersatz muss selbst ein Hook sein (AGENTS.md, Punkt 26).
-  return { useHasPermission: () => useState(true)[0] }
-})
 vi.mock('./profile/ProfilTab', () => ({ ProfilTab: () => <div>inhalt:profil</div> }))
 vi.mock('./profile/KontoTab', () => ({ KontoTab: () => <div>inhalt:konto</div> }))
 vi.mock('./profile/PasswordTab', () => ({ PasswordTab: () => <div>inhalt:passwort</div> }))
@@ -43,6 +39,17 @@ describe('Profile', () => {
   beforeEach(async () => {
     await i18n.changeLanguage('en')
     usePublicSettingsStore.setState({ social_enabled: true })
+    usePermissionsStore.setState({
+      me: {
+        is_owner: true,
+        role_id: null,
+        role_name: null,
+        global_keys: [],
+        server_keys: {},
+      },
+      isLoading: false,
+      error: null,
+    })
   })
 
   it('trägt dieselbe Seitenhülle wie /settings: msm-page plus Abschnittsleiste', () => {
@@ -116,5 +123,26 @@ describe('Profile', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'Connections' }))
     expect(suche).toBe('?tab=connections')
     expect(screen.getByText('inhalt:verknuepft')).toBeInTheDocument()
+  })
+
+  it('blendet Social, Audio & KI ohne passende Berechtigungen auch bei aktivem social_enabled aus', () => {
+    usePublicSettingsStore.setState({ social_enabled: true })
+    usePermissionsStore.setState({
+      me: {
+        is_owner: false,
+        role_id: 2,
+        role_name: 'user',
+        global_keys: [],
+        server_keys: {},
+      },
+      isLoading: false,
+      error: null,
+    })
+    renderProfile('/profile?tab=security')
+    expect(screen.queryByRole('tab', { name: 'Social' })).toBeNull()
+    expect(screen.queryByRole('tab', { name: 'Audio & video' })).toBeNull()
+    expect(screen.queryByRole('tab', { name: 'AI' })).toBeNull()
+    expect(screen.queryByText('inhalt:messenger')).toBeNull()
+    expect(screen.getByText('inhalt:geraete')).toBeInTheDocument()
   })
 })

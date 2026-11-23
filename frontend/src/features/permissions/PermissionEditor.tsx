@@ -50,6 +50,7 @@ const SUBGROUPS = [
     keys: [
       'calendar.use',
       'notes.use',
+      'messenger.use',
       'panel.settings.read',
       'panel.settings.write',
       'panel.database.read',

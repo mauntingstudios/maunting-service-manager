@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from database import get_db
 from dependencies import get_current_user, verify_csrf
 from models import User
-from routers.social.basis import _check_social_enabled
+from routers.social.basis import _check_social_enabled, _require_messenger_access
 from schemas.chat_media import (
     ChatMediaSignedUrlResponse,
     ChatMediaUploadRequest,
@@ -25,7 +25,7 @@ router = APIRouter()
 @router.post(
     "/media/upload",
     response_model=ChatMediaUploadResponse,
-    dependencies=[Depends(_check_social_enabled), Depends(verify_csrf)],
+    dependencies=[Depends(_require_messenger_access), Depends(verify_csrf)],
 )
 def upload_chat_media(
     req: ChatMediaUploadRequest,
@@ -56,7 +56,7 @@ def upload_chat_media(
 
 @router.delete(
     "/media/{media_id}",
-    dependencies=[Depends(_check_social_enabled), Depends(verify_csrf)],
+    dependencies=[Depends(_require_messenger_access), Depends(verify_csrf)],
 )
 def delete_chat_media(
     media_id: str,
@@ -70,7 +70,7 @@ def delete_chat_media(
 @router.get(
     "/media/{media_id}/signed-url",
     response_model=ChatMediaSignedUrlResponse,
-    dependencies=[Depends(_check_social_enabled)],
+    dependencies=[Depends(_require_messenger_access)],
 )
 def get_chat_media_signed_url(
     media_id: str,

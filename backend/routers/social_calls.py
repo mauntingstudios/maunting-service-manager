@@ -49,6 +49,7 @@ from services.call_room_service import (
     UserActiveCallRegistry,
 )
 from services.livekit_service import LivekitZielAbgelehnt
+from services import permission_service
 from services.social_service import SocialService
 from services.sync_event_service import SyncEventService
 
@@ -58,8 +59,16 @@ router = APIRouter(prefix="/api/social/calls", tags=["calls"])
 admin_router = APIRouter(prefix="/api/admin/messenger/livekit", tags=["calls-admin"])
 
 
-def _check_social_enabled(db: Session = Depends(get_db)):
+def _check_social_enabled(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> None:
     SocialService.assert_social_enabled(db)
+    if not permission_service.has_global_permission(db, user, "messenger.use"):
+        raise HTTPException(
+            status_code=403,
+            detail="Sie haben keine Berechtigung für den Messenger (messenger.use).",
+        )
 
 
 def _konfiguration_oder_fehler(db: Session) -> livekit_service.LivekitKonfiguration:

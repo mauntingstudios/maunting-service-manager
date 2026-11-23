@@ -1,7 +1,7 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { ArrowLeft, CreditCard, ExternalLink, LogOut, Menu, ReceiptText, ShoppingBag, User as UserIcon, X } from 'lucide-react'
+import { ArrowLeft, CreditCard, ExternalLink, LifeBuoy, LogOut, Menu, ReceiptText, ShieldCheck, ShoppingBag, User as UserIcon, X } from 'lucide-react'
 import { Blatteintrag, Blattmenue, Kurzinfo } from '@maunting/ui'
 import { Avatar } from '@/components/app/Avatar'
 import { Logo } from '@/components/Logo'
@@ -11,7 +11,13 @@ import { usePanelNavigation } from './usePanelNavigation'
 import { BrowserDownloadBadge } from './BrowserDownloadBadge'
 import { DesktopAppDownloadBadge } from './DesktopAppDownloadBadge'
 import { dashboardElternroute, dashboardTitelKey, istDashboardRoute } from '@/desktop/dashboard/dashboardWege'
+import { useHasPermission } from '@/hooks/useHasPermission'
 import { PANEL_HOME } from '@/lib/panelWege'
+import {
+  isSupportWidgetActive,
+  openSupportWidget,
+  subscribeSupportWidgetState,
+} from '@/lib/supportWidgetLoader'
 import { useAuthStore } from '@/stores/authStore'
 import { useMessengerNotificationStore } from '@/stores/messengerNotificationStore'
 import { useTeamInvitationStore } from '@/stores/teamInvitationStore'
@@ -67,10 +73,18 @@ export function Topbar({ onOpenWallet, presenceStatus: propPresenceStatus, effec
   const { user, logout } = useAuthStore()
 
   const { items: navItems, isOnline } = usePanelNavigation(PANEL_HOME)
+  const canUseMessenger = useHasPermission('messenger.use')
+  const socialEnabled = usePublicSettingsStore((s) => s.social_enabled)
+  const canAccessSocial = socialEnabled && canUseMessenger
+  const canViewOperatorDocs = navItems.some((eintrag) => eintrag.to === '/docs')
+  const supportActive = useSyncExternalStore(
+    subscribeSupportWidgetState,
+    isSupportWidgetActive,
+    () => false,
+  )
   const totalMessengerUnread = useMessengerNotificationStore((s) => s.totalUnreadCount)
   const teamInvitationCount = useTeamInvitationStore((s) => s.count)
   const teamInvitationenLaden = useTeamInvitationStore((s) => s.laden)
-  const socialEnabled = usePublicSettingsStore((s) => s.social_enabled)
   const shopEnabled = usePublicSettingsStore((s) => s.shop_enabled)
   const externalShopUrl = usePublicSettingsStore((s) => s.external_shop_url)
   const customBrand = usePublicSettingsStore((s) => s.branding?.custom_name || '')
@@ -131,6 +145,28 @@ export function Topbar({ onOpenWallet, presenceStatus: propPresenceStatus, effec
             },
           ]
         : []),
+    ...(canViewOperatorDocs
+      ? []
+      : [
+          {
+            key: 'privacy',
+            label: t('shop.fuss.datenschutz'),
+            icon: <ShieldCheck className="h-4 w-4" />,
+            onClick: () => navigate('/privacy'),
+          },
+          ...(supportActive
+            ? [
+                {
+                  key: 'support',
+                  label: t('nav.support'),
+                  icon: <LifeBuoy className="h-4 w-4" />,
+                  onClick: () => {
+                    openSupportWidget()
+                  },
+                },
+              ]
+            : []),
+        ]),
     {
       key: 'profile',
       label: t('profile.title'),
@@ -235,9 +271,9 @@ export function Topbar({ onOpenWallet, presenceStatus: propPresenceStatus, effec
             user={user}
             items={profileMenuItems}
             placement="bottom-right"
-            status={socialEnabled ? presenceStatus : undefined}
-            onStatusChange={socialEnabled ? handlePresenceChange : undefined}
-            effectiveStatus={socialEnabled ? propEffectiveStatus : undefined}
+            status={canAccessSocial ? presenceStatus : undefined}
+            onStatusChange={canAccessSocial ? handlePresenceChange : undefined}
+            effectiveStatus={canAccessSocial ? propEffectiveStatus : undefined}
           />
 
           <button
@@ -332,6 +368,22 @@ export function Topbar({ onOpenWallet, presenceStatus: propPresenceStatus, effec
             )}
             <BrowserDownloadBadge variante="zeile" />
             <DesktopAppDownloadBadge variante="zeile" />
+            {!canViewOperatorDocs && (
+              <>
+                <Blatteintrag
+                  icon={<ShieldCheck className="h-4 w-4" aria-hidden="true" />}
+                  label={t('shop.fuss.datenschutz')}
+                  onClick={() => { setBlattOffen(false); navigate('/privacy') }}
+                />
+                {supportActive && (
+                  <Blatteintrag
+                    icon={<LifeBuoy className="h-4 w-4" aria-hidden="true" />}
+                    label={t('nav.support')}
+                    onClick={() => { setBlattOffen(false); openSupportWidget() }}
+                  />
+                )}
+              </>
+            )}
             {onOpenWallet && (
               <Blatteintrag
                 icon={<CreditCard className="h-4 w-4" aria-hidden="true" />}

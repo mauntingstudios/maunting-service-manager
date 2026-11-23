@@ -31,12 +31,27 @@ vi.mock('@/browser/MessengerHintergrund', () => ({
 
 describe('Shell', () => {
   it('hält das Gerätepostfach auch außerhalb des Messengers offen', () => {
-    render(
-      <MemoryRouter initialEntries={['/servers']}>
-        <Routes><Route path="/servers" element={<Shell />} /></Routes>
-      </MemoryRouter>,
-    )
-    expect(screen.getByTestId('queue-background')).toBeInTheDocument()
+    usePermissionsStore.setState({
+      me: {
+        is_owner: false,
+        role_id: 1,
+        role_name: 'user',
+        global_keys: ['messenger.use'],
+        server_keys: {},
+      },
+      isLoading: false,
+      error: null,
+    })
+    try {
+      render(
+        <MemoryRouter initialEntries={['/servers']}>
+          <Routes><Route path="/servers" element={<Shell />} /></Routes>
+        </MemoryRouter>,
+      )
+      expect(screen.getByTestId('queue-background')).toBeInTheDocument()
+    } finally {
+      usePermissionsStore.setState({ me: null, isLoading: false, error: null })
+    }
   })
 
   const renderShell = (path = '/audit') => render(

@@ -14,7 +14,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from models import User, UserFriend, ChatGroup, ChatGroupMember
+from models import ChatGroup, ChatGroupMember, Role, RolePermission, User, UserFriend
 from services import livekit_service
 from services.auth_service import AuthService
 from services.call_room_service import (
@@ -50,12 +50,19 @@ def _livekit_lokal(monkeypatch):
 
 
 def _user(db: Session, username: str) -> User:
+    role = db.query(Role).filter(Role.name == "handoff_messenger").first()
+    if role is None:
+        role = Role(name="handoff_messenger")
+        db.add(role)
+        db.flush()
+        db.add(RolePermission(role_id=role.id, permission_key="messenger.use"))
     user = User(
         username=username,
         email=f"{username}@test.local",
         password_hash=AuthService.hash_password("StrongTestPass123!"),
         is_active=True,
         email_verified=True,
+        role_id=role.id,
     )
     db.add(user)
     db.commit()

@@ -13,11 +13,11 @@ from sqlalchemy.orm import Session
 from database import get_db
 from dependencies import get_current_user, verify_csrf
 from models import DirectChat, DirectChatMember, User
-from routers.social.basis import _check_social_enabled
+from routers.social.basis import _require_messenger_access
 from schemas.social import CanMessageResponse, DirectChatResponse
 from services.social_service import SocialService
 
-router = APIRouter(dependencies=[Depends(_check_social_enabled)])
+router = APIRouter(dependencies=[Depends(_require_messenger_access)])
 
 
 @router.get("/chat/can-message/{target_user_id}", response_model=CanMessageResponse)

@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 from database import get_db
 from dependencies import get_current_user, verify_csrf
 from models import User
-from routers.social.basis import _check_social_enabled
+from routers.social.basis import _require_messenger_access
 from services.social.messages_service import (
     ack_messages,
     delete_message,
@@ -29,7 +29,7 @@ from services.social.messages_service import (
     update_message,
 )
 
-router = APIRouter(dependencies=[Depends(_check_social_enabled)])
+router = APIRouter(dependencies=[Depends(_require_messenger_access)])
 
 ChatType = Annotated[str, Field(pattern="^(direct|group)$")]
 

@@ -13,7 +13,7 @@ from fastapi.testclient import TestClient
 import jwt
 from sqlalchemy.orm import Session
 
-from models import ChatGroupMember, User
+from models import ChatGroupMember, Role, RolePermission, User
 from services import livekit_service
 from services.call_room_service import GRUPPE_MAX_TEILNEHMER, GroupCallRoomRegistry
 from services.social_service import SocialService
@@ -192,6 +192,15 @@ def test_ohne_startrecht_kein_gruppenanruf(
 # ── Zugangstoken fuer Gruppenraeume ─────────────────────────────────────────
 
 
+def _erlaube_messenger(db: Session, user: User, role_name: str) -> None:
+    rolle = Role(name=role_name)
+    db.add(rolle)
+    db.flush()
+    db.add(RolePermission(role_id=rolle.id, permission_key="messenger.use"))
+    user.role_id = rolle.id
+    db.commit()
+
+
 def test_token_fuer_gruppenraum_nur_mit_beitrittsrecht(
     client: TestClient,
     db: Session,
@@ -200,6 +209,7 @@ def test_token_fuer_gruppenraum_nur_mit_beitrittsrecht(
     owner_cookies: dict,
     user_cookies: dict,
 ) -> None:
+    _erlaube_messenger(db, regular_user, "call_messenger_token")
     gruppe = SocialService.create_group(db, owner_user)
     SocialService.join_group_by_invite_code(db, regular_user, gruppe.invite_code)
 
@@ -417,6 +427,7 @@ def test_pending_zeigt_den_gruppenanruf_nur_mit_beitrittsrecht(
     owner_cookies: dict,
     user_cookies: dict,
 ) -> None:
+    _erlaube_messenger(db, regular_user, "call_messenger_pending")
     gruppe = SocialService.create_group(db, owner_user)
     SocialService.join_group_by_invite_code(db, regular_user, gruppe.invite_code)
 

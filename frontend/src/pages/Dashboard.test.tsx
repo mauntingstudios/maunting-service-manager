@@ -1,10 +1,11 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { MemoryRouter, Outlet, Route, Routes } from 'react-router-dom'
 import * as client from '@/api/client'
 import i18n from '@/i18n'
 import { useServerPreferencesStore } from '@/stores/serverPreferencesStore'
 import { useNodePreferencesStore } from '@/stores/nodePreferencesStore'
+import { usePublicSettingsStore } from '@/stores/publicSettingsStore'
 import * as permissions from '@/hooks/useHasPermission'
 import { Dashboard } from './Dashboard'
 
@@ -67,6 +68,7 @@ describe('Dashboard — Ladefehler statt Leerzustand', () => {
   })
 
   it('zeigt den vollen Dienstdetailtext per Kurzinfo, nicht per nativem title', async () => {
+    vi.mocked(permissions.useHasPermission).mockImplementation((perm) => perm === 'system.view')
     vi.mocked(client.api).mockImplementation(async (path: string) => {
       if (path === '/system/health') {
         return {
@@ -283,5 +285,67 @@ describe('Dashboard — Hintergrund der Hülle', () => {
     const { container } = renderMitHuelle(false)
     expect(await screen.findByText('Erstelle deinen ersten Server, um loszulegen.')).toBeInTheDocument()
     expect(eigenesBild(container)).toBeDefined()
+  })
+})
+
+describe('Dashboard — Kundensicht vs. Betreibersicht (RBAC)', () => {
+  beforeEach(async () => {
+    vi.mocked(client.api).mockReset()
+    vi.mocked(permissions.useHasPermission).mockReturnValue(false)
+    usePublicSettingsStore.setState({ shop_enabled: true })
+    await i18n.changeLanguage('de')
+  })
+
+  afterEach(() => {
+    usePublicSettingsStore.setState({ shop_enabled: false })
+  })
+
+  it('versteckt Unterstützte Spiele, Docker-Details und leitet leere Shop-Kunden in den Shop', async () => {
+    vi.mocked(client.api).mockImplementation(async (path: string) => {
+      if (path === '/system/health') {
+        return {
+          overall: 'ok',
+          services: {
+            docker: { status: 'ok', detail: 'Docker 27.1.2-secret' },
+          },
+        }
+      }
+      if (path === '/servers') return []
+      return []
+    })
+
+    renderDashboard()
+
+    const shopLink = await screen.findByRole('link', { name: i18n.t('dashboard.rentServer') })
+    expect(shopLink).toHaveAttribute('href', '/')
+    expect(client.api).not.toHaveBeenCalledWith('/system/games')
+    expect(screen.queryByText(i18n.t('dashboard.supportedGames'))).not.toBeInTheDocument()
+    expect(screen.queryByText('Docker 27.1.2-secret')).not.toBeInTheDocument()
+  })
+
+  it('zeigt Betreibern Unterstützte Spiele und Systemdetails bei system.view', async () => {
+    vi.mocked(permissions.useHasPermission).mockImplementation(
+      (key) => key === 'servers.create' || key === 'system.view',
+    )
+    vi.mocked(client.api).mockImplementation(async (path: string) => {
+      if (path === '/system/health') {
+        return {
+          overall: 'ok',
+          services: {
+            docker: { status: 'ok', detail: 'Docker 27.1.2' },
+          },
+        }
+      }
+      if (path === '/system/games') {
+        return [{ id: 'palworld', name: 'Palworld', platform: 'linux', mod_support: false, supports_steam_workshop: false, ports: [], source: 'native' }]
+      }
+      return []
+    })
+
+    renderDashboard()
+
+    expect(await screen.findByText(i18n.t('dashboard.supportedGames'))).toBeInTheDocument()
+    expect(await screen.findByText('Docker 27.1.2')).toBeInTheDocument()
+    expect(client.api).toHaveBeenCalledWith('/system/games')
   })
 })

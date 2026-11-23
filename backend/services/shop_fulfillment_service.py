@@ -52,6 +52,7 @@ SHOP_ALLOWED_ROLE_PERMISSIONS: frozenset[str] = frozenset(
         "teams.create",
         "calendar.use",
         "notes.use",
+        "messenger.use",
         "docs.use",
         "ai.chat.use",
         "ai.attachments.use",

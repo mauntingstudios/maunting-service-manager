@@ -7,6 +7,7 @@ import { Server, GameInfo, NodeCapacitySummary } from '@/types'
 import { UpdateBanner } from '@/components/UpdateBanner'
 import { useHasPermission } from '@/hooks/useHasPermission'
 import { useAuthStore } from '@/stores/authStore'
+import { usePublicSettingsStore } from '@/stores/publicSettingsStore'
 import { filterVisibleServersInPreview, useRolePreviewStore } from '@/stores/rolePreviewStore'
 import { sortServersByPriority, useServerPreferencesStore } from '@/stores/serverPreferencesStore'
 import { sortNodesByPriority, useNodePreferencesStore } from '@/stores/nodePreferencesStore'
@@ -230,7 +231,7 @@ function NodeCapacityCard() {
   )
 }
 
-function SystemStatusSection() {
+function SystemStatusSection({ showDetails = true }: { showDetails?: boolean }) {
   const { t } = useTranslation()
   const [health, setHealth] = useState<HealthResponse | null>(null)
   const [loading, setLoading] = useState(true)
@@ -304,7 +305,7 @@ function SystemStatusSection() {
                   {serviceNames[key] ?? key}
                 </span>
               </div>
-              {svc.detail && (
+              {showDetails && svc.detail && (
                 <Kurzinfo text={svc.detail} seite="ende" aussen="min-w-0 max-w-[140px]">
                   <span className="font-mono-sm text-xs text-on-surface-variant/70 truncate max-w-[140px]">
                     {svc.detail}
@@ -332,6 +333,20 @@ export function Dashboard({ ohneHintergrund = false }: { ohneHintergrund?: boole
   const ohneEigenenHintergrund = ohneHintergrund || huelle?.ohneHintergrund === true
   const { t } = useTranslation()
   const canCreateServer = useHasPermission('servers.create')
+  const canReadSettings = useHasPermission('panel.settings.read')
+  const canManageBlueprints = useHasPermission('blueprints.manage')
+  const canReadNodes = useHasPermission('nodes.read')
+  const canReadHoster = useHasPermission('panel.hoster.read')
+  const canReadShop = useHasPermission('shop.read')
+  const canViewSystem = useHasPermission('system.view')
+  const shopEnabled = usePublicSettingsStore((s) => s.shop_enabled)
+  const canViewOperatorInfo =
+    canCreateServer ||
+    canReadSettings ||
+    canManageBlueprints ||
+    canReadNodes ||
+    canReadHoster ||
+    canReadShop
   const [servers, setServers] = useState<Server[]>([])
   const [games, setGames] = useState<GameInfo[]>([])
   const [loading, setLoading] = useState(true)
@@ -345,7 +360,7 @@ export function Dashboard({ ohneHintergrund = false }: { ohneHintergrund?: boole
   useEffect(() => {
     Promise.all([
       api<Server[]>('/servers'),
-      api<GameInfo[]>('/system/games'),
+      canViewOperatorInfo ? api<GameInfo[]>('/system/games') : Promise.resolve([] as GameInfo[]),
     ])
       .then(([srvs, gms]) => {
         setServers(srvs)
@@ -354,7 +369,7 @@ export function Dashboard({ ohneHintergrund = false }: { ohneHintergrund?: boole
       })
       .catch(() => setLoadError(true))
       .finally(() => setLoading(false))
-  }, [])
+  }, [canViewOperatorInfo])
 
   const user = useAuthStore((state) => state.user)
   const stunde = useMemo(() => new Date().getHours(), [])
@@ -443,12 +458,14 @@ export function Dashboard({ ohneHintergrund = false }: { ohneHintergrund?: boole
           </div>
         </div>
 
-        {/* Einheitliches Übersichts-Deck (Server, Unterstützte Spiele, Systemstatus) */}
+        {/* Einheitliches Übersichts-Deck (Server, Unterstützte Spiele für Operatoren, Systemstatus) */}
         <section
           aria-label={t('dashboard.title')}
           className="msm-card rounded-2xl border border-outline bg-surface-container-low/80 backdrop-blur-xl"
         >
-          <div className="grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-outline/40">
+          <div
+            className={`grid grid-cols-1 ${canViewOperatorInfo ? 'md:grid-cols-3' : 'md:grid-cols-2'} divide-y md:divide-y-0 md:divide-x divide-outline/40`}
+          >
             {/* Tile 1: Server-Bestand */}
             <div className="p-4 sm:p-5 flex flex-col justify-between gap-3 min-w-0">
               <div className="flex items-center justify-between gap-2">
@@ -498,93 +515,95 @@ export function Dashboard({ ohneHintergrund = false }: { ohneHintergrund?: boole
               />
             </div>
 
-            {/* Tile 2: Unterstützte Spiele ohne unschönes Abschneiden */}
-            <div className="p-4 sm:p-5 flex flex-col justify-between gap-3 min-w-0">
-              <div className="flex items-center justify-between gap-2">
-                <p className="font-label-md text-label-md text-on-surface-variant uppercase tracking-wider">
-                  {t('dashboard.supportedGames')}
-                </p>
-                {games.length > 4 && (
-                  <Button
-                    ref={gamesTriggerRef}
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    fingerziel
-                    onClick={() => setGamesOpen((open) => !open)}
-                    aria-expanded={gamesOpen}
-                    aria-controls={gamesPopoverId}
-                    className="h-7 px-2 text-xs text-primary"
-                  >
-                    <span>{t('dashboard.allGames')}</span>
-                    <ChevronDown
-                      className={`h-3.5 w-3.5 transition-transform ${gamesOpen ? 'rotate-180' : ''}`}
-                      aria-hidden="true"
-                    />
-                  </Button>
-                )}
-              </div>
+            {/* Tile 2: Unterstützte Spiele (nur für Betreiber / Operatoren) */}
+            {canViewOperatorInfo && (
+              <div className="p-4 sm:p-5 flex flex-col justify-between gap-3 min-w-0">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="font-label-md text-label-md text-on-surface-variant uppercase tracking-wider">
+                    {t('dashboard.supportedGames')}
+                  </p>
+                  {games.length > 4 && (
+                    <Button
+                      ref={gamesTriggerRef}
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      fingerziel
+                      onClick={() => setGamesOpen((open) => !open)}
+                      aria-expanded={gamesOpen}
+                      aria-controls={gamesPopoverId}
+                      className="h-7 px-2 text-xs text-primary"
+                    >
+                      <span>{t('dashboard.allGames')}</span>
+                      <ChevronDown
+                        className={`h-3.5 w-3.5 transition-transform ${gamesOpen ? 'rotate-180' : ''}`}
+                        aria-hidden="true"
+                      />
+                    </Button>
+                  )}
+                </div>
 
-              <div className="flex flex-wrap items-center gap-2 min-w-0">
-                <span className="font-headline text-display-sm font-bold text-primary tabular-nums mr-1">
-                  {games.length}
-                </span>
-                {games.length > 0 && (
-                  <div className="flex flex-wrap items-center gap-1.5 min-w-0">
-                    {games.slice(0, 4).map((g) => (
-                      <span
-                        key={g.id}
-                        className="font-mono-sm text-xs px-2 py-0.5 rounded-full border border-outline bg-surface-container-high/55 text-on-surface-variant truncate max-w-[10rem]"
-                      >
-                        {g.name}
-                      </span>
-                    ))}
-                    {games.length > 4 && (
-                      <button
-                        type="button"
-                        onClick={() => setGamesOpen(true)}
-                        className="font-mono-sm text-xs px-2.5 py-0.5 rounded-full bg-surface-container-highest hover:bg-primary/15 hover:text-primary text-on-surface-variant transition-colors"
-                      >
-                        {t('dashboard.moreGames', { count: games.length - 4 })}
-                      </button>
-                    )}
-                  </div>
-                )}
-              </div>
+                <div className="flex flex-wrap items-center gap-2 min-w-0">
+                  <span className="font-headline text-display-sm font-bold text-primary tabular-nums mr-1">
+                    {games.length}
+                  </span>
+                  {games.length > 0 && (
+                    <div className="flex flex-wrap items-center gap-1.5 min-w-0">
+                      {games.slice(0, 4).map((g) => (
+                        <span
+                          key={g.id}
+                          className="font-mono-sm text-xs px-2 py-0.5 rounded-full border border-outline bg-surface-container-high/55 text-on-surface-variant truncate max-w-[10rem]"
+                        >
+                          {g.name}
+                        </span>
+                      ))}
+                      {games.length > 4 && (
+                        <button
+                          type="button"
+                          onClick={() => setGamesOpen(true)}
+                          className="font-mono-sm text-xs px-2.5 py-0.5 rounded-full bg-surface-container-highest hover:bg-primary/15 hover:text-primary text-on-surface-variant transition-colors"
+                        >
+                          {t('dashboard.moreGames', { count: games.length - 4 })}
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
 
-              <Ankerfenster
-                offen={gamesOpen}
-                onSchliessen={() => setGamesOpen(false)}
-                anker={gamesTriggerRef}
-                label={t('dashboard.supportedGames')}
-                ausrichtung="ende"
-                maxHoehe="65dvh"
-                durchsichtig
-                className="w-[min(24rem,calc(100vw-2rem))] rounded-2xl border-outline-variant/40 overscroll-contain space-y-3"
-              >
-                <section id={gamesPopoverId} aria-label={t('dashboard.supportedGames')} className="space-y-3">
-                  <div className="flex items-center gap-2">
-                    <Gamepad2 className="h-4 w-4 text-primary shrink-0" aria-hidden="true" />
-                    <h3 className="text-sm font-semibold text-on-surface">
-                      {t('dashboard.supportedGames')} ({games.length})
-                    </h3>
-                  </div>
-                  <div className="flex flex-wrap gap-1.5">
-                    {games.map((g) => (
-                      <span
-                        key={g.id}
-                        className="font-mono-sm text-xs px-2.5 py-1 rounded-full border border-outline-variant/45 bg-surface-container/60 text-on-surface"
-                      >
-                        {g.name}
-                      </span>
-                    ))}
-                  </div>
-                </section>
-              </Ankerfenster>
-            </div>
+                <Ankerfenster
+                  offen={gamesOpen}
+                  onSchliessen={() => setGamesOpen(false)}
+                  anker={gamesTriggerRef}
+                  label={t('dashboard.supportedGames')}
+                  ausrichtung="ende"
+                  maxHoehe="65dvh"
+                  durchsichtig
+                  className="w-[min(24rem,calc(100vw-2rem))] rounded-2xl border-outline-variant/40 overscroll-contain space-y-3"
+                >
+                  <section id={gamesPopoverId} aria-label={t('dashboard.supportedGames')} className="space-y-3">
+                    <div className="flex items-center gap-2">
+                      <Gamepad2 className="h-4 w-4 text-primary shrink-0" aria-hidden="true" />
+                      <h3 className="text-sm font-semibold text-on-surface">
+                        {t('dashboard.supportedGames')} ({games.length})
+                      </h3>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {games.map((g) => (
+                        <span
+                          key={g.id}
+                          className="font-mono-sm text-xs px-2.5 py-1 rounded-full border border-outline-variant/45 bg-surface-container/60 text-on-surface"
+                        >
+                          {g.name}
+                        </span>
+                      ))}
+                    </div>
+                  </section>
+                </Ankerfenster>
+              </div>
+            )}
 
             {/* Tile 3: Systemstatus */}
-            <SystemStatusSection />
+            <SystemStatusSection showDetails={canViewSystem} />
           </div>
         </section>
 
@@ -609,13 +628,19 @@ export function Dashboard({ ohneHintergrund = false }: { ohneHintergrund?: boole
               {t('dashboard.noServers')}
             </h3>
             <p className="font-body-md text-sm text-on-surface-variant mb-4">
-              {t('dashboard.createFirstServer')}
+              {!canCreateServer && shopEnabled
+                ? t('dashboard.rentFirstServerHint')
+                : t('dashboard.createFirstServer')}
             </p>
-            {canCreateServer && (
+            {canCreateServer ? (
               <Link to="/servers" className={buttonClasses('primary')}>
                 {t('dashboard.createServer')}
               </Link>
-            )}
+            ) : shopEnabled ? (
+              <Link to="/" className={buttonClasses('primary')}>
+                {t('dashboard.rentServer')}
+              </Link>
+            ) : null}
           </div>
         )}
 

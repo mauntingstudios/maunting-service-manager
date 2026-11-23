@@ -21,3 +21,4 @@ class MePermissionsResponse(BaseModel):
     global_keys: list[str]
     # Per-Server-Delegationen des aktuellen Users: server_id -> [permission_keys]
     server_keys: dict[int, list[str]]
+    has_team_membership: bool = False

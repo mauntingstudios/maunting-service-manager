@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next'
 
-import { useHasPermission, useIsOwner } from '@/hooks/useHasPermission'
+import { useEffectivePermissions, useHasPermission, useIsOwner } from '@/hooks/useHasPermission'
 import { useIsOnline } from '@/hooks/useIsOnline'
 import { useAuthStore } from '@/stores/authStore'
 import { usePublicSettingsStore } from '@/stores/publicSettingsStore'
@@ -34,9 +34,25 @@ export function usePanelNavigation(dashboardPath = '/'): { items: NavigationItem
   const canChatWithAi = useHasPermission('ai.chat.use')
   const canManageAiSkills = useHasPermission('ai.skills.manage')
   const canUseSkills = useHasPermission('ai.skills.use')
+  const canUseCalendar = useHasPermission('calendar.use')
+  const canUseNotes = useHasPermission('notes.use')
+  const canUseMessenger = useHasPermission('messenger.use')
   const canUseDocs = useHasPermission('docs.use')
   const canCreateTeams = useHasPermission('teams.create')
+  const canManageBlueprints = useHasPermission('blueprints.manage')
+  const canCreateServers = useHasPermission('servers.create')
+  const canReadHoster = useHasPermission('panel.hoster.read')
+  const canReadShop = useHasPermission('shop.read')
   const canUseAi = canChatWithAi || canManageAiSkills
+  const canViewOperatorDocs =
+    canViewSettings ||
+    canManageBlueprints ||
+    canReadNodes ||
+    canCreateServers ||
+    canReadHoster ||
+    canReadShop
+  const effectivePermissions = useEffectivePermissions()
+  const hasTeamMembership = Boolean(effectivePermissions?.has_team_membership)
   const isOnline = useIsOnline()
   const preview = useRolePreviewStore((s) => s.preview)
   const isOwnerViaStore = useIsOwner()
@@ -76,12 +92,17 @@ export function usePanelNavigation(dashboardPath = '/'): { items: NavigationItem
       canUseAi,
       canUseSkills: canUseSkills || preview?.kind === 'team',
       canCreateTeams,
+      hasTeamMembership,
       teamInvitationCount,
       calendarEnabled: publicSettings.calendar_enabled,
+      canUseCalendar,
       notesEnabled: publicSettings.notes_enabled,
+      canUseNotes,
       docsEnabled: publicSettings.docs_enabled,
       canUseDocs,
       socialEnabled: publicSettings.social_enabled,
+      canUseMessenger,
+      canViewOperatorDocs,
       dashboardPath,
       isOnline,
     },

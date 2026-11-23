@@ -33,8 +33,13 @@ export function Profile() {
   const { t } = useTranslation()
   const [searchParams, setSearchParams] = useSearchParams()
   const canUseAi = useHasPermission('ai.chat.use')
+  const canUseMessenger = useHasPermission('messenger.use')
+  const canUseNotes = useHasPermission('notes.use')
+  const canUseCalendar = useHasPermission('calendar.use')
   const publicSettings = usePublicSettingsStore()
-  const social = publicSettings.social_enabled
+  const social = publicSettings.social_enabled && canUseMessenger
+  const showDeviceE2ee = social || (publicSettings.social_enabled && (canUseNotes || canUseCalendar))
+  const canAccessAudio = canUseAi || social
 
   const sections: SettingsSectionEintrag<TabId>[] = [
     { id: 'profile', label: t('profile.tabs.profile'), icon: User, group: t('profile.groups.identitaet') },
@@ -42,7 +47,7 @@ export function Profile() {
     { id: 'security', label: t('profile.tabs.security'), icon: Shield, group: t('profile.groups.schutz') },
     ...(social ? [{ id: 'social' as const, label: t('profile.tabs.social'), icon: Users, group: t('profile.groups.schutz') }] : []),
     { id: 'connections', label: t('profile.tabs.connections'), icon: Link2, group: t('profile.groups.schutz') },
-    { id: 'audio', label: t('profile.tabs.audio'), icon: Volume2, group: t('profile.groups.arbeit') },
+    ...(canAccessAudio ? [{ id: 'audio' as const, label: t('profile.tabs.audio'), icon: Volume2, group: t('profile.groups.arbeit') }] : []),
     ...(canUseAi ? [{ id: 'ai' as const, label: t('profile.tabs.ai'), icon: Bot, group: t('profile.groups.arbeit') }] : []),
     { id: 'danger', label: t('profile.tabs.danger'), icon: AlertTriangle, tone: 'danger', group: t('profile.groups.gefahr') },
   ]
@@ -72,7 +77,7 @@ export function Profile() {
             {typeof window !== 'undefined' &&
               ('__TAURI_INTERNALS__' in window || '__TAURI__' in window) &&
               publicSettings.vault_enabled && <TresorSicherheitTab />}
-            <DevicesTab />
+            <DevicesTab social={showDeviceE2ee} />
           </div>
         )}
         {activeTab === 'social' && <SocialTab />}

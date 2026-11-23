@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 
 from database import get_db
 from dependencies import get_current_user
-from models import Role, ServerPermission, User
+from models import Role, ServerPermission, Team, TeamMember, User
 from schemas import (
     MePermissionsResponse,
     PermissionCatalogResponse,
@@ -59,6 +59,13 @@ def get_my_permissions(
         server_perms.setdefault(server_id, []).append(key)
     for sid in server_perms:
         server_perms[sid].sort()
+    has_team_membership = (
+        db.query(TeamMember.id)
+        .join(Team, Team.id == TeamMember.team_id)
+        .filter(TeamMember.user_id == user.id, Team.personal_for_user_id.is_(None))
+        .first()
+        is not None
+    )
 
     return MePermissionsResponse(
         is_owner=user.is_owner,
@@ -68,4 +75,5 @@ def get_my_permissions(
         role_names=role_names,
         global_keys=global_keys,
         server_keys=server_perms,
+        has_team_membership=has_team_membership,
     )

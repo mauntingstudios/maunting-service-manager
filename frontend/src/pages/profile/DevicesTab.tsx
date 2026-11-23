@@ -40,10 +40,10 @@ export function GeraeteKarten({ social }: { social?: boolean } = {}) {
 }
 
 /** Eigener Tab für Geräteverwaltung im Profil. */
-export function DevicesTab() {
+export function DevicesTab({ social }: { social?: boolean } = {}) {
   return (
     <section className="space-y-6" aria-labelledby="devices-profile-title">
-      <GeraeteKarten />
+      <GeraeteKarten social={social} />
     </section>
   )
 }

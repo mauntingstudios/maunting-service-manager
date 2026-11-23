@@ -178,6 +178,7 @@ GLOBAL_PERMISSIONS: tuple[PermissionDef, ...] = (
     PermissionDef("shop.refunds.write",         "panel",   "Shop-Erstattungen, Gutschriften und manuelle Bestellungen ausführen"),
     PermissionDef("calendar.use",               "panel",   "Kalender verwenden"),
     PermissionDef("notes.use",                  "panel",   "Notizen verwenden"),
+    PermissionDef("messenger.use",              "panel",   "Messenger und Freunde verwenden"),
     PermissionDef("cloudflare.manage",          "system",  "Cloudflare DNS verwalten"),
     # Dokumente-Modul (Rich-Text, Kollaboration). Die Feinrechte je Dokument
     # stehen nicht hier: die Dokumentrolle ist die einzige Wahrheit.

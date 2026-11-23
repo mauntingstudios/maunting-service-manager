@@ -16,7 +16,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from models import User, UserActivityTime, UserFriend
+from models import Role, RolePermission, User, UserActivityTime, UserFriend
 from services.achievement_service import ACHIEVEMENTS_CATALOG, AchievementService
 from services.social_service import SocialService
 
@@ -107,6 +107,11 @@ def test_privat_sieht_niemand_auch_kein_freund(
     client: TestClient, db: Session, owner_user: User, owner_cookies: dict,
     regular_user: User, user_cookies: dict,
 ) -> None:
+    role = Role(name="profil_messenger")
+    db.add(role)
+    db.flush()
+    db.add(RolePermission(role_id=role.id, permission_key="messenger.use"))
+    regular_user.role_id = role.id
     regular_user.social_privacy = "private"
     db.commit()
     _freunde(db, owner_user, regular_user)

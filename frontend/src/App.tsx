@@ -228,8 +228,30 @@ function App() {
           />
           <Route path="profile" element={<Profile />} />
           <Route path="einstellungen" element={<Navigate to="/profile" replace />} />
-          <Route path="calendar" element={calendarEnabled ? <Calendar /> : <Navigate to={PANEL_HOME} replace />} />
-          <Route path="notes" element={notesEnabled ? <Notes /> : <Navigate to={PANEL_HOME} replace />} />
+          <Route
+            path="calendar"
+            element={
+              calendarEnabled ? (
+                <RequirePermission routeKey="calendar">
+                  <Calendar />
+                </RequirePermission>
+              ) : (
+                <Navigate to={PANEL_HOME} replace />
+              )
+            }
+          />
+          <Route
+            path="notes"
+            element={
+              notesEnabled ? (
+                <RequirePermission routeKey="notes">
+                  <Notes />
+                </RequirePermission>
+              ) : (
+                <Navigate to={PANEL_HOME} replace />
+              )
+            }
+          />
           <Route
             path="dokumente"
             element={
@@ -259,18 +281,51 @@ function App() {
             }
           />
           <Route path="social" element={<Navigate to="/profile" replace />} />
-          <Route path="chat" element={socialEnabled ? <Messenger /> : <Navigate to={PANEL_HOME} replace />} />
-          <Route path="chat/join/:inviteCode" element={socialEnabled ? <Messenger /> : <Navigate to={PANEL_HOME} replace />} />
+          <Route
+            path="chat"
+            element={
+              socialEnabled ? (
+                <RequirePermission routeKey="chat">
+                  <Messenger />
+                </RequirePermission>
+              ) : (
+                <Navigate to={PANEL_HOME} replace />
+              )
+            }
+          />
+          <Route
+            path="chat/join/:inviteCode"
+            element={
+              socialEnabled ? (
+                <RequirePermission routeKey="chat">
+                  <Messenger />
+                </RequirePermission>
+              ) : (
+                <Navigate to={PANEL_HOME} replace />
+              )
+            }
+          />
           <Route path="messenger" element={<Navigate to={socialEnabled ? '/chat' : PANEL_HOME} replace />} />
-          <Route path="user/:userId" element={socialEnabled ? <Benutzerprofil /> : <Navigate to={PANEL_HOME} replace />} />
+          <Route
+            path="user/:userId"
+            element={
+              socialEnabled ? (
+                <RequirePermission routeKey="chat">
+                  <Benutzerprofil />
+                </RequirePermission>
+              ) : (
+                <Navigate to={PANEL_HOME} replace />
+              )
+            }
+          />
           <Route path="ai" element={<RequirePermission routeKey="ai"><Ai /></RequirePermission>} />
           <Route path="teams" element={<Teams />} />
           <Route path="wallet" element={<WalletRoute />} />
-          <Route path="docs" element={<Docs />} />
-          <Route path="docs/blueprints" element={<BlueprintsDocs />} />
-          <Route path="docs/oauth" element={<OAuthDocs />} />
-          <Route path="docs/self-hosting" element={<SelfHostingDocs />} />
-          <Route path="docs/hoster-api" element={<HosterApiDocs />} />
+          <Route path="docs" element={<RequirePermission routeKey="docs"><Docs /></RequirePermission>} />
+          <Route path="docs/blueprints" element={<RequirePermission routeKey="docs"><BlueprintsDocs /></RequirePermission>} />
+          <Route path="docs/oauth" element={<RequirePermission routeKey="docs"><OAuthDocs /></RequirePermission>} />
+          <Route path="docs/self-hosting" element={<RequirePermission routeKey="docs"><SelfHostingDocs /></RequirePermission>} />
+          <Route path="docs/hoster-api" element={<RequirePermission routeKey="docs"><HosterApiDocs /></RequirePermission>} />
           <Route path="privacy" element={<Privacy />} />
           <Route
             path="blueprints"
@@ -318,7 +373,7 @@ function App() {
       </Suspense>
       </ErrorBoundary>
       {!istShopRoute && <PrivacyAcknowledgementNotice onVisibilityChange={setPrivacyNoticeVisible} />}
-      <SupportWidgetLoader enabled={!privacyNoticeVisible && !istShopRoute} />
+      <SupportWidgetLoader enabled={istShopRoute ? true : !privacyNoticeVisible} />
       <ToastContainer />
       <ConfirmDialog />
       <PromptDialog />

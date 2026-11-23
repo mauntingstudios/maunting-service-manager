@@ -20,6 +20,7 @@ export interface MePermissions {
   global_keys: string[]
   /** server_id -> erlaubte Server-Keys (nur via Delegation, nicht via Rolle) */
   server_keys: Record<string, string[]>
+  has_team_membership?: boolean
 }
 
 export interface Role {

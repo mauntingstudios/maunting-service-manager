@@ -164,6 +164,7 @@ def test_offener_client_zeigt_selbst_und_ersetzt_den_push(
 
 def test_http_anfrage_bleibt_pending_bis_zur_annahme(
     client,
+    db: Session,
     owner_user: User,
     regular_user: User,
     owner_cookies: dict,
@@ -171,6 +172,15 @@ def test_http_anfrage_bleibt_pending_bis_zur_annahme(
     user_csrf_token: str | None,
 ) -> None:
     """Der Beweis am alten Stand: A sendet, B sendet zurueck, niemand ist Freund."""
+    from models import Role, RolePermission
+
+    role = Role(name="friend_messenger")
+    db.add(role)
+    db.flush()
+    db.add(RolePermission(role_id=role.id, permission_key="messenger.use"))
+    regular_user.role_id = role.id
+    db.commit()
+
     erste = client.post(
         "/api/social/friends/request",
         json={"username": regular_user.username},

@@ -13,7 +13,7 @@ import pytest
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
-from models import ChatGroupMember, E2eeChatKey, E2eeMessage, User
+from models import ChatGroupMember, E2eeChatKey, E2eeMessage, Role, RolePermission, User
 from services.auth_service import AuthService
 from services.social import messages_service
 from services.sync_event_service import SyncEventService
@@ -339,6 +339,12 @@ def test_http_senden_lesen_quittieren(
     user_csrf_token: str | None,
 ):
     """Derselbe Weg ueber die echten Routen: senden, lesen, zustellen, lesen."""
+    rolle = Role(name="transport_messenger")
+    db.add(rolle)
+    db.flush()
+    db.add(RolePermission(role_id=rolle.id, permission_key="messenger.use"))
+    regular_user.role_id = rolle.id
+    db.commit()
     chat = _direktchat(db, owner_user, regular_user)
 
     gesendet = client.post(

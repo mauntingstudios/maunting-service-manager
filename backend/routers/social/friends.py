@@ -16,7 +16,7 @@ from schemas.social import (
     FriendResponse,
 )
 from services.social_service import SocialService
-from routers.social.basis import _check_social_enabled
+from routers.social.basis import _require_messenger_access as _check_social_enabled
 
 logger = logging.getLogger(__name__)
 

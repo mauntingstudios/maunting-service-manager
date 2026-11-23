@@ -29,7 +29,9 @@
     "aiProviders": "KI-Provider",
     "teams": "Teams",
     "chat": "Messenger",
-    "documents": "Maunting Docs"
+    "documents": "Maunting Docs",
+    "support": "Support",
+    "legalAndSupport": "Rechtliches & Support"
   },
   "navGroups": {
     "overview": "Arbeit",
@@ -3146,6 +3148,7 @@
     "create": "Server erstellen",
     "createDescription": "Neuen Server erstellen.",
     "createHint": "Erstelle deinen ersten Server, um loszulegen.",
+    "configureInShop": "Server im Shop konfigurieren",
     "currentBlueprint": "Aktuelles Spiel / Blueprint",
     "customerBadge": "Kunde",
     "deleted": "Server gelöscht",
@@ -3687,6 +3690,10 @@
       "title": "Notizen verwenden",
       "desc": "Ermöglicht den Zugriff auf das Notizmodul zum Erstellen, Bearbeiten und Organisieren von Notizen."
     },
+    "messenger_use": {
+      "title": "Messenger und Freunde verwenden",
+      "desc": "Ermöglicht den Zugriff auf den verschlüsselten Messenger, Gruppenchats, Anrufe, Freundeslisten und Statusmeldungen."
+    },
     "server_view": {
       "title": "Server anzeigen",
       "desc": "Diesen Server in der Übersicht und den Detailansichten einsehen."
@@ -3909,6 +3916,8 @@
     "loadFailed": "Die Serverliste konnte nicht geladen werden.",
     "createFirstServer": "Erstelle deinen ersten Server, um loszulegen.",
     "createServer": "Server erstellen",
+    "rentServer": "Server im Shop mieten",
+    "rentFirstServerHint": "Wähle im Shop dein Spiel und deinen gewünschten Standort, um loszulegen.",
     "nodeCapacity": "Node-Kapazität",
     "nodeCapacityHint": "Top Nodes nach Auslastung · max. 5",
     "stoppedCount": "{{count}} gestoppt",
@@ -6893,13 +6902,15 @@
       "shopLink": "Shop",
       "zumShop": "Zum Shop",
       "kiChat": "KI-Chat",
-      "bereiche": "Shop-Bereiche"
+      "bereiche": "Shop-Bereiche",
+      "support": "Support"
     },
     "fuss": {
       "zumInhalt": "Zum Inhalt springen",
       "hinweis": "Game-Server, Add-ons und KI-Kontingente direkt über deinen Maunting Service Manager.",
       "navigation": "Shop-Fußzeile",
       "datenschutz": "Datenschutz",
+      "support": "Support",
       "panel": "Panel"
     },
     "demo": {

@@ -7,10 +7,21 @@ import { useAuthStore } from '@/stores/authStore'
 import { usePermissionsStore } from '@/stores/permissionsStore'
 import { DEFAULT_PUBLIC_SETTINGS, usePublicSettingsStore } from '@/stores/publicSettingsStore'
 import { api } from '@/api/client'
+import { isSupportWidgetActive, openSupportWidget } from '@/lib/supportWidgetLoader'
 
 vi.mock('@/api/client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/api/client')>()
   return { ...actual, api: vi.fn() }
+})
+
+vi.mock('@/lib/supportWidgetLoader', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/supportWidgetLoader')>()
+  return {
+    ...actual,
+    isSupportWidgetActive: vi.fn(() => false),
+    openSupportWidget: vi.fn(() => true),
+    subscribeSupportWidgetState: vi.fn(() => () => {}),
+  }
 })
 
 const BETREIBER = { id: 1, username: 'owner', email: 'owner@example.invalid', is_owner: true } as never
@@ -34,6 +45,8 @@ describe('Topbar', () => {
   beforeEach(() => {
     i18n.changeLanguage('de')
     vi.mocked(api).mockReset().mockResolvedValue({})
+    vi.mocked(isSupportWidgetActive).mockReset().mockReturnValue(false)
+    vi.mocked(openSupportWidget).mockReset().mockReturnValue(true)
     useAuthStore.setState({ user: BETREIBER, isAuthenticated: true, isLoading: false })
     usePermissionsStore.setState({ me: { is_owner: true, role_id: null, role_name: null, global_keys: [], server_keys: {} }, isLoading: false, error: null })
   })
@@ -128,5 +141,40 @@ describe('Topbar', () => {
     } finally {
       usePublicSettingsStore.setState(DEFAULT_PUBLIC_SETTINGS)
     }
+  })
+
+  it('blendet /docs für Nicht-Betreiber aus und bietet Datenschutz sowie Support-Trigger im Profilmenü und Blatt', () => {
+    useAuthStore.setState({
+      user: { id: 2, username: 'kunde', email: 'kunde@example.invalid', is_owner: false } as never,
+      isAuthenticated: true,
+      isLoading: false,
+    })
+    usePermissionsStore.setState({
+      me: { is_owner: false, role_id: 2, role_name: 'Kunde', global_keys: [], server_keys: {}, has_team_membership: false },
+      isLoading: false,
+      error: null,
+    })
+    vi.mocked(isSupportWidgetActive).mockReturnValue(true)
+
+    zeige('/servers')
+
+    expect(screen.queryByRole('button', { name: i18n.t('nav.docs') })).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: /benutzermenü|user menu/i }))
+    expect(screen.getByRole('menuitem', { name: i18n.t('shop.fuss.datenschutz') })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('menuitem', { name: i18n.t('nav.support') }))
+    expect(openSupportWidget).toHaveBeenCalledTimes(1)
+
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('mss.app.menueOeffnen') }))
+    const blatt = screen.getByRole('dialog', { name: i18n.t('shell.mainNavigation') })
+    expect(within(blatt).queryByRole('button', { name: i18n.t('nav.docs') })).toBeNull()
+    expect(within(blatt).getByRole('button', { name: i18n.t('shop.fuss.datenschutz') })).toBeInTheDocument()
+    fireEvent.click(within(blatt).getByRole('button', { name: i18n.t('nav.support') }))
+    expect(openSupportWidget).toHaveBeenCalledTimes(2)
+
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('mss.app.menueOeffnen') }))
+    const blattZwei = screen.getByRole('dialog', { name: i18n.t('shell.mainNavigation') })
+    fireEvent.click(within(blattZwei).getByRole('button', { name: i18n.t('shop.fuss.datenschutz') }))
+    expect(screen.getByTestId('standort')).toHaveTextContent('/privacy')
   })
 })

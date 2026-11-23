@@ -1,5 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { loadSupportWidget, notifySupportWidgetUpdated, SUPPORT_WIDGET_UPDATED_EVENT } from './supportWidgetLoader'
+import {
+  clearSupportWidget,
+  isSupportWidgetActive,
+  loadSupportWidget,
+  notifySupportWidgetUpdated,
+  openSupportWidget,
+  SUPPORT_WIDGET_UPDATED_EVENT,
+} from './supportWidgetLoader'
 import { apiUrl } from '@/config/api'
 
 describe('supportWidgetLoader', () => {
@@ -183,5 +190,41 @@ describe('supportWidgetLoader', () => {
     notifySupportWidgetUpdated()
     expect(handler).toHaveBeenCalledTimes(1)
     window.removeEventListener(SUPPORT_WIDGET_UPDATED_EVENT, handler)
+  })
+
+  it('tracks active state and opens provider widget via openSupportWidget', async () => {
+    clearSupportWidget()
+    expect(isSupportWidgetActive()).toBe(false)
+    expect(openSupportWidget()).toBe(false)
+
+    fetchSpy.mockReturnValueOnce(
+      mockJsonResponse({
+        enabled: true,
+        provider: 'crisp',
+        crisp_website_id: 'crisp-site-1',
+      }),
+    )
+    await loadSupportWidget()
+    expect(isSupportWidgetActive()).toBe(true)
+    expect(openSupportWidget()).toBe(true)
+    expect((window as any).$crisp).toContainEqual(['do', 'chat:open'])
+
+    fetchSpy.mockReturnValueOnce(
+      mockJsonResponse({
+        enabled: true,
+        provider: 'singra',
+        singra_widget_id: 'singra-1',
+      }),
+    )
+    await loadSupportWidget()
+    const btn = document.createElement('button')
+    btn.setAttribute('data-singra-launcher', '')
+    const clickSpy = vi.spyOn(btn, 'click')
+    document.body.appendChild(btn)
+    expect(openSupportWidget()).toBe(true)
+    expect(clickSpy).toHaveBeenCalledTimes(1)
+
+    clearSupportWidget()
+    expect(isSupportWidgetActive()).toBe(false)
   })
 })

@@ -29,7 +29,7 @@ from schemas.social import (
 )
 from services.achievement_service import SELBST_GEMELDET, AchievementService
 from services.social_service import SocialService
-from routers.social.basis import _check_social_enabled
+from routers.social.basis import _require_messenger_access as _check_social_enabled
 
 logger = logging.getLogger(__name__)
 

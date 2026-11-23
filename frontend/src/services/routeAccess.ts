@@ -4,7 +4,10 @@ export type RouteAccessState = 'loading' | 'allowed' | 'forbidden' | 'notFound' 
 
 export const routeAccessRules = {
   dashboard: null,
-  docs: null,
+  calendar: ['calendar.use'],
+  notes: ['notes.use'],
+  chat: ['messenger.use'],
+  docs: ['panel.settings.read', 'blueprints.manage', 'nodes.read', 'servers.create', 'panel.hoster.read', 'shop.read'],
   dokumente: ['docs.use'],
   ai: ['ai.chat.use', 'ai.skills.manage'],
   users: ['users.read', 'users.manage'],

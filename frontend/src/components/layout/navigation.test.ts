@@ -153,10 +153,54 @@ describe('buildNavigation', () => {
       canViewNodes: false,
       canUseAi: false,
       canUseSkills: false,
+      canUseCalendar: true,
     }
     expect(buildNavigation(labels, access).some((item) => item.to === '/calendar')).toBe(true)
     expect(buildNavigation(labels, { ...access, calendarEnabled: true }).some((item) => item.to === '/calendar')).toBe(true)
     expect(buildNavigation(labels, { ...access, calendarEnabled: false }).some((item) => item.to === '/calendar')).toBe(false)
+    expect(buildNavigation(labels, { ...access, canUseCalendar: false }).some((item) => item.to === '/calendar')).toBe(false)
+  })
+
+  it('blendet Kalender, Notizen, Messenger, Docs und Teams fuer unberechtigte Kunden konsequent aus', () => {
+    const customer = buildNavigation(labels, {
+      owner: false,
+      canManageUsers: false,
+      canManageRoles: false,
+      canViewAudit: false,
+      canViewSettings: false,
+      canManagePanelBackups: false,
+      canReadPanelDatabase: false,
+      canViewNodes: false,
+      canUseAi: true,
+      canUseSkills: false,
+      calendarEnabled: true,
+      notesEnabled: true,
+      socialEnabled: true,
+      docsEnabled: true,
+    })
+    const routes = customer.map((item) => item.to)
+    expect(routes).toEqual(['/', '/ai', '/servers'])
+
+    const withMemberships = buildNavigation(labels, {
+      owner: false,
+      canManageUsers: false,
+      canManageRoles: false,
+      canViewAudit: false,
+      canViewSettings: false,
+      canManagePanelBackups: false,
+      canReadPanelDatabase: false,
+      canViewNodes: false,
+      canUseAi: false,
+      canUseSkills: false,
+      hasTeamMembership: true,
+      canUseNotes: true,
+      canUseMessenger: true,
+      canViewOperatorDocs: true,
+    }).map((item) => item.to)
+    expect(withMemberships).toContain('/teams')
+    expect(withMemberships).toContain('/notes')
+    expect(withMemberships).toContain('/chat')
+    expect(withMemberships).toContain('/docs')
   })
 
   it('zeigt offline nur Dashboard, Kalender und Notizen', () => {

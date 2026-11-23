@@ -26,6 +26,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { api } from '@/api/client'
 import i18n from '@/i18n'
+import { usePermissionsStore } from '@/stores/permissionsStore'
 import type { GitUpdateStatus } from '@/types'
 import { UpdateBanner } from './UpdateBanner'
 
@@ -64,6 +65,17 @@ describe('UpdateBanner Prüfschleife', () => {
   beforeEach(async () => {
     vi.clearAllMocks()
     await i18n.changeLanguage('de')
+    usePermissionsStore.setState({
+      me: {
+        is_owner: false,
+        role_id: 1,
+        role_name: 'admin',
+        global_keys: ['panel.settings.read'],
+        server_keys: {},
+      },
+      isLoading: false,
+      error: null,
+    })
     // Das Update bleibt offen: `api` wirft nie, `update_available` bleibt true.
     vi.mocked(api).mockImplementation(async (pfad: string) => {
       if (pfad === '/system/update/panel') return {} as never
@@ -73,6 +85,7 @@ describe('UpdateBanner Prüfschleife', () => {
 
   afterEach(() => {
     vi.useRealTimers()
+    usePermissionsStore.setState({ me: null, isLoading: false, error: null })
   })
 
   it('bricht nach zwei Minuten ab, auch wenn jede Abfrage sauber antwortet', async () => {
@@ -109,5 +122,22 @@ describe('UpdateBanner Prüfschleife', () => {
       await vi.advanceTimersByTimeAsync(3000 * 10)
     })
     expect(statusAbfragen()).toBe(vorAbhaengen)
+  })
+
+  it('fragt /system/update/status ohne panel.settings.read gar nicht erst ab', () => {
+    usePermissionsStore.setState({
+      me: {
+        is_owner: false,
+        role_id: 2,
+        role_name: 'user',
+        global_keys: [],
+        server_keys: {},
+      },
+      isLoading: false,
+      error: null,
+    })
+    const { container } = render(<UpdateBanner />)
+    expect(statusAbfragen()).toBe(0)
+    expect(container.firstChild).toBeNull()
   })
 })

@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 from database import get_db
 from dependencies import get_current_user
 from models import E2eeAccount, E2eeAccountKeyVault, User, UserE2eeDevice
-from routers.social.basis import _check_social_enabled
+from routers.social.basis import _require_messenger_access
 from schemas.social import validate_ecdsa_public_key_jwk, validate_rsa_public_key_jwk
 from services.social.messages_service import latest_chat_key_version, list_chat_keys, store_chat_keys
 
@@ -237,7 +237,7 @@ def lookup_accounts(
     }
 
 
-@router.get("/e2ee/chat-keys", dependencies=[Depends(_check_social_enabled)])
+@router.get("/e2ee/chat-keys", dependencies=[Depends(_require_messenger_access)])
 def get_chat_keys(
     chat_type: str = Query(..., pattern="^(direct|group)$"),
     chat_id: int = Query(..., gt=0),
@@ -250,7 +250,7 @@ def get_chat_keys(
     }
 
 
-@router.put("/e2ee/chat-keys", dependencies=[Depends(_check_social_enabled)])
+@router.put("/e2ee/chat-keys", dependencies=[Depends(_require_messenger_access)])
 def put_chat_keys(
     req: ChatKeysUpload,
     db: Session = Depends(get_db),

@@ -1,8 +1,10 @@
+import { useSyncExternalStore } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import {
   Bot,
   LayoutDashboard,
+  LifeBuoy,
   LogIn,
   LogOut,
   ReceiptText,
@@ -14,6 +16,11 @@ import { Logo } from '@/components/Logo'
 import { ProfileDropdown, type ProfileDropdownItem } from '@/components/app/ProfileDropdown'
 import { useHasPermission } from '@/hooks/useHasPermission'
 import { PANEL_HOME } from '@/lib/panelWege'
+import {
+  isSupportWidgetActive,
+  openSupportWidget,
+  subscribeSupportWidgetState,
+} from '@/lib/supportWidgetLoader'
 import { useAuthStore } from '@/stores/authStore'
 import { usePublicSettingsStore } from '@/stores/publicSettingsStore'
 
@@ -23,6 +30,11 @@ export function ShopKopf() {
   const { isAuthenticated, user, logout } = useAuthStore()
   const canUseAi = useHasPermission('ai.chat.use')
   const shopEnabled = usePublicSettingsStore((s) => s.shop_enabled)
+  const supportActive = useSyncExternalStore(
+    subscribeSupportWidgetState,
+    isSupportWidgetActive,
+    () => false,
+  )
   const customBrand = usePublicSettingsStore((s) => s.branding?.custom_name || '')
   const shopBrandTitle = customBrand ? `${customBrand} Shop` : 'MSM Shop'
 
@@ -99,11 +111,32 @@ export function ShopKopf() {
               <Link to="/#shop-addons" className="transition-colors hover:text-on-surface">
                 {t('shop.kopf.addons')}
               </Link>
+              {supportActive && (
+                <button
+                  type="button"
+                  onClick={() => openSupportWidget()}
+                  className="inline-flex items-center gap-1.5 transition-colors hover:text-on-surface"
+                >
+                  <LifeBuoy className="h-3.5 w-3.5" aria-hidden="true" />
+                  <span>{t('shop.kopf.support')}</span>
+                </button>
+              )}
             </nav>
           )}
         </div>
 
         <nav className="flex items-center gap-2" aria-label={t('shop.kopf.navigation')}>
+          {supportActive && (
+            <button
+              type="button"
+              onClick={() => openSupportWidget()}
+              aria-label={t('shop.kopf.support')}
+              className={buttonClasses('ghost', 'sm', 'gap-1.5 md:hidden')}
+            >
+              <LifeBuoy className="h-4 w-4" aria-hidden="true" />
+              <span className="sr-only sm:not-sr-only">{t('shop.kopf.support')}</span>
+            </button>
+          )}
           {isAuthenticated ? (
             <>
               {canUseAi && (

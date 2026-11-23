@@ -32,7 +32,7 @@ from sqlalchemy.orm import Session
 
 from dependencies import get_current_user, verify_csrf
 from main import app
-from models import ChatGroup, User
+from models import ChatGroup, Role, RolePermission, User
 from services.social_service import SocialService
 
 
@@ -370,6 +370,12 @@ def test_wer_nur_hinauswerfen_darf_bekommt_den_code_nicht(
 
     Die Antwort des Rauswurfs darf kein zweiter Weg zum Code sein.
     """
+    rolle = Role(name="karte_messenger")
+    db.add(rolle)
+    db.flush()
+    db.add(RolePermission(role_id=rolle.id, permission_key="messenger.use"))
+    regular_user.role_id = rolle.id
+    db.commit()
     gruppe = _mit_mitglied(db, owner_user, regular_user, "send_messages,kick_members")
     SocialService.join_group_by_invite_code(db, inactive_user, gruppe.invite_code)
 

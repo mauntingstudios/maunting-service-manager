@@ -1,7 +1,12 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useSyncExternalStore } from 'react'
 import { Link, Outlet, useLocation } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { PANEL_HOME } from '@/lib/panelWege'
+import {
+  isSupportWidgetActive,
+  openSupportWidget,
+  subscribeSupportWidgetState,
+} from '@/lib/supportWidgetLoader'
 import { usePublicSettingsStore } from '@/stores/publicSettingsStore'
 import { ShopPromoBanner } from './components/ShopPromoBanner'
 import { ShopKopf } from './ShopKopf'
@@ -12,6 +17,11 @@ export function ShopRahmen() {
   const mainRef = useRef<HTMLElement>(null)
   const shopEnabled = usePublicSettingsStore((s) => s.shop_enabled)
   const customBrand = usePublicSettingsStore((s) => s.branding?.custom_name || '')
+  const supportActive = useSyncExternalStore(
+    subscribeSupportWidgetState,
+    isSupportWidgetActive,
+    () => false,
+  )
 
   useEffect(() => {
     mainRef.current?.focus()
@@ -47,6 +57,15 @@ export function ShopRahmen() {
             <Link to="/privacy" className="hover:text-on-surface">
               {t('shop.fuss.datenschutz')}
             </Link>
+            {supportActive && (
+              <button
+                type="button"
+                onClick={() => openSupportWidget()}
+                className="hover:text-on-surface"
+              >
+                {t('shop.fuss.support')}
+              </button>
+            )}
             <Link to="/konto/bestellungen" className="hover:text-on-surface">
               {t('shop.kopf.konto')}
             </Link>

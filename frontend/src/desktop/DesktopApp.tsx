@@ -40,7 +40,7 @@ import { Avatar } from '@/components/app/Avatar'
 import { BenachrichtigungsGlocke } from '@/components/notifications/BenachrichtigungsGlocke'
 import { Button, Kurzinfo, UpdateBadge } from '@maunting/ui'
 import { ProfileDropdown, ProfileDropdownItem } from '@/components/app/ProfileDropdown'
-import { useHasPermission } from '@/hooks/useHasPermission'
+import { useEffectivePermissions, useHasPermission } from '@/hooks/useHasPermission'
 import { KI_NAME } from '@/lib/kiName'
 import { Ai } from '@/pages/Ai'
 import { AI_IS_BETA } from '@/components/ai/AiBetaBanner'
@@ -460,6 +460,8 @@ export function DesktopApp() {
   }
 
   const publicSettings = usePublicSettingsStore()
+  const canUseMessenger = useHasPermission('messenger.use')
+  const canAccessSocial = publicSettings.social_enabled && canUseMessenger
   const fallbackRoute = isOffline ? getFallbackOfflineRoute(publicSettings) : '/ai'
 
   let inhalt: ReactNode
@@ -711,7 +713,7 @@ export function DesktopApp() {
       <NavigationEmpfaenger isOffline={isOffline} />
       <div className={`${isAndroid ? '' : 'mui-window'} relative h-[100dvh] max-h-[100dvh] w-full overflow-hidden bg-background text-on-surface pb-[var(--msm-unten-sicher)] pl-[env(safe-area-inset-left,0px)] pr-[env(safe-area-inset-right,0px)] flex flex-col`}>
         <Titelleiste />
-        {phase === 'bereit' && publicSettings.social_enabled && <CrossDeviceCallBanner />}
+        {phase === 'bereit' && canAccessSocial && <CrossDeviceCallBanner />}
         <div className="relative z-10 flex h-full max-h-full min-h-0 flex-1 flex-col overflow-hidden">{inhalt}</div>
 
         {phase === 'bereit' && (
@@ -720,9 +722,9 @@ export function DesktopApp() {
             <KalibrierungsHinweis />
             <AiRunNotice />
             <ServerIncidentNotifier />
-            <FreundschaftsWache />
+            {canAccessSocial && <FreundschaftsWache />}
             <PanelPopupModal />
-            {publicSettings.social_enabled && <AnrufEbene />}
+            {canAccessSocial && <AnrufEbene />}
             {isAndroid && <OverlayFenster inApp={true} />}
           </>
         )}
@@ -746,6 +748,7 @@ function NavigationEmpfaenger({ isOffline }: { isOffline: boolean }) {
   const navigate = useNavigate()
   const location = useLocation()
   const publicSettings = usePublicSettingsStore()
+  const canUseMessenger = useHasPermission('messenger.use')
   const vaultUnlocked = useVaultStore((s) => s.isUnlocked)
 
   /*
@@ -826,7 +829,7 @@ function NavigationEmpfaenger({ isOffline }: { isOffline: boolean }) {
         const ziel = event.payload
         // Die Server-Verwaltung braucht das Panel; offline bleibt sie zu.
         if (isOffline && istDashboardRoute(ziel.split(/[?#]/)[0])) return
-        if (ziel.startsWith('/chat') && !publicSettings.social_enabled) return
+        if (ziel.startsWith('/chat') && (!publicSettings.social_enabled || !canUseMessenger)) return
         if (ziel.startsWith('/kalender') && !publicSettings.calendar_enabled) return
         if (ziel.startsWith('/notizen') && !publicSettings.notes_enabled) return
         if (ziel.startsWith('/dokumente') && !publicSettings.docs_enabled) return
@@ -842,8 +845,8 @@ function NavigationEmpfaenger({ isOffline }: { isOffline: boolean }) {
     return () => {
       void unlisten.then((u) => u())
     }
-  }, [navigate, publicSettings])
-  return !isOffline && publicSettings.social_enabled && !location.pathname.startsWith('/chat')
+  }, [navigate, publicSettings, canUseMessenger])
+  return !isOffline && publicSettings.social_enabled && canUseMessenger && !location.pathname.startsWith('/chat')
     ? <MessengerHintergrund />
     : null
 }
@@ -1021,16 +1024,35 @@ function Hauptseite({
   const hasPermissionKalender = useHasPermission('calendar.use')
   const hasPermissionNotizen = useHasPermission('notes.use')
   const hasPermissionDokumente = useHasPermission('docs.use')
+  const hasPermissionMessenger = useHasPermission('messenger.use')
+  const hasPermissionSkills = useHasPermission('ai.skills.use')
+  const hasPermissionTeamsCreate = useHasPermission('teams.create')
+  const hasPermissionPanelSettings = useHasPermission('panel.settings.read')
+  const hasPermissionBlueprints = useHasPermission('blueprints.manage')
+  const hasPermissionNodes = useHasPermission('nodes.read')
+  const hasPermissionServersCreate = useHasPermission('servers.create')
+  const hasPermissionHosterRead = useHasPermission('panel.hoster.read')
+  const hasPermissionShopRead = useHasPermission('shop.read')
+  const effectivePermissions = useEffectivePermissions()
+  const hasTeamMembership = Boolean(effectivePermissions?.has_team_membership)
+  const teamInvitationCount = useTeamInvitationStore((s) => s.count)
   const darfChatten = !isOffline && hasPermissionChat
   const darfKalender = publicSettings.calendar_enabled && (isOffline || hasPermissionKalender)
   const darfNotizen = publicSettings.notes_enabled && (isOffline || hasPermissionNotizen)
   const darfDokumente = publicSettings.docs_enabled && (isOffline || hasPermissionDokumente)
   const darfTresor = publicSettings.vault_enabled
-  const darfTeams = !isOffline
-  const darfMessenger = publicSettings.social_enabled
+  const darfTeams = !isOffline && (hasPermissionSkills || hasPermissionTeamsCreate || hasTeamMembership || teamInvitationCount > 0)
+  const darfMessenger = publicSettings.social_enabled && hasPermissionMessenger
+  const darfHilfe =
+    !isOffline &&
+    (hasPermissionPanelSettings ||
+      hasPermissionBlueprints ||
+      hasPermissionNodes ||
+      hasPermissionServersCreate ||
+      hasPermissionHosterRead ||
+      hasPermissionShopRead)
   const [mobileMenuOffen, setMobileMenuOffen] = useState(false)
   const totalMessengerUnread = useMessengerNotificationStore((s) => s.totalUnreadCount)
-  const teamInvitationCount = useTeamInvitationStore((s) => s.count)
 
   const offlineRouten = useMemo(() => {
     const routen: string[] = []
@@ -1062,10 +1084,13 @@ function Hauptseite({
     if (!darfDokumente && bereich === 'dokumente') {
       navigate(fallbackRoute, { replace: true })
     }
-    if (isOffline && bereich === 'teams') {
+    if (!darfTeams && bereich === 'teams') {
       navigate(fallbackRoute, { replace: true })
     }
-  }, [darfTresor, darfMessenger, darfKalender, darfNotizen, darfDokumente, isOffline, bereich, navigate, fallbackRoute])
+    if (!darfHilfe && bereich === 'hilfe') {
+      navigate(fallbackRoute, { replace: true })
+    }
+  }, [darfTresor, darfMessenger, darfKalender, darfNotizen, darfDokumente, darfTeams, darfHilfe, bereich, navigate, fallbackRoute])
 
   // Am Handy fehlt die Reiterleiste; die Kopfzeile nennt deshalb den offenen Bereich.
   const kopfTitel = bereich === 'ki'
@@ -1288,7 +1313,7 @@ function Hauptseite({
                 pulse={teamInvitationCount > 0}
               />
             )}
-            {!isOffline && (
+            {darfHilfe && (
               <Reiter
                 aktiv={bereich === 'hilfe'}
                 onClick={() => navigate('/docs')}
@@ -1330,9 +1355,9 @@ function Hauptseite({
               user={user}
               items={profileItems}
               placement="bottom-right"
-              status={!isOffline ? presenceStatus : undefined}
-              onStatusChange={!isOffline ? handlePresenceChange : undefined}
-              effectiveStatus={!isOffline ? presenceEffektiv : undefined}
+              status={!isOffline && darfMessenger ? presenceStatus : undefined}
+              onStatusChange={!isOffline && darfMessenger ? handlePresenceChange : undefined}
+              effectiveStatus={!isOffline && darfMessenger ? presenceEffektiv : undefined}
             />
 
             {/* Mobile Menü-Knopf */}
@@ -1542,7 +1567,7 @@ function Hauptseite({
                   </button>
                 )}
 
-                {!isOffline && (
+                {darfHilfe && (
                   <button
                     type="button"
                     onClick={() => { navigate('/docs'); setMobileMenuOffen(false); }}

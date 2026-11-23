@@ -2,12 +2,14 @@ import { useEffect, useRef, useState } from 'react'
 import { Download, X, RefreshCw } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { api } from '@/api/client'
+import { useHasPermission } from '@/hooks/useHasPermission'
 import { toast } from '@/stores/toastStore'
 import type { GitUpdateStatus } from '@/types'
 import { Button } from '@maunting/ui'
 
 export function UpdateBanner() {
   const { t } = useTranslation()
+  const canReadSettings = useHasPermission('panel.settings.read')
   const [status, setStatus] = useState<GitUpdateStatus | null>(null)
   const [dismissed, setDismissed] = useState(false)
   const [updating, setUpdating] = useState(false)
@@ -27,6 +29,7 @@ export function UpdateBanner() {
   }
 
   useEffect(() => {
+    if (!canReadSettings) return
     fetchStatus()
     // Poll updates status every 5 minutes
     const tId = setInterval(fetchStatus, 300000)
@@ -34,7 +37,7 @@ export function UpdateBanner() {
       clearInterval(tId)
       if (checkRef.current) clearInterval(checkRef.current)
     }
-  }, [])
+  }, [canReadSettings])
 
   const handleUpdate = async () => {
     if (updating) return
@@ -72,7 +75,7 @@ export function UpdateBanner() {
     }
   }
 
-  if (!status || dismissed) return null
+  if (!canReadSettings || !status || dismissed) return null
 
   return (
     <div className="msm-card border border-status-warning/30 bg-status-warning/5 p-4 mb-6">

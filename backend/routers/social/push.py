@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from database import get_db
 from dependencies import get_current_user, session_familie, verify_csrf
 from models import User
-from routers.social.basis import _check_social_enabled
+from routers.social.basis import _require_messenger_access as _check_social_enabled
 from schemas.social import PushSubscriptionCreate
 from services import webpush_service
 

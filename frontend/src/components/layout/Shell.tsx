@@ -17,6 +17,7 @@ import { TageszeitHintergrund } from './TageszeitHintergrund'
 import { useTageszeitMotiv } from '@/lib/tageszeit'
 import { useAufgeloestesServerWallpaper } from '@/stores/serverWallpaperStore'
 import { usePublicSettingsStore } from '@/stores/publicSettingsStore'
+import { useHasPermission } from '@/hooks/useHasPermission'
 import { useMessengerSperreBereitschaft } from '@/hooks/useMessengerSperre'
 import { usePresenceAndActivity } from '@/hooks/usePresenceAndActivity'
 import { MessengerHintergrund } from '@/browser/MessengerHintergrund'
@@ -35,9 +36,11 @@ export function Shell() {
   useMessengerSperreBereitschaft()
 
   const socialEnabled = usePublicSettingsStore((s) => s.social_enabled)
+  const canUseMessenger = useHasPermission('messenger.use')
+  const canAccessSocial = socialEnabled && canUseMessenger
   const [walletOpen, setWalletOpen] = useState(false)
 
-  const { status: presenceStatus, effectiveStatus: presenceEffektiv, changeStatus: handlePresenceChange } = usePresenceAndActivity(socialEnabled, true)
+  const { status: presenceStatus, effectiveStatus: presenceEffektiv, changeStatus: handlePresenceChange } = usePresenceAndActivity(canAccessSocial, true)
 
   useEffect(() => {
     const handleOpenWallet = () => setWalletOpen(true)
@@ -169,15 +172,15 @@ export function Shell() {
 
       {/* Push- & Pop-up-Benachrichtigungen bei Server-Vorfällen & Kalender-Erinnerungen */}
       <ServerIncidentNotifier />
-      <FreundschaftsWache />
+      {canAccessSocial && <FreundschaftsWache />}
       <PasskeyFernBestaetigung />
-      {socialEnabled && !isChatPage && <MessengerHintergrund />}
+      {canAccessSocial && !isChatPage && <MessengerHintergrund />}
 
       {/* Aktive Pop-ups / Ankündigungen des Panels */}
       <PanelPopupModal />
 
       {/* Anruf-Overlay für Direkt- und Gruppenanrufe (global im Shell verfügbar) */}
-      <AnrufEbene />
+      {canAccessSocial && <AnrufEbene />}
 
       {/* Vollbild Smartcard-Wallet-Modus für Mobilgeräte */}
       <SmartcardWalletModal isOpen={walletOpen} onClose={() => setWalletOpen(false)} />

@@ -33,7 +33,24 @@ function resolve(routeKey: string, me: MePermissions | null, options = {}) {
 describe('resolveRouteAccessState', () => {
   it('allows public protected routes without permission data', () => {
     expect(resolve('dashboard', null)).toBe('allowed')
-    expect(resolve('docs', null)).toBe('allowed')
+    expect(resolve('docs', null)).toBe('loading')
+  })
+
+  it('allows operator docs only with operator rights', () => {
+    expect(resolve('docs', owner)).toBe('allowed')
+    expect(resolve('docs', userWith(['shop.read']))).toBe('allowed')
+    expect(resolve('docs', userWith(['servers.create']))).toBe('allowed')
+    expect(resolve('docs', userWith([]))).toBe('forbidden')
+    expect(resolve('docs', userWith(['ai.chat.use']))).toBe('forbidden')
+  })
+
+  it('requires explicit permissions for calendar, notes, and messenger', () => {
+    expect(resolve('calendar', userWith([]))).toBe('forbidden')
+    expect(resolve('calendar', userWith(['calendar.use']))).toBe('allowed')
+    expect(resolve('notes', userWith([]))).toBe('forbidden')
+    expect(resolve('notes', userWith(['notes.use']))).toBe('allowed')
+    expect(resolve('chat', userWith([]))).toBe('forbidden')
+    expect(resolve('chat', userWith(['messenger.use']))).toBe('allowed')
   })
 
   it('allows permitted access to users, roles, settings and blueprints', () => {

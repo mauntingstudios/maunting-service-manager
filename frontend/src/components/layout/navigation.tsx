@@ -24,13 +24,18 @@ interface NavigationAccess {
    */
   canUseSkills: boolean
   canCreateTeams?: boolean
+  hasTeamMembership?: boolean
   teamInvitationCount?: number
   calendarEnabled?: boolean
+  canUseCalendar?: boolean
   notesEnabled?: boolean
+  canUseNotes?: boolean
   /** Modulschalter `docs_enabled`; unabhaengig davon braucht es `docs.use`. */
   docsEnabled?: boolean
   canUseDocs?: boolean
   socialEnabled?: boolean
+  canUseMessenger?: boolean
+  canViewOperatorDocs?: boolean
   /** Web-Panel: `/dashboard`; Desktop-App bleibt bei `/`. */
   dashboardPath?: string
   /**
@@ -53,9 +58,9 @@ export function buildNavigation(labels: Record<string, string>, access: Navigati
   // und Offline-Regeln bleiben, wie sie sind.
   return [
     { to: access.dashboardPath ?? '/', icon: LayoutDashboard, label: labels.dashboard, group: 'Overview' },
-    ...(online && access.socialEnabled !== false ? [{ to: '/chat', icon: MessageSquare, label: labels.chat, group: 'Overview' as const }] : []),
-    ...(access.calendarEnabled !== false ? [{ to: '/calendar', icon: CalendarIcon, label: labels.calendar, group: 'Overview' as const }] : []),
-    ...(access.notesEnabled !== false ? [{ to: '/notes', icon: StickyNote, label: labels.notes, group: 'Overview' as const }] : []),
+    ...(online && access.socialEnabled !== false && (access.owner || access.canUseMessenger) ? [{ to: '/chat', icon: MessageSquare, label: labels.chat, group: 'Overview' as const }] : []),
+    ...(access.calendarEnabled !== false && (access.owner || access.canUseCalendar) ? [{ to: '/calendar', icon: CalendarIcon, label: labels.calendar, group: 'Overview' as const }] : []),
+    ...(access.notesEnabled !== false && (access.owner || access.canUseNotes) ? [{ to: '/notes', icon: StickyNote, label: labels.notes, group: 'Overview' as const }] : []),
     // Dokumente sind offline-faehig: kein `online &&`. Wer eine lokale Kopie
     // hat, oeffnet sie auch ohne Netz.
     ...(access.docsEnabled !== false && (access.owner || access.canUseDocs)
@@ -64,7 +69,7 @@ export function buildNavigation(labels: Record<string, string>, access: Navigati
     ...(online && (access.owner || access.canUseAi) ? [{ to: '/ai', icon: Bot, label: labels.ai, group: 'Infrastructure' as const }] : []),
     ...(online ? [{ to: '/servers', icon: Server, label: labels.servers, group: 'Infrastructure' as const }] : []),
     ...(online && (access.owner || access.canViewNodes) ? [{ to: '/admin/nodes', icon: Network, label: labels.nodes, group: 'Infrastructure' as const }] : []),
-    ...(online && (access.owner || access.canUseAi || access.canUseSkills || access.canCreateTeams || (access.teamInvitationCount ?? 0) > 0) ? [{ to: '/teams', icon: UsersRound, label: labels.teams, group: 'Infrastructure' as const }] : []),
+    ...(online && (access.owner || access.canUseSkills || access.canCreateTeams || access.hasTeamMembership || (access.teamInvitationCount ?? 0) > 0) ? [{ to: '/teams', icon: UsersRound, label: labels.teams, group: 'Infrastructure' as const }] : []),
     ...(online && (access.owner || access.canManageUsers) ? [{ to: '/users', icon: Users, label: labels.users, group: 'Administration' as const }] : []),
     ...(online && (access.owner || access.canManageRoles) ? [{ to: '/roles', icon: Shield, label: labels.roles, group: 'Administration' as const }] : []),
     ...(online && (access.owner || access.canViewAudit) ? [{ to: '/admin/audit', icon: History, label: labels.audit, group: 'Administration' as const }] : []),
@@ -74,6 +79,6 @@ export function buildNavigation(labels: Record<string, string>, access: Navigati
     ] : []),
     ...(online && (access.owner || access.canManagePanelBackups) ? [{ to: '/panel-backups', icon: Archive, label: labels.panelBackups, group: 'Panel' as const }] : []),
     ...(online && (access.owner || access.canReadPanelDatabase) ? [{ to: '/panel-database', icon: Database, label: labels.panelDatabase, group: 'Panel' as const }] : []),
-    ...(online ? [{ to: '/docs', icon: BookOpen, label: labels.docs, group: 'Help' as const }] : []),
+    ...(online && (access.owner || access.canViewOperatorDocs) ? [{ to: '/docs', icon: BookOpen, label: labels.docs, group: 'Help' as const }] : []),
   ]
 }

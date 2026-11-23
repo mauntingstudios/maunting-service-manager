@@ -1,9 +1,16 @@
 import { useEffect } from 'react'
-import { loadSupportWidget, SUPPORT_WIDGET_UPDATED_EVENT } from '@/lib/supportWidgetLoader'
+import {
+  clearSupportWidget,
+  loadSupportWidget,
+  SUPPORT_WIDGET_UPDATED_EVENT,
+} from '@/lib/supportWidgetLoader'
 
 export function SupportWidgetLoader({ enabled }: { enabled: boolean }) {
   useEffect(() => {
-    if (!enabled) return
+    if (!enabled) {
+      clearSupportWidget()
+      return
+    }
     void loadSupportWidget()
     const onUpdate = () => {
       void loadSupportWidget()

@@ -58,25 +58,95 @@ interface PublicSupportWidget {
   custom_snippet?: string
 }
 
+let lastWidgetConfig: PublicSupportWidget | null = null
+const widgetStateListeners = new Set<() => void>()
+
+function setSupportWidgetState(cfg: PublicSupportWidget | null): void {
+  lastWidgetConfig = cfg
+  widgetStateListeners.forEach((listener) => listener())
+}
+
+export function isSupportWidgetActive(): boolean {
+  return Boolean(lastWidgetConfig?.enabled)
+}
+
+export function subscribeSupportWidgetState(listener: () => void): () => void {
+  widgetStateListeners.add(listener)
+  return () => {
+    widgetStateListeners.delete(listener)
+  }
+}
+
+export function openSupportWidget(): boolean {
+  if (!lastWidgetConfig?.enabled) return false
+  const w = window as unknown as {
+    $crisp?: unknown[]
+    Tawk_API?: { maximize?: () => void }
+    SingraWidget?: { open?: () => void; toggle?: () => void }
+    singraWidget?: { open?: () => void; toggle?: () => void }
+  }
+  switch (lastWidgetConfig.provider) {
+    case 'crisp':
+      if (Array.isArray(w.$crisp)) {
+        w.$crisp.push(['do', 'chat:open'])
+        return true
+      }
+      return false
+    case 'tawk':
+      if (typeof w.Tawk_API?.maximize === 'function') {
+        w.Tawk_API.maximize()
+        return true
+      }
+      return false
+    default: {
+      if (typeof w.SingraWidget?.open === 'function') {
+        w.SingraWidget.open()
+        return true
+      }
+      if (typeof w.SingraWidget?.toggle === 'function') {
+        w.SingraWidget.toggle()
+        return true
+      }
+      if (typeof w.singraWidget?.open === 'function') {
+        w.singraWidget.open()
+        return true
+      }
+      const launcher = document.querySelector<HTMLElement>('[data-singra-launcher], [id*="singra"] button')
+      if (launcher) {
+        launcher.click()
+        return true
+      }
+      return false
+    }
+  }
+}
+
 function removeWidgetArtifacts() {
   document.querySelectorAll(`[${SCRIPT_ATTR}]`).forEach((el) => el.remove())
   document.getElementById('msm-support-widget-custom')?.remove()
 }
 
-function injectSingra(widgetId: string, scriptSrc: string) {
-  if (!widgetId.trim()) return
+export function clearSupportWidget(): void {
+  removeWidgetArtifacts()
+  setSupportWidgetState(null)
+}
+
+function injectSingra(widgetId: string, scriptSrc: string): boolean {
+  if (!widgetId.trim()) return false
   removeWidgetArtifacts()
   const script = document.createElement('script')
   script.setAttribute(SCRIPT_ATTR, 'singra')
   script.src = scriptSrc
+  script.async = true
   script.defer = true
   script.setAttribute('data-widget-id', widgetId)
   document.body.appendChild(script)
+  return true
 }
 
-function injectCrisp(websiteId: string) {
+function injectCrisp(websiteId: string): boolean {
   const id = websiteId.trim()
-  if (!id) return
+  if (!id) return false
   removeWidgetArtifacts()
   // Crisp erwartet seine Konfiguration am `window`, bevor l.js startet. Früher
   // stand dafür ein Inline-Skript im Dokument — das kann unter der CSP des
@@ -92,12 +162,13 @@ function injectCrisp(websiteId: string) {
   script.src = 'https://client.crisp.chat/l.js'
   script.async = true
   document.body.appendChild(script)
+  return true
 }
 
-function injectTawk(propertyId: string, widgetId: string) {
+function injectTawk(propertyId: string, widgetId: string): boolean {
   const prop = propertyId.trim()
   const wid = widgetId.trim()
-  if (!prop || !wid) return
+  if (!prop || !wid) return false
   removeWidgetArtifacts()
   // Gleiche Geschichte wie bei Crisp: der von tawk.to dokumentierte Einbaucode
   // ist ein Inline-Skript und scheiterte deshalb still an der CSP. Die beiden
@@ -115,10 +186,11 @@ function injectTawk(propertyId: string, widgetId: string) {
   script.setAttribute('charset', 'UTF-8')
   script.setAttribute('crossorigin', '*')
   document.body.appendChild(script)
+  return true
 }
 
-function injectCustom(snippet: string) {
-  if (!snippet.trim()) return
+function injectCustom(snippet: string): boolean {
+  if (!snippet.trim()) return false
   removeWidgetArtifacts()
   // Das Snippet wird NICHT mehr als HTML in die Seite gehängt. Es stammt aus
   // einem Einstellungsfeld, das jeder Träger von `panel.settings.write` füllen
@@ -152,7 +224,9 @@ function injectCustom(snippet: string) {
       '[MSM] Support-Widget: aus dem eigenen Snippet wurde nichts übernommen. Erlaubt sind nur externe Script-Tags von: ' +
         ALLOWED_WIDGET_ORIGINS.join(', '),
     )
+    return false
   }
+  return true
 }
 
 export async function loadSupportWidget(): Promise<void> {
@@ -160,25 +234,27 @@ export async function loadSupportWidget(): Promise<void> {
     const res = await fetch(apiUrl('/system/support-widget'), { cache: 'no-store' })
     const cfg: PublicSupportWidget | null = res.ok ? await res.json() : null
     if (!cfg?.enabled) {
-      removeWidgetArtifacts()
+      clearSupportWidget()
       return
     }
+    let mounted = false
     switch (cfg.provider) {
       case 'crisp':
-        injectCrisp(cfg.crisp_website_id ?? '')
+        mounted = injectCrisp(cfg.crisp_website_id ?? '')
         break
       case 'tawk':
-        injectTawk(cfg.tawk_property_id ?? '', cfg.tawk_widget_id ?? '')
+        mounted = injectTawk(cfg.tawk_property_id ?? '', cfg.tawk_widget_id ?? '')
         break
       case 'custom':
-        injectCustom(cfg.custom_snippet ?? '')
+        mounted = injectCustom(cfg.custom_snippet ?? '')
         break
       case 'singra':
       default:
-        injectSingra(cfg.singra_widget_id ?? '', cfg.script_src ?? SINGRA_SCRIPT_SRC)
+        mounted = injectSingra(cfg.singra_widget_id ?? '', cfg.script_src ?? SINGRA_SCRIPT_SRC)
     }
+    setSupportWidgetState(mounted ? cfg : null)
   } catch {
-    removeWidgetArtifacts()
+    clearSupportWidget()
   }
 }
 

@@ -6,7 +6,9 @@ import * as client from '@/api/client'
 import i18n from '@/i18n'
 import type { GameInfo } from '@/types'
 import { Backups } from './Backups'
+import * as permissions from '@/hooks/useHasPermission'
 import { useConfirmStore } from '@/stores/confirmStore'
+import { usePublicSettingsStore } from '@/stores/publicSettingsStore'
 import { useServerPreferencesStore } from '@/stores/serverPreferencesStore'
 
 import { confirm } from '@/stores/confirmStore'
@@ -19,9 +21,14 @@ vi.mock('@/hooks/useHostInterfaces', () => ({
   useHostInterfaces: () => ({ interfaces: [{ name: 'eth0', ip: '192.168.1.100' }], defaultBindIp: '192.168.1.100' }),
 }))
 
-vi.mock('@/hooks/useHasPermission', () => ({
-  useHasPermission: () => true,
-}))
+vi.mock('@/hooks/useHasPermission', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/hooks/useHasPermission')>()
+  return {
+    ...actual,
+    useHasPermission: vi.fn(() => true),
+    useIsOwner: vi.fn(() => true),
+  }
+})
 
 vi.mock('@/stores/confirmStore', async () => {
   const actual = await vi.importActual<typeof import('@/stores/confirmStore')>('@/stores/confirmStore')
@@ -192,8 +199,17 @@ describe('Servers create form — dynamic port fields', () => {
 describe('Servers — Takt und Katalog', () => {
   beforeEach(async () => {
     vi.mocked(client.api).mockReset()
+    vi.mocked(permissions.useHasPermission).mockReturnValue(true)
+    vi.mocked(permissions.useIsOwner).mockReturnValue(true)
+    usePublicSettingsStore.setState({ shop_enabled: false })
     useServerPreferencesStore.getState().resetForTests()
     await i18n.changeLanguage('de')
+  })
+
+  afterEach(() => {
+    vi.mocked(permissions.useHasPermission).mockReturnValue(true)
+    vi.mocked(permissions.useIsOwner).mockReturnValue(true)
+    usePublicSettingsStore.setState({ shop_enabled: false })
   })
   afterEach(() => {
     vi.useRealTimers()
@@ -258,8 +274,17 @@ describe('Servers — Takt und Katalog', () => {
 describe('Servers — Ladefehler statt Leerzustand', () => {
   beforeEach(async () => {
     vi.mocked(client.api).mockReset()
+    vi.mocked(permissions.useHasPermission).mockReturnValue(true)
+    vi.mocked(permissions.useIsOwner).mockReturnValue(true)
+    usePublicSettingsStore.setState({ shop_enabled: false })
     useServerPreferencesStore.getState().resetForTests()
     await i18n.changeLanguage('de')
+  })
+
+  afterEach(() => {
+    vi.mocked(permissions.useHasPermission).mockReturnValue(true)
+    vi.mocked(permissions.useIsOwner).mockReturnValue(true)
+    usePublicSettingsStore.setState({ shop_enabled: false })
   })
 
   it('zeigt bei abgelehntem /servers die Fehlermeldung und nicht "Keine Server vorhanden"', async () => {
@@ -332,8 +357,17 @@ describe('Servers — Kunden-Server-Tabs und Badge', () => {
 
   beforeEach(async () => {
     vi.mocked(client.api).mockReset()
+    vi.mocked(permissions.useHasPermission).mockReturnValue(true)
+    vi.mocked(permissions.useIsOwner).mockReturnValue(true)
+    usePublicSettingsStore.setState({ shop_enabled: false })
     useServerPreferencesStore.getState().resetForTests()
     await i18n.changeLanguage('de')
+  })
+
+  afterEach(() => {
+    vi.mocked(permissions.useHasPermission).mockReturnValue(true)
+    vi.mocked(permissions.useIsOwner).mockReturnValue(true)
+    usePublicSettingsStore.setState({ shop_enabled: false })
   })
 
   it('zeigt Tabs und Kunde-Badge, sobald ein Kundenserver in der Liste ist, und filtert beim Wechsel', async () => {
@@ -376,6 +410,27 @@ describe('Servers — Kunden-Server-Tabs und Badge', () => {
 
     expect(await screen.findByText('Bestand')).toBeInTheDocument()
     expect(screen.queryByRole('tab')).not.toBeInTheDocument()
+  })
+
+  it('zeigt reinen Shop-Kunden ihre Mietserver direkt ohne Hoster-Tabs', async () => {
+    vi.mocked(permissions.useIsOwner).mockReturnValue(false)
+    vi.mocked(permissions.useHasPermission).mockReturnValue(false)
+    mockWithServers([serverStub(2, 'Mietserver-Alpha', true)])
+    renderServers()
+
+    expect(await screen.findByText('Mietserver-Alpha')).toBeInTheDocument()
+    expect(screen.queryByRole('tab')).not.toBeInTheDocument()
+  })
+
+  it('verweist Shop-Kunden ohne eigene Server in den Shop', async () => {
+    vi.mocked(permissions.useIsOwner).mockReturnValue(false)
+    vi.mocked(permissions.useHasPermission).mockReturnValue(false)
+    usePublicSettingsStore.setState({ shop_enabled: true })
+    mockWithServers([])
+    renderServers()
+
+    const shopLink = await screen.findByRole('link', { name: i18n.t('servers.configureInShop') })
+    expect(shopLink).toHaveAttribute('href', '/')
   })
 })
 
@@ -552,8 +607,17 @@ describe('Servers — Sortierung, Favoriten, Zuletzt geöffnet & feste IP-Zeile'
 
   beforeEach(async () => {
     vi.mocked(client.api).mockReset()
+    vi.mocked(permissions.useHasPermission).mockReturnValue(true)
+    vi.mocked(permissions.useIsOwner).mockReturnValue(true)
+    usePublicSettingsStore.setState({ shop_enabled: false })
     useServerPreferencesStore.getState().resetForTests()
     await i18n.changeLanguage('de')
+  })
+
+  afterEach(() => {
+    vi.mocked(permissions.useHasPermission).mockReturnValue(true)
+    vi.mocked(permissions.useIsOwner).mockReturnValue(true)
+    usePublicSettingsStore.setState({ shop_enabled: false })
   })
 
   it('sortiert laufende Server vor gestoppte, zieht Favoriten & zuletzt geöffnete nach oben und hält IP-Zeile stets unten', async () => {

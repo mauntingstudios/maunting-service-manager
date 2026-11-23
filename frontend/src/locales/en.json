@@ -29,7 +29,9 @@
     "aiProviders": "AI providers",
     "teams": "Teams",
     "chat": "Messenger",
-    "documents": "Maunting Docs"
+    "documents": "Maunting Docs",
+    "support": "Support",
+    "legalAndSupport": "Legal & support"
   },
   "navGroups": {
     "overview": "Work",
@@ -3146,6 +3148,7 @@
     "create": "Create server",
     "createDescription": "Create a new server.",
     "createHint": "Create your first server to get started.",
+    "configureInShop": "Configure server in the shop",
     "currentBlueprint": "Current game / blueprint",
     "customerBadge": "Customer",
     "deleted": "Server deleted",
@@ -3687,6 +3690,10 @@
       "title": "Use notes",
       "desc": "Enables access to the notes module for creating, editing, and organizing notes."
     },
+    "messenger_use": {
+      "title": "Use messenger and friends",
+      "desc": "Enables access to the encrypted messenger, group chats, calls, friend lists, and status updates."
+    },
     "server_view": {
       "title": "View server",
       "desc": "View this server in the dashboard and detail views."
@@ -3909,6 +3916,8 @@
     "loadFailed": "The server list could not be loaded.",
     "createFirstServer": "Create your first server to get started.",
     "createServer": "Create server",
+    "rentServer": "Rent a server in the shop",
+    "rentFirstServerHint": "Choose your game and preferred location in the shop to get started.",
     "nodeCapacity": "Node capacity",
     "nodeCapacityHint": "Top nodes by load · max 5",
     "stoppedCount": "{{count}} stopped",
@@ -6893,13 +6902,15 @@
       "shopLink": "Shop",
       "zumShop": "Open shop",
       "kiChat": "AI chat",
-      "bereiche": "Shop sections"
+      "bereiche": "Shop sections",
+      "support": "Support"
     },
     "fuss": {
       "zumInhalt": "Skip to content",
       "hinweis": "Game servers, add-ons and AI quotas directly through your Maunting Service Manager.",
       "navigation": "Shop footer",
       "datenschutz": "Privacy",
+      "support": "Support",
       "panel": "Panel"
     },
     "demo": {
