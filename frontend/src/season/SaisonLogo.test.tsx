@@ -78,4 +78,19 @@ describe('SaisonLogo', () => {
     expect(pontisImgs[0].getAttribute('src')).toBe('/pontis-default.webp')
     expect(pontisImgs[2].getAttribute('src')).toBe(SEASON_ASSETS.halloween.logoPontis)
   })
+
+  it('loest onError nur beim Hauptlogo aus und nicht bei ausgeblendeten Saisonlogos', () => {
+    const onError = vi.fn()
+    const { container } = render(
+      <SaisonLogo art="msm" standardSrc="/msm-default.webp" alt="Sentinel" onError={onError} />,
+    )
+    const imgs = Array.from(container.querySelectorAll('img'))
+    expect(imgs).toHaveLength(4)
+    imgs[1].dispatchEvent(new Event('error'))
+    imgs[2].dispatchEvent(new Event('error'))
+    imgs[3].dispatchEvent(new Event('error'))
+    expect(onError).not.toHaveBeenCalled()
+    imgs[0].dispatchEvent(new Event('error'))
+    expect(onError).toHaveBeenCalledTimes(1)
+  })
 })

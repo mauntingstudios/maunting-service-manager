@@ -73,6 +73,8 @@ export function Topbar({ onOpenWallet, presenceStatus: propPresenceStatus, effec
   const socialEnabled = usePublicSettingsStore((s) => s.social_enabled)
   const shopEnabled = usePublicSettingsStore((s) => s.shop_enabled)
   const externalShopUrl = usePublicSettingsStore((s) => s.external_shop_url)
+  const customBrand = usePublicSettingsStore((s) => s.branding?.custom_name || '')
+  const brandMarkText = customBrand || 'MSM'
   const [blattOffen, setBlattOffen] = useState(false)
 
   // Die Hülle meldet die Präsenz; ein zweiter Melder schriebe bei jedem
@@ -148,7 +150,7 @@ export function Topbar({ onOpenWallet, presenceStatus: propPresenceStatus, effec
   const aktiverBereich = bereiche.find((eintrag) => bereichAktiv(eintrag.to, location.pathname))
   const kopfTitel = istDashboardRoute(location.pathname)
     ? t(dashboardTitelKey(location.pathname))
-    : (aktiverBereich?.label ?? (location.pathname === '/profile' ? t('profile.title') : 'MSM'))
+    : (aktiverBereich?.label ?? (location.pathname === '/profile' ? t('profile.title') : brandMarkText))
   const eltern = dashboardElternroute(location.pathname)
 
   const badgeFuer = (to: string): number | undefined => {
@@ -175,7 +177,7 @@ export function Topbar({ onOpenWallet, presenceStatus: propPresenceStatus, effec
           )}
           <div className="flex min-w-0 items-center gap-2">
             <Logo size="sm" />
-            <span className="hidden font-headline text-sm font-bold text-primary min-[400px]:inline">MSM</span>
+            <span className="hidden max-w-[10rem] truncate font-headline text-sm font-bold text-primary min-[400px]:inline">{brandMarkText}</span>
             <h1 className="hidden truncate font-headline text-base font-bold text-on-surface sm:block">{kopfTitel}</h1>
           </div>
         </div>

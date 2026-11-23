@@ -5,6 +5,7 @@ import i18n from '@/i18n'
 import { Topbar } from './Topbar'
 import { useAuthStore } from '@/stores/authStore'
 import { usePermissionsStore } from '@/stores/permissionsStore'
+import { DEFAULT_PUBLIC_SETTINGS, usePublicSettingsStore } from '@/stores/publicSettingsStore'
 import { api } from '@/api/client'
 
 vi.mock('@/api/client', async (importOriginal) => {
@@ -109,5 +110,23 @@ describe('Topbar', () => {
 
     fireEvent.click(within(blatt).getByRole('button', { name: i18n.t('nav.logout') }))
     await waitFor(() => expect(useAuthStore.getState().isAuthenticated).toBe(false))
+  })
+
+  it('zeigt den Whitelabel-Markennamen in der Topbar statt hartem MSM', () => {
+    usePublicSettingsStore.setState({
+      ...DEFAULT_PUBLIC_SETTINGS,
+      branding: {
+        ...DEFAULT_PUBLIC_SETTINGS.branding,
+        name: 'Sentinel Hosting 24',
+        custom_name: 'Sentinel Hosting 24',
+      },
+    })
+    try {
+      zeige('/servers')
+      expect(screen.getByText('Sentinel Hosting 24')).toBeInTheDocument()
+      expect(screen.queryByText('MSM')).toBeNull()
+    } finally {
+      usePublicSettingsStore.setState(DEFAULT_PUBLIC_SETTINGS)
+    }
   })
 })

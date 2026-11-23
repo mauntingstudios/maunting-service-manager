@@ -1,4 +1,5 @@
 import { LOGO_CONFIG } from '@/config/logo'
+import { apiUrl } from '@/config/api'
 import { useEffect, useState } from 'react'
 import { SaisonLogo } from '@/season/SaisonLogo'
 import { usePublicSettingsStore } from '@/stores/publicSettingsStore'
@@ -23,7 +24,7 @@ const sizeClasses = {
 export function Logo({ size = 'md', className = '' }: LogoProps) {
   const branding = usePublicSettingsStore((s) => s.branding)
   const effectiveSrc =
-    branding?.logo_mode === 'custom' && branding.logo_url ? branding.logo_url : LOGO_CONFIG.src
+    branding?.logo_mode === 'custom' && branding.logo_url ? apiUrl(branding.logo_url) : LOGO_CONFIG.src
   const effectiveAlt = branding?.custom_name || LOGO_CONFIG.alt
   const fallbackText = branding?.custom_name
     ? branding.custom_name.slice(0, 3).toUpperCase()

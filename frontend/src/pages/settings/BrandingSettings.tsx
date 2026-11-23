@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { Image as ImageIcon, Trash2, Upload } from 'lucide-react'
 import { Button, Dropdown, Input } from '@maunting/ui'
 import { api, SanitizedApiError } from '@/api/client'
+import { apiUrl } from '@/config/api'
 import { toast } from '@/stores/toastStore'
 import { usePublicSettingsStore } from '@/stores/publicSettingsStore'
 import type { BrandLogoSlot, BrandLogoSlotInfo, PanelSettings } from './types'
@@ -188,7 +189,7 @@ export function BrandingSettings({ settings, canWrite, onChange }: BrandingSetti
                 <div className="grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-full border border-outline-variant/30 bg-surface-container">
                   {info?.configured && info.url ? (
                     <img
-                      src={info.url}
+                      src={apiUrl(info.url)}
                       alt={t(labelKey)}
                       className="h-full w-full object-cover"
                     />

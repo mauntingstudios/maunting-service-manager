@@ -1,4 +1,5 @@
 import { SEASON_ASSETS } from './assets'
+import { apiUrl } from '@/config/api'
 import { usePublicSettingsStore } from '@/stores/publicSettingsStore'
 
 interface SaisonLogoProps {
@@ -22,7 +23,7 @@ export function SaisonLogo({ art, standardSrc, className = '', alt, onError }: S
 
   const effectiveStandard =
     art === 'msm' && branding?.logo_mode === 'custom' && branding.logo_url
-      ? branding.logo_url
+      ? apiUrl(branding.logo_url)
       : standardSrc
 
   if (art === 'msm' && branding?.season_logo_mode === 'disabled') {
@@ -38,21 +39,21 @@ export function SaisonLogo({ art, standardSrc, className = '', alt, onError }: S
 
   const useCustomSeasons = art === 'msm' && branding?.season_logo_mode === 'custom'
   const birthday =
-    (useCustomSeasons && branding?.season_logos?.birthday) ||
+    (useCustomSeasons && branding?.season_logos?.birthday ? apiUrl(branding.season_logos.birthday) : '') ||
     (art === 'msm' ? SEASON_ASSETS.birthday.logoMsm : SEASON_ASSETS.birthday.logoPontis)
   const halloween =
-    (useCustomSeasons && branding?.season_logos?.halloween) ||
+    (useCustomSeasons && branding?.season_logos?.halloween ? apiUrl(branding.season_logos.halloween) : '') ||
     (art === 'msm' ? SEASON_ASSETS.halloween.logoMsm : SEASON_ASSETS.halloween.logoPontis)
   const christmas =
-    (useCustomSeasons && branding?.season_logos?.christmas) ||
+    (useCustomSeasons && branding?.season_logos?.christmas ? apiUrl(branding.season_logos.christmas) : '') ||
     (art === 'msm' ? SEASON_ASSETS.christmas.logoMsm : SEASON_ASSETS.christmas.logoPontis)
 
   return (
     <>
       <img src={effectiveStandard} alt={alt} className={`season-logo-standard ${className}`} onError={onError} />
-      <img src={birthday} alt="" aria-hidden="true" loading="lazy" decoding="async" className={`season-logo-birthday ${className}`} onError={onError} />
-      <img src={halloween} alt="" aria-hidden="true" loading="lazy" decoding="async" className={`season-logo-halloween ${className}`} onError={onError} />
-      <img src={christmas} alt="" aria-hidden="true" loading="lazy" decoding="async" className={`season-logo-christmas ${className}`} onError={onError} />
+      <img src={birthday} alt="" aria-hidden="true" loading="lazy" decoding="async" className={`season-logo-birthday ${className}`} />
+      <img src={halloween} alt="" aria-hidden="true" loading="lazy" decoding="async" className={`season-logo-halloween ${className}`} />
+      <img src={christmas} alt="" aria-hidden="true" loading="lazy" decoding="async" className={`season-logo-christmas ${className}`} />
     </>
   )
 }
