@@ -37,6 +37,7 @@ from pathlib import Path
 from typing import Sequence
 
 from sqlalchemy import func, select, text, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from config import settings
@@ -51,6 +52,7 @@ from services.role_service import effective_user_role_ids
 CHUNK_KLARTEXT = 4 * 1024 * 1024
 CHUNK_UEBERHANG = 12 + 16
 CHUNK_CHIFFRAT = CHUNK_KLARTEXT + CHUNK_UEBERHANG
+BLOCK_OVERHEAD = 4096  # Konservative Obergrenze für Dateisystem-Blockverschnitt je Chunk-Datei (N5)
 
 LOESCHHALTUNG = timedelta(days=7)
 OFFEN_HOECHSTENS = timedelta(hours=24)
@@ -239,8 +241,13 @@ def rolle_speicher_aendern(db: Session, actor_id: int, role_id: int, quota_bytes
 
 
 def belegt(db: Session, bucket_id: str) -> int:
-    """Dateien und Posteingang zusammen: beides belegt die Platte des Servers."""
-    blobs = db.scalar(select(func.coalesce(func.sum(VaultBlob.bytes_total), 0)).where(VaultBlob.bucket_id == bucket_id))
+    """Dateien (inkl. 4-KiB-Block-Overhead je Chunk) und Posteingang zusammen."""
+    blobs = db.scalar(
+        select(
+            func.coalesce(func.sum(VaultBlob.bytes_total), 0)
+            + func.coalesce(func.sum(VaultBlob.chunk_count), 0) * BLOCK_OVERHEAD
+        ).where(VaultBlob.bucket_id == bucket_id)
+    )
     eingang = db.scalar(
         select(func.coalesce(func.sum(func.length(VaultEingang.ciphertext)), 0)).where(VaultEingang.bucket_id == bucket_id)
     )
@@ -283,14 +290,15 @@ def anlegen(
     anzahl = int(db.scalar(select(func.count()).select_from(VaultBlob).where(VaultBlob.bucket_id == bucket_id)) or 0)
     if anzahl >= MAX_BLOBS_JE_BUCKET:
         raise ZuVieleDateien("Zu viele Dateien in diesem Tresor.")
+    effektive_groesse = bytes_total + chunk_count * BLOCK_OVERHEAD
     quote = quota_override if quota_override is not None else quote_fuer(db, user)
     belegt_wert = belegt_override if belegt_override is not None else belegt(db, bucket_id)
-    if belegt_wert + bytes_total > quote:
+    if belegt_wert + effektive_groesse > quote:
         raise SpeicherVoll("Der Speicher dieses Kontos ist voll.")
 
     basis = _basis()
     basis.mkdir(parents=True, exist_ok=True, mode=0o700)
-    if shutil.disk_usage(basis).free < bytes_total + PLATTENRESERVE:
+    if shutil.disk_usage(basis).free < effektive_groesse + PLATTENRESERVE:
         raise PlatteVoll("Auf dem Server ist kein Platz mehr frei.")
 
     blob = VaultBlob(
@@ -303,7 +311,11 @@ def anlegen(
         created_at=_jetzt(),
     )
     db.add(blob)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise BlobKonflikt("Diese Kennung ist vergeben.") from exc
     return blob
 
 
@@ -486,9 +498,10 @@ def speicher(db: Session, user: User, bucket_id: str | None) -> dict[str, int]:
         return {"belegt": 0, "quote": quote, "in_loeschung": 0, "blobs": 0}
     in_loeschung = int(
         db.scalar(
-            select(func.coalesce(func.sum(VaultBlob.bytes_total), 0)).where(
-                VaultBlob.bucket_id == bucket_id, VaultBlob.state == "geloescht"
-            )
+            select(
+                func.coalesce(func.sum(VaultBlob.bytes_total), 0)
+                + func.coalesce(func.sum(VaultBlob.chunk_count), 0) * BLOCK_OVERHEAD
+            ).where(VaultBlob.bucket_id == bucket_id, VaultBlob.state == "geloescht")
         )
         or 0
     )
@@ -541,7 +554,11 @@ def eingang_ablegen(db: Session, user: User, bucket_id: str, eingang_id: str, ci
     if belegt(db, bucket_id) + len(ciphertext) > quote_fuer(db, user):
         raise SpeicherVoll("Der Speicher dieses Kontos ist voll.")
     db.add(VaultEingang(id=eingang_id, bucket_id=bucket_id, ciphertext=ciphertext, created_at=_jetzt()))
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise BlobKonflikt("Diese Kennung ist vergeben.") from exc
 
 
 def eingang_liste(db: Session, bucket_id: str, nach: str | None) -> tuple[list[VaultEingang], str | None]:

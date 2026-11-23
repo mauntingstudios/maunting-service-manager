@@ -1647,6 +1647,10 @@ for _kandidat in /etc/caddy/conf.d/msm.caddy /etc/caddy/conf.d/msm.conf; do
         warn "  $MSM_DIR/install.sh erneut ausfuehren (behaelt die vorhandenen Werte und schreibt die Site neu)"
         warn "  oder in $_kandidat die Bloecke 'handle /assets/*' und 'handle' aus $MSM_DIR/Caddyfile.template uebernehmen."
     fi
+    if ! grep -q "request_body" "$_kandidat" 2>/dev/null; then
+        warn "Caddy konfiguriert noch kein request_body-Limit (max_size 128MB) — uebergrosse Anfragen erreichen ungefiltert das Backend."
+        warn "  $MSM_DIR/install.sh erneut ausfuehren oder in $_kandidat 'request_body { max_size 128MB }' ergaenzen."
+    fi
     break
 done
 

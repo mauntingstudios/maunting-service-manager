@@ -6096,7 +6096,7 @@
       "commandLabel": "Public bootstrap",
       "copy": "Copy command",
       "releaseNote": "The bootstrap prefers the tested msm-panel artifact from the latest GitHub release. install.sh remains the central installer for bootstrap, simple and interactive modes: on minimal systems it installs every required base package and safely repairs an incomplete Caddy repository without replacing an existing Caddyfile.",
-      "caddyUpdate": "Since 09/2026 install.sh writes cache rules into the Caddy site: hashed assets stay in the browser for a year, the page itself reloads on every visit, and a missing chunk stays a 404. Without these rules a browser could hold on to an old, blank page after an update. update.sh does not rewrite an existing site; it reports one without these rules. Run install.sh again in that case: it keeps the existing settings and rewrites the site."
+      "caddyUpdate": "Since 09/2026 install.sh writes cache rules into the Caddy site: hashed assets stay in the browser for a year, the page itself reloads on every visit, and a missing chunk stays a 404. In addition, install.sh caps HTTP request bodies in Caddy at 128 MB (request_body { max_size 128MB }), while the backend enforces tighter per-route limits. update.sh does not rewrite an existing site; it reports missing cache rules or a missing request_body limit. Run install.sh again in that case: it keeps the existing settings and rewrites the site."
     },
     "topology": {
       "title": "Example topology: 20 hosts",
@@ -8791,6 +8791,8 @@
     "vaultUnlockDesc": "Unlock with your card — there is no team password.",
     "vaultRotationTitle": "Key renewal recommended",
     "vaultRotationNotice": "A member has joined or left. Renew the key so only current members can read.",
+    "vaultRotationConfirmDesc": "Confirm key renewal for the team vault. All entries are re-encrypted so only current members keep access.",
+    "vaultRotationBanner": "Team key should be renewed because membership changed.",
     "vaultRotateBtn": "Renew key",
     "vaultNoFilesYet": "No shared files in team vault yet.",
     "vaultNoMediaYet": "No shared photos in team vault yet.",
@@ -9135,6 +9137,10 @@
         "dateien": "All files and their earlier versions go too, {{groesse}} in total. The server deletes them within an hour.",
         "passwortLabel": "Confirm your account password",
         "otpLabel": "Code from your authenticator app",
+        "emailCodeSenden": "Send verification code to email",
+        "emailCodeWirdGesendet": "Sending code …",
+        "emailCodeGesendet": "Verification code sent to your email address.",
+        "emailCodeLabel": "6-digit email code",
         "wortLabel": "Type delete to confirm (cannot be pasted)",
         "knopf": "Reset vault permanently",
         "laeuft": "Resetting …",

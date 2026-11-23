@@ -263,10 +263,13 @@ class DynamicCORSMiddleware(CORSMiddleware):
 # ── Rate Limiting (slowapi) & Request-ID (WP1.1 & 1.3) ──
 from fastapi.exceptions import RequestValidationError
 from errors import status_to_error_code
+from middleware.body_limit import BodyLimitMiddleware
 from middleware.request_id import RequestIDMiddleware, get_request_id
 
 app.state.limiter = limiter
 app.add_middleware(SlowAPIMiddleware)
+# Body-Limit-Middleware vor Request-Parsing, unter RequestID & CORS
+app.add_middleware(BodyLimitMiddleware)
 # RequestIDMiddleware als Schicht unter CORS
 app.add_middleware(RequestIDMiddleware)
 

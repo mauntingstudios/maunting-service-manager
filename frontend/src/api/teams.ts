@@ -292,14 +292,30 @@ export const teamsApi = {
     }),
   getOwnKeyslot: (teamId: number) =>
     api<TeamVaultKeyslotResponse>(`/teams/${teamId}/vault/keyslot`),
-  rotationPrepare: (teamId: number, payload: { bucket_id: string }) =>
+  rotationPrepare: (
+    teamId: number,
+    payload: {
+      bucket_id: string
+      password?: string | null
+      otp_code?: string | null
+      passkey?: unknown | null
+    },
+  ) =>
     api<{ status: string }>(`/teams/${teamId}/vault/rotation/prepare`, {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
-  rotationCommit: (teamId: number) =>
+  rotationCommit: (
+    teamId: number,
+    payload: {
+      password?: string | null
+      otp_code?: string | null
+      passkey?: unknown | null
+    } = {},
+  ) =>
     api<{ status: string }>(`/teams/${teamId}/vault/rotation/commit`, {
       method: 'POST',
+      body: JSON.stringify(payload),
     }),
   rotationAbort: (teamId: number) =>
     api<{ status: string }>(`/teams/${teamId}/vault/rotation/abort`, { method: 'POST' }),
@@ -315,6 +331,7 @@ export const teamsApi = {
     password?: string | null
     otp_code?: string
     passkey?: Record<string, unknown>
+    email_code?: string | null
   }) =>
     api<{ status: string }>(`/teams/${teamId}/vault/reset`, {
       method: 'POST',

@@ -60,7 +60,7 @@ def test_team_rotation_verliert_nichts_bei_abbruch(db, client, owner_user, owner
     # Prepare darf den aktiven Bucket NICHT umschalten (alter Fehler: sofort weg).
     assert client.post(
         f"/api/teams/{team.id}/vault/rotation/prepare",
-        json={"bucket_id": neu},
+        json={"bucket_id": neu, "password": OWNER_PASSWORT},
         cookies=owner_cookies, headers=_headers(owner_cookies),
     ).status_code == 200
     status = client.get(f"/api/teams/{team.id}/vault/status", cookies=owner_cookies).json()
@@ -95,13 +95,14 @@ def test_team_rotation_commit_und_rollback(db, client, owner_user, owner_cookies
     _sync(client, team.id, alt, owner_cookies)
     client.post(
         f"/api/teams/{team.id}/vault/rotation/prepare",
-        json={"bucket_id": neu},
+        json={"bucket_id": neu, "password": OWNER_PASSWORT},
         cookies=owner_cookies, headers=_headers(owner_cookies),
     )
     _sync(client, team.id, neu, owner_cookies, "e1", "sv-vault-v2:neu")
 
     assert client.post(
         f"/api/teams/{team.id}/vault/rotation/commit",
+        json={"password": OWNER_PASSWORT},
         cookies=owner_cookies, headers=_headers(owner_cookies),
     ).status_code == 200
     status = client.get(f"/api/teams/{team.id}/vault/status", cookies=owner_cookies).json()
@@ -380,12 +381,8 @@ def test_private_rotation_commit_ohne_nachweis_403(client, owner_cookies):
     ).status_code == 200
 
 
-def test_team_rotation_prepare_ohne_nachweis_ok(db, client, owner_user, owner_cookies, regular_user):
-    """Die Team-Rotation laeuft automatisch — kein Kontonachweis noetig.
-
-    Anders als privat aendert sie kein Passwort, sondern tauscht nur den
-    Team-Schluessel. Schranken bleiben Gruenderrecht, CSRF und Rate-Limit.
-    """
+def test_team_rotation_prepare_braucht_frischen_nachweis_m3(db, client, owner_user, owner_cookies, regular_user):
+    """M3: Team-Rotation prepare verlangt frischen Kontonachweis (403 ohne, 200 mit)."""
     team = _team_mit_tresor(db, owner_user, regular_user)
     alt, neu = _bucket(), _bucket()
     o_h = _headers(owner_cookies)
@@ -394,9 +391,14 @@ def test_team_rotation_prepare_ohne_nachweis_ok(db, client, owner_user, owner_co
         json={"bucket_id": alt},
         cookies=owner_cookies, headers=o_h,
     ).status_code == 200
-    antwort = client.post(
+    assert client.post(
         f"/api/teams/{team.id}/vault/rotation/prepare",
         json={"bucket_id": neu},
+        cookies=owner_cookies, headers=o_h,
+    ).status_code == 403
+    antwort = client.post(
+        f"/api/teams/{team.id}/vault/rotation/prepare",
+        json={"bucket_id": neu, "password": OWNER_PASSWORT},
         cookies=owner_cookies, headers=o_h,
     )
     assert antwort.status_code == 200
@@ -404,7 +406,8 @@ def test_team_rotation_prepare_ohne_nachweis_ok(db, client, owner_user, owner_co
     assert status["rotation_state"] == "prepared"
 
 
-def test_team_rotation_commit_ohne_nachweis_ok(db, client, owner_user, owner_cookies, regular_user):
+def test_team_rotation_commit_braucht_frischen_nachweis_m3(db, client, owner_user, owner_cookies, regular_user):
+    """M3: Team-Rotation commit verlangt frischen Kontonachweis (403 ohne, 200 mit)."""
     team = _team_mit_tresor(db, owner_user, regular_user)
     alt, neu = _bucket(), _bucket()
     o_h = _headers(owner_cookies)
@@ -415,11 +418,17 @@ def test_team_rotation_commit_ohne_nachweis_ok(db, client, owner_user, owner_coo
     )
     assert client.post(
         f"/api/teams/{team.id}/vault/rotation/prepare",
-        json={"bucket_id": neu},
+        json={"bucket_id": neu, "password": OWNER_PASSWORT},
         cookies=owner_cookies, headers=o_h,
     ).status_code == 200
     assert client.post(
         f"/api/teams/{team.id}/vault/rotation/commit",
+        json={},
+        cookies=owner_cookies, headers=o_h,
+    ).status_code == 403
+    assert client.post(
+        f"/api/teams/{team.id}/vault/rotation/commit",
+        json={"password": OWNER_PASSWORT},
         cookies=owner_cookies, headers=o_h,
     ).status_code == 200
     status = client.get(f"/api/teams/{team.id}/vault/status", cookies=owner_cookies).json()
@@ -481,11 +490,12 @@ def _team_rotation_bis_commit(client, team_id, cookies, alt, neu):
     )
     assert client.post(
         f"/api/teams/{team_id}/vault/rotation/prepare",
-        json={"bucket_id": neu},
+        json={"bucket_id": neu, "password": OWNER_PASSWORT},
         cookies=cookies, headers=h,
     ).status_code == 200
     assert client.post(
         f"/api/teams/{team_id}/vault/rotation/commit",
+        json={"password": OWNER_PASSWORT},
         cookies=cookies, headers=h,
     ).status_code == 200
 

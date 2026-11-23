@@ -6096,7 +6096,7 @@
       "commandLabel": "Öffentlicher Bootstrap",
       "copy": "Befehl kopieren",
       "releaseNote": "Der Bootstrap bevorzugt das getestete msm-panel-Artefakt des neuesten GitHub-Releases. install.sh bleibt für Bootstrap, Simple- und interaktiven Modus der zentrale Installer: Er installiert auf Minimal-Systemen alle benötigten Basispakete und repariert eine unvollständige Caddy-Paketquelle sicher, ohne eine vorhandene Caddyfile zu ersetzen.",
-      "caddyUpdate": "Seit 09/2026 schreibt install.sh Cache-Regeln in die Caddy-Site: Die gehashten Assets bleiben ein Jahr im Browser, die Seite selbst lädt bei jedem Aufruf neu, und ein fehlender Chunk bleibt ein 404. Ohne diese Regeln konnte ein Browser nach einem Update eine alte, leere Seite festhalten. update.sh schreibt eine vorhandene Site nicht neu, sondern meldet eine ohne diese Regeln. Dann install.sh erneut ausführen: Es übernimmt die vorhandenen Einstellungen und schreibt die Site neu."
+      "caddyUpdate": "Seit 09/2026 schreibt install.sh Cache-Regeln in die Caddy-Site: Die gehashten Assets bleiben ein Jahr im Browser, die Seite selbst lädt bei jedem Aufruf neu, und ein fehlender Chunk bleibt ein 404. Zusätzlich begrenzt install.sh HTTP-Anfragen in Caddy auf 128 MB (request_body { max_size 128MB }), während das Backend engere Grenzen je Route prüft. update.sh schreibt eine vorhandene Site nicht neu, sondern meldet fehlende Cache-Regeln oder ein fehlendes request_body-Limit. Dann install.sh erneut ausführen: Es übernimmt die vorhandenen Einstellungen und schreibt die Site neu."
     },
     "topology": {
       "title": "Beispiel-Topologie: 20 Hosts",
@@ -8791,6 +8791,8 @@
     "vaultUnlockDesc": "Entsperre mit deiner Karte — ein Team-Passwort gibt es nicht.",
     "vaultRotationTitle": "Schlüssel-Erneuerung empfohlen",
     "vaultRotationNotice": "Ein Mitglied ist bei- oder ausgetreten. Erneuere den Schlüssel, damit nur aktuelle Mitglieder lesen können.",
+    "vaultRotationConfirmDesc": "Bestätige die Schlüssel-Erneuerung für den Team-Tresor. Alle Einträge werden neu verschlüsselt, danach haben nur noch aktuelle Mitglieder Zugriff.",
+    "vaultRotationBanner": "Team-Schlüssel sollte erneuert werden, weil sich die Mitgliedschaft geändert hat.",
     "vaultRotateBtn": "Schlüssel erneuern",
     "vaultNoFilesYet": "Noch keine geteilten Dateien im Team-Tresor.",
     "vaultNoMediaYet": "Noch keine geteilten Fotos im Team-Tresor.",
@@ -9135,6 +9137,10 @@
         "dateien": "Auch alle Dateien samt früherer Fassungen gehen verloren, zusammen {{groesse}}. Der Server löscht sie innerhalb einer Stunde.",
         "passwortLabel": "Konto-Passwort bestätigen",
         "otpLabel": "Code aus der Authenticator-App",
+        "emailCodeSenden": "Bestätigungscode an E-Mail senden",
+        "emailCodeWirdGesendet": "Code wird gesendet …",
+        "emailCodeGesendet": "Bestätigungscode wurde an deine E-Mail-Adresse gesendet.",
+        "emailCodeLabel": "6-stelliger E-Mail-Code",
         "wortLabel": "Tippe delete zur Bestätigung (nicht kopierbar)",
         "knopf": "Tresor endgültig zurücksetzen",
         "laeuft": "Wird zurückgesetzt …",

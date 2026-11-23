@@ -46,6 +46,7 @@ from schemas.team import (
     TeamServerResponse,
     TeamVaultKeyslotResponse,
     TeamVaultKeyslotsRequest,
+    TeamVaultRotationCommitRequest,
     TeamVaultRotationPrepareRequest,
     TeamVaultSetupRequest,
     TeamVaultStatusResponse,
@@ -1013,6 +1014,24 @@ def get_own_team_vault_keyslot(
     return TeamVaultKeyslotResponse(key_version=zeile.key_version, wrapped_dek=zeile.wrapped_dek)
 
 
+def _team_rotationsnachweis(
+    db: Session,
+    user: User,
+    payload: TeamVaultRotationPrepareRequest | TeamVaultRotationCommitRequest,
+) -> None:
+    """Frischer Kontonachweis vor Team-Rotation prepare/commit (M3)."""
+    fehlt = passkey_service.frischer_nachweis_fehlt(
+        db,
+        user,
+        password=payload.password,
+        otp_code=payload.otp_code,
+        passkey=payload.passkey.model_dump() if payload.passkey else None,
+        zweck="vault_rotation",
+    )
+    if fehlt:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=fehlt)
+
+
 @router.post("/{team_id}/vault/rotation/prepare", dependencies=[Depends(auth_rate_limit), Depends(verify_csrf)])
 def prepare_team_vault_rotation(
     team_id: int,
@@ -1022,6 +1041,7 @@ def prepare_team_vault_rotation(
 ) -> dict[str, str]:
     team = team_service.get_team_for_member(db, team_id, user)
     team_service.assert_team_owner(db, team, user)
+    _team_rotationsnachweis(db, user, payload)
     try:
         vault_service.rotation_vorbereiten_team(db, team, payload.bucket_id)
     except vault_service.VaultZurueckgesetzt as exc:
@@ -1042,11 +1062,13 @@ def prepare_team_vault_rotation(
 @router.post("/{team_id}/vault/rotation/commit", dependencies=[Depends(auth_rate_limit), Depends(verify_csrf)])
 def commit_team_vault_rotation(
     team_id: int,
+    payload: TeamVaultRotationCommitRequest,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> dict[str, str]:
     team = team_service.get_team_for_member(db, team_id, user)
     team_service.assert_team_owner(db, team, user)
+    _team_rotationsnachweis(db, user, payload)
     vault_service.rotation_commit_team(db, team)
     audit_service.record_privileged_action(
         db,
@@ -1147,6 +1169,8 @@ def reset_team_vault(
         zweck="vault_reset",
     ):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=passkey_service.nachweis_hinweis(user))
+    if not user.has_password and not user.two_factor_enabled:
+        vault_service.verify_and_consume_vault_reset_code(db, user, payload.email_code)
 
     vault_service.team_tresor_zuruecksetzen(db, team)
     audit_service.record_privileged_action(
@@ -1245,24 +1269,10 @@ async def team_blob_chunk_hochladen(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> Response:
+    from routers import vault_chunks
+
     _team, bucket = _team_bucket(db, team_id, user)
-    try:
-        erwartet = await run_in_threadpool(vault_blob_service.laenge_fuer_upload, db, bucket, blob_id, index)
-    except vault_blob_service.BlobFehler as exc:
-        raise _blob_fehler_team(exc) from exc
-    await run_in_threadpool(db.rollback)
-    daten = bytearray()
-    async for teil in request.stream():
-        daten += teil
-        if len(daten) > erwartet:
-            raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Chunk zu gross.")
-    if len(daten) != erwartet:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Chunk hat die falsche Laenge.")
-    try:
-        await run_in_threadpool(vault_blob_service.chunk_ablegen, db, bucket, blob_id, index, daten)
-    except vault_blob_service.BlobFehler as exc:
-        raise _blob_fehler_team(exc) from exc
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
+    return await vault_chunks.chunk_annehmen(request, db, bucket, blob_id, index, _blob_fehler_team)
 
 
 @router.get("/{team_id}/vault/blobs/{blob_id}/status", response_model=VaultBlobStatus)

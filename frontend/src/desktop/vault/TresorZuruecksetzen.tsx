@@ -9,6 +9,7 @@ import { Spinner } from '@maunting/ui'
 import { useZweitfaktor, ZweitfaktorFeld } from '@/components/auth/ZweitfaktorNachweis'
 import { useAuthStore } from '@/stores/authStore'
 import { toast } from '@/stores/toastStore'
+import { api } from '@/api/client'
 import { useVaultStore } from './vaultStore'
 import { useTeamVaultStore } from './teamVaultStore'
 import { speicherAbfragen, type TresorSpeicher } from './tresorBlobApi'
@@ -22,11 +23,8 @@ interface Props {
 }
 
 /**
- * „Master-Passwort vergessen?": der Ausweg, den es bis 09/2026 nur über die
- * Datenbank gab. Dieselben Nachweise wie beim Löschen des Kontos, jeder für
- * sich: das Konto-Passwort, wenn eins hinterlegt ist; bei 2FA zusätzlich ein
- * Faktor, gleich welcher; immer das Wort „delete", nicht einfügbar. Ein
- * reines Social-Konto ohne 2FA braucht nur das Wort.
+ * „Master-Passwort vergessen?": Dieselben Nachweise wie beim Löschen des Kontos,
+ * ergänzt um einen E-Mail-Bestätigungscode für passwortlose Konten ohne 2FA (N2).
  */
 export function TresorZuruecksetzen({ onAbbrechen, onFertig, isTeam, teamId }: Props) {
   const { t } = useTranslation()
@@ -34,8 +32,12 @@ export function TresorZuruecksetzen({ onAbbrechen, onFertig, isTeam, teamId }: P
   const resetVault = useVaultStore((s) => s.resetVault)
   const faktor = useZweitfaktor()
   const brauchtPasswort = user?.has_password !== false
+  const brauchtEmailCode = !brauchtPasswort && !user?.two_factor_enabled
 
   const [passwort, setPasswort] = useState('')
+  const [emailCode, setEmailCode] = useState('')
+  const [codeSendet, setCodeSendet] = useState(false)
+  const [codeGesendet, setCodeGesendet] = useState(false)
   const [wort, setWort] = useState('')
   const [laeuft, setLaeuft] = useState(false)
   const [fehler, setFehler] = useState('')
@@ -47,6 +49,20 @@ export function TresorZuruecksetzen({ onAbbrechen, onFertig, isTeam, teamId }: P
     }
   }, [isTeam])
 
+  const codeAnfordern = async () => {
+    setFehler('')
+    setCodeSendet(true)
+    try {
+      await api('/api/vault/reset-code', { method: 'POST' })
+      setCodeGesendet(true)
+      toast.success(t('mss.vault.zuruecksetzen.emailCodeGesendet'))
+    } catch (err) {
+      setFehler(err instanceof Error ? err.message : String(err))
+    } finally {
+      setCodeSendet(false)
+    }
+  }
+
   const absenden = async (e: React.FormEvent) => {
     e.preventDefault()
     setFehler('')
@@ -54,7 +70,11 @@ export function TresorZuruecksetzen({ onAbbrechen, onFertig, isTeam, teamId }: P
     try {
       // Der Passkey zuerst: der Browser verlangt die Abfrage nah am Klick.
       const zweiter = await faktor.nachweis('vault_reset')
-      const payload = { password: brauchtPasswort ? passwort : null, ...zweiter }
+      const payload = {
+        password: brauchtPasswort ? passwort : null,
+        ...(brauchtEmailCode ? { email_code: emailCode.trim() } : {}),
+        ...zweiter,
+      }
       if (isTeam && teamId) {
         await useTeamVaultStore.getState().resetVault(teamId, payload, wort)
       } else {
@@ -110,6 +130,41 @@ export function TresorZuruecksetzen({ onAbbrechen, onFertig, isTeam, teamId }: P
         disabled={laeuft}
       />
 
+      {brauchtEmailCode && (
+        <div className="space-y-2">
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={() => void codeAnfordern()}
+            disabled={laeuft || codeSendet}
+            className="w-full text-xs"
+          >
+            {codeSendet
+              ? t('mss.vault.zuruecksetzen.emailCodeWirdGesendet')
+              : t('mss.vault.zuruecksetzen.emailCodeSenden')}
+          </Button>
+          {codeGesendet && (
+            <p className="text-xs text-on-surface-variant">{t('mss.vault.zuruecksetzen.emailCodeGesendet')}</p>
+          )}
+          <Input
+            id="vault-reset-email-code"
+            type="text"
+            inputMode="numeric"
+            pattern="\d{6}"
+            maxLength={6}
+            label={t('mss.vault.zuruecksetzen.emailCodeLabel')}
+            value={emailCode}
+            onChange={(e) => setEmailCode(e.target.value)}
+            className="font-mono"
+            placeholder="000000"
+            required
+            disabled={laeuft}
+            autoComplete="one-time-code"
+          />
+        </div>
+      )}
+
       <Input
         id="vault-reset-wort"
         type="text"
@@ -134,7 +189,12 @@ export function TresorZuruecksetzen({ onAbbrechen, onFertig, isTeam, teamId }: P
       <Button
         type="submit"
         variant="destructive"
-        disabled={laeuft || !faktor.bereit || wort.trim().toLowerCase() !== 'delete'}
+        disabled={
+          laeuft
+          || !faktor.bereit
+          || (brauchtEmailCode && !/^\d{6}$/.test(emailCode.trim()))
+          || wort.trim().toLowerCase() !== 'delete'
+        }
         className="flex w-full items-center justify-center gap-1.5 text-xs"
       >
         {laeuft ? <Spinner /> : null}

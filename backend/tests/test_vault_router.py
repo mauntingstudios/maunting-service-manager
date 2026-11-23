@@ -445,7 +445,14 @@ def test_vault_disabled_via_settings(client, test_db):
 
 def test_vault_blind_sync_success(test_db):
     """Verifies that blind sync works completely unauthenticated (no cookies, no CSRF, no user)."""
+    import hashlib
+    from models import VaultBlindBucket
+
     session, _, _ = test_db
+    bucket = "f" * 64
+    token = "9" * 64
+    session.add(VaultBlindBucket(bucket_id=bucket, auth_verifier=hashlib.sha256(token.encode()).hexdigest()))
+    session.commit()
 
     def override_get_db():
         yield session
@@ -453,8 +460,6 @@ def test_vault_blind_sync_success(test_db):
     app.dependency_overrides[get_db] = override_get_db
 
     with TestClient(app) as anonymous_client:
-        bucket = "f" * 64
-        token = "9" * 64
         res = anonymous_client.post(
             "/api/vault/blind-sync",
             json={
@@ -483,7 +488,15 @@ def test_vault_blind_sync_success(test_db):
 
 def test_vault_blind_sync_invalid_token(test_db):
     """Verifies that attempting blind sync with an invalid auth_token returns 401 Unauthorized."""
+    import hashlib
+    from models import VaultBlindBucket
+
     session, _, _ = test_db
+    bucket = "8" * 64
+    token_valid = "a" * 64
+    token_invalid = "b" * 64
+    session.add(VaultBlindBucket(bucket_id=bucket, auth_verifier=hashlib.sha256(token_valid.encode()).hexdigest()))
+    session.commit()
 
     def override_get_db():
         yield session
@@ -491,11 +504,7 @@ def test_vault_blind_sync_invalid_token(test_db):
     app.dependency_overrides[get_db] = override_get_db
 
     with TestClient(app) as anonymous_client:
-        bucket = "8" * 64
-        token_valid = "a" * 64
-        token_invalid = "b" * 64
-
-        # Register bucket with token_valid
+        # Access with token_valid -> 200
         r1 = anonymous_client.post(
             "/api/vault/blind-sync",
             json={
@@ -604,7 +613,14 @@ def test_vault_migration_preserves_entries(client, test_db):
 
 def test_vault_blind_sync_duplicate_mutations_in_batch(test_db):
     """Verifies that multiple mutations targeting the same ID within a single request batch succeed without IntegrityError."""
+    import hashlib
+    from models import VaultBlindBucket
+
     session, _, _ = test_db
+    bucket = "3" * 64
+    auth_token = "4" * 64
+    session.add(VaultBlindBucket(bucket_id=bucket, auth_verifier=hashlib.sha256(auth_token.encode()).hexdigest()))
+    session.commit()
 
     def override_get_db():
         yield session
@@ -612,9 +628,6 @@ def test_vault_blind_sync_duplicate_mutations_in_batch(test_db):
     app.dependency_overrides[get_db] = override_get_db
 
     with TestClient(app) as client:
-        bucket = "3" * 64
-        auth_token = "4" * 64
-
         res = client.post(
             "/api/vault/blind-sync",
             json={
@@ -752,7 +765,17 @@ def test_vault_cross_bucket_same_id_composite_pk(client, test_db):
 
 def test_vault_blind_sync_cross_bucket_same_id(test_db):
     """Verifies blind-sync also isolates identical IDs across different buckets via composite PK."""
+    import hashlib
+    from models import VaultBlindBucket
+
     session, _, _ = test_db
+    b1 = "a" * 64
+    b2 = "b" * 64
+    t1 = "1" * 64
+    t2 = "2" * 64
+    session.add(VaultBlindBucket(bucket_id=b1, auth_verifier=hashlib.sha256(t1.encode()).hexdigest()))
+    session.add(VaultBlindBucket(bucket_id=b2, auth_verifier=hashlib.sha256(t2.encode()).hexdigest()))
+    session.commit()
 
     def override_get_db():
         yield session
@@ -760,10 +783,6 @@ def test_vault_blind_sync_cross_bucket_same_id(test_db):
     app.dependency_overrides[get_db] = override_get_db
 
     with TestClient(app) as client:
-        b1 = "a" * 64
-        b2 = "b" * 64
-        t1 = "1" * 64
-        t2 = "2" * 64
         entry_id = "blind-shared-uuid-99"
 
         r1 = client.post(
@@ -839,8 +858,9 @@ def test_vault_sync_in_batch_deduplication(client):
     assert data["entries"][0]["ciphertext"] == "sv-vault-v1:second_version_in_same_batch"
 
 
-def test_vault_sync_exception_sanitization(client, monkeypatch):
-    """Verifies that unexpected server-side sync exceptions are logged and return generic 500 without leaking SQL/internals."""
+def test_vault_sync_exception_sanitization(client, monkeypatch, caplog):
+    """Verifies that unexpected server-side sync exceptions are logged without leaking SQL/secrets and return generic 500."""
+    import logging
     from services import vault_service
 
     def mock_sync_error(*args, **kwargs):
@@ -849,16 +869,20 @@ def test_vault_sync_exception_sanitization(client, monkeypatch):
     monkeypatch.setattr(vault_service, "sync_vault", mock_sync_error)
 
     bucket = "4" * 64
-    res = client.post(
-        "/api/vault/sync",
-        json={"bucket_id": bucket, "since_revision": 0, "mutations": []},
-    )
+    with caplog.at_level(logging.ERROR):
+        res = client.post(
+            "/api/vault/sync",
+            json={"bucket_id": bucket, "since_revision": 0, "mutations": []},
+        )
     assert res.status_code == 500
     data = res.json()
     assert data["detail"] == "Interner Fehler bei der Tresor-Synchronisation."
-    # Crucially ensure internal SQL/tokens are NEVER in the response body
+    # Crucially ensure internal SQL/tokens are NEVER in the response body or logs (N1)
     assert "super-secret-token" not in str(data)
     assert "SELECT secret_table_internal" not in str(data)
+    assert "super-secret-token" not in caplog.text
+    assert "SELECT secret_table_internal" not in caplog.text
+    assert "RuntimeError" in caplog.text
 
 
 def test_vault_schema_boundary_limits(client):
@@ -942,9 +966,14 @@ def test_vault_blind_check_bestaetigt_ohne_anzulegen(test_db):
     meldete bei jedem Passwort „falsch". `/blind-sync` kam als Ersatz nicht in
     Frage: fuer ein falsches Passwort haette es einen leeren Bucket angelegt.
     """
+    import hashlib
     from models import VaultBlindBucket
 
     session, _, _ = test_db
+    bucket = "c" * 64
+    token = "d" * 64
+    session.add(VaultBlindBucket(bucket_id=bucket, auth_verifier=hashlib.sha256(token.encode()).hexdigest()))
+    session.commit()
 
     def override_get_db():
         yield session
@@ -952,8 +981,6 @@ def test_vault_blind_check_bestaetigt_ohne_anzulegen(test_db):
     app.dependency_overrides[get_db] = override_get_db
 
     with TestClient(app) as anonymous_client:
-        bucket = "c" * 64
-        token = "d" * 64
         registriert = anonymous_client.post(
             "/api/vault/blind-sync",
             json={"bucket_id": bucket, "auth_token": token, "since_revision": 0, "mutations": []},
@@ -1099,20 +1126,47 @@ def test_vault_reset_mit_2fa_braucht_passwort_und_faktor(client, test_db):
     assert client.get("/api/vault/salt").json()["has_vault"] is False
 
 
-def test_vault_reset_social_konto_ohne_2fa_braucht_nur_das_wort(client, test_db):
-    """Ein reines Social-Konto ohne 2FA hat nichts, womit es sich ausweisen koennte.
+def test_vault_reset_social_konto_ohne_2fa_braucht_email_code_n2(client, test_db, monkeypatch):
+    """N2: Ein passwortloses Konto ohne 2FA braucht zusätzlich zum Wort 'delete' einen E-Mail-Code."""
+    from services.email_service import EmailService
 
-    Entscheidung des Betreibers vom 30.09.2026: dann genuegt das Wort, wie beim
-    Loeschen des Kontos. Ohne das Wort bleibt es beim Nein.
-    """
+    gesendet: list[str] = []
+
+    async def fake_send_email(to_addr, subject, body, html_content=None):
+        gesendet.append(body)
+        return True
+
+    monkeypatch.setattr(EmailService, "send_email", staticmethod(fake_send_email))
+
     session, user, _ = test_db
     user.has_password = False
     session.commit()
     assert client.post("/api/vault/salt", json={"kdf_salt": "ab" * 16, "bucket_id": "5" * 64}).status_code == 200
 
     assert client.post("/api/vault/reset", json={}).status_code == 400
-    assert client.post("/api/vault/reset", json={"confirmation": "delete"}).status_code == 200
+    # Ohne E-Mail-Code jetzt 403 statt 200
+    assert client.post("/api/vault/reset", json={"confirmation": "delete"}).status_code == 403
+
+    # Code anfordern
+    r_code = client.post("/api/vault/reset-code")
+    assert r_code.status_code == 200
+    assert len(gesendet) == 1
+    # Cooldown blockt sofortige zweite Anfrage
+    assert client.post("/api/vault/reset-code").status_code == 429
+
+    import re
+    m = re.search(r"(\d{6})", gesendet[0])
+    assert m is not None
+    code = m.group(1)
+
+    # Falscher Code -> 403
+    assert client.post("/api/vault/reset", json={"confirmation": "delete", "email_code": "000000" if code != "000000" else "999999"}).status_code == 403
+    # Richtiger Code -> 200
+    assert client.post("/api/vault/reset", json={"confirmation": "delete", "email_code": code}).status_code == 200
     assert client.get("/api/vault/salt").json()["has_vault"] is False
+    # Einmaliger Code: Wiederverwendung -> 403
+    assert client.post("/api/vault/salt", json={"kdf_salt": "cd" * 16, "bucket_id": "6" * 64}).status_code == 200
+    assert client.post("/api/vault/reset", json={"confirmation": "delete", "email_code": code}).status_code == 403
 
 
 def test_endgueltiges_loeschen_nur_auf_der_erwarteten_revision(client):
@@ -1218,7 +1272,12 @@ def test_hochgestufter_bucket_sperrt_aeltere_apps_aus(client, test_db):
 
 
 def test_formatsperre_gilt_auch_blind(test_db):
+    import hashlib
+    from models import VaultBlindBucket
+
     session, _, _ = test_db
+    session.add(VaultBlindBucket(bucket_id="f" * 64, auth_verifier=hashlib.sha256(("1" * 64).encode()).hexdigest()))
+    session.commit()
 
     def override_get_db():
         yield session

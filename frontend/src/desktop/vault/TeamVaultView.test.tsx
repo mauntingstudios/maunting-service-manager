@@ -148,13 +148,16 @@ describe('TeamVaultView', () => {
     expect(screen.getByText(i18n.t('teams.vaultWartetAufFreischaltung'))).toBeInTheDocument()
   })
 
-  it('zeigt kein Rotations-Banner bei Rotations-Bedarf (Auto-Rotation läuft still)', () => {
+  it('zeigt das Rotations-Banner bei Rotations-Bedarf für den Owner und öffnet den Nachweis-Dialog', () => {
     useTeamVaultStore.setState({ isInitialized: true, isUnlocked: true, needsRotation: true, isOwner: true, rotationState: null })
 
     render(<TeamVaultView team={mockTeam} />)
 
-    expect(screen.queryByText(i18n.t('teams.vaultRotationTitle'))).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: new RegExp(i18n.t('teams.vaultRotateBtn')) })).not.toBeInTheDocument()
+    expect(screen.getByText(i18n.t('teams.vaultRotationBanner'))).toBeInTheDocument()
+    const rotateBtn = screen.getByRole('button', { name: new RegExp(i18n.t('teams.vaultRotateBtn')) })
+    expect(rotateBtn).toBeInTheDocument()
+    fireEvent.click(rotateBtn)
+    expect(screen.getByText(i18n.t('teams.vaultRotationConfirmDesc'))).toBeInTheDocument()
   })
 
   it('öffnet den Rotations-Dialog weiter über unterbrochene Rotation', () => {

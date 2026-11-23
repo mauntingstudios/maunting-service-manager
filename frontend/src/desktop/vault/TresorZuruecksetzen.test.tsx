@@ -99,17 +99,27 @@ describe('TresorZuruecksetzen', () => {
     await waitFor(() => expect(resetVault).toHaveBeenCalledWith({ password: 'konto-pw', otp_code: '123456' }, 'delete'))
   })
 
-  it('fragt ein Social-Konto ohne 2FA nur nach dem Wort', async () => {
+  it('verlangt bei Social-Konto ohne 2FA einen 6-stelligen E-Mail-Code und das Wort', async () => {
     useAuthStore.setState({
       user: { id: 1, username: 'ich', has_password: false, two_factor_enabled: false } as never,
     })
     render(<TresorZuruecksetzen onAbbrechen={() => {}} onFertig={() => {}} />)
     expect(screen.queryByLabelText(i18n.t('mss.vault.zuruecksetzen.passwortLabel'))).toBeNull()
+    expect(screen.getByRole('button', { name: i18n.t('mss.vault.zuruecksetzen.emailCodeSenden') })).toBeInTheDocument()
+
     fireEvent.change(screen.getByLabelText(i18n.t('mss.vault.zuruecksetzen.wortLabel')), {
       target: { value: 'delete' },
     })
+    expect(knopf()).toBeDisabled()
+
+    fireEvent.change(screen.getByLabelText(i18n.t('mss.vault.zuruecksetzen.emailCodeLabel')), {
+      target: { value: '654321' },
+    })
+    expect(knopf()).toBeEnabled()
     fireEvent.click(knopf())
-    await waitFor(() => expect(resetVault).toHaveBeenCalledWith({ password: null }, 'delete'))
+    await waitFor(() =>
+      expect(resetVault).toHaveBeenCalledWith({ password: null, email_code: '654321' }, 'delete'),
+    )
   })
 
   it('nennt vorher, wie viele Dateien mitgehen und wie groß sie sind', async () => {

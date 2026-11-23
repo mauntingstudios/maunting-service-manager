@@ -49,7 +49,7 @@ describe('SelfHostingDocs', () => {
   it('tells operators of existing installs how they get the cache rules', () => {
     renderPage()
 
-    expect(screen.getByText(/update\.sh does not rewrite an existing site; it reports one without these rules/i)).toBeInTheDocument()
+    expect(screen.getByText(/update\.sh does not rewrite an existing site; it reports missing cache rules or a missing request_body limit/i)).toBeInTheDocument()
     expect(screen.getByText(/Run install\.sh again in that case: it keeps the existing settings/i)).toBeInTheDocument()
   })
 

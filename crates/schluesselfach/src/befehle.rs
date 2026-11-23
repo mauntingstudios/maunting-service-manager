@@ -55,7 +55,7 @@ pub async fn biometrie_speichern(
     geheimnis: String,
     fach: Option<String>,
 ) -> Result<(), String> {
-    biometrie::speichere_biometrie_geheimnis(&app, &fach_oder_tresor(fach), &geheimnis)
+    biometrie::speichere_biometrie_geheimnis(&app, &fach_oder_tresor(fach), &geheimnis).await
 }
 
 /// Fordert die Bestätigung an und gibt das Geheimnis erst danach heraus.
@@ -77,13 +77,13 @@ pub async fn biometrie_loeschen(app: AppHandle, fach: Option<String>) -> Result<
 
 /// Meldet, ob diese Plattform ein Geheimnis verwahren kann. Nicht dasselbe wie
 /// `biometrie_verfuegbar`: fragen können und verwahren können sind zwei Dinge.
-#[tauri::command]
-pub fn biometrie_speicher_verfuegbar(app: AppHandle) -> bool {
-    biometrie::geheimnisspeicher_verfuegbar(&app)
+#[tauri::command(async)]
+pub async fn biometrie_speicher_verfuegbar(app: AppHandle) -> bool {
+    biometrie::geheimnisspeicher_verfuegbar(&app).await
 }
 
 /// Fragt der Schlüsselspeicher beim Ablegen von sich aus nach einer Bestätigung?
-/// Android ja, Windows nein.
+/// Android und Windows (KeyCredentialManager) fragen selbst.
 #[tauri::command]
 pub fn biometrie_speicher_fragt_selbst() -> bool {
     biometrie::speicher_fragt_selbst()

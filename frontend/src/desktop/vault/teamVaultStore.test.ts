@@ -356,7 +356,7 @@ describe('teamVaultStore', () => {
     expect(teamsApi.syncVault).toHaveBeenCalledTimes(2)
   })
 
-  it('erneuert Schlüssel und Hüllen ohne Nachweis und ohne Passwort', async () => {
+  it('erneuert Schlüssel und Hüllen mit frischem Kontonachweis', async () => {
     vi.mocked(teamsApi.setupVault).mockResolvedValue({ status: 'ok' })
     await useTeamVaultStore.getState().setup(42)
     const alterBucket = useTeamVaultStore.getState().bucketId
@@ -372,11 +372,14 @@ describe('teamVaultStore', () => {
     vi.mocked(teamsApi.rotationPrepare).mockResolvedValue({ status: 'ok' })
     vi.mocked(teamsApi.rotationCommit).mockResolvedValue({ status: 'ok' })
 
-    const ok = await useTeamVaultStore.getState().rotateVault(42)
+    const ok = await useTeamVaultStore.getState().rotateVault(42, { password: 'owner-pw' })
 
     expect(ok).toBe(true)
-    expect(teamsApi.rotationPrepare).toHaveBeenCalledWith(42, { bucket_id: expect.any(String) })
-    expect(teamsApi.rotationCommit).toHaveBeenCalledWith(42)
+    expect(teamsApi.rotationPrepare).toHaveBeenCalledWith(42, {
+      bucket_id: expect.any(String),
+      password: 'owner-pw',
+    })
+    expect(teamsApi.rotationCommit).toHaveBeenCalledWith(42, { password: 'owner-pw' })
     // Hüllen für Stand 2 liegen für beide Mitglieder vor dem Commit.
     const v2 = vi.mocked(teamsApi.uploadKeyslots).mock.calls.filter((c) => c[1].key_version === 2)
     expect(v2).toHaveLength(1)

@@ -138,6 +138,7 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
       syncStatus: s.syncStatus,
       error: s.error,
       needsSlot: s.needsSlot,
+      needsRotation: s.needsRotation,
       keyVersion: s.keyVersion,
       loadStatus: s.loadStatus,
       setup: s.setup,
@@ -240,10 +241,8 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
   const isDeviceAuthorized = personalStore.isDeviceAuthorized
 
   // Team-Tresor angleichen: Schlüsselstand überholt (Rotation lief anderswo)?
-  // Dann lautlos mit der neuen Hülle neu öffnen. Der Gründer rotiert bei
-  // Rotations-Bedarf automatisch — einmal je Schlüsselstand, bei Fehlschlag
-  // erneut beim nächsten Öffnen. Einen Hinweis gibt es nicht mehr.
-  const autoRotiertFuer = useRef<string | null>(null)
+  // Dann lautlos mit der neuen Hülle neu öffnen. Stille Auto-Rotation für den
+  // Gründer entfällt (M3: Rotation erfordert frischen Kontonachweis via Banner/Dialog).
   useEffect(() => {
     if (!isTeam || !team?.id || !isUnlocked) return
     const tid = team.id
@@ -261,22 +260,6 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
         status.key_version !== neu.keyVersion
       ) {
         await useTeamVaultStore.getState().unlock(tid)
-        return
-      }
-      const marke = `${tid}:${status.key_version ?? '?'}`
-      if (neu.needsRotation && neu.isOwner && autoRotiertFuer.current !== marke) {
-        autoRotiertFuer.current = marke
-        const ok = await useTeamVaultStore.getState().rotateVault(tid)
-        if (abgebrochen) return
-        if (ok) {
-          toast.success(t('teams.vaultKeyRotated'))
-        } else {
-          // Freigeben, damit das nächste Öffnen es erneut versucht — sonst
-          // bliebe der Bedarf ohne Banner für immer unerledigt liegen.
-          autoRotiertFuer.current = null
-          const fehler = useTeamVaultStore.getState().error
-          if (fehler) toast.error(fehler)
-        }
       }
     }
     void angleichen()
@@ -285,7 +268,7 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
       abgebrochen = true
       window.removeEventListener('focus', angleichen)
     }
-  }, [isTeam, team?.id, isUnlocked, t])
+  }, [isTeam, team?.id, isUnlocked])
 
   // Team-Tresor: richtet sich beim Gründer von selbst ein — einen
   // Einrichtungs-Klick gibt es nicht mehr. Einzige Voraussetzung ist die
@@ -374,16 +357,16 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
     }
   }
 
-  const handleTeamRotate = async () => {
+  const handleTeamRotate = async (nachweis: import('./teamVaultStore').TeamVaultRotationNachweis) => {
     if (!team?.id || rotBusy) return
     setRotBusy(true)
     try {
-      const ok = await teamStore.rotateVault(team.id)
+      const ok = await teamStore.rotateVault(team.id, nachweis)
       if (ok) {
         toast.success(t('teams.vaultKeyRotated'))
         setRotationOpen(false)
       } else {
-        toast.error(teamStore.error || t('mss.vault.speichernFehlgeschlagen'))
+        toast.error(useTeamVaultStore.getState().error || t('mss.vault.speichernFehlgeschlagen'))
       }
     } finally {
       setRotBusy(false)
@@ -1226,6 +1209,7 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
         syncStatus={syncStatus}
         onSyncWithServer={activeSyncWithServer}
         showRotationPreparedBanner={isTeam && teamStore.rotationState === 'prepared'}
+        showRotationNeededBanner={isTeam && teamStore.needsRotation && isOwner}
         isOwner={isOwner}
         onOpenRotation={() => setRotationOpen(true)}
         onAbortRotation={() => {

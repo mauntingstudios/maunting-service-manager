@@ -4,7 +4,9 @@ import asyncio
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 import hashlib
+import hmac
 import html
+import json
 import secrets
 from typing import Sequence
 from sqlalchemy import func, select, text
@@ -66,6 +68,14 @@ class VaultOhneBucket(Exception):
 
 class VaultSalzGesetzt(Exception):
     """Das Konto hat schon ein anderes Salz; ein neues gibt es nur ueber das Zuruecksetzen (409)."""
+
+
+class VaultUngebundenVoll(Exception):
+    """Ein verwaister blinder Bucket ohne Kontobindung hat das Sicherheitslimit erreicht (507)."""
+
+
+UNBOUND_BUCKET_MAX_BYTES = 64 * 1024 * 1024
+UNBOUND_BUCKET_MAX_ENTRIES = 10_000
 
 
 # ─── Das Konto in den Tresortabellen ─────────────────────────────────────────
@@ -265,23 +275,29 @@ def _pruefe_nicht_beerdigt(db: Session, bucket_id: str) -> None:
         raise VaultZurueckgesetzt("Dieser Tresor wurde zurückgesetzt.")
 
 
-def _pruefe_bucket_nicht_vergeben(
+def _bucket_fremd_belegt(
     db: Session,
     bucket_id: str,
     *,
     ausgenommen_team_id: int | None = None,
     ausgenommen_konto_index: str | None = None,
     erlaubter_staging_bucket: str | None = None,
-) -> None:
-    _pruefe_nicht_beerdigt(db, bucket_id)
+    erlaube_blind_row: bool = False,
+    erlaube_vorhandene_eintraege: bool = False,
+) -> bool:
+    """Gemeinsames Prädikat für alle Bucket-Anspruchspfade (N4).
+
+    Prüft Blind-Row, Kontobesitzer, fremde Pending/Old-Buckets, Team-Buckets
+    (active/pending/old) sowie vorhandene Einträge.
+    """
     b = bucket_id.lower()
 
-    if db.get(VaultBlindBucket, b) is not None:
-        raise HTTPException(status_code=403, detail="Der angegebene Tresor-Bucket ist bereits vergeben.")
+    if not erlaube_blind_row and db.get(VaultBlindBucket, b) is not None:
+        return True
 
     besitzer = _bucket_besitzer(db, b)
     if besitzer is not None and besitzer != ausgenommen_konto_index:
-        raise HTTPException(status_code=403, detail="Der angegebene Tresor-Bucket ist bereits vergeben.")
+        return True
 
     anderes_konto = (
         db.query(VaultUserSetting.konto_index)
@@ -292,7 +308,7 @@ def _pruefe_bucket_nicht_vergeben(
         .first()
     )
     if anderes_konto is not None and anderes_konto[0] != ausgenommen_konto_index:
-        raise HTTPException(status_code=403, detail="Der angegebene Tresor-Bucket ist bereits vergeben.")
+        return True
 
     team_query = db.query(Team.id).filter(
         (func.lower(Team.vault_bucket_id) == b)
@@ -302,9 +318,34 @@ def _pruefe_bucket_nicht_vergeben(
     if ausgenommen_team_id is not None:
         team_query = team_query.filter(Team.id != ausgenommen_team_id)
     if team_query.first() is not None:
-        raise HTTPException(status_code=403, detail="Der angegebene Tresor-Bucket ist bereits vergeben.")
+        return True
 
-    if b != (erlaubter_staging_bucket or "").lower() and _bucket_hat_eintraege(db, b):
+    if (
+        not erlaube_vorhandene_eintraege
+        and b != (erlaubter_staging_bucket or "").lower()
+        and _bucket_hat_eintraege(db, b)
+    ):
+        return True
+
+    return False
+
+
+def _pruefe_bucket_nicht_vergeben(
+    db: Session,
+    bucket_id: str,
+    *,
+    ausgenommen_team_id: int | None = None,
+    ausgenommen_konto_index: str | None = None,
+    erlaubter_staging_bucket: str | None = None,
+) -> None:
+    _pruefe_nicht_beerdigt(db, bucket_id)
+    if _bucket_fremd_belegt(
+        db,
+        bucket_id,
+        ausgenommen_team_id=ausgenommen_team_id,
+        ausgenommen_konto_index=ausgenommen_konto_index,
+        erlaubter_staging_bucket=erlaubter_staging_bucket,
+    ):
         raise HTTPException(status_code=403, detail="Der angegebene Tresor-Bucket ist bereits vergeben.")
 
 
@@ -363,53 +404,98 @@ def _wende_mutationen_an(
     if not mutations:
         return []
 
-    _sperre_bucket(db, bucket_id)
-    # Erst unter der Sperre ist sicher, dass kein Zuruecksetzen dazwischenkam.
-    _pruefe_nicht_beerdigt(db, bucket_id)
+    for versuch in range(2):
+        _sperre_bucket(db, bucket_id)
+        # Erst unter der Sperre ist sicher, dass kein Zuruecksetzen dazwischenkam.
+        _pruefe_nicht_beerdigt(db, bucket_id)
 
-    max_rev_db = db.scalar(
-        select(func.max(VaultEntry.revision)).where(VaultEntry.bucket_id == bucket_id)
-    ) or 0
-    current_rev = int(max_rev_db)
+        max_rev_db = db.scalar(
+            select(func.max(VaultEntry.revision)).where(VaultEntry.bucket_id == bucket_id)
+        ) or 0
+        current_rev = int(max_rev_db)
 
-    mutation_ids = [m.id for m in mutations]
-    existing_stmt = select(VaultEntry).where(
-        VaultEntry.bucket_id == bucket_id,
-        VaultEntry.id.in_(mutation_ids),
-    )
-    existing_map = {row.id: row for row in db.scalars(existing_stmt).all()}
+        mutation_ids = [m.id for m in mutations]
+        existing_stmt = select(VaultEntry).where(
+            VaultEntry.bucket_id == bucket_id,
+            VaultEntry.id.in_(mutation_ids),
+        )
+        existing_map = {row.id: row for row in db.scalars(existing_stmt).all()}
 
-    konflikte: list[str] = []
-    for m in mutations:
-        existing = existing_map.get(m.id)
-        if (
-            m.expected_revision is not None
-            and existing is not None
-            and existing.revision != m.expected_revision
-        ):
-            konflikte.append(m.id)
-            continue
-        current_rev += 1
-        if existing:
-            existing.ciphertext = m.ciphertext
-            existing.revision = current_rev
-            existing.is_deleted = m.is_deleted
-            existing.updated_at = _now()
-        else:
-            new_entry = VaultEntry(
-                id=m.id,
-                bucket_id=bucket_id,
-                ciphertext=m.ciphertext,
-                revision=current_rev,
-                is_deleted=m.is_deleted,
-                created_at=_now(),
-                updated_at=_now(),
+        # Sekundärdeckel für verwaiste registrierte Buckets ohne Kontobindung (H2).
+        if _bucket_besitzer(db, bucket_id) is None:
+            aktuell_bytes = int(
+                db.scalar(
+                    select(func.coalesce(func.sum(func.length(VaultEntry.ciphertext)), 0)).where(
+                        VaultEntry.bucket_id == bucket_id
+                    )
+                )
+                or 0
             )
-            db.add(new_entry)
-            existing_map[m.id] = new_entry
+            aktuell_anzahl = int(
+                db.scalar(
+                    select(func.count()).select_from(VaultEntry).where(VaultEntry.bucket_id == bucket_id)
+                )
+                or 0
+            )
+            delta_bytes = 0
+            neue_ids: set[str] = set()
+            for m in mutations:
+                vorhanden = existing_map.get(m.id)
+                if vorhanden is not None:
+                    delta_bytes += len(m.ciphertext) - len(vorhanden.ciphertext or "")
+                else:
+                    delta_bytes += len(m.ciphertext)
+                    neue_ids.add(m.id)
+            if (
+                aktuell_bytes + delta_bytes > UNBOUND_BUCKET_MAX_BYTES
+                or aktuell_anzahl + len(neue_ids) > UNBOUND_BUCKET_MAX_ENTRIES
+            ):
+                raise VaultUngebundenVoll(
+                    "Speicherkontingent für ungebundenen Tresor-Bucket erschöpft."
+                )
 
-    db.commit()
-    return konflikte
+        konflikte: list[str] = []
+        geschriebene_ids: list[str] = []
+        for m in mutations:
+            existing = existing_map.get(m.id)
+            if (
+                m.expected_revision is not None
+                and existing is not None
+                and existing.revision != m.expected_revision
+            ):
+                konflikte.append(m.id)
+                continue
+            current_rev += 1
+            if existing:
+                existing.ciphertext = m.ciphertext
+                existing.revision = current_rev
+                existing.is_deleted = m.is_deleted
+                existing.updated_at = _now()
+            else:
+                new_entry = VaultEntry(
+                    id=m.id,
+                    bucket_id=bucket_id,
+                    ciphertext=m.ciphertext,
+                    revision=current_rev,
+                    is_deleted=m.is_deleted,
+                    created_at=_now(),
+                    updated_at=_now(),
+                )
+                db.add(new_entry)
+                existing_map[m.id] = new_entry
+                geschriebene_ids.append(m.id)
+
+        try:
+            db.commit()
+            return konflikte
+        except IntegrityError:
+            db.rollback()
+            if versuch == 0:
+                continue
+            # Auch nach Retry nicht möglich -> als Konflikt an Client zurückgeben statt 500 (N1).
+            return sorted(set(konflikte + geschriebene_ids))
+
+    return []
 
 
 # Hoechstens so viele Eintraege je Antwort. Mit der Tresor-Cloud hat ein Tresor
@@ -484,8 +570,16 @@ def sync_vault(db: Session, konto: TresorKonto, request: VaultSyncRequest) -> Va
     # Konto: ueber den Cookie-Pfad darf ihn nur beruehren, wer auch als Besitzer
     # eingetragen ist. Ohne diese Pruefung war `/sync` der Bypass um
     # `/blind-sync` herum — mit Cookie, aber ganz ohne `auth_token`.
-    if besitzer is None and db.get(VaultBlindBucket, bucket_id) is not None:
+    blind_bucket = db.get(VaultBlindBucket, bucket_id)
+    if besitzer is None and blind_bucket is not None:
         raise VaultBucketAccessDenied("Dieser Tresor-Bucket ist an einen blinden Besitznachweis gebunden.")
+
+    if request.mutations and blind_bucket is not None:
+        if not request.auth_token or not secrets.compare_digest(
+            blind_bucket.auth_verifier,
+            hashlib.sha256(request.auth_token.lower().encode("utf-8")).hexdigest(),
+        ):
+            raise VaultBucketAccessDenied("Blinder Besitznachweis für Mutationen erforderlich.")
 
     ist_staging = bool(
         user_setting
@@ -523,10 +617,8 @@ def sync_vault(db: Session, konto: TresorKonto, request: VaultSyncRequest) -> Va
         return antwort_staging
 
     if besitzer is None:
-        # Erstanspruch: nur auf einen Bucket, in dem nichts liegt. Ein Bucket mit
-        # Ciphertext hatte schon einmal einen Besitzer — ihn dem naechsten
-        # angemeldeten Konto zuzuschlagen, gaebe dessen Inhalt heraus.
-        if _bucket_hat_eintraege(db, bucket_id):
+        # Erstanspruch: nur auf einen Bucket, der nirgends belegt ist (N4).
+        if _bucket_fremd_belegt(db, bucket_id, ausgenommen_konto_index=konto.index):
             raise VaultBucketAccessDenied("Zugriff auf fremden Tresor-Bucket verweigert.")
         _beanspruchen(db, bucket_id)
         if user_setting:
@@ -559,52 +651,18 @@ def sync_vault_blind(db: Session, request: VaultBlindSyncRequest) -> VaultSyncRe
     - Der Endpunkt erfordert und kennt kein Benutzerkonto, keine Session-Cookies und keine CSRF-Tokens.
     - Die Autorisierung erfolgt ausschließlich über den blinden Besitznachweis (auth_token).
     - Der Server speichert nur sha256(auth_token) als auth_verifier in konstanter Zeit geprüft.
-    - Trust-On-First-Use gilt **nur** für einen jungfräulichen Bucket: ohne Eintrag und ohne
-      Kontokopplung. Wer einen bestehenden Tresor auf den blinden Pfad heben will, tut das
-      angemeldet über `register_blind_bucket`.
-
-    Warum die enge Grenze (Audit 22.09.2026): vorher registrierte dieser Endpunkt jeden
-    unbekannten Bucket und trennte dabei dessen Kontokopplung. Wer eine `bucket_id` kannte —
-    und die steht fuer jeden mit DB- oder Log-Lesezugriff im Klartext — bekam mit einem
-    einzigen unauthentifizierten Request alle Ciphertexte des Opfers, sperrte es dauerhaft
-    aus seinem eigenen Tresor aus und oeffnete nebenbei den Cookie-Pfad fuer jedes beliebige
-    angemeldete Konto.
+    - Nur bereits registrierte Buckets werden akzeptiert (H2: keine anonyme TOFU-Erstregistrierung;
+      Ersteinrichtung läuft authentifiziert über `register_blind_bucket`).
     """
     bucket_id = request.bucket_id.lower()
     auth_token = request.auth_token.lower()
     computed_verifier = hashlib.sha256(auth_token.encode("utf-8")).hexdigest()
     _pruefe_nicht_beerdigt(db, bucket_id)
 
-    # 1. Blind Bucket lookup
+    # 1. Blind Bucket lookup (uniformes 401 bei fehlendem Bucket oder falschem Token -> kein Oracle)
     blind_bucket = db.get(VaultBlindBucket, bucket_id)
-    if not blind_bucket:
-        # Erster blinder Sync. Erlaubt ist er nur dort, wo es nichts zu erben gibt.
-        # Die Meldung ist bewusst dieselbe wie beim falschen Token: ein eigener
-        # Fehlertext waere ein Orakel dafuer, welche Buckets belegt sind.
-        if _bucket_hat_eintraege(db, bucket_id) or _bucket_besitzer(db, bucket_id) is not None:
-            raise VaultBucketUnauthorized("Ungültiges Authentifizierungs-Token für diesen Tresor-Bucket.")
-        _beanspruchen(db, bucket_id)
-
-        blind_bucket = VaultBlindBucket(
-            bucket_id=bucket_id,
-            auth_verifier=computed_verifier,
-            created_at=_now(),
-            updated_at=_now(),
-        )
-        db.add(blind_bucket)
-
-        try:
-            db.commit()
-        except IntegrityError:
-            # Wettlauf zweier Erstregistrierungen: der andere war schneller.
-            db.rollback()
-            blind_bucket = db.get(VaultBlindBucket, bucket_id)
-            if not blind_bucket or not secrets.compare_digest(blind_bucket.auth_verifier, computed_verifier):
-                raise VaultBucketUnauthorized("Ungültiges Authentifizierungs-Token für diesen Tresor-Bucket.")
-    else:
-        # Bestehender blinder Bucket -> auth_verifier prüfen (Timing-sicher)
-        if not secrets.compare_digest(blind_bucket.auth_verifier, computed_verifier):
-            raise VaultBucketUnauthorized("Ungültiges Authentifizierungs-Token für diesen Tresor-Bucket.")
+    if not blind_bucket or not secrets.compare_digest(blind_bucket.auth_verifier, computed_verifier):
+        raise VaultBucketUnauthorized("Ungültiges Authentifizierungs-Token für diesen Tresor-Bucket.")
 
     _pruefe_format(db, bucket_id, request.client_format, request.min_client_format)
 
@@ -674,7 +732,12 @@ def register_blind_bucket(db: Session, konto: TresorKonto, bucket_id: str, auth_
 
     _beanspruchen(db, bucket_id)
     if besitzer is None:
-        if _bucket_hat_eintraege(db, bucket_id):
+        if _bucket_fremd_belegt(
+            db,
+            bucket_id,
+            ausgenommen_konto_index=konto.index,
+            erlaube_blind_row=True,
+        ):
             raise VaultBucketAccessDenied("Zugriff auf fremden Tresor-Bucket verweigert.")
         if setting and setting.bucket_id and setting.bucket_id != bucket_id:
             raise VaultBucketAccessDenied("Nicht autorisierter Tresor-Bucket für dieses Benutzerkonto.")
@@ -772,24 +835,23 @@ def set_vault_salt(
     # wird erst unter der Sperre gelesen.
     _sperre_konto(db, konto)
     setting = einstellung(db, konto)
-    besitzer = _bucket_besitzer(db, clean_bucket)
-    if besitzer is not None and besitzer != konto.index:
-        raise VaultBucketAccessDenied("Der angegebene Tresor-Bucket ist bereits vergeben.")
-    if db.query(Team.id).filter(
-        (func.lower(Team.vault_bucket_id) == clean_bucket)
-        | (func.lower(Team.vault_pending_bucket_id) == clean_bucket)
-    ).first() is not None:
-        raise VaultBucketAccessDenied("Der angegebene Tresor-Bucket ist bereits vergeben.")
-
     eigener = setting is not None and setting.bucket_id == clean_bucket
+    nachweis = False
     if not eigener:
         blind = db.get(VaultBlindBucket, clean_bucket)
-        belegt = blind is not None or _bucket_hat_eintraege(db, clean_bucket)
         nachweis = bool(auth_token) and blind is not None and secrets.compare_digest(
             blind.auth_verifier,
             hashlib.sha256(auth_token.lower().encode("utf-8")).hexdigest(),
         )
-        if belegt and not nachweis:
+        if blind is not None and not nachweis:
+            raise VaultBucketAccessDenied("Der angegebene Tresor-Bucket ist bereits vergeben.")
+        if _bucket_fremd_belegt(
+            db,
+            clean_bucket,
+            ausgenommen_konto_index=konto.index,
+            erlaube_blind_row=nachweis,
+            erlaube_vorhandene_eintraege=nachweis,
+        ):
             # Derselbe Wortlaut wie oben: die Antwort verraet nicht, ob es den
             # Bucket gibt.
             raise VaultBucketAccessDenied("Der angegebene Tresor-Bucket ist bereits vergeben.")
@@ -997,6 +1059,165 @@ def _sperrfrist_freigeben(db: Session, hint_id: int) -> None:
         {"last_requested_at": None}, synchronize_session=False
     )
     db.commit()
+
+
+RESET_CODE_PURPOSE = "vault_reset_code"
+RESET_CODE_TTL_SECONDS = 600
+RESET_CODE_COOLDOWN_SECONDS = 60
+RESET_CODE_MAX_ATTEMPTS = 5
+
+
+def _reset_code_hmac(user_id: int, salt_hex: str, code: str) -> str:
+    from config import settings
+
+    msg = f"{user_id}:{salt_hex}:{code}".encode("utf-8")
+    return hmac.new(settings.secret_key.encode("utf-8"), msg, hashlib.sha256).hexdigest()
+
+
+def _reset_code_vorbereiten(db: Session, user: User) -> tuple[str, str, str, int] | str:
+    """Erzeugt unter User-Sperre einen 6-stelligen Reset-Code (nur HMAC gespeichert)."""
+    from models import LoginChallenge
+    from models.login_challenge import hash_challenge_token
+
+    if not user.email:
+        return "Für dein Konto ist keine E-Mail-Adresse hinterlegt."
+
+    schluessel = int.from_bytes(
+        hashlib.sha256(f"vault-reset-code:{user.id}".encode()).digest()[:8], "big", signed=True
+    )
+    db.execute(text("SELECT pg_advisory_xact_lock(:schluessel)"), {"schluessel": schluessel})
+
+    now = _now()
+    grenze = now - timedelta(seconds=RESET_CODE_COOLDOWN_SECONDS)
+    juengste = (
+        db.query(LoginChallenge)
+        .filter(
+            LoginChallenge.user_id == user.id,
+            LoginChallenge.purpose == RESET_CODE_PURPOSE,
+            LoginChallenge.consumed_at.is_(None),
+            LoginChallenge.created_at > grenze,
+        )
+        .order_by(LoginChallenge.created_at.desc())
+        .first()
+    )
+    if juengste is not None:
+        rest = max(1, int(RESET_CODE_COOLDOWN_SECONDS - (now - _to_utc(juengste.created_at)).total_seconds()))
+        return f"Bitte warte noch {rest} Sekunden, bevor du einen neuen Code anforderst."
+
+    # Vorherige offene Reset-Codes des Kontos entwertet, damit nur der neueste gilt.
+    db.query(LoginChallenge).filter(
+        LoginChallenge.user_id == user.id,
+        LoginChallenge.purpose == RESET_CODE_PURPOSE,
+        LoginChallenge.consumed_at.is_(None),
+    ).update({LoginChallenge.consumed_at: now}, synchronize_session=False)
+
+    code = f"{secrets.randbelow(1_000_000):06d}"
+    salt_hex = secrets.token_hex(16)
+    code_hmac = _reset_code_hmac(user.id, salt_hex, code)
+    plain_token = secrets.token_urlsafe(32)
+
+    row = LoginChallenge(
+        token_hash=hash_challenge_token(plain_token),
+        purpose=RESET_CODE_PURPOSE,
+        user_id=user.id,
+        payload_json=json.dumps({"salt": salt_hex, "hmac": code_hmac, "versuche": 0}),
+        expires_at=now + timedelta(seconds=RESET_CODE_TTL_SECONDS),
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return code, user.username, user.email, row.id
+
+
+def _reset_code_verwerfen(db: Session, challenge_id: int) -> None:
+    from models import LoginChallenge
+
+    db.query(LoginChallenge).filter(LoginChallenge.id == challenge_id).update(
+        {LoginChallenge.consumed_at: _now()}, synchronize_session=False
+    )
+    db.commit()
+
+
+async def request_vault_reset_code(db: Session, user: User) -> tuple[bool, str]:
+    """Sendet einen 6-stelligen Bestätigungscode für passwortlose Tresor-Resets (N2)."""
+    vorbereitet = await asyncio.to_thread(_reset_code_vorbereiten, db, user)
+    if isinstance(vorbereitet, str):
+        return False, vorbereitet
+    code, username, adresse, challenge_id = vorbereitet
+
+    from services.email_service import EmailService
+
+    subject = "Tresor zurücksetzen: Dein Bestätigungscode"
+    body = f"""Hallo {username},
+
+du hast einen Bestätigungscode zum Zurücksetzen deines Tresors im Maunting Service Manager angefordert.
+
+Dein Bestätigungscode lautet: {code}
+
+Der Code ist 10 Minuten gültig. Falls du diese Anforderung nicht ausgelöst hast, ignoriere diese E-Mail und prüfe deine Kontosicherheit.
+
+Maunting Service Manager
+"""
+    html_content = EmailService._notification_email_html(
+        username,
+        "Bestätigungscode für Tresor-Reset",
+        "Verwende diesen 6-stelligen Code (10 Minuten gültig), um das Zurücksetzen zu bestätigen:",
+        f"<strong>{html.escape(code)}</strong>",
+        kategorie="Tresor",
+    )
+
+    success = await EmailService.send_email(adresse, subject, body, html_content)
+    if not success:
+        await asyncio.to_thread(_reset_code_verwerfen, db, challenge_id)
+        return False, "Die E-Mail konnte nicht gesendet werden. Bitte prüfe die SMTP-Konfiguration."
+    return True, "Bestätigungscode wurde an deine E-Mail-Adresse gesendet."
+
+
+def verify_and_consume_vault_reset_code(db: Session, user: User, email_code: str | None) -> None:
+    """Prüft und verbraucht den 6-stelligen E-Mail-Code für passwortlose Tresor-Resets (N2)."""
+    from models import LoginChallenge
+    from services import login_challenge_service
+
+    if not email_code:
+        raise HTTPException(status_code=403, detail="Bitte bestätige den per E-Mail gesendeten Code.")
+
+    now = _now()
+    row = (
+        db.query(LoginChallenge)
+        .filter(
+            LoginChallenge.user_id == user.id,
+            LoginChallenge.purpose == RESET_CODE_PURPOSE,
+            LoginChallenge.consumed_at.is_(None),
+            LoginChallenge.expires_at > now,
+        )
+        .order_by(LoginChallenge.created_at.desc())
+        .first()
+    )
+    if row is None:
+        raise HTTPException(
+            status_code=403,
+            detail="Kein gültiger E-Mail-Code vorhanden. Bitte fordere einen neuen Code an.",
+        )
+
+    versuch = login_challenge_service.versuch_belegen(db, row, RESET_CODE_MAX_ATTEMPTS)
+    if versuch is None:
+        login_challenge_service.consume(db, row)
+        raise HTTPException(
+            status_code=403,
+            detail="Zu viele Fehlversuche. Bitte fordere einen neuen E-Mail-Code an.",
+        )
+
+    try:
+        daten = json.loads(row.payload_json or "{}")
+    except ValueError:
+        daten = {}
+    salt_hex = str(daten.get("salt") or "")
+    erwartet_hmac = str(daten.get("hmac") or "")
+    aktuell_hmac = _reset_code_hmac(user.id, salt_hex, email_code.strip())
+    if not salt_hex or not erwartet_hmac or not secrets.compare_digest(erwartet_hmac, aktuell_hmac):
+        raise HTTPException(status_code=403, detail="Ungültiger E-Mail-Code.")
+
+    login_challenge_service.consume(db, row)
 
 
 async def request_vault_hint_email(db: Session, user: User, konto: TresorKonto) -> tuple[bool, str]:

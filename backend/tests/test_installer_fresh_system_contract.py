@@ -335,6 +335,21 @@ def test_update_meldet_eine_site_ohne_cache_regeln() -> None:
     assert "install.sh erneut ausfuehren" in block
 
 
+def test_caddy_konfiguriert_request_body_limit_und_update_meldet_drift() -> None:
+    template = (ROOT / "Caddyfile.template").read_text(encoding="utf-8")
+    sites = _caddy_sites(_installer())
+    assert len(sites) == 3
+
+    for site in [*sites, template]:
+        assert "request_body {" in site
+        assert "max_size 128MB" in site
+
+    updater = (ROOT / "update.sh").read_text(encoding="utf-8")
+    block = updater.split("# Cache-Regeln der Oberflaeche", 1)[1].split("\ndone\n", 1)[0]
+    assert '! grep -q "request_body"' in block
+    assert "max_size 128MB" in block
+
+
 def test_installer_and_updater_provision_einvoice_toolchain() -> None:
     installer = _installer()
     updater = (ROOT / "update.sh").read_text(encoding="utf-8")

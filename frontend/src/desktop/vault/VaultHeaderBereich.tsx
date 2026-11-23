@@ -32,6 +32,7 @@ export interface VaultHeaderBereichProps {
   syncStatus: string
   onSyncWithServer: () => Promise<void>
   showRotationPreparedBanner: boolean
+  showRotationNeededBanner?: boolean
   isOwner: boolean
   onOpenRotation: () => void
   onAbortRotation: () => void
@@ -65,6 +66,7 @@ export function VaultHeaderBereich({
   syncStatus,
   onSyncWithServer,
   showRotationPreparedBanner,
+  showRotationNeededBanner = false,
   isOwner,
   onOpenRotation,
   onAbortRotation,
@@ -124,6 +126,18 @@ export function VaultHeaderBereich({
           </Button>
         </div>
       </div>
+
+      {/* Empfohlene Team-Schlüsselrotation nach Mitgliederwechsel (M3) */}
+      {showRotationNeededBanner && !showRotationPreparedBanner && (
+        <div role="alert" className="mx-4 mt-2.5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-status-warning/40 bg-status-warning/10 p-3 shadow-sm">
+          <p className="text-xs text-on-surface">{t('teams.vaultRotationBanner')}</p>
+          {isOwner && (
+            <Button size="sm" onClick={onOpenRotation} className="text-xs px-3 py-1.5">
+              {t('teams.vaultRotateBtn')}
+            </Button>
+          )}
+        </div>
+      )}
 
       {/* Unterbrochene Team-Rotation fortsetzen oder abbrechen */}
       {showRotationPreparedBanner && (

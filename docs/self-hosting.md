@@ -92,7 +92,7 @@ curl -fsSL https://raw.githubusercontent.com/mauntingstudios/maunting-service-ma
 3. **Database Configuration:** Configures a dedicated, unprivileged PostgreSQL database and role (`msm`), enforcing secure authentication.
 4. **Rootless Docker:** Configures user namespaces and rootless Docker to ensure hosted containers execute without host root privileges.
 5. **Systemd Services:** Registers and enables systemd service units for the FastAPI backend, sidecars, and local agent.
-6. **TLS Reverse Proxy:** Configures Caddy to reverse-proxy traffic to the internal backend and frontend while provisioning automatic SSL certificates.
+6. **TLS Reverse Proxy:** Configures Caddy to reverse-proxy traffic to the internal backend and frontend while provisioning automatic SSL certificates and enforcing an outer `request_body { max_size 128MB }` limit (the backend middleware enforces tighter per-route limits such as 16 MiB default, 9 MiB for `/api/vault/blind-sync`, and 112 MiB for file uploads).
 
 ### Resuming a Partial Installation
 

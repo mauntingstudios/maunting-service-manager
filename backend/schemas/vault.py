@@ -50,6 +50,7 @@ VAULT_FORMAT_BEKANNT = 1
 
 class VaultSyncRequest(BaseModel):
     bucket_id: str = Field(..., min_length=64, max_length=64, description="Blinde 64-Hex Bucket-ID, abgeleitet aus dem Client-Master-Secret")
+    auth_token: Optional[str] = Field(default=None, min_length=64, max_length=64, description="Blinder Besitznachweis (SHA-256 Hex), erforderlich fuer Mutationen auf blind-registrierten Buckets")
     since_revision: int = Field(default=0, ge=0, le=9007199254740991, description="Revisions-Wasserzeichen des Clients")
     mutations: List[VaultMutation] = Field(default_factory=list, max_length=100, description="Neue oder aktualisierte verschluesselte Eintraege")
     # Welches Eintragsformat die App versteht, und ab welchem sie den Bucket
@@ -65,6 +66,15 @@ class VaultSyncRequest(BaseModel):
     def validate_bucket_id(cls, v: str) -> str:
         if not HEX_64_REGEX.match(v):
             raise ValueError("bucket_id must be a 64-character hex string")
+        return v.lower()
+
+    @field_validator("auth_token")
+    @classmethod
+    def validate_auth_token(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        if not HEX_64_REGEX.match(v):
+            raise ValueError("auth_token must be a 64-character hex string")
         return v.lower()
 
     @field_validator("mutations")
@@ -135,6 +145,7 @@ class VaultResetRequest(BaseModel):
     password: Optional[str] = Field(default=None, max_length=256)
     otp_code: Optional[str] = Field(default=None, pattern=r"^\d{6}$")
     passkey: Optional[Zweitnachweis] = None
+    email_code: Optional[str] = Field(default=None, pattern=r"^\d{6}$")
     confirmation: str = Field(default="", max_length=32)
 
 

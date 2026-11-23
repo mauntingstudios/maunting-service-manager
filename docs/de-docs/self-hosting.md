@@ -367,9 +367,7 @@ alles andere im `dist` (Icons, Manifest, Erdtextur) einen Tag. Das gilt seit
 09/2026. Vorher setzte die Site gar keinen Cache-Kopf. Ein Browser durfte eine
 alte `index.html` dann nach eigener Schätzung weiterverwenden, und einen
 fehlenden Chunk beantwortete Caddy mit der `index.html`: Die Oberfläche konnte
-nach einem Update leer bleiben. `update.sh` schreibt die Site nicht neu,
-sondern meldet eine ohne diese Regeln. `install.sh` erneut auszuführen behält
-die vorhandenen Werte und schreibt die Site neu.
+nach einem Update leer bleiben. Zudem setzt `install.sh` seit 11/2026 ein äußeres HTTP-Body-Limit (`request_body { max_size 128MB }`) in der Caddy-Site, während die Backend-Middleware engere Limits je Route erzwingt (Standard 16 MiB, Datei-Uploads bis 112 MiB, `/api/vault/blind-sync` 9 MiB, `/api/vault/blind-check` 64 KiB). `update.sh` schreibt die Site nicht neu, sondern meldet fehlende Cache-Regeln oder ein fehlendes `request_body`-Limit. `install.sh` erneut auszuführen behält die vorhandenen Werte und schreibt die Site neu.
 
 Prüfen lässt sich das am gebauten Frontend. Die Ausgabe muss leer bleiben:
 

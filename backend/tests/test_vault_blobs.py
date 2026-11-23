@@ -205,10 +205,10 @@ def test_loeschen_braucht_den_schluessel(als, konten, db):
 
     assert client.request("DELETE", f"/api/vault/blobs/{blob_id}", json={"schluessel": schluessel}).status_code == 200
     assert client.get(f"/api/vault/blobs/{blob_id}/chunks/0").status_code == 404
-    # In der Loeschhaltung belegt er die Quote weiter.
+    # In der Loeschhaltung belegt er die Quote weiter (inkl. Block-Overhead).
     speicher = client.get("/api/vault/speicher").json()
-    assert speicher["belegt"] == 100
-    assert speicher["in_loeschung"] == 100
+    assert speicher["belegt"] == 100 + vault_blob_service.BLOCK_OVERHEAD
+    assert speicher["in_loeschung"] == 100 + vault_blob_service.BLOCK_OVERHEAD
 
 
 def test_schreibende_blob_routen_brauchen_csrf(db, konten, blob_dir):
@@ -252,7 +252,8 @@ def test_fremdes_konto_schliesst_keinen_upload_ab(als, konten, db):
 
 def test_quote_je_tresor(als, konten, db):
     eins, _ = konten
-    _speicher_der_rolle(db, eins, 1000)
+    overhead = vault_blob_service.BLOCK_OVERHEAD
+    _speicher_der_rolle(db, eins, 1000 + 2 * overhead)
     client = als(eins)
     assert _anlegen(client, 600)[2].status_code == 201
     voll = _anlegen(client, 600)[2]
@@ -260,7 +261,21 @@ def test_quote_je_tresor(als, konten, db):
     # Jeder Grund hat seinen Code: Löschen hilft nur beim Kontingent.
     assert voll.json()["detail"]["code"] == "VAULT_SPEICHER_VOLL"
     assert _anlegen(client, 400)[2].status_code == 201
-    assert client.get("/api/vault/speicher").json() == {"belegt": 1000, "quote": 1000, "in_loeschung": 0, "blobs": 2}
+    assert client.get("/api/vault/speicher").json() == {
+        "belegt": 1000 + 2 * overhead,
+        "quote": 1000 + 2 * overhead,
+        "in_loeschung": 0,
+        "blobs": 2,
+    }
+
+
+def test_n5_ein_byte_blob_belegt_block_overhead(als, konten, db):
+    """N5: Kleinster gültiger Blob (29 Bytes = 1 Byte Klartext + 28 Byte GCM) belegt zusätzlich 4-KiB-Block-Overhead."""
+    eins, _ = konten
+    client = als(eins)
+    assert _anlegen(client, 29)[2].status_code == 201
+    speicher = client.get("/api/vault/speicher").json()
+    assert speicher["belegt"] == 29 + vault_blob_service.BLOCK_OVERHEAD
 
 
 def test_chunk_haelt_die_plattenreserve_frei(als, konten, blob_dir, monkeypatch):
@@ -268,12 +283,13 @@ def test_chunk_haelt_die_plattenreserve_frei(als, konten, blob_dir, monkeypatch)
     Reserve. Beide bestehen die Pruefung beim Reservieren; erst beim Schreiben
     darf der zweite die Reserve nicht mehr anbrechen."""
     eins, zwei = konten
-    frei = {"bytes": PLATTENRESERVE + 1500}
+    frei = {"bytes": PLATTENRESERVE + vault_blob_service.BLOCK_OVERHEAD + 1500}
     monkeypatch.setattr(vault_blob_service.shutil, "disk_usage", lambda _pfad: SimpleNamespace(free=frei["bytes"]))
     erster, _, a = _anlegen(als(eins), 1000)
     zweiter, _, b = _anlegen(als(zwei), 1000)
     assert (a.status_code, b.status_code) == (201, 201)
 
+    frei["bytes"] = PLATTENRESERVE + 1500
     assert _hochladen(als(eins), erster, 0, b"x" * 1000).status_code == 204
     frei["bytes"] -= 1000
     antwort = _hochladen(als(zwei), zweiter, 0, b"y" * 1000)
@@ -373,7 +389,8 @@ def test_quote_haelt_bei_zwei_anfragen_zugleich(db, konten, blob_dir):
     Ohne Sperre lesen beide denselben belegten Stand und legen beide an.
     """
     eins, _ = konten
-    _speicher_der_rolle(db, eins, 1000)
+    overhead = vault_blob_service.BLOCK_OVERHEAD
+    _speicher_der_rolle(db, eins, 1000 + overhead)
 
     engine = create_engine(db_module.engine.url, poolclass=NullPool)
     sitzung = sessionmaker(bind=engine)
@@ -414,7 +431,7 @@ def test_quote_haelt_bei_zwei_anfragen_zugleich(db, konten, blob_dir):
 
     assert sorted(ergebnisse) == ["angelegt", "voll"]
     db.expire_all()
-    assert vault_blob_service.belegt(db, BUCKET[eins.id]) == 501
+    assert vault_blob_service.belegt(db, BUCKET[eins.id]) == 501 + overhead
 
 
 def test_aufraeumen_entfernt_nur_faelliges(als, konten, db, blob_dir):
@@ -660,20 +677,38 @@ def test_chunk_nach_fertig_ueberschreibt_nichts(als, konten, db, blob_dir):
 def test_zu_viele_chunks_zugleich_503(als, konten, monkeypatch):
     """Jeder Chunk liegt bis zum Schreiben im Speicher. Bis 02.10.2026 gab es
     keine Grenze, wie viele das zugleich sein durften."""
-    from routers import vault as vault_router
+    from routers import vault_chunks
 
     client = als(konten[0])
     blob_id, _, _ = _anlegen(client, 100)
-    monkeypatch.setattr(vault_router, "_chunks_laufend", getattr(vault_router, "CHUNKS_ZUGLEICH", 16), raising=False)
+    monkeypatch.setattr(vault_chunks, "_chunks_laufend", vault_chunks.CHUNKS_ZUGLEICH)
     antwort = _hochladen(client, blob_id, 0, b"a" * 100)
     assert antwort.status_code == 503
     assert antwort.headers.get("retry-after")
     assert client.get(f"/api/vault/blobs/{blob_id}/status").json()["vorhanden"] == []
 
-    monkeypatch.setattr(vault_router, "_chunks_laufend", 0, raising=False)
+    monkeypatch.setattr(vault_chunks, "_chunks_laufend", 0)
     assert _hochladen(client, blob_id, 0, b"a" * 100).status_code == 204
     # Der Zaehler steht danach wieder, wo er war.
-    assert vault_router._chunks_laufend == 0
+    assert vault_chunks._chunks_laufend == 0
+
+
+def test_n1_blob_und_eingang_integrity_error_wird_409(als, konten, db, monkeypatch):
+    """N1: Ein globaler PK-Race bei anlegen/eingang_ablegen liefert BlobKonflikt (409) statt 500."""
+    from sqlalchemy.exc import IntegrityError
+
+    eins, _ = konten
+    _ = als(eins)
+
+    def raise_integrity():
+        raise IntegrityError("INSERT", {}, Exception("duplicate key"))
+
+    monkeypatch.setattr(db, "commit", raise_integrity)
+    with pytest.raises(vault_blob_service.BlobKonflikt):
+        vault_blob_service.anlegen(db, eins, BUCKET[eins.id], _neue_id(), 1, 100, "0" * 64)
+
+    with pytest.raises(vault_blob_service.BlobKonflikt):
+        vault_blob_service.eingang_ablegen(db, eins, BUCKET[eins.id], _neue_id(), "sv-vault-v1:test")
 
 
 def test_status_liest_das_verzeichnis_einmal(blob_dir, monkeypatch):

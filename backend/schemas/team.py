@@ -194,7 +194,21 @@ class TeamVaultKeyslotResponse(BaseModel):
     wrapped_dek: str
 
 
+from schemas.passkey import Zweitnachweis
+
+
 class TeamVaultRotationPrepareRequest(BaseModel):
-    """Rotation vorbereiten: nur die neue Bucket-Kennung."""
+    """Rotation vorbereiten: neue Bucket-Kennung mit frischem Kontonachweis (M3)."""
 
     bucket_id: str = Field(min_length=64, max_length=64)
+    password: str | None = Field(default=None, max_length=256)
+    otp_code: str | None = Field(default=None, pattern=r"^\d{6}$")
+    passkey: Zweitnachweis | None = None
+
+
+class TeamVaultRotationCommitRequest(BaseModel):
+    """Rotation abschliessen: frischer Kontonachweis wie bei prepare (M3)."""
+
+    password: str | None = Field(default=None, max_length=256)
+    otp_code: str | None = Field(default=None, pattern=r"^\d{6}$")
+    passkey: Zweitnachweis | None = None

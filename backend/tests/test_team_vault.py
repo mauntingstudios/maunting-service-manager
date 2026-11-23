@@ -150,13 +150,11 @@ def test_team_vault_lifecycle(
     )
     assert resp.status_code == 404
 
-    # 10. Owner rotiert (Zwei-Phasen: prepare -> staging-sync -> commit).
-    # Kein Kontonachweis noetig: Die Rotation laeuft automatisch und aendert
-    # kein Passwort — sie tauscht nur den Team-Schluessel.
+    # 10. Owner rotiert (Zwei-Phasen: prepare -> staging-sync -> commit, mit Nachweis M3).
     new_bucket = _valid_bucket_id()
     resp = client.post(
         f"/api/teams/{team.id}/vault/rotation/prepare",
-        json={"bucket_id": new_bucket},
+        json={"bucket_id": new_bucket, "password": "OwnerPass123!"},
         cookies=owner_cookies,
         headers=_headers(owner_cookies),
     )
@@ -181,6 +179,7 @@ def test_team_vault_lifecycle(
     assert resp.status_code == 200
     resp = client.post(
         f"/api/teams/{team.id}/vault/rotation/commit",
+        json={"password": "OwnerPass123!"},
         cookies=owner_cookies,
         headers=_headers(owner_cookies),
     )
@@ -245,7 +244,7 @@ def test_team_setup_und_prepare_beanspruchen_keinen_fremdbucket(
     # Prepare mit Fremdbucket muss mit 403 abgewiesen werden
     res_rot = client.post(
         f"/api/teams/{team.id}/vault/rotation/prepare",
-        json={"bucket_id": fremder_bucket},
+        json={"bucket_id": fremder_bucket, "password": "OwnerPass123!"},
         cookies=owner_cookies,
         headers=_headers(owner_cookies),
     )
@@ -323,7 +322,7 @@ def test_team_vault_keyslots_lifecycle(
     neu = _valid_bucket_id()
     assert client.post(
         f"/api/teams/{team.id}/vault/rotation/prepare",
-        json={"bucket_id": neu},
+        json={"bucket_id": neu, "password": "OwnerPass123!"},
         cookies=owner_cookies,
         headers=_headers(owner_cookies),
     ).status_code == 200
@@ -341,13 +340,14 @@ def test_team_vault_keyslots_lifecycle(
     # 8. Erneut vorbereiten, Huellen hinterlegen, committen -> Stand 2
     assert client.post(
         f"/api/teams/{team.id}/vault/rotation/prepare",
-        json={"bucket_id": neu},
+        json={"bucket_id": neu, "password": "OwnerPass123!"},
         cookies=owner_cookies,
         headers=_headers(owner_cookies),
     ).status_code == 200
     assert keyslots(owner_cookies, 2, [{"user_id": owner_user.id, "wrapped_dek": huelle_owner_v2}]).status_code == 200
     assert client.post(
         f"/api/teams/{team.id}/vault/rotation/commit",
+        json={"password": "OwnerPass123!"},
         cookies=owner_cookies,
         headers=_headers(owner_cookies),
     ).status_code == 200
@@ -375,13 +375,14 @@ def test_team_vault_keyslots_lifecycle(
     # 10. Nach Commit + Frist raeumt der Scheduler Alt-Bucket und Althuelle
     assert client.post(
         f"/api/teams/{team.id}/vault/rotation/prepare",
-        json={"bucket_id": neu},
+        json={"bucket_id": neu, "password": "OwnerPass123!"},
         cookies=owner_cookies,
         headers=_headers(owner_cookies),
     ).status_code == 200
     assert keyslots(owner_cookies, 2, [{"user_id": owner_user.id, "wrapped_dek": huelle_owner_v2}]).status_code == 200
     assert client.post(
         f"/api/teams/{team.id}/vault/rotation/commit",
+        json={"password": "OwnerPass123!"},
         cookies=owner_cookies,
         headers=_headers(owner_cookies),
     ).status_code == 200
@@ -522,8 +523,9 @@ def test_team_blobs_quota_und_lifecycle(
         cookies=owner_cookies,
     )
     assert res_speicher.status_code == 200
+    from services import vault_blob_service
     sp = res_speicher.json()
-    assert sp["belegt"] == bytes_total
+    assert sp["belegt"] == bytes_total + vault_blob_service.BLOCK_OVERHEAD
     assert sp["quote"] == 50 * 1024 * 1024
 
     # 7. Chunk lesen
@@ -769,4 +771,97 @@ def test_rollenentzug_senkt_tresorzugriff(
         json=sync_payload,
         cookies=user_cookies,
         headers=_headers(user_cookies),
+    ).status_code == 200
+
+
+def test_m2_team_chunk_upload_deckel_503(db: Session, client, owner_user: User, owner_cookies: dict, monkeypatch) -> None:
+    """M2: Team-Chunk-Upload nutzt denselben CHUNKS_ZUGLEICH-Deckel (503 + Retry-After)."""
+    import secrets
+    from routers import vault_chunks
+
+    team = Team(name="Chunk Team", owner_user_id=owner_user.id)
+    db.add(team)
+    db.flush()
+    db.add(TeamMember(team_id=team.id, user_id=owner_user.id, role="owner"))
+    db.commit()
+
+    bucket = _valid_bucket_id()
+    assert client.post(
+        f"/api/teams/{team.id}/vault/setup",
+        json={"bucket_id": bucket},
+        cookies=owner_cookies,
+        headers=_headers(owner_cookies),
+    ).status_code == 200
+
+    blob_id = secrets.token_hex(16)
+    assert client.post(
+        f"/api/teams/{team.id}/vault/blobs",
+        json={
+            "id": blob_id,
+            "chunk_count": 1,
+            "bytes_total": 64,
+            "delete_verifier": "a" * 64,
+        },
+        cookies=owner_cookies,
+        headers=_headers(owner_cookies),
+    ).status_code == 201
+
+    monkeypatch.setattr(vault_chunks, "_chunks_laufend", vault_chunks.CHUNKS_ZUGLEICH)
+    resp = client.put(
+        f"/api/teams/{team.id}/vault/blobs/{blob_id}/chunks/0",
+        content=b"x" * 64,
+        cookies=owner_cookies,
+        headers={**_headers(owner_cookies), "Content-Type": "application/octet-stream"},
+    )
+    assert resp.status_code == 503
+    assert resp.headers.get("retry-after")
+
+
+def test_n2_team_reset_passwortlos_braucht_email_code(
+    db: Session, client, owner_user: User, owner_cookies: dict, monkeypatch
+) -> None:
+    """N2: Passwortloser Team-Owner ohne 2FA braucht auch für Team-Reset einen E-Mail-Code."""
+    import re
+    from services.email_service import EmailService
+
+    gesendet: list[str] = []
+
+    async def fake_send_email(to_addr, subject, body, html_content=None):
+        gesendet.append(body)
+        return True
+
+    monkeypatch.setattr(EmailService, "send_email", staticmethod(fake_send_email))
+    owner_user.has_password = False
+    team = Team(name="Reset Team", owner_user_id=owner_user.id)
+    db.add(team)
+    db.flush()
+    db.add(TeamMember(team_id=team.id, user_id=owner_user.id, role="owner"))
+    db.commit()
+
+    assert client.post(
+        f"/api/teams/{team.id}/vault/setup",
+        json={"bucket_id": _valid_bucket_id()},
+        cookies=owner_cookies,
+        headers=_headers(owner_cookies),
+    ).status_code == 200
+
+    assert client.post(
+        f"/api/teams/{team.id}/vault/reset",
+        json={"confirmation": "delete"},
+        cookies=owner_cookies,
+        headers=_headers(owner_cookies),
+    ).status_code == 403
+
+    assert client.post(
+        "/api/vault/reset-code",
+        cookies=owner_cookies,
+        headers=_headers(owner_cookies),
+    ).status_code == 200
+    code = re.search(r"(\d{6})", gesendet[0]).group(1)
+
+    assert client.post(
+        f"/api/teams/{team.id}/vault/reset",
+        json={"confirmation": "delete", "email_code": code},
+        cookies=owner_cookies,
+        headers=_headers(owner_cookies),
     ).status_code == 200

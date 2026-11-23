@@ -47,6 +47,12 @@ import { blobBasisSetzen, blobLoeschen, teamFuerBucketMerken } from './tresorBlo
 import { ablageLaden, blobsLesen, blobsSchreiben } from './tresorAblage'
 import { blobSchluesselNeuWickeln, istBlobKopf } from './tresorDatei'
 
+export interface TeamVaultRotationNachweis {
+  password?: string | null
+  otp_code?: string | null
+  passkey?: unknown | null
+}
+
 export interface TeamVaultState {
   teamId: number | null
   bucketId: string | null
@@ -81,7 +87,7 @@ export interface TeamVaultState {
    * E2EE-Identität). Nur der Gründer ruft das auf.
    */
   huellenHinterlegen: (teamId: number, dek: Uint8Array, keyVersion: number) => Promise<{ verpackt: number; uebersprungen: string[] }>
-  rotateVault: (teamId: number) => Promise<boolean>
+  rotateVault: (teamId: number, nachweis?: TeamVaultRotationNachweis) => Promise<boolean>
   abortRotation: (teamId: number) => Promise<void>
   rollbackRotation: (teamId: number) => Promise<boolean>
   resetVault: (teamId: number, nachweis: Record<string, unknown>, bestaetigung: string) => Promise<void>
@@ -377,7 +383,7 @@ export const useTeamVaultStore = create<TeamVaultState>((set, get) => ({
     }
   },
 
-  rotateVault: async (teamId: number) => {
+  rotateVault: async (teamId: number, nachweis: TeamVaultRotationNachweis = {}) => {
     const { items, userKey, bucketId } = get()
     if (!userKey || !bucketId || !useVaultStore.getState().isUnlocked) return false
 
@@ -424,7 +430,7 @@ export const useTeamVaultStore = create<TeamVaultState>((set, get) => ({
           },
           transport: {
             prepare: async (b) => {
-              await teamsApi.rotationPrepare(teamId, { bucket_id: b })
+              await teamsApi.rotationPrepare(teamId, { bucket_id: b, ...nachweis })
               // Erst weiter, wenn die Hüllen für den neuen Stand liegen —
               // sonst sperrt der Commit die Mitglieder aus. Scheitert das,
               // bricht der Kern ab und raeumt das Staging wieder weg.
@@ -450,7 +456,7 @@ export const useTeamVaultStore = create<TeamVaultState>((set, get) => ({
               }
             },
             commit: async () => {
-              await teamsApi.rotationCommit(teamId)
+              await teamsApi.rotationCommit(teamId, nachweis)
             },
             abort: async () => {
               await teamsApi.rotationAbort(teamId)

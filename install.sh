@@ -2025,6 +2025,10 @@ EOF
 $DOMAIN {
     encode gzip
 
+    request_body {
+        max_size 128MB
+    }
+
     header {
         X-Content-Type-Options nosniff
         X-Frame-Options DENY
@@ -2075,6 +2079,10 @@ $DOMAIN {
     root * /opt/msm/frontend/dist
 
     encode gzip
+
+    request_body {
+        max_size 128MB
+    }
 
     header {
         X-Content-Type-Options nosniff
@@ -2152,6 +2160,10 @@ EOF
     root * /opt/msm/frontend/dist
 
     encode gzip
+
+    request_body {
+        max_size 128MB
+    }
 
     header {
         X-Content-Type-Options nosniff

@@ -12,6 +12,7 @@ Die Leitregel, aus der fast alle Faelle folgen:
     Prinzipal beansprucht werden — weder blind noch angemeldet.
 """
 
+import hashlib
 import pytest
 from fastapi.testclient import TestClient
 from dependencies import get_current_user, get_db, verify_csrf
@@ -163,11 +164,11 @@ def test_blind_sync_entkoppelt_den_besitzer_nicht(test_db, anonym):
     )
 
 
-def test_blind_sync_registriert_jungfraeulichen_bucket_weiterhin(test_db, anonym):
-    """Gegenprobe: ein Bucket ohne jede Spur darf weiter per TOFU entstehen.
+def test_blind_sync_lehnt_unbekannten_bucket_ab_h2(test_db, anonym):
+    """H2: Anonyme TOFU-Erstregistrierung ist abgeschafft.
 
-    Sonst koennte sich ein neues Geraet nie anmelden. Der Unterschied zum Fall
-    oben ist genau einer: hier gibt es nichts zu stehlen.
+    Ein unbekannter Bucket erhält dieselbe 401-Meldung wie ein falsches Token,
+    damit kein Bucket-Existenz-Oracle entsteht.
     """
     bucket = "c" * 64
     res = anonym.post(
@@ -186,8 +187,19 @@ def test_blind_sync_registriert_jungfraeulichen_bucket_weiterhin(test_db, anonym
             ],
         },
     )
-    assert res.status_code == 200
-    assert res.json()["server_revision"] == 1
+    assert res.status_code == 401
+    session, _, _ = test_db
+    assert session.get(VaultBlindBucket, bucket) is None
+
+    # Gegenprobe: registrierter Bucket mit falschem Token -> identische 401-Meldung (kein Oracle)
+    session.add(VaultBlindBucket(bucket_id="f" * 64, auth_verifier="0" * 64))
+    session.commit()
+    res_wrong = anonym.post(
+        "/api/vault/blind-sync",
+        json={"bucket_id": "f" * 64, "auth_token": "1" * 64, "since_revision": 0, "mutations": []},
+    )
+    assert res_wrong.status_code == 401
+    assert res_wrong.json()["detail"] == res.json()["detail"]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -242,6 +254,133 @@ def test_sync_laesst_den_eigenen_bucket_weiter_zu(test_db):
     assert len(res.json()["entries"]) == 1
 
 
+def test_n4_set_vault_salt_lehnt_team_old_und_fremd_staging_ab(test_db):
+    """N4: set_vault_salt prüft auch Team.vault_old_bucket_id und fremde pending/old Buckets."""
+    from models.team import Team
+
+    session, opfer, angreifer = test_db
+    team_old = "1" * 64
+    fremd_pending = "2" * 64
+    fremd_old = "3" * 64
+
+    session.add(
+        Team(
+            name="Audit Team",
+            owner_user_id=opfer.id,
+            vault_bucket_id="4" * 64,
+            vault_old_bucket_id=team_old,
+        )
+    )
+    session.add(
+        VaultUserSetting(
+            konto_index=_index(opfer),
+            bucket_id="5" * 64,
+            pending_bucket_id=fremd_pending,
+            old_bucket_id=fremd_old,
+            kdf_salt="aa" * 16,
+        )
+    )
+    session.commit()
+
+    with _als(session, angreifer) as client:
+        for verboten in (team_old, fremd_pending, fremd_old):
+            r = client.post("/api/vault/salt", json={"kdf_salt": "bb" * 16, "bucket_id": verboten})
+            assert r.status_code == 403
+    app.dependency_overrides.clear()
+
+
+def test_h2_verwaister_blind_bucket_deckel_507_und_gebunden_frei(test_db, anonym, monkeypatch):
+    """H2: Verwaister registrierter Bucket wird ab Sicherheitslimit mit 507 gestoppt; gebundene nicht."""
+    session, opfer, _ = test_db
+    monkeypatch.setattr(vault_service, "UNBOUND_BUCKET_MAX_ENTRIES", 2)
+
+    bucket_ungebunden = "7" * 64
+    tok = "8" * 64
+    session.add(VaultBlindBucket(bucket_id=bucket_ungebunden, auth_verifier=hashlib.sha256(tok.encode()).hexdigest()))
+    session.commit()
+
+    ok = anonym.post(
+        "/api/vault/blind-sync",
+        json={
+            "bucket_id": bucket_ungebunden,
+            "auth_token": tok,
+            "since_revision": 0,
+            "mutations": [
+                {"id": "u1", "ciphertext": "sv-vault-v1:1", "revision": 1, "is_deleted": False},
+                {"id": "u2", "ciphertext": "sv-vault-v1:2", "revision": 2, "is_deleted": False},
+            ],
+        },
+    )
+    assert ok.status_code == 200
+
+    ueber = anonym.post(
+        "/api/vault/blind-sync",
+        json={
+            "bucket_id": bucket_ungebunden,
+            "auth_token": tok,
+            "since_revision": 2,
+            "mutations": [{"id": "u3", "ciphertext": "sv-vault-v1:3", "revision": 3, "is_deleted": False}],
+        },
+    )
+    assert ueber.status_code == 507
+    assert ueber.json()["detail"]["code"] == "VAULT_BUCKET_UNGEBUNDEN_VOLL"
+
+    # Gegenprobe: an Konto gebundener Bucket ist nicht durch UNBOUND_BUCKET_MAX_ENTRIES gedeckelt
+    bucket_gebunden = "9" * 64
+    _lege_fremden_tresor_an(session, opfer, bucket_gebunden, revision=1)
+    session.add(VaultBlindBucket(bucket_id=bucket_gebunden, auth_verifier=hashlib.sha256(tok.encode()).hexdigest()))
+    session.commit()
+    ok_gebunden = anonym.post(
+        "/api/vault/blind-sync",
+        json={
+            "bucket_id": bucket_gebunden,
+            "auth_token": tok,
+            "since_revision": 1,
+            "mutations": [
+                {"id": "g1", "ciphertext": "sv-vault-v1:1", "revision": 2, "is_deleted": False},
+                {"id": "g2", "ciphertext": "sv-vault-v1:2", "revision": 3, "is_deleted": False},
+                {"id": "g3", "ciphertext": "sv-vault-v1:3", "revision": 4, "is_deleted": False},
+            ],
+        },
+    )
+    assert ok_gebunden.status_code == 200
+
+
+def test_m1_sync_verlangt_auth_token_fuer_mutationen_auf_blind_bucket(test_db):
+    """M1: /api/vault/sync verlangt bei blind-registriertem Bucket auth_token für Mutationen."""
+    session, opfer, _ = test_db
+    bucket = "a" * 64
+    tok = "b" * 64
+    _lege_fremden_tresor_an(session, opfer, bucket, revision=1)
+    session.add(VaultBlindBucket(bucket_id=bucket, auth_verifier=hashlib.sha256(tok.encode()).hexdigest()))
+    session.commit()
+
+    mut = [{"id": "m1", "ciphertext": "sv-vault-v1:test", "revision": 2, "is_deleted": False}]
+    with _als(session, opfer) as client:
+        # Lesen ohne Token -> 200
+        read_ok = client.post("/api/vault/sync", json={"bucket_id": bucket, "since_revision": 0, "mutations": []})
+        assert read_ok.status_code == 200
+
+        # Mutieren ohne Token -> 403
+        no_tok = client.post("/api/vault/sync", json={"bucket_id": bucket, "since_revision": 1, "mutations": mut})
+        assert no_tok.status_code == 403
+
+        # Mutieren mit falschem Token -> 403
+        bad_tok = client.post(
+            "/api/vault/sync",
+            json={"bucket_id": bucket, "auth_token": "c" * 64, "since_revision": 1, "mutations": mut},
+        )
+        assert bad_tok.status_code == 403
+
+        # Mutieren mit gültigem Token -> 200
+        good_tok = client.post(
+            "/api/vault/sync",
+            json={"bucket_id": bucket, "auth_token": tok, "since_revision": 1, "mutations": mut},
+        )
+        assert good_tok.status_code == 200
+    app.dependency_overrides.clear()
+
+
 def test_salt_beansprucht_keinen_blind_registrierten_fremdbucket(test_db, anonym):
     """Exploit bis 26.09.2026: `/salt` pruefte nur, ob ein anderes Konto den
     Bucket schon traegt. Ein blind registrierter Bucket ohne Kontobesitzer ging
@@ -250,6 +389,8 @@ def test_salt_beansprucht_keinen_blind_registrierten_fremdbucket(test_db, anonym
     session, _, angreifer = test_db
     bucket = "e" * 64
     token = "7" * 64
+    session.add(VaultBlindBucket(bucket_id=bucket, auth_verifier=hashlib.sha256(token.encode()).hexdigest()))
+    session.commit()
     erster = anonym.post(
         "/api/vault/blind-sync",
         json={
@@ -399,12 +540,11 @@ def test_server_revision_ueberspringt_keine_ungesehenen_eintraege(test_db, anony
     hoeher als die hoechste tatsaechlich ausgelieferte Revision.
     """
     bucket = "e" * 64
-    anonym.post(
-        "/api/vault/blind-sync",
-        json={"bucket_id": bucket, "auth_token": "2" * 64, "since_revision": 0, "mutations": []},
-    )
-
+    token = "2" * 64
     session, _, _ = test_db
+    session.add(VaultBlindBucket(bucket_id=bucket, auth_verifier=hashlib.sha256(token.encode()).hexdigest()))
+    session.commit()
+
     for rev, kennung in ((10, "alt-1"), (20, "alt-2")):
         session.add(
             VaultEntry(
