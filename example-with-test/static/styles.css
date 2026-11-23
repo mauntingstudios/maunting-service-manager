@@ -1,0 +1,235 @@
+:root {
+  --bg: #f4f6f8;
+  --surface: #ffffff;
+  --border: #dce3ea;
+  --text: #152232;
+  --muted: #5b6b7c;
+  --accent: #0f766e;
+  --accent-hover: #0d5e58;
+  --warn: #b45309;
+  --danger: #b91c1c;
+  --ok: #15803d;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.5;
+}
+
+.container {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 0 20px;
+}
+
+.topbar {
+  background: #0f172a;
+  color: #f8fafc;
+  padding: 14px 0;
+  border-bottom: 3px solid var(--accent);
+}
+
+.topbar-inner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.brand-mark {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 700;
+}
+
+.brand-sub {
+  display: block;
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.status-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.pill-ok { background: #dcfce7; color: var(--ok); }
+.pill-warn { background: #fef3c7; color: var(--warn); }
+.pill-err { background: #fee2e2; color: var(--danger); }
+.pill-muted { background: #334155; color: #e2e8f0; }
+
+.main-grid {
+  display: grid;
+  gap: 20px;
+  padding: 24px 20px 48px;
+}
+
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px;
+}
+
+.panel-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+h1, h2 {
+  margin: 0 0 4px;
+  font-size: 18px;
+}
+
+.muted {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 14px;
+}
+
+.plan-card {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px;
+  background: #fafbfc;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.plan-card.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(15, 118, 110, 0.18);
+}
+
+.plan-price {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
+}
+
+.form-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.form-grid input, .form-grid select {
+  padding: 9px 11px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 14px;
+  background: #fff;
+}
+
+.full-width { grid-column: 1 / -1; }
+
+.btn {
+  border: 0;
+  border-radius: 8px;
+  padding: 9px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.btn-primary { background: var(--accent); color: #fff; }
+.btn-primary:hover { background: var(--accent-hover); }
+.btn-secondary { background: #e2e8f0; color: var(--text); }
+.btn-warn { background: #fef3c7; color: var(--warn); }
+.btn-danger { background: #fee2e2; color: var(--danger); }
+
+.contracts-list, .webhooks-list {
+  display: grid;
+  gap: 12px;
+}
+
+.contract-card, .webhook-card {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px;
+  background: #fafbfc;
+}
+
+.contract-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.contract-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.banner {
+  padding: 12px 16px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.banner.ok { background: #dcfce7; color: var(--ok); border: 1px solid #86efac; }
+.banner.err { background: #fee2e2; color: var(--danger); border: 1px solid #fca5a5; }
+.hidden { display: none; }
+.empty { color: var(--muted); font-size: 14px; padding: 12px 0; }
+pre {
+  margin: 8px 0 0;
+  padding: 10px;
+  border-radius: 8px;
+  background: #0f172a;
+  color: #e2e8f0;
+  font-size: 12px;
+  overflow-x: auto;
+}

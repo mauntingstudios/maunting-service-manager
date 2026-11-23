@@ -7,6 +7,8 @@ The same content is available in dual languages inside the panel under **Documen
 > [!NOTE]
 > Die deutschsprachige Fassung dieser Dokumentation befindet sich unter [docs/de-docs/hoster-api.md](de-docs/hoster-api.md).
 >
+> A complete, runnable external store example with Stripe Sandbox integration and Black-Box tests is available in [example-with-test/](../example-with-test/README.md).
+>
 > **Without an explicit integration configured, none of the endpoints described below are active.** A default self-hosted MSM deployment has no exposed external endpoints that operate without an authorized integration API key.
 
 ---
@@ -459,7 +461,7 @@ Base path: `/api/hoster`
 | Method | Route | Permission | Description |
 |---|---|---|---|
 | `GET` | `/integrations` | `panel.hoster.read` | List configured integrations |
-| `POST` | `/integrations` | `panel.hoster.write` | Create integration (returns API key **once**) |
+| `POST` | `/integrations` | `panel.hoster.write` | Create integration (`name`, `slug`, `service_user_id`; returns `{"value", "hint"}` with the plaintext API key **once**) |
 | `PATCH` | `/integrations/{integration_id}` | `panel.hoster.write` | Update name, status, service user, webhook URL, or grace periods |
 | `POST` | `/integrations/{integration_id}/api-key` | `panel.hoster.write` | Rotate API key (invalidates old key immediately) |
 | `POST` | `/integrations/{integration_id}/webhook-secret` | `panel.hoster.write` | Rotate HMAC webhook secret |

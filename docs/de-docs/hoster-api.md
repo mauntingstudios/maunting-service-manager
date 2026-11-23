@@ -8,6 +8,8 @@ es ausschließlich um den Vertrag zwischen Shop und MSM.
 Dieselben Inhalte sind im Panel unter **Dokumentation → Hoster-API** (`/docs/hoster-api`)
 zweisprachig verfügbar.
 
+Ein vollständiger, ausführbarer Beispiel-Shop mit Stripe-Sandbox-Anbindung und Black-Box-Tests liegt im Repository unter [example-with-test/](../example-with-test/README.md).
+
 **Ohne angelegte Integration existiert nichts aus diesem Dokument.** Ein Self-Hosted-Betrieb ohne
 Shop hat keinen offenen Endpunkt, der ohne API-Key etwas tut.
 
@@ -549,7 +551,7 @@ Basis: `/api/hoster`
 | Methode | Pfad | Permission | Zweck |
 | --- | --- | --- | --- |
 | `GET` | `/integrations` | `panel.hoster.read` | Integrationen auflisten |
-| `POST` | `/integrations` | `panel.hoster.write` | Integration anlegen — Antwort enthält den API-Key **einmalig** |
+| `POST` | `/integrations` | `panel.hoster.write` | Integration anlegen (`name`, `slug`, `service_user_id`; Antwort liefert `{"value", "hint"}` mit dem API-Key **einmalig**) |
 | `PATCH` | `/integrations/{integration_id}` | `panel.hoster.write` | Name, Status, Dienstbenutzer, Webhook-Ziel, Kulanzfrist ändern |
 | `POST` | `/integrations/{integration_id}/api-key` | `panel.hoster.write` | API-Key rotieren — alter Key sofort ungültig |
 | `POST` | `/integrations/{integration_id}/webhook-secret` | `panel.hoster.write` | Webhook-Secret erzeugen oder rotieren |

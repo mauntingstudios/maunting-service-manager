@@ -179,3 +179,9 @@ logdump.txt
 /vault-dashboard-template*
 vault-dashboard-template*/
 sign_and_tag.ps1
+/docs/podcast-quellen
+/example-with-test/.venv/
+/example-with-test/.env
+/example-with-test/data/
+/example-with-test/**/__pycache__/
+/example-with-test/.pytest_cache/

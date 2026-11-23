@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Nordkapp Cloud — Externer Hoster-API Testshop</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="container topbar-inner">
+      <div class="brand">
+        <span class="brand-mark">NK</span>
+        <div>
+          <strong>Nordkapp Cloud</strong>
+          <span class="brand-sub">Externer Hoster-API &amp; Stripe Sandbox Testshop</span>
+        </div>
+      </div>
+      <div class="status-bar" id="status-bar">
+        <span class="pill pill-muted">Prüfe Verbindung…</span>
+      </div>
+    </div>
+  </header>
+
+  <main class="container main-grid">
+    <div id="banner" class="banner hidden"></div>
+
+    <section class="panel">
+      <div class="panel-head">
+        <div>
+          <h1>1. Tarife aus MSM-Katalog</h1>
+          <p class="muted">Geladen über <code>GET /api/hoster/v1/catalog</code> (Server-to-Server)</p>
+        </div>
+        <button class="btn btn-secondary" id="btn-reload-catalog">Katalog aktualisieren</button>
+      </div>
+      <div id="plans-grid" class="cards-grid">
+        <div class="empty">Lade Tarife…</div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <div>
+          <h2>2. Bestellung &amp; Stripe Sandbox Checkout</h2>
+          <p class="muted">Erstellt eine echte Stripe Checkout Session im Testmodus.</p>
+        </div>
+      </div>
+      <form id="checkout-form" class="form-grid">
+        <label>
+          <span>Kunden-ID (<code>external_subject</code>)</span>
+          <input type="text" id="input-subject" value="NK-CUST-1001" required />
+        </label>
+        <label>
+          <span>E-Mail-Adresse</span>
+          <input type="email" id="input-email" value="kunde@nordkapp.example" required />
+        </label>
+        <label>
+          <span>Gewählter Tarif</span>
+          <select id="select-plan" required></select>
+        </label>
+        <label>
+          <span>Optionales Add-on</span>
+          <select id="select-addon">
+            <option value="">Kein Add-on</option>
+          </select>
+        </label>
+        <label>
+          <span>RAM (MB, optional)</span>
+          <input type="number" id="input-ram" placeholder="Tarif-Standard" />
+        </label>
+        <label>
+          <span>Slots (optional)</span>
+          <input type="number" id="input-slots" placeholder="Tarif-Standard" />
+        </label>
+        <label>
+          <span>Zahlungsart</span>
+          <select id="select-mode">
+            <option value="subscription">Monats-Abo (Stripe Subscription)</option>
+            <option value="payment">Einmalzahlung (Stripe Payment)</option>
+          </select>
+        </label>
+        <div id="variables-box" class="full-width hidden"></div>
+        <div class="full-width form-actions">
+          <button type="submit" class="btn btn-primary" id="btn-checkout">
+            Mit Stripe Sandbox bezahlen
+          </button>
+        </div>
+      </form>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <div>
+          <h2>3. Kundenverträge &amp; Lebenszyklus-Tests</h2>
+          <p class="muted">Status-Sync, Tarifwechsel, Mahnsperre, Reaktivierung, Kündigung &amp; Ein-Klick-Handoff</p>
+        </div>
+        <button class="btn btn-secondary" id="btn-reload-contracts">Aktualisieren</button>
+      </div>
+      <div id="contracts-list" class="contracts-list">
+        <div class="empty">Noch keine Verträge vorhanden.</div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <div>
+          <h2>4. Eingehende Webhooks (MSM &amp; Stripe)</h2>
+          <p class="muted">Rohbody-HMAC-Prüfung über <code>{timestamp}.{raw_body}</code></p>
+        </div>
+        <button class="btn btn-secondary" id="btn-reload-webhooks">Logs aktualisieren</button>
+      </div>
+      <div id="webhooks-list" class="webhooks-list">
+        <div class="empty">Noch keine Webhooks empfangen.</div>
+      </div>
+    </section>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
