@@ -29,11 +29,17 @@ export interface ShopSpiel {
   hardwareCpuModel?: string | null
   hardwareRamType?: string | null
   hardwareStorageType?: string | null
+  platforms?: string[]
+  lifetimePreisCent?: number | null
+  allowGameSwitch?: boolean
+  ddosProvider?: string | null
+  ddosProfile?: string | null
+  ddosGameAware?: boolean
   geschaetzteSetupSekunden?: number
 }
 
 export type LaufzeitMonate = 1 | 3 | 12
-export type AbrechnungsModus = 'prepaid' | 'subscription'
+export type AbrechnungsModus = 'prepaid' | 'subscription' | 'lifetime'
 
 export interface Konfiguration {
   ramGb: number

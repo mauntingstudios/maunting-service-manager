@@ -259,6 +259,24 @@ def install_mods_batch_bg(server_id: int, workshop_ids: list[str]) -> None:
                 mark_mod_failed(server_id, wid, "Mods in diesem Spiel nicht aktiviert")
             return
 
+        db_backup = SessionLocal()
+        try:
+            srv_row = db_backup.query(Server).filter(Server.id == server_id).first()
+            if srv_row is not None:
+                from services import server_lifecycle_service
+
+                server_lifecycle_service._run_pre_update_backup(
+                    db_backup, srv_row, reason="modpack"
+                )
+        except Exception as exc:
+            logger.warning(
+                "Modpack-Pre-Update-Backup fuer Server %s fehlgeschlagen: %s",
+                server_id,
+                type(exc).__name__,
+            )
+        finally:
+            db_backup.close()
+
         _append_console_log(
             server_id,
             f"[MSM] Batch-Installation für {len(workshop_ids)} Mod(s) in Blöcken à {_BATCH_CHUNK_SIZE} gestartet.\n",

@@ -59,7 +59,7 @@ export interface Subscription {
   bezeichnung: string
   status: 'active' | 'past_due' | 'cancelled'
   intervall: 'month'
-  billingMode?: 'prepaid' | 'subscription'
+  billingMode?: 'prepaid' | 'subscription' | 'lifetime'
   naechsteZahlung: string
   preisCent: number
   cancelAtPeriodEnd?: boolean
@@ -90,6 +90,8 @@ export interface Entitlement {
   purgeReason?: string | null
   purgedAt?: string | null
   canCustomerPurgeNow?: boolean
+  pausedAt?: string | null
+  pauseDaysUsed?: number
 }
 
 export interface PaymentMethod {

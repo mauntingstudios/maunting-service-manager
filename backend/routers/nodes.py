@@ -656,6 +656,14 @@ def update_node(
         node.ram_type = body.ram_type
     if "storage_type" in body.model_fields_set:
         node.storage_type = body.storage_type
+    if "public_ping_url" in body.model_fields_set:
+        node.public_ping_url = body.public_ping_url
+    if "ddos_provider" in body.model_fields_set:
+        node.ddos_provider = body.ddos_provider
+    if "ddos_profile" in body.model_fields_set:
+        node.ddos_profile = body.ddos_profile
+    if "ddos_game_aware" in body.model_fields_set and body.ddos_game_aware is not None:
+        node.ddos_game_aware = bool(body.ddos_game_aware)
 
     has_fp_field = "tls_fingerprint" in body.model_fields_set
     new_fp = body.tls_fingerprint if has_fp_field else node.tls_fingerprint

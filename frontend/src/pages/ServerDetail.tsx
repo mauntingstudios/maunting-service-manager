@@ -251,6 +251,14 @@ export function ServerDetail() {
   const canUseAiMemory = useHasPermission("ai.memory.use");
   const canUseAiChat = useHasPermission("ai.chat.use");
   const canWriteServerConfig = useHasPermission("server.config.write", serverId);
+  useEffect(() => {
+    if (searchParams.get("action") === "switch" && server && canWriteServerConfig) {
+      setShowSwitchBlueprint(true);
+      const next = new URLSearchParams(searchParams);
+      next.delete("action");
+      setSearchParams(next, { replace: true });
+    }
+  }, [searchParams, server, canWriteServerConfig, setSearchParams]);
   const [savingAutoUpdatePaused, setSavingAutoUpdatePaused] = useState(false);
   const preview = useRolePreviewStore((s) => s.preview);
   const isRolePreviewActive = preview !== null;
@@ -1556,7 +1564,12 @@ export function ServerDetail() {
                 />
               </Suspense>
             )}
-            {activeTab === "files" && <FileManager serverId={serverId} />}
+            {activeTab === "files" && (
+              <FileManager
+                serverId={serverId}
+                initialFile={searchParams.get("file")}
+              />
+            )}
             {activeTab === "console" && <ServerConsolePanel serverId={serverId} />}
             {activeTab === "variables" && !isDatabaseServer && (
               <ServerVariablesTab

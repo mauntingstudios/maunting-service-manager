@@ -9,13 +9,19 @@ logger = logging.getLogger(__name__)
 
 class CaptchaService:
     @classmethod
-    async def verify_token(cls, token: str | None, client_ip: str | None = None) -> None:
+    async def verify_token(
+        cls,
+        token: str | None,
+        client_ip: str | None = None,
+        *,
+        force: bool = False,
+    ) -> None:
         """Validates the CAPTCHA token generically based on active provider configuration.
         
         Raises HTTPException(400) if validation fails.
         """
         # 1. Check if CAPTCHA is enabled
-        enabled = PanelSettingsService.get("captcha_enabled", "true") == "true"
+        enabled = force or PanelSettingsService.get("captcha_enabled", "true") == "true"
         if not enabled:
             return
 

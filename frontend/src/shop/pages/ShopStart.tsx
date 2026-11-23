@@ -21,7 +21,7 @@ import {
   Wrench,
   Zap,
 } from 'lucide-react'
-import { Badge, buttonClasses, Spinner, Zustandsflaeche } from '@maunting/ui'
+import { Badge, Button, buttonClasses, Spinner, Zustandsflaeche } from '@maunting/ui'
 import {
   shopCatalogApi,
   type ShopAddonCategory,
@@ -39,6 +39,7 @@ import { motivFuer } from '../spielArtwork'
 import { useShopKatalog } from '../useShopKatalog'
 
 type KatalogFilter = 'alle' | 'verfuegbar' | 'mods'
+type PlattformFilter = 'alle' | 'pc' | 'ps5' | 'xbox' | 'crossplay'
 
 function addonKategorieLabelKey(category: ShopAddonCategory): string {
   switch (category) {
@@ -66,9 +67,64 @@ export function ShopStart() {
     useHasPermission('shop.write') || useHasPermission('panel.settings.write')
   const [suche, setSuche] = useState('')
   const [filter, setFilter] = useState<KatalogFilter>('alle')
+  const [plattformFilter, setPlattformFilter] = useState<PlattformFilter>('alle')
   const [badges, setBadges] = useState<ShopPublicBadgePromo[]>([])
   const [ausgewaehltesHeroId, setAusgewaehltesHeroId] = useState<string | null>(null)
   const [nodeStatuses, setNodeStatuses] = useState<ShopPublicNodeStatusDto[]>([])
+  const [pingWerte, setPingWerte] = useState<Record<number, { ms: number | null; direkt: boolean }>>({})
+  const [pingBusy, setPingBusy] = useState(false)
+
+  const pingTesten = async () => {
+    const onlineNodes = nodeStatuses.filter((n) => n.status === 'online')
+    if (onlineNodes.length === 0 || pingBusy) return
+    setPingBusy(true)
+    const gemessen: Record<number, { ms: number | null; direkt: boolean }> = {}
+    await Promise.all(
+      onlineNodes.map(async (node) => {
+        if (node.public_ping_url) {
+          const start = performance.now()
+          try {
+            await fetch(node.public_ping_url, { mode: 'no-cors', cache: 'no-store' })
+            const ms = Math.max(1, Math.round(performance.now() - start))
+            gemessen[node.id] = { ms, direkt: true }
+            return
+          } catch (err) {
+            still(err, 'ShopStart.pingPublicUrl')
+          }
+        }
+        if (shopCatalogApi.pingNode) {
+          const start = performance.now()
+          try {
+            const res = await shopCatalogApi.pingNode(node.id)
+            const elapsed = Math.max(1, Math.round(performance.now() - start))
+            const ms =
+              res.server_agent_rtt_ms != null && res.server_agent_rtt_ms > 0
+                ? Math.round(res.server_agent_rtt_ms)
+                : elapsed
+            gemessen[node.id] = { ms, direkt: false }
+            return
+          } catch (err) {
+            still(err, 'ShopStart.pingNode')
+          }
+        }
+        gemessen[node.id] = { ms: null, direkt: false }
+      }),
+    )
+    setPingWerte(gemessen)
+    setPingBusy(false)
+  }
+
+  const besterPingNodeId = useMemo(() => {
+    let bestId: number | null = null
+    let bestMs = Infinity
+    for (const [idStr, eintrag] of Object.entries(pingWerte)) {
+      if (eintrag.ms != null && eintrag.ms < bestMs) {
+        bestMs = eintrag.ms
+        bestId = Number(idStr)
+      }
+    }
+    return bestId
+  }, [pingWerte])
 
   useEffect(() => {
     let aktiv = true
@@ -159,11 +215,17 @@ export function ShopStart() {
       if (filter === 'mods' && !spiel.unterstuetztMods && !spiel.unterstuetztWorkshop) {
         return false
       }
+      if (
+        plattformFilter !== 'alle' &&
+        !(spiel.platforms ?? ['pc']).includes(plattformFilter)
+      ) {
+        return false
+      }
       if (!begriff) return true
       const text = [spiel.name, ...spiel.tags].join(' ').toLowerCase()
       return text.includes(begriff)
     })
-  }, [suche, filter, spiele])
+  }, [suche, filter, plattformFilter, spiele])
 
   const renderAddonVorteile = (addon: ShopCatalogAddon) =>
     formatAddonBenefits(addon, t, sprache)
@@ -180,6 +242,13 @@ export function ShopStart() {
     { id: 'alle', label: t('shop.sammlung.alleSpiele') },
     { id: 'verfuegbar', label: t('shop.sammlung.sofortVerfuegbar') },
     { id: 'mods', label: t('shop.sammlung.mitMods') },
+  ]
+  const plattformTabs: Array<{ id: PlattformFilter; label: string }> = [
+    { id: 'alle', label: t('shop.sammlung.plattformAlle') },
+    { id: 'pc', label: 'PC' },
+    { id: 'ps5', label: 'PS5' },
+    { id: 'xbox', label: 'Xbox' },
+    { id: 'crossplay', label: 'Crossplay' },
   ]
 
   return (
@@ -421,7 +490,7 @@ export function ShopStart() {
           className="mx-auto max-w-7xl px-4 pt-10 sm:px-6 lg:px-8"
         >
           <div className="msm-card rounded-2xl border border-outline-variant/30 bg-surface-container-low/80 p-5">
-            <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
                 <h2 className="font-headline text-base font-bold text-on-surface">
                   {t('shop.nodeStatus.titel')}
@@ -430,6 +499,17 @@ export function ShopStart() {
                   {t('shop.nodeStatus.untertitel')}
                 </p>
               </div>
+              {nodeStatuses.some((n) => n.status === 'online') && (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  disabled={pingBusy}
+                  onClick={() => void pingTesten()}
+                >
+                  {pingBusy ? t('shop.nodeStatus.pingLaeuft') : t('shop.nodeStatus.pingTesten')}
+                </Button>
+              )}
             </div>
             <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {nodeStatuses.map((node) => {
@@ -441,10 +521,14 @@ export function ShopStart() {
                   : isFull
                     ? t('shop.nodeStatus.belegt')
                     : t('shop.nodeStatus.frei')
+                const pingInfo = pingWerte[node.id]
+                const istBesterPing = besterPingNodeId === node.id
                 return (
                   <div
                     key={node.id}
-                    className="flex flex-col justify-between gap-2 rounded-xl border border-outline-variant/30 bg-surface-container p-3.5"
+                    className={`flex flex-col justify-between gap-2 rounded-xl border bg-surface-container p-3.5 ${
+                      istBesterPing ? 'border-primary/60' : 'border-outline-variant/30'
+                    }`}
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
@@ -455,7 +539,16 @@ export function ShopStart() {
                           <p className="truncate text-xs text-on-surface-variant">{node.name}</p>
                         )}
                       </div>
-                      <Badge variant={badgeVariant}>{badgeLabel}</Badge>
+                      <div className="flex shrink-0 items-center gap-1.5">
+                        {pingInfo?.ms != null && (
+                          <Badge variant={istBesterPing ? 'success' : 'info'} className="tabular-nums">
+                            {istBesterPing
+                              ? `${pingInfo.ms} ms · ${t('shop.nodeStatus.besterPing')}`
+                              : `${pingInfo.ms} ms`}
+                          </Badge>
+                        )}
+                        <Badge variant={badgeVariant}>{badgeLabel}</Badge>
+                      </div>
                     </div>
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-on-surface-variant">
                       {node.cpu_model && <span>{node.cpu_model}</span>}
@@ -464,6 +557,16 @@ export function ShopStart() {
                       {node.ram_free_percent != null && (
                         <span className="font-medium text-on-surface">
                           {t('shop.nodeStatus.ramFreiProzent', { percent: Math.round(node.ram_free_percent) })}
+                        </span>
+                      )}
+                      {(node.ddos_game_aware || node.ddos_provider) && (
+                        <span className="inline-flex items-center gap-1 font-medium text-status-running">
+                          <ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" />
+                          {node.ddos_game_aware
+                            ? node.ddos_provider
+                              ? `${t('shop.nodeStatus.ddosGameAware')} (${node.ddos_provider})`
+                              : t('shop.nodeStatus.ddosGameAware')
+                            : node.ddos_provider}
                         </span>
                       )}
                     </div>
@@ -524,6 +627,33 @@ export function ShopStart() {
                     }`}
                   >
                     {tab.label}
+                  </button>
+                )
+              })}
+            </div>
+          )}
+
+          {spiele.length > 0 && (
+            <div
+              className="mt-2.5 flex flex-wrap justify-center gap-1.5"
+              role="group"
+              aria-label={t('shop.sammlung.plattformFilter')}
+            >
+              {plattformTabs.map((ptab) => {
+                const aktiv = plattformFilter === ptab.id
+                return (
+                  <button
+                    key={ptab.id}
+                    type="button"
+                    onClick={() => setPlattformFilter(ptab.id)}
+                    aria-pressed={aktiv}
+                    className={`rounded-full border px-3 py-1 text-label-sm font-semibold transition-colors ${
+                      aktiv
+                        ? 'border-primary/55 bg-primary/15 text-primary'
+                        : 'border-outline-variant/35 bg-surface-container-low/70 text-on-surface-variant hover:text-on-surface'
+                    }`}
+                  >
+                    {ptab.label}
                   </button>
                 )
               })}

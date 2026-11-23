@@ -977,6 +977,47 @@ def switch_server_blueprint_endpoint(
     return switch_server_blueprint(db, server, body.new_blueprint_id, user_id=user.id)
 
 
+@router.get("/{server_id}/config-files")
+def list_server_config_files(
+    server_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict:
+    """Listet bekannte Blueprint-Konfigurationsdateien fuer den Schnellzugriff im Dateimanager."""
+    require_server_permission(user, server_id, db, "server.files.read")
+
+    server = db.query(Server).filter(Server.id == server_id).first()
+    if not server:
+        raise HTTPException(status_code=404, detail="Server nicht gefunden")
+
+    from blueprints import get_registry
+
+    entry = get_registry().get(server.game_type)
+    seen: set[str] = set()
+    paths: list[str] = []
+    if entry is not None:
+        rt = entry.blueprint.runtime
+        for patch in getattr(rt, "configPatches", None) or []:
+            rel = getattr(patch, "file", None)
+            if isinstance(rel, str) and rel and rel not in seen:
+                seen.add(rel)
+                paths.append(rel)
+        for seed in getattr(rt, "seedFiles", None) or []:
+            rel = getattr(seed, "file", None)
+            if isinstance(rel, str) and rel and rel not in seen:
+                seen.add(rel)
+                paths.append(rel)
+
+    return {
+        "server_id": server.id,
+        "game_type": server.game_type,
+        "files": [
+            {"path": p, "label": p.rsplit("/", 1)[-1]}
+            for p in paths
+        ],
+    }
+
+
 # ── Server-Wallpaper (Titelbild pro Spiel) ───────────────────────────────
 # Die Wirkung ist game-scoped: Wer hier hochlaedt, aendert das Bild fuer
 # alle Server desselben Spiels — daher der eigene Key server.wallpaper.manage.

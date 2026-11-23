@@ -1,4 +1,5 @@
 from datetime import datetime
+from urllib.parse import urlparse
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -40,6 +41,10 @@ class NodeUpdate(BaseModel):
     location_label: str | None = Field(default=None, max_length=120)
     ram_type: str | None = Field(default=None, max_length=32)
     storage_type: str | None = Field(default=None, max_length=64)
+    public_ping_url: str | None = Field(default=None, max_length=255)
+    ddos_provider: str | None = Field(default=None, max_length=100)
+    ddos_profile: str | None = Field(default=None, max_length=160)
+    ddos_game_aware: bool | None = Field(default=None)
 
     @field_validator("name", mode="before")
     @classmethod
@@ -51,13 +56,28 @@ class NodeUpdate(BaseModel):
             raise ValueError("name darf nicht leer sein")
         return name
 
-    @field_validator("location_label", "ram_type", "storage_type", mode="before")
+    @field_validator("location_label", "ram_type", "storage_type", "ddos_provider", "ddos_profile", mode="before")
     @classmethod
     def _trim_optional_metadata(cls, value: object) -> str | None:
         if value is None:
             return None
         cleaned = str(value).strip()
         return cleaned or None
+
+    @field_validator("public_ping_url", mode="before")
+    @classmethod
+    def _validate_public_ping_url(cls, value: object) -> str | None:
+        if value is None:
+            return None
+        raw = str(value).strip()
+        if not raw:
+            return None
+        if any(ch.isspace() for ch in raw):
+            raise ValueError("public_ping_url darf keine Leerzeichen enthalten")
+        parsed = urlparse(raw)
+        if parsed.scheme != "https" or not parsed.netloc or parsed.username or parsed.password:
+            raise ValueError("public_ping_url muss eine gueltige https://-URL ohne Zugangsdaten sein")
+        return raw.rstrip("/")
 
     @field_validator("tls_fingerprint", mode="before")
     @classmethod
@@ -85,6 +105,10 @@ class NodeOut(BaseModel):
     ram_type: str | None = None
     storage_type: str | None = None
     cpu_steal_percent: float | None = None
+    public_ping_url: str | None = None
+    ddos_provider: str | None = None
+    ddos_profile: str | None = None
+    ddos_game_aware: bool = False
     ram_total: int | None = None
     disk_total: int | None = None
     disk_used: int | None = None

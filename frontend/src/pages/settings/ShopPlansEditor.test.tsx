@@ -73,5 +73,7 @@ describe('ShopPlansEditor', () => {
 
     fireEvent.click(screen.getByRole('button', { name: i18n.t('settings.shop.plans.neu') }))
     expect(await screen.findByRole('dialog')).toBeInTheDocument()
+    expect(screen.getByLabelText(i18n.t('settings.shop.plans.lifetimePreis'))).toBeInTheDocument()
+    expect(screen.getByRole('switch', { name: i18n.t('settings.shop.plans.allowGameSwitch') })).toBeInTheDocument()
   })
 })

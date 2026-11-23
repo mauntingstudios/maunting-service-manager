@@ -8,6 +8,8 @@ const {
   listSubscriptionsMock,
   listEntitlementsMock,
   purgeEntitlementNowMock,
+  pauseEntitlementMock,
+  resumeEntitlementMock,
   extendSubscriptionMock,
   checkoutMock,
   payDemoMock,
@@ -17,6 +19,8 @@ const {
   listSubscriptionsMock: vi.fn(),
   listEntitlementsMock: vi.fn(),
   purgeEntitlementNowMock: vi.fn(),
+  pauseEntitlementMock: vi.fn(),
+  resumeEntitlementMock: vi.fn(),
   extendSubscriptionMock: vi.fn(),
   checkoutMock: vi.fn(),
   payDemoMock: vi.fn(),
@@ -33,6 +37,8 @@ vi.mock('@/api/shop', async (importOriginal) => {
       cancelSubscription: cancelSubscriptionMock,
       listEntitlements: listEntitlementsMock,
       purgeEntitlementNow: purgeEntitlementNowMock,
+      pauseEntitlement: pauseEntitlementMock,
+      resumeEntitlement: resumeEntitlementMock,
       extendSubscription: extendSubscriptionMock,
       checkout: checkoutMock,
       payDemo: payDemoMock,
@@ -47,6 +53,8 @@ describe('KontoAbos', () => {
   beforeEach(() => {
     cancelSubscriptionMock.mockReset()
     purgeEntitlementNowMock.mockReset()
+    pauseEntitlementMock.mockReset()
+    resumeEntitlementMock.mockReset()
     extendSubscriptionMock.mockReset()
     checkoutMock.mockReset()
     payDemoMock.mockReset()
@@ -337,5 +345,73 @@ describe('KontoAbos', () => {
       'href',
       expect.stringContaining('/api/shop/entitlements/10/backups/77/download'),
     )
+  })
+
+  it('unterstuetzt Lifetime, Server-Pause, Fortsetzen und Spiel-Wechsel-Link', async () => {
+    listSubscriptionsMock.mockResolvedValueOnce([
+      {
+        id: 2,
+        game_type: 'palworld',
+        name: 'Palworld Lifetime',
+        status: 'active',
+        billing_interval: 'month',
+        billing_mode: 'lifetime',
+        monthly_gross_cents: 0,
+        tax_rate_percent: 19,
+        started_at: '2026-11-21T10:00:00+00:00',
+        current_period_end: '2126-11-21T10:00:00+00:00',
+        cancel_at_period_end: false,
+      },
+    ])
+    const activeEnt = {
+      id: 11,
+      kind: 'server' as const,
+      label: 'Palworld Lifetime',
+      status: 'active' as const,
+      server_id: 42,
+      server_name: 'Mein-Palworld',
+      provisioning_status: 'ready',
+      provisioning_error: null,
+      paused_at: null,
+      pause_days_used: 0,
+      created_at: '2026-11-21T10:00:00+00:00',
+    }
+    listEntitlementsMock.mockResolvedValueOnce([activeEnt])
+    pauseEntitlementMock.mockResolvedValueOnce({
+      ...activeEnt,
+      paused_at: '2026-11-22T12:00:00+00:00',
+    })
+    resumeEntitlementMock.mockResolvedValueOnce({
+      ...activeEnt,
+      paused_at: null,
+      pause_days_used: 3,
+    })
+
+    render(
+      <MemoryRouter>
+        <KontoAbos />
+      </MemoryRouter>,
+    )
+
+    expect(await screen.findByText('Lifetime')).toBeInTheDocument()
+    expect(screen.getByText('Zeitlich unbegrenzt')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Um 1 Monat verlängern' })).not.toBeInTheDocument()
+
+    expect(screen.getByRole('link', { name: 'Spiel wechseln' })).toHaveAttribute(
+      'href',
+      '/servers/42?action=switch',
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Server pausieren' }))
+    await waitFor(() => {
+      expect(pauseEntitlementMock).toHaveBeenCalledWith('11')
+    })
+    expect(await screen.findByText('Pausiert')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Fortsetzen' }))
+    await waitFor(() => {
+      expect(resumeEntitlementMock).toHaveBeenCalledWith('11')
+    })
+    expect(await screen.findByText('3 Pausentage in diesem Zeitraum angerechnet')).toBeInTheDocument()
   })
 })

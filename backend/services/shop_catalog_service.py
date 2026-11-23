@@ -8,6 +8,7 @@ fuer Custom-Galerie und Steam-Artwork.
 from __future__ import annotations
 
 import re
+import time
 from typing import Any
 
 from sqlalchemy.exc import IntegrityError
@@ -17,6 +18,7 @@ from models import Node, Role, ShopPlan
 from schemas.shop import (
     ShopArtworkResponse,
     ShopCatalogPlan,
+    ShopNodePingResponse,
     ShopPlanResponse,
     ShopPlanUpdate,
     ShopPlanWrite,
@@ -156,6 +158,7 @@ def create_plan(db: Session, payload: ShopPlanWrite, *, actor_id: int) -> ShopPl
 
 _NULLABLE_FIELDS = {
     "description",
+    "lifetime_price_cents",
     "ram_included_mb",
     "ram_max_mb",
     "ram_step_mb",
@@ -310,6 +313,8 @@ def plan_response(db: Session, plan: ShopPlan) -> ShopPlanResponse:
         name=plan.name,
         description=plan.description,
         price_cents=plan.price_cents,
+        lifetime_price_cents=getattr(plan, "lifetime_price_cents", None),
+        allow_game_switch=bool(getattr(plan, "allow_game_switch", True)),
         currency=plan.currency,
         billing_interval=plan.billing_interval,
         tax_rate_percent=plan.tax_rate_percent,
@@ -366,6 +371,7 @@ def _game_meta(game_type: str) -> dict[str, Any]:
         "supports_workshop": bool(mods.supportsSteamWorkshop),
         "supports_slots": getattr(blueprint, "players", None) is not None,
         "estimated_setup_seconds": _estimate_setup_seconds(blueprint),
+        "platforms": [str(p) for p in (getattr(blueprint.meta, "platforms", None) or ["pc"])],
     }
 
 
@@ -405,6 +411,39 @@ def _plan_hardware_summary(db: Session, plan: ShopPlan) -> tuple[str | None, str
         _unanimous("ram_type"),
         _unanimous("storage_type"),
     )
+
+
+def _plan_ddos_summary(db: Session, plan: ShopPlan) -> tuple[str | None, str | None, bool]:
+    from services.node_placement_service import OFFLINE_NODE_STATUSES
+
+    if plan.node_id is not None:
+        node = db.query(Node).filter(Node.id == plan.node_id).first()
+        if node is None:
+            return None, None, False
+        return (
+            getattr(node, "ddos_provider", None) or None,
+            getattr(node, "ddos_profile", None) or None,
+            bool(getattr(node, "ddos_game_aware", False)),
+        )
+
+    nodes = [
+        n
+        for n in db.query(Node).order_by(Node.id.asc()).all()
+        if (n.status or "").strip().lower() not in OFFLINE_NODE_STATUSES
+    ]
+    if not nodes:
+        return None, None, False
+
+    game_aware = all(bool(getattr(n, "ddos_game_aware", False)) for n in nodes)
+
+    def _unanimous(attr: str) -> str | None:
+        vals = {str(getattr(n, attr, None) or "").strip() or None for n in nodes}
+        vals.discard(None)
+        if len(vals) == 1 and all((str(getattr(n, attr, None) or "").strip() or None) is not None for n in nodes):
+            return next(iter(vals))
+        return None
+
+    return _unanimous("ddos_provider"), _unanimous("ddos_profile"), game_aware
 
 
 def public_node_statuses(db: Session) -> list[ShopPublicNodeStatusResponse]:
@@ -455,9 +494,65 @@ def public_node_statuses(db: Session) -> list[ShopPublicNodeStatusResponse]:
                 ram_free_percent=ram_free_pct,
                 load_level=load_level,  # type: ignore[arg-type]
                 accepting_orders=accepting,
+                public_ping_url=getattr(node, "public_ping_url", None) or None,
+                ddos_provider=getattr(node, "ddos_provider", None) or None,
+                ddos_profile=getattr(node, "ddos_profile", None) or None,
+                ddos_game_aware=bool(getattr(node, "ddos_game_aware", False)),
             )
         )
     return out
+
+
+def ping_public_node(db: Session, node_id: int) -> ShopNodePingResponse | None:
+    """Misst die serverseitige RTT zum Node-Agenten, ohne interne URLs offenzulegen."""
+    from services import node_service
+    from services.node_placement_service import OFFLINE_NODE_STATUSES
+
+    node = db.query(Node).filter(Node.id == node_id).first()
+    if node is None:
+        return None
+    now_ms = int(time.time() * 1000)
+    status_norm = (node.status or "unknown").strip().lower()
+    if status_norm in OFFLINE_NODE_STATUSES:
+        return ShopNodePingResponse(
+            node_id=node.id,
+            status=node.status or "offline",
+            server_agent_rtt_ms=None,
+            timestamp_ms=now_ms,
+        )
+    if node.is_local:
+        return ShopNodePingResponse(
+            node_id=node.id,
+            status=node.status or "online",
+            server_agent_rtt_ms=0.0,
+            timestamp_ms=now_ms,
+        )
+
+    client = node_service.client_for_node(node)
+    if client is None:
+        return ShopNodePingResponse(
+            node_id=node.id,
+            status="unreachable",
+            server_agent_rtt_ms=None,
+            timestamp_ms=now_ms,
+        )
+    started = time.perf_counter()
+    try:
+        client.health()
+        rtt_ms = round((time.perf_counter() - started) * 1000.0, 1)
+        return ShopNodePingResponse(
+            node_id=node.id,
+            status="online",
+            server_agent_rtt_ms=rtt_ms,
+            timestamp_ms=now_ms,
+        )
+    except Exception:
+        return ShopNodePingResponse(
+            node_id=node.id,
+            status="unreachable",
+            server_agent_rtt_ms=None,
+            timestamp_ms=now_ms,
+        )
 
 
 def catalog_plan(db: Session, plan: ShopPlan) -> ShopCatalogPlan:
@@ -466,6 +561,7 @@ def catalog_plan(db: Session, plan: ShopPlan) -> ShopCatalogPlan:
     meta = _game_meta(plan.game_type)
     availability = node_placement_service.check_plan_availability(db, plan)
     cpu_model, ram_type, storage_type = _plan_hardware_summary(db, plan)
+    ddos_provider, ddos_profile, ddos_game_aware = _plan_ddos_summary(db, plan)
     return ShopCatalogPlan(
         id=plan.id,
         game_type=plan.game_type,
@@ -478,6 +574,8 @@ def catalog_plan(db: Session, plan: ShopPlan) -> ShopCatalogPlan:
         name=plan.name,
         description=plan.description,
         price_cents=plan.price_cents,
+        lifetime_price_cents=getattr(plan, "lifetime_price_cents", None),
+        allow_game_switch=bool(getattr(plan, "allow_game_switch", True)),
         currency=plan.currency,
         billing_interval=plan.billing_interval,
         tax_rate_percent=plan.tax_rate_percent,
@@ -502,4 +600,8 @@ def catalog_plan(db: Session, plan: ShopPlan) -> ShopCatalogPlan:
         hardware_ram_type=ram_type,
         hardware_storage_type=storage_type,
         estimated_setup_seconds=int(meta.get("estimated_setup_seconds") or 120),
+        platforms=list(meta.get("platforms") or ["pc"]),
+        ddos_provider=ddos_provider,
+        ddos_profile=ddos_profile,
+        ddos_game_aware=ddos_game_aware,
     )

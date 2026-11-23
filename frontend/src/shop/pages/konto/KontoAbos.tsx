@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { Badge, Button, Input, Zustandsflaeche } from '@maunting/ui'
 import { SanitizedApiError } from '@/api/client'
+import { still } from '@/lib/still'
 import { shopApi } from '../../api/shopApi'
 import type {
   Entitlement,
@@ -28,7 +29,38 @@ export function KontoAbos() {
   const [backupsByEnt, setBackupsByEnt] = useState<Record<string, GraceBackup[]>>({})
   const [backupsLoadingId, setBackupsLoadingId] = useState<string | null>(null)
   const [backupsErrorId, setBackupsErrorId] = useState<string | null>(null)
+  const [pauseBusyId, setPauseBusyId] = useState<string | null>(null)
   const [fehler, setFehler] = useState<string | null>(null)
+
+  const togglePause = async (entitlement: Entitlement) => {
+    if (pauseBusyId) return
+    const fn = entitlement.pausedAt ? shopApi.resumeEntitlement : shopApi.pauseEntitlement
+    if (!fn) return
+    setFehler(null)
+    setPauseBusyId(entitlement.id)
+    try {
+      const updated = await fn(entitlement.id)
+      setAbos((prev) =>
+        prev
+          ? {
+              ...prev,
+              entitlements: prev.entitlements.map((row) =>
+                row.id === entitlement.id ? updated : row,
+              ),
+            }
+          : prev,
+      )
+    } catch (error) {
+      still(error, 'kontoAbos.togglePause')
+      setFehler(
+        error instanceof SanitizedApiError
+          ? error.message
+          : t('shop.konto.abos.pauseFehler'),
+      )
+    } finally {
+      setPauseBusyId(null)
+    }
+  }
 
   const neuladen = async () => {
     const [subscriptions, entitlements] = await Promise.all([
@@ -222,14 +254,18 @@ export function KontoAbos() {
                 <div>
                   <p className="font-headline text-sm font-semibold text-on-surface">{abo.bezeichnung}</p>
                   <p className="mt-1 text-xs text-on-surface-variant">
-                    {t('shop.konto.abos.naechsteZahlung', { datum: abo.naechsteZahlung })}
+                    {abo.billingMode === 'lifetime'
+                      ? t('shop.konto.abos.lebenslangGueltig')
+                      : t('shop.konto.abos.naechsteZahlung', { datum: abo.naechsteZahlung })}
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-3">
-                  <Badge variant="default">
-                    {(abo.billingMode ?? 'subscription') === 'prepaid'
-                      ? t('shop.konto.abos.typPrepaid')
-                      : t('shop.konto.abos.typAbo')}
+                  <Badge variant={abo.billingMode === 'lifetime' ? 'info' : 'default'}>
+                    {(abo.billingMode ?? 'subscription') === 'lifetime'
+                      ? t('shop.konto.abos.typLifetime')
+                      : (abo.billingMode ?? 'subscription') === 'prepaid'
+                        ? t('shop.konto.abos.typPrepaid')
+                        : t('shop.konto.abos.typAbo')}
                   </Badge>
                   {abo.cancelAtPeriodEnd && abo.status !== 'cancelled' && (
                     <Badge variant="warning">
@@ -246,9 +282,12 @@ export function KontoAbos() {
                         : t('shop.konto.status.aboCancelled')}
                   </Badge>
                   <span className="font-headline text-sm font-bold tabular-nums text-primary">
-                    {formatEuro(abo.preisCent)}
+                    {abo.billingMode === 'lifetime'
+                      ? t('shop.preis.einmalig')
+                      : formatEuro(abo.preisCent)}
                   </span>
                   {abo.status !== 'cancelled' &&
+                    abo.billingMode !== 'lifetime' &&
                     (abo.billingMode === 'prepaid' || abo.cancelAtPeriodEnd) &&
                     shopApi.extendSubscription && (
                       <Button
@@ -262,7 +301,10 @@ export function KontoAbos() {
                           : t('shop.konto.abos.verlaengern')}
                       </Button>
                     )}
-                  {abo.status !== 'cancelled' && !abo.cancelAtPeriodEnd && bestaetigeAboId !== abo.id && (
+                  {abo.status !== 'cancelled' &&
+                    !abo.cancelAtPeriodEnd &&
+                    bestaetigeAboId !== abo.id &&
+                    (abo.billingMode !== 'lifetime' || (abo.canImmediateDelete && abo.serverName)) && (
                     <Button
                       variant="secondary"
                       size="sm"
@@ -424,17 +466,54 @@ export function KontoAbos() {
                         : t('shop.konto.abos.loeschungAm', { datum: purgeDateLabel })}
                     </p>
                   )}
+                  {entitlement.pausedAt && (
+                    <p className="mt-1 text-xs text-status-warning">
+                      {t('shop.konto.abos.pausiertHinweis')}
+                    </p>
+                  )}
+                  {(entitlement.pauseDaysUsed ?? 0) > 0 && (
+                    <p className="mt-0.5 text-xs text-on-surface-variant">
+                      {t('shop.konto.abos.pausentageVerbraucht', { tage: entitlement.pauseDaysUsed })}
+                    </p>
+                  )}
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
+                  {entitlement.pausedAt && (
+                    <Badge variant="warning">
+                      {t('shop.konto.abos.pausiertStatus')}
+                    </Badge>
+                  )}
                   {entitlement.art === 'server' &&
                     entitlement.serverId != null &&
                     entitlement.status === 'active' && (
-                      <Link
-                        to={`/servers/${entitlement.serverId}`}
-                        className="rounded-lg border border-primary/30 bg-primary/10 px-3 py-1 text-xs font-medium text-primary transition-colors hover:bg-primary/20"
-                      >
-                        {t('shop.konto.abos.serverOeffnen')}
-                      </Link>
+                      <>
+                        <Link
+                          to={`/servers/${entitlement.serverId}`}
+                          className="rounded-lg border border-primary/30 bg-primary/10 px-3 py-1 text-xs font-medium text-primary transition-colors hover:bg-primary/20"
+                        >
+                          {t('shop.konto.abos.serverOeffnen')}
+                        </Link>
+                        <Link
+                          to={`/servers/${entitlement.serverId}?action=switch`}
+                          className="rounded-lg border border-outline-variant/40 bg-surface-container px-3 py-1 text-xs font-medium text-on-surface transition-colors hover:bg-surface-container-high"
+                        >
+                          {t('shop.konto.abos.spielWechseln')}
+                        </Link>
+                        {shopApi.pauseEntitlement && shopApi.resumeEntitlement && (
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            disabled={pauseBusyId === entitlement.id}
+                            onClick={() => void togglePause(entitlement)}
+                          >
+                            {pauseBusyId === entitlement.id
+                              ? t('common.loading')
+                              : entitlement.pausedAt
+                                ? t('shop.konto.abos.fortsetzen')
+                                : t('shop.konto.abos.pausieren')}
+                          </Button>
+                        )}
+                      </>
                     )}
                   {entitlement.art === 'server' &&
                     entitlement.serverId != null &&

@@ -6,6 +6,7 @@
     "game": "ARK",
     "edition": "Survival Ascended (ASA)",
     "category": "steam_game",
+    "platforms": ["pc", "ps5", "xbox", "crossplay"],
     "author": "Maunting Studios",
     "description": "ARK: Survival Ascended Dedicated Server (App-ID 2430930) via SteamCMD. Windows-Binary wird über GE-Proton in einem virtuellen Display (Xvfb) gestartet. Maps: TheIsland_WP, ScorchedEarth_WP, TheCenter_WP, Aberration_WP, Extinction_WP, Ragnarok_WP, Valguero_WP, Astraeos_WP, LostColony_WP, Fjordur_WP, ClubArk_WP."
   },

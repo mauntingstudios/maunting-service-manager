@@ -111,6 +111,12 @@ function spielAusPlan(plan: ShopCatalogPlan): ShopSpiel {
     hardwareCpuModel: plan.hardware_cpu_model ?? null,
     hardwareRamType: plan.hardware_ram_type ?? null,
     hardwareStorageType: plan.hardware_storage_type ?? null,
+    platforms: plan.platforms ?? ['pc'],
+    lifetimePreisCent: plan.lifetime_price_cents ?? null,
+    allowGameSwitch: plan.allow_game_switch ?? true,
+    ddosProvider: plan.ddos_provider ?? null,
+    ddosProfile: plan.ddos_profile ?? null,
+    ddosGameAware: Boolean(plan.ddos_game_aware),
     geschaetzteSetupSekunden: plan.estimated_setup_seconds ?? 120,
   }
 }

@@ -10,6 +10,7 @@ import {
   type ShopPublicPolicyDto,
 } from '@/api/shop'
 import { SanitizedApiError } from '@/api/client'
+import { CaptchaWidget, captchaSperrt, type CaptchaStatus } from '@/components/app/CaptchaWidget'
 import { still } from '@/lib/still'
 import { useAuthStore } from '@/stores/authStore'
 import { formatCpuLabel, formatEuro, preisAufschluesselung, RABATT_PROZENT } from '../preis'
@@ -63,6 +64,10 @@ export function ShopKasse() {
   const [busy, setBusy] = useState(false)
   const [erfolg, setErfolg] = useState<string | null>(null)
   const [publicPolicy, setPublicPolicy] = useState<ShopPublicPolicyDto | null>(null)
+  const [captchaToken, setCaptchaToken] = useState('')
+  const [captchaStatus, setCaptchaStatus] = useState<CaptchaStatus>('disabled')
+  const [captchaResetKey, setCaptchaResetKey] = useState(0)
+  const istCheckoutCaptchaAktiv = Boolean(publicPolicy?.shop_checkout_captcha_enabled)
 
   useEffect(() => {
     let aktiv = true
@@ -209,6 +214,10 @@ export function ShopKasse() {
       setFehler(t('shop.kasse.adresseFehlt'))
       return
     }
+    if (istCheckoutCaptchaAktiv && captchaSperrt(captchaStatus)) {
+      setFehler(t('shop.kasse.captchaFehlt'))
+      return
+    }
 
     setFehler('')
     setBusy(true)
@@ -216,9 +225,14 @@ export function ShopKasse() {
     try {
       const billingMode = istAddon ? 'prepaid' : (konfiguration!.abrechnungsModus ?? 'prepaid')
       const baseOrderPayload = {
-        months: istAddon ? addonMonate : konfiguration!.laufzeitMonate,
+        months: istAddon
+          ? addonMonate
+          : billingMode === 'lifetime'
+            ? (1 as const)
+            : konfiguration!.laufzeitMonate,
         billing_mode: billingMode,
         ...(gutscheinVorschau?.valid ? { coupon_code: gutscheinVorschau.code } : {}),
+        ...(istCheckoutCaptchaAktiv ? { captcha_token: captchaToken } : {}),
         buyer_name: name.trim(),
         buyer_street: strasse.trim(),
         buyer_postal_code: plz.trim(),
@@ -255,7 +269,11 @@ export function ShopKasse() {
       setErfolg(bezahlt.number)
     } catch (err) {
       still(err, 'shopKasse.absenden')
-      setFehler(t('shop.kasse.fehler'))
+      if (istCheckoutCaptchaAktiv) {
+        setCaptchaToken('')
+        setCaptchaResetKey((prev) => prev + 1)
+      }
+      setFehler(err instanceof SanitizedApiError ? err.message : t('shop.kasse.fehler'))
     } finally {
       setBusy(false)
     }
@@ -479,7 +497,9 @@ export function ShopKasse() {
                 <p className="font-medium text-on-surface">
                   {istAddon || (konfiguration?.abrechnungsModus ?? 'prepaid') === 'prepaid'
                     ? t('shop.kasse.prepaidHinweis')
-                    : t('shop.kasse.aboHinweis')}
+                    : konfiguration?.abrechnungsModus === 'lifetime'
+                      ? t('shop.kasse.lifetimeHinweis')
+                      : t('shop.kasse.aboHinweis')}
                 </p>
                 {(publicPolicy?.refund_guarantee_days ?? 0) > 0 && (
                   <p>
@@ -488,6 +508,17 @@ export function ShopKasse() {
                   </p>
                 )}
               </div>
+
+              {istCheckoutCaptchaAktiv && (
+                <div className="rounded-xl border border-outline-variant/30 bg-surface-container p-3.5">
+                  <CaptchaWidget
+                    scope="shop"
+                    onVerify={setCaptchaToken}
+                    onStatusChange={setCaptchaStatus}
+                    resetKey={captchaResetKey}
+                  />
+                </div>
+              )}
 
               {fehler && (
                 <p role="alert" className="text-sm font-medium text-status-destructive">
@@ -560,13 +591,17 @@ export function ShopKasse() {
                     <dd className="text-on-surface">
                       {(konfiguration.abrechnungsModus ?? 'prepaid') === 'prepaid'
                         ? t('shop.konto.abos.typPrepaid')
-                        : t('shop.konto.abos.typAbo')}
+                        : konfiguration.abrechnungsModus === 'lifetime'
+                          ? t('shop.konto.abos.typLifetime')
+                          : t('shop.konto.abos.typAbo')}
                     </dd>
                   </div>
                   <div className="flex justify-between gap-3">
                     <dt className="text-on-surface-variant">{t('shop.kasse.laufzeit')}</dt>
                     <dd className="text-on-surface">
-                      {t('shop.spiel.monate', { count: konfiguration.laufzeitMonate })}
+                      {konfiguration.abrechnungsModus === 'lifetime'
+                        ? t('shop.preis.einmalig')
+                        : t('shop.spiel.monate', { count: konfiguration.laufzeitMonate })}
                     </dd>
                   </div>
                   {gutscheinVorschau?.valid && (

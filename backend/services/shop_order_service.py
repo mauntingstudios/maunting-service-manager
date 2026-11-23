@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import calendar
 from datetime import datetime, timedelta, timezone
+from uuid import uuid4
 
 from sqlalchemy.orm import Session
 
@@ -46,6 +47,10 @@ DURATION_DISCOUNTS: dict[int, int] = {1: 0, 3: 5, 12: 20}
 
 class ShopOrderError(ValueError):
     """Bestellung ist nicht moeglich; wird am Rand zu 422."""
+
+
+class ShopNotFoundError(ShopOrderError):
+    """Gesuchter Shop-Datensatz existiert nicht fuer diesen Benutzer (HTTP 404)."""
 
 
 class ShopCapacityError(ShopOrderError):
@@ -144,6 +149,17 @@ def _resolve_plan_spec(
     slots = _check_resource(
         payload.slots, plan.slots_included, plan.slots_max, plan.slots_step, "Slots"
     )
+    monatlich = _monthly_gross(plan, ram_mb, cpu, slots)
+    billing_mode = getattr(payload, "billing_mode", "subscription")
+    if billing_mode == "lifetime":
+        lifetime_base = getattr(plan, "lifetime_price_cents", None)
+        if lifetime_base is None or lifetime_base <= 0:
+            raise ShopOrderError(
+                "Lifetime-Tarif ist fuer dieses Paket nicht freigeschaltet"
+            )
+        unit_price_cents = int(lifetime_base) + max(0, monatlich - plan.price_cents) * 12
+    else:
+        unit_price_cents = monatlich
     if check_capacity:
         from services import node_placement_service
 
@@ -163,7 +179,7 @@ def _resolve_plan_spec(
         "currency": plan.currency,
         "billing_interval": plan.billing_interval,
         "tax_rate_percent": plan.tax_rate_percent,
-        "monatlich": _monthly_gross(plan, ram_mb, cpu, slots),
+        "monatlich": unit_price_cents,
         "ram_mb": ram_mb,
         "cpu": cpu,
         "slots": slots,
@@ -171,6 +187,8 @@ def _resolve_plan_spec(
 
 
 def _resolve_addon_spec(db: Session, payload: ShopOrderCreate) -> dict[str, object]:
+    if getattr(payload, "billing_mode", "subscription") == "lifetime":
+        raise ShopOrderError("Add-ons unterstuetzen keinen Lifetime-Tarif")
     if (
         payload.ram_mb is not None
         or payload.cpu is not None
@@ -215,19 +233,25 @@ def create_order(
         else _resolve_addon_spec(db, payload)
     )
 
+    raw_mode = getattr(payload, "billing_mode", "subscription")
     billing_mode = (
-        "prepaid"
-        if getattr(payload, "billing_mode", "subscription") == "prepaid"
+        raw_mode
+        if raw_mode in ("prepaid", "subscription", "lifetime")
         else "subscription"
     )
-    discount = DURATION_DISCOUNTS[payload.months]
-    if billing_mode == "subscription" and payload.months == 1:
+    months = 1 if billing_mode == "lifetime" else payload.months
+    discount = 0 if billing_mode == "lifetime" else DURATION_DISCOUNTS[months]
+    if billing_mode == "subscription" and months == 1:
         sub_disc = shop_lifecycle_settings_service.subscription_discount_percent(db=db)
         if sub_disc > 0:
             discount = min(50, discount + sub_disc)
     monatlich = int(spec["monatlich"])  # type: ignore[arg-type]
     tax_rate_percent = int(spec["tax_rate_percent"])  # type: ignore[arg-type]
-    brutto_vor_gutschein = round(monatlich * payload.months * (1 - discount / 100))
+    brutto_vor_gutschein = (
+        monatlich
+        if billing_mode == "lifetime"
+        else round(monatlich * months * (1 - discount / 100))
+    )
     coupon_code: str | None = None
     coupon_discount_cents = 0
     if payload.coupon_code and payload.coupon_code.strip():
@@ -257,7 +281,7 @@ def create_order(
         currency=str(spec["currency"]),
         billing_interval=str(spec["billing_interval"]),
         billing_mode=billing_mode,
-        months=payload.months,
+        months=months,
         discount_percent=discount,
         coupon_code=coupon_code,
         coupon_discount_cents=coupon_discount_cents,
@@ -441,13 +465,21 @@ def _grant_entitlements(db: Session, order: ShopOrder, jetzt: datetime) -> None:
                     billing_interval=order.billing_interval,
                     billing_mode=billing_mode,
                     monthly_gross_cents=(
-                        max(1, round(item.gross_cents / order.months))
-                        if item.gross_cents > 0
-                        else 0
+                        0
+                        if billing_mode == "lifetime"
+                        else (
+                            max(1, round(item.gross_cents / order.months))
+                            if item.gross_cents > 0
+                            else 0
+                        )
                     ),
                     tax_rate_percent=item.tax_rate_percent,
                     started_at=jetzt,
-                    current_period_end=_add_months(jetzt, order.months),
+                    current_period_end=(
+                        jetzt + timedelta(days=36500)
+                        if billing_mode == "lifetime"
+                        else _add_months(jetzt, order.months)
+                    ),
                     cancel_at_period_end=(billing_mode == "prepaid"),
                 )
             )
@@ -978,6 +1010,8 @@ def extend_subscription(
     has_suspended_or_revoked = any(
         ent.status in ("suspended", "revoked") for ent in ents
     )
+    if getattr(subscription, "billing_mode", "subscription") == "lifetime":
+        raise ShopOrderError("Ein Lifetime-Vertrag laeuft zeitlich unbegrenzt")
     if (
         getattr(subscription, "billing_mode", "subscription") == "subscription"
         and subscription.status == "active"
@@ -1371,5 +1405,157 @@ def entitlement_response(
         purge_reason=getattr(row, "purge_reason", None),
         purged_at=getattr(row, "purged_at", None),
         can_customer_purge_now=can_purge_now,
+        paused_at=getattr(row, "paused_at", None),
+        pause_days_used=int(getattr(row, "pause_days_used", 0) or 0),
         created_at=row.created_at,
     )
+
+
+def _stop_server_for_pause(db: Session, *, server: Server, user: User) -> bool:
+    if getattr(server, "status", None) in ("stopped", "offline"):
+        return False
+    from services import server_action_service
+    from services.actor_context import ActorContext
+
+    server_action_service.request_lifecycle_operation(
+        db,
+        server_id=server.id,
+        operation="stop",
+        actor=ActorContext.for_user(user),
+        idempotency_key=f"shop-pause-{server.id}-{uuid4()}",
+    )
+    return True
+
+
+def _start_server_for_resume(db: Session, *, server: Server, user: User) -> bool:
+    if getattr(server, "status", None) in ("running", "starting"):
+        return False
+    from services import server_action_service
+    from services.actor_context import ActorContext
+
+    server_action_service.request_lifecycle_operation(
+        db,
+        server_id=server.id,
+        operation="start",
+        actor=ActorContext.for_user(user),
+        idempotency_key=f"shop-resume-{server.id}-{uuid4()}",
+    )
+    return True
+
+
+def pause_entitlement(
+    db: Session, *, user: User, entitlement_id: int
+) -> ShopEntitlement:
+    """Stoppt den eigenen Server in Ressourcen-Standby ohne Datenverlust."""
+    ent = (
+        db.query(ShopEntitlement)
+        .filter(
+            ShopEntitlement.id == entitlement_id,
+            ShopEntitlement.user_id == user.id,
+        )
+        .first()
+    )
+    if ent is None:
+        raise ShopNotFoundError("Vertrag nicht gefunden")
+    if (
+        ent.kind != "server"
+        or ent.server_id is None
+        or ent.provisioning_status == "purged"
+    ):
+        raise ShopOrderError("Nur ein bereitgestellter Server kann pausiert werden")
+    if ent.status != "active":
+        raise ShopOrderError("Nur aktive Server-Vertraege koennen pausiert werden")
+    if getattr(ent, "paused_at", None) is not None:
+        raise ShopOrderError("Server ist bereits pausiert")
+
+    srv = db.query(Server).filter(Server.id == ent.server_id).first()
+    if srv is None:
+        raise ShopOrderError("Zugehoeriger Server existiert nicht mehr")
+
+    _stop_server_for_pause(db, server=srv, user=user)
+    ent.paused_at = _now()
+    audit_service.record_privileged_action(
+        db,
+        user_id=user.id,
+        action="shop.entitlement.paused",
+        target_type="shop_entitlement",
+        target_id=ent.id,
+        details={"server_id": srv.id},
+    )
+    db.commit()
+    db.refresh(ent)
+    return ent
+
+
+def resume_entitlement(
+    db: Session, *, user: User, entitlement_id: int
+) -> ShopEntitlement:
+    """Setzt einen pausierten Server fort und schreibt ggf. Pause-Kontingent gut."""
+    ent = (
+        db.query(ShopEntitlement)
+        .filter(
+            ShopEntitlement.id == entitlement_id,
+            ShopEntitlement.user_id == user.id,
+        )
+        .first()
+    )
+    if ent is None:
+        raise ShopNotFoundError("Vertrag nicht gefunden")
+    if (
+        ent.kind != "server"
+        or ent.server_id is None
+        or ent.provisioning_status == "purged"
+    ):
+        raise ShopOrderError("Kein aktiver Server vorhanden")
+    if ent.status != "active":
+        raise ShopOrderError(
+            "Gesperrte oder widerrufene Vertraege koennen nicht fortgesetzt werden"
+        )
+    paused_at = getattr(ent, "paused_at", None)
+    if paused_at is None:
+        raise ShopOrderError("Server ist derzeit nicht pausiert")
+
+    srv = db.query(Server).filter(Server.id == ent.server_id).first()
+    if srv is None:
+        raise ShopOrderError("Zugehoeriger Server existiert nicht mehr")
+
+    _start_server_for_resume(db, server=srv, user=user)
+
+    if paused_at.tzinfo is None:
+        paused_at = paused_at.replace(tzinfo=timezone.utc)
+    now = _now()
+    elapsed_days = max(0, (now - paused_at).days)
+    max_freeze = shop_lifecycle_settings_service.pause_freeze_max_days_per_90d(db=db)
+    used_days = int(getattr(ent, "pause_days_used", 0) or 0)
+    remaining_budget = max(0, max_freeze - used_days)
+    credit_days = min(elapsed_days, remaining_budget)
+    if credit_days > 0:
+        sub = (
+            db.query(ShopSubscription)
+            .filter(ShopSubscription.order_item_id == ent.order_item_id)
+            .order_by(ShopSubscription.id.desc())
+            .first()
+        )
+        if (
+            sub is not None
+            and sub.status != "cancelled"
+            and getattr(sub, "billing_mode", "subscription") != "lifetime"
+        ):
+            sub_end = sub.current_period_end
+            if sub_end.tzinfo is None:
+                sub_end = sub_end.replace(tzinfo=timezone.utc)
+            sub.current_period_end = max(sub_end, now) + timedelta(days=credit_days)
+            ent.pause_days_used = used_days + credit_days
+
+    ent.paused_at = None
+    audit_service.record_privileged_action(
+        db,
+        user_id=user.id,
+        action="shop.entitlement.resumed",
+        target_type="shop_entitlement",
+        target_id=ent.id,
+        details={"server_id": srv.id, "credit_days": credit_days},
+    )
+    db.commit()
+    db.refresh(ent)
+    return ent

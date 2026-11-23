@@ -428,13 +428,17 @@ def _run_pre_update_backup(db: Session, server: Server, *, reason: str) -> None:
         .order_by(Backup.created_at.desc())
         .first()
     )
-    if last and last.created_at is not None:
-        created = last.created_at
-        if created.tzinfo is None:
-            created = created.replace(tzinfo=timezone.utc)
-        age_min = (_utcnow() - created.astimezone(timezone.utc)).total_seconds() / 60.0
-        if age_min < _PRE_START_BACKUP_SKIP_MINUTES:
+    if last is not None:
+        created = getattr(last, "created_at", None)
+        if created is not None and not isinstance(created, datetime):
+            # Test-Sessions (z. B. MagicMock) liefern kein echtes datetime-Objekt.
             return
+        if isinstance(created, datetime):
+            if created.tzinfo is None:
+                created = created.replace(tzinfo=timezone.utc)
+            age_min = (_utcnow() - created.astimezone(timezone.utc)).total_seconds() / 60.0
+            if age_min < _PRE_START_BACKUP_SKIP_MINUTES:
+                return
 
     _append_console_log(
         server.id,
@@ -1550,6 +1554,130 @@ def switch_server_blueprint(db: Session, server: Server, new_blueprint_id: str, 
                 "message": f"Blueprint '{new_blueprint_id}' wurde nicht gefunden.",
             },
         )
+
+    if user_id is not None:
+        from models import ShopEntitlement, ShopOrderItem, ShopPlan, User
+        from services import permission_service
+
+        acting_user = db.query(User).filter(User.id == user_id).first()
+        is_shop_admin = acting_user is not None and (
+            getattr(acting_user, "is_owner", False)
+            or permission_service.has_global_permission(db, acting_user, "shop.manage")
+        )
+        if not is_shop_admin:
+            ent = (
+                db.query(ShopEntitlement)
+                .filter(
+                    ShopEntitlement.server_id == server.id,
+                    ShopEntitlement.kind == "server",
+                    ShopEntitlement.status == "active",
+                )
+                .order_by(ShopEntitlement.id.desc())
+                .first()
+            )
+            if ent is not None:
+                plan_id = ent.plan_id
+                if plan_id is None and ent.order_item_id is not None:
+                    item_row = (
+                        db.query(ShopOrderItem)
+                        .filter(ShopOrderItem.id == ent.order_item_id)
+                        .first()
+                    )
+                    if item_row is not None:
+                        plan_id = item_row.plan_id
+                plan = (
+                    db.query(ShopPlan).filter(ShopPlan.id == plan_id).first()
+                    if plan_id is not None
+                    else None
+                )
+                if plan is not None and not getattr(plan, "allow_game_switch", True):
+                    raise HTTPException(
+                        status_code=403,
+                        detail={
+                            "code": "game_switch_disabled",
+                            "message": "Spielwechsel ist fuer diesen Tarif nicht freigeschaltet.",
+                        },
+                    )
+                category_val = getattr(
+                    entry.blueprint.meta.category,
+                    "value",
+                    str(entry.blueprint.meta.category),
+                )
+                if category_val not in ("steam_game", "non_steam_game"):
+                    raise HTTPException(
+                        status_code=400,
+                        detail={
+                            "code": "game_switch_invalid_category",
+                            "message": "Nur Gameserver-Blueprints koennen per Spielwechsel ausgewaehlt werden.",
+                        },
+                    )
+                bp_min_ram = getattr(
+                    getattr(entry.blueprint, "resources", None), "minMemoryMb", None
+                )
+                if (
+                    bp_min_ram is not None
+                    and server.ram_limit_mb is not None
+                    and server.ram_limit_mb > 0
+                    and int(bp_min_ram) > int(server.ram_limit_mb)
+                ):
+                    raise HTTPException(
+                        status_code=400,
+                        detail={
+                            "code": "game_switch_insufficient_ram",
+                            "message": "Der gewaehlte Tarif bietet nicht genug RAM fuer dieses Spiel.",
+                        },
+                    )
+                target_plans = (
+                    db.query(ShopPlan)
+                    .filter(
+                        ShopPlan.game_type == new_blueprint_id,
+                        ShopPlan.active.is_(True),
+                    )
+                    .all()
+                )
+                if target_plans:
+                    min_ram_req = min(
+                        (
+                            p.ram_included_mb
+                            for p in target_plans
+                            if p.ram_included_mb is not None
+                        ),
+                        default=None,
+                    )
+                    if (
+                        min_ram_req is not None
+                        and server.ram_limit_mb is not None
+                        and server.ram_limit_mb > 0
+                        and min_ram_req > server.ram_limit_mb
+                    ):
+                        raise HTTPException(
+                            status_code=400,
+                            detail={
+                                "code": "game_switch_insufficient_ram",
+                                "message": "Der gewaehlte Tarif bietet nicht genug RAM fuer dieses Spiel.",
+                            },
+                        )
+                    min_cpu_req = min(
+                        (
+                            p.cpu_included
+                            for p in target_plans
+                            if p.cpu_included is not None
+                        ),
+                        default=None,
+                    )
+                    if (
+                        min_cpu_req is not None
+                        and server.cpu_limit_percent is not None
+                        and server.cpu_limit_percent > 0
+                        and (min_cpu_req * 100) > server.cpu_limit_percent
+                    ):
+                        raise HTTPException(
+                            status_code=400,
+                            detail={
+                                "code": "game_switch_insufficient_cpu",
+                                "message": "Der gewaehlte Tarif bietet nicht genug CPU-Leistung fuer dieses Spiel.",
+                            },
+                        )
 
     old_game_type = server.game_type
 

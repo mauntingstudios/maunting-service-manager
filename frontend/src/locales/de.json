@@ -2534,6 +2534,14 @@
     "ramTypePlaceholder": "z. B. DDR5 ECC",
     "storageType": "Storage-Typ (optional)",
     "storageTypePlaceholder": "z. B. NVMe SSD",
+    "publicPingUrl": "Öffentliche Ping-URL (optional)",
+    "publicPingUrlHint": "Leichter HTTPS-Endpunkt der Node für direkte Browser-Latenzmessungen (ohne interne IPs oder Tokens).",
+    "ddosProvider": "DDoS-Anbieter (optional)",
+    "ddosProviderPlaceholder": "z. B. Famesystems Game-DDoS, Path.net",
+    "ddosProfile": "DDoS-Schutzprofil (optional)",
+    "ddosProfilePlaceholder": "z. B. Anycast + UDP-Game-Filter",
+    "ddosGameAware": "Game-Aware DDoS-Schutz aktiv",
+    "ddosGameAwareHint": "Zeigt im Shop ein Schutz-Badge auf Basis der echten Upstream-Filterung dieser Node.",
     "status": {
       "online": "Online",
       "unknown": "Unbekannt",
@@ -4274,6 +4282,7 @@
     "breadcrumb": "Pfad innerhalb der Server-Dateien",
     "parentFolder": "Übergeordneter Ordner",
     "summary": "{{files}} Dateien · {{folders}} Ordner · {{size}}",
+    "expertenKonfig": "Experten-Konfiguration",
     "details": "Datei-Informationen",
     "modified": "Geändert",
     "size": "Größe",
@@ -4751,7 +4760,11 @@
         "autoSubdomainEnabled": "Cloudflare-Subdomain automatisch anlegen",
         "autoSubdomainEnabledHint": "Erstellt beim Shop-Provisioning einen A/AAAA- und SRV-Eintrag über Cloudflare und aktualisiert ihn bei Node-Umzügen.",
         "autoSubdomainZone": "Subdomain-Zone (Cloudflare-Domain)",
-        "autoSubdomainZoneHint": "Basisdomain für automatische Server-Subdomains, z. B. play.deinedomain.gg."
+        "autoSubdomainZoneHint": "Basisdomain für automatische Server-Subdomains, z. B. play.deinedomain.gg.",
+        "pauseFreezeDays": "Pause-Laufzeitkontingent (Tage pro 90 Tage)",
+        "pauseFreezeDaysHint": "0 nutzt reinen Ressourcen-Standby ohne Laufzeitverlängerung. Höhere Werte (bis 90) schreiben Pausentage beim Fortsetzen gut.",
+        "checkoutCaptchaEnabled": "DIS-ALTCHA im Shop-Checkout aktivieren",
+        "checkoutCaptchaEnabledHint": "Verlangt vor kostenpflichtigen Bestellungen eine datenschutzfreundliche Proof-of-Work-Prüfung ohne externe Tracker."
       },
       "zahlungen": {
         "titel": "Zahlungen",
@@ -4821,7 +4834,11 @@
         "quelleSteam": "Steam",
         "alsCoverSetzen": "Als Titelbild verwenden",
         "bildEntfernen": "Bild entfernen",
-        "galerieBildGeloescht": "Galeriebild entfernt."
+        "galerieBildGeloescht": "Galeriebild entfernt.",
+        "lifetimePreis": "Lifetime-Preis (EUR, optional)",
+        "lifetimePreisPlatzhalter": "z. B. 149.00 (leer = ausgeblendet)",
+        "lifetimePreisHinweis": "Leer lassen, um keinen Einmal-Kauf ohne laufende Monatskosten anzubieten.",
+        "allowGameSwitch": "Instant Game-Switch (Gamecloud) erlauben"
       },
       "addons": {
         "titel": "Add-ons",
@@ -6778,7 +6795,11 @@
       "frei": "Kapazität frei",
       "belegt": "Ausgelastet",
       "offline": "Wartung / Offline",
-      "ramFreiProzent": "{{percent}} % RAM frei"
+      "ramFreiProzent": "{{percent}} % RAM frei",
+      "pingTesten": "Ping testen",
+      "pingLaeuft": "Messe Latenz …",
+      "besterPing": "Niedrigster Ping",
+      "ddosGameAware": "Game-Aware DDoS"
     },
     "kopf": {
       "startseite": "Zur Shop-Startseite",
@@ -6854,6 +6875,8 @@
       "alleSpiele": "Alle Spiele",
       "sofortVerfuegbar": "Sofort verfügbar",
       "mitMods": "Mods & Workshop",
+      "plattformFilter": "Nach Plattform filtern",
+      "plattformAlle": "Alle Plattformen",
       "leerTitel": "Kein Spiel gefunden",
       "leerText": "Prüfe den Suchbegriff oder wähle ein anderes Spiel.",
       "keineTarifeTitel": "Noch keine Server-Tarife veröffentlicht",
@@ -6985,8 +7008,13 @@
       "aboHinweis": "Verlängert sich monatlich automatisch und ist jederzeit zum Laufzeitende kündbar.",
       "aboHinweisMitRabatt": "Monatliches Abo mit {{prozent}} % Dauerrabatt. Jederzeit zum Laufzeitende kündbar.",
       "aboIntervallHinweis": "Abos werden fest im 1-Monats-Rhythmus abgerechnet.",
+      "lifetimeTitel": "Lifetime",
+      "lifetimeHinweis": "Einmalzahlung ohne monatliche Verlängerung.",
       "inklusiveTitel": "Immer 0,00 € inklusive",
       "inklusiveDdos": "DDoS-Schutz",
+      "inklusiveDdosGameAware": "Game-Aware DDoS-Schutz",
+      "inklusiveDdosMitAnbieter": "Game-Aware DDoS ({{provider}})",
+      "inklusiveDdosProvider": "DDoS-Schutz ({{provider}})",
       "inklusiveBackups": "Automatische Backups (inkl. Pre-Update)",
       "inklusiveGameSwitch": "Instant Game-Switch",
       "inklusiveSftp": "SFTP & Dateimanager",
@@ -7048,6 +7076,8 @@
       "zahlungsartLabel": "Zahlungsart",
       "prepaidHinweis": "Prepaid: läuft automatisch aus, keine Kündigung nötig.",
       "aboHinweis": "Abo: monatliche Verlängerung, jederzeit im Konto kündbar.",
+      "lifetimeHinweis": "Lifetime: Einmalzahlung ohne wiederkehrende Kosten.",
+      "captchaFehlt": "Bitte zuerst die Sicherheitsprüfung abschließen.",
       "erstattungHinweis": "Erstattungsregel: Innerhalb von {{tage}} Tagen direkt auf deine ursprüngliche Zahlungsmethode."
     },
     "promo": {
@@ -7080,6 +7110,7 @@
       "rabatt": "{{prozent}} % Laufzeitrabatt",
       "aboRabatt": "{{prozent}} % Abo-Rabatt",
       "einmalig": "Prepaid (einmalig)",
+      "keineFolgekosten": "inkl. gesetzlicher USt., keine Folgekosten",
       "inklusiveSteuer": "inkl. gesetzlicher USt."
     },
     "konto": {
@@ -7171,6 +7202,15 @@
         "sofortLoeschungZumLaufzeitende": "Kündigung vorgemerkt (Löschung bei Ablauf)",
         "typPrepaid": "Prepaid",
         "typAbo": "Abo",
+        "typLifetime": "Lifetime",
+        "lebenslangGueltig": "Zeitlich unbegrenzt",
+        "pausiertStatus": "Pausiert",
+        "pausiertHinweis": "Ressourcen-Standby aktiv: Spielstand und Subdomain bleiben gespeichert.",
+        "pausentageVerbraucht": "{{tage}} Pausentage in diesem Zeitraum angerechnet",
+        "pausieren": "Server pausieren",
+        "fortsetzen": "Fortsetzen",
+        "pauseFehler": "Pause-Status konnte nicht geändert werden.",
+        "spielWechseln": "Spiel wechseln",
         "verlaengern": "Um 1 Monat verlängern",
         "verlaengernLaeuft": "Verlängerung wird geöffnet …",
         "verlaengernFehler": "Verlängerung konnte nicht gestartet werden.",

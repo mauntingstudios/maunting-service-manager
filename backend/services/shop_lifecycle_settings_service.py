@@ -23,6 +23,8 @@ DEFAULT_REFUND_GUARANTEE_DAYS = 0
 DEFAULT_REFUND_POLICY_NOTE = ""
 DEFAULT_AUTO_SUBDOMAIN_ENABLED = False
 DEFAULT_AUTO_SUBDOMAIN_ZONE = ""
+DEFAULT_PAUSE_FREEZE_MAX_DAYS_PER_90D = 0
+DEFAULT_SHOP_CHECKOUT_CAPTCHA_ENABLED = False
 
 _K_CANCEL_GRACE = "shop_lifecycle_cancel_grace_days"
 _K_UNPAID_ENABLED = "shop_lifecycle_unpaid_auto_delete_enabled"
@@ -34,6 +36,8 @@ _K_REFUND_DAYS = "shop_policy_refund_guarantee_days"
 _K_REFUND_NOTE = "shop_policy_refund_policy_note"
 _K_AUTO_SUBDOMAIN_ENABLED = "shop_policy_auto_subdomain_enabled"
 _K_AUTO_SUBDOMAIN_ZONE = "shop_policy_auto_subdomain_zone"
+_K_PAUSE_FREEZE_DAYS = "shop_policy_pause_freeze_max_days_per_90d"
+_K_CHECKOUT_CAPTCHA = "shop_policy_checkout_captcha_enabled"
 
 
 class LifecycleSettingsError(ValueError):
@@ -151,6 +155,22 @@ def read(db: Session | None = None) -> dict[str, object]:
         "auto_subdomain_zone": _normalize_zone(
             PanelSettingsService.get(_K_AUTO_SUBDOMAIN_ZONE, DEFAULT_AUTO_SUBDOMAIN_ZONE, db=db)
         ),
+        "pause_freeze_max_days_per_90d": _parse_int(
+            PanelSettingsService.get(
+                _K_PAUSE_FREEZE_DAYS, str(DEFAULT_PAUSE_FREEZE_MAX_DAYS_PER_90D), db=db
+            ),
+            DEFAULT_PAUSE_FREEZE_MAX_DAYS_PER_90D,
+            min_v=0,
+            max_v=90,
+        ),
+        "shop_checkout_captcha_enabled": _parse_bool(
+            PanelSettingsService.get(
+                _K_CHECKOUT_CAPTCHA,
+                "true" if DEFAULT_SHOP_CHECKOUT_CAPTCHA_ENABLED else "false",
+                db=db,
+            ),
+            DEFAULT_SHOP_CHECKOUT_CAPTCHA_ENABLED,
+        ),
     }
 
 
@@ -257,6 +277,21 @@ def update(values: dict[str, object], db: Session | None = None) -> dict[str, ob
     )
     if next_subdomain_zone and not _DOMAIN_ZONE_RE.fullmatch(next_subdomain_zone):
         raise LifecycleSettingsError("Subdomain-Zone muss ein gueltiger Domainname sein (z. B. host.deinedomain.de)")
+    next_pause_freeze_days = (
+        _validate_int_field(
+            values["pause_freeze_max_days_per_90d"],
+            label="Max. Pausentage (90 Tage)",
+            min_v=0,
+            max_v=90,
+        )
+        if "pause_freeze_max_days_per_90d" in values and values["pause_freeze_max_days_per_90d"] is not None
+        else int(current["pause_freeze_max_days_per_90d"])  # type: ignore[arg-type]
+    )
+    next_checkout_captcha = (
+        bool(values["shop_checkout_captcha_enabled"])
+        if "shop_checkout_captcha_enabled" in values and values["shop_checkout_captcha_enabled"] is not None
+        else bool(current["shop_checkout_captcha_enabled"])
+    )
 
     PanelSettingsService.set(_K_CANCEL_GRACE, str(next_grace))
     PanelSettingsService.set(_K_UNPAID_ENABLED, "true" if next_unpaid_enabled else "false")
@@ -268,6 +303,10 @@ def update(values: dict[str, object], db: Session | None = None) -> dict[str, ob
     PanelSettingsService.set(_K_REFUND_NOTE, next_refund_note)
     PanelSettingsService.set(_K_AUTO_SUBDOMAIN_ENABLED, "true" if next_subdomain_enabled else "false")
     PanelSettingsService.set(_K_AUTO_SUBDOMAIN_ZONE, next_subdomain_zone)
+    PanelSettingsService.set(_K_PAUSE_FREEZE_DAYS, str(next_pause_freeze_days))
+    PanelSettingsService.set(
+        _K_CHECKOUT_CAPTCHA, "true" if next_checkout_captcha else "false"
+    )
     return read(db=db)
 
 
@@ -285,7 +324,17 @@ def public_policy(db: Session | None = None) -> dict[str, object]:
         "cancel_grace_days": cfg["cancel_grace_days"],
         "auto_subdomain_enabled": cfg["auto_subdomain_enabled"],
         "auto_subdomain_zone": cfg["auto_subdomain_zone"],
+        "pause_freeze_max_days_per_90d": cfg["pause_freeze_max_days_per_90d"],
+        "shop_checkout_captcha_enabled": cfg["shop_checkout_captcha_enabled"],
     }
+
+
+def pause_freeze_max_days_per_90d(db: Session | None = None) -> int:
+    return int(read(db=db)["pause_freeze_max_days_per_90d"])  # type: ignore[arg-type]
+
+
+def checkout_captcha_enabled(db: Session | None = None) -> bool:
+    return bool(read(db=db)["shop_checkout_captcha_enabled"])
 
 
 def cancel_grace_days(db: Session | None = None) -> int:

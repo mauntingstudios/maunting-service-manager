@@ -32,6 +32,8 @@ export interface ShopApi {
   listEntitlementBackups?(id: string): Promise<GraceBackup[]>
   entitlementBackupDownloadUrl?(entitlementId: string, backupId: number): string
   purgeEntitlementNow(id: string, confirmServerName: string): Promise<Entitlement>
+  pauseEntitlement?(id: string): Promise<Entitlement>
+  resumeEntitlement?(id: string): Promise<Entitlement>
   listPaymentMethods(): Promise<PaymentMethod[]>
   getSettings(): Promise<ShopSettings>
 }
@@ -66,6 +68,8 @@ function entitlementAusApi(dto: ShopEntitlementDto): Entitlement {
     purgeReason: dto.purge_reason ?? null,
     purgedAt: dto.purged_at ?? null,
     canCustomerPurgeNow: dto.can_customer_purge_now ?? false,
+    pausedAt: dto.paused_at ?? null,
+    pauseDaysUsed: dto.pause_days_used ?? 0,
   }
 }
 
@@ -153,6 +157,10 @@ export const shopApi: ShopApi = {
     shopOrderApi.entitlementBackupDownloadUrl(entitlementId, backupId),
   purgeEntitlementNow: async (id, confirmServerName) =>
     entitlementAusApi(await shopOrderApi.purgeEntitlementNow(id, confirmServerName)),
+  pauseEntitlement: async (id) =>
+    entitlementAusApi(await shopOrderApi.pauseEntitlement(id)),
+  resumeEntitlement: async (id) =>
+    entitlementAusApi(await shopOrderApi.resumeEntitlement(id)),
   listPaymentMethods: async () => [],
   getSettings: async () => MOCK_SETTINGS,
 }

@@ -237,5 +237,27 @@ describe('CaptchaWidget', () => {
     const errorAlert = await screen.findByRole('alert')
     expect(errorAlert.textContent).toContain('Sicherheitsabfrage konnte nicht geladen werden')
   })
+
+  it('fragt bei scope=shop die Shop-Policy explizit ab', async () => {
+    vi.mocked(client.api).mockImplementation(async (pfad: string) => {
+      if (pfad === '/auth/captcha-challenge?scope=shop') {
+        return {
+          algorithm: 'SHA-256',
+          challenge: 'shop-challenge',
+          maxnumber: 100,
+          salt: `shop-salt?expires=${Math.floor(Date.now() / 1000) + 300}`,
+          signature: 'shop-sig',
+        }
+      }
+      return { enabled: true, provider: 'altcha', site_key: '' }
+    })
+
+    const { container } = render(<CaptchaWidget scope="shop" onVerify={vi.fn()} />)
+    await waitFor(() => {
+      expect(client.api).toHaveBeenCalledWith('/auth/captcha-config?scope=shop')
+      expect(client.api).toHaveBeenCalledWith('/auth/captcha-challenge?scope=shop')
+      expect(container.querySelector('altcha-widget')).not.toBeNull()
+    })
+  })
 })
 

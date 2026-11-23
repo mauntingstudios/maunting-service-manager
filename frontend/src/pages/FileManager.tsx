@@ -15,6 +15,7 @@ import {
   Pencil,
   RefreshCw,
   Search,
+  SlidersHorizontal,
   Trash2,
   Upload,
   X,
@@ -56,6 +57,7 @@ import { uploadFile } from '@/components/server/chunkedUpload'
 
 interface FileManagerProps {
   serverId: number
+  initialFile?: string | null
 }
 
 interface SelectedEntry {
@@ -112,7 +114,7 @@ function isArchive(name: string): boolean {
   return ['.zip', '.tar.gz', '.tgz', '.tar.xz', '.txz', '.tar.bz2', '.tbz2'].some((extension) => lower.endsWith(extension))
 }
 
-export function FileManager({ serverId }: FileManagerProps) {
+export function FileManager({ serverId, initialFile }: FileManagerProps) {
   const { t, i18n } = useTranslation()
   const permissionsLoading = usePermissionsStore((state) => state.isLoading)
   const canWrite = useHasPermission('server.files.write', serverId)
@@ -134,6 +136,7 @@ export function FileManager({ serverId }: FileManagerProps) {
   const [searchTruncated, setSearchTruncated] = useState(false)
   const [tabs, setTabs] = useState<EditorTab[]>([])
   const [versions, setVersions] = useState<Record<string, FileVersion[]>>({})
+  const [configFiles, setConfigFiles] = useState<Array<{ path: string; label: string }>>([])
   const [activePath, setActivePath] = useState<string | null>(null)
   const [autosave, setAutosave] = useState(true)
   const [treeOpen, setTreeOpen] = useState(false)
@@ -192,6 +195,25 @@ export function FileManager({ serverId }: FileManagerProps) {
     void loadDirectory('', true)
     // serverId is the reset boundary; loadDirectory intentionally reads it here.
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [serverId])
+
+  useEffect(() => {
+    let aktiv = true
+    void (async () => {
+      try {
+        const res = await api<{ files?: Array<{ path: string; label: string }> }>(
+          `/servers/${serverId}/config-files`,
+        )
+        if (!aktiv) return
+        setConfigFiles(Array.isArray(res?.files) ? res.files : [])
+      } catch (err: unknown) {
+        still(err, 'FileManager.configFiles')
+        if (aktiv) setConfigFiles([])
+      }
+    })()
+    return () => {
+      aktiv = false
+    }
   }, [serverId])
 
   useEffect(() => {
@@ -389,6 +411,15 @@ export function FileManager({ serverId }: FileManagerProps) {
       toast.error(safeErrorMessage(error, t('files.readFailed')))
     }
   }, [loadVersions, nodes, serverId, t])
+
+  const openedInitialRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!initialFile) return
+    const key = `${serverId}:${initialFile}`
+    if (openedInitialRef.current === key) return
+    openedInitialRef.current = key
+    void openFile(initialFile)
+  }, [serverId, initialFile, openFile])
 
   const saveTab = useCallback(async (path: string) => {
     if (!canWrite || savingPathsRef.current.has(path)) return
@@ -781,6 +812,25 @@ export function FileManager({ serverId }: FileManagerProps) {
         />
         <p className="shrink-0 text-label-sm text-on-surface-variant">{t('files.summary', { files: directorySummary.files, folders: directorySummary.folders, size: formatBytes(directorySummary.bytes) })}</p>
       </div>
+
+      {configFiles.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 border-b border-outline-variant/70 bg-surface-container-low/60 px-3 py-2 text-xs">
+          <span className="inline-flex items-center gap-1.5 font-medium text-on-surface-variant">
+            <SlidersHorizontal className="h-3.5 w-3.5" aria-hidden="true" />
+            {t('files.expertenKonfig')}
+          </span>
+          {configFiles.map((cfg) => (
+            <button
+              key={cfg.path}
+              type="button"
+              onClick={() => void openFile(cfg.path)}
+              className="rounded-md border border-outline-variant/40 bg-surface-container px-2.5 py-1 font-mono text-label-sm text-on-surface transition-colors hover:border-primary/50 hover:text-primary"
+            >
+              {cfg.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       <div
         className="relative"

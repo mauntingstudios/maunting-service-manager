@@ -19,6 +19,8 @@ class ShopPlanWrite(BaseModel):
     name: str = Field(..., min_length=1, max_length=128)
     description: str | None = Field(None, max_length=4096)
     price_cents: int = Field(..., ge=0, le=100_000_000)
+    lifetime_price_cents: int | None = Field(None, ge=0, le=100_000_000)
+    allow_game_switch: bool = True
     currency: str = Field("EUR", min_length=3, max_length=3)
     billing_interval: BillingInterval = "month"
     tax_rate_percent: int = Field(19, ge=0, le=100)
@@ -51,6 +53,8 @@ class ShopPlanUpdate(BaseModel):
     name: str | None = Field(None, min_length=1, max_length=128)
     description: str | None = Field(None, max_length=4096)
     price_cents: int | None = Field(None, ge=0, le=100_000_000)
+    lifetime_price_cents: int | None = Field(None, ge=0, le=100_000_000)
+    allow_game_switch: bool | None = None
     currency: str | None = Field(None, min_length=3, max_length=3)
     billing_interval: BillingInterval | None = None
     tax_rate_percent: int | None = Field(None, ge=0, le=100)
@@ -90,6 +94,8 @@ class ShopPlanResponse(BaseModel):
     name: str
     description: str | None
     price_cents: int
+    lifetime_price_cents: int | None = None
+    allow_game_switch: bool = True
     currency: str
     billing_interval: str
     tax_rate_percent: int
@@ -213,7 +219,7 @@ class ShopAddonSwitchRequest(BaseModel):
 
 
 OrderMonths = Literal[1, 3, 12]
-BillingMode = Literal["prepaid", "subscription"]
+BillingMode = Literal["prepaid", "subscription", "lifetime"]
 OrderStatus = Literal["pending_payment", "paid", "cancelled", "refunded", "failed"]
 SubscriptionStatus = Literal["active", "past_due", "cancelled"]
 EntitlementKind = Literal["server", "role", "addon"]
@@ -231,6 +237,7 @@ class ShopOrderCreate(BaseModel):
     cpu: int | None = Field(None, ge=0, le=10_000)
     slots: int | None = Field(None, ge=0, le=100_000)
     coupon_code: str | None = Field(None, max_length=48)
+    captcha_token: str | None = Field(None, max_length=4096)
 
     # Rechnungsanschrift; ohne sie wird keine Rechnung ausgestellt.
     buyer_name: str | None = Field(None, max_length=160)
@@ -490,6 +497,8 @@ class ShopLifecycleSettingsPayload(BaseModel):
     refund_policy_note: str = Field("", max_length=280)
     auto_subdomain_enabled: bool = False
     auto_subdomain_zone: str = Field("", max_length=128)
+    pause_freeze_max_days_per_90d: int = Field(0, ge=0, le=90)
+    shop_checkout_captcha_enabled: bool = False
 
 
 class ShopLifecycleSettingsResponse(ShopLifecycleSettingsPayload):
@@ -504,6 +513,8 @@ class ShopPublicPolicyResponse(BaseModel):
     cancel_grace_days: int = 7
     auto_subdomain_enabled: bool = False
     auto_subdomain_zone: str = ""
+    pause_freeze_max_days_per_90d: int = 0
+    shop_checkout_captcha_enabled: bool = False
 
 
 class ShopPublicNodeStatusResponse(BaseModel):
@@ -519,6 +530,19 @@ class ShopPublicNodeStatusResponse(BaseModel):
     ram_free_percent: int | None = None
     load_level: Literal["low", "medium", "high", "full", "offline"]
     accepting_orders: bool
+    public_ping_url: str | None = None
+    ddos_provider: str | None = None
+    ddos_profile: str | None = None
+    ddos_game_aware: bool = False
+
+
+class ShopNodePingResponse(BaseModel):
+    """Serverseitige Node-Agent-Latenzmessung ohne IP-/Token-Leak."""
+
+    node_id: int
+    status: str
+    server_agent_rtt_ms: float | None = None
+    timestamp_ms: int
 
 
 class ShopCheckoutRequest(BaseModel):
@@ -648,6 +672,8 @@ class ShopEntitlementResponse(BaseModel):
     purge_reason: str | None = None
     purged_at: datetime | None = None
     can_customer_purge_now: bool = False
+    paused_at: datetime | None = None
+    pause_days_used: int = 0
     created_at: datetime
 
 
@@ -776,6 +802,8 @@ class ShopCatalogPlan(BaseModel):
     name: str
     description: str | None
     price_cents: int
+    lifetime_price_cents: int | None = None
+    allow_game_switch: bool = True
     currency: str
     billing_interval: str
     tax_rate_percent: int
@@ -800,6 +828,10 @@ class ShopCatalogPlan(BaseModel):
     hardware_ram_type: str | None = None
     hardware_storage_type: str | None = None
     estimated_setup_seconds: int = 120
+    platforms: list[str] = Field(default_factory=lambda: ["pc"])
+    ddos_provider: str | None = None
+    ddos_profile: str | None = None
+    ddos_game_aware: bool = False
 
 
 class ShopAvailabilityRequest(BaseModel):

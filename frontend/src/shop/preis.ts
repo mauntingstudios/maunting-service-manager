@@ -54,6 +54,21 @@ export function preisAufschluesselung(
   const kiCent = konfiguration.kiZugang ? spiel.kiZugangCent : 0
   const monatCent = spiel.grundpreisCent + ramCent + cpuCent + slotsCent + kiCent
   const modus = konfiguration.abrechnungsModus ?? 'prepaid'
+  const lifetimeBasis = spiel.lifetimePreisCent ?? null
+  if (modus === 'lifetime' && lifetimeBasis !== null && lifetimeBasis > 0) {
+    const gesamtCent =
+      lifetimeBasis + Math.max(0, monatCent - spiel.grundpreisCent) * 12
+    return {
+      grundpreisCent: spiel.grundpreisCent,
+      ramCent,
+      cpuCent,
+      slotsCent,
+      kiCent,
+      monatCent,
+      rabattProzent: 0,
+      gesamtCent,
+    }
+  }
   let rabattProzent = RABATT_PROZENT[konfiguration.laufzeitMonate]
   if (modus === 'subscription' && konfiguration.laufzeitMonate === 1 && aboRabattProzent > 0) {
     rabattProzent = Math.min(50, rabattProzent + aboRabattProzent)

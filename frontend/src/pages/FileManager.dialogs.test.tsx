@@ -215,4 +215,41 @@ describe('FileManager: Dateisuche', () => {
       vi.useRealTimers()
     }
   })
+
+  it('zeigt Experten-Konfigurations-Chips und oeffnet sie direkt im Editor', async () => {
+    mockApi.mockImplementation(async (pfad: string) => {
+      if (pfad.endsWith('/config-files')) {
+        return {
+          server_id: SERVER_ID,
+          game_type: 'palworld',
+          files: [{ path: 'Pal/Saved/Config/LinuxServer/PalWorldSettings.ini', label: 'PalWorldSettings.ini' }],
+        } as any
+      }
+      if (pfad.includes('/read?path=')) {
+        return {
+          content: 'ServerName=Test',
+          revision: 'rev1',
+          size: 15,
+          modified: 1700000000,
+          mode: '0644',
+          owner: 'root',
+          group: 'root',
+        } as any
+      }
+      if (pfad.includes('/versions?path=')) {
+        return { versions: [] } as any
+      }
+      return ROOT_LISTING as any
+    })
+
+    render(<FileManager serverId={SERVER_ID} />)
+    const chip = await screen.findByRole('button', { name: 'PalWorldSettings.ini' })
+    fireEvent.click(chip)
+
+    await waitFor(() => {
+      expect(mockApi).toHaveBeenCalledWith(
+        expect.stringContaining(`/files/${SERVER_ID}/read?path=`),
+      )
+    })
+  })
 })

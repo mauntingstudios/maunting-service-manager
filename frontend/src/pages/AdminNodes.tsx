@@ -34,6 +34,7 @@ import {
   Kurzinfo,
   PasswordInput,
   Spinner,
+  Switch,
   type ActionMenuItem,
 } from '@maunting/ui'
 import { FavoriteButton, FAVORITE_CARD_HIGHLIGHT_CLASS } from '@/components/FavoriteButton'
@@ -129,6 +130,10 @@ export function AdminNodes({ ohneHintergrund = false }: { ohneHintergrund?: bool
     location_label: '',
     ram_type: '',
     storage_type: '',
+    public_ping_url: '',
+    ddos_provider: '',
+    ddos_profile: '',
+    ddos_game_aware: false,
   })
 
   const [searchVal, setSearchVal] = useState('')
@@ -203,6 +208,10 @@ export function AdminNodes({ ohneHintergrund = false }: { ohneHintergrund?: bool
       location_label: '',
       ram_type: '',
       storage_type: '',
+      public_ping_url: '',
+      ddos_provider: '',
+      ddos_profile: '',
+      ddos_game_aware: false,
     })
     setShowEnrollment(false)
     setShowForm(true)
@@ -218,6 +227,10 @@ export function AdminNodes({ ohneHintergrund = false }: { ohneHintergrund?: bool
       location_label: node.location_label || '',
       ram_type: node.ram_type || '',
       storage_type: node.storage_type || '',
+      public_ping_url: node.public_ping_url || '',
+      ddos_provider: node.ddos_provider || '',
+      ddos_profile: node.ddos_profile || '',
+      ddos_game_aware: Boolean(node.ddos_game_aware),
     })
     setShowForm(true)
   }
@@ -235,12 +248,20 @@ export function AdminNodes({ ohneHintergrund = false }: { ohneHintergrund?: bool
           location_label?: string | null
           ram_type?: string | null
           storage_type?: string | null
+          public_ping_url?: string | null
+          ddos_provider?: string | null
+          ddos_profile?: string | null
+          ddos_game_aware?: boolean
         } = {
           name: form.name.trim(),
           host: form.host.trim(),
           location_label: form.location_label.trim() || null,
           ram_type: form.ram_type.trim() || null,
           storage_type: form.storage_type.trim() || null,
+          public_ping_url: form.public_ping_url.trim() || null,
+          ddos_provider: form.ddos_provider.trim() || null,
+          ddos_profile: form.ddos_profile.trim() || null,
+          ddos_game_aware: form.ddos_game_aware,
         }
         if (form.auth_token.trim()) {
           payload.auth_token = form.auth_token.trim()
@@ -276,6 +297,10 @@ export function AdminNodes({ ohneHintergrund = false }: { ohneHintergrund?: bool
         location_label: '',
         ram_type: '',
         storage_type: '',
+        public_ping_url: '',
+        ddos_provider: '',
+        ddos_profile: '',
+        ddos_game_aware: false,
       })
       setEditing(null)
     } catch (err: unknown) {
@@ -493,32 +518,81 @@ export function AdminNodes({ ohneHintergrund = false }: { ohneHintergrund?: bool
                 />
               </div>
               {editing && (
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                  <Input
-                    label={t('nodes.locationLabel')}
-                    value={form.location_label}
-                    onChange={(e) => setForm({ ...form, location_label: e.target.value })}
-                    placeholder={t('nodes.locationPlaceholder')}
-                    maxLength={120}
-                    autoComplete="off"
-                  />
-                  <Input
-                    label={t('nodes.ramType')}
-                    value={form.ram_type}
-                    onChange={(e) => setForm({ ...form, ram_type: e.target.value })}
-                    placeholder={t('nodes.ramTypePlaceholder')}
-                    maxLength={60}
-                    autoComplete="off"
-                  />
-                  <Input
-                    label={t('nodes.storageType')}
-                    value={form.storage_type}
-                    onChange={(e) => setForm({ ...form, storage_type: e.target.value })}
-                    placeholder={t('nodes.storageTypePlaceholder')}
-                    maxLength={60}
-                    autoComplete="off"
-                  />
-                </div>
+                <>
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                    <Input
+                      label={t('nodes.locationLabel')}
+                      value={form.location_label}
+                      onChange={(e) => setForm({ ...form, location_label: e.target.value })}
+                      placeholder={t('nodes.locationPlaceholder')}
+                      maxLength={120}
+                      autoComplete="off"
+                    />
+                    <Input
+                      label={t('nodes.ramType')}
+                      value={form.ram_type}
+                      onChange={(e) => setForm({ ...form, ram_type: e.target.value })}
+                      placeholder={t('nodes.ramTypePlaceholder')}
+                      maxLength={60}
+                      autoComplete="off"
+                    />
+                    <Input
+                      label={t('nodes.storageType')}
+                      value={form.storage_type}
+                      onChange={(e) => setForm({ ...form, storage_type: e.target.value })}
+                      placeholder={t('nodes.storageTypePlaceholder')}
+                      maxLength={60}
+                      autoComplete="off"
+                    />
+                  </div>
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div className="sm:col-span-2">
+                      <Input
+                        label={t('nodes.publicPingUrl')}
+                        type="url"
+                        value={form.public_ping_url}
+                        onChange={(e) => setForm({ ...form, public_ping_url: e.target.value })}
+                        placeholder="https://ping.deinedomain.de/health"
+                        maxLength={255}
+                        autoComplete="off"
+                      />
+                      <p className="mt-1 text-xs text-on-surface-variant">
+                        {t('nodes.publicPingUrlHint')}
+                      </p>
+                    </div>
+                    <Input
+                      label={t('nodes.ddosProvider')}
+                      value={form.ddos_provider}
+                      onChange={(e) => setForm({ ...form, ddos_provider: e.target.value })}
+                      placeholder={t('nodes.ddosProviderPlaceholder')}
+                      maxLength={80}
+                      autoComplete="off"
+                    />
+                    <Input
+                      label={t('nodes.ddosProfile')}
+                      value={form.ddos_profile}
+                      onChange={(e) => setForm({ ...form, ddos_profile: e.target.value })}
+                      placeholder={t('nodes.ddosProfilePlaceholder')}
+                      maxLength={120}
+                      autoComplete="off"
+                    />
+                  </div>
+                  <div className="flex items-start gap-3">
+                    <Switch
+                      checked={form.ddos_game_aware}
+                      onCheckedChange={(checked) => setForm({ ...form, ddos_game_aware: checked })}
+                      aria-label={t('nodes.ddosGameAware')}
+                    />
+                    <div className="flex-1">
+                      <span className="block text-sm font-medium text-on-surface">
+                        {t('nodes.ddosGameAware')}
+                      </span>
+                      <p className="text-xs text-on-surface-variant">
+                        {t('nodes.ddosGameAwareHint')}
+                      </p>
+                    </div>
+                  </div>
+                </>
               )}
               <div>
                 <Input
@@ -628,6 +702,18 @@ export function AdminNodes({ ohneHintergrund = false }: { ohneHintergrund?: bool
                           <>
                             <span aria-hidden="true" className="text-outline">·</span>
                             <span>{node.storage_type}</span>
+                          </>
+                        )}
+                        {(node.ddos_game_aware || node.ddos_provider) && (
+                          <>
+                            <span aria-hidden="true" className="text-outline">·</span>
+                            <span className="text-status-running">
+                              {node.ddos_game_aware
+                                ? node.ddos_provider
+                                  ? `${t('shop.nodeStatus.ddosGameAware')} (${node.ddos_provider})`
+                                  : t('shop.nodeStatus.ddosGameAware')
+                                : node.ddos_provider}
+                            </span>
                           </>
                         )}
                         {metrics.cpuCores != null && (

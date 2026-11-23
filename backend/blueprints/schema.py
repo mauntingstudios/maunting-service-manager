@@ -322,6 +322,9 @@ def _is_safe_relative_template(
 # ── Modelle ────────────────────────────────────────────────────────────────
 
 
+BlueprintPlatform = Literal["pc", "ps5", "xbox", "crossplay"]
+
+
 class BlueprintMeta(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
@@ -332,6 +335,14 @@ class BlueprintMeta(BaseModel):
     category: BlueprintCategory
     author: str | None = Field(default=None, max_length=128)
     description: str | None = Field(default=None, max_length=1024)
+    platforms: list[BlueprintPlatform] = Field(
+        default_factory=lambda: ["pc"], min_length=1, max_length=4
+    )
+
+    @field_validator("platforms", mode="after")
+    @classmethod
+    def _dedupe_platforms(cls, value: list[BlueprintPlatform]) -> list[BlueprintPlatform]:
+        return list(dict.fromkeys(value)) or ["pc"]
 
     @field_validator("game", "edition", mode="before")
     @classmethod

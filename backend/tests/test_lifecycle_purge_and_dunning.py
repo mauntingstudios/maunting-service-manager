@@ -173,6 +173,8 @@ def test_lifecycle_settings_admin_crud_and_validation(
         "refund_policy_note": "",
         "auto_subdomain_enabled": False,
         "auto_subdomain_zone": "",
+        "pause_freeze_max_days_per_90d": 0,
+        "shop_checkout_captcha_enabled": False,
     }
 
     headers = {"X-CSRF-Token": csrf_token or ""}
@@ -228,6 +230,8 @@ def test_lifecycle_settings_admin_crud_and_validation(
         "refund_policy_note": "",
         "auto_subdomain_enabled": False,
         "auto_subdomain_zone": "",
+        "pause_freeze_max_days_per_90d": 0,
+        "shop_checkout_captcha_enabled": False,
     }
 
 

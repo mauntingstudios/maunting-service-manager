@@ -46,6 +46,8 @@ interface Draft {
   slotsMax: string
   pricePerSlotEuro: string
   taxRate: string
+  lifetimeEuro: string
+  allowGameSwitch: boolean
   artworkMode: ShopArtworkMode
   active: boolean
 }
@@ -104,6 +106,8 @@ const LEER: Draft = {
   slotsMax: '32',
   pricePerSlotEuro: '0.30',
   taxRate: '19',
+  lifetimeEuro: '',
+  allowGameSwitch: true,
   artworkMode: 'steam',
   active: true,
 }
@@ -148,6 +152,11 @@ function planZuDraft(plan: ShopPlan): Draft {
     slotsMax: plan.slots_max === null ? '' : String(plan.slots_max),
     pricePerSlotEuro: centInEuro(plan.price_per_slot_step_cents),
     taxRate: String(plan.tax_rate_percent),
+    lifetimeEuro:
+      plan.lifetime_price_cents != null && plan.lifetime_price_cents > 0
+        ? centInEuro(plan.lifetime_price_cents)
+        : '',
+    allowGameSwitch: plan.allow_game_switch ?? true,
     artworkMode: plan.artwork_mode,
     active: plan.active,
   }
@@ -199,6 +208,8 @@ function draftZuPayload(draft: Draft, editing: ShopPlan | null): ShopPlanWrite {
     slots_max: slotsMax,
     slots_step: 1,
     price_per_slot_step_cents: euroInCent(draft.pricePerSlotEuro),
+    lifetime_price_cents: draft.lifetimeEuro.trim() ? euroInCent(draft.lifetimeEuro) : null,
+    allow_game_switch: draft.allowGameSwitch,
     node_id: null,
     role_id: null,
     artwork_mode: draft.artworkMode,
@@ -211,6 +222,10 @@ function prüfeDraft(draft: Draft): string | null {
   if (!draft.gameType) return 'game'
   if (!draft.name.trim()) return 'name'
   if (zahl(draft.priceEuro) === null) return 'price'
+  if (draft.lifetimeEuro.trim()) {
+    const lp = zahl(draft.lifetimeEuro)
+    if (lp === null || lp <= 0) return 'price'
+  }
   if ((zahl(draft.taxRate) ?? -1) < 0 || (zahl(draft.taxRate) ?? 101) > 100) return 'tax'
   const paare: Array<[string, string]> = [
     [draft.ramIncludedGb, draft.ramMaxGb],
@@ -582,6 +597,21 @@ export function ShopPlansEditor() {
                 value={draft.taxRate}
                 onChange={(event) => setze('taxRate', event.target.value)}
               />
+              <div>
+                <Input
+                  label={t('settings.shop.plans.lifetimePreis')}
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  inputMode="decimal"
+                  placeholder={t('settings.shop.plans.lifetimePreisPlatzhalter')}
+                  value={draft.lifetimeEuro}
+                  onChange={(event) => setze('lifetimeEuro', event.target.value)}
+                />
+                <p className="mt-1 text-xs text-on-surface-variant">
+                  {t('settings.shop.plans.lifetimePreisHinweis')}
+                </p>
+              </div>
             </div>
 
             <div className="space-y-3 rounded-xl border border-outline-variant/30 bg-surface-container/60 p-4">
@@ -659,6 +689,16 @@ export function ShopPlansEditor() {
                   checked={draft.active}
                   onCheckedChange={(wert) => setze('active', wert)}
                   aria-label={t('settings.shop.plans.aktiv')}
+                />
+              </label>
+              <label className="flex items-center justify-between gap-4 rounded-xl border border-outline-variant/30 bg-surface-container p-3 sm:col-span-2">
+                <span className="text-sm font-medium text-on-surface">
+                  {t('settings.shop.plans.allowGameSwitch')}
+                </span>
+                <Switch
+                  checked={draft.allowGameSwitch}
+                  onCheckedChange={(wert) => setze('allowGameSwitch', wert)}
+                  aria-label={t('settings.shop.plans.allowGameSwitch')}
                 />
               </label>
             </div>

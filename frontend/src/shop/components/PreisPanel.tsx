@@ -25,6 +25,9 @@ export function PreisPanel({
 }: PreisPanelProps) {
   const { t } = useTranslation()
   const preis = preisAufschluesselung(spiel, konfiguration, aboRabattProzent)
+  const istLifetime =
+    (konfiguration.abrechnungsModus ?? 'prepaid') === 'lifetime' &&
+    (spiel.lifetimePreisCent ?? 0) > 0
 
   const zeilen = [
     { label: t('shop.preis.grundpreis'), cent: preis.grundpreisCent },
@@ -62,8 +65,10 @@ export function PreisPanel({
 
       <div className="border-t border-outline-variant/30 pt-3" aria-live="polite">
         <div className="flex items-center justify-between gap-3 text-sm text-on-surface-variant">
-          <span>{t('shop.preis.monat')}</span>
-          <span className="tabular-nums">{formatEuro(preis.monatCent)}</span>
+          <span>{istLifetime ? t('shop.spiel.lifetimeTitel') : t('shop.preis.monat')}</span>
+          <span className="tabular-nums">
+            {istLifetime ? t('shop.preis.einmalig') : formatEuro(preis.monatCent)}
+          </span>
         </div>
         <div className="mt-2 flex items-end justify-between gap-3">
           <span className="text-sm font-semibold text-on-surface">
@@ -74,7 +79,7 @@ export function PreisPanel({
           </span>
         </div>
         <p className="mt-1 text-right text-label-sm text-on-surface-variant">
-          {t('shop.preis.inklusiveSteuer')}
+          {istLifetime ? t('shop.preis.keineFolgekosten') : t('shop.preis.inklusiveSteuer')}
         </p>
       </div>
 

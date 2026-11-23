@@ -1,8 +1,8 @@
 import { useTranslation } from 'react-i18next'
 import { Check, Wrench } from 'lucide-react'
 import { Dropdown } from '@maunting/ui'
-import { formatCpuLabel } from '../preis'
-import type { Konfiguration, LaufzeitMonate, ShopSpiel } from '../typen'
+import { formatCpuLabel, formatEuro } from '../preis'
+import type { AbrechnungsModus, Konfiguration, LaufzeitMonate, ShopSpiel } from '../typen'
 
 interface KonfiguratorProps {
   spiel: ShopSpiel
@@ -27,11 +27,12 @@ export function Konfigurator({
   }
 
   const abrechnungsModus = konfiguration.abrechnungsModus ?? 'prepaid'
-  const setzeAbrechnungsModus = (modus: 'prepaid' | 'subscription') => {
+  const hatLifetime = (spiel.lifetimePreisCent ?? 0) > 0
+  const setzeAbrechnungsModus = (modus: AbrechnungsModus) => {
     onChange({
       ...konfiguration,
       abrechnungsModus: modus,
-      laufzeitMonate: modus === 'subscription' ? 1 : konfiguration.laufzeitMonate,
+      laufzeitMonate: modus === 'subscription' || modus === 'lifetime' ? 1 : konfiguration.laufzeitMonate,
     })
   }
   const maxSlots =
@@ -102,7 +103,11 @@ export function Konfigurator({
           <span className="block text-xs font-medium uppercase tracking-wider text-on-surface-variant">
             {t('shop.spiel.zahlungsart')}
           </span>
-          <div className="grid gap-2 sm:grid-cols-2" role="group" aria-label={t('shop.spiel.zahlungsart')}>
+          <div
+            className={`grid gap-2 ${hatLifetime ? 'sm:grid-cols-3' : 'sm:grid-cols-2'}`}
+            role="group"
+            aria-label={t('shop.spiel.zahlungsart')}
+          >
             <button
               type="button"
               onClick={() => setzeAbrechnungsModus('prepaid')}
@@ -142,41 +147,65 @@ export function Konfigurator({
                   : t('shop.spiel.aboHinweis')}
               </span>
             </button>
+            {hatLifetime && (
+              <button
+                type="button"
+                onClick={() => setzeAbrechnungsModus('lifetime')}
+                aria-pressed={abrechnungsModus === 'lifetime'}
+                className={`rounded-xl border px-3.5 py-2.5 text-left transition-colors ${
+                  abrechnungsModus === 'lifetime'
+                    ? 'border-primary/60 bg-primary/15 text-on-surface'
+                    : 'border-outline-variant/40 bg-surface-container text-on-surface-variant hover:text-on-surface'
+                }`}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-sm font-semibold">{t('shop.spiel.lifetimeTitel')}</span>
+                  <span className="rounded-full border border-primary/40 bg-primary/15 px-2 py-0.5 text-label-sm font-bold text-primary">
+                    {formatEuro(spiel.lifetimePreisCent ?? 0)}
+                  </span>
+                </div>
+                <span className="mt-0.5 block text-xs text-on-surface-variant">
+                  {t('shop.spiel.lifetimeHinweis')}
+                </span>
+              </button>
+            )}
           </div>
         </div>
 
-        <div className="space-y-1.5 sm:col-span-2">
-          <span className="block text-xs font-medium uppercase tracking-wider text-on-surface-variant">
-            {t('shop.spiel.laufzeit')}
-          </span>
-          <div className="flex gap-2" role="group" aria-label={t('shop.spiel.laufzeit')}>
-            {LAUFZEITEN.map((monate) => {
-              const aktiv = konfiguration.laufzeitMonate === monate
-              const gesperrt = abrechnungsModus === 'subscription' && monate !== 1
-              return (
-                <button
-                  key={monate}
-                  type="button"
-                  disabled={gesperrt}
-                  onClick={() => setze('laufzeitMonate', monate)}
-                  aria-pressed={aktiv}
-                  className={`min-h-11 flex-1 rounded-lg border px-2 text-sm font-semibold transition-colors ${
-                    gesperrt
-                      ? 'cursor-not-allowed border-outline-variant/25 bg-surface-container/40 text-on-surface-variant/50'
-                      : aktiv
-                        ? 'border-primary/50 bg-primary/15 text-primary'
-                        : 'border-outline-variant/40 bg-surface-container text-on-surface-variant hover:text-on-surface'
-                  }`}
-                >
-                  {t('shop.spiel.monate', { count: monate })}
-                </button>
-              )
-            })}
+        {abrechnungsModus !== 'lifetime' && (
+          <div className="space-y-1.5 sm:col-span-2">
+            <span className="block text-xs font-medium uppercase tracking-wider text-on-surface-variant">
+              {t('shop.spiel.laufzeit')}
+            </span>
+            <div className="flex gap-2" role="group" aria-label={t('shop.spiel.laufzeit')}>
+              {LAUFZEITEN.map((monate) => {
+                const aktiv = konfiguration.laufzeitMonate === monate
+                const gesperrt = abrechnungsModus === 'subscription' && monate !== 1
+                return (
+                  <button
+                    key={monate}
+                    type="button"
+                    disabled={gesperrt}
+                    onClick={() => setze('laufzeitMonate', monate)}
+                    aria-pressed={aktiv}
+                    className={`min-h-11 flex-1 rounded-lg border px-2 text-sm font-semibold transition-colors ${
+                      gesperrt
+                        ? 'cursor-not-allowed border-outline-variant/25 bg-surface-container/40 text-on-surface-variant/50'
+                        : aktiv
+                          ? 'border-primary/50 bg-primary/15 text-primary'
+                          : 'border-outline-variant/40 bg-surface-container text-on-surface-variant hover:text-on-surface'
+                    }`}
+                  >
+                    {t('shop.spiel.monate', { count: monate })}
+                  </button>
+                )
+              })}
+            </div>
+            {abrechnungsModus === 'subscription' && (
+              <p className="text-xs text-on-surface-variant">{t('shop.spiel.aboIntervallHinweis')}</p>
+            )}
           </div>
-          {abrechnungsModus === 'subscription' && (
-            <p className="text-xs text-on-surface-variant">{t('shop.spiel.aboIntervallHinweis')}</p>
-          )}
-        </div>
+        )}
       </div>
 
       <p className="text-xs text-on-surface-variant">
@@ -193,9 +222,15 @@ export function Konfigurator({
         </p>
         <ul className="grid gap-1.5 text-xs text-on-surface sm:grid-cols-2">
           {[
-            t('shop.spiel.inklusiveDdos'),
+            spiel.ddosGameAware
+              ? spiel.ddosProvider
+                ? t('shop.spiel.inklusiveDdosMitAnbieter', { provider: spiel.ddosProvider })
+                : t('shop.spiel.inklusiveDdosGameAware')
+              : spiel.ddosProvider
+                ? t('shop.spiel.inklusiveDdosProvider', { provider: spiel.ddosProvider })
+                : t('shop.spiel.inklusiveDdos'),
             t('shop.spiel.inklusiveBackups'),
-            t('shop.spiel.inklusiveGameSwitch'),
+            ...(spiel.allowGameSwitch !== false ? [t('shop.spiel.inklusiveGameSwitch')] : []),
             t('shop.spiel.inklusiveSftp'),
             t('shop.spiel.inklusiveKonsole'),
           ].map((punkt) => (

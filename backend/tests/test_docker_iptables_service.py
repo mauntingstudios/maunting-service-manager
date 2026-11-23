@@ -185,3 +185,87 @@ class TestDynamicIptablesPortsList:
         dports = {args[args.index("--dport") + 1] for args in deletes}
         assert dports == {"27015", "27016", "27017", "28000"}
 
+
+class TestPhase7DDoSFirewallRules:
+    def test_accept_and_revoke_with_query_rate_limit(self):
+        responses_insert = iter([
+            _ok(), _ok(),
+            _ok(returncode=1), _ok(),
+            _ok(returncode=1), _ok(),
+            _ok(returncode=1), _ok(),
+        ])
+        with patch(
+            "services.docker_iptables_service._run_iptables",
+            side_effect=lambda *a, **kw: next(responses_insert),
+        ) as run:
+            assert dis.accept_server(
+                "srv", "1.2.3.4", 27015, 27016, 27017, query_rate_limit=True
+            ) is True
+        inserts = [c.args for c in run.call_args_list if c.args and c.args[0] == "-I"]
+        assert len(inserts) == 3
+        query_rules = [a for a in inserts if "27016" in a]
+        assert len(query_rules) == 1
+        assert "hashlimit" in query_rules[0]
+        assert "msm_q_27016" in query_rules[0]
+        assert all("hashlimit" not in a for a in inserts if "27016" not in a)
+
+        responses_delete = iter([
+            _ok(), _ok(),
+            _ok(returncode=0), _ok(),
+            _ok(returncode=0), _ok(),
+            _ok(returncode=0), _ok(),
+        ])
+        with patch(
+            "services.docker_iptables_service._run_iptables",
+            side_effect=lambda *a, **kw: next(responses_delete),
+        ) as run_del:
+            assert dis.revoke_server(
+                "srv", "1.2.3.4", 27015, 27016, 27017, query_rate_limit=True
+            ) is True
+        deletes = [c.args for c in run_del.call_args_list if c.args and c.args[0] == "-D"]
+        assert len(deletes) == 3
+        assert any("msm_q_27016" in a for a in deletes)
+
+    def test_rcon_allowlist_restricts_sources_and_fails_closed(self):
+        responses = iter([
+            _ok(), _ok(),
+            _ok(returncode=1), _ok(),  # game
+            _ok(returncode=1), _ok(),  # query
+            _ok(returncode=1), _ok(),  # rcon cidr 1
+            _ok(returncode=1), _ok(),  # rcon cidr 2
+        ])
+        with patch(
+            "services.docker_iptables_service._run_iptables",
+            side_effect=lambda *a, **kw: next(responses),
+        ) as run:
+            assert dis.accept_server(
+                "srv",
+                "1.2.3.4",
+                27015,
+                27016,
+                27017,
+                rcon_allowlist=["10.0.0.5", "192.168.10.0/24", "not-a-cidr"],
+            ) is True
+        inserts = [c.args for c in run.call_args_list if c.args and c.args[0] == "-I"]
+        rcon_rules = [a for a in inserts if "27017" in a]
+        assert len(rcon_rules) == 2
+        sources = {r[r.index("-s") + 1] for r in rcon_rules}
+        assert sources == {"10.0.0.5/32", "192.168.10.0/24"}
+
+        # Leere / rein ungueltige Allowlist -> fail-closed: keine offene RCON-Regel.
+        responses_empty = iter([
+            _ok(), _ok(),
+            _ok(returncode=1), _ok(),
+            _ok(returncode=1), _ok(),
+        ])
+        with patch(
+            "services.docker_iptables_service._run_iptables",
+            side_effect=lambda *a, **kw: next(responses_empty),
+        ) as run_empty:
+            assert dis.accept_server(
+                "srv", "1.2.3.4", 27015, 27016, 27017, rcon_allowlist=[]
+            ) is True
+        inserts_empty = [c.args for c in run_empty.call_args_list if c.args and c.args[0] == "-I"]
+        assert all("27017" not in a for a in inserts_empty)
+
+

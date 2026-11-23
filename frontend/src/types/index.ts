@@ -173,6 +173,10 @@ export interface Node {
   ram_type?: string | null
   storage_type?: string | null
   cpu_steal_percent?: number | null
+  public_ping_url?: string | null
+  ddos_provider?: string | null
+  ddos_profile?: string | null
+  ddos_game_aware?: boolean
   ram_total: number | null
   disk_total: number | null
   disk_used?: number | null

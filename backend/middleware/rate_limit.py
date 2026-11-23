@@ -90,3 +90,17 @@ def auth_rate_limit(request: Request) -> None:
             headers={"Retry-After": "60"},
         )
 
+
+def shop_public_rate_limit(request: Request) -> None:
+    """Schuetzt oeffentliche Shop-Endpunkte vor Scraping und Gutschein-Brute-Force."""
+    from limits import parse
+    from fastapi import HTTPException
+
+    key = f"shop_public:{request.url.path}:{get_remote_address(request)}"
+    if not limiter.limiter.hit(parse("60/minute"), key):
+        raise HTTPException(
+            status_code=429,
+            detail="Zu viele Anfragen. Bitte warte einen Moment.",
+            headers={"Retry-After": "60"},
+        )
+

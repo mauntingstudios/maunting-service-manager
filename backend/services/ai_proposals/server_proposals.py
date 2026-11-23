@@ -3286,6 +3286,22 @@ def _install_modpack_on_server(db: Session, server_id: int, mod_id: str, name: s
         existing.install_action = "install"
         db.commit()
 
+    srv_row = db.query(Server).filter(Server.id == server_id).first()
+    if srv_row is not None:
+        try:
+            from services import server_lifecycle_service
+            import logging
+
+            server_lifecycle_service._run_pre_update_backup(
+                db, srv_row, reason="modpack"
+            )
+        except Exception as exc:
+            logging.getLogger(__name__).warning(
+                "Modpack-Pre-Update-Backup fuer Server %s fehlgeschlagen: %s",
+                server_id,
+                type(exc).__name__,
+            )
+
     threading.Thread(target=install_mod_bg, args=(server_id, mod_id), daemon=True).start()
 
 def _ausfuehren_modpack_install(db: Session, rahmen: _AusfuehrungsRahmen) -> _Ausgefuehrt:

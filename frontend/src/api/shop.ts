@@ -3,7 +3,7 @@ export { apiUrl } from './client'
 
 export type ShopArtworkSource = 'steam' | 'custom' | 'none' | 'panorama'
 export type ShopArtworkMode = 'steam' | 'custom' | 'none'
-export type ShopBillingMode = 'prepaid' | 'subscription'
+export type ShopBillingMode = 'prepaid' | 'subscription' | 'lifetime'
 
 export interface ShopArtwork {
   source: ShopArtworkSource
@@ -40,6 +40,8 @@ export interface ShopPlan {
   slots_max: number | null
   slots_step: number
   price_per_slot_step_cents: number
+  lifetime_price_cents?: number | null
+  allow_game_switch?: boolean
   node_id: number | null
   role_id: number | null
   artwork_mode: ShopArtworkMode
@@ -59,6 +61,7 @@ export interface ShopCatalogPlan {
   supports_mods: boolean
   supports_workshop: boolean
   supports_slots?: boolean
+  platforms?: string[]
   name: string
   description: string | null
   price_cents: number
@@ -77,6 +80,8 @@ export interface ShopCatalogPlan {
   slots_max: number | null
   slots_step: number
   price_per_slot_step_cents: number
+  lifetime_price_cents?: number | null
+  allow_game_switch?: boolean
   artwork: ShopArtwork
   available?: boolean
   availability_reason?: string | null
@@ -85,6 +90,9 @@ export interface ShopCatalogPlan {
   hardware_cpu_model?: string | null
   hardware_ram_type?: string | null
   hardware_storage_type?: string | null
+  ddos_provider?: string | null
+  ddos_profile?: string | null
+  ddos_game_aware?: boolean
   estimated_setup_seconds?: number
 }
 
@@ -99,6 +107,17 @@ export interface ShopPublicNodeStatusDto {
   ram_free_percent: number | null
   load_level: 'low' | 'medium' | 'high' | 'full' | 'offline'
   accepting_orders: boolean
+  public_ping_url?: string | null
+  ddos_provider?: string | null
+  ddos_profile?: string | null
+  ddos_game_aware?: boolean
+}
+
+export interface ShopNodePingDto {
+  node_id: number
+  status: string
+  server_agent_rtt_ms: number | null
+  timestamp_ms: number
 }
 
 export interface ShopPublicPolicyDto {
@@ -109,6 +128,8 @@ export interface ShopPublicPolicyDto {
   cancel_grace_days: number
   auto_subdomain_enabled: boolean
   auto_subdomain_zone: string
+  pause_freeze_max_days_per_90d?: number
+  shop_checkout_captcha_enabled?: boolean
 }
 
 export interface ShopGraceBackupDto {
@@ -148,6 +169,8 @@ export interface ShopPlanWrite {
   slots_max?: number | null
   slots_step?: number
   price_per_slot_step_cents?: number
+  lifetime_price_cents?: number | null
+  allow_game_switch?: boolean
   node_id?: number | null
   role_id?: number | null
   artwork_mode?: ShopArtworkMode
@@ -406,6 +429,7 @@ export const shopAdminApi = {
 export const shopCatalogApi = {
   getCatalog: () => api<ShopCatalogPlan[]>('/shop/catalog'),
   getNodeStatus: () => api<ShopPublicNodeStatusDto[]>('/shop/nodes/status'),
+  pingNode: (nodeId: number) => api<ShopNodePingDto>(`/shop/nodes/${nodeId}/ping`),
   getPublicPolicy: () => api<ShopPublicPolicyDto>('/shop/public-policy'),
   getGallery: (gameType: string) =>
     api<ShopGalleryItem[]>(
@@ -493,6 +517,7 @@ export interface ShopOrderCreate {
   cpu?: number | null
   slots?: number | null
   coupon_code?: string | null
+  captcha_token?: string | null
   buyer_name?: string | null
   buyer_street?: string | null
   buyer_postal_code?: string | null
@@ -535,6 +560,8 @@ export interface ShopEntitlementDto {
   purge_reason?: 'voluntary_cancel' | 'unpaid' | 'refund' | string | null
   purged_at?: string | null
   can_customer_purge_now?: boolean
+  paused_at?: string | null
+  pause_days_used?: number
   created_at: string
 }
 
@@ -559,6 +586,8 @@ export interface ShopLifecycleSettingsDto {
   refund_policy_note?: string
   auto_subdomain_enabled?: boolean
   auto_subdomain_zone?: string
+  pause_freeze_max_days_per_90d?: number
+  shop_checkout_captcha_enabled?: boolean
 }
 
 export const shopOrderApi = {
@@ -610,6 +639,10 @@ export const shopOrderApi = {
       method: 'POST',
       body: JSON.stringify({ confirm_server_name: confirmServerName }),
     }),
+  pauseEntitlement: (id: number | string) =>
+    api<ShopEntitlementDto>(`/shop/entitlements/${id}/pause`, { method: 'POST' }),
+  resumeEntitlement: (id: number | string) =>
+    api<ShopEntitlementDto>(`/shop/entitlements/${id}/resume`, { method: 'POST' }),
   getServerSubscription: (serverId: number | string) =>
     api<ShopServerSubscriptionDto>(`/shop/servers/${serverId}/subscription`),
   getServerPlayers: (serverId: number | string) =>

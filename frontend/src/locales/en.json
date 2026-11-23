@@ -2534,6 +2534,14 @@
     "ramTypePlaceholder": "e.g. DDR5 ECC",
     "storageType": "Storage type (optional)",
     "storageTypePlaceholder": "e.g. NVMe SSD",
+    "publicPingUrl": "Public ping URL (optional)",
+    "publicPingUrlHint": "Lightweight HTTPS endpoint on this node for direct browser latency tests without exposing internal IPs or tokens.",
+    "ddosProvider": "DDoS provider (optional)",
+    "ddosProviderPlaceholder": "e.g. Famesystems Game-DDoS, Path.net",
+    "ddosProfile": "DDoS protection profile (optional)",
+    "ddosProfilePlaceholder": "e.g. Anycast + UDP game filter",
+    "ddosGameAware": "Game-aware DDoS protection active",
+    "ddosGameAwareHint": "Displays a protection badge in the shop based on the node's configured upstream filtering.",
     "status": {
       "online": "Online",
       "unknown": "Unknown",
@@ -4426,6 +4434,7 @@
     "breadcrumb": "Path within server files",
     "parentFolder": "Parent folder",
     "summary": "{{files}} files · {{folders}} folders · {{size}}",
+    "expertenKonfig": "Expert config",
     "details": "File information",
     "modified": "Modified",
     "size": "Size",
@@ -4751,7 +4760,11 @@
         "autoSubdomainEnabled": "Automatically create Cloudflare subdomain",
         "autoSubdomainEnabledHint": "Creates A/AAAA and SRV records via Cloudflare on shop provisioning and updates them on node migration.",
         "autoSubdomainZone": "Subdomain zone (Cloudflare domain)",
-        "autoSubdomainZoneHint": "Base domain for automatic server subdomains, e.g. play.yourdomain.gg."
+        "autoSubdomainZoneHint": "Base domain for automatic server subdomains, e.g. play.yourdomain.gg.",
+        "pauseFreezeDays": "Pause freeze budget (days per 90 days)",
+        "pauseFreezeDaysHint": "0 uses resource standby without extending billing time. Higher values (up to 90) credit paused days upon resume.",
+        "checkoutCaptchaEnabled": "Enable DIS ALTCHA on shop checkout",
+        "checkoutCaptchaEnabledHint": "Requires a privacy-friendly proof-of-work check before orders without external trackers."
       },
       "zahlungen": {
         "titel": "Payments",
@@ -4821,7 +4834,11 @@
         "quelleSteam": "Steam",
         "alsCoverSetzen": "Use as primary cover",
         "bildEntfernen": "Remove image",
-        "galerieBildGeloescht": "Gallery image removed."
+        "galerieBildGeloescht": "Gallery image removed.",
+        "lifetimePreis": "Lifetime price (EUR, optional)",
+        "lifetimePreisPlatzhalter": "e.g. 149.00 (blank = hidden)",
+        "lifetimePreisHinweis": "Leave blank unless offering a one-time lifetime option for this server plan.",
+        "allowGameSwitch": "Allow instant game switch (Gamecloud)"
       },
       "addons": {
         "titel": "Add-ons",
@@ -6778,7 +6795,11 @@
       "frei": "Capacity available",
       "belegt": "High load",
       "offline": "Maintenance / Offline",
-      "ramFreiProzent": "{{percent}}% RAM free"
+      "ramFreiProzent": "{{percent}}% RAM free",
+      "pingTesten": "Test ping",
+      "pingLaeuft": "Testing ping …",
+      "besterPing": "Lowest latency",
+      "ddosGameAware": "Game-aware DDoS"
     },
     "kopf": {
       "startseite": "Back to shop home",
@@ -6854,6 +6875,8 @@
       "alleSpiele": "All games",
       "sofortVerfuegbar": "Ready to deploy",
       "mitMods": "Mods & Workshop",
+      "plattformFilter": "Filter by platform",
+      "plattformAlle": "All platforms",
       "leerTitel": "No game found",
       "leerText": "Check the search term or pick another game.",
       "keineTarifeTitel": "No server plans published yet",
@@ -6985,8 +7008,13 @@
       "aboHinweis": "Renews automatically each month and can be cancelled anytime before the period ends.",
       "aboHinweisMitRabatt": "Monthly subscription with {{prozent}}% recurring discount. Cancel anytime before the period ends.",
       "aboIntervallHinweis": "Subscriptions are billed on a fixed 1-month cycle.",
+      "lifetimeTitel": "Lifetime",
+      "lifetimeHinweis": "One-time payment without recurring monthly renewals.",
       "inklusiveTitel": "Always €0.00 included",
       "inklusiveDdos": "DDoS protection",
+      "inklusiveDdosGameAware": "Game-aware DDoS protection",
+      "inklusiveDdosMitAnbieter": "Game-aware DDoS ({{provider}})",
+      "inklusiveDdosProvider": "DDoS protection ({{provider}})",
       "inklusiveBackups": "Automatic backups (incl. pre-update)",
       "inklusiveGameSwitch": "Instant game switch",
       "inklusiveSftp": "SFTP & file manager",
@@ -7048,6 +7076,8 @@
       "zahlungsartLabel": "Billing mode",
       "prepaidHinweis": "Prepaid: expires automatically, no cancellation needed.",
       "aboHinweis": "Subscription: monthly renewal, cancel anytime in your account.",
+      "lifetimeHinweis": "Lifetime: one-time payment with no recurring renewals.",
+      "captchaFehlt": "Please complete the verification check first.",
       "erstattungHinweis": "Refund policy: within {{tage}} days directly to your original payment method."
     },
     "promo": {
@@ -7080,6 +7110,7 @@
       "rabatt": "{{prozent}}% term discount",
       "aboRabatt": "{{prozent}}% subscription discount",
       "einmalig": "Prepaid (one-time)",
+      "keineFolgekosten": "incl. applicable VAT, no recurring fees",
       "inklusiveSteuer": "incl. applicable VAT"
     },
     "konto": {
@@ -7171,6 +7202,15 @@
         "sofortLoeschungZumLaufzeitende": "Cancels at period end (no grace retention)",
         "typPrepaid": "Prepaid",
         "typAbo": "Subscription",
+        "typLifetime": "Lifetime",
+        "lebenslangGueltig": "Unlimited duration",
+        "pausiertStatus": "Paused",
+        "pausiertHinweis": "Resource standby active: world data and subdomain stay preserved.",
+        "pausentageVerbraucht": "{{tage}} paused days credited in this period",
+        "pausieren": "Pause server",
+        "fortsetzen": "Resume",
+        "pauseFehler": "Could not update server pause state.",
+        "spielWechseln": "Switch game",
         "verlaengern": "Extend by 1 month",
         "verlaengernLaeuft": "Opening extension …",
         "verlaengernFehler": "Could not start extension.",

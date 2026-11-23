@@ -38,6 +38,7 @@ interface CaptchaWidgetProps {
   onVerify: (token: string) => void
   onStatusChange?: (status: CaptchaStatus) => void
   resetKey?: any
+  scope?: 'shop'
 }
 
 interface CaptchaConfig {
@@ -46,7 +47,7 @@ interface CaptchaConfig {
   site_key: string
 }
 
-export function CaptchaWidget({ onVerify, onStatusChange, resetKey }: CaptchaWidgetProps) {
+export function CaptchaWidget({ onVerify, onStatusChange, resetKey, scope }: CaptchaWidgetProps) {
   const { t, i18n } = useTranslation()
   const [config, setConfig] = useState<CaptchaConfig | null>(null)
   // Ohne diesen Zustand endet ein geblocktes Anbieterskript in einem leeren
@@ -64,10 +65,12 @@ export function CaptchaWidget({ onVerify, onStatusChange, resetKey }: CaptchaWid
 
   const melde = (status: CaptchaStatus) => onStatusRef.current?.(status)
 
+  const scopeQuery = scope === 'shop' ? '?scope=shop' : ''
+
   useEffect(() => {
     let active = true
     melde('loading')
-    api<CaptchaConfig>('/auth/captcha-config')
+    api<CaptchaConfig>(`/auth/captcha-config${scopeQuery}`)
       .then((data) => {
         if (!active) return
         setConfig(data)
@@ -84,14 +87,14 @@ export function CaptchaWidget({ onVerify, onStatusChange, resetKey }: CaptchaWid
     return () => {
       active = false
     }
-  }, [])
+  }, [scopeQuery])
 
   useEffect(() => {
     if (resetKey === undefined || !containerRef.current) return
     if (config?.provider === 'altcha') {
       const widget = containerRef.current.querySelector('altcha-widget') as any
       if (widget) {
-        api<Record<string, unknown>>('/auth/captcha-challenge')
+        api<Record<string, unknown>>(`/auth/captcha-challenge${scopeQuery}`)
           .then((fresh) => {
             widget.setAttribute('challenge', JSON.stringify(fresh))
             if (typeof widget.reset === 'function') {
@@ -123,7 +126,7 @@ export function CaptchaWidget({ onVerify, onStatusChange, resetKey }: CaptchaWid
         melde('ready')
       }
     }
-  }, [resetKey, config?.provider])
+  }, [resetKey, config?.provider, scopeQuery])
 
   useEffect(() => {
     if (!config || !config.enabled || !containerRef.current) return
@@ -135,7 +138,7 @@ export function CaptchaWidget({ onVerify, onStatusChange, resetKey }: CaptchaWid
       let active = true
       Promise.all([
         import('altcha'),
-        api<Record<string, unknown>>('/auth/captcha-challenge'),
+        api<Record<string, unknown>>(`/auth/captcha-challenge${scopeQuery}`),
       ])
         .then(([_, challengeData]) => {
           if (!active || !containerRef.current) return
@@ -198,7 +201,7 @@ export function CaptchaWidget({ onVerify, onStatusChange, resetKey }: CaptchaWid
           const handleExpired = () => {
             onVerifyRef.current('')
             melde('ready')
-            api<Record<string, unknown>>('/auth/captcha-challenge')
+            api<Record<string, unknown>>(`/auth/captcha-challenge${scopeQuery}`)
               .then((fresh) => {
                 widget.setAttribute('challenge', JSON.stringify(fresh))
                 if (typeof widget.reset === 'function') widget.reset()

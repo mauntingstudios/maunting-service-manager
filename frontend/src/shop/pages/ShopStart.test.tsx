@@ -8,6 +8,7 @@ const hoisted = vi.hoisted(() => ({
   listAddons: vi.fn(),
   getPromos: vi.fn(),
   getNodeStatus: vi.fn(),
+  pingNode: vi.fn(),
 }))
 
 vi.mock('@/api/shop', async (importOriginal) => {
@@ -19,6 +20,7 @@ vi.mock('@/api/shop', async (importOriginal) => {
       listAddons: hoisted.listAddons,
       getPromos: hoisted.getPromos,
       getNodeStatus: hoisted.getNodeStatus,
+      pingNode: hoisted.pingNode,
     },
   }
 })
@@ -212,5 +214,44 @@ describe('ShopStart', () => {
     expect(screen.getByText('DDR5 ECC')).toBeInTheDocument()
     expect(screen.getByText('NVMe SSD')).toBeInTheDocument()
     expect(screen.getByText(i18n.t('shop.nodeStatus.ramFreiProzent', { percent: 64 }))).toBeInTheDocument()
+  })
+
+  it('filtert nach Plattformen und misst Node-Ping samt DDoS-Schutz', async () => {
+    hoisted.getCatalog.mockResolvedValue([
+      { ...SAMPLE_PLANS[0], platforms: ['pc', 'ps5', 'xbox', 'crossplay'] },
+      { ...SAMPLE_PLANS[1], platforms: ['pc'] },
+    ])
+    hoisted.getNodeStatus.mockResolvedValue([
+      {
+        id: 1,
+        name: 'eu-fra-01',
+        location_label: 'Frankfurt DE',
+        status: 'online',
+        cpu_model: 'AMD Ryzen 9 7950X3D',
+        ram_type: 'DDR5',
+        storage_type: 'NVMe',
+        ram_free_percent: 72,
+        load_level: 'low',
+        accepting_orders: true,
+        ddos_provider: 'Famesystems Game-DDoS',
+        ddos_game_aware: true,
+      },
+    ])
+    hoisted.pingNode.mockResolvedValue({
+      node_id: 1,
+      status: 'online',
+      server_agent_rtt_ms: 14,
+      timestamp_ms: 1700000000000,
+    })
+
+    zeige()
+    expect(await screen.findByText('Game-Aware DDoS (Famesystems Game-DDoS)')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'PS5' }))
+    expect(screen.getByRole('heading', { name: 'Palworld' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Rust' })).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('shop.nodeStatus.pingTesten') }))
+    expect(await screen.findByText(/14 ms/)).toBeInTheDocument()
   })
 })

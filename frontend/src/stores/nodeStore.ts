@@ -22,6 +22,13 @@ interface NodeState {
     host: string
     auth_token: string
     tls_fingerprint?: string
+    location_label?: string | null
+    ram_type?: string | null
+    storage_type?: string | null
+    public_ping_url?: string | null
+    ddos_provider?: string | null
+    ddos_profile?: string | null
+    ddos_game_aware?: boolean
   }) => Promise<Node>
   updateNode: (
     id: number,
@@ -33,6 +40,10 @@ interface NodeState {
       location_label?: string | null
       ram_type?: string | null
       storage_type?: string | null
+      public_ping_url?: string | null
+      ddos_provider?: string | null
+      ddos_profile?: string | null
+      ddos_game_aware?: boolean
     },
   ) => Promise<Node>
   deleteNode: (id: number) => Promise<void>

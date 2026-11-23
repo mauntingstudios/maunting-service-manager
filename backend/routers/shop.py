@@ -24,6 +24,7 @@ from config import settings
 
 from database import get_db
 from dependencies import get_current_user, verify_csrf
+from middleware.rate_limit import shop_public_rate_limit
 from models import (
     Server,
     ShopAddon,
@@ -68,6 +69,7 @@ from schemas.shop import (
     ShopInvoiceValidationResponse,
     ShopLifecycleSettingsPayload,
     ShopLifecycleSettingsResponse,
+    ShopNodePingResponse,
     ShopOrderCreate,
     ShopOrderResponse,
     ShopPaymentEventResponse,
@@ -117,6 +119,7 @@ from services import (
     stripe_settings_service,
     wallpaper_service,
 )
+from services.captcha_service import CaptchaService
 from services.media_gallery_service import build_webp_response
 
 
@@ -174,12 +177,32 @@ def get_catalog(db: Session = Depends(get_db)) -> list[ShopCatalogPlan]:
     ]
 
 
-@router.get("/nodes/status", response_model=list[ShopPublicNodeStatusResponse])
+@router.get(
+    "/nodes/status",
+    response_model=list[ShopPublicNodeStatusResponse],
+    dependencies=[Depends(shop_public_rate_limit)],
+)
 def get_public_node_status(
     db: Session = Depends(get_db),
 ) -> list[ShopPublicNodeStatusResponse]:
     """Oeffentliche Node-Auslastung und echte Hardware-Angaben ohne IPs/Tokens."""
     return shop_catalog_service.public_node_statuses(db)
+
+
+@router.get(
+    "/nodes/{node_id}/ping",
+    response_model=ShopNodePingResponse,
+    dependencies=[Depends(shop_public_rate_limit)],
+)
+def ping_public_shop_node(
+    node_id: int,
+    db: Session = Depends(get_db),
+) -> ShopNodePingResponse:
+    """Misst die serverseitige RTT zur gewaehlten Node ohne IP-/Token-Leak."""
+    result = shop_catalog_service.ping_public_node(db, node_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Standort nicht gefunden")
+    return result
 
 
 @router.get("/public-policy", response_model=ShopPublicPolicyResponse)
@@ -192,7 +215,11 @@ def get_public_policy(
     )
 
 
-@router.post("/availability", response_model=ShopAvailabilityResponse)
+@router.post(
+    "/availability",
+    response_model=ShopAvailabilityResponse,
+    dependencies=[Depends(shop_public_rate_limit)],
+)
 def check_shop_availability(
     payload: ShopAvailabilityRequest,
     db: Session = Depends(get_db),
@@ -236,7 +263,11 @@ def get_public_promos(db: Session = Depends(get_db)) -> ShopPublicPromosResponse
     return shop_coupon_service.get_public_promos(db)
 
 
-@router.post("/coupons/preview", response_model=ShopCouponPreviewResponse)
+@router.post(
+    "/coupons/preview",
+    response_model=ShopCouponPreviewResponse,
+    dependencies=[Depends(shop_public_rate_limit)],
+)
 def preview_coupon_public(
     payload: ShopCouponPreviewRequest,
     db: Session = Depends(get_db),
@@ -330,13 +361,20 @@ def list_my_orders(
 
 
 @router.post("/orders", response_model=ShopOrderResponse)
-def create_my_order(
+async def create_my_order(
     payload: ShopOrderCreate,
+    request: Request,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
     _: None = Depends(verify_csrf),
 ) -> ShopOrderResponse:
     """Legt eine Bestellung aus dem Tarif an; Preise berechnet der Server."""
+    if shop_lifecycle_settings_service.checkout_captcha_enabled(db=db):
+        await CaptchaService.verify_token(
+            payload.captcha_token,
+            client_ip=request.client.host if request.client else None,
+            force=True,
+        )
     try:
         order = shop_order_service.create_order(db, user, payload)
     except shop_order_service.ShopCapacityError as exc:
@@ -889,6 +927,54 @@ def list_my_entitlements(
         shop_order_service.entitlement_response(row, db=db)
         for row in shop_order_service.list_entitlements(db, user.id)
     ]
+
+
+@router.post(
+    "/entitlements/{entitlement_id}/pause",
+    response_model=ShopEntitlementResponse,
+)
+def pause_my_server(
+    entitlement_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    _: None = Depends(verify_csrf),
+) -> ShopEntitlementResponse:
+    """Stoppt den eigenen Server sauber in den Ressourcen-Standby."""
+    try:
+        ent = shop_order_service.pause_entitlement(
+            db, user=user, entitlement_id=entitlement_id
+        )
+    except shop_order_service.ShopNotFoundError as exc:
+        db.rollback()
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except shop_order_service.ShopOrderError as exc:
+        db.rollback()
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return shop_order_service.entitlement_response(ent, db=db)
+
+
+@router.post(
+    "/entitlements/{entitlement_id}/resume",
+    response_model=ShopEntitlementResponse,
+)
+def resume_my_server(
+    entitlement_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    _: None = Depends(verify_csrf),
+) -> ShopEntitlementResponse:
+    """Setzt einen pausierten Server fort und prueft ein optionales Freeze-Budget."""
+    try:
+        ent = shop_order_service.resume_entitlement(
+            db, user=user, entitlement_id=entitlement_id
+        )
+    except shop_order_service.ShopNotFoundError as exc:
+        db.rollback()
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except shop_order_service.ShopOrderError as exc:
+        db.rollback()
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return shop_order_service.entitlement_response(ent, db=db)
 
 
 @router.post(

@@ -21,6 +21,8 @@ const DEFAULT_SETTINGS: ShopLifecycleSettingsDto = {
   refund_policy_note: '',
   auto_subdomain_enabled: false,
   auto_subdomain_zone: '',
+  pause_freeze_max_days_per_90d: 0,
+  shop_checkout_captcha_enabled: false,
 }
 
 function parseReminderList(raw: string): number[] {
@@ -310,6 +312,48 @@ export function ShopLifecycleKarte() {
                 </p>
               </div>
             )}
+          </div>
+        </div>
+
+        <div className="space-y-1.5">
+          <label className="block space-y-1.5">
+            <span className="block text-sm font-semibold text-on-surface">
+              {t('settings.shop.lifecycle.pauseFreezeDays')}
+            </span>
+            <Input
+              type="number"
+              min={0}
+              max={90}
+              value={daten.pause_freeze_max_days_per_90d ?? 0}
+              onChange={(e) => {
+                const n = Number(e.target.value)
+                setDaten((alt) => ({
+                  ...alt,
+                  pause_freeze_max_days_per_90d: Number.isFinite(n) ? Math.max(0, Math.min(90, n)) : 0,
+                }))
+              }}
+            />
+          </label>
+          <p className="text-xs text-on-surface-variant">
+            {t('settings.shop.lifecycle.pauseFreezeDaysHint')}
+          </p>
+        </div>
+
+        <div className="flex items-start gap-3">
+          <Switch
+            checked={Boolean(daten.shop_checkout_captcha_enabled)}
+            onCheckedChange={(checked) =>
+              setDaten((alt) => ({ ...alt, shop_checkout_captcha_enabled: checked }))
+            }
+            aria-label={t('settings.shop.lifecycle.checkoutCaptchaEnabled')}
+          />
+          <div className="flex-1">
+            <span className="block text-sm font-medium text-on-surface">
+              {t('settings.shop.lifecycle.checkoutCaptchaEnabled')}
+            </span>
+            <p className="text-xs text-on-surface-variant">
+              {t('settings.shop.lifecycle.checkoutCaptchaEnabledHint')}
+            </p>
           </div>
         </div>
       </div>

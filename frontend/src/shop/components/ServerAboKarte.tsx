@@ -28,6 +28,8 @@ export function ServerAboKarte({ serverId }: ServerAboKarteProps) {
   const [slotBusy, setSlotBusy] = useState(false)
   const [slotStatus, setSlotStatus] = useState('')
   const [slotWarnung, setSlotWarnung] = useState(false)
+  const [pauseBusy, setPauseBusy] = useState(false)
+  const [pauseFehler, setPauseFehler] = useState('')
 
   useEffect(() => {
     let aktiv = true
@@ -129,6 +131,23 @@ export function ServerAboKarte({ serverId }: ServerAboKarteProps) {
     }
   }
 
+  const togglePause = async () => {
+    if (!ent || pauseBusy) return
+    const fn = ent.paused_at ? shopOrderApi.resumeEntitlement : shopOrderApi.pauseEntitlement
+    if (!fn) return
+    setPauseBusy(true)
+    setPauseFehler('')
+    try {
+      const updated = await fn(ent.id)
+      setDaten((vorher) => (vorher ? { ...vorher, entitlement: updated } : vorher))
+    } catch (err) {
+      still(err, 'serverAboKarte.togglePause')
+      setPauseFehler(t('shop.konto.abos.pauseFehler'))
+    } finally {
+      setPauseBusy(false)
+    }
+  }
+
   return (
     <section className="msm-card space-y-4 rounded-2xl border border-outline-variant/30 bg-surface-container-low/80 p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -152,6 +171,12 @@ export function ServerAboKarte({ serverId }: ServerAboKarteProps) {
                 max: spieler.booked_slots ?? spieler.max_players ?? daten.slots ?? '—',
               })}
             </Badge>
+          )}
+          {abo?.billing_mode === 'lifetime' && (
+            <Badge variant="info">{t('shop.konto.abos.typLifetime')}</Badge>
+          )}
+          {ent?.paused_at && (
+            <Badge variant="warning">{t('shop.konto.abos.pausiertStatus')}</Badge>
           )}
           {abo?.cancel_at_period_end && abo.status !== 'cancelled' && (
             <Badge variant="warning">{t('shop.konto.abos.kuendigungVorgemerkt')}</Badge>
@@ -194,7 +219,9 @@ export function ServerAboKarte({ serverId }: ServerAboKarteProps) {
           <dt className="text-xs text-on-surface-variant">{t('shop.serverAbo.naechsteZahlung')}</dt>
           <dd className="mt-1 text-sm font-semibold text-on-surface">
             {abo
-              ? `${abo.current_period_end.slice(0, 10)} · ${formatEuro(abo.monthly_gross_cents)}`
+              ? abo.billing_mode === 'lifetime'
+                ? t('shop.konto.abos.lebenslangGueltig')
+                : `${abo.current_period_end.slice(0, 10)} · ${formatEuro(abo.monthly_gross_cents)}`
               : '—'}
           </dd>
         </div>
@@ -240,7 +267,33 @@ export function ServerAboKarte({ serverId }: ServerAboKarteProps) {
         </div>
       )}
 
+      {pauseFehler && <p className="text-xs text-status-destructive">{pauseFehler}</p>}
+
       <div className="flex flex-wrap gap-2">
+        {ent && ent.status === 'active' && (
+          <>
+            <Link
+              to={`/servers/${serverId}?action=switch`}
+              className="inline-flex min-h-9 items-center rounded-lg border border-outline-variant/40 px-3 text-sm font-semibold text-on-surface hover:bg-surface-container-high"
+            >
+              {t('shop.konto.abos.spielWechseln')}
+            </Link>
+            {typeof shopOrderApi.pauseEntitlement === 'function' &&
+              typeof shopOrderApi.resumeEntitlement === 'function' && (
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                disabled={pauseBusy}
+                onClick={() => void togglePause()}
+              >
+                {ent.paused_at
+                  ? t('shop.konto.abos.fortsetzen')
+                  : t('shop.konto.abos.pausieren')}
+              </Button>
+            )}
+          </>
+        )}
         <Link
           to="/konto/abos"
           className="inline-flex min-h-9 items-center rounded-lg border border-outline-variant/40 px-3 text-sm font-semibold text-on-surface hover:bg-surface-container-high"

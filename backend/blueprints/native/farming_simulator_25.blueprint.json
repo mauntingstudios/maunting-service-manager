@@ -6,6 +6,7 @@
     "game": "Farming Simulator",
     "edition": "2025",
     "category": "steam_game",
+    "platforms": ["pc", "ps5", "xbox", "crossplay"],
     "author": "Maunting Studios",
     "description": "Farming Simulator 25 Dedicated Server (Steam App-ID 2300320) via Wine/Xvfb. Erfordert einen globalen Steam-Account mit gekaufter FS25-Lizenz (requiresLogin=true, ohne Steam Guard) sowie Einrichtung von dedicatedServer.xml / Web-Admin."
   },

@@ -9,9 +9,33 @@ const hoisted = vi.hoisted(() => ({
   katalog: [] as Record<string, unknown>[],
   addons: [] as Record<string, unknown>[],
   previewCoupon: vi.fn(),
+  getPublicPolicy: vi.fn(),
   createOrder: vi.fn(),
   payDemo: vi.fn(),
   checkout: vi.fn(),
+}))
+
+vi.mock('@/components/app/CaptchaWidget', () => ({
+  captchaSperrt: (status: string) => status !== 'verified' && status !== 'disabled',
+  CaptchaWidget: ({
+    onVerify,
+    onStatusChange,
+    scope,
+  }: {
+    onVerify: (token: string) => void
+    onStatusChange?: (status: 'verified' | 'ready') => void
+    scope?: string
+  }) => (
+    <button
+      type="button"
+      onClick={() => {
+        onVerify('pow-token-7')
+        onStatusChange?.('verified')
+      }}
+    >
+      {`ALTCHA (${scope ?? 'default'})`}
+    </button>
+  ),
 }))
 
 vi.mock('@/api/shop', async (importOriginal) => {
@@ -22,6 +46,7 @@ vi.mock('@/api/shop', async (importOriginal) => {
       getCatalog: vi.fn(async () => hoisted.katalog),
       listAddons: vi.fn(async () => hoisted.addons),
       previewCoupon: hoisted.previewCoupon,
+      getPublicPolicy: hoisted.getPublicPolicy,
     },
     shopOrderApi: {
       ...actual.shopOrderApi,
@@ -118,6 +143,17 @@ describe('ShopKasse', () => {
     hoisted.createOrder.mockReset()
     hoisted.payDemo.mockReset()
     hoisted.checkout.mockReset()
+    hoisted.getPublicPolicy.mockReset().mockResolvedValue({
+      default_billing_mode: 'prepaid',
+      subscription_discount_percent: 12,
+      refund_guarantee_days: 14,
+      refund_policy_note: '',
+      cancel_grace_days: 7,
+      auto_subdomain_enabled: false,
+      auto_subdomain_zone: '',
+      pause_freeze_max_days_per_90d: 0,
+      shop_checkout_captcha_enabled: false,
+    })
     useAuthStore.setState({ isAuthenticated: false, user: null, isLoading: false })
   })
 
@@ -218,6 +254,43 @@ describe('ShopKasse', () => {
       expect.objectContaining({
         addon_id: 12,
         months: 1,
+      }),
+    )
+  })
+
+  it('erzwingt DIS-ALTCHA im Checkout wenn vom Betreiber aktiviert', async () => {
+    hoisted.getPublicPolicy.mockResolvedValue({
+      default_billing_mode: 'prepaid',
+      subscription_discount_percent: 0,
+      refund_guarantee_days: 0,
+      refund_policy_note: '',
+      cancel_grace_days: 7,
+      auto_subdomain_enabled: false,
+      auto_subdomain_zone: '',
+      pause_freeze_max_days_per_90d: 0,
+      shop_checkout_captcha_enabled: true,
+    })
+    hoisted.createOrder.mockResolvedValue({ id: 91, number: 'MSM-2026-000091' })
+    hoisted.checkout.mockRejectedValue(
+      new SanitizedApiError('Stripe ist nicht konfiguriert', { status: 409 }),
+    )
+    hoisted.payDemo.mockResolvedValue({ id: 91, number: 'MSM-2026-000091' })
+    useAuthStore.setState({
+      isAuthenticated: true,
+      user: { id: 1, username: 'kunde', is_owner: false } as never,
+      isLoading: false,
+    })
+
+    zeige('/shop/palworld/kasse')
+    const captchaBtn = await screen.findByRole('button', { name: 'ALTCHA (shop)' })
+    fireEvent.click(captchaBtn)
+    fuelleFormular()
+
+    expect(await screen.findByText('MSM-2026-000091')).toBeInTheDocument()
+    expect(hoisted.createOrder).toHaveBeenCalledWith(
+      expect.objectContaining({
+        plan_id: 7,
+        captcha_token: 'pow-token-7',
       }),
     )
   })

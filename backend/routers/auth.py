@@ -139,9 +139,16 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
 @router.get("/captcha-config")
-def get_captcha_config() -> dict:
+def get_captcha_config(
+    scope: str | None = None,
+    db: Session = Depends(get_db),
+) -> dict:
     """Oeffentliche CAPTCHA-Konfiguration fuer das Frontend."""
     enabled = PanelSettingsService.get("captcha_enabled", "true") == "true"
+    if not enabled and scope == "shop":
+        from services import shop_lifecycle_settings_service
+
+        enabled = shop_lifecycle_settings_service.checkout_captcha_enabled(db=db)
     provider = PanelSettingsService.get("captcha_provider", "altcha")
     site_key = PanelSettingsService.get("captcha_site_key", "")
     return {
@@ -152,9 +159,16 @@ def get_captcha_config() -> dict:
 
 
 @router.get("/captcha-challenge")
-def get_captcha_challenge() -> dict:
+def get_captcha_challenge(
+    scope: str | None = None,
+    db: Session = Depends(get_db),
+) -> dict:
     """Liefert eine ALTCHA Proof-of-Work Challenge fuer das Frontend."""
     enabled = PanelSettingsService.get("captcha_enabled", "true") == "true"
+    if not enabled and scope == "shop":
+        from services import shop_lifecycle_settings_service
+
+        enabled = shop_lifecycle_settings_service.checkout_captcha_enabled(db=db)
     provider = PanelSettingsService.get("captcha_provider", "altcha")
     if not enabled or provider != "altcha":
         raise HTTPException(status_code=400, detail="ALTCHA ist derzeit nicht aktiv.")

@@ -513,6 +513,16 @@ def process_unpaid_deletion_reminders(
         .all()
     )
     for ent in shop_rows:
+        abo = _linked_subscription(db, ent)
+        if (
+            abo is not None
+            and getattr(abo, "billing_mode", "subscription") == "lifetime"
+            and abo.status == "active"
+        ):
+            ent.purge_after = None
+            ent.purge_reason = None
+            db.commit()
+            continue
         if not ent.purge_cycle_token:
             ent.purge_cycle_token = str(uuid4())
             db.commit()
@@ -601,6 +611,17 @@ def purge_expired_shop_entitlements(
                 db, ent.server_id, exclude_entitlement_id=ent.id
             ):
                 ent.purge_after = None
+                db.commit()
+                continue
+
+            abo_check = _linked_subscription(db, ent)
+            if (
+                abo_check is not None
+                and getattr(abo_check, "billing_mode", "subscription") == "lifetime"
+                and abo_check.status == "active"
+            ):
+                ent.purge_after = None
+                ent.purge_reason = None
                 db.commit()
                 continue
 

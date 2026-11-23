@@ -4,6 +4,7 @@
     "id": "valheim",
     "name": "Valheim",
     "category": "steam_game",
+    "platforms": ["pc", "xbox", "crossplay"],
     "author": "Maunting Studios",
     "description": "Valheim Dedicated Server via SteamCMD (App-ID 896660). Nativer Linux-Support."
   },

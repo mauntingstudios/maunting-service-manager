@@ -30,7 +30,9 @@ beim Server-Start neu angelegt. Wer den Boot-Zustand persistieren will, kann
 
 from __future__ import annotations
 
+import ipaddress
 import logging
+import os
 import subprocess
 
 from services.port_allocation_service import PORT_RANGE_END, PORT_RANGE_START
@@ -149,15 +151,28 @@ def accept_server(
     game_port: int | None | list[tuple[int, str, str]],
     query_port: int | None = None,
     rcon_port: int | None = None,
+    *,
+    query_rate_limit: bool | None = None,
+    rcon_allowlist: list[str] | None = None,
 ) -> bool:
     """Erlaubt eingehenden Traffic fuer einen Server ueber DOCKER-USER.
 
     Fuegt ACCEPT-Regeln am ANFANG der Chain ein (``-I 1``), sodass sie vor
-    dem Baseline-DROP greifen. Idempotent.
+    dem Baseline-DROP greifen. Optional mit UDP-Query-Hashlimit und
+    RCON-CIDR-Allowlist. Idempotent.
     """
     if not _iptables_available() or not _chain_exists():
         return False
-    return _apply_server_rules("insert", name, bind_ip, game_port, query_port, rcon_port)
+    return _apply_server_rules(
+        "insert",
+        name,
+        bind_ip,
+        game_port,
+        query_port,
+        rcon_port,
+        query_rate_limit=query_rate_limit,
+        rcon_allowlist=rcon_allowlist,
+    )
 
 
 def revoke_server(
@@ -166,14 +181,45 @@ def revoke_server(
     game_port: int | None | list[tuple[int, str, str]],
     query_port: int | None = None,
     rcon_port: int | None = None,
+    *,
+    query_rate_limit: bool | None = None,
+    rcon_allowlist: list[str] | None = None,
 ) -> bool:
     """Entfernt die ACCEPT-Regeln eines Servers wieder. Idempotent."""
     if not _iptables_available() or not _chain_exists():
         return False
-    return _apply_server_rules("delete", name, bind_ip, game_port, query_port, rcon_port)
+    return _apply_server_rules(
+        "delete",
+        name,
+        bind_ip,
+        game_port,
+        query_port,
+        rcon_port,
+        query_rate_limit=query_rate_limit,
+        rcon_allowlist=rcon_allowlist,
+    )
 
 
 # ── intern ───────────────────────────────────────────────────────────────
+
+
+def _parse_rcon_allowlist(entries: list[str]) -> list[str]:
+    """Validiert CIDR/IP-Eintraege fuer RCON-Allowlist ohne Ausnahmen (fail-closed)."""
+    nets: list[str] = []
+    seen: set[str] = set()
+    for raw in entries:
+        candidate = (raw or "").strip()
+        if not candidate:
+            continue
+        try:
+            net = str(ipaddress.ip_network(candidate, strict=False))
+        except ValueError:
+            logger.warning("Ungueltige RCON-Allowlist-Angabe '%s' uebersprungen.", candidate)
+            continue
+        if net not in seen:
+            seen.add(net)
+            nets.append(net)
+    return nets
 
 
 def _apply_server_rules(
@@ -183,6 +229,9 @@ def _apply_server_rules(
     game_port: int | None | list[tuple[int, str, str]],
     query_port: int | None,
     rcon_port: int | None,
+    *,
+    query_rate_limit: bool | None = None,
+    rcon_allowlist: list[str] | None = None,
 ) -> bool:
     """Insert oder Delete fuer alle Ports."""
     if not bind_ip:
@@ -190,6 +239,12 @@ def _apply_server_rules(
             "accept_server/revoke_server fuer '%s' ohne bind_ip — uebersprungen.", name,
         )
         return False
+
+    effective_query_rl = (
+        os.getenv("MSM_IPTABLES_QUERY_RATELIMIT", "").lower() == "true"
+        if query_rate_limit is None
+        else bool(query_rate_limit)
+    )
 
     ports_to_process: list[tuple[int | None, str, str]]
     if isinstance(game_port, list):
@@ -206,27 +261,53 @@ def _apply_server_rules(
         if not port:
             continue
         comment = f"{_COMMENT_PREFIX}:{_safe(name)}:{role}"
-        rule = [
-            _DOCKER_USER_CHAIN,
-            "-p", protocol,
-            "--dport", str(port),
-            "-m", "comment", "--comment", comment,
-            "-j", "RETURN",
-        ]
-        if action == "insert":
-            # Skip wenn schon vorhanden (idempotent).
-            if _rule_exists(rule):
-                continue
-            # ``-I CHAIN 1`` fuegt am Anfang ein.
-            rule_for_insert = [_DOCKER_USER_CHAIN, "1", *rule[1:]]
-            result = _run_iptables("-I", *rule_for_insert)
-        else:  # delete
-            # Idempotent: wenn nicht da, NICHT loggen.
-            if not _rule_exists(rule):
-                continue
-            result = _run_iptables("-D", *rule)
-        if result is None or result.returncode != 0:
-            ok = False
+
+        rules_for_port: list[list[str]] = []
+        if role == "rcon" and rcon_allowlist is not None:
+            for cidr in _parse_rcon_allowlist(rcon_allowlist):
+                rules_for_port.append([
+                    _DOCKER_USER_CHAIN,
+                    "-s", cidr,
+                    "-p", protocol,
+                    "--dport", str(port),
+                    "-m", "comment", "--comment", comment,
+                    "-j", "RETURN",
+                ])
+        else:
+            rule = [
+                _DOCKER_USER_CHAIN,
+                "-p", protocol,
+                "--dport", str(port),
+            ]
+            if role == "query" and protocol == "udp" and effective_query_rl:
+                rule.extend([
+                    "-m", "hashlimit",
+                    "--hashlimit-upto", "30/sec",
+                    "--hashlimit-burst", "60",
+                    "--hashlimit-mode", "srcip",
+                    "--hashlimit-name", f"msm_q_{port}",
+                ])
+            rule.extend([
+                "-m", "comment", "--comment", comment,
+                "-j", "RETURN",
+            ])
+            rules_for_port.append(rule)
+
+        for rule in rules_for_port:
+            if action == "insert":
+                # Skip wenn schon vorhanden (idempotent).
+                if _rule_exists(rule):
+                    continue
+                # ``-I CHAIN 1`` fuegt am Anfang ein.
+                rule_for_insert = [_DOCKER_USER_CHAIN, "1", *rule[1:]]
+                result = _run_iptables("-I", *rule_for_insert)
+            else:  # delete
+                # Idempotent: wenn nicht da, NICHT loggen.
+                if not _rule_exists(rule):
+                    continue
+                result = _run_iptables("-D", *rule)
+            if result is None or result.returncode != 0:
+                ok = False
     return ok
 
 

@@ -45,6 +45,10 @@ class ShopPlan(Base):
         UniqueConstraint("game_type", "name", name="uq_shop_plans_game_name"),
         CheckConstraint("price_cents >= 0", name="ck_shop_plans_price"),
         CheckConstraint(
+            "lifetime_price_cents IS NULL OR lifetime_price_cents >= 0",
+            name="ck_shop_plans_lifetime_price",
+        ),
+        CheckConstraint(
             "tax_rate_percent >= 0 AND tax_rate_percent <= 100",
             name="ck_shop_plans_tax",
         ),
@@ -66,6 +70,10 @@ class ShopPlan(Base):
     # Preise in Cent. Waehrung und Intervall sind fuer Phase 2 auf EUR/Monat
     # begrenzt; weitere Intervalle brauchen eine bewusste Erweiterung.
     price_cents: Mapped[int] = mapped_column(Integer, nullable=False)
+    lifetime_price_cents: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    allow_game_switch: Mapped[bool] = mapped_column(
+        Boolean, default=True, server_default="1", nullable=False
+    )
     currency: Mapped[str] = mapped_column(String(3), default="EUR", nullable=False)
     billing_interval: Mapped[str] = mapped_column(
         String(16), default="month", nullable=False
@@ -143,7 +151,7 @@ class ShopOrder(Base):
             name="ck_shop_orders_cents",
         ),
         CheckConstraint(
-            "billing_mode IN ('prepaid', 'subscription')",
+            "billing_mode IN ('prepaid', 'subscription', 'lifetime')",
             name="ck_shop_orders_billing_mode",
         ),
         Index("ix_shop_orders_user_created", "user_id", "created_at"),
@@ -400,7 +408,7 @@ class ShopSubscription(Base):
             name="ck_shop_subscriptions_interval",
         ),
         CheckConstraint(
-            "billing_mode IN ('prepaid', 'subscription')",
+            "billing_mode IN ('prepaid', 'subscription', 'lifetime')",
             name="ck_shop_subscriptions_billing_mode",
         ),
     )
@@ -573,6 +581,12 @@ class ShopEntitlement(Base):
     purge_cycle_token: Mapped[str | None] = mapped_column(String(36), nullable=True)
     purged_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
+    )
+    paused_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    pause_days_used: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0", nullable=False
     )
 
 

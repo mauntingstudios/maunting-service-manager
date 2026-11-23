@@ -11,10 +11,18 @@ interface SpielKarteProps {
   priority?: boolean
 }
 
+const PLATTFORM_LABELS: Record<string, string> = {
+  pc: 'PC',
+  ps5: 'PS5',
+  xbox: 'Xbox',
+  crossplay: 'Crossplay',
+}
+
 export function SpielKarte({ spiel, rabattLabel, priority = false }: SpielKarteProps) {
   const { t, i18n } = useTranslation()
   const sprache = i18n.language.startsWith('de') ? 'de' : 'en'
   const ausverkauft = spiel.verfuegbar === false
+  const plattformen = (spiel.platforms ?? []).filter((p) => p in PLATTFORM_LABELS)
 
   return (
     <Link
@@ -48,6 +56,18 @@ export function SpielKarte({ spiel, rabattLabel, priority = false }: SpielKarteP
           <h3 className="font-headline text-base font-bold text-on-surface sm:text-lg">
             {spiel.name}
           </h3>
+          {plattformen.length > 0 && (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {plattformen.map((tag) => (
+                <span
+                  key={tag}
+                  className="inline-flex items-center rounded-md border border-outline-variant/40 bg-surface-container px-2 py-0.5 text-label-sm font-medium text-on-surface-variant"
+                >
+                  {PLATTFORM_LABELS[tag]}
+                </span>
+              ))}
+            </div>
+          )}
         </header>
 
         <p className="flex-1 px-4 pt-2 line-clamp-2 text-xs leading-relaxed text-on-surface-variant sm:px-5 sm:text-sm">

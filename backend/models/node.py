@@ -33,6 +33,12 @@ class Node(Base):
     ram_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
     storage_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
     cpu_steal_percent: Mapped[float | None] = mapped_column(Float, nullable=True)
+    public_ping_url: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    ddos_provider: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    ddos_profile: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    ddos_game_aware: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="0", nullable=False
+    )
     ram_total: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     disk_total: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     cpu_percent: Mapped[float | None] = mapped_column(Float, nullable=True)

@@ -177,4 +177,30 @@ describe('ShopSpiel', () => {
     zeige('/shop/palworld')
     expect(await screen.findByText(`${i18n.t('shop.spiel.ram')} · DDR5 ECC`)).toBeInTheDocument()
   })
+
+  it('zeigt Lifetime nur wenn konfiguriert und berechnet Einmalpreis korrekt', async () => {
+    const erster = zeige('/shop/palworld')
+    expect(await screen.findByText(i18n.t('shop.spiel.prepaidTitel'))).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Lifetime/ })).toBeNull()
+    erster.unmount()
+
+    hoisted.getCatalog.mockResolvedValue([
+      {
+        ...PALWORLD_PLAN,
+        lifetime_price_cents: 19900,
+        ddos_game_aware: true,
+        ddos_provider: 'Path.net',
+      },
+    ])
+    zeige('/shop/palworld')
+    const lifeBtn = await screen.findByRole('button', {
+      name: (name) => name.includes(i18n.t('shop.spiel.lifetimeTitel')),
+    })
+    expect(screen.getByText('Game-Aware DDoS (Path.net)')).toBeInTheDocument()
+
+    fireEvent.click(lifeBtn)
+    expect(lifeBtn).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.queryByRole('button', { name: i18n.t('shop.spiel.monate', { count: 3 }) })).toBeNull()
+    expect(screen.getByText(i18n.t('shop.preis.keineFolgekosten'))).toBeInTheDocument()
+  })
 })
