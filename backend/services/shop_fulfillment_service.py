@@ -401,7 +401,11 @@ def _sync_server_entitlement(
                 game_type=item.game_type,
                 ram_limit_mb=ram_limit,
                 cpu_limit_percent=cpu_limit,
-                node_id=plan.node_id if plan is not None else None,
+                node_id=(
+                    getattr(ent, "preferred_node_id", None)
+                    or getattr(item, "preferred_node_id", None)
+                    or (plan.node_id if plan is not None else None)
+                ),
             )
 
             try:
@@ -416,13 +420,16 @@ def _sync_server_entitlement(
                 db.flush()
 
                 prov_fn = server_provisioning_service.provision_server
+                prov_params = inspect.signature(prov_fn).parameters
                 prov_kwargs: dict[str, object] = {
                     "idempotency_key": idempotency_key,
                     "retry_of_id": retry_of_id,
                 }
-                if "auto_place" in inspect.signature(prov_fn).parameters:
+                if "auto_place" in prov_params:
                     prov_kwargs["auto_place"] = req.node_id is None
                     prov_kwargs["strict_capacity"] = True
+                if "shop_only" in prov_params:
+                    prov_kwargs["shop_only"] = True
                 result = prov_fn(db, req, actor, **prov_kwargs)
                 permission_service.set_user_server_permissions(
                     db,

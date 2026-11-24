@@ -250,6 +250,9 @@ export function ShopKasse() {
               ram_mb: konfiguration!.ramGb * 1024,
               cpu: konfiguration!.cpu,
               slots: konfiguration!.slots,
+              ...(konfiguration!.preferredNodeId != null
+                ? { preferred_node_id: konfiguration!.preferredNodeId }
+                : {}),
             },
       )
 
@@ -574,6 +577,17 @@ export function ShopKasse() {
                     <dt className="text-on-surface-variant">{t('shop.kasse.spiel')}</dt>
                     <dd className="text-on-surface">{spiel.name}</dd>
                   </div>
+                  {konfiguration.standortName && (
+                    <div className="flex justify-between gap-3">
+                      <dt className="text-on-surface-variant">{t('shop.kasse.standort')}</dt>
+                      <dd className="text-on-surface">
+                        {konfiguration.standortName}
+                        {(konfiguration.standortAufpreisCent ?? 0) > 0
+                          ? ` (+${formatEuro(konfiguration.standortAufpreisCent ?? 0)} / ${t('shop.kasse.monatKurz')})`
+                          : ` (${t('shop.nodeStatus.inklusive')})`}
+                      </dd>
+                    </div>
+                  )}
                   <div className="flex justify-between gap-3">
                     <dt className="text-on-surface-variant">{t('shop.kasse.ram')}</dt>
                     <dd className="text-on-surface">{konfiguration.ramGb} GB</dd>

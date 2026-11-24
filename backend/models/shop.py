@@ -362,6 +362,10 @@ class ShopOrderItem(Base):
     __table_args__ = (
         CheckConstraint("kind IN ('plan', 'addon')", name="ck_shop_order_items_kind"),
         CheckConstraint("quantity > 0", name="ck_shop_order_items_quantity"),
+        CheckConstraint(
+            "node_surcharge_cents >= 0",
+            name="ck_shop_order_items_node_surcharge",
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
@@ -392,6 +396,12 @@ class ShopOrderItem(Base):
     ram_mb: Mapped[int | None] = mapped_column(Integer, nullable=True)
     cpu: Mapped[int | None] = mapped_column(Integer, nullable=True)
     slots: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    preferred_node_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("nodes.id", ondelete="SET NULL"), nullable=True
+    )
+    node_surcharge_cents: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0", nullable=False
+    )
 
 
 class ShopSubscription(Base):
@@ -565,6 +575,9 @@ class ShopEntitlement(Base):
     ram_mb: Mapped[int | None] = mapped_column(Integer, nullable=True)
     cpu: Mapped[int | None] = mapped_column(Integer, nullable=True)
     slots: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    preferred_node_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("nodes.id", ondelete="SET NULL"), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_now, nullable=False
     )

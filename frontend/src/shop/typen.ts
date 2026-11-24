@@ -49,6 +49,9 @@ export interface Konfiguration {
   abrechnungsModus?: AbrechnungsModus
   mods: boolean
   kiZugang: boolean
+  preferredNodeId?: number | null
+  standortName?: string | null
+  standortAufpreisCent?: number
 }
 
 export interface KassenEntwurf {
@@ -63,6 +66,7 @@ export interface PreisAufschluesselung {
   cpuCent: number
   slotsCent: number
   kiCent: number
+  standortCent: number
   monatCent: number
   rabattProzent: number
   gesamtCent: number

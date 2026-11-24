@@ -379,18 +379,30 @@ def _plan_hardware_summary(db: Session, plan: ShopPlan) -> tuple[str | None, str
     from services.node_placement_service import OFFLINE_NODE_STATUSES
 
     if plan.node_id is not None:
-        node = db.query(Node).filter(Node.id == plan.node_id).first()
+        node = (
+            db.query(Node)
+            .filter(Node.id == plan.node_id, Node.shop_enabled.is_(True))
+            .first()
+        )
         if node is None:
             return None, None, None
+        cpu = (
+            getattr(node, "cpu_model", None) or None
+            if bool(getattr(node, "shop_show_cpu", True))
+            else None
+        )
         return (
-            getattr(node, "cpu_model", None) or None,
+            cpu,
             getattr(node, "ram_type", None) or None,
             getattr(node, "storage_type", None) or None,
         )
 
     nodes = [
         n
-        for n in db.query(Node).order_by(Node.id.asc()).all()
+        for n in db.query(Node)
+        .filter(Node.shop_enabled.is_(True))
+        .order_by(Node.id.asc())
+        .all()
         if (n.status or "").strip().lower() not in OFFLINE_NODE_STATUSES
     ]
     if not nodes:
@@ -406,8 +418,9 @@ def _plan_hardware_summary(db: Session, plan: ShopPlan) -> tuple[str | None, str
             return next(iter(vals))
         return None
 
+    show_cpu_all = all(bool(getattr(n, "shop_show_cpu", True)) for n in nodes)
     return (
-        _unanimous("cpu_model"),
+        _unanimous("cpu_model") if show_cpu_all else None,
         _unanimous("ram_type"),
         _unanimous("storage_type"),
     )
@@ -417,7 +430,11 @@ def _plan_ddos_summary(db: Session, plan: ShopPlan) -> tuple[str | None, str | N
     from services.node_placement_service import OFFLINE_NODE_STATUSES
 
     if plan.node_id is not None:
-        node = db.query(Node).filter(Node.id == plan.node_id).first()
+        node = (
+            db.query(Node)
+            .filter(Node.id == plan.node_id, Node.shop_enabled.is_(True))
+            .first()
+        )
         if node is None:
             return None, None, False
         return (
@@ -428,7 +445,10 @@ def _plan_ddos_summary(db: Session, plan: ShopPlan) -> tuple[str | None, str | N
 
     nodes = [
         n
-        for n in db.query(Node).order_by(Node.id.asc()).all()
+        for n in db.query(Node)
+        .filter(Node.shop_enabled.is_(True))
+        .order_by(Node.id.asc())
+        .all()
         if (n.status or "").strip().lower() not in OFFLINE_NODE_STATUSES
     ]
     if not nodes:
@@ -451,7 +471,12 @@ def public_node_statuses(db: Session) -> list[ShopPublicNodeStatusResponse]:
     from services.node_capacity import normalize_ram_mb
     from services.node_placement_service import OFFLINE_NODE_STATUSES, evaluate_node_capacity, _reserved_ram_mb
 
-    nodes = db.query(Node).order_by(Node.id.asc()).all()
+    nodes = (
+        db.query(Node)
+        .filter(Node.shop_enabled.is_(True))
+        .order_by(Node.id.asc())
+        .all()
+    )
     out: list[ShopPublicNodeStatusResponse] = []
     for node in nodes:
         status_norm = (node.status or "unknown").strip().lower()
@@ -482,15 +507,19 @@ def public_node_statuses(db: Session) -> list[ShopPublicNodeStatusResponse]:
             load_level = "low"
             accepting = True
 
+        show_cpu = bool(getattr(node, "shop_show_cpu", True))
+        surcharge_cents = max(0, int(getattr(node, "shop_surcharge_cents", 0) or 0))
         out.append(
             ShopPublicNodeStatusResponse(
                 id=node.id,
                 name=node.name,
                 location_label=getattr(node, "location_label", None) or None,
                 status=node.status or "unknown",
-                cpu_model=getattr(node, "cpu_model", None) or None,
+                cpu_model=(getattr(node, "cpu_model", None) or None) if show_cpu else None,
                 ram_type=getattr(node, "ram_type", None) or None,
                 storage_type=getattr(node, "storage_type", None) or None,
+                hardware_tier_label=getattr(node, "hardware_tier_label", None) or None,
+                shop_surcharge_cents=surcharge_cents,
                 ram_free_percent=ram_free_pct,
                 load_level=load_level,  # type: ignore[arg-type]
                 accepting_orders=accepting,
@@ -508,7 +537,11 @@ def ping_public_node(db: Session, node_id: int) -> ShopNodePingResponse | None:
     from services import node_service
     from services.node_placement_service import OFFLINE_NODE_STATUSES
 
-    node = db.query(Node).filter(Node.id == node_id).first()
+    node = (
+        db.query(Node)
+        .filter(Node.id == node_id, Node.shop_enabled.is_(True))
+        .first()
+    )
     if node is None:
         return None
     now_ms = int(time.time() * 1000)
@@ -559,7 +592,12 @@ def catalog_plan(db: Session, plan: ShopPlan) -> ShopCatalogPlan:
     from services import node_placement_service
 
     meta = _game_meta(plan.game_type)
-    availability = node_placement_service.check_plan_availability(db, plan)
+    availability = node_placement_service.check_plan_availability(
+        db, plan, shop_only=True
+    )
+    is_available = availability.available or any(
+        n.available for n in availability.nodes
+    )
     cpu_model, ram_type, storage_type = _plan_hardware_summary(db, plan)
     ddos_provider, ddos_profile, ddos_game_aware = _plan_ddos_summary(db, plan)
     return ShopCatalogPlan(
@@ -592,8 +630,8 @@ def catalog_plan(db: Session, plan: ShopPlan) -> ShopCatalogPlan:
         slots_step=plan.slots_step,
         price_per_slot_step_cents=plan.price_per_slot_step_cents,
         artwork=_artwork(db, plan),
-        available=availability.available,
-        availability_reason=availability.reason,
+        available=is_available,
+        availability_reason=None if is_available else availability.reason,
         max_available_ram_mb=availability.max_ram_mb,
         max_available_cpu=availability.max_cpu,
         hardware_cpu_model=cpu_model,

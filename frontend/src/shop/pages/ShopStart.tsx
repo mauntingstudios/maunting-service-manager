@@ -36,6 +36,7 @@ import { formatAddonBenefits } from '../addonBenefits'
 import { SpielKarte } from '../components/SpielKarte'
 import { formatEuro } from '../preis'
 import { motivFuer } from '../spielArtwork'
+import { useShopStandortStore } from '../shopStandortStore'
 import { useShopKatalog } from '../useShopKatalog'
 
 type KatalogFilter = 'alle' | 'verfuegbar' | 'mods'
@@ -71,7 +72,10 @@ export function ShopStart() {
   const [badges, setBadges] = useState<ShopPublicBadgePromo[]>([])
   const [ausgewaehltesHeroId, setAusgewaehltesHeroId] = useState<string | null>(null)
   const [nodeStatuses, setNodeStatuses] = useState<ShopPublicNodeStatusDto[]>([])
-  const [pingWerte, setPingWerte] = useState<Record<number, { ms: number | null; direkt: boolean }>>({})
+  const ausgewaehlteNodeId = useShopStandortStore((s) => s.ausgewaehlteNodeId)
+  const setAusgewaehlteNodeId = useShopStandortStore((s) => s.setAusgewaehlteNodeId)
+  const pingWerte = useShopStandortStore((s) => s.pingMsByNodeId)
+  const setPingWerte = useShopStandortStore((s) => s.setPingWerte)
   const [pingBusy, setPingBusy] = useState(false)
 
   const pingTesten = async () => {
@@ -499,17 +503,29 @@ export function ShopStart() {
                   {t('shop.nodeStatus.untertitel')}
                 </p>
               </div>
-              {nodeStatuses.some((n) => n.status === 'online') && (
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  disabled={pingBusy}
-                  onClick={() => void pingTesten()}
-                >
-                  {pingBusy ? t('shop.nodeStatus.pingLaeuft') : t('shop.nodeStatus.pingTesten')}
-                </Button>
-              )}
+              <div className="flex flex-wrap items-center gap-2">
+                {ausgewaehlteNodeId != null && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setAusgewaehlteNodeId(null)}
+                  >
+                    {t('shop.nodeStatus.standortAutomatischZuruecksetzen')}
+                  </Button>
+                )}
+                {nodeStatuses.some((n) => n.status === 'online') && (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    disabled={pingBusy}
+                    onClick={() => void pingTesten()}
+                  >
+                    {pingBusy ? t('shop.nodeStatus.pingLaeuft') : t('shop.nodeStatus.pingTesten')}
+                  </Button>
+                )}
+              </div>
             </div>
             <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {nodeStatuses.map((node) => {
@@ -523,53 +539,87 @@ export function ShopStart() {
                     : t('shop.nodeStatus.frei')
                 const pingInfo = pingWerte[node.id]
                 const istBesterPing = besterPingNodeId === node.id
+                const istAusgewaehlt = ausgewaehlteNodeId === node.id
+                const aufpreis = Math.max(0, node.shop_surcharge_cents ?? 0)
+                const kannWaehlen = !isOffline && !isFull
                 return (
                   <div
                     key={node.id}
-                    className={`flex flex-col justify-between gap-2 rounded-xl border bg-surface-container p-3.5 ${
-                      istBesterPing ? 'border-primary/60' : 'border-outline-variant/30'
+                    className={`flex flex-col justify-between gap-3 rounded-xl border bg-surface-container p-3.5 transition-colors ${
+                      istAusgewaehlt
+                        ? 'border-primary bg-primary/5'
+                        : istBesterPing
+                          ? 'border-primary/60'
+                          : 'border-outline-variant/30'
                     }`}
                   >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold text-on-surface">
-                          {node.location_label || node.name}
-                        </p>
-                        {node.location_label && node.location_label !== node.name && (
-                          <p className="truncate text-xs text-on-surface-variant">{node.name}</p>
+                    <div className="space-y-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold text-on-surface">
+                            {node.location_label || node.name}
+                          </p>
+                          {node.location_label && node.location_label !== node.name && (
+                            <p className="truncate text-xs text-on-surface-variant">{node.name}</p>
+                          )}
+                        </div>
+                        <div className="flex shrink-0 items-center gap-1.5">
+                          {pingInfo?.ms != null && (
+                            <Badge variant={istBesterPing ? 'success' : 'info'} className="tabular-nums">
+                              {istBesterPing
+                                ? `${pingInfo.ms} ms · ${t('shop.nodeStatus.besterPing')}`
+                                : `${pingInfo.ms} ms`}
+                            </Badge>
+                          )}
+                          <Badge variant={badgeVariant}>{badgeLabel}</Badge>
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        {node.hardware_tier_label && (
+                          <Badge variant="default">{node.hardware_tier_label}</Badge>
+                        )}
+                        <Badge variant="default" className="tabular-nums">
+                          {aufpreis > 0
+                            ? t('shop.nodeStatus.aufpreisMonat', { preis: formatEuro(aufpreis) })
+                            : t('shop.nodeStatus.inklusive')}
+                        </Badge>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-on-surface-variant">
+                        {node.cpu_model && <span>{node.cpu_model}</span>}
+                        {node.ram_type && <span>{node.ram_type}</span>}
+                        {node.storage_type && <span>{node.storage_type}</span>}
+                        {node.ram_free_percent != null && (
+                          <span className="font-medium text-on-surface">
+                            {t('shop.nodeStatus.ramFreiProzent', { percent: Math.round(node.ram_free_percent) })}
+                          </span>
+                        )}
+                        {(node.ddos_game_aware || node.ddos_provider) && (
+                          <span className="inline-flex items-center gap-1 font-medium text-status-running">
+                            <ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" />
+                            {node.ddos_game_aware
+                              ? node.ddos_provider
+                                ? `${t('shop.nodeStatus.ddosGameAware')} (${node.ddos_provider})`
+                                : t('shop.nodeStatus.ddosGameAware')
+                              : node.ddos_provider}
+                          </span>
                         )}
                       </div>
-                      <div className="flex shrink-0 items-center gap-1.5">
-                        {pingInfo?.ms != null && (
-                          <Badge variant={istBesterPing ? 'success' : 'info'} className="tabular-nums">
-                            {istBesterPing
-                              ? `${pingInfo.ms} ms · ${t('shop.nodeStatus.besterPing')}`
-                              : `${pingInfo.ms} ms`}
-                          </Badge>
-                        )}
-                        <Badge variant={badgeVariant}>{badgeLabel}</Badge>
-                      </div>
                     </div>
-                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-on-surface-variant">
-                      {node.cpu_model && <span>{node.cpu_model}</span>}
-                      {node.ram_type && <span>{node.ram_type}</span>}
-                      {node.storage_type && <span>{node.storage_type}</span>}
-                      {node.ram_free_percent != null && (
-                        <span className="font-medium text-on-surface">
-                          {t('shop.nodeStatus.ramFreiProzent', { percent: Math.round(node.ram_free_percent) })}
-                        </span>
-                      )}
-                      {(node.ddos_game_aware || node.ddos_provider) && (
-                        <span className="inline-flex items-center gap-1 font-medium text-status-running">
-                          <ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" />
-                          {node.ddos_game_aware
-                            ? node.ddos_provider
-                              ? `${t('shop.nodeStatus.ddosGameAware')} (${node.ddos_provider})`
-                              : t('shop.nodeStatus.ddosGameAware')
-                            : node.ddos_provider}
-                        </span>
-                      )}
-                    </div>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={istAusgewaehlt ? 'primary' : 'secondary'}
+                      disabled={!kannWaehlen && !istAusgewaehlt}
+                      aria-pressed={istAusgewaehlt}
+                      onClick={() => setAusgewaehlteNodeId(istAusgewaehlt ? null : node.id)}
+                      className="w-full"
+                    >
+                      {istAusgewaehlt
+                        ? t('shop.nodeStatus.standortAusgewaehlt')
+                        : kannWaehlen
+                          ? t('shop.nodeStatus.standortWaehlen')
+                          : badgeLabel}
+                    </Button>
                   </div>
                 )
               })}

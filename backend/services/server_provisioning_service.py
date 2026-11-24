@@ -242,6 +242,7 @@ def _lock_and_allocate_node(
     requested_ports: dict[str, int],
     is_database: bool,
     strict_capacity: bool,
+    shop_only: bool = False,
 ) -> tuple[Node | None, list[tuple[str, int, str]], str]:
     from services.node_capacity import ensure_ram_limit_fits, ensure_strict_capacity_fits
     from services.node_placement_service import OFFLINE_NODE_STATUSES
@@ -254,6 +255,14 @@ def _lock_and_allocate_node(
             .with_for_update()
             .one()
         )
+        if shop_only and not bool(getattr(target_node, "shop_enabled", True)):
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "node_not_available_for_shop",
+                    "message": "errors.node_not_available_for_shop",
+                },
+            )
         if strict_capacity and (target_node.status or "").strip().lower() in OFFLINE_NODE_STATUSES:
             raise HTTPException(
                 status_code=409,
@@ -321,6 +330,7 @@ def provision_server(
     retry_of_id: str | None = None,
     auto_place: bool = False,
     strict_capacity: bool = False,
+    shop_only: bool = False,
 ) -> ProvisioningResult:
     """Provisioniert über einen einzigen, backendseitig autorisierten Pfad.
 
@@ -413,6 +423,7 @@ def provision_server(
                 requested_ports=requested_ports,
                 is_database=is_database,
                 strict_capacity=strict_capacity,
+                shop_only=shop_only,
             )
         elif auto_place:
             candidates, reason = node_placement_service.find_candidate_nodes(
@@ -420,6 +431,7 @@ def provision_server(
                 ram_mb=req.ram_limit_mb,
                 cpu_percent=req.cpu_limit_percent,
                 disk_gb=req.disk_limit_gb,
+                shop_only=shop_only,
             )
             if not candidates:
                 if reason is not None:
@@ -435,6 +447,7 @@ def provision_server(
                     requested_ports=requested_ports,
                     is_database=is_database,
                     strict_capacity=strict_capacity,
+                    shop_only=shop_only,
                 )
             else:
                 last_exc: HTTPException | None = None
@@ -449,6 +462,7 @@ def provision_server(
                             requested_ports=requested_ports,
                             is_database=is_database,
                             strict_capacity=True,
+                            shop_only=shop_only,
                         )
                         break
                     except HTTPException as exc:
@@ -469,6 +483,7 @@ def provision_server(
                 requested_ports=requested_ports,
                 is_database=is_database,
                 strict_capacity=strict_capacity,
+                shop_only=shop_only,
             )
 
         server = Server(

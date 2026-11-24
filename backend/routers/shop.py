@@ -69,6 +69,7 @@ from schemas.shop import (
     ShopInvoiceValidationResponse,
     ShopLifecycleSettingsPayload,
     ShopLifecycleSettingsResponse,
+    ShopNodeAvailabilityItem,
     ShopNodePingResponse,
     ShopOrderCreate,
     ShopOrderResponse,
@@ -233,6 +234,8 @@ def check_shop_availability(
         plan,
         ram_mb=payload.ram_mb,
         cpu_cores=payload.cpu,
+        preferred_node_id=payload.preferred_node_id,
+        shop_only=True,
     )
     return ShopAvailabilityResponse(
         available=result.available,
@@ -240,6 +243,15 @@ def check_shop_availability(
         available_nodes=result.available_nodes,
         max_ram_mb=result.max_ram_mb,
         max_cpu=result.max_cpu,
+        nodes=[
+            ShopNodeAvailabilityItem(
+                node_id=entry.node_id,
+                available=entry.available,
+                reason=entry.reason,
+                shop_surcharge_cents=entry.shop_surcharge_cents,
+            )
+            for entry in result.nodes
+        ],
     )
 
 
@@ -439,7 +451,12 @@ def start_my_order_checkout(
         plan = shop_catalog_service.get_plan(db, item0.plan_id)
         if plan is not None and plan.active:
             avail = node_placement_service.check_plan_availability(
-                db, plan, ram_mb=item0.ram_mb, cpu_cores=item0.cpu
+                db,
+                plan,
+                ram_mb=item0.ram_mb,
+                cpu_cores=item0.cpu,
+                preferred_node_id=getattr(item0, "preferred_node_id", None),
+                shop_only=True,
             )
             if not avail.available:
                 raise HTTPException(

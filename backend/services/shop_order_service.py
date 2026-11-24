@@ -19,6 +19,7 @@ from uuid import uuid4
 from sqlalchemy.orm import Session
 
 from models import (
+    Node,
     Server,
     ShopAddon,
     ShopEntitlement,
@@ -140,6 +141,20 @@ def _resolve_plan_spec(
     if plan is None:
         raise ShopOrderError("Tarif ist nicht verfuegbar")
 
+    preferred_node_id = getattr(payload, "preferred_node_id", None)
+    node_surcharge_cents = 0
+    if preferred_node_id is not None:
+        node = db.query(Node).filter(Node.id == preferred_node_id).first()
+        if node is None or not bool(getattr(node, "shop_enabled", True)):
+            raise ShopOrderError("Gewaehlter Standort ist im Shop nicht verfuegbar")
+        if plan.node_id is not None and plan.node_id != preferred_node_id:
+            raise ShopOrderError("Gewaehlter Standort ist fuer diesen Tarif nicht zulaessig")
+        node_surcharge_cents = max(0, int(getattr(node, "shop_surcharge_cents", 0) or 0))
+    elif plan.node_id is not None:
+        pinned = db.query(Node).filter(Node.id == plan.node_id).first()
+        if pinned is not None and not bool(getattr(pinned, "shop_enabled", True)):
+            raise ShopOrderError("Tarif-Standort ist im Shop nicht freigegeben")
+
     ram_mb = _check_resource(
         payload.ram_mb, plan.ram_included_mb, plan.ram_max_mb, plan.ram_step_mb, "RAM"
     )
@@ -149,7 +164,7 @@ def _resolve_plan_spec(
     slots = _check_resource(
         payload.slots, plan.slots_included, plan.slots_max, plan.slots_step, "Slots"
     )
-    monatlich = _monthly_gross(plan, ram_mb, cpu, slots)
+    monatlich = _monthly_gross(plan, ram_mb, cpu, slots) + node_surcharge_cents
     billing_mode = getattr(payload, "billing_mode", "subscription")
     if billing_mode == "lifetime":
         lifetime_base = getattr(plan, "lifetime_price_cents", None)
@@ -164,7 +179,12 @@ def _resolve_plan_spec(
         from services import node_placement_service
 
         availability = node_placement_service.check_plan_availability(
-            db, plan, ram_mb=ram_mb, cpu_cores=cpu
+            db,
+            plan,
+            ram_mb=ram_mb,
+            cpu_cores=cpu,
+            preferred_node_id=preferred_node_id,
+            shop_only=True,
         )
         if not availability.available:
             raise ShopCapacityError(
@@ -183,12 +203,16 @@ def _resolve_plan_spec(
         "ram_mb": ram_mb,
         "cpu": cpu,
         "slots": slots,
+        "preferred_node_id": preferred_node_id,
+        "node_surcharge_cents": node_surcharge_cents,
     }
 
 
 def _resolve_addon_spec(db: Session, payload: ShopOrderCreate) -> dict[str, object]:
     if getattr(payload, "billing_mode", "subscription") == "lifetime":
         raise ShopOrderError("Add-ons unterstuetzen keinen Lifetime-Tarif")
+    if getattr(payload, "preferred_node_id", None) is not None:
+        raise ShopOrderError("Add-on-Bestellungen nehmen keinen Standort entgegen")
     if (
         payload.ram_mb is not None
         or payload.cpu is not None
@@ -217,6 +241,8 @@ def _resolve_addon_spec(db: Session, payload: ShopOrderCreate) -> dict[str, obje
         "ram_mb": None,
         "cpu": None,
         "slots": addon.extra_slots,
+        "preferred_node_id": None,
+        "node_surcharge_cents": 0,
     }
 
 
@@ -317,6 +343,8 @@ def create_order(
             ram_mb=spec["ram_mb"],  # type: ignore[arg-type]
             cpu=spec["cpu"],  # type: ignore[arg-type]
             slots=spec["slots"],  # type: ignore[arg-type]
+            preferred_node_id=spec.get("preferred_node_id"),  # type: ignore[arg-type]
+            node_surcharge_cents=int(spec.get("node_surcharge_cents") or 0),  # type: ignore[arg-type]
         )
     )
     db.commit()
@@ -533,6 +561,7 @@ def _grant_entitlements(db: Session, order: ShopOrder, jetzt: datetime) -> None:
                     ram_mb=item.ram_mb,
                     cpu=item.cpu,
                     slots=item.slots,
+                    preferred_node_id=getattr(item, "preferred_node_id", None),
                 )
             )
 
@@ -1248,6 +1277,7 @@ def create_manual_order(
             ram_mb=payload.ram_mb,
             cpu=payload.cpu,
             slots=payload.slots,
+            preferred_node_id=getattr(payload, "preferred_node_id", None),
             coupon_code=payload.coupon_code,
             buyer_name=payload.buyer_name,
             buyer_street=payload.buyer_street,
@@ -1328,6 +1358,10 @@ def order_response(db: Session, order: ShopOrder) -> ShopOrderResponse:
                 ram_mb=item.ram_mb,
                 cpu=item.cpu,
                 slots=item.slots,
+                preferred_node_id=getattr(item, "preferred_node_id", None),
+                node_surcharge_cents=max(
+                    0, int(getattr(item, "node_surcharge_cents", 0) or 0)
+                ),
             )
             for item in order_items(db, order.id)
         ],

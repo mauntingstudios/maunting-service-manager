@@ -109,7 +109,7 @@ export function AdminNodes({ ohneHintergrund = false }: { ohneHintergrund?: bool
   // Die Hülle trägt das Bild auf Dashboard-Routen; die Prop bleibt für die
   // MSS-App, die dieselbe Seite einbettet.
   const ohneEigenenHintergrund = ohneHintergrund || huelle?.ohneHintergrund === true
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const { nodes, total, loading, fetchNodes, createNode, updateNode, deleteNode, healthCheck } =
     useNodeStore()
   const { favoriteIds, toggleFavorite } = useNodePreferencesStore()
@@ -134,6 +134,10 @@ export function AdminNodes({ ohneHintergrund = false }: { ohneHintergrund?: bool
     ddos_provider: '',
     ddos_profile: '',
     ddos_game_aware: false,
+    shop_enabled: true,
+    shop_show_cpu: true,
+    hardware_tier_label: '',
+    shop_surcharge_euro: '0.00',
   })
 
   const [searchVal, setSearchVal] = useState('')
@@ -212,6 +216,10 @@ export function AdminNodes({ ohneHintergrund = false }: { ohneHintergrund?: bool
       ddos_provider: '',
       ddos_profile: '',
       ddos_game_aware: false,
+      shop_enabled: true,
+      shop_show_cpu: true,
+      hardware_tier_label: '',
+      shop_surcharge_euro: '0.00',
     })
     setShowEnrollment(false)
     setShowForm(true)
@@ -231,6 +239,10 @@ export function AdminNodes({ ohneHintergrund = false }: { ohneHintergrund?: bool
       ddos_provider: node.ddos_provider || '',
       ddos_profile: node.ddos_profile || '',
       ddos_game_aware: Boolean(node.ddos_game_aware),
+      shop_enabled: node.shop_enabled !== false,
+      shop_show_cpu: node.shop_show_cpu !== false,
+      hardware_tier_label: node.hardware_tier_label || '',
+      shop_surcharge_euro: ((node.shop_surcharge_cents ?? 0) / 100).toFixed(2),
     })
     setShowForm(true)
   }
@@ -240,6 +252,13 @@ export function AdminNodes({ ohneHintergrund = false }: { ohneHintergrund?: bool
     setSaving(true)
     try {
       if (editing) {
+        const surchargeRaw = form.shop_surcharge_euro.replace(',', '.').trim()
+        const surchargeParsed = surchargeRaw === '' ? 0 : Number(surchargeRaw)
+        if (!Number.isFinite(surchargeParsed) || surchargeParsed < 0) {
+          toast.error(t('nodes.shopSurchargeInvalid'))
+          return
+        }
+        const shopSurchargeCents = Math.round(surchargeParsed * 100)
         const payload: {
           name?: string
           host?: string
@@ -252,6 +271,10 @@ export function AdminNodes({ ohneHintergrund = false }: { ohneHintergrund?: bool
           ddos_provider?: string | null
           ddos_profile?: string | null
           ddos_game_aware?: boolean
+          shop_enabled?: boolean
+          shop_show_cpu?: boolean
+          hardware_tier_label?: string | null
+          shop_surcharge_cents?: number
         } = {
           name: form.name.trim(),
           host: form.host.trim(),
@@ -262,6 +285,10 @@ export function AdminNodes({ ohneHintergrund = false }: { ohneHintergrund?: bool
           ddos_provider: form.ddos_provider.trim() || null,
           ddos_profile: form.ddos_profile.trim() || null,
           ddos_game_aware: form.ddos_game_aware,
+          shop_enabled: form.shop_enabled,
+          shop_show_cpu: form.shop_show_cpu,
+          hardware_tier_label: form.hardware_tier_label.trim() || null,
+          shop_surcharge_cents: shopSurchargeCents,
         }
         if (form.auth_token.trim()) {
           payload.auth_token = form.auth_token.trim()
@@ -301,6 +328,10 @@ export function AdminNodes({ ohneHintergrund = false }: { ohneHintergrund?: bool
         ddos_provider: '',
         ddos_profile: '',
         ddos_game_aware: false,
+        shop_enabled: true,
+        shop_show_cpu: true,
+        hardware_tier_label: '',
+        shop_surcharge_euro: '0.00',
       })
       setEditing(null)
     } catch (err: unknown) {
@@ -492,137 +523,223 @@ export function AdminNodes({ ohneHintergrund = false }: { ohneHintergrund?: bool
             }
           }}
         >
-          <DialogContent className="max-w-lg">
-            <DialogHeader>
+          <DialogContent className="max-w-2xl max-h-[90dvh]">
+            <DialogHeader className="shrink-0">
               <DialogTitle>{editing ? t('nodes.edit') : t('nodes.add')}</DialogTitle>
               <DialogDescription>{t('nodes.subtitle')}</DialogDescription>
             </DialogHeader>
-            <form onSubmit={handleSave} className="space-y-4">
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <Input
-                  label={t('common.name')}
-                  value={form.name}
-                  onChange={(e) => setForm({ ...form, name: e.target.value })}
-                  required
-                  maxLength={100}
-                  autoComplete="off"
-                />
-                <Input
-                  label={t('nodes.host')}
-                  value={form.host}
-                  onChange={(e) => setForm({ ...form, host: e.target.value })}
-                  required
-                  placeholder="https://10.0.0.5:9000"
-                  maxLength={255}
-                  autoComplete="off"
-                />
-              </div>
-              {editing && (
-                <>
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <form onSubmit={handleSave} className="flex min-h-0 flex-1 flex-col">
+              <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5 space-y-6">
+                <section className="space-y-4">
+                  <h4 className="text-xs font-semibold uppercase tracking-wider text-on-surface-variant">
+                    {t('nodes.sectionConnection')}
+                  </h4>
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <Input
-                      label={t('nodes.locationLabel')}
-                      value={form.location_label}
-                      onChange={(e) => setForm({ ...form, location_label: e.target.value })}
-                      placeholder={t('nodes.locationPlaceholder')}
-                      maxLength={120}
+                      label={t('common.name')}
+                      value={form.name}
+                      onChange={(e) => setForm({ ...form, name: e.target.value })}
+                      required
+                      maxLength={100}
                       autoComplete="off"
                     />
                     <Input
-                      label={t('nodes.ramType')}
-                      value={form.ram_type}
-                      onChange={(e) => setForm({ ...form, ram_type: e.target.value })}
-                      placeholder={t('nodes.ramTypePlaceholder')}
-                      maxLength={60}
-                      autoComplete="off"
-                    />
-                    <Input
-                      label={t('nodes.storageType')}
-                      value={form.storage_type}
-                      onChange={(e) => setForm({ ...form, storage_type: e.target.value })}
-                      placeholder={t('nodes.storageTypePlaceholder')}
-                      maxLength={60}
+                      label={t('nodes.host')}
+                      value={form.host}
+                      onChange={(e) => setForm({ ...form, host: e.target.value })}
+                      required
+                      placeholder="https://10.0.0.5:9000"
+                      maxLength={255}
                       autoComplete="off"
                     />
                   </div>
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                    <div className="sm:col-span-2">
+                    <div>
                       <Input
-                        label={t('nodes.publicPingUrl')}
-                        type="url"
-                        value={form.public_ping_url}
-                        onChange={(e) => setForm({ ...form, public_ping_url: e.target.value })}
-                        placeholder="https://ping.deinedomain.de/health"
-                        maxLength={255}
+                        label={t('nodes.tlsFingerprint')}
+                        className="font-mono text-sm"
+                        value={form.tls_fingerprint}
+                        onChange={(e) => setForm({ ...form, tls_fingerprint: e.target.value })}
+                        required={!editing}
+                        placeholder={t('nodes.fingerprintPlaceholder')}
+                        maxLength={128}
                         autoComplete="off"
+                        spellCheck={false}
                       />
-                      <p className="mt-1 text-xs text-on-surface-variant">
-                        {t('nodes.publicPingUrlHint')}
-                      </p>
+                      <p className="mt-1 text-xs text-on-surface-variant">{t('nodes.fingerprintHint')}</p>
                     </div>
-                    <Input
-                      label={t('nodes.ddosProvider')}
-                      value={form.ddos_provider}
-                      onChange={(e) => setForm({ ...form, ddos_provider: e.target.value })}
-                      placeholder={t('nodes.ddosProviderPlaceholder')}
-                      maxLength={80}
-                      autoComplete="off"
-                    />
-                    <Input
-                      label={t('nodes.ddosProfile')}
-                      value={form.ddos_profile}
-                      onChange={(e) => setForm({ ...form, ddos_profile: e.target.value })}
-                      placeholder={t('nodes.ddosProfilePlaceholder')}
-                      maxLength={120}
-                      autoComplete="off"
-                    />
-                  </div>
-                  <div className="flex items-start gap-3">
-                    <Switch
-                      checked={form.ddos_game_aware}
-                      onCheckedChange={(checked) => setForm({ ...form, ddos_game_aware: checked })}
-                      aria-label={t('nodes.ddosGameAware')}
-                    />
-                    <div className="flex-1">
-                      <span className="block text-sm font-medium text-on-surface">
-                        {t('nodes.ddosGameAware')}
-                      </span>
-                      <p className="text-xs text-on-surface-variant">
-                        {t('nodes.ddosGameAwareHint')}
+                    <div>
+                      <PasswordInput
+                        label={t('nodes.agentToken')}
+                        value={form.auth_token}
+                        onChange={(e) => setForm({ ...form, auth_token: e.target.value })}
+                        required={!editing}
+                        minLength={editing ? undefined : 16}
+                        placeholder={editing ? t('nodes.tokenLeaveBlank') : undefined}
+                        autoComplete="new-password"
+                      />
+                      <p className="mt-1 font-body-md text-xs text-on-surface-variant">
+                        {t('nodes.tokenHint')}
                       </p>
                     </div>
                   </div>
-                </>
-              )}
-              <div>
-                <Input
-                  label={t('nodes.tlsFingerprint')}
-                  className="font-mono text-sm"
-                  value={form.tls_fingerprint}
-                  onChange={(e) => setForm({ ...form, tls_fingerprint: e.target.value })}
-                  required={!editing}
-                  placeholder={t('nodes.fingerprintPlaceholder')}
-                  maxLength={128}
-                  autoComplete="off"
-                  spellCheck={false}
-                />
-                <p className="mt-1 text-xs text-on-surface-variant">{t('nodes.fingerprintHint')}</p>
+                </section>
+
+                {editing && (
+                  <>
+                    <section className="space-y-4 border-t border-outline-variant/30 pt-5">
+                      <h4 className="text-xs font-semibold uppercase tracking-wider text-on-surface-variant">
+                        {t('nodes.sectionLocationHardware')}
+                      </h4>
+                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                        <Input
+                          label={t('nodes.locationLabel')}
+                          value={form.location_label}
+                          onChange={(e) => setForm({ ...form, location_label: e.target.value })}
+                          placeholder={t('nodes.locationPlaceholder')}
+                          maxLength={120}
+                          autoComplete="off"
+                        />
+                        <Input
+                          label={t('nodes.ramType')}
+                          value={form.ram_type}
+                          onChange={(e) => setForm({ ...form, ram_type: e.target.value })}
+                          placeholder={t('nodes.ramTypePlaceholder')}
+                          maxLength={60}
+                          autoComplete="off"
+                        />
+                        <Input
+                          label={t('nodes.storageType')}
+                          value={form.storage_type}
+                          onChange={(e) => setForm({ ...form, storage_type: e.target.value })}
+                          placeholder={t('nodes.storageTypePlaceholder')}
+                          maxLength={60}
+                          autoComplete="off"
+                        />
+                        <div>
+                          <Input
+                            label={t('nodes.publicPingUrl')}
+                            type="url"
+                            value={form.public_ping_url}
+                            onChange={(e) => setForm({ ...form, public_ping_url: e.target.value })}
+                            placeholder="https://ping.deinedomain.de/health"
+                            maxLength={255}
+                            autoComplete="off"
+                          />
+                          <p className="mt-1 text-xs text-on-surface-variant">
+                            {t('nodes.publicPingUrlHint')}
+                          </p>
+                        </div>
+                      </div>
+                    </section>
+
+                    <section className="space-y-4 border-t border-outline-variant/30 pt-5">
+                      <h4 className="text-xs font-semibold uppercase tracking-wider text-on-surface-variant">
+                        {t('nodes.sectionDdos')}
+                      </h4>
+                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                        <Input
+                          label={t('nodes.ddosProvider')}
+                          value={form.ddos_provider}
+                          onChange={(e) => setForm({ ...form, ddos_provider: e.target.value })}
+                          placeholder={t('nodes.ddosProviderPlaceholder')}
+                          maxLength={80}
+                          autoComplete="off"
+                        />
+                        <Input
+                          label={t('nodes.ddosProfile')}
+                          value={form.ddos_profile}
+                          onChange={(e) => setForm({ ...form, ddos_profile: e.target.value })}
+                          placeholder={t('nodes.ddosProfilePlaceholder')}
+                          maxLength={120}
+                          autoComplete="off"
+                        />
+                      </div>
+                      <div className="flex items-start gap-3">
+                        <Switch
+                          checked={form.ddos_game_aware}
+                          onCheckedChange={(checked) => setForm({ ...form, ddos_game_aware: checked })}
+                          aria-label={t('nodes.ddosGameAware')}
+                        />
+                        <div className="flex-1">
+                          <span className="block text-sm font-medium text-on-surface">
+                            {t('nodes.ddosGameAware')}
+                          </span>
+                          <p className="text-xs text-on-surface-variant">
+                            {t('nodes.ddosGameAwareHint')}
+                          </p>
+                        </div>
+                      </div>
+                    </section>
+
+                    <section className="space-y-4 border-t border-outline-variant/30 pt-5">
+                      <h4 className="text-xs font-semibold uppercase tracking-wider text-on-surface-variant">
+                        {t('nodes.sectionShop')}
+                      </h4>
+                      <div className="space-y-4">
+                        <div className="flex items-start gap-3">
+                          <Switch
+                            checked={form.shop_enabled}
+                            onCheckedChange={(checked) => setForm({ ...form, shop_enabled: checked })}
+                            aria-label={t('nodes.shopEnabled')}
+                          />
+                          <div className="flex-1">
+                            <span className="block text-sm font-medium text-on-surface">
+                              {t('nodes.shopEnabled')}
+                            </span>
+                            <p className="text-xs text-on-surface-variant">
+                              {t('nodes.shopEnabledHint')}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-start gap-3">
+                          <Switch
+                            checked={form.shop_show_cpu}
+                            onCheckedChange={(checked) => setForm({ ...form, shop_show_cpu: checked })}
+                            aria-label={t('nodes.shopShowCpu')}
+                          />
+                          <div className="flex-1">
+                            <span className="block text-sm font-medium text-on-surface">
+                              {t('nodes.shopShowCpu')}
+                            </span>
+                            <p className="text-xs text-on-surface-variant">
+                              {t('nodes.shopShowCpuHint')}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                          <Input
+                            label={t('nodes.hardwareTierLabel')}
+                            value={form.hardware_tier_label}
+                            onChange={(e) => setForm({ ...form, hardware_tier_label: e.target.value })}
+                            placeholder={t('nodes.hardwareTierPlaceholder')}
+                            maxLength={64}
+                            autoComplete="off"
+                          />
+                          <div>
+                            <Input
+                              label={t('nodes.shopSurchargeEuro')}
+                              type="text"
+                              inputMode="decimal"
+                              value={form.shop_surcharge_euro}
+                              onChange={(e) => setForm({ ...form, shop_surcharge_euro: e.target.value })}
+                              placeholder="0.00"
+                              autoComplete="off"
+                            />
+                            <p className="mt-1 text-xs text-on-surface-variant">
+                              {t('nodes.shopSurchargeHint')}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    </section>
+                  </>
+                )}
               </div>
-              <div>
-                <PasswordInput
-                  label={t('nodes.agentToken')}
-                  value={form.auth_token}
-                  onChange={(e) => setForm({ ...form, auth_token: e.target.value })}
-                  required={!editing}
-                  minLength={editing ? undefined : 16}
-                  placeholder={editing ? t('nodes.tokenLeaveBlank') : undefined}
-                  autoComplete="new-password"
-                />
-                <p className="mt-1 font-body-md text-xs text-on-surface-variant">
-                  {t('nodes.tokenHint')}
-                </p>
-              </div>
-              <DialogFooter>
+
+              <DialogFooter className="shrink-0">
                 <Button
                   variant="secondary"
                   type="button"
@@ -682,6 +799,20 @@ export function AdminNodes({ ohneHintergrund = false }: { ohneHintergrund?: bool
                           {t(`nodes.status.${node.status}`, { defaultValue: node.status })}
                         </Badge>
                         {node.is_local && <Badge variant="info">{t('nodes.local')}</Badge>}
+                        {node.shop_enabled === false && (
+                          <Badge variant="default">{t('nodes.privateBadge')}</Badge>
+                        )}
+                        {node.shop_enabled !== false && node.hardware_tier_label && (
+                          <Badge variant="default">{node.hardware_tier_label}</Badge>
+                        )}
+                        {node.shop_enabled !== false && (node.shop_surcharge_cents ?? 0) > 0 && (
+                          <Badge variant="info">
+                            +{((node.shop_surcharge_cents ?? 0) / 100).toLocaleString(
+                              i18n.language.startsWith('de') ? 'de-DE' : 'en-US',
+                              { style: 'currency', currency: 'EUR' },
+                            )}
+                          </Badge>
+                        )}
                       </div>
 
                       <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-on-surface-variant">

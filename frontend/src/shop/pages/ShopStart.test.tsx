@@ -26,6 +26,7 @@ vi.mock('@/api/shop', async (importOriginal) => {
 })
 
 import { ShopStart } from './ShopStart'
+import { useShopStandortStore } from '../shopStandortStore'
 
 const SAMPLE_PLANS = [
   {
@@ -125,6 +126,7 @@ function zeige() {
 
 describe('ShopStart', () => {
   beforeEach(() => {
+    useShopStandortStore.getState().reset()
     hoisted.getCatalog.mockReset().mockResolvedValue(SAMPLE_PLANS)
     hoisted.listAddons.mockReset().mockResolvedValue(SAMPLE_ADDONS)
     hoisted.getNodeStatus.mockReset().mockResolvedValue([])
@@ -253,5 +255,45 @@ describe('ShopStart', () => {
 
     fireEvent.click(screen.getByRole('button', { name: i18n.t('shop.nodeStatus.pingTesten') }))
     expect(await screen.findByText(/14 ms/)).toBeInTheDocument()
+  })
+
+  it('merkt gewaehlten Standort und Ping-Werte im Standort-Store', async () => {
+    hoisted.getNodeStatus.mockResolvedValue([
+      {
+        id: 5,
+        name: 'eu-fra-perf',
+        location_label: 'Frankfurt Performance',
+        status: 'online',
+        cpu_model: null,
+        ram_type: 'DDR5 ECC',
+        storage_type: 'NVMe SSD',
+        ram_free_percent: 80,
+        load_level: 'low',
+        accepting_orders: true,
+        hardware_tier_label: 'Performance',
+        shop_surcharge_cents: 350,
+      },
+    ])
+    hoisted.pingNode.mockResolvedValue({
+      node_id: 5,
+      status: 'online',
+      server_agent_rtt_ms: 19,
+      timestamp_ms: 1700000000000,
+    })
+
+    zeige()
+    expect(await screen.findByText('Frankfurt Performance')).toBeInTheDocument()
+    expect(screen.getByText('Performance')).toBeInTheDocument()
+    expect(screen.getByText(/\+3,50/)).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('shop.nodeStatus.pingTesten') }))
+    expect(await screen.findByText(/19 ms/)).toBeInTheDocument()
+    expect(useShopStandortStore.getState().pingMsByNodeId[5]?.ms).toBe(19)
+
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('shop.nodeStatus.standortWaehlen') }))
+    expect(useShopStandortStore.getState().ausgewaehlteNodeId).toBe(5)
+    expect(
+      screen.getByRole('button', { name: i18n.t('shop.nodeStatus.standortAusgewaehlt') }),
+    ).toHaveAttribute('aria-pressed', 'true')
   })
 })

@@ -1,14 +1,20 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { ArrowLeft } from 'lucide-react'
 import { Badge, Dropdown, Spinner, Zustandsflaeche } from '@maunting/ui'
-import { shopCatalogApi, type ShopPublicPolicyDto } from '@/api/shop'
+import {
+  shopCatalogApi,
+  type ShopNodeAvailabilityItem,
+  type ShopPublicNodeStatusDto,
+  type ShopPublicPolicyDto,
+} from '@/api/shop'
 import { still } from '@/lib/still'
 import { SpielGalerie } from '../components/SpielGalerie'
 import { Konfigurator } from '../components/Konfigurator'
 import { PreisPanel } from '../components/PreisPanel'
 import { formatEuro } from '../preis'
+import { useShopStandortStore } from '../shopStandortStore'
 import { standardKonfiguration } from '../typen'
 import type { KassenEntwurf, Konfiguration } from '../typen'
 import { useShopKatalog } from '../useShopKatalog'
@@ -28,6 +34,13 @@ export function ShopSpiel() {
   )
   const [kapazitaetFrei, setKapazitaetFrei] = useState<boolean | null>(null)
   const [publicPolicy, setPublicPolicy] = useState<ShopPublicPolicyDto | null>(null)
+  const [nodeStatuses, setNodeStatuses] = useState<ShopPublicNodeStatusDto[]>([])
+  const [nodeAvailability, setNodeAvailability] = useState<
+    Record<number, ShopNodeAvailabilityItem>
+  >({})
+  const ausgewaehlteNodeId = useShopStandortStore((s) => s.ausgewaehlteNodeId)
+  const setAusgewaehlteNodeId = useShopStandortStore((s) => s.setAusgewaehlteNodeId)
+  const pingMsByNodeId = useShopStandortStore((s) => s.pingMsByNodeId)
 
   useEffect(() => {
     let aktiv = true
@@ -44,15 +57,82 @@ export function ShopSpiel() {
       aktiv = false
     }
   }, [])
+
+  useEffect(() => {
+    let aktiv = true
+    const fetchNodes = shopCatalogApi.getNodeStatus
+    if (!fetchNodes) return
+    fetchNodes()
+      .then((rows) => {
+        if (aktiv && Array.isArray(rows)) setNodeStatuses(rows)
+      })
+      .catch((err) => {
+        still(err, 'ShopSpiel.getNodeStatus')
+      })
+    return () => {
+      aktiv = false
+    }
+  }, [])
+
   const aktuelleKonfiguration =
     konfiguration ?? (ausgewaehlt ? standardKonfiguration(ausgewaehlt.spiel) : null)
 
-  useEffect(() => {
-    if (ausgewaehlt) {
-      setKonfiguration(standardKonfiguration(ausgewaehlt.spiel))
-      setKapazitaetFrei(null)
+  const standortFelder = (nodeId: number | null) => {
+    if (nodeId == null) {
+      return {
+        preferredNodeId: null,
+        standortName: null,
+        standortAufpreisCent: 0,
+      }
     }
+    const treffer = nodeStatuses.find((n) => n.id === nodeId)
+    if (!treffer) {
+      return {
+        preferredNodeId: null,
+        standortName: null,
+        standortAufpreisCent: 0,
+      }
+    }
+    return {
+      preferredNodeId: treffer.id,
+      standortName: treffer.location_label || treffer.name,
+      standortAufpreisCent: Math.max(0, treffer.shop_surcharge_cents ?? 0),
+    }
+  }
+
+  useEffect(() => {
+    if (!ausgewaehlt) return
+    const erlaubt =
+      ausgewaehlteNodeId != null &&
+      (Object.keys(nodeAvailability).length === 0 ||
+        Boolean(nodeAvailability[ausgewaehlteNodeId]))
+    const felder = standortFelder(erlaubt ? ausgewaehlteNodeId : null)
+    setKonfiguration({
+      ...standardKonfiguration(ausgewaehlt.spiel),
+      ...felder,
+    })
+    setKapazitaetFrei(null)
   }, [ausgewaehlt?.plan.id])
+
+  useEffect(() => {
+    if (!ausgewaehlt) return
+    const erlaubt =
+      ausgewaehlteNodeId != null &&
+      (Object.keys(nodeAvailability).length === 0 ||
+        Boolean(nodeAvailability[ausgewaehlteNodeId]))
+    const felder = standortFelder(erlaubt ? ausgewaehlteNodeId : null)
+    setKonfiguration((prev) => {
+      const basis = prev ?? standardKonfiguration(ausgewaehlt.spiel)
+      if (
+        basis.preferredNodeId === felder.preferredNodeId &&
+        basis.standortName === felder.standortName &&
+        (basis.standortAufpreisCent ?? 0) === felder.standortAufpreisCent
+      ) {
+        return prev
+      }
+      return { ...basis, ...felder }
+    })
+  }, [ausgewaehlteNodeId, nodeStatuses, nodeAvailability, ausgewaehlt?.plan.id])
 
   useEffect(() => {
     if (!ausgewaehlt || !aktuelleKonfiguration) return
@@ -66,9 +146,20 @@ export function ShopSpiel() {
       plan_id: ausgewaehlt.plan.id,
       ram_mb: aktuelleKonfiguration.ramGb * 1024,
       cpu: aktuelleKonfiguration.cpu,
+      ...(aktuelleKonfiguration.preferredNodeId != null
+        ? { preferred_node_id: aktuelleKonfiguration.preferredNodeId }
+        : {}),
     })
       .then((res) => {
-        if (aktiv) setKapazitaetFrei(res.available)
+        if (!aktiv) return
+        setKapazitaetFrei(res.available)
+        if (Array.isArray(res.nodes)) {
+          const map: Record<number, ShopNodeAvailabilityItem> = {}
+          for (const item of res.nodes) {
+            map[item.node_id] = item
+          }
+          setNodeAvailability(map)
+        }
       })
       .catch((err: unknown) => {
         still(err, 'shopSpiel.availability')
@@ -76,7 +167,27 @@ export function ShopSpiel() {
     return () => {
       aktiv = false
     }
-  }, [ausgewaehlt?.plan.id, aktuelleKonfiguration?.ramGb, aktuelleKonfiguration?.cpu])
+  }, [
+    ausgewaehlt?.plan.id,
+    aktuelleKonfiguration?.ramGb,
+    aktuelleKonfiguration?.cpu,
+    aktuelleKonfiguration?.preferredNodeId,
+  ])
+
+  const sichtbareNodes = useMemo(() => {
+    if (Object.keys(nodeAvailability).length === 0) return nodeStatuses
+    return nodeStatuses.filter((n) => Boolean(nodeAvailability[n.id]))
+  }, [nodeStatuses, nodeAvailability])
+
+  const handleSelectStandort = (nodeId: number | null) => {
+    setAusgewaehlteNodeId(nodeId)
+    const felder = standortFelder(nodeId)
+    setKonfiguration((prev) => {
+      const basis =
+        prev ?? (ausgewaehlt ? standardKonfiguration(ausgewaehlt.spiel) : null)
+      return basis ? { ...basis, ...felder } : basis
+    })
+  }
 
   if (!ausgewaehlt || !aktuelleKonfiguration) {
     if (loading) {
@@ -183,6 +294,10 @@ export function ShopSpiel() {
             konfiguration={aktuelleKonfiguration}
             onChange={setKonfiguration}
             aboRabattProzent={publicPolicy?.subscription_discount_percent ?? 0}
+            nodeStatuses={sichtbareNodes}
+            nodeAvailabilityById={nodeAvailability}
+            pingMsByNodeId={pingMsByNodeId}
+            onSelectStandort={handleSelectStandort}
           />
         </div>
 

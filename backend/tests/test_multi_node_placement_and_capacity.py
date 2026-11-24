@@ -306,3 +306,219 @@ def test_cpu_limit_and_pinned_offline_node_block_shop_while_manual_operator_can_
     )
     assert res.server.id is not None
     assert res.server.node_id == online_node.id
+
+
+def test_private_hybrid_node_isolation_cpu_masking_and_location_surcharge(
+    client: TestClient,
+    db: Session,
+    owner_user: User,
+    owner_cookies: dict,
+    user_cookies: dict,
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    _patch_runtime_env(monkeypatch, tmp_path)
+
+    private_node = _mk_node(
+        db,
+        name="Private-Internal",
+        host="https://10.9.0.1:9000",
+        is_local=False,
+        status="online",
+        ram_total_mb=32768,
+        cpu_total=8.0,
+    )
+    private_node.shop_enabled = False
+    private_node.cpu_model = "AMD EPYC Private"
+
+    standard_node = _mk_node(
+        db,
+        name="FRA-Standard",
+        host="https://10.9.0.2:9000",
+        is_local=False,
+        status="online",
+        ram_total_mb=5632,  # 5632 - 1536 headroom = 4096 MB (genau 1 Server mit 4 GB)
+        cpu_total=2.0,
+    )
+    standard_node.location_label = "Frankfurt Standard"
+    standard_node.cpu_model = "AMD EPYC Hidden"
+    standard_node.shop_enabled = True
+    standard_node.shop_show_cpu = False
+    standard_node.hardware_tier_label = "Standard"
+    standard_node.shop_surcharge_cents = 0
+
+    perf_node = _mk_node(
+        db,
+        name="FRA-Performance",
+        host="https://10.9.0.3:9000",
+        is_local=False,
+        status="online",
+        ram_total_mb=9728,  # 8192 MB frei fuer max 1x 4GB? Nein: 5632 -> genau 1x 4GB
+        cpu_total=4.0,
+    )
+    perf_node.ram_total = 5632
+    perf_node.location_label = "Frankfurt Performance"
+    perf_node.cpu_model = "AMD Ryzen 9 9950X"
+    perf_node.shop_enabled = True
+    perf_node.shop_show_cpu = True
+    perf_node.hardware_tier_label = "Performance"
+    perf_node.shop_surcharge_cents = 350
+    db.commit()
+
+    plan = _mk_plan(
+        db,
+        owner_user,
+        price_cents=1000,
+        lifetime_price_cents=10000,
+        ram_included_mb=4096,
+        ram_max_mb=8192,
+        cpu_included=1,
+        cpu_max=4,
+    )
+
+    # 1. Private Node taucht im Shop nicht auf; CPU ist bei shop_show_cpu=False maskiert,
+    # im Admin-/nodes Endpunkt aber weiter sichtbar.
+    pub_status = client.get("/api/shop/nodes/status")
+    assert pub_status.status_code == 200
+    status_by_id = {row["id"]: row for row in pub_status.json()}
+    assert private_node.id not in status_by_id
+    assert status_by_id[standard_node.id]["cpu_model"] is None
+    assert status_by_id[perf_node.id]["cpu_model"] == "AMD Ryzen 9 9950X"
+    assert status_by_id[perf_node.id]["hardware_tier_label"] == "Performance"
+    assert status_by_id[perf_node.id]["shop_surcharge_cents"] == 350
+
+    admin_nodes = client.get("/api/nodes", cookies=owner_cookies)
+    assert admin_nodes.status_code == 200
+    admin_nodes_payload = admin_nodes.json()
+    admin_rows = (
+        admin_nodes_payload["items"]
+        if isinstance(admin_nodes_payload, dict)
+        else admin_nodes_payload
+    )
+    admin_by_id = {row["id"]: row for row in admin_rows}
+    assert admin_by_id[standard_node.id]["cpu_model"] == "AMD EPYC Hidden"
+
+    # Private Node darf auch nicht per ID-Enumeration angepingt oder bestellt werden.
+    assert client.get(f"/api/shop/nodes/{private_node.id}/ping").status_code == 404
+    priv_order = client.post(
+        "/api/shop/orders",
+        json={"plan_id": plan.id, "preferred_node_id": private_node.id, "months": 1},
+        cookies=user_cookies,
+        headers=_csrf_headers(user_cookies),
+    )
+    assert priv_order.status_code == 422
+
+    # 2. Pro-Standort-Verfuegbarkeit im Konfigurator-Check.
+    avail = client.post(
+        "/api/shop/availability",
+        json={"plan_id": plan.id, "ram_mb": 4096, "cpu": 1},
+    )
+    assert avail.status_code == 200
+    avail_data = avail.json()
+    assert avail_data["available"] is True
+    node_avail = {n["node_id"]: n for n in avail_data["nodes"]}
+    assert private_node.id not in node_avail
+    assert node_avail[standard_node.id]["available"] is True
+    assert node_avail[perf_node.id]["available"] is True
+    assert node_avail[perf_node.id]["shop_surcharge_cents"] == 350
+
+    # Katalog maskiert hardware_cpu_model im Pool, sobald eine Online-Shop-Node shop_show_cpu=False hat.
+    catalog_resp = client.get("/api/shop/catalog")
+    assert catalog_resp.status_code == 200
+    plan_row = next(r for r in catalog_resp.json() if r["id"] == plan.id)
+    assert plan_row["hardware_cpu_model"] is None
+
+    # 3. Automatische Bestellung waehlt kostenlose standard_node (nicht die Aufpreis-Node und nicht private).
+    auto_order = client.post(
+        "/api/shop/orders",
+        json={"plan_id": plan.id, "ram_mb": 4096, "cpu": 1, "slots": 8, "months": 1, "billing_mode": "prepaid"},
+        cookies=user_cookies,
+        headers=_csrf_headers(user_cookies),
+    )
+    assert auto_order.status_code == 200
+    assert auto_order.json()["gross_cents"] == 1000
+    paid_auto = client.post(
+        f"/api/shop/orders/{auto_order.json()['id']}/demo-pay",
+        cookies=user_cookies,
+        headers=_csrf_headers(user_cookies),
+    )
+    assert paid_auto.status_code == 200
+    srv_auto = (
+        db.query(Server)
+        .filter(Server.name.like(f"shop-{auto_order.json()['number']}-%"))
+        .first()
+    )
+    assert srv_auto is not None
+    assert srv_auto.node_id == standard_node.id
+
+    # 4. Da kostenlose standard_node nun voll ist, darf "Automatisch" NICHT gratis auf Aufpreis-Node
+    #    oder auf private_node ueberlaufen.
+    auto_blocked = client.post(
+        "/api/shop/orders",
+        json={"plan_id": plan.id, "ram_mb": 4096, "cpu": 1, "slots": 8, "months": 1},
+        cookies=user_cookies,
+        headers=_csrf_headers(user_cookies),
+    )
+    assert auto_blocked.status_code == 409
+    assert auto_blocked.json()["detail"]["code"] == "shop_out_of_capacity"
+
+    # 5. Gezielte Wahl der Performance-Node addiert Aufpreis serverseitig (inkl. Lifetime * 12)
+    #    und provisioniert auf perf_node.
+    life_order = client.post(
+        "/api/shop/orders",
+        json={
+            "plan_id": plan.id,
+            "ram_mb": 4096,
+            "cpu": 1,
+            "slots": 8,
+            "months": 1,
+            "billing_mode": "lifetime",
+            "preferred_node_id": perf_node.id,
+        },
+        cookies=user_cookies,
+        headers=_csrf_headers(user_cookies),
+    )
+    assert life_order.status_code == 200
+    assert life_order.json()["gross_cents"] == 10000 + 350 * 12
+    assert life_order.json()["items"][0]["preferred_node_id"] == perf_node.id
+    assert life_order.json()["items"][0]["node_surcharge_cents"] == 350
+
+    paid_life = client.post(
+        f"/api/shop/orders/{life_order.json()['id']}/demo-pay",
+        cookies=user_cookies,
+        headers=_csrf_headers(user_cookies),
+    )
+    assert paid_life.status_code == 200
+    srv_life = (
+        db.query(Server)
+        .filter(Server.name.like(f"shop-{life_order.json()['number']}-%"))
+        .first()
+    )
+    assert srv_life is not None
+    assert srv_life.node_id == perf_node.id
+
+    # Auch perf_node ist nun voll -> weitere Bestellung auf perf_node muss mit 409 abbrechen.
+    full_pref = client.post(
+        "/api/shop/orders",
+        json={"plan_id": plan.id, "ram_mb": 4096, "cpu": 1, "slots": 8, "months": 1, "preferred_node_id": perf_node.id},
+        cookies=user_cookies,
+        headers=_csrf_headers(user_cookies),
+    )
+    assert full_pref.status_code == 409
+
+    # 6. Admin kann im Panel trotzdem weiterhin explizit auf der privaten Node provisionieren.
+    from services import server_provisioning_service
+
+    admin_res = server_provisioning_service.provision_server(
+        db,
+        ServerCreate(
+            name="Admin Internal Server",
+            game_type="palworld",
+            ram_limit_mb=4096,
+            cpu_limit_percent=100,
+            node_id=private_node.id,
+        ),
+        ActorContext.for_user(owner_user, origin="direct"),
+        idempotency_key=f"admin-priv-{uuid4().hex}",
+    )
+    assert admin_res.server.node_id == private_node.id

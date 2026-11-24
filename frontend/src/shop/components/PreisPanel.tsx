@@ -34,6 +34,7 @@ export function PreisPanel({
     { label: t('shop.preis.ram'), cent: preis.ramCent },
     { label: t('shop.preis.cpu'), cent: preis.cpuCent },
     { label: t('shop.preis.slots'), cent: preis.slotsCent },
+    { label: t('shop.preis.standortAufpreis'), cent: preis.standortCent },
     { label: t('shop.preis.ki'), cent: preis.kiCent },
   ].filter((zeile) => zeile.cent > 0)
 
@@ -44,6 +45,11 @@ export function PreisPanel({
           {t('shop.kasse.zusammenfassung')}
         </h2>
         <p className="mt-1 text-sm text-on-surface-variant">{spiel.name}</p>
+        {konfiguration.standortName && (
+          <p className="mt-1 text-xs font-medium text-on-surface-variant">
+            {t('shop.kasse.standort')}: <span className="text-on-surface">{konfiguration.standortName}</span>
+          </p>
+        )}
       </div>
 
       <dl className="space-y-2 text-sm">

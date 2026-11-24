@@ -45,6 +45,10 @@ class NodeUpdate(BaseModel):
     ddos_provider: str | None = Field(default=None, max_length=100)
     ddos_profile: str | None = Field(default=None, max_length=160)
     ddos_game_aware: bool | None = Field(default=None)
+    shop_enabled: bool | None = Field(default=None)
+    shop_show_cpu: bool | None = Field(default=None)
+    hardware_tier_label: str | None = Field(default=None, max_length=64)
+    shop_surcharge_cents: int | None = Field(default=None, ge=0, le=10_000_000)
 
     @field_validator("name", mode="before")
     @classmethod
@@ -56,7 +60,7 @@ class NodeUpdate(BaseModel):
             raise ValueError("name darf nicht leer sein")
         return name
 
-    @field_validator("location_label", "ram_type", "storage_type", "ddos_provider", "ddos_profile", mode="before")
+    @field_validator("location_label", "ram_type", "storage_type", "ddos_provider", "ddos_profile", "hardware_tier_label", mode="before")
     @classmethod
     def _trim_optional_metadata(cls, value: object) -> str | None:
         if value is None:
@@ -109,6 +113,10 @@ class NodeOut(BaseModel):
     ddos_provider: str | None = None
     ddos_profile: str | None = None
     ddos_game_aware: bool = False
+    shop_enabled: bool = True
+    shop_show_cpu: bool = True
+    hardware_tier_label: str | None = None
+    shop_surcharge_cents: int = 0
     ram_total: int | None = None
     disk_total: int | None = None
     disk_used: int | None = None

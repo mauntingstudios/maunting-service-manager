@@ -463,3 +463,51 @@ def test_node_tls_fingerprint_must_be_normalized_in_database(db: Session):
     with pytest.raises(IntegrityError):
         db.commit()
     db.rollback()
+
+
+def test_admin_can_update_node_shop_hybrid_and_surcharge_fields(
+    client: TestClient,
+    db: Session,
+    owner_cookies: dict,
+):
+    node = Node(
+        name="Hybrid-Node",
+        host="https://198.51.100.40:9000",
+        auth_token_enc="enc",
+        tls_fingerprint="a" * 64,
+        is_local=False,
+        status="online",
+    )
+    db.add(node)
+    db.commit()
+    db.refresh(node)
+
+    csrf = owner_cookies.get("__Secure-csrf_token") or ""
+    resp = client.put(
+        f"/api/nodes/{node.id}",
+        cookies=owner_cookies,
+        headers={"X-CSRF-Token": csrf},
+        json={
+            "shop_enabled": False,
+            "shop_show_cpu": False,
+            "hardware_tier_label": "  Performance Plus  ",
+            "shop_surcharge_cents": 450,
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["shop_enabled"] is False
+    assert body["shop_show_cpu"] is False
+    assert body["hardware_tier_label"] == "Performance Plus"
+    assert body["shop_surcharge_cents"] == 450
+
+    invalid = client.put(
+        f"/api/nodes/{node.id}",
+        cookies=owner_cookies,
+        headers={"X-CSRF-Token": csrf},
+        json={"shop_surcharge_cents": -100},
+    )
+    assert invalid.status_code == 422
+
+    db.delete(node)
+    db.commit()

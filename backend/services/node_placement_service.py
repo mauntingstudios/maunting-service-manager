@@ -36,12 +36,21 @@ class NodeCapacityCheck:
 
 
 @dataclass(frozen=True)
+class NodeAvailabilityEntry:
+    node_id: int
+    available: bool
+    reason: str | None
+    shop_surcharge_cents: int = 0
+
+
+@dataclass(frozen=True)
 class PlanAvailability:
     available: bool
     reason: str | None
     available_nodes: int
     max_ram_mb: int | None
     max_cpu: int | None
+    nodes: tuple[NodeAvailabilityEntry, ...] = ()
 
 
 def _reserved_ram_mb() -> int:
@@ -145,6 +154,7 @@ def find_candidate_nodes(
     disk_gb: int | None = None,
     preferred_node_id: int | None = None,
     cpu_overcommit_factor: float = 1.0,
+    shop_only: bool = False,
 ) -> tuple[list[Node], str | None]:
     """Liefert passende Nodes in optimaler Platzierungsreihenfolge (Least-Loaded zuerst).
 
@@ -156,6 +166,8 @@ def find_candidate_nodes(
         node = db.query(Node).filter(Node.id == preferred_node_id).first()
         if node is None:
             return [], "node_not_found"
+        if shop_only and not bool(getattr(node, "shop_enabled", True)):
+            return [], "node_not_available_for_shop"
         check = evaluate_node_capacity(
             db,
             node,
@@ -169,6 +181,17 @@ def find_candidate_nodes(
     nodes = db.query(Node).order_by(Node.id.asc()).all()
     if not nodes:
         return [], None
+
+    if shop_only:
+        nodes = [n for n in nodes if bool(getattr(n, "shop_enabled", True))]
+        if not nodes:
+            return [], "node_not_available_for_shop"
+        free_nodes = [
+            n for n in nodes if max(0, int(getattr(n, "shop_surcharge_cents", 0) or 0)) == 0
+        ]
+        if not free_nodes:
+            return [], "node_selection_required"
+        nodes = free_nodes
 
     checks = [
         evaluate_node_capacity(
@@ -208,6 +231,8 @@ def check_plan_availability(
     ram_mb: int | None = None,
     cpu_cores: int | None = None,
     disk_gb: int | None = None,
+    preferred_node_id: int | None = None,
+    shop_only: bool = True,
 ) -> PlanAvailability:
     eff_ram = ram_mb if ram_mb is not None else plan.ram_included_mb
     eff_cpu_cores = cpu_cores if cpu_cores is not None else plan.cpu_included
@@ -216,14 +241,38 @@ def check_plan_availability(
     )
 
     if plan.node_id is None:
-        nodes = db.query(Node).order_by(Node.id.asc()).all()
-        if not nodes:
+        all_nodes = db.query(Node).order_by(Node.id.asc()).all()
+        if not all_nodes:
+            if preferred_node_id is not None:
+                return PlanAvailability(
+                    available=False,
+                    reason="node_not_found",
+                    available_nodes=0,
+                    max_ram_mb=0,
+                    max_cpu=0,
+                    nodes=(),
+                )
             return PlanAvailability(
                 available=True,
                 reason=None,
                 available_nodes=0,
                 max_ram_mb=plan.ram_max_mb,
                 max_cpu=plan.cpu_max,
+                nodes=(),
+            )
+        nodes = (
+            [n for n in all_nodes if bool(getattr(n, "shop_enabled", True))]
+            if shop_only
+            else all_nodes
+        )
+        if not nodes:
+            return PlanAvailability(
+                available=False,
+                reason="node_not_available_for_shop",
+                available_nodes=0,
+                max_ram_mb=0,
+                max_cpu=0,
+                nodes=(),
             )
     else:
         pinned = db.query(Node).filter(Node.id == plan.node_id).first()
@@ -234,6 +283,16 @@ def check_plan_availability(
                 available_nodes=0,
                 max_ram_mb=0,
                 max_cpu=0,
+                nodes=(),
+            )
+        if shop_only and not bool(getattr(pinned, "shop_enabled", True)):
+            return PlanAvailability(
+                available=False,
+                reason="node_not_available_for_shop",
+                available_nodes=0,
+                max_ram_mb=0,
+                max_cpu=0,
+                nodes=(),
             )
         nodes = [pinned]
 
@@ -247,43 +306,106 @@ def check_plan_availability(
         )
         for node in nodes
     ]
-    fitting = [c for c in checks if c.fits]
+    node_entries = tuple(
+        NodeAvailabilityEntry(
+            node_id=c.node.id,
+            available=c.fits,
+            reason=c.reason,
+            shop_surcharge_cents=max(0, int(getattr(c.node, "shop_surcharge_cents", 0) or 0)),
+        )
+        for c in checks
+    )
 
-    online_checks = [c for c in checks if c.reason != "node_offline"]
-    ram_caps = [c.remaining_ram_mb for c in online_checks if c.remaining_ram_mb is not None]
+    priorities = ("insufficient_node_cpu", "insufficient_node_ram", "insufficient_node_disk", "node_offline")
     uses_percent_unit = (
         (plan.cpu_included is not None and int(plan.cpu_included) > 32)
         or (plan.cpu_max is not None and int(plan.cpu_max) > 32)
     )
-    cpu_caps = [
-        (c.remaining_cpu_percent if uses_percent_unit else c.remaining_cpu_percent // 100)
-        for c in online_checks
-        if c.remaining_cpu_percent is not None
-    ]
 
-    max_ram: int | None = max(ram_caps) if ram_caps else None
-    if max_ram is not None and plan.ram_max_mb is not None:
-        max_ram = min(max_ram, plan.ram_max_mb)
-    max_cpu: int | None = max(cpu_caps) if cpu_caps else None
-    if max_cpu is not None and plan.cpu_max is not None:
-        max_cpu = min(max_cpu, plan.cpu_max)
+    def _caps_from(subset: list[NodeCapacityCheck]) -> tuple[int | None, int | None]:
+        online = [c for c in subset if c.reason != "node_offline"]
+        ram_caps = [c.remaining_ram_mb for c in online if c.remaining_ram_mb is not None]
+        cpu_caps = [
+            (c.remaining_cpu_percent if uses_percent_unit else c.remaining_cpu_percent // 100)
+            for c in online
+            if c.remaining_cpu_percent is not None
+        ]
+        m_ram: int | None = max(ram_caps) if ram_caps else None
+        if m_ram is not None and plan.ram_max_mb is not None:
+            m_ram = min(m_ram, plan.ram_max_mb)
+        m_cpu: int | None = max(cpu_caps) if cpu_caps else None
+        if m_cpu is not None and plan.cpu_max is not None:
+            m_cpu = min(m_cpu, plan.cpu_max)
+        return m_ram, m_cpu
 
+    if preferred_node_id is not None:
+        if plan.node_id is not None and preferred_node_id != plan.node_id:
+            m_ram, m_cpu = _caps_from(checks)
+            return PlanAvailability(
+                available=False,
+                reason="node_not_allowed_for_plan",
+                available_nodes=0,
+                max_ram_mb=m_ram,
+                max_cpu=m_cpu,
+                nodes=node_entries,
+            )
+        selected = next((c for c in checks if c.node.id == preferred_node_id), None)
+        if selected is None:
+            m_ram, m_cpu = _caps_from(checks)
+            return PlanAvailability(
+                available=False,
+                reason="node_not_available_for_shop",
+                available_nodes=0,
+                max_ram_mb=m_ram,
+                max_cpu=m_cpu,
+                nodes=node_entries,
+            )
+        m_ram, m_cpu = _caps_from([selected])
+        return PlanAvailability(
+            available=selected.fits,
+            reason=None if selected.fits else (selected.reason or "no_node_capacity"),
+            available_nodes=1 if selected.fits else 0,
+            max_ram_mb=m_ram,
+            max_cpu=m_cpu,
+            nodes=node_entries,
+        )
+
+    m_ram, m_cpu = _caps_from(checks)
+    if plan.node_id is None and shop_only:
+        free_checks = [
+            c for c in checks if max(0, int(getattr(c.node, "shop_surcharge_cents", 0) or 0)) == 0
+        ]
+        if not free_checks:
+            return PlanAvailability(
+                available=False,
+                reason="node_selection_required",
+                available_nodes=0,
+                max_ram_mb=m_ram,
+                max_cpu=m_cpu,
+                nodes=node_entries,
+            )
+        target_checks = free_checks
+    else:
+        target_checks = checks
+
+    fitting = [c for c in target_checks if c.fits]
     if fitting:
         return PlanAvailability(
             available=True,
             reason=None,
             available_nodes=len(fitting),
-            max_ram_mb=max_ram,
-            max_cpu=max_cpu,
+            max_ram_mb=m_ram,
+            max_cpu=m_cpu,
+            nodes=node_entries,
         )
 
-    priorities = ("insufficient_node_cpu", "insufficient_node_ram", "insufficient_node_disk", "node_offline")
-    reasons = [c.reason for c in checks if c.reason]
+    reasons = [c.reason for c in target_checks if c.reason]
     dominant = next((p for p in priorities if p in reasons), "no_node_capacity")
     return PlanAvailability(
         available=False,
         reason=dominant,
         available_nodes=0,
-        max_ram_mb=max_ram,
-        max_cpu=max_cpu,
+        max_ram_mb=m_ram,
+        max_cpu=m_cpu,
+        nodes=node_entries,
     )

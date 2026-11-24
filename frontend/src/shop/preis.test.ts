@@ -79,4 +79,29 @@ describe('Shop-Preislogik', () => {
   it('formatiert Euro deutsch', () => {
     expect(formatEuro(699)).toContain('6,99')
   })
+
+  it('rechnet den Standort-Aufpreis vor Rabatten und Lifetime-Faktor ein', () => {
+    const monatsPreis = preisAufschluesselung(palworld, {
+      ...standardKonfiguration(palworld),
+      standortAufpreisCent: 350,
+    })
+    expect(monatsPreis.standortCent).toBe(350)
+    expect(monatsPreis.monatCent).toBe(palworld.grundpreisCent + 350)
+    expect(monatsPreis.gesamtCent).toBe(palworld.grundpreisCent + 350)
+
+    const jahresPreis = preisAufschluesselung(palworld, {
+      ...standardKonfiguration(palworld),
+      laufzeitMonate: 12,
+      standortAufpreisCent: 350,
+    })
+    expect(jahresPreis.gesamtCent).toBe(Math.round((palworld.grundpreisCent + 350) * 12 * 0.8))
+
+    const lifetimeTarif = { ...palworld, lifetimePreisCent: 10000 }
+    const lifetimePreis = preisAufschluesselung(lifetimeTarif, {
+      ...standardKonfiguration(lifetimeTarif),
+      abrechnungsModus: 'lifetime',
+      standortAufpreisCent: 350,
+    })
+    expect(lifetimePreis.gesamtCent).toBe(10000 + 350 * 12)
+  })
 })

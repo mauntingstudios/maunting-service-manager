@@ -10,7 +10,7 @@ Arbeitsgrundlage für den Umbau von Storefront, RBAC-Sichtbarkeit, Multi-Node-St
 1. [Zielbild & Die 3 Betriebsmodi (Koexistenz ohne Bruchstellen)](#1-zielbild--die-3-betriebsmodi-koexistenz-ohne-bruchstellen)
 2. [Weiterentwicklung der Maunting Design-DNA (v2.1) & Anti-AI-Slop-Regeln](#2-weiterentwicklung-der-maunting-design-dna-v21--anti-ai-slop-regeln)
 3. [Paket 1: Strikte RBAC-Sichtbarkeit, Support-Widget-Fix & Modus-Trennung (umgesetzt, 24.11.2026)](#paket-1-strikte-rbac-sichtbarkeit-support-widget-fix--modus-trennung-umgesetzt-24112026)
-4. [Paket 2: Nodes 2.0, Private Hybrid-Nodes, CPU-Sichtbarkeit & Standort-Wahl](#paket-2-nodes-20-private-hybrid-nodes-cpu-sichtbarkeit--standort-wahl)
+4. [Paket 2: Nodes 2.0, Private Hybrid-Nodes, CPU-Sichtbarkeit & Standort-Wahl (umgesetzt, 24.11.2026)](#paket-2-nodes-20-private-hybrid-nodes-cpu-sichtbarkeit--standort-wahl-umgesetzt-24112026)
 5. [Paket 3: Pop-up- & Ankündigungs-System 2.0 (unten rechts in Shop & Panel)](#paket-3-pop-up--ankündigungs-system-20-unten-rechts-in-shop--panel)
 6. [Paket 4: Integriertes News-System (`/news`, Shop-Teaser, Panel & Admin-CMS)](#paket-4-integriertes-news-system-news-shop-teaser-panel--admin-cms)
 7. [Paket 5: Shop-Storefront, Katalog, Trustpilot-Option & Konfigurator 2.0](#paket-5-shop-storefront-katalog-trustpilot-option--konfigurator-20)
@@ -180,7 +180,7 @@ Im bestehenden `frontend/src/shop/pages/ShopStart.tsx` fallen folgende typische 
 
 ---
 
-## Paket 2: Nodes 2.0, Private Hybrid-Nodes, CPU-Sichtbarkeit & Standort-Wahl
+## Paket 2: Nodes 2.0, Private Hybrid-Nodes, CPU-Sichtbarkeit & Standort-Wahl (umgesetzt, 24.11.2026)
 
 ### Ist-Zustand & konkrete Befunde im Code
 
@@ -269,6 +269,32 @@ Im bestehenden `frontend/src/shop/pages/ShopStart.tsx` fallen folgende typische 
   - `preferred_node_id` mit `shop_surcharge_cents > 0` erhöht den serverseitigen Preis exakt; volle Wunsch-Node liefert HTTP 409 (`shop_out_of_capacity`).
 - Frontend (`vitest`): `AdminNodes.test.tsx` (Layout/Felder), `Konfigurator`- & `preis.ts`-Tests, `ShopKasse`-Checkout-Payload inkl. `preferred_node_id`.
 - Browser-Probe: `/admin/nodes` -> „Node bearbeiten“ visuell auf Abstände/Scrolling auf Desktop & schmalem Viewport prüfen; Ping-Test auf `/` -> Standort wählen -> `/shop/:id` -> `/shop/:id/kasse` komplett durchklicken.
+
+### Umsetzungsstand & Erkenntnisse (Paket 2)
+
+- **Backend-Umsetzung:**
+  - `backend/models/node.py` um `shop_enabled` (Default `True`), `shop_show_cpu` (Default `True`), `hardware_tier_label` (`String(64)`) und `shop_surcharge_cents` (`>= 0`) erweitert; `backend/models/shop.py` um `preferred_node_id` + `node_surcharge_cents` (`ShopOrderItem`) sowie `preferred_node_id` (`ShopEntitlement`) ergänzt.
+  - Alembic-Migration `backend/migrations/versions/20261124_02_nodes_shop_controls_and_order_node.py` (`down_revision = "20261124_01"`) angelegt; Single-Head-Prüfung `['20261124_02']` bestanden.
+  - `backend/schemas/node.py`, `backend/services/node_service.py` und `backend/routers/nodes.py` um die neuen Felder samt Validierung erweitert.
+  - `backend/services/node_placement_service.py` um `shop_only`-Isolierung, Bevorzugung kostenloser Shop-Nodes (`shop_surcharge_cents == 0`) im Automatik-Modus, Prüfung gewählter `preferred_node_id` und Pro-Standort-Verfügbarkeit (`NodeAvailabilityEntry`) erweitert.
+  - `backend/services/shop_catalog_service.py` und `backend/routers/shop.py`: `/api/shop/nodes/status`, `/api/shop/nodes/{id}/ping`, `_plan_hardware_summary` und `_plan_ddos_summary` strikt auf `shop_enabled=True` eingegrenzt; `cpu_model` wird bei `shop_show_cpu=False` in allen öffentlichen Endpunkten auf `None` maskiert; `POST /api/shop/availability` gibt Standortstatus je Node zurück.
+  - `backend/services/shop_order_service.py`, `backend/services/shop_fulfillment_service.py`, `backend/services/server_provisioning_service.py` und `backend/services/hoster_service_lifecycle.py` validieren `preferred_node_id`, rechnen `node_surcharge_cents` vor Laufzeit-, Abo- und Coupon-Rabatten sowie beim Lifetime-Faktor (`* 12`) ein und erzwingen `shop_only=True` bei Shop- und Hoster-Provisionierung.
+- **Frontend-Umsetzung:**
+  - `frontend/src/pages/AdminNodes.tsx`: Dialog „Node bearbeiten“ / manuell anlegen auf `max-w-2xl max-h-[90dvh]` mit scrollbarem, gepolstertem Innenbereich (`px-6 py-5 space-y-6 overflow-y-auto`) vor dem feststehenden Footer in vier klaren Sektionen umgebaut; Hybrid-, CPU-Sichtbarkeits-, Hardware-Klassen- und Aufpreis-Felder sowie Karten-Badges ergänzt.
+  - `frontend/src/shop/shopStandortStore.ts`, `frontend/src/types/index.ts`, `frontend/src/api/shop.ts`, `frontend/src/shop/typen.ts` und `frontend/src/shop/preis.ts` (`standortCent`) umgesetzt.
+  - `frontend/src/shop/pages/ShopStart.tsx`, `frontend/src/shop/pages/ShopSpiel.tsx`, `frontend/src/shop/components/Konfigurator.tsx`, `frontend/src/shop/components/PreisPanel.tsx` und `frontend/src/shop/pages/ShopKasse.tsx` für durchgängige Ping-/Standort-/Aufpreis-Auswahl vom Startbereich bis zum Checkout verbunden; Übersetzungen in `de.json` und `en.json` ergänzt (`en/de parity: 11315 keys`).
+- **Verifikation (nach letztem Code-Edit):**
+  - **Backend (`pytest` gegen PostgreSQL auf Port 15499):** Placement-, Node- und Shop-Suiten (`test_multi_node_placement_and_capacity.py`, `test_nodes_router.py`, `test_shop_phase6_transparency.py`, `test_shop_orders.py`, `test_shop_fulfillment.py`, `test_shop_catalog.py`, `test_shop_phase7_bestof.py`) `55 passed`; Hoster- & Node-Kapazitäts-Suiten (`test_hoster_v2_apply.py`, `test_node_capacity.py`) `16 passed`.
+  - **Frontend (`vitest`):** 5 Paket-2-Testdateien mit `31 passed` (`AdminNodes.test.tsx`, `preis.test.ts`, `ShopStart.test.tsx`, `ShopSpiel.test.tsx`, `ShopKasse.test.tsx`). Zuvor bestätigte `src/locales/schreibweise.test.ts` auf unverändertem `en.json`-Stand weiterhin nur die 4 vorbestehenden Alt-Keys ohne neue Verstöße.
+  - **Frontend-Builds:** `npm run build` (`npm run check && tsc && vite build`) und `npm run build:desktop` (`npm run check && tsc && vite build --config vite.desktop.config.ts`) jeweils mit Exit-Code `0`.
+  - **Noch offen:** Die visuelle Browser-Probe für den umgebauten „Node bearbeiten“-Dialog auf Desktop und schmalem Viewport sowie der Klickpfad `/` -> `/shop/:id` -> `/shop/:id/kasse` stehen noch aus.
+- **Erkenntnisse:**
+  1. **Deutsches Komma bei Aufpreisen (`type="text" inputMode="decimal"`):** `<input type="number">` verwirft Eingaben mit Dezimalkomma wie `4,50` im Browser/jsdom als ungültig. Ein Textfeld mit `inputMode="decimal"` erlaubt sowohl `4,50` als auch `4.50` ohne stilles Zurücksetzen auf `0`.
+  2. **Automatik-Modus vs. Bezahl-Klassen:** Wenn kostenlose Shop-Nodes voll sind und nur noch Aufpreis-Nodes Platz haben, darf der Shop-Automatikpfad nicht still auf die teurere Node ausweichen. Gleichzeitig liefert `catalog_plan` das Spiel weiterhin als verfügbar, solange mindestens eine Shop-Node im Konfigurator wählbar ist.
+  3. **Badge-Varianten (`@maunting/ui`):** `Badge` kennt `"default" | "success" | "warning" | "destructive" | "info"` (kein `"neutral"`).
+- **Ideen für Folgepakete:**
+  - **Startseiten-Ping & Konfigurator-Design in Paket 5:** Die neue Standort-Auswahl und Ping-Karten werden in Paket 5 visuell an die überarbeitete Storefront angepasst.
+  - **Kundenwechsel von Node nach Kauf (Support/Upgrade):** Falls Kunden später von Standard- auf Performance-Hardware wechseln möchten, ließe sich ein tarifierter Node-Umzug im Konto-Upgrade (Paket 6) vorsehen.
 
 ---
 

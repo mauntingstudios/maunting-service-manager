@@ -8,6 +8,7 @@ const hoisted = vi.hoisted(() => ({
   listAddons: vi.fn(),
   checkAvailability: vi.fn(),
   getPublicPolicy: vi.fn(),
+  getNodeStatus: vi.fn(),
 }))
 
 vi.mock('@/api/shop', async (importOriginal) => {
@@ -19,11 +20,13 @@ vi.mock('@/api/shop', async (importOriginal) => {
       listAddons: hoisted.listAddons,
       checkAvailability: hoisted.checkAvailability,
       getPublicPolicy: hoisted.getPublicPolicy,
+      getNodeStatus: hoisted.getNodeStatus,
     },
   }
 })
 
 import { ShopSpiel } from './ShopSpiel'
+import { useShopStandortStore } from '../shopStandortStore'
 
 const PALWORLD_PLAN = {
   id: 7,
@@ -76,8 +79,10 @@ function zeige(start: string) {
 
 describe('ShopSpiel', () => {
   beforeEach(() => {
+    useShopStandortStore.getState().reset()
     hoisted.getCatalog.mockReset().mockResolvedValue([PALWORLD_PLAN])
     hoisted.listAddons.mockReset().mockResolvedValue([])
+    hoisted.getNodeStatus.mockReset().mockResolvedValue([])
     hoisted.checkAvailability.mockReset().mockResolvedValue({
       available: true,
       reason: null,
@@ -202,5 +207,77 @@ describe('ShopSpiel', () => {
     expect(lifeBtn).toHaveAttribute('aria-pressed', 'true')
     expect(screen.queryByRole('button', { name: i18n.t('shop.spiel.monate', { count: 3 }) })).toBeNull()
     expect(screen.getByText(i18n.t('shop.preis.keineFolgekosten'))).toBeInTheDocument()
+  })
+
+  it('zeigt Standort- & Hardware-Auswahl, maskiert leere CPU und überträgt Aufpreis samt preferredNodeId', async () => {
+    hoisted.getNodeStatus.mockResolvedValue([
+      {
+        id: 1,
+        name: 'fra-std',
+        location_label: 'Frankfurt Standard',
+        status: 'online',
+        cpu_model: null,
+        ram_type: 'DDR5',
+        storage_type: 'NVMe',
+        ram_free_percent: 65,
+        load_level: 'low',
+        accepting_orders: true,
+        hardware_tier_label: 'Standard',
+        shop_surcharge_cents: 0,
+      },
+      {
+        id: 2,
+        name: 'fra-perf',
+        location_label: 'Frankfurt Performance',
+        status: 'online',
+        cpu_model: 'AMD Ryzen 9 9950X',
+        ram_type: 'DDR5 ECC',
+        storage_type: 'NVMe Gen5',
+        ram_free_percent: 82,
+        load_level: 'low',
+        accepting_orders: true,
+        hardware_tier_label: 'Performance',
+        shop_surcharge_cents: 350,
+      },
+    ])
+    hoisted.checkAvailability.mockResolvedValue({
+      available: true,
+      reason: null,
+      available_nodes: 2,
+      max_ram_mb: 16384,
+      max_cpu: 4,
+      nodes: [
+        { node_id: 1, available: true, reason: null, shop_surcharge_cents: 0 },
+        { node_id: 2, available: true, reason: null, shop_surcharge_cents: 350 },
+      ],
+    })
+    useShopStandortStore.getState().setPingWerte({ 2: { ms: 16, direkt: true } })
+
+    zeige('/shop/palworld')
+
+    expect(await screen.findByText('Frankfurt Performance')).toBeInTheDocument()
+    expect(screen.getByText('AMD Ryzen 9 9950X')).toBeInTheDocument()
+    expect(screen.getByText('16 ms')).toBeInTheDocument()
+
+    const perfBtn = screen.getByRole('button', {
+      name: (name) => name.includes('Frankfurt Performance'),
+    })
+    fireEvent.click(perfBtn)
+
+    await vi.waitFor(() => {
+      expect(hoisted.checkAvailability).toHaveBeenLastCalledWith({
+        plan_id: 7,
+        ram_mb: 8192,
+        cpu: 150,
+        preferred_node_id: 2,
+      })
+    })
+    expect(screen.getByText(i18n.t('shop.preis.standortAufpreis'))).toBeInTheDocument()
+    expect(screen.getAllByText(/10,49/).length).toBeGreaterThanOrEqual(2)
+
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('shop.spiel.weiterKasse') }))
+    const kasse = screen.getByTestId('kasse')
+    expect(kasse).toHaveTextContent('"preferredNodeId":2')
+    expect(kasse).toHaveTextContent('"standortAufpreisCent":350')
   })
 })

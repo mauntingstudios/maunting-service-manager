@@ -177,6 +177,10 @@ export interface Node {
   ddos_provider?: string | null
   ddos_profile?: string | null
   ddos_game_aware?: boolean
+  shop_enabled?: boolean
+  shop_show_cpu?: boolean
+  hardware_tier_label?: string | null
+  shop_surcharge_cents?: number
   ram_total: number | null
   disk_total: number | null
   disk_used?: number | null

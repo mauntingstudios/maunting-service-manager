@@ -236,6 +236,7 @@ class ShopOrderCreate(BaseModel):
     ram_mb: int | None = Field(None, ge=0, le=4_194_304)
     cpu: int | None = Field(None, ge=0, le=10_000)
     slots: int | None = Field(None, ge=0, le=100_000)
+    preferred_node_id: int | None = Field(None, ge=1)
     coupon_code: str | None = Field(None, max_length=48)
     captcha_token: str | None = Field(None, max_length=4096)
 
@@ -264,6 +265,7 @@ class ShopAdminManualOrderCreate(BaseModel):
     ram_mb: int | None = Field(None, ge=0, le=4_194_304)
     cpu: int | None = Field(None, ge=0, le=10_000)
     slots: int | None = Field(None, ge=0, le=100_000)
+    preferred_node_id: int | None = Field(None, ge=1)
     coupon_code: str | None = Field(None, max_length=48)
     mark_paid: bool = True
     note: str | None = Field(None, max_length=300)
@@ -418,6 +420,8 @@ class ShopOrderItemResponse(BaseModel):
     ram_mb: int | None
     cpu: int | None
     slots: int | None
+    preferred_node_id: int | None = None
+    node_surcharge_cents: int = 0
 
 
 class ShopOrderResponse(BaseModel):
@@ -527,6 +531,8 @@ class ShopPublicNodeStatusResponse(BaseModel):
     cpu_model: str | None = None
     ram_type: str | None = None
     storage_type: str | None = None
+    hardware_tier_label: str | None = None
+    shop_surcharge_cents: int = 0
     ram_free_percent: int | None = None
     load_level: Literal["low", "medium", "high", "full", "offline"]
     accepting_orders: bool
@@ -838,6 +844,14 @@ class ShopAvailabilityRequest(BaseModel):
     plan_id: int = Field(..., ge=1)
     ram_mb: int | None = Field(None, ge=0, le=4_194_304)
     cpu: int | None = Field(None, ge=0, le=10_000)
+    preferred_node_id: int | None = Field(None, ge=1)
+
+
+class ShopNodeAvailabilityItem(BaseModel):
+    node_id: int
+    available: bool
+    reason: str | None = None
+    shop_surcharge_cents: int = 0
 
 
 class ShopAvailabilityResponse(BaseModel):
@@ -846,6 +860,7 @@ class ShopAvailabilityResponse(BaseModel):
     available_nodes: int = 0
     max_ram_mb: int | None = None
     max_cpu: int | None = None
+    nodes: list[ShopNodeAvailabilityItem] = Field(default_factory=list)
 
 
 class ShopGalleryItem(BaseModel):

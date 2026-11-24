@@ -111,6 +111,8 @@ export interface ShopPublicNodeStatusDto {
   ddos_provider?: string | null
   ddos_profile?: string | null
   ddos_game_aware?: boolean
+  hardware_tier_label?: string | null
+  shop_surcharge_cents?: number
 }
 
 export interface ShopNodePingDto {
@@ -141,12 +143,20 @@ export interface ShopGraceBackupDto {
   downloadable: boolean
 }
 
+export interface ShopNodeAvailabilityItem {
+  node_id: number
+  available: boolean
+  reason?: string | null
+  shop_surcharge_cents?: number
+}
+
 export interface ShopAvailabilityResponse {
   available: boolean
   reason?: string | null
   available_nodes: number
   max_ram_mb?: number | null
   max_cpu?: number | null
+  nodes?: ShopNodeAvailabilityItem[]
 }
 
 export interface ShopPlanWrite {
@@ -454,6 +464,7 @@ export const shopCatalogApi = {
     plan_id: number
     ram_mb?: number | null
     cpu?: number | null
+    preferred_node_id?: number | null
   }) =>
     api<ShopAvailabilityResponse>('/shop/availability', {
       method: 'POST',
@@ -484,6 +495,8 @@ export interface ShopOrderItemDto {
   ram_mb: number | null
   cpu: number | null
   slots: number | null
+  preferred_node_id?: number | null
+  node_surcharge_cents?: number
 }
 
 export interface ShopOrderDto {
@@ -516,6 +529,7 @@ export interface ShopOrderCreate {
   ram_mb?: number | null
   cpu?: number | null
   slots?: number | null
+  preferred_node_id?: number | null
   coupon_code?: string | null
   captcha_token?: string | null
   buyer_name?: string | null

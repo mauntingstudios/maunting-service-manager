@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import BigInteger, CheckConstraint, String, Integer, Boolean, DateTime, Float, Text
+from sqlalchemy import BigInteger, CheckConstraint, String, Integer, Boolean, DateTime, Float, Text, true
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
@@ -15,6 +15,10 @@ class Node(Base):
             "AND tls_fingerprint = lower(tls_fingerprint) "
             "AND tls_fingerprint NOT LIKE '%:%')",
             name="ck_nodes_tls_fingerprint_normalized",
+        ),
+        CheckConstraint(
+            "shop_surcharge_cents >= 0",
+            name="ck_nodes_shop_surcharge_cents",
         ),
     )
 
@@ -38,6 +42,16 @@ class Node(Base):
     ddos_profile: Mapped[str | None] = mapped_column(String(160), nullable=True)
     ddos_game_aware: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="0", nullable=False
+    )
+    shop_enabled: Mapped[bool] = mapped_column(
+        Boolean, default=True, server_default=true(), nullable=False
+    )
+    shop_show_cpu: Mapped[bool] = mapped_column(
+        Boolean, default=True, server_default=true(), nullable=False
+    )
+    hardware_tier_label: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    shop_surcharge_cents: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0", nullable=False
     )
     ram_total: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     disk_total: Mapped[int | None] = mapped_column(BigInteger, nullable=True)

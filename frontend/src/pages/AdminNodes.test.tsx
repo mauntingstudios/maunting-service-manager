@@ -180,4 +180,56 @@ describe('AdminNodes', () => {
     expect(screen.getByTestId('admin-node-block-2')).toHaveAttribute('data-favorite', 'false')
     expect(document.body.querySelectorAll('[title]')).toHaveLength(0)
   })
+
+  it('öffnet einen gepolsterten, sektionierten Bearbeiten-Dialog und speichert Hybrid-/Shop-Felder', async () => {
+    render(
+      <MemoryRouter>
+        <AdminNodes />
+      </MemoryRouter>,
+    )
+
+    expect(await screen.findByTestId('node-card-1')).toBeInTheDocument()
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: i18n.t('nodes.actionsMenu', { name: 'Node-Berlin-01' }),
+      }),
+    )
+    fireEvent.click(await screen.findByRole('menuitem', { name: i18n.t('nodes.edit') }))
+
+    expect(await screen.findByText(i18n.t('nodes.sectionConnection'))).toBeInTheDocument()
+    expect(screen.getByText(i18n.t('nodes.sectionLocationHardware'))).toBeInTheDocument()
+    expect(screen.getByText(i18n.t('nodes.sectionDdos'))).toBeInTheDocument()
+    expect(screen.getByText(i18n.t('nodes.sectionShop'))).toBeInTheDocument()
+
+    const dialog = screen.getByRole('dialog')
+    const scrollContainer = dialog.querySelector('form > div.overflow-y-auto')
+    expect(scrollContainer).not.toBeNull()
+    expect(scrollContainer?.className).toContain('px-6')
+    expect(scrollContainer?.className).toContain('py-5')
+
+    fireEvent.click(screen.getByRole('switch', { name: i18n.t('nodes.shopEnabled') }))
+    fireEvent.click(screen.getByRole('switch', { name: i18n.t('nodes.shopShowCpu') }))
+    fireEvent.change(screen.getByLabelText(i18n.t('nodes.hardwareTierLabel')), {
+      target: { value: 'Performance' },
+    })
+    fireEvent.change(screen.getByLabelText(i18n.t('nodes.shopSurchargeEuro')), {
+      target: { value: '4,50' },
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('common.save') }))
+
+    await vi.waitFor(() => {
+      const putCall = mockApi.mock.calls.find(
+        ([path, opts]) => path === '/nodes/1' && (opts as { method?: string } | undefined)?.method === 'PUT',
+      )
+      expect(putCall).toBeTruthy()
+      const body = JSON.parse((putCall?.[1] as { body: string }).body)
+      expect(body).toMatchObject({
+        shop_enabled: false,
+        shop_show_cpu: false,
+        hardware_tier_label: 'Performance',
+        shop_surcharge_cents: 450,
+      })
+    })
+  })
 })

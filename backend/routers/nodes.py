@@ -664,6 +664,14 @@ def update_node(
         node.ddos_profile = body.ddos_profile
     if "ddos_game_aware" in body.model_fields_set and body.ddos_game_aware is not None:
         node.ddos_game_aware = bool(body.ddos_game_aware)
+    if "shop_enabled" in body.model_fields_set and body.shop_enabled is not None:
+        node.shop_enabled = bool(body.shop_enabled)
+    if "shop_show_cpu" in body.model_fields_set and body.shop_show_cpu is not None:
+        node.shop_show_cpu = bool(body.shop_show_cpu)
+    if "hardware_tier_label" in body.model_fields_set:
+        node.hardware_tier_label = body.hardware_tier_label
+    if "shop_surcharge_cents" in body.model_fields_set and body.shop_surcharge_cents is not None:
+        node.shop_surcharge_cents = max(0, int(body.shop_surcharge_cents))
 
     has_fp_field = "tls_fingerprint" in body.model_fields_set
     new_fp = body.tls_fingerprint if has_fp_field else node.tls_fingerprint

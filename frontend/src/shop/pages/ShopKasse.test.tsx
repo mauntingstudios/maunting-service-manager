@@ -294,4 +294,60 @@ describe('ShopKasse', () => {
       }),
     )
   })
+
+  it('uebertraegt gewaehlte preferred_node_id und rechnet Standort-Aufpreis in Summe und Zusammenfassung ein', async () => {
+    hoisted.createOrder.mockResolvedValue({ id: 99, number: 'MSM-2026-000099' })
+    hoisted.checkout.mockRejectedValue(
+      new SanitizedApiError('Stripe ist nicht konfiguriert', { status: 409 }),
+    )
+    hoisted.payDemo.mockResolvedValue({ id: 99, number: 'MSM-2026-000099' })
+    useAuthStore.setState({
+      isAuthenticated: true,
+      user: { id: 1, username: 'kunde', is_owner: false } as never,
+      isLoading: false,
+    })
+
+    render(
+      <MemoryRouter
+        initialEntries={[
+          {
+            pathname: '/shop/palworld/kasse',
+            state: {
+              spielId: 'palworld',
+              tarifId: 7,
+              konfiguration: {
+                ramGb: 8,
+                cpu: 2,
+                slots: 8,
+                laufzeitMonate: 1,
+                abrechnungsModus: 'prepaid',
+                mods: false,
+                kiZugang: false,
+                preferredNodeId: 5,
+                standortName: 'Frankfurt Performance',
+                standortAufpreisCent: 350,
+              },
+            },
+          },
+        ]}
+      >
+        <Routes>
+          <Route path="/shop/:spielId/kasse" element={<ShopKasse />} />
+        </Routes>
+      </MemoryRouter>,
+    )
+
+    expect(await screen.findByText(/Frankfurt Performance/)).toBeInTheDocument()
+    // 6,99 EUR + 3,50 EUR = 10,49 EUR
+    expect(screen.getByText(/10,49/)).toBeInTheDocument()
+
+    fuelleFormular()
+    expect(await screen.findByText('MSM-2026-000099')).toBeInTheDocument()
+    expect(hoisted.createOrder).toHaveBeenCalledWith(
+      expect.objectContaining({
+        plan_id: 7,
+        preferred_node_id: 5,
+      }),
+    )
+  })
 })

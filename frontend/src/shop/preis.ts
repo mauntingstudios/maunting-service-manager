@@ -52,7 +52,9 @@ export function preisAufschluesselung(
     Math.floor(Math.max(0, konfiguration.slots - spiel.standardSlots) / slotStep) *
     spiel.preisProSlotCent
   const kiCent = konfiguration.kiZugang ? spiel.kiZugangCent : 0
-  const monatCent = spiel.grundpreisCent + ramCent + cpuCent + slotsCent + kiCent
+  const standortCent = Math.max(0, Math.round(konfiguration.standortAufpreisCent ?? 0))
+  const monatCent =
+    spiel.grundpreisCent + ramCent + cpuCent + slotsCent + kiCent + standortCent
   const modus = konfiguration.abrechnungsModus ?? 'prepaid'
   const lifetimeBasis = spiel.lifetimePreisCent ?? null
   if (modus === 'lifetime' && lifetimeBasis !== null && lifetimeBasis > 0) {
@@ -64,6 +66,7 @@ export function preisAufschluesselung(
       cpuCent,
       slotsCent,
       kiCent,
+      standortCent,
       monatCent,
       rabattProzent: 0,
       gesamtCent,
@@ -82,6 +85,7 @@ export function preisAufschluesselung(
     cpuCent,
     slotsCent,
     kiCent,
+    standortCent,
     monatCent,
     rabattProzent,
     gesamtCent,
