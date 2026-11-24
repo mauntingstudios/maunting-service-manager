@@ -809,6 +809,13 @@ class ShopServerSlotsResponse(BaseModel):
     live_players: int | None = None
 
 
+class ShopSteamBranchInfo(BaseModel):
+    id: str
+    label: str
+    description: str | None = None
+    requires_password: bool = False
+
+
 class ShopCatalogPlan(BaseModel):
     """Oeffentliche Sicht: keine Node-/Rollen-IDs, nur was der Shop braucht."""
 
@@ -816,6 +823,12 @@ class ShopCatalogPlan(BaseModel):
     game_type: str
     game_name: str
     game_description: str | None
+    game_tagline: str | None = None
+    game_story_de: str | None = None
+    game_story_en: str | None = None
+    genres: list[str] = Field(default_factory=list)
+    steam_app_id: str | None = None
+    available_branches: list[ShopSteamBranchInfo] = Field(default_factory=list)
     game_category: str
     supports_mods: bool
     supports_workshop: bool

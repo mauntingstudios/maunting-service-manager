@@ -5,7 +5,10 @@
     "name": "V Rising",
     "category": "steam_game",
     "author": "Maunting Studios",
-    "description": "V Rising Dedicated Server (Steam App-ID 1829350). Windows-Server-Binary läuft zuverlässig über Wine 10 mit persisitentDataPath save-data."
+    "description": "V Rising Dedicated Server (Steam App-ID 1829350). Windows-Server-Binary läuft zuverlässig über Wine 10 mit persisitentDataPath save-data.",
+    "platforms": [
+      "pc"
+    ]
   },
   "runtime": {
     "image": "ghcr.io/parkervcp/yolks:wine_10",

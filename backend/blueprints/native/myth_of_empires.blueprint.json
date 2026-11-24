@@ -5,7 +5,10 @@
     "name": "Myth of Empires",
     "category": "steam_game",
     "author": "Maunting Studios",
-    "description": "Myth of Empires Dedicated Server (Steam App-ID 1794810). Läuft über GE-Proton + UMU (msm-proton-runtime) mit PROTON_USE_WINED3D=1 und PROTON_NO_ESYNC=1."
+    "description": "Myth of Empires Dedicated Server (Steam App-ID 1794810). Läuft über GE-Proton + UMU (msm-proton-runtime) mit PROTON_USE_WINED3D=1 und PROTON_NO_ESYNC=1.",
+    "platforms": [
+      "pc"
+    ]
   },
   "runtime": {
     "image": "ghcr.io/mauntingstudios/msm-proton-runtime:ge-proton10-34-umu1.4.0",

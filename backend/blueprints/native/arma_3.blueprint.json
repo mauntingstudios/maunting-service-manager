@@ -7,7 +7,10 @@
     "edition": "3",
     "category": "steam_game",
     "author": "Maunting Studios",
-    "description": "Arma 3 Dedicated Server (Steam App-ID 233780, nativer Linux-Support über arma3server_x64). Steam Query belegt automatisch Game-Port + 1 (Standard 2303 UDP). Für Workshop-Mods (App-ID 107410) kann ein Steam-Account erforderlich sein."
+    "description": "Arma 3 Dedicated Server (Steam App-ID 233780, nativer Linux-Support über arma3server_x64). Steam Query belegt automatisch Game-Port + 1 (Standard 2303 UDP). Für Workshop-Mods (App-ID 107410) kann ein Steam-Account erforderlich sein.",
+    "platforms": [
+      "pc"
+    ]
   },
   "runtime": {
     "image": "ghcr.io/parkervcp/games:arma3",

@@ -7,7 +7,10 @@
     "edition": "2019",
     "category": "steam_game",
     "author": "Maunting Studios",
-    "description": "Farming Simulator 19 Dedicated Server (Steam App-ID 787860) via Wine/Xvfb. Erfordert einen globalen Steam-Account mit gekaufter FS19-Lizenz (requiresLogin=true, ohne Steam Guard) sowie Einrichtung von dedicatedServer.xml / Web-Admin."
+    "description": "Farming Simulator 19 Dedicated Server (Steam App-ID 787860) via Wine/Xvfb. Erfordert einen globalen Steam-Account mit gekaufter FS19-Lizenz (requiresLogin=true, ohne Steam Guard) sowie Einrichtung von dedicatedServer.xml / Web-Admin.",
+    "platforms": [
+      "pc"
+    ]
   },
   "runtime": {
     "image": "ghcr.io/parkervcp/yolks:wine_10",

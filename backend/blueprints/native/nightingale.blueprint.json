@@ -5,7 +5,10 @@
     "name": "Nightingale",
     "category": "steam_game",
     "author": "Maunting Studios",
-    "description": "Nightingale Dedicated Server (Steam App-ID 3796810, nativer Linux-Support). Läuft nativ auf Unreal Engine 5 ohne Wine oder Proton."
+    "description": "Nightingale Dedicated Server (Steam App-ID 3796810, nativer Linux-Support). Läuft nativ auf Unreal Engine 5 ohne Wine oder Proton.",
+    "platforms": [
+      "pc"
+    ]
   },
   "runtime": {
     "image": "ghcr.io/parkervcp/steamcmd:debian",

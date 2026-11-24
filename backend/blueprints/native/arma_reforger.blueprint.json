@@ -7,7 +7,13 @@
     "edition": "Reforger",
     "category": "steam_game",
     "author": "Maunting Studios",
-    "description": "Arma Reforger Dedicated Server (Steam App-ID 1874900, nativer Linux-Support). Läuft ohne Wine/Proton direkt unter Debian mit A2S-Query-Unterstützung über config.json."
+    "description": "Arma Reforger Dedicated Server (Steam App-ID 1874900, nativer Linux-Support). Läuft ohne Wine/Proton direkt unter Debian mit A2S-Query-Unterstützung über config.json.",
+    "platforms": [
+      "pc",
+      "ps5",
+      "xbox",
+      "crossplay"
+    ]
   },
   "runtime": {
     "image": "ghcr.io/parkervcp/steamcmd:debian",
@@ -71,7 +77,19 @@
       "platform": "linux",
       "compatibility": "native",
       "requiresLogin": false,
-      "validate": false
+      "validate": false,
+      "branches": [
+        {
+          "id": "public",
+          "label": "Standard (public)",
+          "description": "Stabile Arma-Reforger-Serverversion."
+        },
+        {
+          "id": "experimental",
+          "label": "Experimental",
+          "description": "Testzweig fuer kommende Reforger-Updates."
+        }
+      ]
     },
     "updateStrategy": "checkBased"
   },

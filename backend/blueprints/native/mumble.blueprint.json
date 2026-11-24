@@ -6,7 +6,9 @@
     "game": "Mumble",
     "category": "voice_server",
     "author": "Maunting Studios",
-    "description": "Quelloffener Voice-Server mit geringer Latenz und Opus-Audio über mumblevoip/mumble-server."
+    "description": "Quelloffener Voice-Server mit geringer Latenz und Opus-Audio über mumblevoip/mumble-server.",
+    "shopTagline": "Schlanker Open-Source-Sprachchat mit extrem geringer Verzögerung.",
+    "shopStory": "Mumble liefert kristallklare Sprachübertragung, Positions-Audio für unterstützte Spiele und sparsamen Bandbreitenverbrauch."
   },
   "runtime": {
     "image": "mumblevoip/mumble-server:latest",

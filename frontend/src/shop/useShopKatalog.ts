@@ -78,6 +78,8 @@ function spielAusPlan(plan: ShopCatalogPlan): ShopSpiel {
   const cpuStufen = cpuStufenFuer(plan.cpu_included, plan.cpu_max, plan.cpu_step)
   const slotStufen = stufen(plan.slots_included, plan.slots_max, plan.slots_step, [4, 8, 16])
   const text = plan.game_description || plan.description || plan.name
+  const storyDe = plan.game_story_de || text
+  const storyEn = plan.game_story_en || text
   const tags: string[] = []
   if (plan.supports_mods) tags.push('Mods')
   if (plan.supports_workshop) tags.push('Workshop')
@@ -87,7 +89,14 @@ function spielAusPlan(plan: ShopCatalogPlan): ShopSpiel {
     name: plan.game_name || plan.game_type,
     game: plan.game_type,
     category: plan.game_category || 'Server',
-    beschreibung: { de: text, en: text },
+    beschreibung: {
+      de: plan.game_tagline || plan.description || plan.game_story_de || text,
+      en: plan.game_tagline || plan.description || plan.game_story_en || text,
+    },
+    tagline: plan.game_tagline ?? null,
+    story: { de: storyDe, en: storyEn },
+    genres: plan.genres ?? [],
+    steamAppId: plan.steam_app_id ?? null,
     tags,
     unterstuetztMods: plan.supports_mods,
     unterstuetztWorkshop: plan.supports_workshop,

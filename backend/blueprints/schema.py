@@ -323,6 +323,37 @@ def _is_safe_relative_template(
 
 
 BlueprintPlatform = Literal["pc", "ps5", "xbox", "crossplay"]
+BlueprintVersioningProvider = Literal[
+    "mojang",
+    "papermc",
+    "purpurmc",
+    "fabric",
+    "forge",
+    "neoforge",
+    "spigot",
+    "sponge",
+]
+
+_ENV_KEY_RE = re.compile(r"^[A-Z][A-Z0-9_]{0,63}$")
+_STEAM_BRANCH_ID_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$")
+
+
+class BlueprintVersioning(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    provider: BlueprintVersioningProvider
+    envKey: str = Field(default="VERSION", min_length=1, max_length=64)
+    supportsDowngradeWarning: bool = True
+
+    @field_validator("envKey")
+    @classmethod
+    def _check_env_key(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not _ENV_KEY_RE.fullmatch(cleaned):
+            raise ValueError(
+                "meta.versioning.envKey muss ein gueltiger Env-Schluessel (^[A-Z][A-Z0-9_]{0,63}$) sein."
+            )
+        return cleaned
 
 
 class BlueprintMeta(BaseModel):
@@ -335,9 +366,20 @@ class BlueprintMeta(BaseModel):
     category: BlueprintCategory
     author: str | None = Field(default=None, max_length=128)
     description: str | None = Field(default=None, max_length=1024)
+    shopTagline: str | None = Field(default=None, max_length=160)
+    shopStory: str | None = Field(default=None, max_length=2000)
+    versioning: BlueprintVersioning | None = None
     platforms: list[BlueprintPlatform] = Field(
         default_factory=lambda: ["pc"], min_length=1, max_length=4
     )
+
+    @field_validator("shopTagline", "shopStory", mode="before")
+    @classmethod
+    def _normalize_optional_shop_text(cls, v: object) -> object:
+        if isinstance(v, str):
+            stripped = v.strip()
+            return stripped or None
+        return v
 
     @field_validator("platforms", mode="after")
     @classmethod
@@ -618,6 +660,33 @@ class BlueprintPort(BaseModel):
     protocol: BlueprintPortProtocol
 
 
+class BlueprintSteamBranch(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    id: str = Field(min_length=1, max_length=64)
+    label: str = Field(min_length=1, max_length=80)
+    description: str | None = Field(default=None, max_length=240)
+    requiresPassword: bool = False
+
+    @field_validator("id")
+    @classmethod
+    def _check_branch_id(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not _STEAM_BRANCH_ID_RE.fullmatch(cleaned):
+            raise ValueError(
+                "source.steam.branches[].id: ungueltiger Name (erlaubt: Buchstaben, Ziffern, . _ -)."
+            )
+        return cleaned
+
+    @field_validator("label", "description", mode="before")
+    @classmethod
+    def _normalize_text(cls, value: object) -> object:
+        if isinstance(value, str):
+            stripped = value.strip()
+            return stripped or None
+        return value
+
+
 class BlueprintSteamSource(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
@@ -638,11 +707,34 @@ class BlueprintSteamSource(BaseModel):
             "Weglassen oder null = public (Standard-Release)."
         ),
     )
+    branches: list[BlueprintSteamBranch] = Field(default_factory=list, max_length=16)
     validate_: bool = Field(
         default=True,
         alias="validate",
         description="if False: \"+app_update <id>\" without \"validate\" (faster, less error-prone for some Proton apps like SCUM); generic Blueprint control for ALL supported Steam games to avoid slow starts and 0x226 state errors on every start/restart",
     )
+
+    @field_validator("branches", mode="after")
+    @classmethod
+    def _dedupe_branches(
+        cls, value: list[BlueprintSteamBranch]
+    ) -> list[BlueprintSteamBranch]:
+        seen: set[str] = set()
+        out: list[BlueprintSteamBranch] = []
+        for entry in value:
+            if entry.id in seen:
+                continue
+            seen.add(entry.id)
+            out.append(entry)
+        return out
+
+    def effective_branches(self) -> list[BlueprintSteamBranch]:
+        """Liefert die gepflegten Branches oder den Standard-Branch."""
+        if self.branches:
+            return list(self.branches)
+        default_id = self.branch or "public"
+        label = "Standard (public)" if default_id == "public" else default_id
+        return [BlueprintSteamBranch(id=default_id, label=label)]
 
     @field_validator("appId")
     @classmethod

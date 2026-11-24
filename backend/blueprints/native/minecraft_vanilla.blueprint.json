@@ -7,7 +7,17 @@
     "edition": "Vanilla",
     "category": "non_steam_game",
     "author": "Maunting Studios",
-    "description": "Vanilla Minecraft Java Edition Server via itzg/minecraft-server. EULA=TRUE bedeutet Zustimmung zu Mojangs EULA (https://www.minecraft.net/eula). VERSION=LATEST nimmt die aktuellste stable Release; fuer feste Version Blueprint herunterladen, VERSION anpassen, neu hochladen."
+    "description": "Vanilla Minecraft Java Edition Server via itzg/minecraft-server. EULA=TRUE bedeutet Zustimmung zu Mojangs EULA (https://www.minecraft.net/eula). VERSION=LATEST nimmt die aktuellste stable Release; fuer feste Version Blueprint herunterladen, VERSION anpassen, neu hochladen.",
+    "platforms": [
+      "pc"
+    ],
+    "versioning": {
+      "provider": "mojang",
+      "envKey": "VERSION",
+      "supportsDowngradeWarning": true
+    },
+    "shopTagline": "Originales Minecraft ohne Mods, direkt vom offiziellen Mojang-Server.",
+    "shopStory": "Minecraft Vanilla bietet das klassische Survival- und Bau-Erlebnis genau so, wie Mojang es veröffentlicht. Ideal für Freundeskreise, reine Bauwelten und sofortiges Loslegen ohne zusätzliche Client-Mods."
   },
   "runtime": {
     "image": "itzg/minecraft-server:latest",
@@ -135,14 +145,39 @@
       "placeholder": "z. B. 1.21.10",
       "pattern": "^(LATEST|SNAPSHOT|[0-9]+(\\.[0-9]+){1,2}(?:-[A-Za-z0-9._-]+)?)$",
       "options": [
-        { "value": "LATEST", "label": "Aktuellste Version (LATEST)", "badge": "Empfohlen" },
-        { "value": "1.21.10", "label": "Minecraft 1.21.10" },
-        { "value": "1.21.8", "label": "Minecraft 1.21.8" },
-        { "value": "1.21.4", "label": "Minecraft 1.21.4" },
-        { "value": "1.20.6", "label": "Minecraft 1.20.6" },
-        { "value": "1.20.4", "label": "Minecraft 1.20.4" },
-        { "value": "1.19.4", "label": "Minecraft 1.19.4" },
-        { "value": "1.16.5", "label": "Minecraft 1.16.5 (Legacy)" }
+        {
+          "value": "LATEST",
+          "label": "Aktuellste Version (LATEST)",
+          "badge": "Empfohlen"
+        },
+        {
+          "value": "1.21.10",
+          "label": "Minecraft 1.21.10"
+        },
+        {
+          "value": "1.21.8",
+          "label": "Minecraft 1.21.8"
+        },
+        {
+          "value": "1.21.4",
+          "label": "Minecraft 1.21.4"
+        },
+        {
+          "value": "1.20.6",
+          "label": "Minecraft 1.20.6"
+        },
+        {
+          "value": "1.20.4",
+          "label": "Minecraft 1.20.4"
+        },
+        {
+          "value": "1.19.4",
+          "label": "Minecraft 1.19.4"
+        },
+        {
+          "value": "1.16.5",
+          "label": "Minecraft 1.16.5 (Legacy)"
+        }
       ]
     },
     {
@@ -152,10 +187,22 @@
       "type": "select",
       "default": "normal",
       "options": [
-        { "value": "peaceful", "label": "Friedlich" },
-        { "value": "easy", "label": "Einfach" },
-        { "value": "normal", "label": "Normal" },
-        { "value": "hard", "label": "Schwer" }
+        {
+          "value": "peaceful",
+          "label": "Friedlich"
+        },
+        {
+          "value": "easy",
+          "label": "Einfach"
+        },
+        {
+          "value": "normal",
+          "label": "Normal"
+        },
+        {
+          "value": "hard",
+          "label": "Schwer"
+        }
       ]
     },
     {
@@ -165,10 +212,22 @@
       "type": "select",
       "default": "survival",
       "options": [
-        { "value": "survival", "label": "Überleben" },
-        { "value": "creative", "label": "Kreativ" },
-        { "value": "adventure", "label": "Abenteuer" },
-        { "value": "spectator", "label": "Zuschauer" }
+        {
+          "value": "survival",
+          "label": "Überleben"
+        },
+        {
+          "value": "creative",
+          "label": "Kreativ"
+        },
+        {
+          "value": "adventure",
+          "label": "Abenteuer"
+        },
+        {
+          "value": "spectator",
+          "label": "Zuschauer"
+        }
       ]
     },
     {

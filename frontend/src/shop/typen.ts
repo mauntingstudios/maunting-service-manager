@@ -5,6 +5,10 @@ export interface ShopSpiel {
   game: string
   category: string
   beschreibung: { de: string; en: string }
+  tagline?: string | null
+  story?: { de: string; en: string }
+  genres?: string[]
+  steamAppId?: string | null
   tags: string[]
   unterstuetztMods: boolean
   unterstuetztWorkshop: boolean

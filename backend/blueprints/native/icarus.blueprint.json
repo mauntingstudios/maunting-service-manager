@@ -5,7 +5,10 @@
     "name": "Icarus",
     "category": "steam_game",
     "author": "Maunting Studios",
-    "description": "Icarus Dedicated Server via SteamCMD (App-ID 2089300). Windows-Binary läuft über Wine im Headless-Modus (-nullrhi)."
+    "description": "Icarus Dedicated Server via SteamCMD (App-ID 2089300). Windows-Binary läuft über Wine im Headless-Modus (-nullrhi).",
+    "platforms": [
+      "pc"
+    ]
   },
   "runtime": {
     "image": "ghcr.io/parkervcp/yolks:wine_10",

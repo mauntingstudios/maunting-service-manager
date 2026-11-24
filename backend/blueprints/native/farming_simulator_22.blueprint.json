@@ -7,7 +7,13 @@
     "edition": "2022",
     "category": "steam_game",
     "author": "Maunting Studios",
-    "description": "Farming Simulator 22 Dedicated Server (Steam App-ID 1248130) via Wine/Xvfb. Erfordert einen globalen Steam-Account mit gekaufter FS22-Lizenz (requiresLogin=true, ohne Steam Guard) sowie Einrichtung von dedicatedServer.xml / Web-Admin."
+    "description": "Farming Simulator 22 Dedicated Server (Steam App-ID 1248130) via Wine/Xvfb. Erfordert einen globalen Steam-Account mit gekaufter FS22-Lizenz (requiresLogin=true, ohne Steam Guard) sowie Einrichtung von dedicatedServer.xml / Web-Admin.",
+    "platforms": [
+      "pc",
+      "ps5",
+      "xbox",
+      "crossplay"
+    ]
   },
   "runtime": {
     "image": "ghcr.io/parkervcp/yolks:wine_10",

@@ -7,7 +7,12 @@
     "edition": "Survival Evolved (ASE)",
     "category": "steam_game",
     "author": "Maunting Studios",
-    "description": "ARK: Survival Evolved Dedicated Server via SteamCMD (App-ID 376030). Nativer Linux-Support. Mods über Steam Workshop (App-ID 346110)."
+    "description": "ARK: Survival Evolved Dedicated Server via SteamCMD (App-ID 376030). Nativer Linux-Support. Mods über Steam Workshop (App-ID 346110).",
+    "platforms": [
+      "pc",
+      "ps5",
+      "xbox"
+    ]
   },
   "runtime": {
     "image": "ghcr.io/parkervcp/steamcmd:debian",

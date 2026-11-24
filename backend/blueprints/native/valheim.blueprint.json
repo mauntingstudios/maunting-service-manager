@@ -4,7 +4,11 @@
     "id": "valheim",
     "name": "Valheim",
     "category": "steam_game",
-    "platforms": ["pc", "xbox", "crossplay"],
+    "platforms": [
+      "pc",
+      "xbox",
+      "crossplay"
+    ],
     "author": "Maunting Studios",
     "description": "Valheim Dedicated Server via SteamCMD (App-ID 896660). Nativer Linux-Support."
   },
@@ -53,7 +57,20 @@
       "platform": "linux",
       "compatibility": "native",
       "requiresLogin": false,
-      "validate": false
+      "validate": false,
+      "branches": [
+        {
+          "id": "public",
+          "label": "Standard (public)",
+          "description": "Offizieller Release-Zweig ohne Zusatzpasswort."
+        },
+        {
+          "id": "public-test",
+          "label": "Public Test",
+          "description": "Oeffentlicher Testzweig (erfordert je nach Patch Steam-Beta-Passwort).",
+          "requiresPassword": true
+        }
+      ]
     },
     "updateStrategy": "checkBased"
   },

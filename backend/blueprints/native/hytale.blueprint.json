@@ -5,7 +5,12 @@
     "name": "Hytale (Dedicated)",
     "category": "non_steam_game",
     "author": "Maunting Studios",
-    "description": "Hytale Dedicated Server via offiziellem Hytale Linux-Downloader. Beim ersten Start zeigt die Console den Hytale-OAuth-Link an; danach lädt der Downloader die Serverdateien in das Server-Verzeichnis."
+    "description": "Hytale Dedicated Server via offiziellem Hytale Linux-Downloader. Beim ersten Start zeigt die Console den Hytale-OAuth-Link an; danach lädt der Downloader die Serverdateien in das Server-Verzeichnis.",
+    "platforms": [
+      "pc"
+    ],
+    "shopTagline": "Dedizierter Hytale-Server für Koop-Abenteuer, Baukunst und Community-Modding.",
+    "shopStory": "Erkunde prozedurale Zonen, kämpfe durch Dungeons und passe Spielregeln sowie eigene Welten direkt für deine Spielergruppe an."
   },
   "runtime": {
     "image": "ghcr.io/natroutter/egg-hytale:latest",

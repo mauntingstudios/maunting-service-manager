@@ -154,6 +154,7 @@ from .server_runtime_env import ServerRuntimeEnv
 from .singra_deployment import SingraDeployment
 from .singra_test_run import SingraTestRun
 from .game_wallpaper import GameWallpaper
+from .game_store_metadata import GameStoreMetadata
 from .lifecycle_notice import LifecycleDeletionNotice
 
 __all__ = [
@@ -164,7 +165,7 @@ __all__ = [
     "AiAutonomyGrant", "AiToolResult", "AiRun", "AiGuardianNotice",
     "AiGuardianRepair", "AiTask", "AiActionApproval",
     "AiMailOutbox", "AiMeldung", "DesktopJob", "DevicePairing",
-    "Server", "ServerRuntimeEnv", "SingraDeployment", "SingraTestRun", "GameWallpaper", "Node", "NodeEnrollment", "Role", "RolePermission", "ServerPermission",
+    "Server", "ServerRuntimeEnv", "SingraDeployment", "SingraTestRun", "GameWallpaper", "GameStoreMetadata", "Node", "NodeEnrollment", "Role", "RolePermission", "ServerPermission",
     "Team", "TeamInvitation", "TeamMember", "TeamMemberRole", "TeamRole", "TeamRolePermission", "TeamRoleServerGrant", "TeamServerGrant",
     "Backup", "PanelBackup", "Mod", "AuditLog", "RefreshToken", "JwtBlacklist",
     "EmailVerification", "BackupCode", "UserPasskey", "PanelSetting", "ServerPort",

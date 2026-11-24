@@ -7,7 +7,9 @@
     "edition": "TeamSpeak 3",
     "category": "voice_server",
     "author": "Maunting Studios",
-    "description": "Klassischer TeamSpeak-3-Voiceserver mit ServerQuery und Dateitransfer. Der erste Privilege-Key erscheint beim ersten Start in den Server-Logs."
+    "description": "Klassischer TeamSpeak-3-Voiceserver mit ServerQuery und Dateitransfer. Der erste Privilege-Key erscheint beim ersten Start in den Server-Logs.",
+    "shopTagline": "Zuverlässiger Sprachserver mit niedriger Latenz und feiner Rechte-Struktur.",
+    "shopStory": "TeamSpeak 3 bietet klare Sprachqualität, minimale Systemlast und ein detailliertes Rechtesystem für Clans, Gilden und Gaming-Communities."
   },
   "runtime": {
     "image": "teamspeak:latest",
@@ -59,7 +61,10 @@
       "type": "select",
       "default": "accept",
       "options": [
-        { "value": "accept", "label": "Akzeptiert (accept)" }
+        {
+          "value": "accept",
+          "label": "Akzeptiert (accept)"
+        }
       ]
     },
     {
@@ -70,9 +75,19 @@
       "type": "select",
       "default": "raw,ssh",
       "options": [
-        { "value": "raw,ssh", "label": "Raw + SSH (Standard)" },
-        { "value": "ssh", "label": "Nur SSH (verschlüsselt)", "badge": "Sicher" },
-        { "value": "raw", "label": "Nur Raw (Telnet)" }
+        {
+          "value": "raw,ssh",
+          "label": "Raw + SSH (Standard)"
+        },
+        {
+          "value": "ssh",
+          "label": "Nur SSH (verschlüsselt)",
+          "badge": "Sicher"
+        },
+        {
+          "value": "raw",
+          "label": "Nur Raw (Telnet)"
+        }
       ]
     }
   ]

@@ -5,7 +5,10 @@
     "name": "VEIN",
     "category": "steam_game",
     "author": "Maunting Studios",
-    "description": "VEIN Dedicated Server (Steam App-ID 2131400, Base-ID 1857950). Nativer Linux-Support (Unreal Engine), inklusive steam_appid.txt-Seed und Source-Query."
+    "description": "VEIN Dedicated Server (Steam App-ID 2131400, Base-ID 1857950). Nativer Linux-Support (Unreal Engine), inklusive steam_appid.txt-Seed und Source-Query.",
+    "platforms": [
+      "pc"
+    ]
   },
   "runtime": {
     "image": "ghcr.io/parkervcp/steamcmd:debian",

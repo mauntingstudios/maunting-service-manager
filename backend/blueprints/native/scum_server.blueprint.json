@@ -5,7 +5,10 @@
     "name": "SCUM",
     "category": "steam_game",
     "author": "Community",
-    "description": "Open World Survival - SCUM Dedicated Server via SteamCMD (AppID 3792580). Runs on Windows via Proton."
+    "description": "Open World Survival - SCUM Dedicated Server via SteamCMD (AppID 3792580). Runs on Windows via Proton.",
+    "platforms": [
+      "pc"
+    ]
   },
   "runtime": {
     "image": "ghcr.io/parkervcp/yolks:wine_10",

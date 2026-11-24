@@ -5,7 +5,12 @@
     "name": "DayZ",
     "category": "steam_game",
     "author": "Maunting Studios",
-    "description": "DayZ Linux Dedicated Server (App-ID 223350, Workshop 221100). Benötigt einen konfigurierten globalen Steam-Account unter Settings (Steam Guard muss deaktiviert sein; RCON per BattlEye UDP)."
+    "description": "DayZ Linux Dedicated Server (App-ID 223350, Workshop 221100). Benötigt einen konfigurierten globalen Steam-Account unter Settings (Steam Guard muss deaktiviert sein; RCON per BattlEye UDP).",
+    "platforms": [
+      "pc",
+      "ps5",
+      "xbox"
+    ]
   },
   "runtime": {
     "image": "ghcr.io/parkervcp/steamcmd:debian",
@@ -70,7 +75,19 @@
       "appId": "223350",
       "platform": "linux",
       "compatibility": "native",
-      "requiresLogin": true
+      "requiresLogin": true,
+      "branches": [
+        {
+          "id": "public",
+          "label": "Standard (public)",
+          "description": "Stabile DayZ-Release-Version fuer oeffentliche Server."
+        },
+        {
+          "id": "experimental",
+          "label": "Experimental",
+          "description": "Fruehe Patch-Vorschau fuer Tests vor dem Haupt-Update."
+        }
+      ]
     }
   },
   "mods": {

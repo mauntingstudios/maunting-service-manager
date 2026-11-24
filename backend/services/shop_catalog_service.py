@@ -25,8 +25,9 @@ from schemas.shop import (
     ShopPlanUpdate,
     ShopPlanWrite,
     ShopPublicNodeStatusResponse,
+    ShopSteamBranchInfo,
 )
-from services import audit_service, wallpaper_service
+from services import audit_service, steam_metadata_service, wallpaper_service
 
 
 _CURRENCY_RE = re.compile(r"^[A-Z]{3}$")
@@ -155,6 +156,9 @@ def create_plan(db: Session, payload: ShopPlanWrite, *, actor_id: int) -> ShopPl
     _audit(db, actor_id, "shop.plan.created", plan)
     db.commit()
     db.refresh(plan)
+    steam_metadata_service.ensure_steam_metadata_background(
+        _game_meta(plan.game_type).get("steam_app_id")
+    )
     return plan
 
 
@@ -196,6 +200,9 @@ def update_plan(
     _audit(db, actor_id, "shop.plan.updated", plan)
     db.commit()
     db.refresh(plan)
+    steam_metadata_service.ensure_steam_metadata_background(
+        _game_meta(plan.game_type).get("steam_app_id")
+    )
     return plan
 
 
@@ -368,9 +375,28 @@ def _game_meta(game_type: str) -> dict[str, Any]:
         return {}
     blueprint = plugin.get_blueprint()
     mods = blueprint.effective_mods()
+    steam_src = getattr(getattr(blueprint, "source", None), "steam", None)
+    steam_app_id = wallpaper_service.artwork_app_id_for_blueprint(blueprint)
+    available_branches = (
+        [
+            ShopSteamBranchInfo(
+                id=branch.id,
+                label=branch.label,
+                description=branch.description,
+                requires_password=branch.requiresPassword,
+            )
+            for branch in steam_src.effective_branches()
+        ]
+        if steam_src is not None
+        else []
+    )
     return {
         "game_name": blueprint.meta.name,
         "game_description": blueprint.meta.description,
+        "game_tagline": getattr(blueprint.meta, "shopTagline", None),
+        "shop_story": getattr(blueprint.meta, "shopStory", None),
+        "steam_app_id": steam_app_id,
+        "available_branches": available_branches,
         "game_category": blueprint.meta.category.value,
         "supports_mods": bool(mods.supportsMods),
         "supports_workshop": bool(mods.supportsSteamWorkshop),
@@ -624,6 +650,28 @@ def catalog_plan(
     from services import node_placement_service
 
     meta = _game_meta(plan.game_type)
+    steam_app_id = meta.get("steam_app_id")
+    cached_steam = (
+        steam_metadata_service.get_cached_metadata(db, steam_app_id)
+        if steam_app_id
+        else {}
+    )
+    if steam_app_id and not cached_steam:
+        steam_metadata_service.ensure_steam_metadata_background(steam_app_id)
+
+    plan_override = (plan.description or "").strip() or None
+    bp_story = meta.get("shop_story")
+    bp_desc = meta.get("game_description")
+    steam_de = (cached_steam.get("de") or {}).get("short_description")
+    steam_en = (cached_steam.get("en") or {}).get("short_description")
+    game_story_de = plan_override or bp_story or steam_de or steam_en or bp_desc
+    game_story_en = plan_override or bp_story or steam_en or steam_de or bp_desc
+    genres = list(
+        (cached_steam.get("de") or {}).get("genres")
+        or (cached_steam.get("en") or {}).get("genres")
+        or []
+    )
+
     availability = node_placement_service.check_plan_availability(
         db, plan, shop_only=True
     )
@@ -636,7 +684,13 @@ def catalog_plan(
         id=plan.id,
         game_type=plan.game_type,
         game_name=meta.get("game_name") or plan.game_type,
-        game_description=meta.get("game_description"),
+        game_description=bp_desc,
+        game_tagline=meta.get("game_tagline"),
+        game_story_de=game_story_de,
+        game_story_en=game_story_en,
+        genres=genres,
+        steam_app_id=steam_app_id,
+        available_branches=list(meta.get("available_branches") or []),
         game_category=meta.get("game_category") or "",
         supports_mods=bool(meta.get("supports_mods")),
         supports_workshop=bool(meta.get("supports_workshop")),

@@ -5,7 +5,10 @@
     "name": "Abiotic Factor",
     "category": "steam_game",
     "author": "Maunting Studios",
-    "description": "Abiotic Factor Dedicated Server (Steam App-ID 2857200). Läuft zuverlässig über GE-Proton + UMU (msm-proton-runtime) mit Source-Query."
+    "description": "Abiotic Factor Dedicated Server (Steam App-ID 2857200). Läuft zuverlässig über GE-Proton + UMU (msm-proton-runtime) mit Source-Query.",
+    "platforms": [
+      "pc"
+    ]
   },
   "runtime": {
     "image": "ghcr.io/mauntingstudios/msm-proton-runtime:ge-proton10-34-umu1.4.0",

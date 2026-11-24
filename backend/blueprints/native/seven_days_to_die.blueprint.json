@@ -4,7 +4,12 @@
     "id": "seven_days_to_die",
     "name": "7 Days to Die",
     "category": "steam_game",
-    "platforms": ["pc", "ps5", "xbox", "crossplay"],
+    "platforms": [
+      "pc",
+      "ps5",
+      "xbox",
+      "crossplay"
+    ],
     "author": "Maunting Studios",
     "description": "7 Days to Die Dedicated Server via SteamCMD (App-ID 294420). Nativer Linux-Support."
   },
@@ -101,7 +106,19 @@
       "platform": "linux",
       "compatibility": "native",
       "requiresLogin": false,
-      "validate": false
+      "validate": false,
+      "branches": [
+        {
+          "id": "public",
+          "label": "Standard (public)",
+          "description": "Stabile 7-Days-to-Die-Hauptversion."
+        },
+        {
+          "id": "latest_experimental",
+          "label": "Latest Experimental",
+          "description": "Experimenteller Vorab-Zweig fuer neue Builds."
+        }
+      ]
     },
     "updateStrategy": "checkBased"
   },

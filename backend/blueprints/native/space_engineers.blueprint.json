@@ -5,7 +5,12 @@
     "name": "Space Engineers",
     "category": "steam_game",
     "author": "Maunting Studios",
-    "description": "Space Engineers Dedicated Server via SteamCMD (App-ID 298740). Läuft über das MSM Wine-10 + .NET 4.8 Runtime-Image. Steam Workshop (App-ID 244850)."
+    "description": "Space Engineers Dedicated Server via SteamCMD (App-ID 298740). Läuft über das MSM Wine-10 + .NET 4.8 Runtime-Image. Steam Workshop (App-ID 244850).",
+    "platforms": [
+      "pc",
+      "ps5",
+      "xbox"
+    ]
   },
   "runtime": {
     "image": "ghcr.io/mauntingstudios/msm-space-engineers-runtime:wine10-dotnet48",

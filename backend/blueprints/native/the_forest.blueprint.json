@@ -5,7 +5,10 @@
     "name": "The Forest",
     "category": "steam_game",
     "author": "Maunting Studios",
-    "description": "The Forest Dedicated Server via SteamCMD (App-ID 556450). Windows-Binary (TheForestDedicatedServer.exe) läuft über Wine + Xvfb."
+    "description": "The Forest Dedicated Server via SteamCMD (App-ID 556450). Windows-Binary (TheForestDedicatedServer.exe) läuft über Wine + Xvfb.",
+    "platforms": [
+      "pc"
+    ]
   },
   "runtime": {
     "image": "ghcr.io/parkervcp/yolks:wine_10",

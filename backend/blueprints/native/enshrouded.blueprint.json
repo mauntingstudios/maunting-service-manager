@@ -5,7 +5,10 @@
     "name": "Enshrouded",
     "category": "steam_game",
     "author": "Maunting Studios",
-    "description": "Enshrouded Dedicated Server via SteamCMD (App-ID 2278520). Die Windows-Serverdateien laufen unter Wine; ein Steam-Account ist nicht erforderlich. Konfiguration über enshrouded_server.json."
+    "description": "Enshrouded Dedicated Server via SteamCMD (App-ID 2278520). Die Windows-Serverdateien laufen unter Wine; ein Steam-Account ist nicht erforderlich. Konfiguration über enshrouded_server.json.",
+    "platforms": [
+      "pc"
+    ]
   },
   "runtime": {
     "image": "ghcr.io/parkervcp/yolks:wine_10",

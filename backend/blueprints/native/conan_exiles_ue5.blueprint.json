@@ -5,7 +5,12 @@
     "name": "Conan Exiles (UE5)",
     "category": "steam_game",
     "author": "Maunting Studios",
-    "description": "Conan Exiles Enhanced (UE5) Dedicated Server (App-ID 443030, Workshop 440900)."
+    "description": "Conan Exiles Enhanced (UE5) Dedicated Server (App-ID 443030, Workshop 440900).",
+    "platforms": [
+      "pc",
+      "ps5",
+      "xbox"
+    ]
   },
   "runtime": {
     "image": "ghcr.io/parkervcp/steamcmd:debian",

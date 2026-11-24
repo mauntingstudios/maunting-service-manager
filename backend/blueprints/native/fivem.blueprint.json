@@ -5,7 +5,12 @@
     "name": "FiveM / RedM (FXServer)",
     "category": "non_steam_game",
     "author": "Maunting Studios",
-    "description": "FiveM und RedM Multiplayer-Server (Cfx.re FXServer Build 38435) über das gepinnte MSM-Runtime-Image. Trage deinen kostenlosen Keymaster-Lizenzschlüssel (portal.cfx.re) als sv_licenseKey in server.cfg ein."
+    "description": "FiveM und RedM Multiplayer-Server (Cfx.re FXServer Build 38435) über das gepinnte MSM-Runtime-Image. Trage deinen kostenlosen Keymaster-Lizenzschlüssel (portal.cfx.re) als sv_licenseKey in server.cfg ein.",
+    "platforms": [
+      "pc"
+    ],
+    "shopTagline": "Eigener GTA-V-Multiplayer-Server mit Ressourcen, Frameworks und Voice-Support.",
+    "shopStory": "Mit FiveM betreibst du eigene GTA-V-Rollenspiel-, Drift- oder Freeroam-Welten mit individuellen Skripten, Fahrzeugen und Community-Regeln."
   },
   "runtime": {
     "image": "ghcr.io/mauntingstudios/msm-fivem-runtime:build-38435",

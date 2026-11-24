@@ -1,7 +1,7 @@
 # MSM Shop & Hosting-Ökosystem 2.0: Master-Roadmap
 
-Stand: 23.11.2026  
-Arbeitsgrundlage für den Umbau von Storefront, RBAC-Sichtbarkeit, Multi-Node-Standortwahl, Ankündigungen, News-System und Kundenkonto. Baut direkt auf dem Stand aus [native-shop-roadmap.md](native-shop-roadmap.md) (Phasen 1 bis 8) auf.
+Stand: 24.11.2026  
+Arbeitsgrundlage für den Umbau von Storefront, RBAC-Sichtbarkeit, Multi-Node-Standortwahl, Ankündigungen, News-System, Kundenkonto, Blueprint-Metadaten, Kurzzeit-Laufzeiten und Server-Wechsel-Workflows. Baut direkt auf dem Stand aus [native-shop-roadmap.md](native-shop-roadmap.md) (Phasen 1 bis 8) auf.
 
 ---
 
@@ -11,11 +11,15 @@ Arbeitsgrundlage für den Umbau von Storefront, RBAC-Sichtbarkeit, Multi-Node-St
 2. [Weiterentwicklung der Maunting Design-DNA (v2.1) & Anti-AI-Slop-Regeln](#2-weiterentwicklung-der-maunting-design-dna-v21--anti-ai-slop-regeln)
 3. [Paket 1: Strikte RBAC-Sichtbarkeit, Support-Widget-Fix & Modus-Trennung (umgesetzt, 24.11.2026)](#paket-1-strikte-rbac-sichtbarkeit-support-widget-fix--modus-trennung-umgesetzt-24112026)
 4. [Paket 2: Nodes 2.0, Private Hybrid-Nodes, CPU-Sichtbarkeit & Standort-Wahl (umgesetzt, 24.11.2026)](#paket-2-nodes-20-private-hybrid-nodes-cpu-sichtbarkeit--standort-wahl-umgesetzt-24112026)
-5. [Paket 3: Pop-up- & Ankündigungs-System 2.0 (unten rechts in Shop & Panel) (umgesetzt, 24.11.2026)](#paket-3-pop-up--ankündigungs-system-20-unten-rechts-in-shop--panel-umgesetzt-24112026)
+5. [Paket 3: Pop-up- & Ankündigungs-System 2.0 (unten rechts in Shop & Panel) (umgesetzt, 24.11.2026)](#paket-3-pop-up---ankündigungs-system-20-unten-rechts-in-shop--panel-umgesetzt-24112026)
 6. [Paket 4: Integriertes News-System (`/news`, Shop-Teaser, Panel & Admin-CMS) (umgesetzt, 24.11.2026)](#paket-4-integriertes-news-system-news-shop-teaser-panel--admin-cms-umgesetzt-24112026)
 7. [Paket 5: Shop-Storefront, Katalog, Trustpilot-Option & Konfigurator 2.0 (umgesetzt, 24.11.2026)](#paket-5-shop-storefront-katalog-trustpilot-option--konfigurator-20-umgesetzt-24112026)
-8. [Paket 6: Konto- & Abo-Zentrale 2.0 (`/konto` & `/profile` aus einem Guss)](#paket-6-konto--abo-zentrale-20-konto--profile-aus-einem-guss)
-9. [Umsetzungsreihenfolge & Globale Qualitäts-Gates](#9-umsetzungsreihenfolge--globale-qualitäts-gates)
+8. [Paket 6: Konto- & Abo-Zentrale 2.0 (`/konto` & `/profile` aus einem Guss) (umgesetzt, 24.11.2026)](#paket-6-konto---abo-zentrale-20-konto--profile-aus-einem-guss-umgesetzt-24112026)
+9. [Paket 7: Blueprint-Metadaten 2.0 (Plattformen, Steam-Branches, Spiel-Story & Steam-Store-Cache)](#paket-7-blueprint-metadaten-20-plattformen-steam-branches-spiel-story--steam-store-cache)
+10. [Paket 8: Storefront 3.0 & Spiel-Detailseite (Produkt-UI, Top-Spiele-Steuerung & Multi-Node-DDoS)](#paket-8-storefront-30--spiel-detailseite-produkt-ui-top-spiele-steuerung--multi-node-ddos)
+11. [Paket 9: Kurzzeit-Laufzeiten (3 Tage, 7 Tage, 14 Tage neben 1 / 3 / 12 Monaten)](#paket-9-kurzzeit-laufzeiten-3-tage-7-tage-14-tage-neben-1--3--12-monaten)
+12. [Paket 10: Server-Wechsel 2.0 (Kunden-Spielwechsel mit Missbrauchsschutz, Steam-Branch-Wechsel & Minecraft-Versionswechsler)](#paket-10-server-wechsel-20-kunden-spielwechsel-mit-missbrauchsschutz-steam-branch-wechsel--minecraft-versionswechsler)
+13. [Umsetzungsreihenfolge & Globale Qualitäts-Gates](#13-umsetzungsreihenfolge--globale-qualitäts-gates)
 
 ---
 
@@ -470,6 +474,7 @@ Im bestehenden `frontend/src/shop/pages/ShopStart.tsx` fallen folgende typische 
   - *CSRF-Cookie-Name in Tests:* Login setzt `__Secure-csrf_token` (nicht `msm_csrf`).
   - *UI-Prop-Verträge:* `@maunting/ui` nutzt `Zustandsflaeche` (`art`, `titel`, `text`, `icon`), `Switch` (`onCheckedChange`), `Spinner` ohne `label`-Prop sowie `Badge` mit `default`/`destructive` statt `neutral`/`error`; Destructive-Utility-Klassen heißen `status-destructive` statt `status-error`.
   - *Offen:* Einbindung des `ShopNewsTeaser`-Blocks (`#shop-news`) auf der Shop-Startseite im Rahmen des anstehenden Paket-5-UI-Reworks sowie die manuelle Browser-Probe (Artikel + Cover-Upload im Admin und Prüfung auf `/news`, `/news/:slug`, `/` und `/dashboard` inkl. Browser-Konsole).
+- **Nachbesserung (24.11.2026, Commit `19271753`):** `NewsTab.tsx` aufgeräumt (Promo-Kasten auf einzeiligen `Singra-Redaktion`-Streifen gekürzt, `KI-Aufgabe planen`-Button und doppelten Leerzustands-Button entfernt, `"Singularity"` zu `"Singra"` umbenannt, `execCommand('copy')`-Fallback für HTTP/LAN ergänzt) sowie `propose_news_upsert` und `news_service.py` um Standard-Autor `"Singra AI"`, SSRF-geprüfte `cover_image_url`-Downloads und Steam-Spiel-Artwork-Fallback (`save_cover_from_game`) erweitert.
 
 ---
 
@@ -563,16 +568,16 @@ Im bestehenden `frontend/src/shop/pages/ShopStart.tsx` fallen folgende typische 
 
 - **Backend umgesetzt (bereits in Commit `2166a096` enthalten):** `ShopPlan` (`backend/models/shop.py`) und die Schemas in `backend/schemas/shop.py` um `is_featured`, `is_bestseller` und `is_new` erweitert (Migration `20261124_04_shop_plan_curation.py`). `backend/services/shop_catalog_service.py` und `backend/routers/shop.py` liefern echte bezahlte Bestellzahlen der letzten 90 Tage als `recent_order_count`; `backend/services/shop_lifecycle_settings_service.py` ergänzt `shop_trustpilot_enabled`, `shop_trustpilot_url` (HTTPS auf `trustpilot.com` bzw. `*.trustpilot.com` mit `/review/<slug>`) sowie `shop_discord_invite_url` (`discord.gg/<code>` oder `discord.com/invite/<code>`).
 - **Bewusste Entscheidung bei Trustpilot:** Vorerst ist ausschließlich die trackingfreie `link_card`-Variante ohne externes TrustBox-Skript umgesetzt, sodass `frontend/vite.csp.ts`, `backend/main.py`, `install.sh` und `Caddyfile.template` unberührt bleiben.
-- **Frontend-UI-Rework umgesetzt (noch uncommittet):**
+- **Frontend-UI-Rework umgesetzt (Commit `1254826d`):**
   - **Entschlackter Header (`ShopKopf.tsx`):** `LanguageSwitcher` und `Support`-Button vollständig entfernt; bei eingeloggten Nutzern stehen rechts nur `Dashboard` und `ProfileDropdown`.
   - **Vollbild-Hero (`HeroShowcase.tsx`):** Große Bühne (`min-h-[540px]` bzw. `lg:min-h-[620px]`) ohne rechte Statusbox, `fetchpriority="high"` ohne `loading="lazy"` am Hauptmotiv, 2 klare CTAs (`Konfigurieren` + `Spiele entdecken`), leuchtende Game-Aware-DDoS-Schutz-Pill (`.msm-shop-ddos-pill`) samt echtem Anbieternamen sowie breites 5er-Dock am unteren Rand mit animierter Fortschrittsleiste (`.msm-shop-hero-progress`) und Pause/Play ohne `aria-pressed`.
   - **DDoS-Spotlight & Live-Telemetrie (`TrustSection.tsx`, `StandortPingDeck.tsx`, `SpielKarte.tsx`):** Hervorgehobener `.msm-shop-ddos-glow`-Spotlight-Banner mit konfigurierten Anbietern/Profilen; neu gestaltete Node-Karten mit Statuspunkt, visuellem RAM-/Auslastungsbalken (`ram_free_percent`), animierter Latenzleiste, DDoS-Anbieter-Pill und Standort-Auswahl.
   - **Scroll-Reveals, Carousel & News-Teaser (`index.css`, `useShopReveal.ts`, `KatalogSchiene.tsx`, `ShopNewsTeaser.tsx`, `ShopStart.tsx`):** Scroll-Animationen nativ über `@supports ((animation-timeline: view()) and (animation-range: entry))` (`.msm-shop-reveal`) mit `IntersectionObserver`-Fallback (`useShopReveal`), `overscroll-behavior-x: contain` und barrierefreier Carousel-Region in `KatalogSchiene.tsx`, Integration von `#shop-news` über `ShopNewsTeaser.tsx` sowie Ausblenden der Add-ons-Sektion bei leerer Add-on-Liste.
-- **Feinschliff umgesetzt (24.11.2026, uncommittet):**
+- **Feinschliff umgesetzt (24.11.2026, Commit `13cc69da`):**
   - **Geplante KI-Aufträge unter Tools (`Ai.tsx`, `SingraToolsView.tsx`, `AiRunNotice.tsx`, `NewsTab.tsx`):** Vollbild-Modus `ansicht=aufgaben` entfernt; Aufträge leben einheitlich unter `?bereich=tools&tool=tasks` (beschriftet mit `Geplante Aufträge`, geschützt über `ai.tasks.manage`). Alte Links auf `?ansicht=aufgaben` bzw. `onSwitchMode('aufgaben')` leiten automatisch dorthin um.
   - **Gemeinsamer Markdown-Editor (`MarkdownFormatLeiste.tsx`, `PopupTab.tsx`, `NewsTab.tsx`):** Beide Editoren nutzen dieselbe Formatleiste mit `Kurzinfo`-Tooltips und `Schreiben`/`Live-Vorschau`-Umschaltung; `PopupTab` zeigt eine Corner-Toast-Vorschau samt separatem `Pop-up testen`-Button, `NewsTab` eine Artikel-Live-Vorschau inkl. Cover, Kategorien, Markdown und Quellen.
   - **Shop-Header & Katalog-Bereinigung (`ShopKopf.tsx`, `ShopStart.tsx`):** Floating-Glass-Nav-Pill im Desktop-Header samt mobilem Menü-Toggle (`aria-expanded`); die drei gestapelten `KatalogSchiene`-Bänder oberhalb von `#shop-spiele` wurden entfernt und als kompakte Kurationsfilter (`Meistgemietet`, `Empfohlen`, `Neu`) in `#shop-spiele` zusammengeführt (`HeroShowcase -> TrustSection -> #shop-spiele -> StandortPingDeck -> ShopNewsTeaser -> #shop-addons`).
-- **Drei-Stufen-System für geplante KI-Aufträge (Phase 2, 24.11.2026, uncommittet):**
+- **Drei-Stufen-System für geplante KI-Aufträge (Phase 2, 24.11.2026, Commit `cd3a67dd`):**
   - **Datenmodell & Berechtigung (`ai_task.py`, Migration `20261124_06`, `permission_catalog.py`):** `AiTask` um `scope` (`personal`, `team`, `global`), `team_id` (`teams.id`, nur echte Teams ohne `personal_for_user_id`) und `updated_by_user_id` erweitert; neues globales Recht `ai.tasks.manage_global` ergänzt (mit `panel.settings.write`-/`ai.settings.manage`-Fallback für Betreiber).
   - **Sichtbarkeit, Laufzeit-Schutz & KI-Führung (`ai_task_service.py`, `routers/ai_tasks.py`, `task_tools.py`, `task_proposals.py`, `ai_prompt.py`):** Persönliche Aufträge bleiben auf den Ersteller beschränkt, Team-Aufträge teilen sich echte Teammitglieder mit `ai.tasks.manage`, panelweite Aufträge (News, Pop-ups, Infrastruktur) verlangen `ai.tasks.manage_global` sowie Bestätigungspflicht (`always_confirm`) im Chat. Fällige Läufe legen sich bei entzogener Team-Mitgliedschaft oder fehlendem Global-Recht automatisch still (`_stilllegen`).
   - **Einheitliche Oberfläche (`AufgabenAnsicht.tsx`, `NewsTab.tsx`, `PermissionEditor.tsx`):** Kompakter Filter (`Alle`, `Persönlich`, `Teams`, `Panelweit`), Geltungsbereich-`Dropdown`, Scope-/Ersteller-Badges auf Karten und Deep-Link `?scope=global` aus dem News-CMS.
@@ -584,7 +589,7 @@ Im bestehenden `frontend/src/shop/pages/ShopStart.tsx` fallen folgende typische 
 
 ---
 
-## Paket 6: Konto- & Abo-Zentrale 2.0 (`/konto` & `/profile` aus einem Guss)
+## Paket 6: Konto- & Abo-Zentrale 2.0 (`/konto` & `/profile` aus einem Guss) (umgesetzt, 24.11.2026)
 
 ### Ist-Zustand & konkrete Befunde im Code
 
@@ -644,16 +649,327 @@ Im bestehenden `frontend/src/shop/pages/ShopStart.tsx` fallen folgende typische 
 
 ---
 
-## 9. Umsetzungsreihenfolge & Globale Qualitäts-Gates
+## Paket 7: Blueprint-Metadaten 2.0 (Plattformen, Steam-Branches, Spiel-Story & Steam-Store-Cache)
+
+### Warum dieses Paket zuerst kommt
+
+Im gesamten Panel bilden die JSON-Dateien unter `backend/blueprints/native/*.blueprint.json` und das Pydantic-Schema `backend/blueprints/schema.py` die zentrale Wahrheitsquelle für Spiele, Installation, Updates und Shop-Katalog. Bisher fehlen dort genau die Metadaten, die ein öffentlicher Shop, die Spiel-Detailseite und sichere Versions- bzw. Branch-Wechsel brauchen. Wenn dieses Fundament sauber im Blueprint liegt, greifen Storefront (Paket 8) und Server-Wechsel (Paket 10) auf dieselben geprüften Daten zurück, ohne Sonderlogik pro Spiel im Frontend pflegen zu müssen.
+
+### Ist-Zustand & konkrete Befunde im Code
+
+1. **Plattformen fast nirgends gepflegt:** `BlueprintMeta.platforms` existiert zwar in `backend/blueprints/schema.py` (Zeile 338–345, Werte `pc`, `ps5`, `xbox`, `crossplay`) und wird von `shop_catalog_service._game_meta` ausgelesen, ist aber in nur 5 von 56 nativen Blueprints eingetragen (`ark_ascended`, `farming_simulator_25`, `palworld`, `seven_days_to_die`, `valheim`). Alle anderen 51 Blueprints fallen still auf `['pc']` zurück.
+2. **Keine auswählbaren Steam-Branches:** `BlueprintSteamSource.branch` (`backend/blueprints/schema.py`, Zeile 633–640) speichert nur einen einzigen festen Standard-Branch pro Blueprint. Eine gepflegte Liste erlaubter bzw. bekannter Branches (z. B. `public`, `experimental`) existiert nicht.
+3. **Technische statt redaktionelle Spielbeschreibungen:** `meta.description` enthält technische Betriebs- und Docker-Hinweise für Admins (z. B. `Paper-Server via itzg/minecraft-server...`), aber keine einladende Spiel-Geschichte für Shop-Besucher auf `ShopSpiel.tsx`.
+4. **Fehlendes Versionierungs-Metamodell für Nicht-Steam-Spiele:** Alle 8 Minecraft-Blueprints (`minecraft_*.blueprint.json`) nutzen zwar die Umgebungsvariable `VERSION` (Standard `LATEST`), deklarieren aber im Blueprint-Schema noch kein strukturierendes `versioning`-Objekt für API-gestützte Versionslisten und Downgrade-Schutz.
+
+### Ziel-Zustand & Fachlogik (Wie & Wo)
+
+1. **Abwärtskompatible Erweiterung von `backend/blueprints/schema.py` (`version: 1` bleibt erhalten, `extra="forbid"`):**
+   - **`BlueprintMeta`:**
+     - `shopTagline: str | None = Field(default=None, max_length=160)`: ein knapper Einstiegssatz für Spielkarten und Meta-Teaser.
+     - `shopStory: str | None = Field(default=None, max_length=2000)`: optionale redaktionelle Kurzbeschreibung für die Spiel-Detailseite (Pflichtfeld für Nicht-Steam-Spiele wie Hytale, FiveM oder Minecraft, falls keine Steam-App-ID existiert).
+     - `versioning: BlueprintVersioning | None = None`: neues Untermodell mit `provider: Literal["mojang", "papermc", "purpurmc", "fabric", "forge", "neoforge", "spigot", "sponge"]`, `envKey: str = "VERSION"` und `supportsDowngradeWarning: bool = True`.
+   - **`BlueprintSteamSource`:**
+     - `branches: list[BlueprintSteamBranch] = Field(default_factory=list, max_length=16)`: jedes Element hat `id` (validiert gegen `^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$`, z. B. `public`, `experimental`, `unstable`), `label: str` (lesbarer Anzeigename), `description: str | None = None` und `requiresPassword: bool = False`.
+     - Ist `branches` leer, legt der Resolver automatisch einen Eintrag `{ id: branch or "public", label: "Standard (public)" }` abwärtskompatibel ab.
+     - `artworkAppId` (Fallback `appId`) dient weiterhin als eindeutige Steam-Store-ID, falls Server-Tool-ID und Spiel-Store-ID abweichen (Beispiel Project Zomboid: Tool `380870`, Spiel `108600`).
+2. **Gecachter Steam-Store-Dienst (`backend/services/steam_metadata_service.py`):**
+   - **Warum & wie:** Statt Spielbeschreibungen mühsam für dutzende Steam-Titel doppelt abzutippen, fragt der Dienst für Steam-Blueprints (anhand `artworkAppId or appId`) per HTTPS die öffentliche Steam Store API (`https://store.steampowered.com/api/appdetails?appids=<id>&l=<german|english>`, Timeout 8 s) ab und legt das Ergebnis lokal in der neuen DB-Tabelle `game_store_metadata` ab (Alembic-Migration; TTL 7 Tage, schlägt beim Katalog-Abruf niemals blockierend fehl).
+   - **Sicherheit & Hygiene:** Alle HTML-Tags aus Steam-Antworten (`short_description`, `about_the_game`) werden serverseitig mit `bleach` / reinem Text-Extractor auf reinen Fließtext reduziert; `frontend` rendert ausschließlich escaped Klartext oder geprüftes Markdown, niemals `dangerouslySetInnerHTML`.
+3. **Klare 4-Stufen-Priorität in `backend/services/shop_catalog_service.py` (`_game_meta` & `ShopCatalogPlan`):**
+   - `ShopCatalogPlan` und `ShopCatalogResponse` erhalten neben `game_description` optional `game_story` (`shop_story_de` / `shop_story_en` bzw. aktivierte Sprache), `game_tagline`, `steam_app_id`, `available_branches` sowie `genres`.
+   - Auflösung der Spiel-Story pro Sprache in fester Reihenfolge:
+     1. **Admin-Override im Tarif** (`ShopPlan.description`, z. B. für Update-Aktionen oder eigene Betreiber-Texte).
+     2. **`blueprint.meta.shopStory`** direkt aus dem Blueprint.
+     3. **Steam-Store-Cache** (`game_store_metadata`) passend zu `de` oder `en`.
+     4. **`blueprint.meta.description`** als sicherer technischer Fallback.
+4. **Kurations-Durchgang über alle 56 nativen Blueprints (`backend/blueprints/native/*.blueprint.json`):**
+   - Echte `meta.platforms`-Listen (`pc`, `ps5`, `xbox`, `crossplay`) für alle Multi-Plattform- und Konsolen-Crossplay-Titel (z. B. Rust, Conan Exiles, ARK, Farming Simulator, Space Engineers, Minecraft-Editionen, Project Zomboid, Enshrouded, DayZ).
+   - Prüfung von `source.steam.artworkAppId`, wo Dedicated-Server-IDs von der Spiel-Store-ID abweichen.
+   - Ergänzung bekannter öffentlicher Steam-Branches in `source.steam.branches` für typische Titel (`dayz`, `satisfactory`, `project_zomboid`, `valheim`, `rust`, `seven_days_to_die`, `arma_reforger`).
+   - Ergänzung von `meta.versioning` in allen 8 `minecraft_*.blueprint.json` sowie gepflegter `shopTagline`/`shopStory` für Nicht-Steam-Spiele (`minecraft_*`, `fivem`, `hytale`, Voice-Server `teamspeak3`/`teamspeak6`/`mumble`).
+
+### Betroffene Dateien
+
+- **Backend:**
+  - `backend/blueprints/schema.py`
+  - `backend/blueprints/native/*.blueprint.json`
+  - `backend/models/game_store_metadata.py` (und Export in `backend/models/__init__.py`)
+  - `backend/migrations/versions/<neu>_game_store_metadata_cache.py`
+  - `backend/services/steam_metadata_service.py`
+  - `backend/services/shop_catalog_service.py`, `backend/schemas/shop.py`
+  - `backend/services/blueprint_service.py` (Weitergabe der neuen Metadaten an UI/Tarif-Editor)
+- **Frontend:**
+  - `frontend/src/api/shop.ts`, `frontend/src/shop/typen.ts` (Übernahme von `gameTagline`, `gameStory`, `genres` im Katalog-Mapper)
+
+### Stolpersteine & Invarianten
+
+- **Strikte Schema-Validierung (`extra="forbid"`):** Jeder bestehende Blueprint muss nach der Schema-Erweiterung weiterhin ohne Pflichtfehler validieren (`test_blueprints` + Registry-Lauf). Alle neuen Felder sind deshalb optional mit sicheren Defaults.
+- **Keine Live-Abhängigkeit zu Steam beim Seitenaufruf:** Der öffentliche Aufruf von `GET /api/shop/catalog` darf niemals synchron auf einen langsamen Steam-HTTP-Request warten. Entweder liefert er direkt aus dem Cache (`game_store_metadata`), oder ein Hintergrund-Refresh füllt fehlende Einträge asynchron bzw. beim Tarif-Speichern/Startup-Sync nach.
+- **Kein XSS durch externe Store-Daten:** Steam-Antworten enthalten häufig HTML-Fragmente (`<br>`, `<strong>`, `<img>`). Sie müssen beim Import sauber in strukturierten Klartext bereinigt werden.
+
+### Tests & Laufzeit-Abnahme
+
+- Backend (`pytest`): Schema-Validierung über alle 56 nativen Blueprints, Test der 4-Stufen-Priorität in `shop_catalog_service`, gemockter HTTP-Test für `steam_metadata_service` (Caching, TTL, HTML-Bereinigung, Timeout-Fallback ohne Exception).
+- Prüfung in `/api/shop/catalog`: Plattformen (`PS5`/`Xbox`/`Crossplay`), `game_tagline` und `game_story` erscheinen direkt für konfigurierte Spiele.
+
+---
+
+## Paket 8: Storefront 3.0 & Spiel-Detailseite (Produkt-UI, Top-Spiele-Steuerung & Multi-Node-DDoS)
+
+### Warum wir hier gezielt umbauen
+
+Die aktuelle Storefront aus Paket 5 funktioniert technisch, trägt oben aber noch zu viel Information auf einmal: Im Hero liegen Kicker-Zeile, Standort-Badges, Überschrift, Untertitel, Fokus-Leiste, zwei Buttons und eine 4-Punkte-Liste direkt übereinander. Gleichzeitig holt `ShopStart.tsx` bei gemischtem DDoS-Schutz pauschal den ersten Anbieter heraus (`providers[0]`), zeigt ohne gesetztes `location_label` den technischen Namen `"Lokal"` an und kippt den kompletten Spielekatalog auf einen Schlag untereinander. Auf `ShopSpiel.tsx` fehlt schließlich der untere redaktionelle Spiel-Abschnitt mit Hintergrundbild und Story. Ziel dieses Pakets ist ein ruhiges, hochwertiges Produkt-UI nach Maunting Design-DNA, mit dem Besucher sich innerhalb von zwei Sekunden orientieren.
+
+### Ist-Zustand & konkrete Befunde im Code
+
+1. **Überladener Hero-Bereich (`frontend/src/shop/components/HeroShowcase.tsx`):** Zeilen 156–265 stapeln 6 Elemente über dem 5er-Dock (`shop.hero.kicker` *Gameserver-Hosting*, Online-Node-Pill, H1 + 2-Zeilen-Untertitel, separate Fokus-Kapsel, 2 Buttons und `trustHighlights`-Liste). Das Hintergrundbild nutzt aktuell nur einen statischen Fade (`.msm-shop-hero-fade` in `frontend/src/index.css`, Zeile 1189) ohne weichen Bild-zu-Bild-Übergang.
+2. **Ungenaues Multi-Node-DDoS-Signal (`ShopStart.tsx` Zeilen 276–304, `shop_catalog_service.py` Zeilen 434–471):** Das Backend ermittelt bereits mit `_plan_ddos_summary`, ob sich alle Shop-Nodes einig sind. `ShopStart.tsx` baut `ddosHighlight` jedoch aus `ddosSummary.providers[0]`, sodass bei zwei Nodes mit unterschiedlichen Anbietern (Node A = Schutz X, Node B = Schutz Y) fälschlich nur Anbieter X im Header-Bereich prangt.
+3. **Technischer Standort-Fallback `"Lokal"` (`HeroShowcase.tsx`, `StandortPingDeck.tsx`, `Konfigurator.tsx`):** Ist `node.location_label` leer und der interne Node-Name `Lokal` oder `local`, sehen Shop-Kunden im öffentlichen Bereich den Begriff `Lokal`.
+4. **Top-Spiele nicht zentral steuerbar & Katalog ohne Fokus:** Zwar existiert `recent_paid_order_counts` (`shop_catalog_service.py`, Zeile 596), aber der Hero sortiert aktuell starr nach `isFeatured` / `bildUrl` (`HeroShowcase.tsx`, Zeile 66–70). Der Betreiber hat keinen Schalter zwischen automatischer (bezahlter) Bestell-Sortierung und manueller Kuration und kann keine kurzen Update-Hinweisbanner (z. B. für ein großes Patch-Release) an ein Spiel heften. Im Vollkatalog `#shop-spiele` werden alle Spiele sofort ausgegeben.
+5. **Fehlender unterer Story-Bereich auf `ShopSpiel.tsx`:** Unten nach dem `Konfigurator` endet die Seite abrupt, ohne das Spiel atmosphärisch mit Hintergrundbild, Spielgeschichte (Paket 7) und echten Hosting-Vorteilen abzurunden.
+
+### Ziel-Zustand, Produkt-UI & Fachlogik (Wie & Wo)
+
+1. **Hero-Stage 3.0 (`frontend/src/shop/components/HeroShowcase.tsx` & `frontend/src/index.css`):**
+   - **Visuelle Architektur (Nitrado-Ruhe in Design-DNA):** Volle Bühnenbreite (`min-h-[560px] lg:min-h-[640px]`), tiefdunkler Edge-Vignette-Verlauf nur links/unten für maximalen Kontrast (`contrast >= 4.5:1`), sodass rechts und oben das Spiel-Artwork wirkt.
+   - **Dual-Layer-Crossfade & ruhiger Ken-Burns-Zoom:** Statt hartem Bildwechsel bei `<img key={...}>` liegen aktuelles und vorheriges Bild übereinander; beim Wechsel blendet das neue Bild weich über `opacity` (`650 ms cubic-bezier(0.22, 1, 0.36, 1)`) ein, während ein langsamer 7-Sekunden-Zoom (`scale(1)` auf `scale(1.05)`) läuft. Strikte Compositor-Regel: ausschließlich `transform` und `opacity` innerhalb `@media (prefers-reduced-motion: no-preference)`; bei `prefers-reduced-motion: reduce` sofortiger ruhiger Schnitt ohne Zoom.
+   - **Text-Diät im Hero:** Entfernt werden `shop.hero.kicker` (*Gameserver-Hosting*), die 4-Punkte-Liste `trustHighlights`, die überladene H1-Marketing-Floskel und die separate Fokus-Kapsel. Links stehen nur noch:
+     1. Optionales Update-/Aktion-Badge (`promo_highlight_text`, falls vom Betreiber gepflegt) oder diskrete Online-/Standort-Anzeige.
+     2. Großer Spielname (`Manrope`, `tracking-tight`, z. B. `text-4xl sm:text-5xl lg:text-6xl`).
+     3. Eine präzise Faktenzeile in `font-mono tabular-nums`: Einstiegspreis (*ab X,XX € / 3 Tage* bzw. *Monat*), Plattform-Badges und kontextkorrektes DDoS-Badge.
+     4. Genau **ein** Primär-Button (**Server konfigurieren** -> `/shop/:spielId`) sowie ein ruhiger Sekundär-Link (**Alle Spiele** -> `#shop-spiele`).
+   - **Unterer Top-5-Switcher:** Schlankes, halbtransparentes Glass-Dock (`bg-background/72 backdrop-blur-2xl border-t border-white/10`) mit Thumbnail, Spielname, ab-Preis, aktivem Fortschrittsbalken (`.msm-shop-hero-progress`), Pfeiltasten-Navigation und Pause/Play-`<button>` (WCAG 2.2.2, ohne `aria-pressed`).
+2. **Manipulationssichere Top-Spiele-Logik & Update-Highlights:**
+   - **Einstellungen (`backend/services/shop_lifecycle_settings_service.py`, `ShopTab.tsx` / `ShopLifecycleKarte.tsx`):**
+     - Neues Feld `shop_hero_mode: Literal["auto_paid", "manual"]` (Default `"auto_paid"`).
+     - **Warum sicher gegen Tricks:** Im Modus `auto_paid` sortiert `shop_catalog_service` ausschließlich anhand **verifizierter bezahlter Bestellungen** der letzten 90 Tage (`recent_paid_order_counts`, `ShopOrder.status == "paid"`), niemals über Klicks, Aufrufe oder unbezahlte Warenkörbe.
+     - Sortier-Kaskade in `auto_paid`:
+       1. Spiele mit aktivem `ShopPlan.pinned_in_hero == True` (damit der Betreiber jederzeit ein wichtiges Spiel-Update oder neuen Titel oben festpinnen kann).
+       2. Höchste Summe aus `recent_paid_order_counts` der letzten 90 Tage.
+       3. Fallback bei noch wenigen Bestellungen: `is_featured`, danach `sort_order`.
+     - Im Modus `manual` erscheinen ausschließlich Spiele mit `pinned_in_hero == True` oder `is_featured == True` in `sort_order`-Reihenfolge.
+   - **Tarif-Editor (`backend/models/shop.py` -> Migration, `backend/schemas/shop.py`, `ShopPlansEditor.tsx`):**
+     - `ShopPlan.pinned_in_hero: bool` (`Default False`) und `ShopPlan.promo_highlight_text: str | None` (`String(80)`, nullable, z. B. `Großes Update · neuer Patch`).
+     - In `ShopPlansEditor.tsx` als ruhiger Switch + kurzes Hinweisfeld im Basis-Reiter integriert; auf Hero, `SpielKarte` und `ShopSpiel` als dezentes Akzent-Badge gerendert.
+3. **Präzise Multi-Node-DDoS-Kennzeichnung & saubere Standortnamen:**
+   - **Backend & Frontend (`shop_catalog_service.py`, `ShopStart.tsx`, `TrustSection.tsx`, `StandortPingDeck.tsx`):**
+     - Besitzen alle aktiven Shop-Nodes denselben DDoS-Anbieter, leuchtet dessen Name prominent im Hero und im DDoS-Spotlight (`.msm-shop-ddos-pill` / `.msm-shop-ddos-glow`).
+     - Haben Shop-Nodes **unterschiedliche** Anbieter (z. B. Node 1 = Path.net, Node 2 = CosmicGuard), wählt `ShopStart.tsx` nicht länger blind `providers[0]`, sondern zeigt im Gesamt-Spotlight transparent **„DDoS-Schutz je Standort: <Anbieter A>, <Anbieter B>“** (mit `ddosGameAware`-Hinweis nur dort, wo er tatsächlich aktiv ist) und kennzeichnet den genauen DDoS-Anbieter + Profil direkt an jeder Standort-Karte im `StandortPingDeck`. Sobald der Nutzer einen Standort auswählt (`ausgewaehlteNodeId`), übernimmt Hero und Spiel-Konfigurator exakt dessen DDoS-Anbieter.
+   - **Standort-Namen ohne `"Lokal"`-Leak (`standortAnzeigeName`-Helper + `AdminNodes.tsx`):**
+     - Fehlt `node.location_label` und lautet `node.name` case-insensitiv `lokal` oder `local`, zeigen `HeroShowcase`, `StandortPingDeck`, `Konfigurator` und `PreisPanel` statt `"Lokal"` den lokalisierten Anzeigenamen **„Standard-Standort“** bzw. **„Primary location“**.
+     - Im Dialog „Node bearbeiten“ (`frontend/src/pages/AdminNodes.tsx`) erscheint bei aktivem `shop_enabled` und leerem `location_label` ein sanfter Hinweis (*Im Shop sichtbar: z. B. Frankfurt am Main · DE*).
+4. **Kompaktes Standort-Band & fokussierter Katalog (`StandortPingDeck.tsx`, `ShopStart.tsx`, `SpielKarte.tsx`):**
+   - **Standorte nebeneinander statt lange Liste:** `StandortPingDeck.tsx` arbeitet konsequent kompakt (`sm:grid-cols-2 lg:grid-cols-3`), strafft Kartenhöhe, zeigt oben in einer schmalen Kopfzeile Gesamtstatus + „Ping testen“-Button und pro Karte übersichtlich Standort, echte Live-Latenz (`tabular-nums`), DDoS-Anbieter, optionales CPU-Modell und die **„Wählen“**-Aktion (bei 1 aktivem Shop-Node als einzelnes kompaktes Telemetry-Band ohne Leerraum rechts).
+   - **Katalog mit klarem Einstieg statt Endlos-Wand (`#shop-spiele`):**
+     - Suchfeld und kompakte Filterleiste (*Alle | Beliebt | Empfohlen | Neu | Sofort verfügbar | Mit Mods* + Plattform-Pills) stehen direkt am Einstieg.
+     - Initial zeigt das Grid fokussiert bis zu **8** kuratierte Spiele (Top-Spiele / Bestseller zuerst), darunter ein ruhiger **„Alle X Spiele anzeigen“**-Button; sobald der Besucher etwas in die Suche tippt oder einen Filter anklickt, expandiert das Grid automatisch über den kompletten Katalog.
+     - `SpielKarte.tsx` bleibt flächig im 16:9-Breitbildformat (keine künstlichen DVD-Hüllen), klare `border-edge`-Kontur, Titel, Plattform-Tags, ein knapper Einstiegspreis (`tabular-nums`) und dezentes `promo_highlight_text`- oder Rabatt-Badge.
+5. **Spiel-Detailseite 2.0 (`ShopSpiel.tsx`, `Konfigurator.tsx`, `PreisPanel.tsx`):**
+   - **Oberer Workbench-Bereich:** Oben kompakte Spiel-Kopfzeile (Titel, Plattform-Badges, optionales `promo_highlight_text`-Badge, Tarifwahl per `@maunting/ui`-`Dropdown` nur bei mehreren Tarifen), links direkt der gegliederte `Konfigurator` inkl. **inline Ping-Check-Button** direkt in der Standort-Wahl (man muss nicht erst zurück zur Startseite!) und rechts das ruhige, sticky `PreisPanel`.
+   - **Unterer Bereich: Garantien & Spiel-Story-Finale:**
+     - Direkte Faktenzeile der inkludierten Leistungen (exakter DDoS-Schutz des gewählten Standorts, Pre-Update-Backups, optionaler Spielwechsel, ungefähre Setup-Dauer).
+     - Darunter ein **vollflächiger Story-Abschnitt mit abgedunkeltem Spiel-Hintergrundbild (`aspect` / `min-h-[320px]`)**: Zeigt links die aufbereitete Spielgeschichte (`game_story` aus Paket 7: *Über <Spiel>*), Plattform-/Mod-Fakten sowie passende Neuigkeiten (`gameNews` aus Paket 4) und rechts einen dezenten Button **„Nach oben zum Konfigurator“**, um ohne Scroll-Mühe direkt abzuschließen.
+
+### Betroffene Dateien
+
+- **Backend:** `backend/models/shop.py`, `backend/schemas/shop.py`, `backend/migrations/versions/<neu>_shop_hero_pinning_and_promo.py`, `backend/services/shop_catalog_service.py`, `backend/services/shop_lifecycle_settings_service.py`
+- **Frontend:**
+  - `frontend/src/index.css`, `frontend/src/api/shop.ts`, `frontend/src/shop/typen.ts`
+  - `frontend/src/shop/components/HeroShowcase.tsx`, `StandortPingDeck.tsx`, `TrustSection.tsx`, `SpielKarte.tsx`, `Konfigurator.tsx`
+  - `frontend/src/shop/pages/ShopStart.tsx`, `frontend/src/shop/pages/ShopSpiel.tsx`
+  - `frontend/src/pages/settings/ShopPlansEditor.tsx`, `ShopLifecycleKarte.tsx`, `frontend/src/pages/AdminNodes.tsx`
+  - `frontend/src/locales/de.json`, `frontend/src/locales/en.json`
+
+### Stolpersteine & Invarianten
+
+- **Animations-Performance & Barrierefreiheit:** Alle Hero-Crossfades und Zoom-Bewegungen verwenden ausschließlich `transform` und `opacity` unter `@media (prefers-reduced-motion: no-preference)`. Der Pause/Play-Button im Hero ändert seinen `aria-label`-Text und verzichtet gemäß WCAG 2.2.2 auf `aria-pressed`.
+- **Keine manipulierbaren Beliebtheitswerte:** Kunden können `auto_paid`-Rankings weder durch Seitenaufrufe noch durch offene `pending_payment`-Bestellungen beeinflussen; gezählt wird ausschließlich `ShopOrder.status == "paid"`.
+- **DDoS-Transparenz:** Kein Standort-Anbieter wird erfunden oder verallgemeinert, wenn Nodes unterschiedliche Provider nutzen.
+
+### Tests & Laufzeit-Abnahme
+
+- Backend (`pytest`): Sortierlogik `auto_paid` vs. `manual` inkl. `pinned_in_hero`, Bestellzahl-Unempfindlichkeit bei unbezahlten Bestellungen, gemischte vs. einheitliche DDoS-Provider in `_plan_ddos_summary`.
+- Frontend (`vitest`): Tests für `HeroShowcase` (schlanker Textaufbau, Dual-Layer-Crossfade, Pause/Play), `ShopStart` (gemischter DDoS-Hinweis, `Standort`-Fallback ohne `"Lokal"`, Katalog-Expand bei > 8 Spielen), `ShopSpiel` (Story-Sektion mit Hintergrundbild, inline Ping-Check).
+- Browser-Probe (`1440px` & `375px`): Visuelle Abnahme von Hero-Animation, DDoS-Kennzeichnung, kompakter Node-Leiste und unterem Story-Block auf `/shop/:id` inkl. `prefers-reduced-motion`-Prüfung und leerer Fehlerkonsole.
+
+---
+
+## Paket 9: Kurzzeit-Laufzeiten (3 Tage, 7 Tage, 14 Tage neben 1 / 3 / 12 Monaten)
+
+### Warum dieses Paket sinnvoll ist
+
+Viele Spielergruppen mieten für ein Wochenende, einen frischen Rust-/Palworld-Wipe oder ein Event lieber zuerst 3 oder 7 Tage, bevor sie einen ganzen Monat buchen. Aktuell lässt das Shop-System ausschließlich `1`, `3` oder `12` Monate (`OrderMonths`) und `Lifetime` zu. Gleichzeitig braucht der Betreiber einen Mindestpreis-Schutz, damit bei einer 3-Tage-Buchung über 1,50 € nicht die festen Zahlungsgebühren die komplette Marge auffressen.
+
+### Ist-Zustand & konkrete Befunde im Code
+
+1. **Starre Monatsbeschränkung in Schema & Preisrechner:**
+   - `backend/schemas/shop.py` (Zeile 230): `OrderMonths = Literal[1, 3, 12]` auf `ShopOrderCreate.months`.
+   - `backend/services/shop_order_service.py` (Zeile 46, 268–290, 1026): `DURATION_DISCOUNTS = {1: 0, 3: 5, 12: 20}`; auch `extend_subscription` erlaubt nur 1, 3 oder 12 Monate.
+   - `frontend/src/shop/typen.ts` (Zeile 45) & `frontend/src/shop/preis.ts` & `frontend/src/shop/components/Konfigurator.tsx` (Zeile 20): kennen ebenfalls nur `LaufzeitMonate = 1 | 3 | 12`.
+2. **Abo-Verlängerung vs. Prepaid:** Wiederkehrende Stripe-Subscriptions sind in MSM an monatliche Intervalle gekoppelt (`ShopSubscription.billing_interval = "month"`), während Prepaid-Laufzeiten bereits per `timedelta(days=...)` auf `current_period_end` addiert werden können (analog zur Guthaben-Berechnung in `shop_order_service.py`).
+
+### Ziel-Zustand & Fachlogik (Wie & Wo)
+
+1. **Abwärtskompatible Datenbank-Erweiterung (`backend/models/shop.py` & Alembic-Migration):**
+   - `ShopOrder`, `ShopOrderItem` und `ShopEntitlement` erhalten eine optionale Spalte `duration_days: int | None` (`CheckConstraint("duration_days IS NULL OR duration_days > 0")`).
+   - Bestandsdatensätze bleiben `duration_days = NULL` und rechnen wie bisher sauber mit `months`.
+   - `ShopPlan` erhält optional `allow_short_durations: bool = True` (`server_default=true()`), sodass einzelne teure Pakete (z. B. komplexe Dedicated-Setups) bei Bedarf von Kurzzeit-Tarifen ausgenommen bleiben können.
+2. **Betreiber-Einstellungen (`shop_lifecycle_settings_service.py` & `ShopTab.tsx`):**
+   - `shop_short_durations_enabled: bool` (Default `False` für sicheres Opt-in ohne Überraschungen in Bestandsshops).
+   - Konfigurierbare Kurzzeit-Stufen (`3`, `7`, `14` Tage) mit jeweils:
+     - `enabled: bool`
+     - `price_factor_percent: int` (Anteil vom Monatspreis, z. B. 3 Tage = `25 %`, 7 Tage = `40 %`, 14 Tage = `65 %`)
+     - `min_price_cents: int` (`>= 100`, z. B. `199` = 1,99 € als Untergrenze gegen Stripe-Transaktionsgebühren).
+3. **Strenge Zahlungs- und Abo-Regel:**
+   - Kurzzeit-Laufzeiten (`duration_days in {3, 7, 14}`) sind **ausschließlich im `prepaid`-Modus** buchbar (und ablehnend per `422`, falls jemand `billing_mode="subscription"` oder `"lifetime"` mit `duration_days` schickt). So kollidiert nichts mit wiederkehrenden monatlichen Stripe-Abos.
+   - Im `KontoAbos`-Verlängerungsflow (`POST /api/shop/subscriptions/{id}/extend`) können bestehende Prepaid-Server bei aktiviertem Setting sowohl um 3, 7, 14 Tage als auch um 1, 3, 12 Monate aufgeladen werden (`current_period_end = max(current_period_end, now) + timedelta(days=duration_days)`).
+4. **Cent-genaue Parität zwischen Backend & Frontend (`shop_order_service.py`, `preis.ts`, Rechnungen):**
+   - Serverberechnung (`shop_order_service.py`) und Clientvorschau (`preis.ts`) nutzen identisch:
+     - `tageBrutto = max(tier.min_price_cents, round(monatlich * tier.price_factor_percent / 100))`
+     - Rabatt-Gutscheine (`ShopCoupon`) greifen danach normal, bleiben aber durch die allgemeine Mindest-Logik geschützt.
+   - Rechnungsgenerierung (`invoice_service.py`, PDF/A-3 & XRechnung-XML) weist den gebuchten Zeitraum bei gesetztem `duration_days` explizit in Tagen aus (`"3 Tage Prepaid"` statt `"1 Monat"`).
+5. **UI im Konfigurator & auf Karten (`Konfigurator.tsx`, `PreisPanel.tsx`, `SpielKarte.tsx`, `HeroShowcase.tsx`, `KontoAbos.tsx`):**
+   - In `Konfigurator.tsx` wählt der Kunde klar zwischen den aktiven Laufzeit-Chips (**3 Tage · 7 Tage · 14 Tage | 1 Monat · 3 Monate (-5 %) · 12 Monate (-20 %)**). Wechselt der Kunde auf **Abo**, deaktiviert das UI die Tages-Chips sauber mit einem ruhigen Einzeiler (*Kurzzeit-Tarife stehen im Prepaid-Modus ohne Kündigungsfrist bereit*).
+   - Auf `SpielKarte.tsx` und im `HeroShowcase` wird immer der niedrigste aktive Einstiegspreis angezeigt: Ist `3 Tage` aktiv, erscheint dort z. B. **„ab 2,49 € / 3 Tage“**, ansonsten **„ab X,XX € / Monat“**.
+
+### Betroffene Dateien
+
+- **Backend:** `backend/models/shop.py`, `backend/schemas/shop.py`, `backend/migrations/versions/<neu>_shop_short_durations.py`, `backend/services/shop_lifecycle_settings_service.py`, `backend/services/shop_catalog_service.py`, `backend/services/shop_order_service.py`, `backend/services/invoice_service.py`, `backend/routers/shop.py`
+- **Frontend:** `frontend/src/api/shop.ts`, `frontend/src/shop/typen.ts`, `frontend/src/shop/preis.ts`, `frontend/src/shop/components/Konfigurator.tsx`, `PreisPanel.tsx`, `SpielKarte.tsx`, `HeroShowcase.tsx`, `frontend/src/shop/pages/konto/KontoAbos.tsx`, `frontend/src/pages/settings/ShopPlansEditor.tsx`, `ShopLifecycleKarte.tsx`, `frontend/src/locales/{de,en}.json`
+
+### Stolpersteine & Invarianten
+
+- **Keine Subscription-Falle:** `ShopOrderCreate` prüft serverseitig im `model_validator`, dass `duration_days` nur bei `billing_mode == "prepaid"` und nur für aktivierte Stufen zulässig ist (`422` sonst).
+- **Cent-Gleichheit:** Server (`_resolve_plan_spec` / `create_order`) und Frontend (`preisAufschluesselung`) müssen auf denselben Cent runden (`Math.round` vs. Python `round` mit sauberer half-up- oder expliziter Integer-Arithmetik `(monatlich * factor + 50) // 100`), damit Stripe-Checkout-Betrag und UI-Anzeige niemals um 1 Cent abweichen.
+- **Add-ons schützen:** Reine Panel-/KI-Add-ons bleiben bei monatlichen Intervallen (`duration_days` nur für Server-Pläne).
+
+### Tests & Laufzeit-Abnahme
+
+- Backend (`pytest`): Bestellung + Verlängerung mit 3/7/14 Tagen, Mindestpreis-Durchsetzung (`min_price_cents`), Ablehnung von `duration_days` bei `subscription`/`lifetime` oder deaktiviertem Setting (`422`), Rechnungsausgabe mit Tageszeitraum, korrekte `current_period_end`-Addition (`+ timedelta(days=duration_days)`).
+- Frontend (`vitest`): `preis.test.ts` (Parität zu Python für alle Stufen & Mindestpreise), `Konfigurator.test.tsx` (Prepaid vs. Abo-Umschaltung), `SpielKarte` (Anzeige kleinster Preis).
+
+---
+
+## Paket 10: Server-Wechsel 2.0 (Kunden-Spielwechsel mit Missbrauchsschutz, Steam-Branch-Wechsel & Minecraft-Versionswechsler)
+
+### Warum dieses Paket wichtig ist
+
+Spieler erwarten von einem modernen Hosting-Produkt Flexibilität auf drei Ebenen:
+1. Mit demselben gemieteten Gameserver spontan zu einem anderen Spiel wechseln (ohne erst zu kündigen), aber für den Betreiber sauber gegen Dauer-Wechsler und Tarif-Umgehung abgesichert.
+2. Bei Steam-Titeln (z. B. DayZ Experimental, Satisfactory Experimental, Project Zomboid Unstable) sauber zwischen **Branches** wechseln können, inklusive automatischer Update-Erkennung für genau diesen Branch.
+3. Bei Minecraft nicht jedes Mal den ganzen Server plattmachen müssen, sondern innerhalb der gewählten Edition bequem auf eine neue Version (oder sicher mit Welt-Reset auf eine ältere Version) wechseln und bei Bedarf zwischen Editionen (z. B. Paper zu Fabric oder Purpur) umschalten.
+
+In allen drei Fällen bleibt die oberste MSM-Sicherheitsregel unangetastet: **Kein einziger Wechsel darf Dateien antasten oder löschen, bevor nicht ein verifiziertes Voll-Backup über den zentralen `backup_orchestrator` (inkl. S3-Upload, falls konfiguriert) nachweislich geschrieben und geprüft wurde.**
+
+### Ist-Zustand & konkrete Befunde im Code
+
+1. **Blueprint-Wechsel bereits technisch solide, aber UI & Missbrauchsschutz unvollständig:**
+   - `backend/services/server_lifecycle_service.py` (`switch_server_blueprint`, Zeile 1512–1798) prüft bereits Server-Stopp (`stopped`), Pflicht-Backup mit `backup_record.verified_at` über `backup_orchestrator.create_server_backup()`, Dateibereinigung per `wipe_server_root`, Port-Neuzuweisung sowie für Kunden `allow_game_switch`, Gameserver-Kategorie und RAM-/CPU-Minimum.
+   - **Lücken:** `frontend/src/components/server/SwitchBlueprintDialog.tsx` (Zeile 30) ruft noch das rohe `/blueprints`-Endpoint auf und zeigt Kunden technische Blueprint-IDs und -Kategorien. Außerdem fehlt serverseitig ein **Cooldown** (z. B. maximal 1 Wechsel je 24 h / X je Monat) sowie ein optionaler **Preis-Vergleich** gegen Tarif-Umgehung.
+2. **Steam-Branch starr im Blueprint verdrahtet:**
+   - `backend/games/updater.py` (`_steam_effective_branch`, Zeile 276) liest ausschließlich `blueprint.source.steam.branch`; `blueprint_plugin.py` (Zeile 460) und `check_server_file_update` (Zeile 781) kennen keinen Server-spezifischen Branch.
+3. **Minecraft-Version nur als rohes Env-Textfeld:**
+   - `minecraft_*.blueprint.json` definiert `runtime.env.VERSION` (Standard `LATEST`), ohne echte Versionsliste, ohne SemVer-Upgrade-/Downgrade-Prüfung und ohne geführten Welt-Schutz vor dem bekannten Absturz `"world was created in a different version"`.
+
+### Ziel-Zustand, Produkt-UI & Fachlogik (Wie & Wo)
+
+#### Teil A: Kunden-Spielwechsel mit Missbrauchsschutz (`SwitchBlueprintDialog.tsx`, `server_lifecycle_service.py`)
+
+1. **Kontext-getrennter Auswahldialog (`GET /api/servers/{server_id}/switch-options`):**
+   - **Shop-Kunde** (`is_hoster_managed` ohne `shop.manage` / `servers.create`): liefert ausschließlich freigegebene aktive Shop-Spiele (`ShopPlan.active == True`, Kategorie `steam_game` oder `non_steam_game`) mit Spielname, Cover-Artwork, Plattformen, benötigtem RAM/CPU und Angabe, ob das Spiel im aktuellen Tarif sofort wechselbar ist oder wegen RAM/CPU/Preisgrenze ausgeschlossen bleibt. Keine rohen Blueprint-Dateinamen, keine Bots oder Datenbanken.
+   - **Self-Hoster / Betreiber:** liefert wie gewohnt die vollständige Blueprint-Liste aller installierbaren Blueprints.
+2. **Serverseitiger Missbrauchsschutz (`Server.last_blueprint_switch_at` + Einstellungen in `shop_lifecycle_settings_service.py`):**
+   - Neue einstellbare Betreiber-Regeln in **Einstellungen → Shop** (`ShopLifecycleKarte.tsx`):
+     - `shop_game_switch_cooldown_hours: int` (Default `24`, Bereich `0–720`).
+     - `shop_game_switch_max_per_30d: int` (Default `4`, Bereich `0–100`, `0` = unbegrenzt): gezählt über bestehende Audit-Einträge (`server.blueprint.switch`) in den letzten 30 Tagen.
+     - `shop_game_switch_allow_higher_price_plan: bool` (Default `False`): verhindert, dass ein Kunde einen sehr günstigen Spieltarif bucht und sofort auf ein teureres Spiel wechselt, wenn dessen Mindest-Grundpreis über dem aktuell gezahlten Grundtarif liegt.
+   - `switch_server_blueprint` prüft diese Regeln bei Shop-Kunden **vor** Backup/Wipe und antwortet mit klarem HTTP `429` (Restzeit bis zum nächsten Wechsel) bzw. HTTP `403`. Admins (`is_owner` / `shop.manage`) und Self-Hosted-Server bleiben davon ausgenommen.
+3. **Hochwertiger UI-Dialog (`SwitchBlueprintDialog.tsx`):**
+   - Für Shop-Kunden als moderner, visueller **Spiel-Browser im Modal**: Suchfeld, 2-Spalten-Kartenraster mit Spiel-Thumbnail, Plattform-Tags, Hinweis „Automatisches Backup vor dem Wechsel (inkl. S3)“ sowie klarer Status-Zeile für aktiven Cooldown oder fehlenden RAM/CPU direkt an nicht wählbaren Spielen (mit Direkt-Hinweis auf Upgrade/Verlängerung). Erreichbar von `ServerDetail.tsx` **und** direkt aus `KontoAbos.tsx`.
+
+#### Teil B: Steam-Branch-Wechsel pro Server (`Server.steam_branch`, `updater.py`, `blueprint_plugin.py`)
+
+1. **Datenmodell & Sicherheit (`backend/models/server.py`, Migration):**
+   - `Server.steam_branch: Mapped[str | None]` (`String(64)`, nullable -> `None` bedeutet Standard-Branch des Blueprints).
+   - `Server.steam_branch_password_encrypted: Mapped[str | None]` (`Text`, nullable -> über bestehenden MSM-Verschlüsselungshelfer verschlüsselt, niemals im Klartext in Logs, Prompts oder API-Responses; UI bekommt nur `has_branch_password: bool`).
+   - Striktes Namens-Regex `^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$` schließt jede Kommando-Injektion an SteamCMD aus.
+2. **Backend-Ablauf (`POST /api/servers/{server_id}/switch-branch`):**
+   - Prüft `server.config.write` + `server.status == "stopped"` + Steam-Source-Blueprint.
+   - **Rechte-Trennung:** Shop-Kunden dürfen ausschließlich Branches aus `blueprint.source.steam.branches` (Paket 7) wählen (keine beliebige Branch-Manipulation); Self-Hoster und Admins dürfen zusätzlich freie Branch-Namen samt optionalem Beta-Passwort eintragen.
+   - Zieht **ausnahmslos** ein verifiziertes Backup über `backup_orchestrator.create_server_backup(server.id, db, ...)` (inkl. S3-Upload, falls aktiviert). Bei Backup-Fehler Abbruch ohne Änderung.
+   - Speichert `Server.steam_branch`, stößt den Re-Install / `app_update -beta <branch> validate` an und sorgt über `_steam_effective_branch(steam, server=server)` in `updater.py` und `blueprint_plugin.py` dafür, dass auch jeder spätere Neustart und der Update-Checker exakt diesen Server-Branch abgleichen.
+
+#### Teil C: Minecraft-Versionswechsler & Edition-Wechsel (`minecraft_version_service.py`, `ServerVersionBranchDialog.tsx`)
+
+1. **Versions-Katalogdienst (`backend/services/minecraft_version_service.py`):**
+   - Neuer Endpoint `GET /api/servers/{server_id}/minecraft/versions`:
+     - Erkennt anhand `blueprint.meta.versioning` (Paket 7) die aktive Minecraft-Edition (`vanilla`, `paper`, `purpur`, `fabric`, `forge`, `neoforge`, `spigot`, `sponge`) sowie die aktuell eingestellte Version aus `server.env_vars` / Blueprint-Default.
+     - Fragt für Editionen mit stabiler JSON-API offiziell und mit 6-Stunden-Cache ab:
+       - **Vanilla (`mojang`):** `https://piston-meta.mojang.com/mc/game/version_manifest_v2.json`
+       - **Paper (`papermc`):** `https://api.papermc.io/v2/projects/paper`
+       - **Purpur (`purpurmc`):** `https://api.purpurmc.org/v2/purpur`
+       - **Fabric (`fabric`):** `https://meta.fabricmc.net/v2/versions/game`
+       - **Forge / NeoForge / Spigot / Sponge:** kombinierte offizielle Vanilla-Basisliste + `LATEST`-Option (inkl. sicherem Offline-Fallback, falls APIs temporär nicht antworten).
+     - Klassifiziert jede Version gegenüber der aktuellen Server-Version automatisch als `upgrade`, `same`, `downgrade` oder `latest` mittels sauberem SemVer-Vergleich.
+2. **Sicherer Versionswechsel ohne unnötigen Komplettverlust (`POST /api/servers/{server_id}/minecraft/switch-version`):**
+   - Input: `{ target_version: str, reset_world: bool = False }` (validiert gegen bekannte Versionen oder strenges Versions-Regex `^(LATEST|SNAPSHOT|[0-9]{1,2}\.[0-9]{1,3}(?:\.[0-9]{1,3})?(?:-[a-zA-Z0-9._-]+)?)$`).
+   - Ablauf:
+     1. Server muss gestoppt sein (`stopped`), `server.config.write` erforderlich.
+     2. **Pflicht-Backup über `backup_orchestrator.create_server_backup()`** (inkl. S3, Abbruch falls `verified_at is None`).
+     3. **Upgrade (oder gleicher Major/Minor-Zweig):** Bestehende Welt, Plugins, Mods und `server.properties` bleiben erhalten; lediglich die `VERSION`-Konfiguration (über `config_wishes` / Server-Umgebungsvariable) wird aktualisiert, sodass `itzg/minecraft-server` beim nächsten Start sauber das passende Server-JAR lädt.
+     4. **Downgrade (z. B. `1.21.4` -> `1.20.4`):** API verlangt bei aktiviertem `supportsDowngradeWarning` entweder `reset_world: true` oder eine explizite Bestätigung (`confirm_downgrade_keep_world: true`) und erklärt klar, dass Minecraft ältere Welten aus Sicherheitsgründen blockiert (`"world was created in a different version"`). Erst **nach** abgeschlossenem verifiziertem Backup löscht ein optionales `reset_world: true` gezielt nur die Weltordner (`world`, `world_nether`, `world_the_end`, lokal oder per Node-Agent) und lässt Konfigurationen (`server.properties`, Whitelist, Plugins-Ordner) intakt.
+3. **Gebündelter Produkt-Dialog (`frontend/src/components/server/ServerVersionBranchDialog.tsx`):**
+   - Auf `ServerDetail.tsx` direkt in der Server-Aktionsleiste platziert (**„Version & Branch“** für Minecraft bzw. Steam-Spiele neben **„Spiel wechseln“**):
+     - **Für Minecraft-Server:** Zwei ruhige Tabs im Dialog: **„Version wechseln“** (aktuelle Edition & Version oben, Suchfeld, Toggle *Nur stabile Releases / auch Snapshots*, klare Farbhierarchie für *Update* vs. *Downgrade*, deutliches Backup-+S3-Schutzbanner und kontextabhängige Welt-Reset-Checkbox bei Downgrades) und **„Edition wechseln“** (z. B. Paper -> Fabric, Purpur oder Vanilla mit direkter Verknüpfung auf `switch_server_blueprint`).
+     - **Für Steam-Server:** Kompakte Übersicht aller erlaubten `source.steam.branches` als anklickbare Auswahlkarten (inkl. Status *Aktiv installiert*) sowie für Self-Hoster/Betreiber ein optionaler Experten-Bereich für eigene Branch-Namen und Passwort.
+
+### Betroffene Dateien
+
+- **Backend:**
+  - `backend/models/server.py`, `backend/migrations/versions/<neu>_server_branch_and_switch_cooldown.py`
+  - `backend/services/shop_lifecycle_settings_service.py` (`shop_game_switch_cooldown_hours`, `shop_game_switch_max_per_30d`, `shop_game_switch_allow_higher_price_plan`)
+  - `backend/services/server_lifecycle_service.py`, `backend/games/updater.py`, `backend/games/blueprint_plugin.py`
+  - `backend/services/minecraft_version_service.py` (neu)
+  - `backend/routers/servers.py`, `backend/schemas/server.py`
+- **Frontend:**
+  - `frontend/src/api/shop.ts`, `frontend/src/types/index.ts`
+  - `frontend/src/components/server/SwitchBlueprintDialog.tsx`, `frontend/src/components/server/ServerVersionBranchDialog.tsx` (neu)
+  - `frontend/src/pages/ServerDetail.tsx`, `frontend/src/shop/pages/konto/KontoAbos.tsx`, `frontend/src/pages/settings/ShopLifecycleKarte.tsx`
+  - `frontend/src/locales/{de,en}.json`
+
+### Stolpersteine & Invarianten
+
+- **Unverrückbare Backup-Reihenfolge:** In allen drei Pfaden (`switch_server_blueprint`, `switch_steam_branch`, `switch_minecraft_version`) darf **nicht ein Byte** gelöscht oder überschrieben werden, bevor `create_server_backup(...)` ein Backup mit `verified_at is not None` (inkl. abgeschlossenem S3-Upload bei aktiviertem S3) geliefert hat.
+- **Kein Agent-/Docker-Sync-Konflikt:** Bei laufenden Minecraft- oder Steam-Servern werden alle drei Aktionen strikt mit `400 server_must_be_stopped` abgewiesen. Remote-Nodes delegieren Weltordner-Löschung und SteamCMD-Beta-Updates sauber über `NodeClient`, niemals über lokale Pfade.
+- **Keine geheimen Beta-Passwörter in Logs oder API-Antworten:** `steam_branch_password_encrypted` verlässt das Backend niemals entschlüsselt Richtung Frontend.
+
+### Tests & Laufzeit-Abnahme
+
+- Backend (`pytest` gegen PostgreSQL):
+  - Cooldown (`429`), 30-Tage-Limit und Preisgrenze bei Shop-Kunden im `switch_server_blueprint` (plus Admin-/Self-Hosted-Befreiung).
+  - `/api/servers/{id}/switch-options` filtert für Kunden nur Shop-Spiele und gibt für Self-Hoster alle Blueprints zurück.
+  - Steam-Branch-Wechsel setzt `Server.steam_branch`, blockiert Shell-Metazeichen, prüft Allowlist für Kunden, erzwingt Pflicht-Backup vor `steamcmd` und berücksichtigt den Branch in `check_server_file_update`.
+  - Minecraft-Versionswechsler (`minecraft_version_service`) erkennt Upgrade vs. Downgrade, cached API-Antworten, zieht Pflicht-Backup vor `reset_world` und lässt bei Upgrades bestehende Welten unberührt.
+- Frontend (`vitest`): Tests für `SwitchBlueprintDialog` (Kunden- vs. Self-Hosted-Ansicht, Cooldown-Anzeige), `ServerVersionBranchDialog` (Minecraft Release-Filter, Downgrade-Warnung, Edition-Tab, Steam-Branch-Karten) sowie `ShopLifecycleKarte`.
+- Browser-Probe: Auf einem Test-Minecraft-Server Versionswechsel + Edition-Tab sowie auf einem Steam-Server Branch-Wechsel und Spielwechsel im Browser inklusive Fehlermeldungen bei laufendem Server prüfen.
+
+---
+
+## 13. Umsetzungsreihenfolge & Globale Qualitäts-Gates
 
 ### Empfohlene Reihenfolge
 
-1. **Paket 1** (Fundament: RBAC-Sichtbarkeit, Support-Widget-Fix, Kunden-/Hybrid-/Self-Hosted-Trennung)
-2. **Paket 2** (Infrastruktur: „Node bearbeiten“-Redesign, private Hybrid-Nodes, CPU-Toggle, Standort-Auswahl & Aufpreis)
-3. **Paket 3** (Kommunikation: Kompakte Ankündigungs-Karte unten rechts in Shop & Panel)
-4. **Paket 4** (Content: News-System `/news` + CMS + Shop/Panel-Anbindung)
-5. **Paket 5** (Storefront 2.0: Design-DNA-Schärfung, Hero-Showcase, Katalog-Schienen, Live-Ping-Deck, optionale Trustpilot-/Discord-Integration, Konfigurator 2.0)
-6. **Paket 6** (Konto 2.0: Einheitliche Konto- & Abo-Zentrale ohne doppelte Navigation)
+1. **Paket 1** (umgesetzt, 24.11.2026: Fundament, RBAC-Sichtbarkeit, Support-Widget-Fix, Modus-Trennung)
+2. **Paket 2** (umgesetzt, 24.11.2026: Nodes 2.0, private Hybrid-Nodes, CPU-Toggle, Standort-Auswahl & Aufpreis)
+3. **Paket 3** (umgesetzt, 24.11.2026: Kompakte Ankündigungs-Karte unten rechts in Shop & Panel)
+4. **Paket 4** (umgesetzt, 24.11.2026: News-System `/news`, CMS, `NewsTab`-Aufräumung & Singra-Titelbilder)
+5. **Paket 5** (umgesetzt, 24.11.2026: Storefront 2.0, Katalog-Kuratierung, DDoS-Spotlight & Konfigurator 2.0)
+6. **Paket 6** (umgesetzt, 24.11.2026: Konto- & Abo-Zentrale 2.0 ohne doppelte Header und mit geführten Dialogen)
+7. **Paket 7** (als Nächstes: Blueprint-Metadaten 2.0 als Single Source of Truth für Plattformen, Steam-Branches, Spiel-Story & Steam-Store-Cache)
+8. **Paket 8** (Storefront 3.0 & Spiel-Detailseite: ruhiger Vollbild-Hero mit Crossfade/Zoom, manipulationssichere Top-Spiele-Steuerung, Multi-Node-DDoS-Kennzeichnung & unterer Spiel-Story-Bereich)
+9. **Paket 9** (Kurzzeit-Laufzeiten: 3, 7 und 14 Tage als sicheres Prepaid mit Mindestpreis-Schutz)
+10. **Paket 10** (Server-Wechsel 2.0: Kunden-Spielwechsel mit Missbrauchsschutz, Steam-Branch-Wechsel & Minecraft-Versionswechsler mit Welt-Schutz)
 
 Jedes Paket wird einzeln als abgeschlossene Änderung implementiert, getestet und im Browser abgenommen, bevor das nächste startet.
 

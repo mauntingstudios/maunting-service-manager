@@ -5,7 +5,10 @@
     "name": "Project Zomboid",
     "category": "steam_game",
     "author": "Maunting Studios",
-    "description": "Project Zomboid Dedicated Server via SteamCMD (App-ID 380870). Nativer Linux-Support."
+    "description": "Project Zomboid Dedicated Server via SteamCMD (App-ID 380870). Nativer Linux-Support.",
+    "platforms": [
+      "pc"
+    ]
   },
   "runtime": {
     "image": "ghcr.io/parkervcp/steamcmd:debian",
@@ -45,7 +48,19 @@
       "platform": "linux",
       "compatibility": "native",
       "requiresLogin": false,
-      "validate": false
+      "validate": false,
+      "branches": [
+        {
+          "id": "public",
+          "label": "Standard (public)",
+          "description": "Aktueller stabiler Build fuer Langzeit-Welten."
+        },
+        {
+          "id": "unstable",
+          "label": "Unstable (Beta)",
+          "description": "Testzweig fuer kommende Build-Updates."
+        }
+      ]
     },
     "updateStrategy": "checkBased"
   },

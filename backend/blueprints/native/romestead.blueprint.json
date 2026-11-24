@@ -5,7 +5,10 @@
     "name": "Romestead",
     "category": "steam_game",
     "author": "Maunting Studios",
-    "description": "Romestead Dedicated Server (Steam App-ID 4763510, nativer Linux-/.NET-8-Server). Kooperatives Aufbauspiel (1-8 Spieler, Early Access Mai 2026). Benötigt für den SteamCMD-Download einen globalen Steam-Account mit gekaufter Romestead-Lizenz."
+    "description": "Romestead Dedicated Server (Steam App-ID 4763510, nativer Linux-/.NET-8-Server). Kooperatives Aufbauspiel (1-8 Spieler, Early Access Mai 2026). Benötigt für den SteamCMD-Download einen globalen Steam-Account mit gekaufter Romestead-Lizenz.",
+    "platforms": [
+      "pc"
+    ]
   },
   "runtime": {
     "image": "ghcr.io/ptero-eggs/yolks:dotnet_8",

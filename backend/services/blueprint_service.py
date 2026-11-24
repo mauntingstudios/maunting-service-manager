@@ -92,6 +92,8 @@ ID_MUSTER = re.compile(r"^[a-z0-9_]{1,64}$")
 AENDERBARE_PFADE = (
     "meta.name",
     "meta.description",
+    "meta.shopTagline",
+    "meta.shopStory",
     "runtime.image",
     "runtime.env",
     "runtime.startup",

@@ -55,11 +55,24 @@ export interface ShopPlan {
   artwork: ShopArtwork
 }
 
+export interface ShopSteamBranchDto {
+  id: string
+  label: string
+  description?: string | null
+  requires_password?: boolean
+}
+
 export interface ShopCatalogPlan {
   id: number
   game_type: string
   game_name: string
   game_description: string | null
+  game_tagline?: string | null
+  game_story_de?: string | null
+  game_story_en?: string | null
+  genres?: string[]
+  steam_app_id?: string | null
+  available_branches?: ShopSteamBranchDto[]
   game_category: string
   supports_mods: boolean
   supports_workshop: boolean

@@ -7,7 +7,9 @@
     "edition": "TeamSpeak 6",
     "category": "voice_server",
     "author": "Maunting Studios",
-    "description": "Aktueller TeamSpeak-6-Voiceserver (offizielles Server-Image). Der erste Privilege-Key erscheint beim ersten Start in der Konsole."
+    "description": "Aktueller TeamSpeak-6-Voiceserver (offizielles Server-Image). Der erste Privilege-Key erscheint beim ersten Start in der Konsole.",
+    "shopTagline": "Aktuelle TeamSpeak-Servergeneration für Clans und eingespielte Teams.",
+    "shopStory": "TeamSpeak 6 verbindet bewährte Latenzwerte und lokale Kontrolle mit der neuesten Server-Generation."
   },
   "runtime": {
     "image": "teamspeaksystems/teamspeak6-server:latest",
@@ -62,7 +64,10 @@
       "type": "select",
       "default": "accept",
       "options": [
-        { "value": "accept", "label": "Akzeptiert (accept)" }
+        {
+          "value": "accept",
+          "label": "Akzeptiert (accept)"
+        }
       ]
     },
     {
@@ -72,9 +77,18 @@
       "type": "select",
       "default": "INFO",
       "options": [
-        { "value": "INFO", "label": "Standard (INFO)" },
-        { "value": "WARNING", "label": "Nur Warnungen & Fehler (WARNING)" },
-        { "value": "DEBUG", "label": "Diagnose (DEBUG)" }
+        {
+          "value": "INFO",
+          "label": "Standard (INFO)"
+        },
+        {
+          "value": "WARNING",
+          "label": "Nur Warnungen & Fehler (WARNING)"
+        },
+        {
+          "value": "DEBUG",
+          "label": "Diagnose (DEBUG)"
+        }
       ]
     }
   ]

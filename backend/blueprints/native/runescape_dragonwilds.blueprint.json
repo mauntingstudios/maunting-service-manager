@@ -5,7 +5,10 @@
     "name": "RuneScape: Dragonwilds",
     "category": "steam_game",
     "author": "Maunting Studios",
-    "description": "RuneScape: Dragonwilds Dedicated Server (Steam App-ID 4019830, nativer Linux-Support). Kooperatives Survival-RPG (1-6 Spieler). Vor dem Start muss die eigene Player-ID als OwnerId in RSDragonwilds/Saved/Config/LinuxServer/DedicatedServer.ini eingetragen werden."
+    "description": "RuneScape: Dragonwilds Dedicated Server (Steam App-ID 4019830, nativer Linux-Support). Kooperatives Survival-RPG (1-6 Spieler). Vor dem Start muss die eigene Player-ID als OwnerId in RSDragonwilds/Saved/Config/LinuxServer/DedicatedServer.ini eingetragen werden.",
+    "platforms": [
+      "pc"
+    ]
   },
   "runtime": {
     "image": "ghcr.io/parkervcp/steamcmd:debian",

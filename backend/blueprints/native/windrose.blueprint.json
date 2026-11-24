@@ -5,7 +5,10 @@
     "name": "Windrose",
     "category": "steam_game",
     "author": "Maunting Studios",
-    "description": "Windrose Dedicated Server (Steam App-ID 4129620). Läuft über GE-Proton + UMU (msm-proton-runtime) im DirectConnection- oder InviteCode-Modus (R5/ServerDescription.json)."
+    "description": "Windrose Dedicated Server (Steam App-ID 4129620). Läuft über GE-Proton + UMU (msm-proton-runtime) im DirectConnection- oder InviteCode-Modus (R5/ServerDescription.json).",
+    "platforms": [
+      "pc"
+    ]
   },
   "runtime": {
     "image": "ghcr.io/mauntingstudios/msm-proton-runtime:ge-proton10-34-umu1.4.0",

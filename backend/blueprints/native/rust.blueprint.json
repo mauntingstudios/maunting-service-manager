@@ -5,7 +5,12 @@
     "name": "Rust",
     "category": "steam_game",
     "author": "Maunting Studios",
-    "description": "Rust Dedicated Server via SteamCMD (App-ID 258550). Nativer Linux-Support."
+    "description": "Rust Dedicated Server via SteamCMD (App-ID 258550). Nativer Linux-Support.",
+    "platforms": [
+      "pc",
+      "ps5",
+      "xbox"
+    ]
   },
   "runtime": {
     "image": "ghcr.io/parkervcp/steamcmd:debian",
@@ -53,7 +58,19 @@
       "platform": "linux",
       "compatibility": "native",
       "requiresLogin": false,
-      "validate": false
+      "validate": false,
+      "branches": [
+        {
+          "id": "public",
+          "label": "Standard (public)",
+          "description": "Monatliche Haupt-Releases fuer produktive Rust-Server."
+        },
+        {
+          "id": "staging",
+          "label": "Staging",
+          "description": "Vorab-Zweig fuer kommende Force-Wipe-Aenderungen."
+        }
+      ]
     },
     "updateStrategy": "checkBased"
   },

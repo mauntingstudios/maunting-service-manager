@@ -5,7 +5,10 @@
     "name": "ASKA",
     "category": "steam_game",
     "author": "Maunting Studios",
-    "description": "ASKA Dedicated Server (Steam App-ID 3246670). Windows-Server-Binary läuft über Wine 10. Für eine öffentliche Listung muss ein Steam Game Server Login Token (App-ID 1898300) unter authentication token in der server properties.txt hinterlegt werden."
+    "description": "ASKA Dedicated Server (Steam App-ID 3246670). Windows-Server-Binary läuft über Wine 10. Für eine öffentliche Listung muss ein Steam Game Server Login Token (App-ID 1898300) unter authentication token in der server properties.txt hinterlegt werden.",
+    "platforms": [
+      "pc"
+    ]
   },
   "runtime": {
     "image": "ghcr.io/parkervcp/yolks:wine_10",

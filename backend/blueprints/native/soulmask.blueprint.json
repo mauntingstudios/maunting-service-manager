@@ -5,7 +5,10 @@
     "name": "Soulmask",
     "category": "steam_game",
     "author": "Maunting Studios",
-    "description": "Soulmask Dedicated Server For Linux (Steam App-ID 3017300). Nativer Linux-Support via WSServer-Linux-Shipping, inkl. Game-, Query- und Echo-Port."
+    "description": "Soulmask Dedicated Server For Linux (Steam App-ID 3017300). Nativer Linux-Support via WSServer-Linux-Shipping, inkl. Game-, Query- und Echo-Port.",
+    "platforms": [
+      "pc"
+    ]
   },
   "runtime": {
     "image": "ghcr.io/parkervcp/steamcmd:debian",

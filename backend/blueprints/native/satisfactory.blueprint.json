@@ -5,7 +5,10 @@
     "name": "Satisfactory",
     "category": "steam_game",
     "author": "Maunting Studios",
-    "description": "Satisfactory Dedicated Server via SteamCMD (App-ID 1690800). Nativer Linux-Support (Update 1.0/1.1+)."
+    "description": "Satisfactory Dedicated Server via SteamCMD (App-ID 1690800). Nativer Linux-Support (Update 1.0/1.1+).",
+    "platforms": [
+      "pc"
+    ]
   },
   "runtime": {
     "image": "ghcr.io/parkervcp/steamcmd:debian",
@@ -47,7 +50,19 @@
       "platform": "linux",
       "compatibility": "native",
       "requiresLogin": false,
-      "validate": false
+      "validate": false,
+      "branches": [
+        {
+          "id": "public",
+          "label": "Standard (public)",
+          "description": "Stabile Satisfactory-Hauptversion."
+        },
+        {
+          "id": "experimental",
+          "label": "Experimental",
+          "description": "Vorschau-Zweig mit neuen Updates und Fabrik-Features."
+        }
+      ]
     },
     "updateStrategy": "checkBased"
   },
