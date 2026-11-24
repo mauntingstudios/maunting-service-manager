@@ -10165,7 +10165,20 @@
     "markdownItalic": "Kursiv (*text*)",
     "markdownOrderedList": "Nummerierte Liste (1. )",
     "markdownLink": "Link ([Text](url))",
-    "markdownCode": "Code (`code`)"
+    "markdownCode": "Code (`code`)",
+    "fieldAudience": "Zielbereich",
+    "audienceAll": "Shop & Panel",
+    "audienceShop": "Nur Shop",
+    "audiencePanel": "Nur Panel",
+    "fieldTone": "Darstellung",
+    "toneInfo": "Hinweis",
+    "tonePromo": "Angebot",
+    "toneMaintenance": "Wartung",
+    "buttonUrlHint": "Erlaubt sind interne Pfade (/shop) oder https://-Links.",
+    "contentLengthHint": "Kompakte Karte unten rechts: kurz und schnell lesbar halten.",
+    "contentTooLong": "Der Inhalt darf höchstens {{max}} Zeichen lang sein.",
+    "regionLabel": "Ankündigung",
+    "queuePosition": "{{current}} von {{total}}"
   },
   "desktopBadge": {
     "tooltip": "Maunting Smart System Desktop-App herunterladen",

@@ -1,9 +1,16 @@
 import { api } from './client'
 
+export type PopupAudience = 'all' | 'shop' | 'panel'
+export type PopupTone = 'info' | 'promo' | 'maintenance'
+
+export const POPUP_CONTENT_MAX_LENGTH = 600
+
 export interface PanelPopup {
   id: number
   title: string
   content_markdown: string
+  audience?: PopupAudience
+  tone?: PopupTone
   is_active: boolean
   start_at: string | null
   end_at: string | null
@@ -16,6 +23,8 @@ export interface PanelPopup {
 export interface PanelPopupCreateInput {
   title: string
   content_markdown: string
+  audience?: PopupAudience
+  tone?: PopupTone
   is_active?: boolean
   start_at?: string | null
   end_at?: string | null
@@ -26,6 +35,8 @@ export interface PanelPopupCreateInput {
 export interface PanelPopupUpdateInput {
   title?: string
   content_markdown?: string
+  audience?: PopupAudience
+  tone?: PopupTone
   is_active?: boolean
   start_at?: string | null
   end_at?: string | null
@@ -35,6 +46,12 @@ export interface PanelPopupUpdateInput {
 
 export async function getActivePopup(): Promise<PanelPopup | null> {
   return api<PanelPopup | null>('/popups/active')
+}
+
+export async function getPublicActivePopups(
+  surface: 'shop' | 'panel' = 'shop',
+): Promise<PanelPopup[]> {
+  return api<PanelPopup[]>(`/popups/public/active?surface=${encodeURIComponent(surface)}`)
 }
 
 export async function dismissPopup(popupId: number, mode: 'snooze' | 'permanent'): Promise<{ ok: boolean; mode: string }> {

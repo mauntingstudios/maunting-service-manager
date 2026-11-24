@@ -1087,6 +1087,32 @@ html[data-season="christmas"] .season-logo-christmas {
   }
 }
 
+/* Nicht-modale Bottom-Right-Ankündigungskarte (Shop & Panel) */
+.msm-popup-card {
+  top: auto;
+  left: auto;
+  margin: 0;
+  opacity: 1;
+  translate: 0 0;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .msm-popup-card {
+    transition:
+      opacity 220ms cubic-bezier(0.22, 1, 0.36, 1),
+      translate 240ms cubic-bezier(0.22, 1, 0.36, 1),
+      display 220ms allow-discrete,
+      overlay 220ms allow-discrete;
+  }
+
+  @starting-style {
+    .msm-popup-card {
+      opacity: 0;
+      translate: 0 0.75rem;
+    }
+  }
+}
+
 /* Native Modal Scroll-Containment (keine Hintergrund-Scrolls unter offenen Dialogen) */
 dialog:modal {
   overscroll-behavior: contain;

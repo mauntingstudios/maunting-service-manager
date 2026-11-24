@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, false, text, true
+from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, false, text, true
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from database import Base
@@ -9,10 +9,16 @@ from database import Base
 
 class PanelPopup(Base):
     __tablename__ = "panel_popups"
+    __table_args__ = (
+        CheckConstraint("audience IN ('all', 'shop', 'panel')", name="ck_panel_popups_audience"),
+        CheckConstraint("tone IN ('info', 'promo', 'maintenance')", name="ck_panel_popups_tone"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     content_markdown: Mapped[str] = mapped_column(Text, nullable=False)
+    audience: Mapped[str] = mapped_column(String(16), default="all", server_default="all", nullable=False)
+    tone: Mapped[str] = mapped_column(String(16), default="info", server_default="info", nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default=true(), nullable=False)
     start_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     end_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

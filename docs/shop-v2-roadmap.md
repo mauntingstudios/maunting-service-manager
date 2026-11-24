@@ -11,7 +11,7 @@ Arbeitsgrundlage für den Umbau von Storefront, RBAC-Sichtbarkeit, Multi-Node-St
 2. [Weiterentwicklung der Maunting Design-DNA (v2.1) & Anti-AI-Slop-Regeln](#2-weiterentwicklung-der-maunting-design-dna-v21--anti-ai-slop-regeln)
 3. [Paket 1: Strikte RBAC-Sichtbarkeit, Support-Widget-Fix & Modus-Trennung (umgesetzt, 24.11.2026)](#paket-1-strikte-rbac-sichtbarkeit-support-widget-fix--modus-trennung-umgesetzt-24112026)
 4. [Paket 2: Nodes 2.0, Private Hybrid-Nodes, CPU-Sichtbarkeit & Standort-Wahl (umgesetzt, 24.11.2026)](#paket-2-nodes-20-private-hybrid-nodes-cpu-sichtbarkeit--standort-wahl-umgesetzt-24112026)
-5. [Paket 3: Pop-up- & Ankündigungs-System 2.0 (unten rechts in Shop & Panel)](#paket-3-pop-up--ankündigungs-system-20-unten-rechts-in-shop--panel)
+5. [Paket 3: Pop-up- & Ankündigungs-System 2.0 (unten rechts in Shop & Panel) (umgesetzt, 24.11.2026)](#paket-3-pop-up--ankündigungs-system-20-unten-rechts-in-shop--panel-umgesetzt-24112026)
 6. [Paket 4: Integriertes News-System (`/news`, Shop-Teaser, Panel & Admin-CMS)](#paket-4-integriertes-news-system-news-shop-teaser-panel--admin-cms)
 7. [Paket 5: Shop-Storefront, Katalog, Trustpilot-Option & Konfigurator 2.0](#paket-5-shop-storefront-katalog-trustpilot-option--konfigurator-20)
 8. [Paket 6: Konto- & Abo-Zentrale 2.0 (`/konto` & `/profile` aus einem Guss)](#paket-6-konto--abo-zentrale-20-konto--profile-aus-einem-guss)
@@ -298,7 +298,7 @@ Im bestehenden `frontend/src/shop/pages/ShopStart.tsx` fallen folgende typische 
 
 ---
 
-## Paket 3: Pop-up- & Ankündigungs-System 2.0 (unten rechts in Shop & Panel)
+## Paket 3: Pop-up- & Ankündigungs-System 2.0 (unten rechts in Shop & Panel) (umgesetzt, 24.11.2026)
 
 ### Ist-Zustand & konkrete Befunde im Code
 
@@ -356,6 +356,31 @@ Im bestehenden `frontend/src/shop/pages/ShopStart.tsx` fallen folgende typische 
 - Backend (`pytest`): Filterung nach `audience` (`shop` vs. `panel` vs. `all`), Gast-Abruf ohne Auth auf `/api/popups/public/active`, DB-Dismissal für eingeloggte Nutzer, Abweisung unsicherer `button_url`-Schemas (422).
 - Frontend (`vitest`): Unit-Tests für `localStorage`-Snooze/Permanent bei Gästen, Tastatur-Erreichbarkeit ohne Fokus-Raub, Unterdrückung bei offenem modalen `<Dialog>`, korrekte Vorschau in `PopupTab.test.tsx`.
 - Browser-Probe: Auf `/` (unangemeldet) und `/dashboard` (angemeldet) testen, dass die Karte unten rechts animiert erscheint, den Support-Launcher nicht verdeckt, sich per „Verstanden“ / „Nicht mehr anzeigen“ / `X` schließen lässt und nach Reload weggedrückt bleibt.
+
+### Umsetzungsstand & Erkenntnisse (Paket 3)
+
+- **Backend-Umsetzung:**
+  - `backend/models/panel_popup.py` um `audience` (`'all' | 'shop' | 'panel'`, Default `'all'`) und `tone` (`'info' | 'promo' | 'maintenance'`, Default `'info'`) samt Check-Constraints erweitert.
+  - Alembic-Migration `backend/migrations/versions/20261124_03_popup_audience_and_tone.py` (`down_revision = "20261124_02"`) ergänzt; Single-Head-Prüfung `['20261124_03']` bestanden.
+  - `backend/schemas/popup.py`: `POPUP_CONTENT_MAX_LENGTH = 600` für `PanelPopupCreate` und `PanelPopupUpdate` eingeführt (`PanelPopupResponse` bleibt für lesbare Altdaten ungekürzt) sowie `_validate_popup_button_url` ergänzt (erlaubt relative Pfade mit `/` ohne `//` sowie `http://` und `https://`; weist Leerzeichen, Steuerzeichen, `javascript:` und `data:` ab).
+  - `backend/routers/popups.py`: Öffentlichen, rate-limitierten Endpunkt `GET /api/popups/public/active?surface=shop|panel` mit `get_optional_user` und `limit=5` ergänzt; `GET /api/popups/active` filtert abwärtskompatibel auf `surface="panel"`.
+  - **KI-Pop-up-Tools & Prompt aktualisiert:** `backend/services/ai_proposals/task_proposals.py` (`_popup_set_payload`, `_ausfuehren_popup_set`), `backend/services/ai_tools/personal_tools.py` (`popups_read`, `propose_popup_set`) und `backend/services/ai_prompt.py` (`POPUPS_UND_ANKUENDIGUNGEN`) um `audience`, `tone`, Link-Prüfung sowie die 600-Zeichen-Obergrenze erweitert; die eingefrorenen SHA-256-Katalog-Snapshots in `backend/tests/test_ai_werkzeug_mengen.py` wurden entsprechend angepasst.
+- **Frontend-Umsetzung:**
+  - `frontend/src/api/popups.ts` um `PopupAudience`, `PopupTone`, `POPUP_CONTENT_MAX_LENGTH = 600` und `getPublicActivePopups` erweitert.
+  - `frontend/src/index.css` (`.msm-popup-card` mit Compositor-Übergängen per `@starting-style`, `transition-behavior: allow-discrete` unter `prefers-reduced-motion: no-preference` und Anker-Reset `top: auto; left: auto; margin: 0;` gegen User-Agent-`[popover]`-Zentrierung).
+  - `frontend/src/components/popups/PanelPopupModal.tsx` (`PanelPopupCard` / `PanelPopupModal`): Umbau vom Vollbild-Overlay auf eine kompakte Bottom-Right-Glass-Karte (`right-4 bottom-[calc(5.25rem+var(--msm-unten-sicher,0px))] z-40`), `role="region"` ohne Fokus-Raub, optionales `popover="manual"` mit Feature-Check, vorübergehende Unterdrückung bei offenem `[aria-modal="true"]` / `dialog:modal`, Queue-Fortschaltung, Client-URL-Prüfung (`sanitizePopupUrl` / `isSafePopupUrl`) und Gast-Dismissal über `localStorage` (`msm.popup.dismissed.v1`, 24h-Snooze oder dauerhaft).
+  - Einbindung in `frontend/src/shop/ShopRahmen.tsx` (`surface="shop"`) und `frontend/src/components/layout/Shell.tsx` (`surface="panel"`; `BrowserApp.tsx` und `DesktopApp.tsx` nutzen den Default `surface="panel"`).
+  - `frontend/src/pages/settings/PopupTab.tsx`: `@maunting/ui`-`Dropdown` für Zielbereich und Darstellung (kein natives `<select>`), `buttonUrl` auf `type="text"` für interne `/...`-Pfade umgestellt, `maxLength={600}` samt Live-Zeichenzähler (`text-on-surface-variant` / `text-status-warning` / `text-status-destructive`) und Speicherprüfung ergänzt sowie Zielbereich-/Darstellungs-Badges in der Liste ergänzt. Übersetzungen in `de.json` und `en.json` ergänzt (`en/de parity: 11328 keys`).
+- **Verifikation (nach letztem Code-Edit):**
+  - **Backend (`pytest` gegen PostgreSQL auf Port 15499):** `tests/test_popups.py`, `tests/test_ai_tool_registry.py`, `tests/test_ai_tool_handler_contract.py` und `tests/test_ai_werkzeug_mengen.py`: `109 passed`.
+  - **Frontend (`vitest`):** `PopupTab.test.tsx`, `PanelPopupModal.test.tsx`, `ShopStart.test.tsx` und `Shell.test.tsx` (`4 test files, 28 passed`) sowie `keinNativesTitle.test.ts` (`2 passed`). Zuvor bestätigte `schreibweise.test.ts` (`6 passed | 1 failed`), dass keine neuen Verstöße zu den 4 vorbestehenden fremden `en.json`-Keys hinzukamen.
+  - **Frontend-Builds:** `npm run build` (`npm run check && tsc && vite build`) und `npm run build:desktop` (`npm run check && tsc && vite build --config vite.desktop.config.ts`) jeweils mit Exit-Code `0`.
+  - **Noch offen:** Die manuelle Browser-Probe auf `/` (unangemeldet) und `/dashboard` bzw. `/settings` (angemeldet, inkl. Support-Launcher-Abstand unten rechts und Live-Vorschau) steht noch aus.
+- **Erkenntnisse:**
+  1. **User-Agent-Styles für `[popover]`:** Browser setzen per Default `inset: 0px; margin: auto;` auf `[popover]`, wodurch eine `fixed`-Karte ohne explizites `top: auto; left: auto; margin: 0;` in der Bildschirmmitte statt unten rechts landet.
+  2. **Frontend-Klassenwächter (`check-classes.mjs`):** Roh-Palettenfarben wie `amber-*` schlagen beim Build-Check fehl; für Warn-Töne (`maintenance`) und Zeichenzähler-Schwellen greifen ausschließlich semantische Tokens (`status-warning`, `status-destructive`, `primary`).
+- **Ideen für Folgepakete:**
+  - **Storefront-Abstimmung in Paket 5:** Die Tonalität `promo` kann auf der Startseite gezielt zeitlich begrenzte Einführungsangebote mit Direktlink auf ein Spiel (`/shop/:slug`) hervorheben.
 
 ---
 

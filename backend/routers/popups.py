@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone, timedelta
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from typing import Literal
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.orm import Session
 from sqlalchemy import or_, and_, desc
 
 from database import get_db
-from dependencies import get_current_user, require_global, verify_csrf
+from dependencies import get_current_user, get_optional_user, require_global, verify_csrf
+from middleware.rate_limit import shop_public_rate_limit
 from models import User, PanelPopup, UserPopupState
 from schemas.popup import (
     PanelPopupResponse,
@@ -26,6 +29,70 @@ def _as_utc(dt: datetime | None) -> datetime | None:
     return dt.astimezone(timezone.utc)
 
 
+def _matching_active_popups(
+    db: Session,
+    *,
+    surface: Literal["shop", "panel"],
+    user: User | None,
+    limit: int | None = None,
+) -> list[PanelPopup]:
+    now = datetime.now(timezone.utc)
+    twenty_four_hours_ago = now - timedelta(hours=24)
+
+    popups = (
+        db.query(PanelPopup)
+        .filter(
+            PanelPopup.is_active == True,
+            PanelPopup.audience.in_(["all", surface]),
+            or_(PanelPopup.start_at.is_(None), PanelPopup.start_at <= now),
+            or_(PanelPopup.end_at.is_(None), PanelPopup.end_at >= now),
+        )
+        .order_by(desc(PanelPopup.id))
+        .all()
+    )
+    if not popups:
+        return []
+
+    if user is None:
+        return popups[:limit] if limit is not None else popups
+
+    popup_ids = [p.id for p in popups]
+    user_states = {
+        s.popup_id: s
+        for s in db.query(UserPopupState)
+        .filter(UserPopupState.user_id == user.id, UserPopupState.popup_id.in_(popup_ids))
+        .all()
+    }
+
+    visible: list[PanelPopup] = []
+    for p in popups:
+        state = user_states.get(p.id)
+        if state:
+            if state.dismissed_permanently:
+                continue
+            last_dismissed = _as_utc(state.last_dismissed_at)
+            if last_dismissed and last_dismissed > twenty_four_hours_ago:
+                continue
+        visible.append(p)
+        if limit is not None and len(visible) >= limit:
+            break
+    return visible
+
+
+@router.get(
+    "/public/active",
+    response_model=list[PanelPopupResponse],
+    dependencies=[Depends(shop_public_rate_limit)],
+)
+def get_public_active_popups(
+    surface: Literal["shop", "panel"] = Query("shop"),
+    db: Session = Depends(get_db),
+    user: User | None = Depends(get_optional_user),
+) -> list[PanelPopup]:
+    """Liefert bis zu 5 aktive Ankündigungen für Shop oder Panel (auch für Gäste)."""
+    return _matching_active_popups(db, surface=surface, user=user, limit=5)
+
+
 @router.get("/active", response_model=PanelPopupResponse | None)
 def get_active_popup(
     db: Session = Depends(get_db),
@@ -36,45 +103,8 @@ def get_active_popup(
     Berücksichtigt Gültigkeitszeitraum, Deaktivierung, permanente Ausblendung
     sowie die 24-Stunden-Schlummerfrist ("snooze").
     """
-    now = datetime.now(timezone.utc)
-    twenty_four_hours_ago = now - timedelta(hours=24)
-
-    # 1. Alle aktiven Popups holen, deren Zeitfenster passt
-    popups = (
-        db.query(PanelPopup)
-        .filter(
-            PanelPopup.is_active == True,
-            or_(PanelPopup.start_at.is_(None), PanelPopup.start_at <= now),
-            or_(PanelPopup.end_at.is_(None), PanelPopup.end_at >= now),
-        )
-        .order_by(desc(PanelPopup.id))
-        .all()
-    )
-
-    if not popups:
-        return None
-
-    # 2. Dismiss-Zustände des Nutzers abfragen
-    popup_ids = [p.id for p in popups]
-    user_states = {
-        s.popup_id: s
-        for s in db.query(UserPopupState)
-        .filter(UserPopupState.user_id == user.id, UserPopupState.popup_id.in_(popup_ids))
-        .all()
-    }
-
-    # 3. Erstes nicht ausgeblendetes Pop-up finden
-    for p in popups:
-        state = user_states.get(p.id)
-        if state:
-            if state.dismissed_permanently:
-                continue
-            last_dismissed = _as_utc(state.last_dismissed_at)
-            if last_dismissed and last_dismissed > twenty_four_hours_ago:
-                continue
-        return p
-
-    return None
+    matches = _matching_active_popups(db, surface="panel", user=user, limit=1)
+    return matches[0] if matches else None
 
 
 @router.post("/{popup_id}/dismiss")
@@ -142,6 +172,8 @@ def create_admin_popup(
     popup = PanelPopup(
         title=req.title.strip(),
         content_markdown=req.content_markdown.strip(),
+        audience=req.audience,
+        tone=req.tone,
         is_active=req.is_active,
         start_at=req.start_at,
         end_at=req.end_at,
@@ -172,6 +204,10 @@ def update_admin_popup(
         popup.title = req.title.strip()
     if req.content_markdown is not None:
         popup.content_markdown = req.content_markdown.strip()
+    if req.audience is not None:
+        popup.audience = req.audience
+    if req.tone is not None:
+        popup.tone = req.tone
     if req.is_active is not None:
         popup.is_active = req.is_active
     if req.start_at is not None or "start_at" in req.model_fields_set:

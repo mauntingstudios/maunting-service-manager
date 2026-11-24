@@ -25,10 +25,13 @@ import {
   createAdminPopup,
   updateAdminPopup,
   deleteAdminPopup,
+  POPUP_CONTENT_MAX_LENGTH,
   type PanelPopup,
   type PanelPopupCreateInput,
+  type PopupAudience,
+  type PopupTone,
 } from '@/api/popups'
-import { Button, Switch, DateTimePicker, Kurzinfo } from '@maunting/ui'
+import { Button, Dropdown, Switch, DateTimePicker, Kurzinfo } from '@maunting/ui'
 import { toast } from '@/stores/toastStore'
 import { confirm } from '@/stores/confirmStore'
 import { useHasPermission } from '@/hooks/useHasPermission'
@@ -48,6 +51,8 @@ export function PopupTab() {
   // Form State
   const [title, setTitle] = useState('')
   const [contentMarkdown, setContentMarkdown] = useState('')
+  const [audience, setAudience] = useState<PopupAudience>('all')
+  const [tone, setTone] = useState<PopupTone>('info')
   const [isActive, setIsActive] = useState(true)
   const [startAt, setStartAt] = useState('')
   const [endAt, setEndAt] = useState('')
@@ -77,6 +82,8 @@ export function PopupTab() {
     setEditingPopup(null)
     setTitle('')
     setContentMarkdown('')
+    setAudience('all')
+    setTone('info')
     setIsActive(true)
     setStartAt('')
     setEndAt('')
@@ -89,6 +96,8 @@ export function PopupTab() {
     setEditingPopup(p)
     setTitle(p.title)
     setContentMarkdown(p.content_markdown)
+    setAudience(p.audience ?? 'all')
+    setTone(p.tone ?? 'info')
     setIsActive(p.is_active)
     setStartAt(p.start_at ? p.start_at.substring(0, 16) : '')
     setEndAt(p.end_at ? p.end_at.substring(0, 16) : '')
@@ -127,12 +136,18 @@ export function PopupTab() {
       toast.error(t('popups.validationRequired'))
       return
     }
+    if (contentMarkdown.trim().length > POPUP_CONTENT_MAX_LENGTH) {
+      toast.error(t('popups.contentTooLong', { max: POPUP_CONTENT_MAX_LENGTH }))
+      return
+    }
 
     setSaving(true)
     try {
       const payload: PanelPopupCreateInput = {
         title: title.trim(),
         content_markdown: contentMarkdown.trim(),
+        audience,
+        tone,
         is_active: isActive,
         start_at: startAt ? new Date(startAt).toISOString() : null,
         end_at: endAt ? new Date(endAt).toISOString() : null,
@@ -183,6 +198,8 @@ export function PopupTab() {
       id: editingPopup?.id || 999999,
       title: title || 'Beispiel-Ankündigung',
       content_markdown: contentMarkdown || 'Hier steht der formatierte Textinhalt der Ankündigung.',
+      audience,
+      tone,
       is_active: isActive,
       start_at: startAt ? new Date(startAt).toISOString() : null,
       end_at: endAt ? new Date(endAt).toISOString() : null,
@@ -246,6 +263,42 @@ export function PopupTab() {
                 maxLength={255}
                 className="msm-input"
               />
+            </div>
+
+            {/* Zielbereich & Darstellung */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label htmlFor="popup-audience-select" className="block font-label-md text-label-md text-on-surface-variant mb-1.5 uppercase tracking-wider">
+                  {t('popups.fieldAudience')}
+                </label>
+                <Dropdown
+                  id="popup-audience-select"
+                  value={audience}
+                  onChange={(value) => setAudience(value as PopupAudience)}
+                  aria-label={t('popups.fieldAudience')}
+                  options={[
+                    { value: 'all', label: t('popups.audienceAll') },
+                    { value: 'shop', label: t('popups.audienceShop') },
+                    { value: 'panel', label: t('popups.audiencePanel') },
+                  ]}
+                />
+              </div>
+              <div>
+                <label htmlFor="popup-tone-select" className="block font-label-md text-label-md text-on-surface-variant mb-1.5 uppercase tracking-wider">
+                  {t('popups.fieldTone')}
+                </label>
+                <Dropdown
+                  id="popup-tone-select"
+                  value={tone}
+                  onChange={(value) => setTone(value as PopupTone)}
+                  aria-label={t('popups.fieldTone')}
+                  options={[
+                    { value: 'info', label: t('popups.toneInfo') },
+                    { value: 'promo', label: t('popups.tonePromo') },
+                    { value: 'maintenance', label: t('popups.toneMaintenance') },
+                  ]}
+                />
+              </div>
             </div>
 
             {/* Markdown Toolbar & Content */}
@@ -333,10 +386,31 @@ export function PopupTab() {
                 value={contentMarkdown}
                 onChange={(e) => setContentMarkdown(e.target.value)}
                 placeholder={t('popups.bodyPlaceholder')}
-                rows={7}
+                rows={5}
+                maxLength={POPUP_CONTENT_MAX_LENGTH}
                 required
+                aria-describedby="popup-content-meta"
                 className="msm-input font-mono text-sm leading-relaxed"
               />
+              <div
+                id="popup-content-meta"
+                className="flex items-center justify-between gap-3 mt-1.5 text-xs"
+              >
+                <span className="text-on-surface-variant">
+                  {t('popups.contentLengthHint')}
+                </span>
+                <span
+                  className={
+                    contentMarkdown.length > POPUP_CONTENT_MAX_LENGTH
+                      ? 'font-medium text-status-destructive shrink-0'
+                      : contentMarkdown.length >= POPUP_CONTENT_MAX_LENGTH - 60
+                        ? 'font-medium text-status-warning shrink-0'
+                        : 'text-on-surface-variant shrink-0'
+                  }
+                >
+                  {contentMarkdown.length} / {POPUP_CONTENT_MAX_LENGTH}
+                </span>
+              </div>
             </div>
 
             {/* Zeitraum (Start / Ende) */}
@@ -385,17 +459,21 @@ export function PopupTab() {
                 />
               </div>
               <div>
-                <label className="block font-label-md text-label-md text-on-surface-variant mb-1.5 uppercase tracking-wider">
+                <label htmlFor="popup-button-url-input" className="block font-label-md text-label-md text-on-surface-variant mb-1.5 uppercase tracking-wider">
                   {t('popups.fieldButtonUrl')}
                 </label>
                 <input
-                  type="url"
+                  id="popup-button-url-input"
+                  type="text"
                   value={buttonUrl}
                   onChange={(e) => setButtonUrl(e.target.value)}
-                  placeholder="https://status.example.com"
+                  placeholder="/shop oder https://status.example.com"
                   maxLength={2048}
                   className="msm-input"
                 />
+                <p className="text-xs text-on-surface-variant mt-1">
+                  {t('popups.buttonUrlHint')}
+                </p>
               </div>
             </div>
 
@@ -491,6 +569,28 @@ export function PopupTab() {
                           {t('popups.statusInactive')}
                         </span>
                       )}
+                      <span className="msm-badge-neutral text-xs">
+                        {p.audience === 'shop'
+                          ? t('popups.audienceShop')
+                          : p.audience === 'panel'
+                            ? t('popups.audiencePanel')
+                            : t('popups.audienceAll')}
+                      </span>
+                      <span
+                        className={`${
+                          p.tone === 'maintenance'
+                            ? 'msm-badge-warning'
+                            : p.tone === 'promo'
+                              ? 'msm-badge-info'
+                              : 'msm-badge-neutral'
+                        } text-xs`}
+                      >
+                        {p.tone === 'maintenance'
+                          ? t('popups.toneMaintenance')
+                          : p.tone === 'promo'
+                            ? t('popups.tonePromo')
+                            : t('popups.toneInfo')}
+                      </span>
                     </div>
 
                     <p className="text-body-sm text-on-surface-variant line-clamp-2 font-mono">

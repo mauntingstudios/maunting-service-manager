@@ -177,7 +177,7 @@ export function Shell() {
       {canAccessSocial && !isChatPage && <MessengerHintergrund />}
 
       {/* Aktive Pop-ups / Ankündigungen des Panels */}
-      <PanelPopupModal />
+      <PanelPopupModal surface="panel" />
 
       {/* Anruf-Overlay für Direkt- und Gruppenanrufe (global im Shell verfügbar) */}
       {canAccessSocial && <AnrufEbene />}

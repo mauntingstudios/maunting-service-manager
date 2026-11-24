@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from fastapi import HTTPException
 
 from models import User
+from schemas.popup import POPUP_CONTENT_MAX_LENGTH, _validate_popup_button_url
 from services import audit_service, permission_service, ai_task_service
 from services.ai_action_errors import AiActionValidationError
 from services.ai_redaction import redact_sensitive_text
@@ -22,9 +23,12 @@ _AUFGABEN_FELDER = frozenset({
 })
 
 _POPUP_FELDER = frozenset({
-    "popup_id", "title", "content_markdown", "is_active",
+    "popup_id", "title", "content_markdown", "audience", "tone", "is_active",
     "start_at", "end_at", "button_text", "button_url",
 })
+
+_POPUP_AUDIENCES = frozenset({"all", "shop", "panel"})
+_POPUP_TONES = frozenset({"info", "promo", "maintenance"})
 
 # Was beim Aendern unberuehrt bleibt, wenn das Modell es nicht nennt. Genannt
 # werden muss ein Feld auch dann, wenn es auf `null` soll — deshalb entscheidet
@@ -104,6 +108,23 @@ def _popup_set_payload(db: Session, user: User, rest: dict) -> tuple[dict, dict]
         raise AiActionValidationError("Der Titel darf nicht leer sein")
     if content_markdown == "":
         raise AiActionValidationError("Der Inhalt darf nicht leer sein")
+    if content_markdown is not None and len(content_markdown) > POPUP_CONTENT_MAX_LENGTH:
+        raise AiActionValidationError(
+            f"Der Inhalt darf hoechstens {POPUP_CONTENT_MAX_LENGTH} Zeichen lang sein"
+        )
+
+    audience: str | None = None
+    if "audience" in rest:
+        audience = str(rest["audience"]).strip() if rest["audience"] is not None else ""
+        if audience not in _POPUP_AUDIENCES:
+            raise AiActionValidationError("audience muss all, shop oder panel sein")
+
+    tone: str | None = None
+    if "tone" in rest:
+        tone = str(rest["tone"]).strip() if rest["tone"] is not None else ""
+        if tone not in _POPUP_TONES:
+            raise AiActionValidationError("tone muss info, promo oder maintenance sein")
+
     # Die Zeitpunkte werden **jetzt** geprueft und nicht erst beim Klick. Eine
     # Karte, die im Bestaetigungsmoment an einem Datumsformat scheitert, hat dem
     # Benutzer eine Zusage hingelegt, die nicht haelt.
@@ -116,6 +137,10 @@ def _popup_set_payload(db: Session, user: User, rest: dict) -> tuple[dict, dict]
         payload["title"] = redact_sensitive_text(title)
     if content_markdown is not None:
         payload["content_markdown"] = redact_sensitive_text(content_markdown)
+    if audience is not None:
+        payload["audience"] = audience
+    if tone is not None:
+        payload["tone"] = tone
     if "is_active" in rest:
         payload["is_active"] = bool(rest["is_active"])
     for feld in _POPUP_OPTIONAL:
@@ -123,6 +148,11 @@ def _popup_set_payload(db: Session, user: User, rest: dict) -> tuple[dict, dict]
             continue
         wert = rest[feld]
         text = str(wert).strip() if wert is not None and str(wert).strip() else None
+        if feld == "button_url" and text is not None:
+            try:
+                text = _validate_popup_button_url(text)
+            except ValueError as exc:
+                raise AiActionValidationError(str(exc)) from None
         payload[feld] = (
             redact_sensitive_text(text)
             if text is not None and feld == "button_text"
@@ -142,6 +172,14 @@ def _popup_set_payload(db: Session, user: User, rest: dict) -> tuple[dict, dict]
             "content_markdown",
             redact_sensitive_text(str(bestehend.content_markdown)) if bestehend else "",
         )[:300],
+        "audience": payload.get(
+            "audience",
+            str(bestehend.audience) if bestehend and bestehend.audience else "all",
+        ),
+        "tone": payload.get(
+            "tone",
+            str(bestehend.tone) if bestehend and bestehend.tone else "info",
+        ),
         "is_active": payload.get(
             "is_active", bool(bestehend.is_active) if bestehend else True
         ),
@@ -235,6 +273,10 @@ def _ausfuehren_popup_set(db: Session, rahmen: _AusfuehrungsRahmen) -> _Ausgefue
             popup.title = str(p["title"])
         if "content_markdown" in p:
             popup.content_markdown = str(p["content_markdown"])
+        if "audience" in p:
+            popup.audience = str(p["audience"])
+        if "tone" in p:
+            popup.tone = str(p["tone"])
         if "is_active" in p:
             popup.is_active = bool(p["is_active"])
         if "start_at" in p:
@@ -255,6 +297,8 @@ def _ausfuehren_popup_set(db: Session, rahmen: _AusfuehrungsRahmen) -> _Ausgefue
     popup = PanelPopup(
         title=str(p["title"]),
         content_markdown=str(p["content_markdown"]),
+        audience=str(p.get("audience", "all")),
+        tone=str(p.get("tone", "info")),
         is_active=bool(p.get("is_active", True)),
         start_at=_popup_zeitpunkt(p.get("start_at")),
         end_at=_popup_zeitpunkt(p.get("end_at")),

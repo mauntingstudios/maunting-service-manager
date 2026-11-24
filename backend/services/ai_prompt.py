@@ -684,11 +684,14 @@ POPUPS_UND_ANKUENDIGUNGEN = """\
 Pop-ups und Ankuendigungen: Ein neues legst du mit `propose_popup_set` ohne \
 `popup_id` an. Soll ein bestehendes geaendert oder abgeschaltet werden, lies \
 es mit `popups_read` und ruf `propose_popup_set` mit der gelesenen `popup_id` \
-auf — rate nie eine Kennung. `content_markdown` ersetzt den ganzen Text: \
-schick den vollstaendigen neuen Inhalt. Meldet `popups_read` \
-`content_truncated: true`, schreib den Ausschnitt nicht zurueck, sondern sag, \
-dass der Text zu lang zum Nachfuehren ist. Schreib klar, sachlich und \
-natuerlich in Markdown, ohne Werbephrasen und KI-Schablonen."""
+auf — rate nie eine Kennung. `content_markdown` ersetzt den ganzen Text \
+(maximal 600 Zeichen, damit die kompakte Karte unten rechts schnell lesbar bleibt): \
+schick den vollstaendigen neuen Inhalt. Waehle `audience` (`all`, `shop`, `panel`) \
+und `tone` (`info`, `promo`, `maintenance`) passend zum Anlass; optionale \
+Button-Links duerfen mit `/` beginnen oder `http(s)://` nutzen. Meldet \
+`popups_read` `content_truncated: true`, schreib den Ausschnitt nicht zurueck, \
+sondern sag, dass der Text zu lang zum Nachfuehren ist. Schreib klar, sachlich \
+und direkt, ohne Werbefloskeln und KI-Schablonen."""
 
 
 NATIVER_SHOP = """\

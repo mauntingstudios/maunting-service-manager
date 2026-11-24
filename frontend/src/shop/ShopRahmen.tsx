@@ -8,6 +8,7 @@ import {
   subscribeSupportWidgetState,
 } from '@/lib/supportWidgetLoader'
 import { usePublicSettingsStore } from '@/stores/publicSettingsStore'
+import { PanelPopupModal } from '@/components/popups/PanelPopupModal'
 import { ShopPromoBanner } from './components/ShopPromoBanner'
 import { ShopKopf } from './ShopKopf'
 
@@ -75,6 +76,7 @@ export function ShopRahmen() {
           </nav>
         </div>
       </footer>
+      <PanelPopupModal surface="shop" />
     </div>
   )
 }

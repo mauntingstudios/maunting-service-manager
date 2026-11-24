@@ -7,6 +7,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 from models import User
+from schemas.popup import POPUP_CONTENT_MAX_LENGTH
 from services import permission_service
 from services.ai_action_errors import AiActionValidationError
 from services.ai_redaction import redact_sensitive_text
@@ -295,8 +296,8 @@ def _mailbox_and_calendar_tool_definitions() -> list[dict]:
         ),
         _function(
             "popups_read",
-            "Listet die Panel-Pop-ups (Ankündigungen) mit Kennung, Titel, Text, "
-            "Zeitfenster und Aktivität — die `popup_id` für propose_popup_set.",
+            "Listet die Pop-ups (Ankündigungen in Shop und Panel) mit Kennung, "
+            "Titel, Text, Zielbereich, Darstellung, Zeitfenster und Aktivität — die `popup_id` für propose_popup_set.",
             {
                 "only_active": {
                     "type": "boolean",
@@ -307,9 +308,10 @@ def _mailbox_and_calendar_tool_definitions() -> list[dict]:
         ),
         _function(
             "propose_popup_set",
-            "Schlägt ein panelweites Pop-up (Ankündigung) vor: ohne `popup_id` "
-            "neu, mit `popup_id` aus popups_read als Änderung. Inhalt in sauberem "
-            "Markdown, menschlich, ohne KI-Schablonen oder Gedankenstrich-Ketten.",
+            "Schlägt ein Pop-up (kompakte Karte unten rechts in Shop und/oder Panel) vor: "
+            "ohne `popup_id` neu, mit `popup_id` aus popups_read als Änderung. "
+            f"Inhalt kurz und schnell lesbar (maximal {POPUP_CONTENT_MAX_LENGTH} Zeichen) "
+            "in sauberem Markdown, ohne KI-Schablonen.",
             {
                 "popup_id": {
                     "type": "integer",
@@ -321,8 +323,18 @@ def _mailbox_and_calendar_tool_definitions() -> list[dict]:
                 },
                 "content_markdown": {
                     "type": "string",
-                    "maxLength": 32000,
-                    "description": "Beim Ändern der ganze neue Text.",
+                    "maxLength": POPUP_CONTENT_MAX_LENGTH,
+                    "description": f"Kompakter Markdown-Text (maximal {POPUP_CONTENT_MAX_LENGTH} Zeichen). Beim Ändern der ganze neue Text.",
+                },
+                "audience": {
+                    "type": "string",
+                    "enum": ["all", "shop", "panel"],
+                    "description": "Zielbereich: all (Shop & Panel), shop oder panel. Standard: all.",
+                },
+                "tone": {
+                    "type": "string",
+                    "enum": ["info", "promo", "maintenance"],
+                    "description": "Darstellung: info (Hinweis), promo (Angebot) oder maintenance (Wartung). Standard: info.",
                 },
                 "is_active": {
                     "type": "boolean",
@@ -346,7 +358,7 @@ def _mailbox_and_calendar_tool_definitions() -> list[dict]:
                 "button_url": {
                     "type": ["string", "null"],
                     "maxLength": 2048,
-                    "description": "http(s); null entfernt.",
+                    "description": "Relativer Pfad (/shop) oder http(s)-Link; null entfernt.",
                 },
                 **_RATIONALE_SCHEMA,
             },
@@ -749,6 +761,8 @@ def _lies_popups(
             # Inhalt vollstaendig. Wer einen gekuerzten Text zurueckschreibt,
             # loescht den Rest des Pop-ups, ohne es zu merken.
             "content_truncated": gekuerzt,
+            "audience": getattr(popup, "audience", None) or "all",
+            "tone": getattr(popup, "tone", None) or "info",
             "is_active": bool(popup.is_active),
             "start_at": popup.start_at.isoformat() if popup.start_at else None,
             "end_at": popup.end_at.isoformat() if popup.end_at else None,
