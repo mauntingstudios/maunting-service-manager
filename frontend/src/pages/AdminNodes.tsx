@@ -592,14 +592,21 @@ export function AdminNodes({ ohneHintergrund = false }: { ohneHintergrund?: bool
                         {t('nodes.sectionLocationHardware')}
                       </h4>
                       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                        <Input
-                          label={t('nodes.locationLabel')}
-                          value={form.location_label}
-                          onChange={(e) => setForm({ ...form, location_label: e.target.value })}
-                          placeholder={t('nodes.locationPlaceholder')}
-                          maxLength={120}
-                          autoComplete="off"
-                        />
+                        <div>
+                          <Input
+                            label={t('nodes.locationLabel')}
+                            value={form.location_label}
+                            onChange={(e) => setForm({ ...form, location_label: e.target.value })}
+                            placeholder={t('nodes.locationPlaceholder')}
+                            maxLength={120}
+                            autoComplete="off"
+                          />
+                          {form.shop_enabled && !form.location_label.trim() && (
+                            <p className="mt-1 font-body-md text-xs text-on-surface-variant">
+                              {t('nodes.locationShopHint')}
+                            </p>
+                          )}
+                        </div>
                         <Input
                           label={t('nodes.ramType')}
                           value={form.ram_type}

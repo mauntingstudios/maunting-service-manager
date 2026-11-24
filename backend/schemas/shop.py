@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field, model_validator
 
 ArtworkMode = Literal["steam", "custom", "none"]
 BillingInterval = Literal["month"]
+HeroMode = Literal["auto_paid", "manual"]
 AddonCategory = Literal["ai_quota", "slots", "backups", "storage", "role"]
 CouponDiscountType = Literal["percent", "fixed_cents"]
 CouponScope = Literal["all", "plans", "addons"]
@@ -49,6 +50,8 @@ class ShopPlanWrite(BaseModel):
     is_featured: bool = False
     is_bestseller: bool = False
     is_new: bool = False
+    pinned_in_hero: bool = False
+    promo_highlight_text: str | None = Field(None, max_length=80)
 
 
 class ShopPlanUpdate(BaseModel):
@@ -86,6 +89,8 @@ class ShopPlanUpdate(BaseModel):
     is_featured: bool | None = None
     is_bestseller: bool | None = None
     is_new: bool | None = None
+    pinned_in_hero: bool | None = None
+    promo_highlight_text: str | None = Field(None, max_length=80)
 
 
 class ShopArtworkResponse(BaseModel):
@@ -125,6 +130,8 @@ class ShopPlanResponse(BaseModel):
     is_featured: bool = False
     is_bestseller: bool = False
     is_new: bool = False
+    pinned_in_hero: bool = False
+    promo_highlight_text: str | None = Field(None, max_length=80)
     created_at: datetime
     updated_at: datetime
     artwork: ShopArtworkResponse
@@ -515,6 +522,7 @@ class ShopLifecycleSettingsPayload(BaseModel):
     shop_trustpilot_enabled: bool = False
     shop_trustpilot_url: str = Field("", max_length=512)
     shop_discord_invite_url: str = Field("", max_length=512)
+    shop_hero_mode: HeroMode = "auto_paid"
 
 
 class ShopLifecycleSettingsResponse(ShopLifecycleSettingsPayload):
@@ -534,6 +542,7 @@ class ShopPublicPolicyResponse(BaseModel):
     shop_trustpilot_enabled: bool = False
     shop_trustpilot_url: str = ""
     shop_discord_invite_url: str = ""
+    shop_hero_mode: HeroMode = "auto_paid"
 
 
 class ShopPublicNodeStatusResponse(BaseModel):
@@ -869,6 +878,8 @@ class ShopCatalogPlan(BaseModel):
     is_featured: bool = False
     is_bestseller: bool = False
     is_new: bool = False
+    pinned_in_hero: bool = False
+    promo_highlight_text: str | None = Field(None, max_length=80)
     recent_order_count: int = 0
 
 

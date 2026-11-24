@@ -110,6 +110,8 @@ def _validate_plan_values(
 
 def _apply(plan: ShopPlan, values: dict[str, Any]) -> None:
     for feld, wert in values.items():
+        if feld == "promo_highlight_text" and isinstance(wert, str):
+            wert = wert.strip()[:80] or None
         setattr(plan, feld, wert)
 
 
@@ -143,6 +145,8 @@ def get_plan(db: Session, plan_id: int) -> ShopPlan | None:
 
 def create_plan(db: Session, payload: ShopPlanWrite, *, actor_id: int) -> ShopPlan:
     values = payload.model_dump()
+    if isinstance(values.get("promo_highlight_text"), str):
+        values["promo_highlight_text"] = values["promo_highlight_text"].strip()[:80] or None
     _validate_plan_values(db, values)
     plan = ShopPlan(**values)
     db.add(plan)
@@ -174,6 +178,7 @@ _NULLABLE_FIELDS = {
     "slots_max",
     "node_id",
     "role_id",
+    "promo_highlight_text",
 }
 
 
@@ -347,6 +352,8 @@ def plan_response(db: Session, plan: ShopPlan) -> ShopPlanResponse:
         is_featured=bool(getattr(plan, "is_featured", False)),
         is_bestseller=bool(getattr(plan, "is_bestseller", False)),
         is_new=bool(getattr(plan, "is_new", False)),
+        pinned_in_hero=bool(getattr(plan, "pinned_in_hero", False)),
+        promo_highlight_text=(getattr(plan, "promo_highlight_text", None) or None),
         created_at=plan.created_at,
         updated_at=plan.updated_at,
         artwork=_artwork(db, plan),
@@ -731,5 +738,7 @@ def catalog_plan(
         is_featured=bool(getattr(plan, "is_featured", False)),
         is_bestseller=bool(getattr(plan, "is_bestseller", False)),
         is_new=bool(getattr(plan, "is_new", False)),
+        pinned_in_hero=bool(getattr(plan, "pinned_in_hero", False)),
+        promo_highlight_text=(getattr(plan, "promo_highlight_text", None) or None),
         recent_order_count=max(0, int(recent_order_count)),
     )

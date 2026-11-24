@@ -2585,7 +2585,8 @@
       "online": "Online",
       "unknown": "Unknown",
       "offline": "Offline"
-    }
+    },
+    "locationShopHint": "Tip: Add a clear public location label for shop visitors (e.g. Frankfurt · DE)."
   },
   "routes": {
     "forbiddenTitle": "No access",
@@ -4853,7 +4854,11 @@
         "trustpilotUrl": "Trustpilot profile URL",
         "trustpilotUrlHint": "HTTPS link to trustpilot.com/review/<your-domain>.",
         "discordInviteUrl": "Discord invite link (optional)",
-        "discordInviteUrlHint": "HTTPS link formatted as https://discord.gg/invite or https://discord.com/invite/code"
+        "discordInviteUrlHint": "HTTPS link formatted as https://discord.gg/invite or https://discord.com/invite/code",
+        "heroMode": "Homepage hero games",
+        "heroModeHint": "Automatic mode prioritizes pinned titles first and then verified paid orders from the last 90 days.",
+        "heroModeAutoPaid": "Automatic by paid orders (+ pinned)",
+        "heroModeManual": "Manually curated and pinned games only"
       },
       "zahlungen": {
         "titel": "Payments",
@@ -4952,7 +4957,11 @@
         "tabBasis": "Basics & pricing",
         "tabRessourcen": "Resources",
         "tabBilder": "Artwork & gallery",
-        "galerieErstNachSpeichern": "Custom images can be uploaded right after saving. Until then, the selected artwork mode applies."
+        "galerieErstNachSpeichern": "Custom images can be uploaded right after saving. Until then, the selected artwork mode applies.",
+        "pinnedInHero": "Pin in homepage hero",
+        "badgePinned": "Hero",
+        "promoHighlightText": "Update or promo highlight",
+        "promoHighlightPlaceholder": "e.g. Major update or new patch"
       },
       "addons": {
         "titel": "Add-ons",
@@ -6957,7 +6966,8 @@
       "eyebrow": "Locations & latency",
       "pingFortschritt": "{{done}} / {{total}} tested",
       "zumKatalog": "Pick a game at this location",
-      "kapazitaetAuslastung": "Memory load"
+      "kapazitaetAuslastung": "Memory load",
+      "standardStandort": "Primary location"
     },
     "kopf": {
       "startseite": "Back to shop home",
@@ -7021,7 +7031,8 @@
         "backups": "Automated backups",
         "kontrolle": "Full panel control",
         "preise": "Transparent pricing"
-      }
+      },
+      "ddosJeStandort": "DDoS protection by location"
     },
     "trust": {
       "titel": "Live shop facts",
@@ -7045,7 +7056,9 @@
       "trustpilotCta": "Open profile",
       "discordTitel": "Community Discord",
       "discordText": "Connect with players, status updates and community help.",
-      "discordCta": "Join server"
+      "discordCta": "Join server",
+      "ddosSpotlightTitelMulti": "Location-specific DDoS protection",
+      "ddosSpotlightTextMulti": "Each location runs its own mitigation profile. Select a location below to see its exact provider."
     },
     "katalog": {
       "meistgemietetKicker": "Popular",
@@ -7102,7 +7115,9 @@
       "keineTarifeText": "Active plans are configured in the shop settings and will appear here automatically.",
       "fehlerTitel": "Could not load catalog",
       "fehlerText": "Please reload the page in a moment.",
-      "tarifeEinrichten": "Configure plans in panel"
+      "tarifeEinrichten": "Configure plans in panel",
+      "alleAnzeigen": "Show all {{count}} games",
+      "wenigerAnzeigen": "Show fewer games"
     },
     "infra": {
       "kicker": "INFRASTRUCTURE",
@@ -7251,7 +7266,11 @@
       "standortAuswahlPflicht": "Select location",
       "schrittLeistung": "Performance & player slots",
       "schrittAbrechnung": "Billing & term",
-      "schrittGarantien": "Included features"
+      "schrittGarantien": "Included features",
+      "ueberSpielEyebrow": "About the game",
+      "ueberSpielTitel": "Overview of {{name}}",
+      "hostingHighlightsTitel": "Included with your server",
+      "zurueckZumKonfigurator": "Back to configurator"
     },
     "kasse": {
       "titel": "Checkout",
@@ -9034,7 +9053,7 @@
     "vaultWirdMitKarteEntsperrt": "The team vault is unlocked with your card during transfer.",
     "vaultKeyRotated": "Team key renewed.",
     "vaultSetupBrauchtKarte": "Insert your card first: enter your master password — the team vault then sets itself up automatically.",
-    "vaultRotationConfirmDesc": "Generates a new team key, re-encrypts all entries and wraps the key for all current members. Former members can no longer read anything new afterwards.",
+    "vaultRotationConfirmDesc": "Confirm key renewal for the team vault. All entries are re-encrypted so only current members keep access.",
     "vaultNotSetup": "This team vault has not been set up yet.",
     "vaultNotSetupDesc": "Only the team founder can initially set up the team vault.",
     "vaultAccessDenied": "Access denied",
@@ -9043,7 +9062,6 @@
     "vaultUnlockDesc": "Unlock with your card — there is no team password.",
     "vaultRotationTitle": "Key renewal recommended",
     "vaultRotationNotice": "A member has joined or left. Renew the key so only current members can read.",
-    "vaultRotationConfirmDesc": "Confirm key renewal for the team vault. All entries are re-encrypted so only current members keep access.",
     "vaultRotationBanner": "Team key should be renewed because membership changed.",
     "vaultRotateBtn": "Renew key",
     "vaultNoFilesYet": "No shared files in team vault yet.",

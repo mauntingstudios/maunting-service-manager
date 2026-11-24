@@ -178,19 +178,20 @@ describe('ShopStart', () => {
     })
   })
 
-  it('zeigt Storefront 2.0 mit Hero, TrustSection und rollenbasierten Add-ons', async () => {
+  it('zeigt Storefront 3.0 mit Hero, TrustSection und rollenbasierten Add-ons', async () => {
     zeige()
     expect(
-      screen.getByRole('heading', { level: 1, name: i18n.t('shop.hero.titel') }),
+      await screen.findByRole('heading', { level: 1, name: 'Palworld' }),
     ).toBeInTheDocument()
-    expect(await screen.findByRole('heading', { name: 'Palworld' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'Rust' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 3, name: 'Palworld' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 3, name: 'Rust' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Singra & Tresor Pro' })).toBeInTheDocument()
     expect(screen.getByText(/50 GB Tresorspeicher inklusive/)).toBeInTheDocument()
     expect(screen.getByText(/500\.000 KI-Tokens im Monat/)).toBeInTheDocument()
     expect(screen.getByText(i18n.t('shop.hero.dockTitel'))).toBeInTheDocument()
     expect(screen.getByText(i18n.t('shop.trust.prepaidWert'))).toBeInTheDocument()
     expect(screen.queryByText(i18n.t('shop.trust.trustpilotTitel'))).toBeNull()
+    expect(screen.queryByText(i18n.t('shop.hero.kicker'))).toBeNull()
     expect(screen.queryByText('steam_game')).toBeNull()
     expect(screen.queryByText(i18n.t('shop.demo.badge'))).toBeNull()
   })
@@ -228,8 +229,8 @@ describe('ShopStart', () => {
     expect(screen.queryByRole('heading', { name: i18n.t('shop.katalog.empfohlenTitel') })).toBeNull()
 
     fireEvent.click(neuFilterBtn)
-    expect(screen.getByRole('heading', { name: 'Rust' })).toBeInTheDocument()
-    expect(screen.queryByRole('heading', { name: 'Palworld' })).toBeNull()
+    expect(screen.getByRole('heading', { level: 3, name: 'Rust' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { level: 3, name: 'Palworld' })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: i18n.t('shop.sammlung.alleSpiele') }))
 
     // Pause/Play-Steuerung im Hero ohne aria-pressed
@@ -249,16 +250,16 @@ describe('ShopStart', () => {
 
   it('filtert die Sammlung ueber Suche und Filter-Tabs', async () => {
     zeige()
-    await screen.findByRole('heading', { name: 'Palworld' })
+    await screen.findByRole('heading', { level: 3, name: 'Palworld' })
 
     fireEvent.click(screen.getByRole('button', { name: i18n.t('shop.sammlung.mitMods') }))
-    expect(screen.getByRole('heading', { name: 'Rust' })).toBeInTheDocument()
-    expect(screen.queryByRole('heading', { name: 'Palworld' })).toBeNull()
+    expect(screen.getByRole('heading', { level: 3, name: 'Rust' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { level: 3, name: 'Palworld' })).toBeNull()
 
     fireEvent.click(screen.getByRole('button', { name: i18n.t('shop.sammlung.alleSpiele') }))
     fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'palworld' } })
-    expect(screen.getByRole('heading', { name: 'Palworld' })).toBeInTheDocument()
-    expect(screen.queryByRole('heading', { name: 'Rust' })).toBeNull()
+    expect(screen.getByRole('heading', { level: 3, name: 'Palworld' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { level: 3, name: 'Rust' })).toBeNull()
   })
 
   it('zeigt einen produktiven Leerzustand wenn noch keine Tarife hinterlegt sind', async () => {
@@ -337,8 +338,8 @@ describe('ShopStart', () => {
     expect(screen.getByText('Famesystems Game-DDoS')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'PS5' }))
-    expect(screen.getByRole('heading', { name: 'Palworld' })).toBeInTheDocument()
-    expect(screen.queryByRole('heading', { name: 'Rust' })).toBeNull()
+    expect(screen.getByRole('heading', { level: 3, name: 'Palworld' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { level: 3, name: 'Rust' })).toBeNull()
 
     fireEvent.click(screen.getByRole('button', { name: i18n.t('shop.nodeStatus.pingTesten') }))
     expect((await screen.findAllByText(/14 ms/)).length).toBeGreaterThanOrEqual(2)
@@ -458,5 +459,68 @@ describe('ShopStart', () => {
     expect(
       screen.getByRole('button', { name: i18n.t('shop.nodeStatus.standortAusgewaehlt') }),
     ).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('kennzeichnet gemischte DDoS-Anbieter je Standort, maskiert generisches Lokal und klappt Katalog > 8 Spiele auf', async () => {
+    const vieleSpiele = Array.from({ length: 10 }, (_, idx) => ({
+      ...SAMPLE_PLANS[0],
+      id: idx + 1,
+      game_type: `spiel_${idx + 1}`,
+      game_name: `Game ${String(idx + 1).padStart(2, '0')}`,
+      name: `Plan ${idx + 1}`,
+      is_featured: idx < 2,
+      pinned_in_hero: idx === 9,
+      promo_highlight_text: idx === 9 ? 'Update 2.0' : null,
+    }))
+    hoisted.getCatalog.mockResolvedValue(vieleSpiele)
+    hoisted.getNodeStatus.mockResolvedValue([
+      {
+        id: 1,
+        name: 'Lokal',
+        location_label: null,
+        status: 'online',
+        cpu_model: null,
+        ram_type: 'DDR5',
+        storage_type: 'NVMe',
+        ram_free_percent: 80,
+        load_level: 'low',
+        accepting_orders: true,
+        ddos_provider: 'Path.net',
+        ddos_game_aware: true,
+      },
+      {
+        id: 2,
+        name: 'us-ny',
+        location_label: 'New York US',
+        status: 'online',
+        cpu_model: null,
+        ram_type: 'DDR5',
+        storage_type: 'NVMe',
+        ram_free_percent: 70,
+        load_level: 'low',
+        accepting_orders: true,
+        ddos_provider: 'CosmicGuard',
+        ddos_game_aware: false,
+      },
+    ])
+
+    zeige()
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Game 10' }),
+    ).toBeInTheDocument()
+    expect(screen.getAllByText('Update 2.0').length).toBeGreaterThanOrEqual(1)
+    expect(screen.getByText(i18n.t('shop.nodeStatus.standardStandort'))).toBeInTheDocument()
+    expect(screen.queryByText('Lokal')).toBeNull()
+    expect(screen.getByText(i18n.t('shop.trust.ddosSpotlightTitelMulti'))).toBeInTheDocument()
+    expect(screen.getByText(/Path\.net · CosmicGuard/)).toBeInTheDocument()
+
+    // Initial 8 Spiele im Katalog + Aufklapp-Button fuer alle 10
+    expect(
+      screen.getByRole('button', { name: i18n.t('shop.sammlung.alleAnzeigen', { count: 10 }) }),
+    ).toBeInTheDocument()
+    fireEvent.click(
+      screen.getByRole('button', { name: i18n.t('shop.sammlung.alleAnzeigen', { count: 10 }) }),
+    )
+    expect(screen.getByRole('heading', { level: 3, name: 'Game 08' })).toBeInTheDocument()
   })
 })

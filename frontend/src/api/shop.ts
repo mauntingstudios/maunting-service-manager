@@ -4,6 +4,7 @@ export { apiUrl } from './client'
 export type ShopArtworkSource = 'steam' | 'custom' | 'none' | 'panorama'
 export type ShopArtworkMode = 'steam' | 'custom' | 'none'
 export type ShopBillingMode = 'prepaid' | 'subscription' | 'lifetime'
+export type ShopHeroMode = 'auto_paid' | 'manual'
 
 export interface ShopArtwork {
   source: ShopArtworkSource
@@ -50,6 +51,8 @@ export interface ShopPlan {
   is_featured?: boolean
   is_bestseller?: boolean
   is_new?: boolean
+  pinned_in_hero?: boolean
+  promo_highlight_text?: string | null
   created_at: string
   updated_at: string
   artwork: ShopArtwork
@@ -113,6 +116,8 @@ export interface ShopCatalogPlan {
   is_featured?: boolean
   is_bestseller?: boolean
   is_new?: boolean
+  pinned_in_hero?: boolean
+  promo_highlight_text?: string | null
   recent_order_count?: number
 }
 
@@ -155,6 +160,7 @@ export interface ShopPublicPolicyDto {
   shop_trustpilot_enabled?: boolean
   shop_trustpilot_url?: string
   shop_discord_invite_url?: string
+  shop_hero_mode?: ShopHeroMode
 }
 
 export interface ShopGraceBackupDto {
@@ -212,6 +218,8 @@ export interface ShopPlanWrite {
   is_featured?: boolean
   is_bestseller?: boolean
   is_new?: boolean
+  pinned_in_hero?: boolean
+  promo_highlight_text?: string | null
 }
 
 export type ShopAddonCategory = 'ai_quota' | 'slots' | 'backups' | 'storage' | 'role'
@@ -631,6 +639,7 @@ export interface ShopLifecycleSettingsDto {
   shop_trustpilot_enabled?: boolean
   shop_trustpilot_url?: string
   shop_discord_invite_url?: string
+  shop_hero_mode?: ShopHeroMode
 }
 
 export const shopOrderApi = {

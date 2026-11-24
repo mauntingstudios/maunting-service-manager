@@ -1,18 +1,18 @@
-import { useEffect, useState, type KeyboardEvent } from 'react'
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import {
   ArrowRight,
-  Check,
   Gamepad2,
   Pause,
   Play,
   Rocket,
   Server,
   ShieldCheck,
+  Sparkles,
 } from 'lucide-react'
 import { Badge, buttonClasses } from '@maunting/ui'
-import type { ShopPublicBadgePromo } from '@/api/shop'
+import type { ShopHeroMode, ShopPublicBadgePromo } from '@/api/shop'
 import type { HeaderHintergrundVariante } from '@/lib/tageszeit'
 import { formatEuro } from '../preis'
 import { motivFuer } from '../spielArtwork'
@@ -22,6 +22,8 @@ export interface ShopDdosHighlight {
   gameAware: boolean
   provider: string | null
   profile: string | null
+  mixed?: boolean
+  providers?: string[]
 }
 
 interface HeroShowcaseProps {
@@ -32,6 +34,7 @@ interface HeroShowcaseProps {
   standortGewaehltName: string | null
   onlineNodesCount: number
   ddosHighlight?: ShopDdosHighlight | null
+  heroMode?: ShopHeroMode
 }
 
 const PLATTFORM_LABELS: Record<string, string> = {
@@ -49,8 +52,10 @@ export function HeroShowcase({
   standortGewaehltName,
   onlineNodesCount,
   ddosHighlight,
+  heroMode = 'auto_paid',
 }: HeroShowcaseProps) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
+  const sprache = i18n.language.startsWith('de') ? 'de' : 'en'
   const [ausgewaehltesId, setAusgewaehltesId] = useState<string | null>(null)
   const [pausiert, setPausiert] = useState<boolean>(() => {
     if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
@@ -62,13 +67,30 @@ export function HeroShowcase({
   const topSpiele = (() => {
     if (spiele.length === 0) return []
     const verfuegbar = spiele.filter((s) => s.verfuegbar !== false)
-    const pool = verfuegbar.length > 0 ? verfuegbar : spiele
-    const sortiert = [...pool].sort((a, b) => {
-      const aFeat = a.isFeatured ? 2 : a.bildUrl ? 1 : 0
-      const bFeat = b.isFeatured ? 2 : b.bildUrl ? 1 : 0
-      return bFeat - aFeat
-    })
-    return sortiert.slice(0, 5)
+    const basisPool = verfuegbar.length > 0 ? verfuegbar : spiele
+
+    if (heroMode === 'manual') {
+      const kuratiert = basisPool.filter((s) => Boolean(s.pinnedInHero) || Boolean(s.isFeatured))
+      const pool = kuratiert.length > 0 ? kuratiert : basisPool
+      return [...pool]
+        .sort(
+          (a, b) =>
+            Number(Boolean(b.pinnedInHero)) - Number(Boolean(a.pinnedInHero)) ||
+            Number(Boolean(b.isFeatured)) - Number(Boolean(a.isFeatured)) ||
+            Number(Boolean(b.bildUrl)) - Number(Boolean(a.bildUrl)),
+        )
+        .slice(0, 5)
+    }
+
+    return [...basisPool]
+      .sort(
+        (a, b) =>
+          Number(Boolean(b.pinnedInHero)) - Number(Boolean(a.pinnedInHero)) ||
+          (b.recentOrderCount ?? 0) - (a.recentOrderCount ?? 0) ||
+          Number(Boolean(b.isFeatured)) - Number(Boolean(a.isFeatured)) ||
+          Number(Boolean(b.bildUrl)) - Number(Boolean(a.bildUrl)),
+      )
+      .slice(0, 5)
   })()
 
   const aktiverIndex = Math.max(
@@ -76,6 +98,16 @@ export function HeroShowcase({
     ausgewaehltesId ? topSpiele.findIndex((s) => s.id === ausgewaehltesId) : 0,
   )
   const heroSpiel = topSpiele[aktiverIndex] ?? null
+
+  const heroBildSrc = heroSpiel?.bildUrl || headerMotiv.pfad
+  const [vorherigesBildSrc, setVorherigesBildSrc] = useState<string | null>(null)
+  const letztesBildRef = useRef<string>(heroBildSrc)
+
+  useEffect(() => {
+    if (letztesBildRef.current === heroBildSrc) return
+    setVorherigesBildSrc(letztesBildRef.current)
+    letztesBildRef.current = heroBildSrc
+  }, [heroBildSrc])
 
   useEffect(() => {
     if (pausiert || topSpiele.length <= 1) return
@@ -116,21 +148,36 @@ export function HeroShowcase({
     }
   }
 
-  const heroBildSrc = heroSpiel?.bildUrl || headerMotiv.pfad
-  const trustHighlights = [
-    t('shop.hero.trust.sofortAktiv'),
-    t('shop.hero.trust.backups'),
-    t('shop.hero.trust.kontrolle'),
-    t('shop.hero.trust.preise'),
-  ]
   const plattformen = (heroSpiel?.platforms ?? []).filter((p) => p in PLATTFORM_LABELS)
-  const effectiveDdosGameAware = Boolean(heroSpiel?.ddosGameAware || ddosHighlight?.gameAware)
-  const effectiveDdosProvider = heroSpiel?.ddosProvider || ddosHighlight?.provider || null
-  const showDdosPill = effectiveDdosGameAware || Boolean(effectiveDdosProvider)
+  const isMixedDdos = Boolean(ddosHighlight?.mixed && (ddosHighlight.providers?.length ?? 0) > 1)
+  const effectiveDdosGameAware = Boolean(
+    ddosHighlight?.gameAware || (!isMixedDdos && heroSpiel?.ddosGameAware),
+  )
+  const effectiveDdosProvider = isMixedDdos
+    ? null
+    : ddosHighlight?.provider || heroSpiel?.ddosProvider || null
+  const mixedProvidersLabel = isMixedDdos ? (ddosHighlight?.providers ?? []).join(' · ') : null
+  const showDdosPill = Boolean(
+    isMixedDdos || effectiveDdosGameAware || effectiveDdosProvider,
+  )
+
+  const headlineText = heroSpiel ? heroSpiel.name : t('shop.hero.titel')
+  const leadText = heroSpiel
+    ? heroSpiel.tagline || heroSpiel.beschreibung[sprache]
+    : t('shop.hero.untertitel')
 
   return (
     <section className="relative isolate flex min-h-[540px] flex-col justify-between overflow-hidden border-b border-white/10 bg-background lg:min-h-[620px]">
       <div className="pointer-events-none absolute inset-0 -z-10" aria-hidden="true">
+        {vorherigesBildSrc && vorherigesBildSrc !== heroBildSrc && (
+          <img
+            src={vorherigesBildSrc}
+            alt=""
+            width={1920}
+            height={1080}
+            className="absolute inset-0 h-full w-full object-cover object-center opacity-75"
+          />
+        )}
         <img
           key={heroBildSrc}
           src={heroBildSrc}
@@ -139,7 +186,7 @@ export function HeroShowcase({
           height={1080}
           {...({ fetchpriority: 'high' } as Record<string, string>)}
           style={heroSpiel?.bildUrl ? undefined : { objectPosition: headerMotiv.position }}
-          className="msm-shop-hero-fade h-full w-full object-cover object-center"
+          className="msm-shop-hero-layer msm-shop-hero-kenburns h-full w-full object-cover object-center opacity-85"
         />
         {!heroSpiel?.bildUrl && (
           <div
@@ -147,83 +194,82 @@ export function HeroShowcase({
             style={{ backgroundImage: headerMotiv.ueberlagerung }}
           />
         )}
-        <div className="absolute inset-0 bg-gradient-to-r from-background/95 via-background/60 to-background/20" />
-        <div className="absolute inset-0 bg-gradient-to-t from-background via-background/25 to-background/40" />
+        <div className="absolute inset-0 bg-gradient-to-r from-background/95 via-background/55 to-background/10" />
+        <div className="absolute inset-0 bg-gradient-to-t from-background via-background/25 to-background/30" />
       </div>
 
       <div className="mx-auto flex w-full max-w-7xl flex-1 flex-col justify-center px-4 pb-8 pt-12 sm:px-6 sm:pt-16 lg:px-8 lg:pt-20">
-        <div className="max-w-3xl">
-          <div className="flex flex-wrap items-center gap-2.5">
-            <p className="inline-flex items-center gap-2 rounded-full border border-primary/35 bg-primary/15 px-3 py-1 text-label-sm font-semibold uppercase tracking-[0.2em] text-primary backdrop-blur-md">
-              {t('shop.hero.kicker')}
-            </p>
-            {onlineNodesCount > 0 && (
-              <a
-                href="#shop-standorte"
-                className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-background/70 px-3 py-1 text-label-sm font-semibold text-on-surface backdrop-blur-md transition-colors hover:border-status-running/45"
-              >
-                <span className="h-2 w-2 rounded-full bg-status-running" aria-hidden="true" />
-                <span>{t('shop.hero.standorteOnline', { count: onlineNodesCount })}</span>
-              </a>
-            )}
-            {standortGewaehltName && (
-              <a
-                href="#shop-standorte"
-                className="inline-flex items-center gap-1.5 rounded-full border border-status-running/45 bg-status-running/15 px-3 py-1 text-label-sm font-semibold text-status-running backdrop-blur-md transition-colors hover:bg-status-running/25"
-              >
-                <Server className="h-3.5 w-3.5" aria-hidden="true" />
-                <span>{standortGewaehltName}</span>
-              </a>
-            )}
-          </div>
+        <div className="max-w-2xl">
+          {(heroSpiel?.promoHighlightText || standortGewaehltName || onlineNodesCount > 0) && (
+            <div className="flex flex-wrap items-center gap-2">
+              {heroSpiel?.promoHighlightText && (
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/50 bg-primary/20 px-3 py-1 text-label-sm font-semibold text-primary backdrop-blur-md">
+                  <Sparkles className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                  <span>{heroSpiel.promoHighlightText}</span>
+                </span>
+              )}
+              {standortGewaehltName ? (
+                <a
+                  href="#shop-standorte"
+                  className="inline-flex items-center gap-1.5 rounded-full border border-status-running/45 bg-status-running/15 px-3 py-1 text-label-sm font-semibold text-status-running backdrop-blur-md transition-colors hover:bg-status-running/25"
+                >
+                  <Server className="h-3.5 w-3.5" aria-hidden="true" />
+                  <span>{standortGewaehltName}</span>
+                </a>
+              ) : (
+                onlineNodesCount > 0 && (
+                  <a
+                    href="#shop-standorte"
+                    className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-background/70 px-3 py-1 text-label-sm font-semibold text-on-surface backdrop-blur-md transition-colors hover:border-status-running/45"
+                  >
+                    <span className="h-2 w-2 rounded-full bg-status-running" aria-hidden="true" />
+                    <span>{t('shop.hero.standorteOnline', { count: onlineNodesCount })}</span>
+                  </a>
+                )
+              )}
+            </div>
+          )}
 
-          <h1 className="mt-5 font-headline text-4xl font-extrabold leading-[1.05] tracking-tight text-white sm:text-5xl lg:text-6xl">
-            {t('shop.hero.titel')}
+          <h1 className="mt-4 font-headline text-4xl font-extrabold leading-[1.04] tracking-tight text-white sm:text-5xl lg:text-6xl">
+            {headlineText}
           </h1>
-          <p className="mt-4 max-w-xl text-base leading-relaxed text-white/85 sm:text-lg">
-            {t('shop.hero.untertitel')}
+          <p className="mt-3 line-clamp-2 max-w-xl text-base leading-relaxed text-white/85 sm:text-lg">
+            {leadText}
           </p>
 
           {(heroSpiel || showDdosPill) && (
-            <div className="mt-6 flex flex-wrap items-center gap-2.5 rounded-2xl border border-white/15 bg-background/75 px-4 py-3 backdrop-blur-xl">
+            <div className="mt-5 flex flex-wrap items-center gap-2 font-mono text-xs tabular-nums sm:text-sm">
               {heroSpiel && (
-                <>
-                  <span className="text-label-sm font-semibold uppercase tracking-wider text-primary">
-                    {t('shop.hero.fokusSpiel')}
-                  </span>
-                  <span className="font-headline text-sm font-bold text-white sm:text-base">
-                    {heroSpiel.name}
-                  </span>
-                  <span className="text-sm font-semibold tabular-nums text-on-surface-variant">
-                    {t('shop.karte.abPreis', { preis: formatEuro(heroSpiel.grundpreisCent) })}
-                  </span>
-                  {plattformen.map((tag) => (
-                    <span
-                      key={tag}
-                      className="rounded-md border border-white/15 bg-surface-container-high/80 px-2 py-0.5 text-label-sm font-medium text-on-surface"
-                    >
-                      {PLATTFORM_LABELS[tag]}
-                    </span>
-                  ))}
-                </>
+                <span className="rounded-lg border border-white/15 bg-background/80 px-3 py-1 font-semibold text-white backdrop-blur-md">
+                  {t('shop.karte.abPreis', { preis: formatEuro(heroSpiel.grundpreisCent) })}
+                </span>
               )}
-
+              {plattformen.map((tag) => (
+                <span
+                  key={tag}
+                  className="rounded-lg border border-white/15 bg-surface-container-high/80 px-2.5 py-1 text-xs font-medium text-on-surface backdrop-blur-md"
+                >
+                  {PLATTFORM_LABELS[tag]}
+                </span>
+              ))}
               {showDdosPill && (
-                <span className="msm-shop-ddos-pill inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-semibold text-status-running">
+                <span className="msm-shop-ddos-pill inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 font-sans text-xs font-semibold text-status-running">
                   <ShieldCheck className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
                   <span>
-                    {effectiveDdosGameAware
-                      ? effectiveDdosProvider
-                        ? `${t('shop.nodeStatus.ddosGameAware')} · ${effectiveDdosProvider}`
-                        : t('shop.nodeStatus.ddosGameAware')
-                      : effectiveDdosProvider}
+                    {isMixedDdos && mixedProvidersLabel
+                      ? `${t('shop.hero.ddosJeStandort')}: ${mixedProvidersLabel}`
+                      : effectiveDdosGameAware
+                        ? effectiveDdosProvider
+                          ? `${t('shop.nodeStatus.ddosGameAware')} · ${effectiveDdosProvider}`
+                          : t('shop.nodeStatus.ddosGameAware')
+                        : effectiveDdosProvider}
                   </span>
                 </span>
               )}
             </div>
           )}
 
-          <div className="mt-7 flex flex-wrap gap-3">
+          <div className="mt-6 flex flex-wrap items-center gap-4">
             {heroSpiel ? (
               <>
                 <Link
@@ -236,11 +282,7 @@ export function HeroShowcase({
                 </Link>
                 <a
                   href="#shop-spiele"
-                  className={buttonClasses(
-                    'secondary',
-                    'lg',
-                    'gap-2 border-white/15 bg-background/75 backdrop-blur-md hover:bg-surface-container-high/90',
-                  )}
+                  className="inline-flex items-center gap-1.5 text-sm font-semibold text-white/85 underline-offset-4 transition-colors hover:text-white hover:underline"
                 >
                   <Gamepad2 className="h-4 w-4" aria-hidden="true" />
                   <span>{t('shop.hero.ctaSammlung')}</span>
@@ -254,15 +296,6 @@ export function HeroShowcase({
               </a>
             )}
           </div>
-
-          <ul className="mt-7 flex flex-wrap gap-x-6 gap-y-2 text-sm text-white/80">
-            {trustHighlights.map((punkt) => (
-              <li key={punkt} className="inline-flex items-center gap-1.5">
-                <Check className="h-4 w-4 text-primary" aria-hidden="true" />
-                <span>{punkt}</span>
-              </li>
-            ))}
-          </ul>
         </div>
       </div>
 

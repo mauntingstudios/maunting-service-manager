@@ -2585,7 +2585,8 @@
       "online": "Online",
       "unknown": "Unbekannt",
       "offline": "Offline"
-    }
+    },
+    "locationShopHint": "Hinweis: Für Shop-Kunden ist eine echte Ortsangabe hilfreich (z. B. Frankfurt am Main · DE)."
   },
   "routes": {
     "forbiddenTitle": "Kein Zugriff",
@@ -4853,7 +4854,11 @@
         "trustpilotUrl": "Trustpilot-Profil-URL",
         "trustpilotUrlHint": "HTTPS-Link zu trustpilot.com/review/<deine-domain>.",
         "discordInviteUrl": "Discord-Einladungslink (optional)",
-        "discordInviteUrlHint": "HTTPS-Link im Format https://discord.gg/einladung oder https://discord.com/invite/einladung"
+        "discordInviteUrlHint": "HTTPS-Link im Format https://discord.gg/einladung oder https://discord.com/invite/einladung",
+        "heroMode": "Top-Spiele auf der Startseite",
+        "heroModeHint": "Automatisch ordnet zuerst angepinnte Titel und danach echte bezahlte Bestellungen der letzten 90 Tage (nicht manipulierbar).",
+        "heroModeAutoPaid": "Automatisch nach bezahlten Bestellungen (+ angepinnte)",
+        "heroModeManual": "Nur manuell kuratierte / angepinnte Spiele"
       },
       "zahlungen": {
         "titel": "Zahlungen",
@@ -4952,7 +4957,11 @@
         "tabBasis": "Grunddaten & Preis",
         "tabRessourcen": "Ressourcen",
         "tabBilder": "Bilder & Galerie",
-        "galerieErstNachSpeichern": "Eigene Bilder lassen sich direkt nach dem Anlegen hochladen. Bis dahin wird das ausgewählte Artwork verwendet."
+        "galerieErstNachSpeichern": "Eigene Bilder lassen sich direkt nach dem Anlegen hochladen. Bis dahin wird das ausgewählte Artwork verwendet.",
+        "pinnedInHero": "Im Hero oben anpinnen",
+        "badgePinned": "Hero",
+        "promoHighlightText": "Update- oder Aktions-Hinweis",
+        "promoHighlightPlaceholder": "z. B. Großes Update · neuer Patch"
       },
       "addons": {
         "titel": "Add-ons",
@@ -6957,7 +6966,8 @@
       "eyebrow": "Standorte & Latenz",
       "pingFortschritt": "{{done}} / {{total}} gemessen",
       "zumKatalog": "Spiel an diesem Standort wählen",
-      "kapazitaetAuslastung": "Speicherauslastung"
+      "kapazitaetAuslastung": "Speicherauslastung",
+      "standardStandort": "Standard-Standort"
     },
     "kopf": {
       "startseite": "Zur Shop-Startseite",
@@ -7021,7 +7031,8 @@
         "backups": "Automatische Backups",
         "kontrolle": "Volle Panel-Kontrolle",
         "preise": "Transparente Preise"
-      }
+      },
+      "ddosJeStandort": "DDoS-Schutz je Standort"
     },
     "trust": {
       "titel": "Aktuelle Shop-Fakten",
@@ -7045,7 +7056,9 @@
       "trustpilotCta": "Profil öffnen",
       "discordTitel": "Community-Discord",
       "discordText": "Mitspieler finden, Status-Meldungen lesen und Support erreichen.",
-      "discordCta": "Beitreten"
+      "discordCta": "Beitreten",
+      "ddosSpotlightTitelMulti": "DDoS-Schutz je nach Standort",
+      "ddosSpotlightTextMulti": "Unsere Standorte nutzen unterschiedliche Schutzprofile. Wähle unten deinen Wunsch-Standort für das genaue Profil."
     },
     "katalog": {
       "meistgemietetKicker": "Beliebt",
@@ -7102,7 +7115,9 @@
       "keineTarifeText": "Aktive Tarife werden in den Shop-Einstellungen gepflegt und erscheinen dann automatisch hier.",
       "fehlerTitel": "Katalog konnte nicht geladen werden",
       "fehlerText": "Bitte lade die Seite gleich noch einmal.",
-      "tarifeEinrichten": "Tarife im Panel einrichten"
+      "tarifeEinrichten": "Tarife im Panel einrichten",
+      "alleAnzeigen": "Alle {{count}} Spiele anzeigen",
+      "wenigerAnzeigen": "Weniger anzeigen"
     },
     "infra": {
       "kicker": "INFRASTRUKTUR",
@@ -7251,7 +7266,11 @@
       "standortAuswahlPflicht": "Standort wählen",
       "schrittLeistung": "Leistung & Spieler-Slots",
       "schrittAbrechnung": "Abrechnung & Laufzeit",
-      "schrittGarantien": "Inklusive Leistungen"
+      "schrittGarantien": "Inklusive Leistungen",
+      "ueberSpielEyebrow": "Über das Spiel",
+      "ueberSpielTitel": "{{name}} im Überblick",
+      "hostingHighlightsTitel": "Im Paket enthalten",
+      "zurueckZumKonfigurator": "Nach oben zum Konfigurator"
     },
     "kasse": {
       "titel": "Kasse",
@@ -9034,7 +9053,7 @@
     "vaultWirdMitKarteEntsperrt": "Der Team-Tresor wird beim Übertragen mit deiner Karte entsperrt.",
     "vaultKeyRotated": "Team-Schlüssel erneuert.",
     "vaultSetupBrauchtKarte": "Stecke zuerst deine Karte: Gib dein Master-Passwort ein — danach richtet sich der Team-Tresor von selbst ein.",
-    "vaultRotationConfirmDesc": "Erzeugt einen neuen Team-Schlüssel, verschlüsselt alle Einträge um und verpackt den Schlüssel für alle aktuellen Mitglieder. Ehemalige Mitglieder können danach nichts Neues mehr lesen.",
+    "vaultRotationConfirmDesc": "Bestätige die Schlüssel-Erneuerung für den Team-Tresor. Alle Einträge werden neu verschlüsselt, danach haben nur noch aktuelle Mitglieder Zugriff.",
     "vaultNotSetup": "Dieser Team-Tresor wurde noch nicht eingerichtet.",
     "vaultNotSetupDesc": "Nur der Gründer des Teams kann den Team-Tresor erstmals einrichten.",
     "vaultAccessDenied": "Zutritt verwehrt",
@@ -9043,7 +9062,6 @@
     "vaultUnlockDesc": "Entsperre mit deiner Karte — ein Team-Passwort gibt es nicht.",
     "vaultRotationTitle": "Schlüssel-Erneuerung empfohlen",
     "vaultRotationNotice": "Ein Mitglied ist bei- oder ausgetreten. Erneuere den Schlüssel, damit nur aktuelle Mitglieder lesen können.",
-    "vaultRotationConfirmDesc": "Bestätige die Schlüssel-Erneuerung für den Team-Tresor. Alle Einträge werden neu verschlüsselt, danach haben nur noch aktuelle Mitglieder Zugriff.",
     "vaultRotationBanner": "Team-Schlüssel sollte erneuert werden, weil sich die Mitgliedschaft geändert hat.",
     "vaultRotateBtn": "Schlüssel erneuern",
     "vaultNoFilesYet": "Noch keine geteilten Dateien im Team-Tresor.",

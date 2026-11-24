@@ -29,6 +29,8 @@ DEFAULT_SHOP_CHECKOUT_CAPTCHA_ENABLED = False
 DEFAULT_SHOP_TRUSTPILOT_ENABLED = False
 DEFAULT_SHOP_TRUSTPILOT_URL = ""
 DEFAULT_SHOP_DISCORD_INVITE_URL = ""
+DEFAULT_SHOP_HERO_MODE = "auto_paid"
+_ALLOWED_HERO_MODES = frozenset({"auto_paid", "manual"})
 
 _K_CANCEL_GRACE = "shop_lifecycle_cancel_grace_days"
 _K_UNPAID_ENABLED = "shop_lifecycle_unpaid_auto_delete_enabled"
@@ -45,6 +47,7 @@ _K_CHECKOUT_CAPTCHA = "shop_policy_checkout_captcha_enabled"
 _K_TRUSTPILOT_ENABLED = "shop_policy_trustpilot_enabled"
 _K_TRUSTPILOT_URL = "shop_policy_trustpilot_url"
 _K_DISCORD_INVITE_URL = "shop_policy_discord_invite_url"
+_K_HERO_MODE = "shop_policy_hero_mode"
 
 
 class LifecycleSettingsError(ValueError):
@@ -121,6 +124,13 @@ def _validate_discord_invite_url(raw: object) -> str:
             "Discord-Link muss mit https://discord.gg/... oder https://discord.com/invite/... beginnen"
         )
     return cleaned
+
+
+def _normalize_hero_mode(raw: object, default: str = DEFAULT_SHOP_HERO_MODE) -> str:
+    val = str(raw or "").strip().lower()
+    if val in _ALLOWED_HERO_MODES:
+        return val
+    return default
 
 
 def _normalize_zone(raw: object) -> str:
@@ -251,6 +261,9 @@ def read(db: Session | None = None) -> dict[str, object]:
             )
             or ""
         ).strip()[:512],
+        "shop_hero_mode": _normalize_hero_mode(
+            PanelSettingsService.get(_K_HERO_MODE, DEFAULT_SHOP_HERO_MODE, db=db)
+        ),
     }
 
 
@@ -391,6 +404,15 @@ def update(values: dict[str, object], db: Session | None = None) -> dict[str, ob
         if "shop_discord_invite_url" in values and values["shop_discord_invite_url"] is not None
         else _validate_discord_invite_url(current["shop_discord_invite_url"])
     )
+    if "shop_hero_mode" in values and values["shop_hero_mode"] is not None:
+        raw_hero_mode = str(values["shop_hero_mode"]).strip().lower()
+        if raw_hero_mode not in _ALLOWED_HERO_MODES:
+            raise LifecycleSettingsError(
+                "Hero-Modus muss 'auto_paid' oder 'manual' sein"
+            )
+        next_hero_mode = raw_hero_mode
+    else:
+        next_hero_mode = _normalize_hero_mode(current.get("shop_hero_mode"))
 
     PanelSettingsService.set(_K_CANCEL_GRACE, str(next_grace))
     PanelSettingsService.set(_K_UNPAID_ENABLED, "true" if next_unpaid_enabled else "false")
@@ -411,6 +433,7 @@ def update(values: dict[str, object], db: Session | None = None) -> dict[str, ob
     )
     PanelSettingsService.set(_K_TRUSTPILOT_URL, next_trustpilot_url)
     PanelSettingsService.set(_K_DISCORD_INVITE_URL, next_discord_invite_url)
+    PanelSettingsService.set(_K_HERO_MODE, next_hero_mode)
     return read(db=db)
 
 
@@ -433,6 +456,7 @@ def public_policy(db: Session | None = None) -> dict[str, object]:
         "shop_trustpilot_enabled": cfg["shop_trustpilot_enabled"],
         "shop_trustpilot_url": cfg["shop_trustpilot_url"],
         "shop_discord_invite_url": cfg["shop_discord_invite_url"],
+        "shop_hero_mode": cfg["shop_hero_mode"],
     }
 
 

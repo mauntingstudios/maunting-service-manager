@@ -128,6 +128,12 @@ class ShopPlan(Base):
     is_new: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="0", nullable=False
     )
+    pinned_in_hero: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="0", nullable=False
+    )
+    promo_highlight_text: Mapped[str | None] = mapped_column(
+        String(80), nullable=True
+    )
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_now, nullable=False

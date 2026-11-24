@@ -1,8 +1,9 @@
 import { useTranslation } from 'react-i18next'
-import { Check, Cpu, Server, ShieldCheck, Wrench } from 'lucide-react'
-import { Dropdown } from '@maunting/ui'
+import { Activity, Check, Cpu, Server, ShieldCheck, Wrench } from 'lucide-react'
+import { Button, Dropdown } from '@maunting/ui'
 import type { ShopNodeAvailabilityItem, ShopPublicNodeStatusDto } from '@/api/shop'
 import { formatCpuLabel, formatEuro } from '../preis'
+import { standortAnzeigeName } from '../standortName'
 import type { ShopPingMessung } from '../shopStandortStore'
 import type { AbrechnungsModus, Konfiguration, LaufzeitMonate, ShopSpiel } from '../typen'
 
@@ -15,6 +16,8 @@ interface KonfiguratorProps {
   nodeAvailabilityById?: Record<number, ShopNodeAvailabilityItem>
   pingMsByNodeId?: Record<number, ShopPingMessung>
   onSelectStandort?: (nodeId: number | null) => void
+  pingBusy?: boolean
+  onRunPingTest?: () => void
 }
 
 const LAUFZEITEN: LaufzeitMonate[] = [1, 3, 12]
@@ -39,6 +42,8 @@ export function Konfigurator({
   nodeAvailabilityById = {},
   pingMsByNodeId = {},
   onSelectStandort,
+  pingBusy = false,
+  onRunPingTest,
 }: KonfiguratorProps) {
   const { t, i18n } = useTranslation()
   const sprache = i18n.language.startsWith('de') ? 'de' : 'en'
@@ -91,7 +96,22 @@ export function Konfigurator({
 
       {hatStandorte && (
         <div className="space-y-3 border-b border-outline-variant/25 pb-5">
-          <SchrittKopf nummer={1} titel={t('shop.spiel.standortHardware')} />
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <SchrittKopf nummer={1} titel={t('shop.spiel.standortHardware')} />
+            {onRunPingTest && (
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                disabled={pingBusy}
+                onClick={onRunPingTest}
+                className="gap-1.5"
+              >
+                <Activity className="h-3.5 w-3.5" aria-hidden="true" />
+                <span>{pingBusy ? t('shop.nodeStatus.pingLaeuft') : t('shop.nodeStatus.pingTesten')}</span>
+              </Button>
+            )}
+          </div>
           <div
             className="grid gap-2.5 sm:grid-cols-2"
             role="group"
@@ -179,7 +199,7 @@ export function Konfigurator({
                   <div className="flex flex-wrap items-start justify-between gap-2">
                     <div className="min-w-0">
                       <span className="block truncate text-sm font-semibold text-on-surface">
-                        {node.location_label || node.name}
+                        {standortAnzeigeName(node, t('shop.nodeStatus.standardStandort'))}
                       </span>
                       {node.hardware_tier_label && (
                         <span className="mt-0.5 inline-block rounded-full border border-outline-variant/40 bg-surface-container-low px-2 py-0.5 text-label-sm font-medium text-on-surface-variant">

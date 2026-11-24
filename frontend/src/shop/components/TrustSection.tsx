@@ -67,6 +67,7 @@ export function TrustSection({
   const hasDdosSpotlight = Boolean(
     ddosSummary && (ddosSummary.gameAware || ddosSummary.providers.length > 0),
   )
+  const isMultiProviderDdos = Boolean(ddosSummary && ddosSummary.providers.length > 1)
 
   return (
     <section
@@ -88,12 +89,16 @@ export function TrustSection({
                   </span>
                 </div>
                 <h2 className="mt-0.5 font-headline text-base font-extrabold text-white sm:text-lg">
-                  {ddosSummary.gameAware
-                    ? t('shop.trust.ddosSpotlightTitelGameAware')
-                    : t('shop.trust.ddosSpotlightTitel')}
+                  {isMultiProviderDdos
+                    ? t('shop.trust.ddosSpotlightTitelMulti')
+                    : ddosSummary.gameAware
+                      ? t('shop.trust.ddosSpotlightTitelGameAware')
+                      : t('shop.trust.ddosSpotlightTitel')}
                 </h2>
                 <p className="mt-0.5 text-xs leading-relaxed text-on-surface-variant sm:text-sm">
-                  {t('shop.trust.ddosSpotlightText')}
+                  {isMultiProviderDdos
+                    ? t('shop.trust.ddosSpotlightTextMulti')
+                    : t('shop.trust.ddosSpotlightText')}
                 </p>
               </div>
             </div>

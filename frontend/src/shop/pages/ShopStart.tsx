@@ -30,6 +30,8 @@ import { SpielKarte } from '../components/SpielKarte'
 import { StandortPingDeck } from '../components/StandortPingDeck'
 import { TrustSection, type ShopDdosSummary } from '../components/TrustSection'
 import { formatEuro } from '../preis'
+import { messeNodePings } from '../pingNodes'
+import { standortAnzeigeName } from '../standortName'
 import { useShopReveal } from '../useShopReveal'
 import { useShopStandortStore } from '../shopStandortStore'
 import { useShopKatalog } from '../useShopKatalog'
@@ -70,6 +72,7 @@ export function ShopStart() {
   const [suche, setSuche] = useState('')
   const [filter, setFilter] = useState<KatalogFilter>('alle')
   const [plattformFilter, setPlattformFilter] = useState<PlattformFilter>('alle')
+  const [alleSpieleOffen, setAlleSpieleOffen] = useState(false)
   const [badges, setBadges] = useState<ShopPublicBadgePromo[]>([])
   const [nodeStatuses, setNodeStatuses] = useState<ShopPublicNodeStatusDto[]>([])
   const [publicPolicy, setPublicPolicy] = useState<ShopPublicPolicyDto | null>(null)
@@ -83,38 +86,7 @@ export function ShopStart() {
     const onlineNodes = nodeStatuses.filter((n) => n.status === 'online')
     if (onlineNodes.length === 0 || pingBusy) return
     setPingBusy(true)
-    const gemessen: Record<number, { ms: number | null; direkt: boolean }> = {}
-    await Promise.all(
-      onlineNodes.map(async (node) => {
-        if (node.public_ping_url) {
-          const start = performance.now()
-          try {
-            await fetch(node.public_ping_url, { mode: 'no-cors', cache: 'no-store' })
-            const ms = Math.max(1, Math.round(performance.now() - start))
-            gemessen[node.id] = { ms, direkt: true }
-            return
-          } catch (err) {
-            still(err, 'ShopStart.pingPublicUrl')
-          }
-        }
-        if (shopCatalogApi.pingNode) {
-          const start = performance.now()
-          try {
-            const res = await shopCatalogApi.pingNode(node.id)
-            const elapsed = Math.max(1, Math.round(performance.now() - start))
-            const ms =
-              res.server_agent_rtt_ms != null && res.server_agent_rtt_ms > 0
-                ? Math.round(res.server_agent_rtt_ms)
-                : elapsed
-            gemessen[node.id] = { ms, direkt: false }
-            return
-          } catch (err) {
-            still(err, 'ShopStart.pingNode')
-          }
-        }
-        gemessen[node.id] = { ms: null, direkt: false }
-      }),
-    )
+    const gemessen = await messeNodePings(nodeStatuses, 'ShopStart')
     setPingWerte(gemessen)
     setPingBusy(false)
   }
@@ -261,7 +233,14 @@ export function ShopStart() {
           Number(Boolean(b.isBestseller)) - Number(Boolean(a.isBestseller)),
       )
     }
-    return treffer
+    return [...treffer].sort(
+      (a, b) =>
+        Number(Boolean(b.pinnedInHero)) - Number(Boolean(a.pinnedInHero)) ||
+        (b.recentOrderCount ?? 0) - (a.recentOrderCount ?? 0) ||
+        Number(Boolean(b.isBestseller)) - Number(Boolean(a.isBestseller)) ||
+        Number(Boolean(b.isFeatured)) - Number(Boolean(a.isFeatured)) ||
+        a.name.localeCompare(b.name),
+    )
   }, [suche, filter, plattformFilter, spiele])
 
   const renderAddonVorteile = (addon: ShopCatalogAddon) =>
@@ -270,7 +249,7 @@ export function ShopStart() {
   const onlineNodesCount = nodeStatuses.filter((n) => n.status === 'online').length
   const gewaehlterStandort = nodeStatuses.find((n) => n.id === ausgewaehlteNodeId)
   const standortGewaehltName = gewaehlterStandort
-    ? gewaehlterStandort.location_label || gewaehlterStandort.name
+    ? standortAnzeigeName(gewaehlterStandort, t('shop.nodeStatus.standardStandort'))
     : null
 
   const ddosSummary: ShopDdosSummary = useMemo(() => {
@@ -282,10 +261,12 @@ export function ShopStart() {
       if (node.ddos_provider) providers.add(node.ddos_provider)
       if (node.ddos_profile) profiles.add(node.ddos_profile)
     }
-    for (const spiel of spiele) {
-      if (spiel.ddosGameAware) gameAware = true
-      if (spiel.ddosProvider) providers.add(spiel.ddosProvider)
-      if (spiel.ddosProfile) profiles.add(spiel.ddosProfile)
+    if (nodeStatuses.length === 0) {
+      for (const spiel of spiele) {
+        if (spiel.ddosGameAware) gameAware = true
+        if (spiel.ddosProvider) providers.add(spiel.ddosProvider)
+        if (spiel.ddosProfile) profiles.add(spiel.ddosProfile)
+      }
     }
     return {
       gameAware,
@@ -295,13 +276,39 @@ export function ShopStart() {
   }, [nodeStatuses, spiele])
 
   const ddosHighlight: ShopDdosHighlight | null = useMemo(() => {
+    if (gewaehlterStandort) {
+      if (!gewaehlterStandort.ddos_game_aware && !gewaehlterStandort.ddos_provider) {
+        return null
+      }
+      return {
+        gameAware: Boolean(gewaehlterStandort.ddos_game_aware),
+        provider: gewaehlterStandort.ddos_provider ?? null,
+        profile: gewaehlterStandort.ddos_profile ?? null,
+        mixed: false,
+      }
+    }
     if (!ddosSummary.gameAware && ddosSummary.providers.length === 0) return null
+    if (ddosSummary.providers.length > 1) {
+      return {
+        gameAware: ddosSummary.gameAware,
+        provider: null,
+        profile: null,
+        mixed: true,
+        providers: ddosSummary.providers,
+      }
+    }
     return {
       gameAware: ddosSummary.gameAware,
       provider: ddosSummary.providers[0] ?? null,
       profile: ddosSummary.profiles[0] ?? null,
+      mixed: false,
     }
-  }, [ddosSummary])
+  }, [gewaehlterStandort, ddosSummary])
+
+  const hatAktivenFilter =
+    Boolean(suche.trim()) || filter !== 'alle' || plattformFilter !== 'alle'
+  const sichtbareSpiele =
+    hatAktivenFilter || alleSpieleOffen ? gefiltert : gefiltert.slice(0, 8)
 
   useShopReveal(`${spiele.length}-${nodeStatuses.length}-${addons.length}`)
 
@@ -337,6 +344,7 @@ export function ShopStart() {
         standortGewaehltName={standortGewaehltName}
         onlineNodesCount={onlineNodesCount}
         ddosHighlight={ddosHighlight}
+        heroMode={publicPolicy?.shop_hero_mode ?? 'auto_paid'}
       />
 
       <TrustSection
@@ -475,14 +483,31 @@ export function ShopStart() {
               )}
             </div>
           ) : (
-            <div className="msm-blueprint-grid">
-              {gefiltert.map((spiel) => (
-                <SpielKarte
-                  key={spiel.id}
-                  spiel={spiel}
-                  rabattLabel={rabattFuerSpiel(spiel.id)}
-                />
-              ))}
+            <div className="space-y-6">
+              <div className="msm-blueprint-grid">
+                {sichtbareSpiele.map((spiel) => (
+                  <SpielKarte
+                    key={spiel.id}
+                    spiel={spiel}
+                    rabattLabel={rabattFuerSpiel(spiel.id)}
+                  />
+                ))}
+              </div>
+              {!hatAktivenFilter && gefiltert.length > 8 && (
+                <div className="flex justify-center">
+                  <button
+                    type="button"
+                    onClick={() => setAlleSpieleOffen((alt) => !alt)}
+                    className={buttonClasses('secondary', 'md', 'gap-2')}
+                  >
+                    <span>
+                      {alleSpieleOffen
+                        ? t('shop.sammlung.wenigerAnzeigen')
+                        : t('shop.sammlung.alleAnzeigen', { count: gefiltert.length })}
+                    </span>
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>

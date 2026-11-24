@@ -43,6 +43,8 @@ export interface ShopSpiel {
   isFeatured?: boolean
   isBestseller?: boolean
   isNew?: boolean
+  pinnedInHero?: boolean
+  promoHighlightText?: string | null
   recentOrderCount?: number
 }
 

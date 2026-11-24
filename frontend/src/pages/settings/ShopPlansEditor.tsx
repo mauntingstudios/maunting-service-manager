@@ -65,6 +65,8 @@ interface Draft {
   isFeatured: boolean
   isBestseller: boolean
   isNew: boolean
+  pinnedInHero: boolean
+  promoHighlightText: string
 }
 
 type DialogTabId = 'basis' | 'ressourcen' | 'bilder'
@@ -138,6 +140,8 @@ const LEER: Draft = {
   isFeatured: false,
   isBestseller: false,
   isNew: false,
+  pinnedInHero: false,
+  promoHighlightText: '',
 }
 
 function zahl(wert: string): number | null {
@@ -190,6 +194,8 @@ function planZuDraft(plan: ShopPlan): Draft {
     isFeatured: Boolean(plan.is_featured),
     isBestseller: Boolean(plan.is_bestseller),
     isNew: Boolean(plan.is_new),
+    pinnedInHero: Boolean(plan.pinned_in_hero),
+    promoHighlightText: plan.promo_highlight_text ?? '',
   }
 }
 
@@ -249,6 +255,8 @@ function draftZuPayload(draft: Draft, editing: ShopPlan | null): ShopPlanWrite {
     is_featured: draft.isFeatured,
     is_bestseller: draft.isBestseller,
     is_new: draft.isNew,
+    pinned_in_hero: draft.pinnedInHero,
+    promo_highlight_text: draft.promoHighlightText.trim() || null,
   }
 }
 
@@ -776,6 +784,11 @@ export function ShopPlansEditor({ onPlansLoaded }: ShopPlansEditorProps = {}) {
                           {t('settings.shop.plans.badgeNeu')}
                         </span>
                       )}
+                      {plan.pinned_in_hero && (
+                        <span className="inline-flex items-center rounded-md border border-primary/45 bg-primary/15 px-2 py-0.5 text-xs font-medium text-primary backdrop-blur-sm">
+                          {t('settings.shop.plans.badgePinned')}
+                        </span>
+                      )}
                       <span className="inline-flex items-center rounded-md border border-outline-variant/30 bg-background/75 px-2 py-0.5 text-xs text-on-surface-variant backdrop-blur-sm">
                         {artworkLabel(plan.artwork_mode)}
                       </span>
@@ -918,6 +931,9 @@ export function ShopPlansEditor({ onPlansLoaded }: ShopPlansEditorProps = {}) {
                       )}
                       {plan.is_new && (
                         <Badge variant="warning">{t('settings.shop.plans.badgeNeu')}</Badge>
+                      )}
+                      {plan.pinned_in_hero && (
+                        <Badge variant="info">{t('settings.shop.plans.badgePinned')}</Badge>
                       )}
                     </div>
                     <p className="mt-1 text-xs text-on-surface-variant">
@@ -1119,7 +1135,7 @@ export function ShopPlansEditor({ onPlansLoaded }: ShopPlansEditorProps = {}) {
                       aria-label={t('settings.shop.plans.isBestseller')}
                     />
                   </label>
-                  <label className="flex items-center justify-between gap-4 rounded-xl border border-outline-variant/30 bg-surface-container p-3 sm:col-span-2">
+                  <label className="flex items-center justify-between gap-4 rounded-xl border border-outline-variant/30 bg-surface-container p-3">
                     <span className="text-sm font-medium text-on-surface">
                       {t('settings.shop.plans.isNew')}
                     </span>
@@ -1129,6 +1145,25 @@ export function ShopPlansEditor({ onPlansLoaded }: ShopPlansEditorProps = {}) {
                       aria-label={t('settings.shop.plans.isNew')}
                     />
                   </label>
+                  <label className="flex items-center justify-between gap-4 rounded-xl border border-outline-variant/30 bg-surface-container p-3">
+                    <span className="text-sm font-medium text-on-surface">
+                      {t('settings.shop.plans.pinnedInHero')}
+                    </span>
+                    <Switch
+                      checked={draft.pinnedInHero}
+                      onCheckedChange={(wert) => setze('pinnedInHero', wert)}
+                      aria-label={t('settings.shop.plans.pinnedInHero')}
+                    />
+                  </label>
+                  <div className="sm:col-span-2">
+                    <Input
+                      label={t('settings.shop.plans.promoHighlightText')}
+                      value={draft.promoHighlightText}
+                      onChange={(event) => setze('promoHighlightText', event.target.value)}
+                      placeholder={t('settings.shop.plans.promoHighlightPlaceholder')}
+                      maxLength={80}
+                    />
+                  </div>
                 </div>
               </div>
             </div>

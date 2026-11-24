@@ -201,7 +201,7 @@ describe('ShopSpiel', () => {
     const lifeBtn = await screen.findByRole('button', {
       name: (name) => name.includes(i18n.t('shop.spiel.lifetimeTitel')),
     })
-    expect(screen.getByText('Game-Aware DDoS (Path.net)')).toBeInTheDocument()
+    expect(screen.getAllByText('Game-Aware DDoS (Path.net)').length).toBeGreaterThanOrEqual(1)
 
     fireEvent.click(lifeBtn)
     expect(lifeBtn).toHaveAttribute('aria-pressed', 'true')
@@ -279,5 +279,46 @@ describe('ShopSpiel', () => {
     const kasse = screen.getByTestId('kasse')
     expect(kasse).toHaveTextContent('"preferredNodeId":2')
     expect(kasse).toHaveTextContent('"standortAufpreisCent":350')
+  })
+
+  it('rendert unteren Story-Bereich mit Spielgeschichte, Genres und inline Ping-Check', async () => {
+    hoisted.getCatalog.mockResolvedValue([
+      {
+        ...PALWORLD_PLAN,
+        platforms: ['pc', 'ps5', 'xbox', 'crossplay'],
+        promo_highlight_text: 'Crossplay-Patch aktiv',
+        game_tagline: 'Kurzer Einstiegssatz',
+        game_story_de: 'Ausfuehrliche Hintergrundgeschichte ueber Palworld fuer den unteren Abschnitt.',
+        genres: ['Abenteuer', 'Survival'],
+      },
+    ])
+    hoisted.getNodeStatus.mockResolvedValue([
+      {
+        id: 1,
+        name: 'Lokal',
+        location_label: null,
+        status: 'online',
+        cpu_model: null,
+        ram_type: 'DDR5',
+        storage_type: 'NVMe',
+        ram_free_percent: 70,
+        load_level: 'low',
+        accepting_orders: true,
+        ddos_provider: 'Path.net',
+        ddos_game_aware: true,
+      },
+    ])
+
+    zeige('/shop/palworld')
+    expect(
+      await screen.findByRole('heading', { name: i18n.t('shop.spiel.ueberSpielTitel', { name: 'Palworld' }) }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText('Ausfuehrliche Hintergrundgeschichte ueber Palworld fuer den unteren Abschnitt.'),
+    ).toBeInTheDocument()
+    expect(screen.getByText('Crossplay-Patch aktiv')).toBeInTheDocument()
+    expect(screen.getByText('Abenteuer')).toBeInTheDocument()
+    expect(screen.getByText(i18n.t('shop.nodeStatus.standardStandort'))).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: i18n.t('shop.nodeStatus.pingTesten') })).toBeInTheDocument()
   })
 })

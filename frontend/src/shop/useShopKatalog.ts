@@ -130,6 +130,8 @@ function spielAusPlan(plan: ShopCatalogPlan): ShopSpiel {
     isFeatured: Boolean(plan.is_featured),
     isBestseller: Boolean(plan.is_bestseller),
     isNew: Boolean(plan.is_new),
+    pinnedInHero: Boolean(plan.pinned_in_hero),
+    promoHighlightText: plan.promo_highlight_text ?? null,
     recentOrderCount: plan.recent_order_count ?? 0,
   }
 }
@@ -149,6 +151,10 @@ function ausPlans(plans: ShopCatalogPlan[]): Pick<ShopKatalog, 'spiele' | 'tarif
     const isFeatured = gamePlans.some((p) => Boolean(p.is_featured))
     const isBestseller = gamePlans.some((p) => Boolean(p.is_bestseller))
     const isNew = gamePlans.some((p) => Boolean(p.is_new))
+    const pinnedInHero = gamePlans.some((p) => Boolean(p.pinned_in_hero))
+    const promoHighlightText =
+      gamePlans.find((p) => Boolean(p.promo_highlight_text?.trim()))?.promo_highlight_text?.trim() ??
+      null
     const recentOrderCount = gamePlans.reduce(
       (sum, p) => sum + Math.max(0, p.recent_order_count ?? 0),
       0,
@@ -162,6 +168,8 @@ function ausPlans(plans: ShopCatalogPlan[]): Pick<ShopKatalog, 'spiele' | 'tarif
           isFeatured,
           isBestseller,
           isNew,
+          pinnedInHero,
+          promoHighlightText,
           recentOrderCount,
         },
       })),

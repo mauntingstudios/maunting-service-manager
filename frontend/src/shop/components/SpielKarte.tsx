@@ -43,11 +43,18 @@ export function SpielKarte({ spiel, rabattLabel, priority = false }: SpielKarteP
             priority={priority}
             className={`transition-transform duration-300 group-hover:scale-[1.03] ${ausverkauft ? 'opacity-70 grayscale-[25%]' : ''}`}
           />
-          {kurationKey && !ausverkauft && (
-            <div className="pointer-events-none absolute left-3 top-3">
-              <span className="inline-flex items-center rounded-full border border-primary/45 bg-background/90 px-2.5 py-1 text-label-sm font-semibold text-primary shadow-md backdrop-blur-md">
-                {t(kurationKey)}
-              </span>
+          {(spiel.promoHighlightText || kurationKey) && !ausverkauft && (
+            <div className="pointer-events-none absolute left-3 top-3 flex flex-wrap gap-1.5">
+              {spiel.promoHighlightText && (
+                <span className="inline-flex items-center rounded-full border border-primary/60 bg-background/92 px-2.5 py-1 text-label-sm font-bold text-primary shadow-md backdrop-blur-md">
+                  {spiel.promoHighlightText}
+                </span>
+              )}
+              {kurationKey && !spiel.promoHighlightText && (
+                <span className="inline-flex items-center rounded-full border border-primary/45 bg-background/90 px-2.5 py-1 text-label-sm font-semibold text-primary shadow-md backdrop-blur-md">
+                  {t(kurationKey)}
+                </span>
+              )}
             </div>
           )}
           {(ausverkauft || rabattLabel) && (

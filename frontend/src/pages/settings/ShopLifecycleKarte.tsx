@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Clock } from 'lucide-react'
-import { Button, Input, Spinner, Switch } from '@maunting/ui'
+import { Button, Dropdown, Input, Spinner, Switch } from '@maunting/ui'
 import { SanitizedApiError } from '@/api/client'
 import {
   shopAdminOpsApi,
+  type ShopHeroMode,
   type ShopLifecycleSettingsDto,
 } from '@/api/shop'
 import { still } from '@/lib/still'
@@ -26,6 +27,7 @@ const DEFAULT_SETTINGS: ShopLifecycleSettingsDto = {
   shop_trustpilot_enabled: false,
   shop_trustpilot_url: '',
   shop_discord_invite_url: '',
+  shop_hero_mode: 'auto_paid',
 }
 
 function parseReminderList(raw: string): number[] {
@@ -415,6 +417,34 @@ export function ShopLifecycleKarte({ flat = false }: { flat?: boolean } = {}) {
                 </div>
               )}
             </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="block space-y-1.5">
+              <span className="block text-sm font-semibold text-on-surface">
+                {t('settings.shop.lifecycle.heroMode')}
+              </span>
+              <Dropdown
+                value={daten.shop_hero_mode ?? 'auto_paid'}
+                onChange={(val) =>
+                  setDaten((alt) => ({ ...alt, shop_hero_mode: val as ShopHeroMode }))
+                }
+                options={[
+                  {
+                    value: 'auto_paid',
+                    label: t('settings.shop.lifecycle.heroModeAutoPaid'),
+                  },
+                  {
+                    value: 'manual',
+                    label: t('settings.shop.lifecycle.heroModeManual'),
+                  },
+                ]}
+                aria-label={t('settings.shop.lifecycle.heroMode')}
+              />
+            </label>
+            <p className="text-xs text-on-surface-variant">
+              {t('settings.shop.lifecycle.heroModeHint')}
+            </p>
           </div>
 
           <div className="space-y-1.5">

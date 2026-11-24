@@ -3,6 +3,7 @@ import { ArrowRight, Cpu, Server, ShieldCheck } from 'lucide-react'
 import { Badge, Button } from '@maunting/ui'
 import type { ShopPublicNodeStatusDto } from '@/api/shop'
 import { formatEuro } from '../preis'
+import { standortAnzeigeName, standortUntertitel } from '../standortName'
 import type { ShopPingMessung } from '../shopStandortStore'
 
 interface StandortPingDeckProps {
@@ -96,8 +97,18 @@ export function StandortPingDeck({
           </div>
         </div>
 
-        <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div
+          className={`mt-5 grid gap-4 ${
+            nodeStatuses.length === 1
+              ? 'max-w-2xl grid-cols-1'
+              : nodeStatuses.length === 2
+                ? 'grid-cols-1 md:grid-cols-2'
+                : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3'
+          }`}
+        >
           {nodeStatuses.map((node) => {
+            const anzeigeName = standortAnzeigeName(node, t('shop.nodeStatus.standardStandort'))
+            const untertitel = standortUntertitel(node)
             const isOffline = node.load_level === 'offline' || node.status !== 'online'
             const isFull =
               !isOffline &&
@@ -130,7 +141,7 @@ export function StandortPingDeck({
             return (
               <article
                 key={node.id}
-                className={`msm-shop-card-lift flex flex-col justify-between gap-4 rounded-2xl border bg-surface-container/95 p-5 transition-colors ${
+                className={`msm-shop-card-lift flex flex-col justify-between gap-3.5 rounded-2xl border bg-surface-container/95 p-4 transition-colors ${
                   istAusgewaehlt
                     ? 'border-primary bg-primary/5 ring-1 ring-primary/40'
                     : istBesterPing
@@ -138,7 +149,7 @@ export function StandortPingDeck({
                       : 'border-outline-variant/30'
                 }`}
               >
-                <div className="space-y-3.5">
+                <div className="space-y-3">
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex min-w-0 items-start gap-2.5">
                       <span
@@ -147,10 +158,10 @@ export function StandortPingDeck({
                       />
                       <div className="min-w-0">
                         <h3 className="truncate font-headline text-base font-bold text-on-surface">
-                          {node.location_label || node.name}
+                          {anzeigeName}
                         </h3>
-                        {node.location_label && node.location_label !== node.name && (
-                          <p className="truncate text-xs text-on-surface-variant">{node.name}</p>
+                        {untertitel && (
+                          <p className="truncate text-xs text-on-surface-variant">{untertitel}</p>
                         )}
                       </div>
                     </div>
