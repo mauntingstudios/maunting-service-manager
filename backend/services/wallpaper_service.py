@@ -521,16 +521,20 @@ def artwork_app_id_for_blueprint(blueprint: Any) -> str | None:
     return getattr(steam, "appId", None)
 
 
-def _negativ_cache_pfad(app_id: str) -> Path:
-    return steam_cache_verzeichnis() / f"{app_id}.neg"
+def _negativ_cache_pfad(app_id: str, suffix: str = "") -> Path:
+    return steam_cache_verzeichnis() / f"{app_id}{suffix}.neg"
 
 
 def steam_cache_pfad(app_id: str) -> Path:
     return steam_cache_verzeichnis() / f"{app_id}.webp"
 
 
-def _negativ_gecacht(app_id: str) -> bool:
-    pfad = _negativ_cache_pfad(app_id)
+def steam_poster_cache_pfad(app_id: str) -> Path:
+    return steam_cache_verzeichnis() / f"{app_id}_poster.webp"
+
+
+def _negativ_gecacht(app_id: str, suffix: str = "") -> bool:
+    pfad = _negativ_cache_pfad(app_id, suffix)
     try:
         stamp = float(pfad.read_text().strip())
     except (OSError, ValueError):
@@ -538,55 +542,90 @@ def _negativ_gecacht(app_id: str) -> bool:
     return (time.time() - stamp) < STEAM_NEGATIVE_CACHE_TTL_SECONDS
 
 
-def _negativ_merken(app_id: str) -> None:
+def _negativ_merken(app_id: str, suffix: str = "") -> None:
     try:
         cache_dir = steam_cache_verzeichnis()
         cache_dir.mkdir(parents=True, exist_ok=True)
-        _negativ_cache_pfad(app_id).write_text(str(time.time()))
+        _negativ_cache_pfad(app_id, suffix).write_text(str(time.time()))
     except OSError:
         pass
 
 
-def fetch_steam_artwork(app_id: str) -> bytes | None:
-    """Laedt library_hero.jpg vom Steam-CDN (sanitisiert) oder None."""
+def _fetch_steam_candidates(app_id: str, paths: tuple[str, ...]) -> bytes | None:
     if not re.fullmatch(r"\d{1,10}", app_id or ""):
         return None
-    for host in STEAM_CDN_HOSTS:
-        url = f"https://{host}/steam/apps/{app_id}/library_hero.jpg"
-        try:
-            resp = httpx.get(url, timeout=STEAM_FETCH_TIMEOUT_SECONDS)
-        except httpx.HTTPError:
-            continue
-        if resp.status_code != 200:
-            continue
-        content_type = (resp.headers.get("content-type") or "").lower()
-        if "image" not in content_type:
-            continue
-        try:
-            return sanitize_and_compress_wallpaper(resp.content)
-        except WallpaperValidationError:
-            continue
+    for rel_path in paths:
+        for host in STEAM_CDN_HOSTS:
+            url = f"https://{host}/steam/apps/{app_id}/{rel_path}"
+            try:
+                resp = httpx.get(url, timeout=STEAM_FETCH_TIMEOUT_SECONDS)
+            except httpx.HTTPError:
+                continue
+            if resp.status_code != 200:
+                continue
+            content_type = (resp.headers.get("content-type") or "").lower()
+            if "image" not in content_type:
+                continue
+            try:
+                return sanitize_and_compress_wallpaper(resp.content)
+            except WallpaperValidationError:
+                continue
     return None
 
 
-def ensure_steam_cached(app_id: str) -> Path | None:
-    """Stellt das gecachte Steam-Bild bereit (Pfad) oder None bei Fehler."""
-    pfad = steam_cache_pfad(app_id)
+def fetch_steam_artwork(app_id: str) -> bytes | None:
+    """Laedt library_hero.jpg vom Steam-CDN (sanitisiert) oder None."""
+    return _fetch_steam_candidates(app_id, ("library_hero.jpg",))
+
+
+def fetch_steam_poster_artwork(app_id: str) -> bytes | None:
+    """Laedt vertikales Steam-DVD-Cover (library_600x900) oder None."""
+    return _fetch_steam_candidates(app_id, ("library_600x900_2x.jpg", "library_600x900.jpg"))
+
+
+def _ensure_steam_variant(
+    app_id: str,
+    *,
+    pfad: Path,
+    suffix: str,
+    fetcher: Any,
+) -> Path | None:
     if pfad.is_file():
         return pfad
-    if _negativ_gecacht(app_id):
+    if _negativ_gecacht(app_id, suffix):
         return None
-    webp = fetch_steam_artwork(app_id)
+    webp = fetcher(app_id)
     if webp is None:
-        _negativ_merken(app_id)
+        _negativ_merken(app_id, suffix)
         return None
     try:
         pfad.parent.mkdir(parents=True, exist_ok=True)
         pfad.write_bytes(webp)
-        _negativ_cache_pfad(app_id).unlink(missing_ok=True)
+        _negativ_cache_pfad(app_id, suffix).unlink(missing_ok=True)
         return pfad
     except OSError:
         return None
+
+
+def ensure_steam_cached(app_id: str) -> Path | None:
+    """Stellt das gecachte Steam-Bild bereit (Pfad) oder None bei Fehler."""
+    return _ensure_steam_variant(
+        app_id,
+        pfad=steam_cache_pfad(app_id),
+        suffix="",
+        fetcher=fetch_steam_artwork,
+    )
+
+
+def ensure_steam_poster_cached(app_id: str) -> Path | None:
+    """Stellt das gecachte DVD-Poster (600x900) bereit, sonst Hero-Fallback."""
+    poster = _ensure_steam_variant(
+        app_id,
+        pfad=steam_poster_cache_pfad(app_id),
+        suffix="_poster",
+        fetcher=fetch_steam_poster_artwork,
+    )
+    return poster if poster is not None else ensure_steam_cached(app_id)
 
 
 # ── Resolver ─────────────────────────────────────────────────────────────
@@ -639,9 +678,13 @@ def resolve_plan_artwork(
 
 
 def plan_artwork_bytes(
-    db: Session, game_type: str, version: str | None
+    db: Session, game_type: str, version: str | None, *, variant: str | None = None
 ) -> tuple[bytes, str] | None:
     """Loest eine Shop-Artwork-Version (``custom-{id}``/``steam-{app}``) auf."""
+    use_poster = variant == "poster"
+    loader = ensure_steam_poster_cached if use_poster else ensure_steam_cached
+    etag_suffix = "-poster" if use_poster else ""
+
     if version:
         match = _VERSION_RE.fullmatch(version)
         if match is None:
@@ -656,11 +699,11 @@ def plan_artwork_bytes(
         blueprint = _blueprint_for_game_type(game_type)
         if artwork_app_id_for_blueprint(blueprint) != kennung:
             return None
-        pfad = ensure_steam_cached(kennung)
+        pfad = loader(kennung)
         if pfad is None:
             return None
         try:
-            return pfad.read_bytes(), f'"steam-{kennung}"'
+            return pfad.read_bytes(), f'"steam-{kennung}{etag_suffix}"'
         except OSError:
             return None
 
@@ -675,11 +718,11 @@ def plan_artwork_bytes(
     app_id = artwork_app_id_for_blueprint(_blueprint_for_game_type(game_type))
     if app_id is None:
         return None
-    pfad = ensure_steam_cached(app_id)
+    pfad = loader(app_id)
     if pfad is None:
         return None
     try:
-        return pfad.read_bytes(), f'"steam-{app_id}"'
+        return pfad.read_bytes(), f'"steam-{app_id}{etag_suffix}"'
     except OSError:
         return None
 

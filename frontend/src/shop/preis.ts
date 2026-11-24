@@ -167,3 +167,17 @@ const euroFormat = new Intl.NumberFormat('de-DE', {
 export function formatEuro(cent: number): string {
   return euroFormat.format(cent / 100)
 }
+
+const ganzzahlFormat = new Intl.NumberFormat('de-DE', {
+  maximumFractionDigits: 0,
+})
+
+export function zerlegeEuro(cent: number): { euro: string; cent: string } {
+  const sicher = Math.max(0, Math.round(cent))
+  const euroTeil = Math.floor(sicher / 100)
+  const centTeil = sicher % 100
+  return {
+    euro: ganzzahlFormat.format(euroTeil),
+    cent: String(centTeil).padStart(2, '0'),
+  }
+}

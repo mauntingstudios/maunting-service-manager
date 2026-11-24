@@ -117,3 +117,83 @@ def test_public_node_statuses_expose_distinct_ddos_providers(db) -> None:
     assert by_name["node-a"].ddos_game_aware is True
     assert by_name["node-b"].ddos_provider == "CosmicGuard"
     assert by_name["node-b"].ddos_game_aware is False
+
+
+def test_private_node_never_leaks_ddos_and_five_mixed_nodes_avoid_false_uniform_claim(
+    client: TestClient, owner_user, db
+) -> None:
+    from unittest.mock import patch
+
+    db.add(
+        Node(
+            name="private-home-node",
+            host="https://10.9.9.1:9000",
+            auth_token_enc="tok-priv",
+            location_label="Privat Keller",
+            status="online",
+            shop_enabled=False,
+            ddos_provider="PrivateShield",
+            ddos_game_aware=True,
+        )
+    )
+    for idx in range(4):
+        db.add(
+            Node(
+                name=f"eu-pub-{idx}",
+                host=f"https://10.1.0.{idx + 1}:9000",
+                auth_token_enc=f"tok-pub-{idx}",
+                location_label=f"Frankfurt {idx + 1}",
+                status="online",
+                shop_enabled=True,
+                ddos_provider="Path.net",
+                ddos_game_aware=True,
+            )
+        )
+    db.add(
+        Node(
+            name="us-pub-5",
+            host="https://10.1.0.99:9000",
+            auth_token_enc="tok-pub-5",
+            location_label="New York",
+            status="online",
+            shop_enabled=True,
+            ddos_provider="Voxility",
+            ddos_game_aware=False,
+        )
+    )
+    shop_catalog_service.create_plan(
+        db,
+        ShopPlanWrite(game_type="palworld", name="Palworld Multi-Node", price_cents=799),
+        actor_id=owner_user.id,
+    )
+    db.commit()
+
+    # 1. Private node never appears in public node statuses
+    nodes_res = client.get("/api/shop/nodes/status")
+    assert nodes_res.status_code == 200
+    names = [n["name"] for n in nodes_res.json()]
+    assert "private-home-node" not in names
+    assert "PrivateShield" not in nodes_res.text
+    by_name = {n["name"]: n for n in nodes_res.json()}
+    assert by_name["eu-pub-0"]["ddos_provider"] == "Path.net"
+    assert by_name["us-pub-5"]["ddos_provider"] == "Voxility"
+
+    # 2. Catalog never claims a single uniform DDoS provider when 5 public nodes differ
+    cat_res = client.get("/api/shop/catalog")
+    assert cat_res.status_code == 200
+    pal_plans = [p for p in cat_res.json() if p["game_type"] == "palworld"]
+    assert len(pal_plans) >= 1
+    assert pal_plans[0]["ddos_provider"] is None
+    assert pal_plans[0]["ddos_game_aware"] is False
+
+    # 3. Artwork endpoint forwards variant="poster" only when valid
+    with patch(
+        "services.wallpaper_service.plan_artwork_bytes",
+        return_value=(b"webp-poster", '"steam-1-poster"'),
+    ) as m_art:
+        art_res = client.get("/api/shop/artwork/palworld?variant=poster")
+        assert art_res.status_code == 200
+        assert m_art.call_args.kwargs.get("variant") == "poster"
+
+        client.get("/api/shop/artwork/palworld?variant=bogus")
+        assert m_art.call_args.kwargs.get("variant") is None

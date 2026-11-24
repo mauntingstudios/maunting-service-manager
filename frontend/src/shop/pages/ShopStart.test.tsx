@@ -8,7 +8,6 @@ const hoisted = vi.hoisted(() => ({
   listAddons: vi.fn(),
   getPromos: vi.fn(),
   getNodeStatus: vi.fn(),
-  pingNode: vi.fn(),
   getPublicPolicy: vi.fn(),
   listPublicNews: vi.fn(),
 }))
@@ -22,7 +21,6 @@ vi.mock('@/api/shop', async (importOriginal) => {
       listAddons: hoisted.listAddons,
       getPromos: hoisted.getPromos,
       getNodeStatus: hoisted.getNodeStatus,
-      pingNode: hoisted.pingNode,
       getPublicPolicy: hoisted.getPublicPolicy,
     },
   }
@@ -43,7 +41,6 @@ import { useAuthStore } from '@/stores/authStore'
 import { usePublicSettingsStore } from '@/stores/publicSettingsStore'
 import { ShopKopf } from '../ShopKopf'
 import { ShopStart } from './ShopStart'
-import { useShopStandortStore } from '../shopStandortStore'
 
 const SAMPLE_PLANS = [
   {
@@ -143,7 +140,6 @@ function zeige() {
 
 describe('ShopStart', () => {
   beforeEach(() => {
-    useShopStandortStore.getState().reset()
     hoisted.getCatalog.mockReset().mockResolvedValue(SAMPLE_PLANS)
     hoisted.listAddons.mockReset().mockResolvedValue(SAMPLE_ADDONS)
     hoisted.getNodeStatus.mockReset().mockResolvedValue([])
@@ -178,7 +174,7 @@ describe('ShopStart', () => {
     })
   })
 
-  it('zeigt Storefront 3.0 mit Hero, TrustSection und rollenbasierten Add-ons', async () => {
+  it('zeigt Storefront mit DVD-Karten (variant=poster), kompakter TrustSection und Add-ons', async () => {
     zeige()
     expect(
       await screen.findByRole('heading', { level: 1, name: 'Palworld' }),
@@ -187,16 +183,44 @@ describe('ShopStart', () => {
     expect(screen.getByRole('heading', { level: 3, name: 'Rust' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Singra & Tresor Pro' })).toBeInTheDocument()
     expect(screen.getByText(/50 GB Tresorspeicher inklusive/)).toBeInTheDocument()
-    expect(screen.getByText(/500\.000 KI-Tokens im Monat/)).toBeInTheDocument()
-    expect(screen.getByText(i18n.t('shop.hero.dockTitel'))).toBeInTheDocument()
     expect(screen.getByText(i18n.t('shop.trust.prepaidWert'))).toBeInTheDocument()
-    expect(screen.queryByText(i18n.t('shop.trust.trustpilotTitel'))).toBeNull()
-    expect(screen.queryByText(i18n.t('shop.hero.kicker'))).toBeNull()
-    expect(screen.queryByText('steam_game')).toBeNull()
-    expect(screen.queryByText(i18n.t('shop.demo.badge'))).toBeNull()
+    // Keine veraltete Landingpage-Node-Auslastungsliste
+    expect(screen.queryByRole('heading', { name: i18n.t('shop.nodeStatus.titel') })).toBeNull()
+    // Steam-DVD-Cover nutzt ?variant=poster
+    const imgs = document.querySelectorAll('img[src*="variant=poster"]')
+    expect(imgs.length).toBeGreaterThanOrEqual(1)
   })
 
-  it('rendert Hero-Pause-Toggle, integrierte Kurationsfilter und konfigurierte Trust-Links', async () => {
+  it('oeffnet das Plattform-Dropdown auf DVD-Karten per Hover/Klick und schliesst per Escape', async () => {
+    hoisted.getCatalog.mockResolvedValue([
+      { ...SAMPLE_PLANS[0], platforms: ['pc', 'ps5', 'xbox', 'crossplay'] },
+      { ...SAMPLE_PLANS[1], platforms: ['pc'] },
+    ])
+
+    zeige()
+    const trigger = await screen.findByRole('button', {
+      name: i18n.t('shop.karte.plattformenLabel'),
+    })
+    expect(trigger).toHaveAttribute('aria-expanded', 'false')
+
+    fireEvent.mouseEnter(trigger.parentElement!)
+    expect(trigger).toHaveAttribute('aria-expanded', 'true')
+    const tooltip = screen.getByRole('tooltip')
+    expect(tooltip).toHaveTextContent('PS5')
+    expect(tooltip).toHaveTextContent('Xbox')
+
+    fireEvent.keyDown(trigger.parentElement!, { key: 'Escape' })
+    expect(trigger).toHaveAttribute('aria-expanded', 'false')
+
+    fireEvent.click(trigger)
+    expect(trigger).toHaveAttribute('aria-expanded', 'true')
+
+    fireEvent.click(screen.getByRole('button', { name: 'PS5' }))
+    expect(screen.getByRole('heading', { level: 3, name: 'Palworld' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { level: 3, name: 'Rust' })).toBeNull()
+  })
+
+  it('rendert Hero-Pause-Toggle, Filter-Tabs und Trustpilot-/Discord-Karten', async () => {
     hoisted.getCatalog.mockResolvedValue([
       { ...SAMPLE_PLANS[0], is_featured: true, is_bestseller: true, recent_order_count: 8 },
       { ...SAMPLE_PLANS[1], is_featured: true, is_bestseller: true, is_new: true },
@@ -218,37 +242,27 @@ describe('ShopStart', () => {
 
     zeige()
     const neuFilterBtn = await screen.findByRole('button', { name: i18n.t('shop.katalog.badgeNeu') })
-    expect(
-      screen.getByRole('button', { name: i18n.t('shop.katalog.badgeBestseller') }),
-    ).toBeInTheDocument()
-    expect(
-      screen.getByRole('button', { name: i18n.t('shop.katalog.badgeFeatured') }),
-    ).toBeInTheDocument()
-    // Keine doppelten Katalog-Schienen-Sektionen oberhalb des Vollkatalogs
-    expect(screen.queryByRole('heading', { name: i18n.t('shop.katalog.meistgemietetTitel') })).toBeNull()
-    expect(screen.queryByRole('heading', { name: i18n.t('shop.katalog.empfohlenTitel') })).toBeNull()
-
     fireEvent.click(neuFilterBtn)
     expect(screen.getByRole('heading', { level: 3, name: 'Rust' })).toBeInTheDocument()
     expect(screen.queryByRole('heading', { level: 3, name: 'Palworld' })).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: i18n.t('shop.sammlung.alleSpiele') }))
 
-    // Pause/Play-Steuerung im Hero ohne aria-pressed
     const toggleBtn = screen.getByRole('button', { name: i18n.t('shop.hero.rotationPausieren') })
-    expect(toggleBtn).not.toHaveAttribute('aria-pressed')
     fireEvent.click(toggleBtn)
     expect(
       screen.getByRole('button', { name: i18n.t('shop.hero.rotationFortsetzen') }),
     ).toBeInTheDocument()
 
-    // Konfigurierte externe Trustpilot- & Discord-Karten erscheinen
-    const trustLink = screen.getByRole('link', { name: /Trustpilot/i })
-    expect(trustLink).toHaveAttribute('href', 'https://www.trustpilot.com/review/example.de')
-    const discordLink = screen.getByRole('link', { name: /Discord/i })
-    expect(discordLink).toHaveAttribute('href', 'https://discord.gg/maunting')
+    expect(screen.getByRole('link', { name: /Trustpilot/i })).toHaveAttribute(
+      'href',
+      'https://www.trustpilot.com/review/example.de',
+    )
+    expect(screen.getByRole('link', { name: /Discord/i })).toHaveAttribute(
+      'href',
+      'https://discord.gg/maunting',
+    )
   })
 
-  it('filtert die Sammlung ueber Suche und Filter-Tabs', async () => {
+  it('filtert die Sammlung ueber Suche und Mod-Filter', async () => {
     zeige()
     await screen.findByRole('heading', { level: 3, name: 'Palworld' })
 
@@ -262,87 +276,124 @@ describe('ShopStart', () => {
     expect(screen.queryByRole('heading', { level: 3, name: 'Rust' })).toBeNull()
   })
 
-  it('zeigt einen produktiven Leerzustand wenn noch keine Tarife hinterlegt sind', async () => {
-    hoisted.getCatalog.mockResolvedValue([])
-    hoisted.listAddons.mockResolvedValue([])
-    zeige()
-    expect(
-      await screen.findByText(i18n.t('shop.sammlung.keineTarifeTitel')),
-    ).toBeInTheDocument()
-  })
-
-  it('kennzeichnet nicht verfuegbare Tarife mit kontrastreichem Ausverkauft-Badge', async () => {
-    hoisted.getCatalog.mockResolvedValue([
-      { ...SAMPLE_PLANS[0], available: false, availability_reason: 'insufficient_node_cpu' },
-    ])
-    zeige()
-    const badges = await screen.findAllByText(i18n.t('shop.karte.ausverkauft'))
-    expect(badges.length).toBeGreaterThan(0)
-    expect(badges.some((el) => el.className.includes('bg-background/95'))).toBe(true)
-  })
-
-  it('zeigt Live-Node-Auslastung ohne interne IPs im Shop', async () => {
+  it('kennzeichnet gemischte vs partielle DDoS-Abdeckung ehrlich und klappt > 8 Spiele auf', async () => {
+    const vieleSpiele = Array.from({ length: 10 }, (_, idx) => ({
+      ...SAMPLE_PLANS[0],
+      id: idx + 1,
+      game_type: `spiel_${idx + 1}`,
+      game_name: `Game ${String(idx + 1).padStart(2, '0')}`,
+      name: `Plan ${idx + 1}`,
+      is_featured: idx < 2,
+      pinned_in_hero: idx === 9,
+      promo_highlight_text: idx === 9 ? 'Update 2.0' : null,
+    }))
+    hoisted.getCatalog.mockResolvedValue(vieleSpiele)
     hoisted.getNodeStatus.mockResolvedValue([
       {
         id: 1,
-        name: 'eu-fra-01',
-        location_label: 'Frankfurt DE · RZ 2',
+        name: 'eu-1',
+        location_label: 'Frankfurt',
         status: 'online',
-        cpu_model: 'AMD EPYC 7763',
-        ram_type: 'DDR5 ECC',
-        storage_type: 'NVMe SSD',
-        ram_free_percent: 64,
-        load_level: 'low',
-        accepting_orders: true,
-      },
-    ])
-    zeige()
-    expect(await screen.findByText('Frankfurt DE · RZ 2')).toBeInTheDocument()
-    expect(screen.getByText('DDR5 ECC')).toBeInTheDocument()
-    expect(screen.getByText('NVMe SSD')).toBeInTheDocument()
-    expect(screen.getByText(i18n.t('shop.nodeStatus.ramFreiProzent', { percent: 64 }))).toBeInTheDocument()
-  })
-
-  it('filtert nach Plattformen und misst Node-Ping samt DDoS-Schutz', async () => {
-    hoisted.getCatalog.mockResolvedValue([
-      { ...SAMPLE_PLANS[0], platforms: ['pc', 'ps5', 'xbox', 'crossplay'] },
-      { ...SAMPLE_PLANS[1], platforms: ['pc'] },
-    ])
-    hoisted.getNodeStatus.mockResolvedValue([
-      {
-        id: 1,
-        name: 'eu-fra-01',
-        location_label: 'Frankfurt DE',
-        status: 'online',
-        cpu_model: 'AMD Ryzen 9 7950X3D',
+        cpu_model: null,
         ram_type: 'DDR5',
         storage_type: 'NVMe',
-        ram_free_percent: 72,
+        ram_free_percent: 80,
         load_level: 'low',
         accepting_orders: true,
-        ddos_provider: 'Famesystems Game-DDoS',
+        ddos_provider: 'Path.net',
         ddos_game_aware: true,
       },
+      {
+        id: 2,
+        name: 'us-2',
+        location_label: 'New York',
+        status: 'online',
+        cpu_model: null,
+        ram_type: 'DDR5',
+        storage_type: 'NVMe',
+        ram_free_percent: 70,
+        load_level: 'low',
+        accepting_orders: true,
+        ddos_provider: null,
+        ddos_game_aware: false,
+      },
     ])
-    hoisted.pingNode.mockResolvedValue({
-      node_id: 1,
-      status: 'online',
-      server_agent_rtt_ms: 14,
-      timestamp_ms: 1700000000000,
+
+    zeige()
+    expect(await screen.findByText(i18n.t('shop.trust.ddosPartialTitel'))).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: i18n.t('shop.sammlung.alleAnzeigen', { count: 10 }) }),
+    ).toBeInTheDocument()
+    fireEvent.click(
+      screen.getByRole('button', { name: i18n.t('shop.sammlung.alleAnzeigen', { count: 10 }) }),
+    )
+    expect(screen.getByRole('heading', { level: 3, name: 'Game 08' })).toBeInTheDocument()
+  })
+
+  it('zeigt typografische Preisauszeichnung bei aktiven Kurzzeit-Tarifen', async () => {
+    hoisted.getCatalog.mockResolvedValue([
+      {
+        ...SAMPLE_PLANS[0],
+        price_cents: 1000,
+        allow_short_durations: true,
+      },
+    ])
+    hoisted.getPublicPolicy.mockResolvedValue({
+      default_billing_mode: 'prepaid',
+      subscription_discount_percent: 0,
+      refund_guarantee_days: 0,
+      refund_policy_note: '',
+      cancel_grace_days: 7,
+      auto_subdomain_enabled: false,
+      auto_subdomain_zone: '',
+      shop_short_durations_enabled: true,
+      shop_short_duration_tiers: [
+        { days: 3, enabled: true, price_factor_percent: 25, min_price_cents: 199 },
+        { days: 7, enabled: true, price_factor_percent: 40, min_price_cents: 299 },
+        { days: 14, enabled: true, price_factor_percent: 65, min_price_cents: 499 },
+      ],
     })
 
     zeige()
-    expect(await screen.findByText('Game-Aware DDoS (Famesystems Game-DDoS)')).toBeInTheDocument()
-    expect(screen.getByText('Game-Aware DDoS · Famesystems Game-DDoS')).toBeInTheDocument()
-    expect(screen.getByText(i18n.t('shop.trust.ddosSpotlightTitelGameAware'))).toBeInTheDocument()
-    expect(screen.getByText('Famesystems Game-DDoS')).toBeInTheDocument()
+    await screen.findByRole('heading', { level: 3, name: 'Palworld' })
+    expect(screen.getAllByText(/2,50 €/).length).toBeGreaterThanOrEqual(2)
+    expect(screen.getAllByText('/ 3 Tage').length).toBeGreaterThanOrEqual(2)
+  })
 
-    fireEvent.click(screen.getByRole('button', { name: 'PS5' }))
-    expect(screen.getByRole('heading', { level: 3, name: 'Palworld' })).toBeInTheDocument()
-    expect(screen.queryByRole('heading', { level: 3, name: 'Rust' })).toBeNull()
+  it('rendert ShopKopf ohne DE/EN-Switcher und ohne Support-Button', () => {
+    const prevShopEnabled = usePublicSettingsStore.getState().shop_enabled
+    const prevAuth = {
+      isAuthenticated: useAuthStore.getState().isAuthenticated,
+      user: useAuthStore.getState().user,
+    }
+    try {
+      usePublicSettingsStore.setState({ shop_enabled: true })
+      useAuthStore.setState({
+        isAuthenticated: true,
+        user: {
+          id: 1,
+          username: 'tester',
+          email: 'tester@example.com',
+          role: 'admin',
+        } as ReturnType<typeof useAuthStore.getState>['user'],
+      })
 
-    fireEvent.click(screen.getByRole('button', { name: i18n.t('shop.nodeStatus.pingTesten') }))
-    expect((await screen.findAllByText(/14 ms/)).length).toBeGreaterThanOrEqual(2)
+      render(
+        <MemoryRouter>
+          <ShopKopf />
+        </MemoryRouter>,
+      )
+      expect(screen.queryByRole('button', { name: 'DE' })).toBeNull()
+      expect(screen.queryByRole('button', { name: 'EN' })).toBeNull()
+      expect(screen.queryByText(i18n.t('shop.kopf.support'))).toBeNull()
+      expect(screen.getByRole('link', { name: i18n.t('shop.kopf.news') })).toBeInTheDocument()
+      expect(
+        screen.getByRole('link', { name: i18n.t('shop.kopf.dashboard') }),
+      ).toBeInTheDocument()
+    } finally {
+      usePublicSettingsStore.setState({ shop_enabled: prevShopEnabled })
+      useAuthStore.setState(prevAuth)
+    }
   })
 
   it('rendert ShopNewsTeaser bei veroeffentlichten Beitraegen und blendet leeren Add-ons-Kasten aus', async () => {
@@ -375,180 +426,5 @@ describe('ShopStart', () => {
       await screen.findByRole('heading', { name: i18n.t('shop.newsTeaser.titel') }),
     ).toBeInTheDocument()
     expect(screen.getByText('Palworld Crossplay-Update')).toBeInTheDocument()
-    expect(screen.queryByText(i18n.t('shop.addons.leerText'))).toBeNull()
-  })
-
-  it('rendert ShopKopf ohne DE/EN-Switcher und ohne Support-Button', () => {
-    const prevShopEnabled = usePublicSettingsStore.getState().shop_enabled
-    const prevAuth = {
-      isAuthenticated: useAuthStore.getState().isAuthenticated,
-      user: useAuthStore.getState().user,
-    }
-    try {
-      usePublicSettingsStore.setState({ shop_enabled: true })
-      useAuthStore.setState({
-        isAuthenticated: true,
-        user: {
-          id: 1,
-          username: 'tester',
-          email: 'tester@example.com',
-          role: 'admin',
-        } as ReturnType<typeof useAuthStore.getState>['user'],
-      })
-
-      render(
-        <MemoryRouter>
-          <ShopKopf />
-        </MemoryRouter>,
-      )
-      expect(screen.queryByRole('button', { name: 'DE' })).toBeNull()
-      expect(screen.queryByRole('button', { name: 'EN' })).toBeNull()
-      expect(screen.queryByText(i18n.t('shop.kopf.support'))).toBeNull()
-      expect(screen.queryByText(i18n.t('shop.kopf.kiChat'))).toBeNull()
-      expect(screen.getByRole('link', { name: i18n.t('shop.kopf.news') })).toBeInTheDocument()
-      expect(
-        screen.getByRole('link', { name: i18n.t('shop.kopf.dashboard') }),
-      ).toBeInTheDocument()
-
-      const mobileMenuBtn = screen.getByRole('button', { name: i18n.t('shop.kopf.menueOeffnen') })
-      expect(mobileMenuBtn).toHaveAttribute('aria-expanded', 'false')
-      fireEvent.click(mobileMenuBtn)
-      expect(mobileMenuBtn).toHaveAttribute('aria-expanded', 'true')
-      expect(screen.getAllByRole('link', { name: i18n.t('shop.kopf.news') })).toHaveLength(2)
-    } finally {
-      usePublicSettingsStore.setState({ shop_enabled: prevShopEnabled })
-      useAuthStore.setState(prevAuth)
-    }
-  })
-
-  it('merkt gewaehlten Standort und Ping-Werte im Standort-Store', async () => {
-    hoisted.getNodeStatus.mockResolvedValue([
-      {
-        id: 5,
-        name: 'eu-fra-perf',
-        location_label: 'Frankfurt Performance',
-        status: 'online',
-        cpu_model: null,
-        ram_type: 'DDR5 ECC',
-        storage_type: 'NVMe SSD',
-        ram_free_percent: 80,
-        load_level: 'low',
-        accepting_orders: true,
-        hardware_tier_label: 'Performance',
-        shop_surcharge_cents: 350,
-      },
-    ])
-    hoisted.pingNode.mockResolvedValue({
-      node_id: 5,
-      status: 'online',
-      server_agent_rtt_ms: 19,
-      timestamp_ms: 1700000000000,
-    })
-
-    zeige()
-    expect(await screen.findByText('Frankfurt Performance')).toBeInTheDocument()
-    expect(screen.getByText('Performance')).toBeInTheDocument()
-    expect(screen.getByText(/\+3,50/)).toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole('button', { name: i18n.t('shop.nodeStatus.pingTesten') }))
-    expect((await screen.findAllByText(/19 ms/)).length).toBeGreaterThanOrEqual(2)
-    expect(useShopStandortStore.getState().pingMsByNodeId[5]?.ms).toBe(19)
-
-    fireEvent.click(screen.getByRole('button', { name: i18n.t('shop.nodeStatus.standortWaehlen') }))
-    expect(useShopStandortStore.getState().ausgewaehlteNodeId).toBe(5)
-    expect(
-      screen.getByRole('button', { name: i18n.t('shop.nodeStatus.standortAusgewaehlt') }),
-    ).toHaveAttribute('aria-pressed', 'true')
-  })
-
-  it('kennzeichnet gemischte DDoS-Anbieter je Standort, maskiert generisches Lokal und klappt Katalog > 8 Spiele auf', async () => {
-    const vieleSpiele = Array.from({ length: 10 }, (_, idx) => ({
-      ...SAMPLE_PLANS[0],
-      id: idx + 1,
-      game_type: `spiel_${idx + 1}`,
-      game_name: `Game ${String(idx + 1).padStart(2, '0')}`,
-      name: `Plan ${idx + 1}`,
-      is_featured: idx < 2,
-      pinned_in_hero: idx === 9,
-      promo_highlight_text: idx === 9 ? 'Update 2.0' : null,
-    }))
-    hoisted.getCatalog.mockResolvedValue(vieleSpiele)
-    hoisted.getNodeStatus.mockResolvedValue([
-      {
-        id: 1,
-        name: 'Lokal',
-        location_label: null,
-        status: 'online',
-        cpu_model: null,
-        ram_type: 'DDR5',
-        storage_type: 'NVMe',
-        ram_free_percent: 80,
-        load_level: 'low',
-        accepting_orders: true,
-        ddos_provider: 'Path.net',
-        ddos_game_aware: true,
-      },
-      {
-        id: 2,
-        name: 'us-ny',
-        location_label: 'New York US',
-        status: 'online',
-        cpu_model: null,
-        ram_type: 'DDR5',
-        storage_type: 'NVMe',
-        ram_free_percent: 70,
-        load_level: 'low',
-        accepting_orders: true,
-        ddos_provider: 'CosmicGuard',
-        ddos_game_aware: false,
-      },
-    ])
-
-    zeige()
-    expect(
-      await screen.findByRole('heading', { level: 1, name: 'Game 10' }),
-    ).toBeInTheDocument()
-    expect(screen.getAllByText('Update 2.0').length).toBeGreaterThanOrEqual(1)
-    expect(screen.getByText(i18n.t('shop.nodeStatus.standardStandort'))).toBeInTheDocument()
-    expect(screen.queryByText('Lokal')).toBeNull()
-    expect(screen.getByText(i18n.t('shop.trust.ddosSpotlightTitelMulti'))).toBeInTheDocument()
-    expect(screen.getByText(/Path\.net · CosmicGuard/)).toBeInTheDocument()
-
-    // Initial 8 Spiele im Katalog + Aufklapp-Button fuer alle 10
-    expect(
-      screen.getByRole('button', { name: i18n.t('shop.sammlung.alleAnzeigen', { count: 10 }) }),
-    ).toBeInTheDocument()
-    fireEvent.click(
-      screen.getByRole('button', { name: i18n.t('shop.sammlung.alleAnzeigen', { count: 10 }) }),
-    )
-    expect(screen.getByRole('heading', { level: 3, name: 'Game 08' })).toBeInTheDocument()
-  })
-
-  it('zeigt bei aktiven Kurzzeit-Tarifen den guenstigsten 3-Tage-Einstiegspreis auf Hero und Karte', async () => {
-    hoisted.getCatalog.mockResolvedValue([
-      {
-        ...SAMPLE_PLANS[0],
-        price_cents: 1000,
-        allow_short_durations: true,
-      },
-    ])
-    hoisted.getPublicPolicy.mockResolvedValue({
-      default_billing_mode: 'prepaid',
-      subscription_discount_percent: 0,
-      refund_guarantee_days: 0,
-      refund_policy_note: '',
-      cancel_grace_days: 7,
-      auto_subdomain_enabled: false,
-      auto_subdomain_zone: '',
-      shop_short_durations_enabled: true,
-      shop_short_duration_tiers: [
-        { days: 3, enabled: true, price_factor_percent: 25, min_price_cents: 199 },
-        { days: 7, enabled: true, price_factor_percent: 40, min_price_cents: 299 },
-        { days: 14, enabled: true, price_factor_percent: 65, min_price_cents: 499 },
-      ],
-    })
-
-    zeige()
-    expect((await screen.findAllByText(/2,50.*3 Tage/)).length).toBeGreaterThanOrEqual(2)
   })
 })

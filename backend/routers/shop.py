@@ -347,10 +347,14 @@ def get_artwork(
     db: Session = Depends(get_db),
     if_none_match: str | None = Header(default=None),
     v: str | None = Query(default=None),
+    variant: str | None = Query(default=None),
 ) -> Response:
     """Liefert das aufgeloeste Spielbild (Custom oder Steam-Cache)."""
+    safe_variant = "poster" if variant == "poster" else None
     try:
-        gefunden = wallpaper_service.plan_artwork_bytes(db, game_type, v)
+        gefunden = wallpaper_service.plan_artwork_bytes(
+            db, game_type, v, variant=safe_variant
+        )
     except wallpaper_service.WallpaperValidationError as exc:
         raise HTTPException(status_code=400, detail=exc.message)
     if gefunden is None:

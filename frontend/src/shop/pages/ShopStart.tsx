@@ -24,16 +24,14 @@ import { useHasPermission } from '@/hooks/useHasPermission'
 import { still } from '@/lib/still'
 import { useTageszeitMotiv } from '@/lib/tageszeit'
 import { formatAddonBenefits } from '../addonBenefits'
-import { HeroShowcase, type ShopDdosHighlight } from '../components/HeroShowcase'
+import { berechneDdosSummary } from '../ddosSummary'
+import { HeroShowcase } from '../components/HeroShowcase'
+import { PreisAuszeichnung } from '../components/PreisAuszeichnung'
 import { ShopNewsTeaser } from '../components/ShopNewsTeaser'
 import { SpielKarte } from '../components/SpielKarte'
-import { StandortPingDeck } from '../components/StandortPingDeck'
-import { TrustSection, type ShopDdosSummary } from '../components/TrustSection'
+import { TrustSection } from '../components/TrustSection'
 import { formatEuro } from '../preis'
-import { messeNodePings } from '../pingNodes'
-import { standortAnzeigeName } from '../standortName'
 import { useShopReveal } from '../useShopReveal'
-import { useShopStandortStore } from '../shopStandortStore'
 import { useShopKatalog } from '../useShopKatalog'
 
 type KatalogFilter =
@@ -76,35 +74,6 @@ export function ShopStart() {
   const [badges, setBadges] = useState<ShopPublicBadgePromo[]>([])
   const [nodeStatuses, setNodeStatuses] = useState<ShopPublicNodeStatusDto[]>([])
   const [publicPolicy, setPublicPolicy] = useState<ShopPublicPolicyDto | null>(null)
-  const ausgewaehlteNodeId = useShopStandortStore((s) => s.ausgewaehlteNodeId)
-  const setAusgewaehlteNodeId = useShopStandortStore((s) => s.setAusgewaehlteNodeId)
-  const pingWerte = useShopStandortStore((s) => s.pingMsByNodeId)
-  const setPingWerte = useShopStandortStore((s) => s.setPingWerte)
-  const [pingBusy, setPingBusy] = useState(false)
-
-  const pingTesten = async () => {
-    const onlineNodes = nodeStatuses.filter((n) => n.status === 'online')
-    if (onlineNodes.length === 0 || pingBusy) return
-    setPingBusy(true)
-    const gemessen = await messeNodePings(nodeStatuses, 'ShopStart')
-    setPingWerte(gemessen)
-    setPingBusy(false)
-  }
-
-  const { besterPingNodeId, bestPingMs } = useMemo(() => {
-    let bestId: number | null = null
-    let bestMs = Infinity
-    for (const [idStr, eintrag] of Object.entries(pingWerte)) {
-      if (eintrag.ms != null && eintrag.ms < bestMs) {
-        bestMs = eintrag.ms
-        bestId = Number(idStr)
-      }
-    }
-    return {
-      besterPingNodeId: bestId,
-      bestPingMs: Number.isFinite(bestMs) ? bestMs : null,
-    }
-  }, [pingWerte])
 
   useEffect(() => {
     let aktiv = true
@@ -247,63 +216,7 @@ export function ShopStart() {
     formatAddonBenefits(addon, t, sprache)
 
   const onlineNodesCount = nodeStatuses.filter((n) => n.status === 'online').length
-  const gewaehlterStandort = nodeStatuses.find((n) => n.id === ausgewaehlteNodeId)
-  const standortGewaehltName = gewaehlterStandort
-    ? standortAnzeigeName(gewaehlterStandort, t('shop.nodeStatus.standardStandort'))
-    : null
-
-  const ddosSummary: ShopDdosSummary = useMemo(() => {
-    const providers = new Set<string>()
-    const profiles = new Set<string>()
-    let gameAware = false
-    for (const node of nodeStatuses) {
-      if (node.ddos_game_aware) gameAware = true
-      if (node.ddos_provider) providers.add(node.ddos_provider)
-      if (node.ddos_profile) profiles.add(node.ddos_profile)
-    }
-    if (nodeStatuses.length === 0) {
-      for (const spiel of spiele) {
-        if (spiel.ddosGameAware) gameAware = true
-        if (spiel.ddosProvider) providers.add(spiel.ddosProvider)
-        if (spiel.ddosProfile) profiles.add(spiel.ddosProfile)
-      }
-    }
-    return {
-      gameAware,
-      providers: [...providers],
-      profiles: [...profiles],
-    }
-  }, [nodeStatuses, spiele])
-
-  const ddosHighlight: ShopDdosHighlight | null = useMemo(() => {
-    if (gewaehlterStandort) {
-      if (!gewaehlterStandort.ddos_game_aware && !gewaehlterStandort.ddos_provider) {
-        return null
-      }
-      return {
-        gameAware: Boolean(gewaehlterStandort.ddos_game_aware),
-        provider: gewaehlterStandort.ddos_provider ?? null,
-        profile: gewaehlterStandort.ddos_profile ?? null,
-        mixed: false,
-      }
-    }
-    if (!ddosSummary.gameAware && ddosSummary.providers.length === 0) return null
-    if (ddosSummary.providers.length > 1) {
-      return {
-        gameAware: ddosSummary.gameAware,
-        provider: null,
-        profile: null,
-        mixed: true,
-        providers: ddosSummary.providers,
-      }
-    }
-    return {
-      gameAware: ddosSummary.gameAware,
-      provider: ddosSummary.providers[0] ?? null,
-      profile: ddosSummary.profiles[0] ?? null,
-      mixed: false,
-    }
-  }, [gewaehlterStandort, ddosSummary])
+  const ddosSummary = useMemo(() => berechneDdosSummary(nodeStatuses), [nodeStatuses])
 
   const hatAktivenFilter =
     Boolean(suche.trim()) || filter !== 'alle' || plattformFilter !== 'alle'
@@ -341,16 +254,14 @@ export function ShopStart() {
         badges={badges}
         tarifIdsFuerSpiel={(id) => tarifeFuer(id).map((item) => item.plan.id)}
         headerMotiv={headerMotiv}
-        standortGewaehltName={standortGewaehltName}
         onlineNodesCount={onlineNodesCount}
-        ddosHighlight={ddosHighlight}
+        ddosSummary={ddosSummary}
         heroMode={publicPolicy?.shop_hero_mode ?? 'auto_paid'}
         shortDurationPolicy={publicPolicy}
       />
 
       <TrustSection
         onlineNodesCount={onlineNodesCount}
-        bestPingMs={bestPingMs}
         publicPolicy={publicPolicy}
         ddosSummary={ddosSummary}
       />
@@ -485,7 +396,7 @@ export function ShopStart() {
             </div>
           ) : (
             <div className="space-y-6">
-              <div className="msm-blueprint-grid">
+              <div className="msm-shop-poster-grid">
                 {sichtbareSpiele.map((spiel) => (
                   <SpielKarte
                     key={spiel.id}
@@ -514,16 +425,6 @@ export function ShopStart() {
           )}
         </div>
       </section>
-
-      <StandortPingDeck
-        nodeStatuses={nodeStatuses}
-        ausgewaehlteNodeId={ausgewaehlteNodeId}
-        onSelectNode={(nodeId) => setAusgewaehlteNodeId(nodeId)}
-        pingWerte={pingWerte}
-        besterPingNodeId={besterPingNodeId}
-        pingBusy={pingBusy}
-        onRunPingTest={() => void pingTesten()}
-      />
 
       <ShopNewsTeaser />
 
@@ -604,14 +505,11 @@ export function ShopStart() {
                     )}
 
                     <footer className="mt-auto flex items-center justify-between gap-3 border-t border-white/10 pt-4">
-                      <div>
-                        <p className="font-headline text-lg font-extrabold tabular-nums text-primary">
-                          {formatEuro(addon.price_cents)}
-                        </p>
-                        <p className="text-xs text-on-surface-variant">
-                          {t('shop.preis.proMonat')}
-                        </p>
-                      </div>
+                      <PreisAuszeichnung
+                        variant="card"
+                        cent={addon.price_cents}
+                        einheit={`/ ${t('shop.preis.proMonat')}`}
+                      />
                       <Link
                         to={`/shop/addon/${addon.id}/kasse`}
                         className={buttonClasses('primary', 'sm', 'gap-1.5')}

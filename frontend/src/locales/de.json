@@ -7140,7 +7140,10 @@
       "discordText": "Mitspieler finden, Status-Meldungen lesen und Support erreichen.",
       "discordCta": "Beitreten",
       "ddosSpotlightTitelMulti": "DDoS-Schutz je nach Standort",
-      "ddosSpotlightTextMulti": "Unsere Standorte nutzen unterschiedliche Schutzprofile. Wähle unten deinen Wunsch-Standort für das genaue Profil."
+      "ddosSpotlightTextMulti": "Unsere Standorte nutzen unterschiedliche Schutzprofile. Wähle unten deinen Wunsch-Standort für das genaue Profil.",
+      "ddosPartialTitel": "DDoS-Schutz an gewählten Standorten",
+      "ddosPartialText": "Standorte mit Schutz sind im Konfigurator eindeutig markiert.",
+      "ddosProviderNur": "DDoS-Schutz · {{provider}}"
     },
     "katalog": {
       "meistgemietetKicker": "Beliebt",
@@ -7257,6 +7260,11 @@
       "blueprint": "Blueprint",
       "abPreis": "ab {{preis}} / Monat",
       "abPreisTage": "ab {{preis}} / {{count}} Tage",
+      "abPraefix": "ab",
+      "jeMonat": "/ Monat",
+      "jeTage_one": "/ {{count}} Tag",
+      "jeTage_other": "/ {{count}} Tage",
+      "plattformenLabel": "Verfügbare Plattformen",
       "abWert": "ab {{preis}}",
       "slots_one": "{{count}} Spieler inklusive",
       "slots_other": "{{count}} Spieler inklusive",
@@ -7338,6 +7346,8 @@
       "inklusiveDdosGameAware": "Game-Aware DDoS-Schutz",
       "inklusiveDdosMitAnbieter": "Game-Aware DDoS ({{provider}})",
       "inklusiveDdosProvider": "DDoS-Schutz ({{provider}})",
+      "inklusiveDdosJeStandort": "DDoS-Schutz je Standort ({{providers}})",
+      "inklusiveDdosTeilweise": "DDoS-Schutz an ausgewählten Standorten",
       "inklusiveBackups": "Automatische Backups (inkl. Pre-Update)",
       "inklusiveGameSwitch": "Instant Game-Switch",
       "inklusiveSftp": "SFTP & Dateimanager",

@@ -23,6 +23,7 @@ import { still } from '@/lib/still'
 import { SpielGalerie } from '../components/SpielGalerie'
 import { Konfigurator } from '../components/Konfigurator'
 import { PreisPanel } from '../components/PreisPanel'
+import { berechneDdosSummary, extractSupportedPlatforms, PLATTFORM_LABELS } from '../ddosSummary'
 import { messeNodePings } from '../pingNodes'
 import { formatEuro } from '../preis'
 import { standortAnzeigeName } from '../standortName'
@@ -30,13 +31,6 @@ import { useShopStandortStore } from '../shopStandortStore'
 import { standardKonfiguration } from '../typen'
 import type { KassenEntwurf, Konfiguration } from '../typen'
 import { useShopKatalog } from '../useShopKatalog'
-
-const PLATTFORM_LABELS: Record<string, string> = {
-  pc: 'PC',
-  ps5: 'PS5',
-  xbox: 'Xbox',
-  crossplay: 'Crossplay',
-}
 
 export function ShopSpiel() {
   const { spielId } = useParams()
@@ -268,16 +262,44 @@ export function ShopSpiel() {
   const sprache = i18n.language.startsWith('de') ? 'de' : 'en'
   const aktuellesSpiel = ausgewaehlt.spiel
   const verfuegbar = kapazitaetFrei ?? (ausgewaehlt.plan.available !== false)
-  const plattformen = (aktuellesSpiel.platforms ?? []).filter((p) => p in PLATTFORM_LABELS)
+  const plattformen = extractSupportedPlatforms(aktuellesSpiel.platforms)
   const gewaehlterNode = nodeStatuses.find((n) => n.id === aktuelleKonfiguration.preferredNodeId)
   const storyText = aktuellesSpiel.story?.[sprache] || aktuellesSpiel.beschreibung[sprache]
   const setupMinuten = Math.max(1, Math.round((aktuellesSpiel.geschaetzteSetupSekunden ?? 120) / 60))
-  const aktiveDdosGameAware = gewaehlterNode
-    ? Boolean(gewaehlterNode.ddos_game_aware)
-    : Boolean(aktuellesSpiel.ddosGameAware)
-  const aktiveDdosProvider = gewaehlterNode
-    ? gewaehlterNode.ddos_provider || null
-    : aktuellesSpiel.ddosProvider || null
+  const nodesDdosSummary = berechneDdosSummary(sichtbareNodes)
+  const ddosHighlightLabel = (() => {
+    const formatNodeDdos = (gameAware: boolean, provider: string | null) => {
+      if (!gameAware && !provider) return null
+      if (gameAware) {
+        return provider
+          ? t('shop.spiel.inklusiveDdosMitAnbieter', { provider })
+          : t('shop.spiel.inklusiveDdosGameAware')
+      }
+      return provider
+        ? t('shop.spiel.inklusiveDdosProvider', { provider })
+        : t('shop.spiel.inklusiveDdos')
+    }
+    if (gewaehlterNode) {
+      return formatNodeDdos(
+        Boolean(gewaehlterNode.ddos_game_aware),
+        gewaehlterNode.ddos_provider || null,
+      )
+    }
+    if (sichtbareNodes.length > 0) {
+      if (nodesDdosSummary.coverage === 'none') return null
+      if (nodesDdosSummary.coverage === 'partial') return t('shop.spiel.inklusiveDdosTeilweise')
+      if (nodesDdosSummary.coverage === 'mixed') {
+        return t('shop.spiel.inklusiveDdosJeStandort', {
+          providers: nodesDdosSummary.providers.join(' · '),
+        })
+      }
+      return formatNodeDdos(nodesDdosSummary.allGameAware, nodesDdosSummary.providers[0] ?? null)
+    }
+    return formatNodeDdos(
+      Boolean(aktuellesSpiel.ddosGameAware),
+      aktuellesSpiel.ddosProvider || null,
+    )
+  })()
 
   const weiter = () => {
     if (!verfuegbar) return
@@ -460,18 +482,12 @@ export function ShopSpiel() {
                 {t('shop.spiel.hostingHighlightsTitel')}
               </p>
               <ul className="mt-3 space-y-2 text-xs text-on-surface sm:text-sm">
-                <li className="flex items-center gap-2">
-                  <ShieldCheck className="h-4 w-4 shrink-0 text-status-running" aria-hidden="true" />
-                  <span>
-                    {aktiveDdosGameAware
-                      ? aktiveDdosProvider
-                        ? t('shop.spiel.inklusiveDdosMitAnbieter', { provider: aktiveDdosProvider })
-                        : t('shop.spiel.inklusiveDdosGameAware')
-                      : aktiveDdosProvider
-                        ? t('shop.spiel.inklusiveDdosProvider', { provider: aktiveDdosProvider })
-                        : t('shop.spiel.inklusiveDdos')}
-                  </span>
-                </li>
+                {ddosHighlightLabel && (
+                  <li className="flex items-center gap-2">
+                    <ShieldCheck className="h-4 w-4 shrink-0 text-status-running" aria-hidden="true" />
+                    <span>{ddosHighlightLabel}</span>
+                  </li>
+                )}
                 <li className="flex items-center gap-2">
                   <Check className="h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
                   <span>{t('shop.spiel.inklusiveBackups')}</span>

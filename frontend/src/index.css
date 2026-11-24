@@ -1034,6 +1034,37 @@ html[data-season="christmas"] .season-logo-christmas {
   gap: 1rem;
 }
 
+.msm-shop-poster-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 14.5rem), 1fr));
+  gap: 1.25rem;
+}
+
+.msm-platform-popover {
+  transform-origin: top right;
+  animation: msm-popover-fade 150ms ease-out both;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .msm-platform-popover {
+    animation:
+      msm-popover-grow 240ms linear(0, 0.45 15%, 1.08 35%, 0.97 55%, 1.01 75%, 1) both,
+      msm-popover-fade 150ms ease-out both;
+  }
+}
+
+@keyframes msm-popover-grow {
+  from {
+    scale: 0.92;
+  }
+}
+
+@keyframes msm-popover-fade {
+  from {
+    opacity: 0;
+  }
+}
+
 .msm-game-card,
 .msm-bp-card {
   container-type: inline-size;
@@ -1158,20 +1189,6 @@ dialog::backdrop {
 .msm-shop-rail > * {
   scroll-snap-align: start;
   min-inline-size: 0;
-}
-
-.msm-shop-ddos-glow {
-  border-color: rgba(16, 185, 129, 0.5);
-  background: linear-gradient(
-    135deg,
-    rgba(16, 185, 129, 0.16) 0%,
-    rgba(6, 182, 212, 0.11) 52%,
-    rgba(15, 23, 42, 0.72) 100%
-  );
-  box-shadow:
-    0 0 0 1px rgba(16, 185, 129, 0.2),
-    0 14px 36px -14px rgba(16, 185, 129, 0.35),
-    0 0 48px -18px rgba(6, 182, 212, 0.32);
 }
 
 .msm-shop-ddos-pill {

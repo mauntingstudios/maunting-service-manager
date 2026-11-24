@@ -1,39 +1,27 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import {
-  ArrowRight,
-  Gamepad2,
-  Pause,
-  Play,
-  Rocket,
-  Server,
-  ShieldCheck,
-  Sparkles,
-} from 'lucide-react'
+import { ArrowRight, Gamepad2, Pause, Play, Rocket, ShieldCheck, Sparkles } from 'lucide-react'
 import { Badge, buttonClasses } from '@maunting/ui'
 import type { ShopHeroMode, ShopPublicBadgePromo, ShopPublicPolicyDto } from '@/api/shop'
 import type { HeaderHintergrundVariante } from '@/lib/tageszeit'
+import {
+  extractSupportedPlatforms,
+  PLATTFORM_LABELS,
+  type ShopDdosSummary,
+} from '../ddosSummary'
 import { formatEuro, niedrigsterEinstiegsPreis } from '../preis'
 import { motivFuer } from '../spielArtwork'
 import type { ShopSpiel } from '../typen'
-
-export interface ShopDdosHighlight {
-  gameAware: boolean
-  provider: string | null
-  profile: string | null
-  mixed?: boolean
-  providers?: string[]
-}
+import { PreisAuszeichnung } from './PreisAuszeichnung'
 
 interface HeroShowcaseProps {
   spiele: ShopSpiel[]
   badges: ShopPublicBadgePromo[]
   tarifIdsFuerSpiel: (spielId: string) => number[]
   headerMotiv: HeaderHintergrundVariante
-  standortGewaehltName: string | null
   onlineNodesCount: number
-  ddosHighlight?: ShopDdosHighlight | null
+  ddosSummary?: ShopDdosSummary | null
   heroMode?: ShopHeroMode
   shortDurationPolicy?: Pick<
     ShopPublicPolicyDto,
@@ -41,21 +29,13 @@ interface HeroShowcaseProps {
   > | null
 }
 
-const PLATTFORM_LABELS: Record<string, string> = {
-  pc: 'PC',
-  ps5: 'PS5',
-  xbox: 'Xbox',
-  crossplay: 'Crossplay',
-}
-
 export function HeroShowcase({
   spiele,
   badges,
   tarifIdsFuerSpiel,
   headerMotiv,
-  standortGewaehltName,
   onlineNodesCount,
-  ddosHighlight,
+  ddosSummary = null,
   heroMode = 'auto_paid',
   shortDurationPolicy = null,
 }: HeroShowcaseProps) {
@@ -153,18 +133,9 @@ export function HeroShowcase({
     }
   }
 
-  const plattformen = (heroSpiel?.platforms ?? []).filter((p) => p in PLATTFORM_LABELS)
-  const isMixedDdos = Boolean(ddosHighlight?.mixed && (ddosHighlight.providers?.length ?? 0) > 1)
-  const effectiveDdosGameAware = Boolean(
-    ddosHighlight?.gameAware || (!isMixedDdos && heroSpiel?.ddosGameAware),
-  )
-  const effectiveDdosProvider = isMixedDdos
-    ? null
-    : ddosHighlight?.provider || heroSpiel?.ddosProvider || null
-  const mixedProvidersLabel = isMixedDdos ? (ddosHighlight?.providers ?? []).join(' · ') : null
-  const showDdosPill = Boolean(
-    isMixedDdos || effectiveDdosGameAware || effectiveDdosProvider,
-  )
+  const plattformen = extractSupportedPlatforms(heroSpiel?.platforms)
+  const ddosCoverage = ddosSummary?.coverage ?? 'none'
+  const showDdosPill = ddosCoverage === 'uniform' || ddosCoverage === 'mixed'
 
   const headlineText = heroSpiel ? heroSpiel.name : t('shop.hero.titel')
   const leadText = heroSpiel
@@ -172,7 +143,7 @@ export function HeroShowcase({
     : t('shop.hero.untertitel')
 
   return (
-    <section className="relative isolate flex min-h-[540px] flex-col justify-between overflow-hidden border-b border-white/10 bg-background lg:min-h-[620px]">
+    <section className="relative isolate flex min-h-[520px] flex-col justify-between overflow-hidden border-b border-white/10 bg-background lg:min-h-[600px]">
       <div className="pointer-events-none absolute inset-0 -z-10" aria-hidden="true">
         {vorherigesBildSrc && vorherigesBildSrc !== heroBildSrc && (
           <img
@@ -205,7 +176,7 @@ export function HeroShowcase({
 
       <div className="mx-auto flex w-full max-w-7xl flex-1 flex-col justify-center px-4 pb-8 pt-12 sm:px-6 sm:pt-16 lg:px-8 lg:pt-20">
         <div className="max-w-2xl">
-          {(heroSpiel?.promoHighlightText || standortGewaehltName || onlineNodesCount > 0) && (
+          {(heroSpiel?.promoHighlightText || onlineNodesCount > 0) && (
             <div className="flex flex-wrap items-center gap-2">
               {heroSpiel?.promoHighlightText && (
                 <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/50 bg-primary/20 px-3 py-1 text-label-sm font-semibold text-primary backdrop-blur-md">
@@ -213,24 +184,11 @@ export function HeroShowcase({
                   <span>{heroSpiel.promoHighlightText}</span>
                 </span>
               )}
-              {standortGewaehltName ? (
-                <a
-                  href="#shop-standorte"
-                  className="inline-flex items-center gap-1.5 rounded-full border border-status-running/45 bg-status-running/15 px-3 py-1 text-label-sm font-semibold text-status-running backdrop-blur-md transition-colors hover:bg-status-running/25"
-                >
-                  <Server className="h-3.5 w-3.5" aria-hidden="true" />
-                  <span>{standortGewaehltName}</span>
-                </a>
-              ) : (
-                onlineNodesCount > 0 && (
-                  <a
-                    href="#shop-standorte"
-                    className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-background/70 px-3 py-1 text-label-sm font-semibold text-on-surface backdrop-blur-md transition-colors hover:border-status-running/45"
-                  >
-                    <span className="h-2 w-2 rounded-full bg-status-running" aria-hidden="true" />
-                    <span>{t('shop.hero.standorteOnline', { count: onlineNodesCount })}</span>
-                  </a>
-                )
+              {onlineNodesCount > 0 && (
+                <span className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-background/70 px-3 py-1 text-label-sm font-semibold text-on-surface backdrop-blur-md">
+                  <span className="h-2 w-2 rounded-full bg-status-running" aria-hidden="true" />
+                  <span>{t('shop.hero.standorteOnline', { count: onlineNodesCount })}</span>
+                </span>
               )}
             </div>
           )}
@@ -243,39 +201,45 @@ export function HeroShowcase({
           </p>
 
           {(heroSpiel || showDdosPill) && (
-            <div className="mt-5 flex flex-wrap items-center gap-2 font-mono text-xs tabular-nums sm:text-sm">
+            <div className="mt-5 flex flex-wrap items-center gap-3">
               {heroSpiel && (() => {
                 const einstieg = niedrigsterEinstiegsPreis(heroSpiel, shortDurationPolicy)
+                const einheitLabel =
+                  einstieg.tage != null
+                    ? t('shop.karte.jeTage', { count: einstieg.tage })
+                    : t('shop.karte.jeMonat')
                 return (
-                  <span className="rounded-lg border border-white/15 bg-background/80 px-3 py-1 font-semibold text-white backdrop-blur-md">
-                    {einstieg.tage != null
-                      ? t('shop.karte.abPreisTage', {
-                          preis: formatEuro(einstieg.cent),
-                          count: einstieg.tage,
-                        })
-                      : t('shop.karte.abPreis', { preis: formatEuro(einstieg.cent) })}
-                  </span>
+                  <PreisAuszeichnung
+                    variant="hero"
+                    cent={einstieg.cent}
+                    praefix={t('shop.karte.abPraefix')}
+                    einheit={einheitLabel}
+                  />
                 )
               })()}
-              {plattformen.map((tag) => (
-                <span
-                  key={tag}
-                  className="rounded-lg border border-white/15 bg-surface-container-high/80 px-2.5 py-1 text-xs font-medium text-on-surface backdrop-blur-md"
-                >
-                  {PLATTFORM_LABELS[tag]}
-                </span>
-              ))}
-              {showDdosPill && (
-                <span className="msm-shop-ddos-pill inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 font-sans text-xs font-semibold text-status-running">
+              {plattformen.length > 0 && (
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {plattformen.map((tag) => (
+                    <span
+                      key={tag}
+                      className="rounded-lg border border-white/15 bg-surface-container-high/80 px-2.5 py-1 text-xs font-medium text-on-surface backdrop-blur-md"
+                    >
+                      {PLATTFORM_LABELS[tag]}
+                    </span>
+                  ))}
+                </div>
+              )}
+              {showDdosPill && ddosSummary && (
+                <span className="msm-shop-ddos-pill inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-semibold text-status-running">
                   <ShieldCheck className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
                   <span>
-                    {isMixedDdos && mixedProvidersLabel
-                      ? `${t('shop.hero.ddosJeStandort')}: ${mixedProvidersLabel}`
-                      : effectiveDdosGameAware
-                        ? effectiveDdosProvider
-                          ? `${t('shop.nodeStatus.ddosGameAware')} · ${effectiveDdosProvider}`
+                    {ddosCoverage === 'mixed'
+                      ? `${t('shop.hero.ddosJeStandort')}: ${ddosSummary.providers.join(' · ')}`
+                      : ddosSummary.allGameAware
+                        ? ddosSummary.providers[0]
+                          ? `${t('shop.nodeStatus.ddosGameAware')} · ${ddosSummary.providers[0]}`
                           : t('shop.nodeStatus.ddosGameAware')
-                        : effectiveDdosProvider}
+                        : ddosSummary.providers[0]}
                   </span>
                 </span>
               )}
@@ -377,7 +341,6 @@ export function HeroShowcase({
                           width={128}
                           height={72}
                           loading="lazy"
-                          {...({ fetchpriority: 'low' } as Record<string, string>)}
                           className="h-full w-full object-cover"
                         />
                       ) : (

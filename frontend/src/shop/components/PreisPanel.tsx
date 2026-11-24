@@ -4,6 +4,7 @@ import { Button } from '@maunting/ui'
 import type { ShopShortDurationTierDto } from '@/api/shop'
 import { formatEuro, preisAufschluesselung } from '../preis'
 import type { Konfiguration, ShopSpiel } from '../typen'
+import { PreisAuszeichnung } from './PreisAuszeichnung'
 
 interface PreisPanelProps {
   spiel: ShopSpiel
@@ -95,9 +96,7 @@ export function PreisPanel({
           <span className="text-sm font-semibold text-on-surface">
             {t('shop.preis.gesamt')}
           </span>
-          <span className="font-headline text-2xl font-extrabold tabular-nums text-primary">
-            {formatEuro(preis.gesamtCent)}
-          </span>
+          <PreisAuszeichnung variant="panel" cent={preis.gesamtCent} />
         </div>
         <p className="mt-1 text-right text-label-sm text-on-surface-variant">
           {istLifetime ? t('shop.preis.keineFolgekosten') : t('shop.preis.inklusiveSteuer')}

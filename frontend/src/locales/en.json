@@ -7140,7 +7140,10 @@
       "discordText": "Connect with players, status updates and community help.",
       "discordCta": "Join server",
       "ddosSpotlightTitelMulti": "Location-specific DDoS protection",
-      "ddosSpotlightTextMulti": "Each location runs its own mitigation profile. Select a location below to see its exact provider."
+      "ddosSpotlightTextMulti": "Each location runs its own mitigation profile. Select a location below to see its exact provider.",
+      "ddosPartialTitel": "DDoS protection on select locations",
+      "ddosPartialText": "Protected locations are marked directly in the configurator.",
+      "ddosProviderNur": "DDoS protection · {{provider}}"
     },
     "katalog": {
       "meistgemietetKicker": "Popular",
@@ -7257,6 +7260,11 @@
       "blueprint": "Blueprint",
       "abPreis": "from {{preis}} / month",
       "abPreisTage": "from {{preis}} / {{count}} days",
+      "abPraefix": "from",
+      "jeMonat": "/ month",
+      "jeTage_one": "/ {{count}} day",
+      "jeTage_other": "/ {{count}} days",
+      "plattformenLabel": "Supported platforms",
       "abWert": "from {{preis}}",
       "slots_one": "Includes {{count}} players",
       "slots_other": "Includes {{count}} players",
@@ -7338,6 +7346,8 @@
       "inklusiveDdosGameAware": "Game-aware DDoS protection",
       "inklusiveDdosMitAnbieter": "Game-aware DDoS ({{provider}})",
       "inklusiveDdosProvider": "DDoS protection ({{provider}})",
+      "inklusiveDdosJeStandort": "DDoS protection per location ({{providers}})",
+      "inklusiveDdosTeilweise": "DDoS protection at selected locations",
       "inklusiveBackups": "Automatic backups (incl. pre-update)",
       "inklusiveGameSwitch": "Instant game switch",
       "inklusiveSftp": "SFTP & file manager",
