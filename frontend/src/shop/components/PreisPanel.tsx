@@ -28,12 +28,12 @@ export function PreisPanel({
   erstattungHinweis = '',
 }: PreisPanelProps) {
   const { t } = useTranslation()
+  const aktuellerModus = konfiguration.abrechnungsModus ?? 'prepaid'
   const preis = preisAufschluesselung(spiel, konfiguration, aboRabattProzent, shortDurationTiers)
   const istLifetime =
-    (konfiguration.abrechnungsModus ?? 'prepaid') === 'lifetime' &&
-    (spiel.lifetimePreisCent ?? 0) > 0
+    aktuellerModus === 'lifetime' && (spiel.lifetimePreisCent ?? 0) > 0
   const gewaehlteTage =
-    (konfiguration.abrechnungsModus ?? 'prepaid') === 'prepaid' &&
+    aktuellerModus === 'prepaid' &&
     konfiguration.laufzeitTage != null &&
     shortDurationTiers.some((tier) => tier.enabled && tier.days === konfiguration.laufzeitTage)
       ? konfiguration.laufzeitTage
@@ -49,7 +49,7 @@ export function PreisPanel({
   ].filter((zeile) => zeile.cent > 0)
 
   return (
-    <aside className="msm-card space-y-4 rounded-2xl border border-outline-variant/30 bg-surface-container-low/90 p-5 lg:sticky lg:top-24">
+    <aside className="msm-card space-y-4 rounded-2xl border border-white/10 bg-surface-container-low/90 p-5 shadow-xl lg:sticky lg:top-24">
       <div>
         <h2 className="font-headline text-lg font-bold text-on-surface">
           {t('shop.kasse.zusammenfassung')}
@@ -135,11 +135,8 @@ export function PreisPanel({
       </p>
 
       <div className="space-y-1 border-t border-outline-variant/25 pt-3 text-label-sm leading-relaxed text-on-surface-variant">
-        <p>
-          {(konfiguration.abrechnungsModus ?? 'prepaid') === 'prepaid'
-            ? t('shop.kasse.prepaidHinweis')
-            : t('shop.kasse.aboHinweis')}
-        </p>
+        {aktuellerModus === 'prepaid' && <p>{t('shop.kasse.prepaidHinweis')}</p>}
+        {aktuellerModus === 'subscription' && <p>{t('shop.kasse.aboHinweis')}</p>}
         {spiel.geschaetzteSetupSekunden != null && spiel.geschaetzteSetupSekunden > 0 && (
           <p>{t('shop.spiel.setupDauer', { sekunden: spiel.geschaetzteSetupSekunden })}</p>
         )}

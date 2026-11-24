@@ -165,9 +165,6 @@ export function SpielGalerie({
         >
           {sichtbare.map((eintrag, index) => {
             const ausgewaehlt = eintrag.id === aktuellesBild.id
-            const thumbPrioritaet = {
-              fetchpriority: 'low',
-            } as Record<string, string>
             return (
               <button
                 key={eintrag.id}
@@ -190,7 +187,6 @@ export function SpielGalerie({
                   height={90}
                   loading="lazy"
                   decoding="async"
-                  {...thumbPrioritaet}
                   className="block h-full w-full object-cover"
                   onError={() => bildAlsDefektMarkieren(eintrag.id)}
                 />

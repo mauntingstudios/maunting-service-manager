@@ -1,14 +1,11 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import {
   ArrowLeft,
   ArrowRight,
   ArrowUp,
-  Check,
-  Clock,
   Newspaper,
-  ShieldCheck,
   Sparkles,
 } from 'lucide-react'
 import { Badge, Button, Dropdown, Spinner, Zustandsflaeche } from '@maunting/ui'
@@ -145,19 +142,7 @@ export function ShopSpiel() {
     }
   }
 
-  useEffect(() => {
-    if (!ausgewaehlt) return
-    const erlaubt =
-      ausgewaehlteNodeId != null &&
-      (Object.keys(nodeAvailability).length === 0 ||
-        Boolean(nodeAvailability[ausgewaehlteNodeId]))
-    const felder = standortFelder(erlaubt ? ausgewaehlteNodeId : null)
-    setKonfiguration({
-      ...standardKonfiguration(ausgewaehlt.spiel),
-      ...felder,
-    })
-    setKapazitaetFrei(null)
-  }, [ausgewaehlt?.plan.id])
+  const lastPlanIdRef = useRef<number | null>(null)
 
   useEffect(() => {
     if (!ausgewaehlt) return
@@ -166,6 +151,18 @@ export function ShopSpiel() {
       (Object.keys(nodeAvailability).length === 0 ||
         Boolean(nodeAvailability[ausgewaehlteNodeId]))
     const felder = standortFelder(erlaubt ? ausgewaehlteNodeId : null)
+    const planGewechselt = lastPlanIdRef.current !== ausgewaehlt.plan.id
+    lastPlanIdRef.current = ausgewaehlt.plan.id
+
+    if (planGewechselt) {
+      setKonfiguration({
+        ...standardKonfiguration(ausgewaehlt.spiel),
+        ...felder,
+      })
+      setKapazitaetFrei(null)
+      return
+    }
+
     setKonfiguration((prev) => {
       const basis = prev ?? standardKonfiguration(ausgewaehlt.spiel)
       if (
@@ -264,8 +261,12 @@ export function ShopSpiel() {
   const verfuegbar = kapazitaetFrei ?? (ausgewaehlt.plan.available !== false)
   const plattformen = extractSupportedPlatforms(aktuellesSpiel.platforms)
   const gewaehlterNode = nodeStatuses.find((n) => n.id === aktuelleKonfiguration.preferredNodeId)
-  const storyText = aktuellesSpiel.story?.[sprache] || aktuellesSpiel.beschreibung[sprache]
-  const setupMinuten = Math.max(1, Math.round((aktuellesSpiel.geschaetzteSetupSekunden ?? 120) / 60))
+  const eigeneStory = aktuellesSpiel.story?.[sprache]?.trim() || ''
+  const hatEigeneStory = Boolean(
+    eigeneStory && eigeneStory !== aktuellesSpiel.beschreibung[sprache].trim(),
+  )
+  const genres = aktuellesSpiel.genres ?? []
+  const zeigeUntenBereich = hatEigeneStory || genres.length > 0 || gameNews.length > 0
   const nodesDdosSummary = berechneDdosSummary(sichtbareNodes)
   const ddosHighlightLabel = (() => {
     const formatNodeDdos = (gameAware: boolean, provider: string | null) => {
@@ -328,67 +329,69 @@ export function ShopSpiel() {
       </Link>
 
       <div className="mt-5 grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
-        <div className="space-y-5">
-          <div className="overflow-hidden rounded-2xl border border-outline-variant/30">
+        <div className="space-y-6">
+          <div className="overflow-hidden rounded-2xl border border-white/10 bg-surface-container-low/85 shadow-xl">
             <SpielGalerie spiel={aktuellesSpiel} priority />
-          </div>
 
-          <div>
-            {(aktuellesSpiel.promoHighlightText ||
-              plattformen.length > 0 ||
-              aktuellesSpiel.tags.length > 0) && (
-              <div className="flex flex-wrap items-center gap-2">
-                {aktuellesSpiel.promoHighlightText && (
-                  <Badge variant="success" className="gap-1">
-                    <Sparkles className="h-3 w-3 shrink-0" aria-hidden="true" />
-                    <span>{aktuellesSpiel.promoHighlightText}</span>
-                  </Badge>
-                )}
-                {plattformen.map((tag) => (
-                  <Badge key={tag} variant="default">
-                    {PLATTFORM_LABELS[tag]}
-                  </Badge>
-                ))}
-                {aktuellesSpiel.tags.map((tag) => (
-                  <Badge key={tag} variant="info">
-                    {tag === 'Mods'
-                      ? t('shop.spiel.modsInklusive')
-                      : tag === 'Workshop'
-                        ? t('shop.spiel.workshopInklusive')
-                        : tag}
-                  </Badge>
-                ))}
-              </div>
-            )}
-            <h1 className="mt-4 font-headline text-3xl font-extrabold tracking-tight text-on-surface sm:text-4xl">
-              {aktuellesSpiel.name}
-            </h1>
-            <p className="mt-3 max-w-3xl text-base leading-relaxed text-on-surface-variant">
-              {aktuellesSpiel.beschreibung[sprache]}
-            </p>
+            <div className="border-t border-white/10 p-5 sm:p-6">
+              {(aktuellesSpiel.promoHighlightText ||
+                plattformen.length > 0 ||
+                aktuellesSpiel.tags.length > 0) && (
+                <div className="mb-3 flex flex-wrap items-center gap-2">
+                  {aktuellesSpiel.promoHighlightText && (
+                    <Badge variant="success" className="gap-1">
+                      <Sparkles className="h-3 w-3 shrink-0" aria-hidden="true" />
+                      <span>{aktuellesSpiel.promoHighlightText}</span>
+                    </Badge>
+                  )}
+                  {plattformen.map((tag) => (
+                    <Badge key={tag} variant="default">
+                      {PLATTFORM_LABELS[tag]}
+                    </Badge>
+                  ))}
+                  {aktuellesSpiel.tags.map((tag) => (
+                    <Badge key={tag} variant="info">
+                      {tag === 'Mods'
+                        ? t('shop.spiel.modsInklusive')
+                        : tag === 'Workshop'
+                          ? t('shop.spiel.workshopInklusive')
+                          : tag}
+                    </Badge>
+                  ))}
+                </div>
+              )}
 
-            {tarife.length > 1 && (
-              <label className="mt-5 block max-w-sm space-y-1.5">
-                <span className="block text-xs font-medium uppercase tracking-wider text-on-surface-variant">
-                  {t('shop.spiel.tarif')}
-                </span>
-                <Dropdown
-                  value={String(ausgewaehlt.plan.id)}
-                  onChange={(wert) => setTarifId(Number(wert))}
-                  options={tarife.map((tarif) => ({
-                    value: String(tarif.plan.id),
-                    label: `${tarif.plan.name} · ${formatEuro(tarif.plan.price_cents)}`,
-                  }))}
-                  aria-label={t('shop.spiel.tarif')}
-                />
-              </label>
-            )}
+              <h1 className="font-headline text-3xl font-extrabold tracking-tight text-on-surface sm:text-4xl">
+                {aktuellesSpiel.name}
+              </h1>
+              <p className="mt-2.5 max-w-3xl text-base leading-relaxed text-on-surface-variant">
+                {aktuellesSpiel.beschreibung[sprache]}
+              </p>
+
+              {tarife.length > 1 && (
+                <label className="mt-5 block max-w-sm space-y-1.5">
+                  <span className="block text-xs font-medium uppercase tracking-wider text-on-surface-variant">
+                    {t('shop.spiel.tarif')}
+                  </span>
+                  <Dropdown
+                    value={String(ausgewaehlt.plan.id)}
+                    onChange={(wert) => setTarifId(Number(wert))}
+                    options={tarife.map((tarif) => ({
+                      value: String(tarif.plan.id),
+                      label: `${tarif.plan.name} · ${formatEuro(tarif.plan.price_cents)}`,
+                    }))}
+                    aria-label={t('shop.spiel.tarif')}
+                  />
+                </label>
+              )}
+            </div>
           </div>
 
           <Konfigurator
             spiel={aktuellesSpiel}
             konfiguration={aktuelleKonfiguration}
             onChange={setKonfiguration}
+            ddosLabel={ddosHighlightLabel}
             aboRabattProzent={publicPolicy?.subscription_discount_percent ?? 0}
             shortDurationTiers={
               publicPolicy?.shop_short_durations_enabled
@@ -424,80 +427,68 @@ export function ShopSpiel() {
         />
       </div>
 
-      <article className="relative isolate mt-10 overflow-hidden rounded-2xl border border-white/10 bg-surface-container-low shadow-2xl">
-        <div className="pointer-events-none absolute inset-0 -z-10" aria-hidden="true">
-          {aktuellesSpiel.bildUrl && (
-            <img
-              src={aktuellesSpiel.bildUrl}
-              alt=""
-              width={1600}
-              height={640}
-              loading="lazy"
-              className="h-full w-full object-cover object-center opacity-30"
-            />
-          )}
-          <div className="absolute inset-0 bg-gradient-to-r from-background/95 via-background/88 to-background/70" />
-          <div className="absolute inset-0 bg-gradient-to-t from-background/95 via-transparent to-background/60" />
-        </div>
-
-        <div className="grid gap-8 p-6 sm:p-8 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)] lg:p-10">
-          <div className="space-y-4">
-            <p className="text-label-sm font-semibold uppercase tracking-[0.18em] text-primary">
-              {t('shop.spiel.ueberSpielEyebrow')}
-            </p>
-            <h2 className="font-headline text-2xl font-extrabold tracking-tight text-white sm:text-3xl">
-              {t('shop.spiel.ueberSpielTitel', { name: aktuellesSpiel.name })}
-            </h2>
-            <p className="max-w-2xl text-sm leading-relaxed text-on-surface sm:text-base">
-              {storyText}
-            </p>
-
-            {(aktuellesSpiel.genres?.length ?? 0) > 0 && (
-              <div className="flex flex-wrap gap-2 pt-1">
-                {aktuellesSpiel.genres?.map((genre) => (
-                  <Badge key={genre} variant="default">
-                    {genre}
-                  </Badge>
-                ))}
-              </div>
+      {zeigeUntenBereich && (
+        <article className="relative isolate mt-10 overflow-hidden rounded-2xl border border-white/10 bg-surface-container-low shadow-2xl">
+          <div className="pointer-events-none absolute inset-0 -z-10" aria-hidden="true">
+            {aktuellesSpiel.bildUrl && (
+              <img
+                src={aktuellesSpiel.bildUrl}
+                alt=""
+                width={1600}
+                height={640}
+                loading="lazy"
+                className="h-full w-full object-cover object-center opacity-30"
+              />
             )}
-
-            <div className="pt-2">
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                className="gap-1.5"
-                onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-              >
-                <ArrowUp className="h-3.5 w-3.5" aria-hidden="true" />
-                <span>{t('shop.spiel.zurueckZumKonfigurator')}</span>
-              </Button>
-            </div>
+            <div className="absolute inset-0 bg-gradient-to-r from-background/95 via-background/88 to-background/70" />
+            <div className="absolute inset-0 bg-gradient-to-t from-background/95 via-transparent to-background/60" />
           </div>
 
-          <div className="space-y-4">
-            <div className="rounded-xl border border-white/10 bg-background/75 p-4 backdrop-blur-xl">
-              <p className="text-xs font-semibold uppercase tracking-wider text-status-running">
-                {t('shop.spiel.hostingHighlightsTitel')}
-              </p>
-              <ul className="mt-3 space-y-2 text-xs text-on-surface sm:text-sm">
-                {ddosHighlightLabel && (
-                  <li className="flex items-center gap-2">
-                    <ShieldCheck className="h-4 w-4 shrink-0 text-status-running" aria-hidden="true" />
-                    <span>{ddosHighlightLabel}</span>
-                  </li>
+          <div
+            className={`grid gap-8 p-6 sm:p-8 lg:p-10 ${
+              gameNews.length > 0 && (hatEigeneStory || genres.length > 0)
+                ? 'lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]'
+                : ''
+            }`}
+          >
+            {(hatEigeneStory || genres.length > 0) && (
+              <div className="space-y-4">
+                <p className="text-label-sm font-semibold uppercase tracking-[0.18em] text-primary">
+                  {t('shop.spiel.ueberSpielEyebrow')}
+                </p>
+                <h2 className="font-headline text-2xl font-extrabold tracking-tight text-white sm:text-3xl">
+                  {t('shop.spiel.ueberSpielTitel', { name: aktuellesSpiel.name })}
+                </h2>
+                {hatEigeneStory && (
+                  <p className="max-w-2xl text-sm leading-relaxed text-on-surface sm:text-base">
+                    {eigeneStory}
+                  </p>
                 )}
-                <li className="flex items-center gap-2">
-                  <Check className="h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
-                  <span>{t('shop.spiel.inklusiveBackups')}</span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <Clock className="h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
-                  <span>{t('shop.spiel.setupDauer', { minuten: setupMinuten })}</span>
-                </li>
-              </ul>
-            </div>
+
+                {genres.length > 0 && (
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    {genres.map((genre) => (
+                      <Badge key={genre} variant="default">
+                        {genre}
+                      </Badge>
+                    ))}
+                  </div>
+                )}
+
+                <div className="pt-2">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    className="gap-1.5"
+                    onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+                  >
+                    <ArrowUp className="h-3.5 w-3.5" aria-hidden="true" />
+                    <span>{t('shop.spiel.zurueckZumKonfigurator')}</span>
+                  </Button>
+                </div>
+              </div>
+            )}
 
             {gameNews.length > 0 && (
               <div className="rounded-xl border border-white/10 bg-background/75 p-4 backdrop-blur-xl">
@@ -530,8 +521,8 @@ export function ShopSpiel() {
               </div>
             )}
           </div>
-        </div>
-      </article>
+        </article>
+      )}
     </section>
   )
 }

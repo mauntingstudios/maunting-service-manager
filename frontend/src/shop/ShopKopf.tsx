@@ -28,7 +28,6 @@ export function ShopKopf() {
   const canUseAi = useHasPermission('ai.chat.use')
   const shopEnabled = usePublicSettingsStore((s) => s.shop_enabled)
   const customBrand = usePublicSettingsStore((s) => s.branding?.custom_name || '')
-  const shopBrandTitle = customBrand ? `${customBrand} Shop` : 'MSM Shop'
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
 
   const abmelden = async () => {
@@ -87,11 +86,6 @@ export function ShopKopf() {
       active: location.pathname === '/' && (location.hash === '' || location.hash === '#shop-spiele'),
     },
     {
-      to: '/#shop-standorte',
-      label: t('shop.kopf.standorte'),
-      active: location.pathname === '/' && location.hash === '#shop-standorte',
-    },
-    {
       to: '/#shop-addons',
       label: t('shop.kopf.addons'),
       active: location.pathname === '/' && location.hash === '#shop-addons',
@@ -104,42 +98,49 @@ export function ShopKopf() {
   ]
 
   return (
-    <header className="sticky top-0 z-30 border-b border-outline-variant/25 bg-background/85 backdrop-blur-xl">
-      <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
-        <div className="flex min-w-0 items-center gap-6">
-          <Link
-            to={shopEnabled ? '/' : PANEL_HOME}
-            onClick={() => setMobileNavOpen(false)}
-            className="flex shrink-0 items-center gap-2.5 rounded-lg focus-visible:ring-2 focus-visible:ring-primary/50"
-            aria-label={t('shop.kopf.startseite')}
+    <header
+      className="sticky top-0 z-30 border-b border-white/10 bg-background/80 backdrop-blur-2xl"
+      onKeyDown={(event) => {
+        if (event.key === 'Escape' && mobileNavOpen) setMobileNavOpen(false)
+      }}
+    >
+      <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-4 px-4 sm:px-6 md:grid md:grid-cols-[1fr_auto_1fr] lg:px-8">
+        <Link
+          to={shopEnabled ? '/' : PANEL_HOME}
+          onClick={() => setMobileNavOpen(false)}
+          className="flex shrink-0 items-center gap-2.5 justify-self-start rounded-xl px-1 py-1 focus-visible:ring-2 focus-visible:ring-primary/50"
+          aria-label={t('shop.kopf.startseite')}
+        >
+          <Logo size="sm" />
+          <span className="font-headline text-sm font-bold tracking-tight text-on-surface">
+            {customBrand || 'MSM'} <span className="text-primary">Shop</span>
+          </span>
+        </Link>
+
+        {shopEnabled ? (
+          <nav
+            className="hidden items-center gap-1 justify-self-center rounded-full border border-white/10 bg-surface-container-low/80 p-1 text-sm font-medium text-on-surface-variant shadow-sm backdrop-blur-md md:flex"
+            aria-label={t('shop.kopf.bereiche')}
           >
-            <Logo size="sm" />
-            <span className="font-headline text-sm font-bold text-primary">{shopBrandTitle}</span>
-          </Link>
+            {navLinks.map((item) => (
+              <Link
+                key={item.to}
+                to={item.to}
+                className={`rounded-full border px-3.5 py-1.5 transition-colors ${
+                  item.active
+                    ? 'border-primary/30 bg-primary/15 text-primary shadow-sm'
+                    : 'border-transparent hover:bg-white/10 hover:text-on-surface'
+                }`}
+              >
+                {item.label}
+              </Link>
+            ))}
+          </nav>
+        ) : (
+          <div className="hidden md:block" aria-hidden="true" />
+        )}
 
-          {shopEnabled && (
-            <nav
-              className="hidden items-center gap-1 rounded-full border border-white/10 bg-surface-container/60 p-1 text-sm font-medium text-on-surface-variant backdrop-blur-md md:flex"
-              aria-label={t('shop.kopf.bereiche')}
-            >
-              {navLinks.map((item) => (
-                <Link
-                  key={item.to}
-                  to={item.to}
-                  className={`rounded-full px-3.5 py-1.5 transition-colors ${
-                    item.active
-                      ? 'bg-primary/15 text-primary'
-                      : 'hover:bg-white/10 hover:text-on-surface'
-                  }`}
-                >
-                  {item.label}
-                </Link>
-              ))}
-            </nav>
-          )}
-        </div>
-
-        <nav className="flex items-center gap-2" aria-label={t('shop.kopf.navigation')}>
+        <nav className="flex items-center justify-self-end gap-2" aria-label={t('shop.kopf.navigation')}>
           {shopEnabled && (
             <button
               type="button"

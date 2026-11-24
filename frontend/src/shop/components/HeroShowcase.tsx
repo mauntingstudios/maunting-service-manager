@@ -10,7 +10,7 @@ import {
   PLATTFORM_LABELS,
   type ShopDdosSummary,
 } from '../ddosSummary'
-import { formatEuro, niedrigsterEinstiegsPreis } from '../preis'
+import { findeSpielRabattLabel, formatEuro, niedrigsterEinstiegsPreis } from '../preis'
 import { motivFuer } from '../spielArtwork'
 import type { ShopSpiel } from '../typen'
 import { PreisAuszeichnung } from './PreisAuszeichnung'
@@ -106,19 +106,8 @@ export function HeroShowcase({
     return () => window.clearInterval(timer)
   }, [pausiert, topSpiele])
 
-  const rabattFuerSpiel = (spielId: string): string | null => {
-    if (badges.length === 0) return null
-    const ids = new Set(tarifIdsFuerSpiel(spielId))
-    const passend = badges.find((badge) => {
-      if (badge.scope === 'addons') return false
-      if (badge.target_plan_ids.length === 0) return true
-      return badge.target_plan_ids.some((id) => ids.has(id))
-    })
-    if (!passend) return null
-    return passend.discount_type === 'percent'
-      ? `${passend.discount_value} %`
-      : formatEuro(passend.discount_value)
-  }
+  const rabattFuerSpiel = (spielId: string): string | null =>
+    findeSpielRabattLabel(badges, tarifIdsFuerSpiel(spielId))
 
   const handleSlideKey = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
     if (topSpiele.length <= 1) return
@@ -141,6 +130,13 @@ export function HeroShowcase({
   const leadText = heroSpiel
     ? heroSpiel.tagline || heroSpiel.beschreibung[sprache]
     : t('shop.hero.untertitel')
+  const heroEinstieg = heroSpiel
+    ? niedrigsterEinstiegsPreis(heroSpiel, shortDurationPolicy)
+    : null
+  const heroEinheitLabel =
+    heroEinstieg?.tage != null
+      ? t('shop.karte.jeTage', { count: heroEinstieg.tage })
+      : t('shop.karte.jeMonat')
 
   return (
     <section className="relative isolate flex min-h-[520px] flex-col justify-between overflow-hidden border-b border-white/10 bg-background lg:min-h-[600px]">
@@ -202,21 +198,14 @@ export function HeroShowcase({
 
           {(heroSpiel || showDdosPill) && (
             <div className="mt-5 flex flex-wrap items-center gap-3">
-              {heroSpiel && (() => {
-                const einstieg = niedrigsterEinstiegsPreis(heroSpiel, shortDurationPolicy)
-                const einheitLabel =
-                  einstieg.tage != null
-                    ? t('shop.karte.jeTage', { count: einstieg.tage })
-                    : t('shop.karte.jeMonat')
-                return (
-                  <PreisAuszeichnung
-                    variant="hero"
-                    cent={einstieg.cent}
-                    praefix={t('shop.karte.abPraefix')}
-                    einheit={einheitLabel}
-                  />
-                )
-              })()}
+              {heroEinstieg && (
+                <PreisAuszeichnung
+                  variant="hero"
+                  cent={heroEinstieg.cent}
+                  praefix={t('shop.karte.abPraefix')}
+                  einheit={heroEinheitLabel}
+                />
+              )}
               {plattformen.length > 0 && (
                 <div className="flex flex-wrap items-center gap-1.5">
                   {plattformen.map((tag) => (
@@ -317,6 +306,14 @@ export function HeroShowcase({
                 const motiv = motivFuer(spiel.motiv)
                 const Icon = motiv.icon
                 const rabatt = rabattFuerSpiel(spiel.id)
+                const slideEinstieg = niedrigsterEinstiegsPreis(spiel, shortDurationPolicy)
+                const slidePreisText =
+                  slideEinstieg.tage != null
+                    ? t('shop.karte.abPreisTage', {
+                        preis: formatEuro(slideEinstieg.cent),
+                        count: slideEinstieg.tage,
+                      })
+                    : t('shop.karte.abPreis', { preis: formatEuro(slideEinstieg.cent) })
 
                 return (
                   <button
@@ -362,15 +359,7 @@ export function HeroShowcase({
                         )}
                       </div>
                       <p className="text-xs tabular-nums text-on-surface-variant">
-                        {(() => {
-                          const einstieg = niedrigsterEinstiegsPreis(spiel, shortDurationPolicy)
-                          return einstieg.tage != null
-                            ? t('shop.karte.abPreisTage', {
-                                preis: formatEuro(einstieg.cent),
-                                count: einstieg.tage,
-                              })
-                            : t('shop.karte.abPreis', { preis: formatEuro(einstieg.cent) })
-                        })()}
+                        {slidePreisText}
                       </p>
                     </div>
 

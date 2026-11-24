@@ -30,7 +30,7 @@ import { PreisAuszeichnung } from '../components/PreisAuszeichnung'
 import { ShopNewsTeaser } from '../components/ShopNewsTeaser'
 import { SpielKarte } from '../components/SpielKarte'
 import { TrustSection } from '../components/TrustSection'
-import { formatEuro } from '../preis'
+import { findeAddonRabattLabel, findeSpielRabattLabel } from '../preis'
 import { useShopReveal } from '../useShopReveal'
 import { useShopKatalog } from '../useShopKatalog'
 
@@ -127,30 +127,13 @@ export function ShopStart() {
     }
   }, [])
 
-  const rabattFuerSpiel = (spielId: string): string | null => {
-    if (badges.length === 0) return null
-    const tarife = tarifeFuer(spielId)
-    const planIds = new Set(tarife.map((tItem) => tItem.plan.id))
-    const passend = badges.find((badge) => {
-      if (badge.scope === 'addons') return false
-      if (badge.target_plan_ids.length === 0) return true
-      return badge.target_plan_ids.some((id) => planIds.has(id))
-    })
-    if (!passend) return null
-    return passend.discount_type === 'percent'
-      ? `${passend.discount_value} %`
-      : formatEuro(passend.discount_value)
-  }
-
-  const rabattFuerAddons = useMemo((): string | null => {
-    const passend = badges.find(
-      (badge) => badge.scope === 'all' || badge.scope === 'addons',
+  const rabattFuerSpiel = (spielId: string): string | null =>
+    findeSpielRabattLabel(
+      badges,
+      tarifeFuer(spielId).map((tItem) => tItem.plan.id),
     )
-    if (!passend) return null
-    return passend.discount_type === 'percent'
-      ? `${passend.discount_value} %`
-      : formatEuro(passend.discount_value)
-  }, [badges])
+
+  const rabattFuerAddons = useMemo(() => findeAddonRabattLabel(badges), [badges])
 
   const bestsellerSpiele = useMemo(() => {
     return [...spiele]

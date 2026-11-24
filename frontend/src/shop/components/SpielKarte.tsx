@@ -65,7 +65,10 @@ function PlattformOverlay({ plattformen }: { plattformen: string[] }) {
         aria-expanded={offen}
         aria-controls={popoverId}
         aria-label={t('shop.karte.plattformenLabel')}
-        onClick={() => setOffen((alt) => !alt)}
+        onClick={(event) => {
+          event.stopPropagation()
+          setOffen((alt) => !alt)
+        }}
         className="inline-flex items-center gap-1 rounded-full border border-white/20 bg-background/85 px-2.5 py-1 text-label-sm font-semibold text-white shadow-md backdrop-blur-md transition-colors hover:border-primary/60 hover:text-primary focus-visible:ring-2 focus-visible:ring-primary/60"
       >
         <span>{primaryLabel}</span>
@@ -110,6 +113,7 @@ export function SpielKarte({
   shortDurationPolicy = null,
 }: SpielKarteProps) {
   const { t } = useTranslation()
+  const titleId = useId()
   const ausverkauft = spiel.verfuegbar === false
   const plattformen = extractSupportedPlatforms(spiel.platforms)
   const einstieg = niedrigsterEinstiegsPreis(spiel, shortDurationPolicy)
@@ -127,7 +131,13 @@ export function SpielKarte({
       : t('shop.karte.jeMonat')
 
   return (
-    <article className="msm-game-card msm-card msm-shop-card-lift group relative overflow-hidden rounded-2xl border border-white/10 bg-surface-container-low shadow-xl hover:border-primary/50">
+    <article className="msm-game-card msm-card msm-shop-card-lift group relative cursor-pointer overflow-hidden rounded-2xl border border-white/10 bg-surface-container-low shadow-xl hover:border-primary/50">
+      <Link
+        to={`/shop/${spiel.id}`}
+        aria-labelledby={titleId}
+        className="absolute inset-0 z-10 rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-inset"
+      />
+
       <SpielArtwork
         spiel={spiel}
         variant="poster"
@@ -138,7 +148,7 @@ export function SpielKarte({
       />
 
       {/* Top-Left: Maximal 1 fokussiertes Status-/Aktions-Badge */}
-      <div className="pointer-events-none absolute left-3 top-3 z-10 flex flex-wrap gap-1.5">
+      <div className="pointer-events-none absolute left-3 top-3 z-20 flex flex-wrap gap-1.5">
         {ausverkauft ? (
           <span className="inline-flex items-center rounded-full border border-status-warning/75 bg-background/95 px-2.5 py-1 text-label-sm font-bold text-status-warning shadow-md backdrop-blur-md">
             {t('shop.karte.ausverkauft')}
@@ -161,22 +171,20 @@ export function SpielKarte({
       </div>
 
       {/* Top-Right: Plattformen als kompaktes Hover/Focus-Popover (eigener Interactive Layer) */}
-      <div className="absolute right-3 top-3 z-20">
+      <div className="absolute right-3 top-3 z-30">
         <PlattformOverlay plattformen={plattformen} />
       </div>
 
-      {/* Bottom DVD Overlay: Titel, klare Preis-Typografie und gestreckter Kartenlink */}
-      <div className="absolute inset-x-0 bottom-0 z-10 p-4 sm:p-5">
-        <h3 className="font-headline text-lg font-extrabold leading-tight tracking-tight text-white drop-shadow-sm sm:text-xl">
-          <Link
-            to={`/shop/${spiel.id}`}
-            className="after:absolute after:inset-0 after:z-0 after:content-[''] focus-visible:outline-none focus-visible:after:rounded-2xl focus-visible:after:ring-2 focus-visible:after:ring-primary"
-          >
-            {spiel.name}
-          </Link>
+      {/* Bottom DVD Overlay: Titel und klare Preis-Typografie */}
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 p-4 sm:p-5">
+        <h3
+          id={titleId}
+          className="font-headline text-lg font-extrabold leading-tight tracking-tight text-white drop-shadow-sm sm:text-xl"
+        >
+          {spiel.name}
         </h3>
 
-        <div className="pointer-events-none mt-2.5 flex items-end justify-between gap-3">
+        <div className="mt-2.5 flex items-end justify-between gap-3">
           <PreisAuszeichnung
             variant="poster"
             cent={einstieg.cent}

@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next'
-import { Activity, Check, Cpu, Server, ShieldCheck, Wrench } from 'lucide-react'
+import { Activity, Check, Cpu, Server, ShieldCheck } from 'lucide-react'
 import { Button, Dropdown } from '@maunting/ui'
 import type {
   ShopNodeAvailabilityItem,
@@ -15,6 +15,7 @@ interface KonfiguratorProps {
   spiel: ShopSpiel
   konfiguration: Konfiguration
   onChange: (naechste: Konfiguration) => void
+  ddosLabel?: string | null
   aboRabattProzent?: number
   shortDurationTiers?: ShopShortDurationTierDto[]
   nodeStatuses?: ShopPublicNodeStatusDto[]
@@ -26,6 +27,16 @@ interface KonfiguratorProps {
 }
 
 const LAUFZEITEN: LaufzeitMonate[] = [1, 3, 12]
+
+function auswahlKarteKlassen(aktiv: boolean, gesperrt = false): string {
+  if (gesperrt) {
+    return 'cursor-not-allowed border-outline-variant/25 bg-surface-container/40 text-on-surface-variant/60'
+  }
+  if (aktiv) {
+    return 'border-primary/60 bg-primary/15 text-on-surface'
+  }
+  return 'border-outline-variant/40 bg-surface-container text-on-surface-variant hover:text-on-surface'
+}
 
 function SchrittKopf({ nummer, titel }: { nummer: number; titel: string }) {
   return (
@@ -42,6 +53,7 @@ export function Konfigurator({
   spiel,
   konfiguration,
   onChange,
+  ddosLabel = null,
   aboRabattProzent = 0,
   shortDurationTiers = [],
   nodeStatuses = [],
@@ -107,14 +119,31 @@ export function Konfigurator({
     value: String(slots),
     label: `${slots} ${t('shop.spiel.spieler')}`,
   }))
-  const zeigtModInklusiv = spiel.unterstuetztMods || spiel.unterstuetztWorkshop
   const hatStandorte = nodeStatuses.length > 0
   const leistungSchritt = hatStandorte ? 2 : 1
   const abrechnungSchritt = hatStandorte ? 3 : 2
-  const garantienSchritt = hatStandorte ? 4 : 3
+  const hatKostenloseNode = nodeStatuses.some(
+    (n) => Math.max(0, n.shop_surcharge_cents ?? 0) === 0,
+  )
+  const autoFrei =
+    hatKostenloseNode &&
+    nodeStatuses.some((n) => {
+      if (Math.max(0, n.shop_surcharge_cents ?? 0) > 0) return false
+      const eintrag = nodeAvailabilityById[n.id]
+      if (eintrag) return eintrag.available
+      return n.load_level !== 'offline' && n.status === 'online' && n.accepting_orders
+    })
+  const autoAktiv = konfiguration.preferredNodeId == null
+  const inklusiveLeistungen = [
+    ...(ddosLabel ? [ddosLabel] : []),
+    t('shop.spiel.inklusiveBackups'),
+    ...(spiel.allowGameSwitch !== false ? [t('shop.spiel.inklusiveGameSwitch')] : []),
+    t('shop.spiel.inklusiveSftp'),
+    t('shop.spiel.inklusiveKonsole'),
+  ]
 
   return (
-    <section className="msm-card space-y-6 rounded-2xl border border-outline-variant/30 bg-surface-container-low/80 p-5 sm:p-6">
+    <section className="msm-card space-y-6 rounded-2xl border border-white/10 bg-surface-container-low/85 p-5 shadow-xl sm:p-6">
       <h2 className="font-headline text-lg font-bold text-on-surface">
         {t('shop.spiel.konfigurator')}
       </h2>
@@ -142,57 +171,38 @@ export function Konfigurator({
             role="group"
             aria-label={t('shop.spiel.standortHardware')}
           >
-            {(() => {
-              const hatKostenloseNode = nodeStatuses.some(
-                (n) => Math.max(0, n.shop_surcharge_cents ?? 0) === 0,
-              )
-              const autoFrei =
-                hatKostenloseNode &&
-                nodeStatuses.some((n) => {
-                  if (Math.max(0, n.shop_surcharge_cents ?? 0) > 0) return false
-                  const eintrag = nodeAvailabilityById[n.id]
-                  if (eintrag) return eintrag.available
-                  return n.load_level !== 'offline' && n.status === 'online' && n.accepting_orders
-                })
-              const autoAktiv = konfiguration.preferredNodeId == null
-              return (
-                <button
-                  type="button"
-                  disabled={!hatKostenloseNode && !autoAktiv}
-                  onClick={() => onSelectStandort?.(null)}
-                  aria-pressed={autoAktiv}
-                  className={`rounded-xl border px-3.5 py-3 text-left transition-colors ${
-                    !hatKostenloseNode && !autoAktiv
-                      ? 'cursor-not-allowed border-outline-variant/25 bg-surface-container/40 text-on-surface-variant/60'
-                      : autoAktiv
-                        ? 'border-primary/60 bg-primary/15 text-on-surface'
-                        : 'border-outline-variant/40 bg-surface-container text-on-surface-variant hover:text-on-surface'
+            <button
+              type="button"
+              disabled={!hatKostenloseNode && !autoAktiv}
+              onClick={() => onSelectStandort?.(null)}
+              aria-pressed={autoAktiv}
+              className={`rounded-xl border px-3.5 py-3 text-left transition-colors ${auswahlKarteKlassen(
+                autoAktiv,
+                !hatKostenloseNode && !autoAktiv,
+              )}`}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-sm font-semibold text-on-surface">
+                  {t('shop.spiel.standortAutomatisch')}
+                </span>
+                <span
+                  className={`rounded-full px-2 py-0.5 text-label-sm font-semibold ${
+                    autoFrei
+                      ? 'bg-status-running/15 text-status-running'
+                      : 'bg-status-warning/15 text-status-warning'
                   }`}
                 >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-sm font-semibold text-on-surface">
-                      {t('shop.spiel.standortAutomatisch')}
-                    </span>
-                    <span
-                      className={`rounded-full px-2 py-0.5 text-label-sm font-semibold ${
-                        autoFrei
-                          ? 'bg-status-running/15 text-status-running'
-                          : 'bg-status-warning/15 text-status-warning'
-                      }`}
-                    >
-                      {autoFrei
-                        ? t('shop.spiel.standortVerfuegbar')
-                        : hatKostenloseNode
-                          ? t('shop.spiel.standortAusgebuchtGroesse')
-                          : t('shop.spiel.standortAuswahlPflicht')}
-                    </span>
-                  </div>
-                  <p className="mt-1 text-xs text-on-surface-variant">
-                    {t('shop.spiel.standortAutomatischHinweis')}
-                  </p>
-                </button>
-              )
-            })()}
+                  {autoFrei
+                    ? t('shop.spiel.standortVerfuegbar')
+                    : hatKostenloseNode
+                      ? t('shop.spiel.standortAusgebuchtGroesse')
+                      : t('shop.spiel.standortAuswahlPflicht')}
+                </span>
+              </div>
+              <p className="mt-1 text-xs text-on-surface-variant">
+                {t('shop.spiel.standortAutomatischHinweis')}
+              </p>
+            </button>
 
             {nodeStatuses.map((node) => {
               const eintrag = nodeAvailabilityById[node.id]
@@ -213,13 +223,10 @@ export function Konfigurator({
                   disabled={!istVerfuegbar && !aktiv}
                   onClick={() => onSelectStandort?.(node.id)}
                   aria-pressed={aktiv}
-                  className={`rounded-xl border px-3.5 py-3 text-left transition-colors ${
-                    !istVerfuegbar && !aktiv
-                      ? 'cursor-not-allowed border-outline-variant/25 bg-surface-container/40 text-on-surface-variant/60'
-                      : aktiv
-                        ? 'border-primary/60 bg-primary/15 text-on-surface'
-                        : 'border-outline-variant/40 bg-surface-container text-on-surface-variant hover:text-on-surface'
-                  }`}
+                  className={`rounded-xl border px-3.5 py-3 text-left transition-colors ${auswahlKarteKlassen(
+                    aktiv,
+                    !istVerfuegbar && !aktiv,
+                  )}`}
                 >
                   <div className="flex flex-wrap items-start justify-between gap-2">
                     <div className="min-w-0">
@@ -501,51 +508,18 @@ export function Konfigurator({
         )}
       </div>
 
-      <div className="space-y-3">
-        <SchrittKopf nummer={garantienSchritt} titel={t('shop.spiel.schrittGarantien')} />
-
-        <div className="space-y-2.5 rounded-xl border border-outline-variant/30 bg-surface-container/60 p-4">
-          <p className="text-xs font-semibold uppercase tracking-wider text-status-running">
-            {t('shop.spiel.inklusiveTitel')}
-          </p>
-          <ul className="grid gap-1.5 text-xs text-on-surface sm:grid-cols-2">
-            {[
-              spiel.ddosGameAware
-                ? spiel.ddosProvider
-                  ? t('shop.spiel.inklusiveDdosMitAnbieter', { provider: spiel.ddosProvider })
-                  : t('shop.spiel.inklusiveDdosGameAware')
-                : spiel.ddosProvider
-                  ? t('shop.spiel.inklusiveDdosProvider', { provider: spiel.ddosProvider })
-                  : t('shop.spiel.inklusiveDdos'),
-              t('shop.spiel.inklusiveBackups'),
-              ...(spiel.allowGameSwitch !== false ? [t('shop.spiel.inklusiveGameSwitch')] : []),
-              t('shop.spiel.inklusiveSftp'),
-              t('shop.spiel.inklusiveKonsole'),
-            ].map((punkt) => (
-              <li key={punkt} className="flex items-center gap-1.5">
-                <Check className="h-3.5 w-3.5 shrink-0 text-status-running" aria-hidden="true" />
-                <span>{punkt}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-
-        {zeigtModInklusiv && (
-          <div className="flex flex-wrap items-center gap-3 pt-1">
-            {spiel.unterstuetztMods && (
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-status-running/35 bg-status-running/10 px-3 py-1 text-xs font-semibold text-status-running">
-                <Check className="h-3.5 w-3.5" aria-hidden="true" />
-                {t('shop.spiel.modsInklusive')}
-              </span>
-            )}
-            {spiel.unterstuetztWorkshop && (
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/35 bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
-                <Wrench className="h-3.5 w-3.5" aria-hidden="true" />
-                {t('shop.spiel.workshopInklusive')}
-              </span>
-            )}
-          </div>
-        )}
+      <div className="space-y-2.5 border-t border-outline-variant/25 pt-5">
+        <p className="text-xs font-semibold uppercase tracking-wider text-status-running">
+          {t('shop.spiel.inklusiveTitel')}
+        </p>
+        <ul className="grid gap-1.5 text-xs text-on-surface sm:grid-cols-2">
+          {inklusiveLeistungen.map((punkt) => (
+            <li key={punkt} className="flex items-center gap-1.5">
+              <Check className="h-3.5 w-3.5 shrink-0 text-status-running" aria-hidden="true" />
+              <span>{punkt}</span>
+            </li>
+          ))}
+        </ul>
       </div>
     </section>
   )

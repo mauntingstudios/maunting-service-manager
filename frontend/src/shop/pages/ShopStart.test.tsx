@@ -189,6 +189,10 @@ describe('ShopStart', () => {
     // Steam-DVD-Cover nutzt ?variant=poster
     const imgs = document.querySelectorAll('img[src*="variant=poster"]')
     expect(imgs.length).toBeGreaterThanOrEqual(1)
+    // Vollflächige Hitbox direkt unter <article>
+    const palworldLink = screen.getByRole('link', { name: 'Palworld' })
+    expect(palworldLink.parentElement?.tagName).toBe('ARTICLE')
+    expect(palworldLink.className).toContain('inset-0')
   })
 
   it('oeffnet das Plattform-Dropdown auf DVD-Karten per Hover/Klick und schliesst per Escape', async () => {
@@ -386,6 +390,9 @@ describe('ShopStart', () => {
       expect(screen.queryByRole('button', { name: 'DE' })).toBeNull()
       expect(screen.queryByRole('button', { name: 'EN' })).toBeNull()
       expect(screen.queryByText(i18n.t('shop.kopf.support'))).toBeNull()
+      expect(document.querySelector('a[href="/#shop-standorte"]')).toBeNull()
+      expect(screen.getByRole('link', { name: i18n.t('shop.kopf.spiele') })).toBeInTheDocument()
+      expect(screen.getByRole('link', { name: i18n.t('shop.kopf.addons') })).toBeInTheDocument()
       expect(screen.getByRole('link', { name: i18n.t('shop.kopf.news') })).toBeInTheDocument()
       expect(
         screen.getByRole('link', { name: i18n.t('shop.kopf.dashboard') }),

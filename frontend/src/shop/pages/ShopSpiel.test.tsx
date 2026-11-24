@@ -207,6 +207,8 @@ describe('ShopSpiel', () => {
     expect(lifeBtn).toHaveAttribute('aria-pressed', 'true')
     expect(screen.queryByRole('button', { name: i18n.t('shop.spiel.monate', { count: 3 }) })).toBeNull()
     expect(screen.getByText(i18n.t('shop.preis.keineFolgekosten'))).toBeInTheDocument()
+    expect(screen.queryByText(i18n.t('shop.kasse.aboHinweis'))).toBeNull()
+    expect(screen.queryByText(i18n.t('shop.kasse.prepaidHinweis'))).toBeNull()
   })
 
   it('zeigt Standort- & Hardware-Auswahl, maskiert leere CPU und überträgt Aufpreis samt preferredNodeId', async () => {
@@ -357,5 +359,35 @@ describe('ShopSpiel', () => {
     fireEvent.click(aboBtn)
     expect(dreitageBtn).toBeDisabled()
     expect(screen.getByText(i18n.t('shop.spiel.kurzzeitNurPrepaid'))).toBeInTheDocument()
+  })
+
+  it('blendet DDoS-Zusage im Konfigurator aus wenn aktive Nodes keinen DDoS-Schutz melden', async () => {
+    hoisted.getCatalog.mockResolvedValue([
+      {
+        ...PALWORLD_PLAN,
+        ddos_game_aware: true,
+        ddos_provider: 'Path.net',
+      },
+    ])
+    hoisted.getNodeStatus.mockResolvedValue([
+      {
+        id: 1,
+        name: 'eu-bare',
+        location_label: 'Nürnberg',
+        status: 'online',
+        cpu_model: null,
+        ram_type: 'DDR5',
+        storage_type: 'NVMe',
+        ram_free_percent: 80,
+        load_level: 'low',
+        accepting_orders: true,
+        ddos_provider: null,
+        ddos_game_aware: false,
+      },
+    ])
+
+    zeige('/shop/palworld')
+    expect(await screen.findByText('Nürnberg')).toBeInTheDocument()
+    expect(screen.queryByText(/DDoS/i)).toBeNull()
   })
 })

@@ -1,4 +1,8 @@
-import type { ShopPublicPolicyDto, ShopShortDurationTierDto } from '@/api/shop'
+import type {
+  ShopPublicBadgePromo,
+  ShopPublicPolicyDto,
+  ShopShortDurationTierDto,
+} from '@/api/shop'
 import type {
   Konfiguration,
   LaufzeitMonate,
@@ -180,4 +184,31 @@ export function zerlegeEuro(cent: number): { euro: string; cent: string } {
     euro: ganzzahlFormat.format(euroTeil),
     cent: String(centTeil).padStart(2, '0'),
   }
+}
+
+function formatiereBadgeRabatt(badge: ShopPublicBadgePromo): string {
+  return badge.discount_type === 'percent'
+    ? `${badge.discount_value} %`
+    : formatEuro(badge.discount_value)
+}
+
+export function findeSpielRabattLabel(
+  badges: ShopPublicBadgePromo[],
+  planIds: Iterable<number>,
+): string | null {
+  if (badges.length === 0) return null
+  const idSet = planIds instanceof Set ? planIds : new Set(planIds)
+  const passend = badges.find((badge) => {
+    if (badge.scope === 'addons') return false
+    if (badge.target_plan_ids.length === 0) return true
+    return badge.target_plan_ids.some((id) => idSet.has(id))
+  })
+  return passend ? formatiereBadgeRabatt(passend) : null
+}
+
+export function findeAddonRabattLabel(badges: ShopPublicBadgePromo[]): string | null {
+  const passend = badges.find(
+    (badge) => badge.scope === 'all' || badge.scope === 'addons',
+  )
+  return passend ? formatiereBadgeRabatt(passend) : null
 }

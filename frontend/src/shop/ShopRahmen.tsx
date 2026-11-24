@@ -95,11 +95,6 @@ export function ShopRahmen() {
                     </Link>
                   </li>
                   <li>
-                    <Link to="/#shop-standorte" className="hover:text-on-surface">
-                      {t('shop.kopf.standorte')}
-                    </Link>
-                  </li>
-                  <li>
                     <Link to="/#shop-addons" className="hover:text-on-surface">
                       {t('shop.kopf.addons')}
                     </Link>
