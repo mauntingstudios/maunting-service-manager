@@ -93,6 +93,15 @@ describe('ShopPlansEditor', () => {
     expect(
       screen.getByRole('switch', { name: i18n.t('settings.shop.plans.allowGameSwitch') }),
     ).toBeInTheDocument()
+    expect(
+      screen.getByRole('switch', { name: i18n.t('settings.shop.plans.isFeatured') }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('switch', { name: i18n.t('settings.shop.plans.isBestseller') }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('switch', { name: i18n.t('settings.shop.plans.isNew') }),
+    ).toBeInTheDocument()
 
     // Dialog-Tabs wechseln (Ressourcen & Bilder)
     fireEvent.click(screen.getByRole('tab', { name: i18n.t('settings.shop.plans.tabRessourcen') }))

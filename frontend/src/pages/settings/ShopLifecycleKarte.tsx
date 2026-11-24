@@ -23,6 +23,9 @@ const DEFAULT_SETTINGS: ShopLifecycleSettingsDto = {
   auto_subdomain_zone: '',
   pause_freeze_max_days_per_90d: 0,
   shop_checkout_captcha_enabled: false,
+  shop_trustpilot_enabled: false,
+  shop_trustpilot_url: '',
+  shop_discord_invite_url: '',
 }
 
 function parseReminderList(raw: string): number[] {
@@ -359,6 +362,78 @@ export function ShopLifecycleKarte({ flat = false }: { flat?: boolean } = {}) {
             </span>
             <p className="text-xs text-on-surface-variant">
               {t('settings.shop.lifecycle.checkoutCaptchaEnabledHint')}
+            </p>
+          </div>
+        </div>
+
+        <div className="space-y-4 rounded-xl border border-outline-variant/30 bg-surface-container p-4">
+          <div>
+            <h4 className="font-headline text-sm font-bold text-on-surface">
+              {t('settings.shop.lifecycle.trustSectionTitle')}
+            </h4>
+            <p className="mt-0.5 text-xs text-on-surface-variant">
+              {t('settings.shop.lifecycle.trustSectionHint')}
+            </p>
+          </div>
+
+          <div className="flex items-start gap-3">
+            <Switch
+              checked={Boolean(daten.shop_trustpilot_enabled)}
+              onCheckedChange={(checked) =>
+                setDaten((alt) => ({ ...alt, shop_trustpilot_enabled: checked }))
+              }
+              aria-label={t('settings.shop.lifecycle.trustpilotEnabled')}
+            />
+            <div className="flex-1 space-y-2">
+              <div>
+                <span className="block text-sm font-medium text-on-surface">
+                  {t('settings.shop.lifecycle.trustpilotEnabled')}
+                </span>
+                <p className="text-xs text-on-surface-variant">
+                  {t('settings.shop.lifecycle.trustpilotEnabledHint')}
+                </p>
+              </div>
+              {daten.shop_trustpilot_enabled && (
+                <div className="space-y-1.5">
+                  <label className="block space-y-1.5">
+                    <span className="block text-sm font-semibold text-on-surface">
+                      {t('settings.shop.lifecycle.trustpilotUrl')}
+                    </span>
+                    <Input
+                      type="url"
+                      value={daten.shop_trustpilot_url ?? ''}
+                      maxLength={512}
+                      placeholder="https://www.trustpilot.com/review/deinedomain.de"
+                      onChange={(e) =>
+                        setDaten((alt) => ({ ...alt, shop_trustpilot_url: e.target.value }))
+                      }
+                    />
+                  </label>
+                  <p className="text-xs text-on-surface-variant">
+                    {t('settings.shop.lifecycle.trustpilotUrlHint')}
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="block space-y-1.5">
+              <span className="block text-sm font-semibold text-on-surface">
+                {t('settings.shop.lifecycle.discordInviteUrl')}
+              </span>
+              <Input
+                type="url"
+                value={daten.shop_discord_invite_url ?? ''}
+                maxLength={512}
+                placeholder="https://discord.gg/deinserver"
+                onChange={(e) =>
+                  setDaten((alt) => ({ ...alt, shop_discord_invite_url: e.target.value }))
+                }
+              />
+            </label>
+            <p className="text-xs text-on-surface-variant">
+              {t('settings.shop.lifecycle.discordInviteUrlHint')}
             </p>
           </div>
         </div>

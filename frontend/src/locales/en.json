@@ -6936,7 +6936,8 @@
       "standortAutomatischZuruecksetzen": "Automatic (free)",
       "eyebrow": "Locations & latency",
       "pingFortschritt": "{{done}} / {{total}} tested",
-      "zumKatalog": "Pick a game at this location"
+      "zumKatalog": "Pick a game at this location",
+      "kapazitaetAuslastung": "Memory load"
     },
     "kopf": {
       "startseite": "Back to shop home",
@@ -6993,6 +6994,7 @@
       "statSofortWert": "Instant after payment",
       "statBlueprints": "Blueprints available",
       "statSetup": "Steps to online",
+      "dockTitel": "Top games ready to deploy",
       "trust": {
         "sofortAktiv": "Instant activation",
         "backups": "Automated backups",
@@ -7002,6 +7004,10 @@
     },
     "trust": {
       "titel": "Live shop facts",
+      "ddosSpotlightBadge": "Active infrastructure",
+      "ddosSpotlightTitelGameAware": "Game-aware DDoS protection included",
+      "ddosSpotlightTitel": "Network DDoS protection included",
+      "ddosSpotlightText": "Inspects game-specific UDP and query traffic to keep attacks away from your server.",
       "standorteWert_one": "{{count}} location online",
       "standorteWert_other": "{{count}} locations online",
       "standorteBereit": "Infrastructure ready",
@@ -7032,9 +7038,16 @@
       "neuText": "Recently added games and blueprints.",
       "schieneZurueck": "{{titel}}: scroll back",
       "schieneWeiter": "{{titel}}: scroll forward",
+      "schieneStatus": "Catalog rail scrolled",
       "badgeBestseller": "Most rented",
       "badgeFeatured": "Featured",
       "badgeNeu": "New"
+    },
+    "newsTeaser": {
+      "kicker": "Editorial & updates",
+      "titel": "Latest server and game news",
+      "untertitel": "Release notes, maintenance notices and new blueprint updates straight from your instance.",
+      "alleBeitraege": "View all news"
     },
     "shortcuts": {
       "gameserver": {

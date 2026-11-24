@@ -36,6 +36,10 @@ export interface ShopSpiel {
   ddosProfile?: string | null
   ddosGameAware?: boolean
   geschaetzteSetupSekunden?: number
+  isFeatured?: boolean
+  isBestseller?: boolean
+  isNew?: boolean
+  recentOrderCount?: number
 }
 
 export type LaufzeitMonate = 1 | 3 | 12

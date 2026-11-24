@@ -62,6 +62,9 @@ interface Draft {
   allowGameSwitch: boolean
   artworkMode: ShopArtworkMode
   active: boolean
+  isFeatured: boolean
+  isBestseller: boolean
+  isNew: boolean
 }
 
 type DialogTabId = 'basis' | 'ressourcen' | 'bilder'
@@ -132,6 +135,9 @@ const LEER: Draft = {
   allowGameSwitch: true,
   artworkMode: 'steam',
   active: true,
+  isFeatured: false,
+  isBestseller: false,
+  isNew: false,
 }
 
 function zahl(wert: string): number | null {
@@ -181,6 +187,9 @@ function planZuDraft(plan: ShopPlan): Draft {
     allowGameSwitch: plan.allow_game_switch ?? true,
     artworkMode: plan.artwork_mode,
     active: plan.active,
+    isFeatured: Boolean(plan.is_featured),
+    isBestseller: Boolean(plan.is_bestseller),
+    isNew: Boolean(plan.is_new),
   }
 }
 
@@ -237,6 +246,9 @@ function draftZuPayload(draft: Draft, editing: ShopPlan | null): ShopPlanWrite {
     artwork_mode: draft.artworkMode,
     active: draft.active,
     sort_order: 0,
+    is_featured: draft.isFeatured,
+    is_bestseller: draft.isBestseller,
+    is_new: draft.isNew,
   }
 }
 
@@ -749,6 +761,21 @@ export function ShopPlansEditor({ onPlansLoaded }: ShopPlansEditorProps = {}) {
                           {t('settings.shop.plans.gameSwitchKurz')}
                         </span>
                       )}
+                      {plan.is_featured && (
+                        <span className="inline-flex items-center rounded-md border border-primary/45 bg-primary/15 px-2 py-0.5 text-xs font-medium text-primary backdrop-blur-sm">
+                          {t('settings.shop.plans.badgeFeatured')}
+                        </span>
+                      )}
+                      {plan.is_bestseller && (
+                        <span className="inline-flex items-center rounded-md border border-status-running/45 bg-status-running/15 px-2 py-0.5 text-xs font-medium text-status-running backdrop-blur-sm">
+                          {t('settings.shop.plans.badgeBestseller')}
+                        </span>
+                      )}
+                      {plan.is_new && (
+                        <span className="inline-flex items-center rounded-md border border-status-warning/45 bg-status-warning/15 px-2 py-0.5 text-xs font-medium text-status-warning backdrop-blur-sm">
+                          {t('settings.shop.plans.badgeNeu')}
+                        </span>
+                      )}
                       <span className="inline-flex items-center rounded-md border border-outline-variant/30 bg-background/75 px-2 py-0.5 text-xs text-on-surface-variant backdrop-blur-sm">
                         {artworkLabel(plan.artwork_mode)}
                       </span>
@@ -883,6 +910,15 @@ export function ShopPlansEditor({ onPlansLoaded }: ShopPlansEditorProps = {}) {
                           : t('settings.shop.plans.ausgeblendet')}
                       </Badge>
                       <Badge variant="info">{artworkLabel(plan.artwork_mode)}</Badge>
+                      {plan.is_featured && (
+                        <Badge variant="info">{t('settings.shop.plans.badgeFeatured')}</Badge>
+                      )}
+                      {plan.is_bestseller && (
+                        <Badge variant="success">{t('settings.shop.plans.badgeBestseller')}</Badge>
+                      )}
+                      {plan.is_new && (
+                        <Badge variant="warning">{t('settings.shop.plans.badgeNeu')}</Badge>
+                      )}
                     </div>
                     <p className="mt-1 text-xs text-on-surface-variant">
                       {gameName(plan.game_type)} · {formatEuro(plan.price_cents)} /{' '}
@@ -1061,6 +1097,36 @@ export function ShopPlansEditor({ onPlansLoaded }: ShopPlansEditorProps = {}) {
                       checked={draft.allowGameSwitch}
                       onCheckedChange={(wert) => setze('allowGameSwitch', wert)}
                       aria-label={t('settings.shop.plans.allowGameSwitch')}
+                    />
+                  </label>
+                  <label className="flex items-center justify-between gap-4 rounded-xl border border-outline-variant/30 bg-surface-container p-3">
+                    <span className="text-sm font-medium text-on-surface">
+                      {t('settings.shop.plans.isFeatured')}
+                    </span>
+                    <Switch
+                      checked={draft.isFeatured}
+                      onCheckedChange={(wert) => setze('isFeatured', wert)}
+                      aria-label={t('settings.shop.plans.isFeatured')}
+                    />
+                  </label>
+                  <label className="flex items-center justify-between gap-4 rounded-xl border border-outline-variant/30 bg-surface-container p-3">
+                    <span className="text-sm font-medium text-on-surface">
+                      {t('settings.shop.plans.isBestseller')}
+                    </span>
+                    <Switch
+                      checked={draft.isBestseller}
+                      onCheckedChange={(wert) => setze('isBestseller', wert)}
+                      aria-label={t('settings.shop.plans.isBestseller')}
+                    />
+                  </label>
+                  <label className="flex items-center justify-between gap-4 rounded-xl border border-outline-variant/30 bg-surface-container p-3 sm:col-span-2">
+                    <span className="text-sm font-medium text-on-surface">
+                      {t('settings.shop.plans.isNew')}
+                    </span>
+                    <Switch
+                      checked={draft.isNew}
+                      onCheckedChange={(wert) => setze('isNew', wert)}
+                      aria-label={t('settings.shop.plans.isNew')}
                     />
                   </label>
                 </div>

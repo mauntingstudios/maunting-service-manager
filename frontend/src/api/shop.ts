@@ -47,6 +47,9 @@ export interface ShopPlan {
   artwork_mode: ShopArtworkMode
   active: boolean
   sort_order: number
+  is_featured?: boolean
+  is_bestseller?: boolean
+  is_new?: boolean
   created_at: string
   updated_at: string
   artwork: ShopArtwork
@@ -94,6 +97,10 @@ export interface ShopCatalogPlan {
   ddos_profile?: string | null
   ddos_game_aware?: boolean
   estimated_setup_seconds?: number
+  is_featured?: boolean
+  is_bestseller?: boolean
+  is_new?: boolean
+  recent_order_count?: number
 }
 
 export interface ShopPublicNodeStatusDto {
@@ -132,6 +139,9 @@ export interface ShopPublicPolicyDto {
   auto_subdomain_zone: string
   pause_freeze_max_days_per_90d?: number
   shop_checkout_captcha_enabled?: boolean
+  shop_trustpilot_enabled?: boolean
+  shop_trustpilot_url?: string
+  shop_discord_invite_url?: string
 }
 
 export interface ShopGraceBackupDto {
@@ -186,6 +196,9 @@ export interface ShopPlanWrite {
   artwork_mode?: ShopArtworkMode
   active?: boolean
   sort_order?: number
+  is_featured?: boolean
+  is_bestseller?: boolean
+  is_new?: boolean
 }
 
 export type ShopAddonCategory = 'ai_quota' | 'slots' | 'backups' | 'storage' | 'role'
@@ -602,6 +615,9 @@ export interface ShopLifecycleSettingsDto {
   auto_subdomain_zone?: string
   pause_freeze_max_days_per_90d?: number
   shop_checkout_captcha_enabled?: boolean
+  shop_trustpilot_enabled?: boolean
+  shop_trustpilot_url?: string
+  shop_discord_invite_url?: string
 }
 
 export const shopOrderApi = {

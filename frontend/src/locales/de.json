@@ -6936,7 +6936,8 @@
       "standortAutomatischZuruecksetzen": "Automatisch (kostenlos)",
       "eyebrow": "Standorte & Latenz",
       "pingFortschritt": "{{done}} / {{total}} gemessen",
-      "zumKatalog": "Spiel an diesem Standort wählen"
+      "zumKatalog": "Spiel an diesem Standort wählen",
+      "kapazitaetAuslastung": "Speicherauslastung"
     },
     "kopf": {
       "startseite": "Zur Shop-Startseite",
@@ -6993,6 +6994,7 @@
       "statSofortWert": "Sofort nach Zahlung",
       "statBlueprints": "Blueprints verfügbar",
       "statSetup": "Schritte bis online",
+      "dockTitel": "Top-Spiele direkt starten",
       "trust": {
         "sofortAktiv": "Sofort aktiv",
         "backups": "Automatische Backups",
@@ -7002,6 +7004,10 @@
     },
     "trust": {
       "titel": "Aktuelle Shop-Fakten",
+      "ddosSpotlightBadge": "Aktive Infrastruktur",
+      "ddosSpotlightTitelGameAware": "Game-Aware DDoS-Schutz inklusive",
+      "ddosSpotlightTitel": "Netzwerk-DDoS-Schutz inklusive",
+      "ddosSpotlightText": "Erkennt spielspezifische UDP- und Query-Pakete und hält Angriffe vom Server fern.",
       "standorteWert_one": "{{count}} Standort online",
       "standorteWert_other": "{{count}} Standorte online",
       "standorteBereit": "Infrastruktur bereit",
@@ -7032,9 +7038,16 @@
       "neuText": "Frisch hinzugefügte Spiele und aktuelle Blueprints.",
       "schieneZurueck": "{{titel}}: zurück blättern",
       "schieneWeiter": "{{titel}}: weiter blättern",
+      "schieneStatus": "Katalog-Ansicht verschoben",
       "badgeBestseller": "Meistgemietet",
       "badgeFeatured": "Empfohlen",
       "badgeNeu": "Neu"
+    },
+    "newsTeaser": {
+      "kicker": "Redaktion & Updates",
+      "titel": "Aktuelles rund um Server & Spiele",
+      "untertitel": "Hinweise zu Updates, Wartungen und neuen Blueprints direkt aus der Instanz.",
+      "alleBeitraege": "Alle News ansehen"
     },
     "shortcuts": {
       "gameserver": {

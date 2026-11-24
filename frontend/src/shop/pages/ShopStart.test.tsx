@@ -9,6 +9,8 @@ const hoisted = vi.hoisted(() => ({
   getPromos: vi.fn(),
   getNodeStatus: vi.fn(),
   pingNode: vi.fn(),
+  getPublicPolicy: vi.fn(),
+  listPublicNews: vi.fn(),
 }))
 
 vi.mock('@/api/shop', async (importOriginal) => {
@@ -21,10 +23,25 @@ vi.mock('@/api/shop', async (importOriginal) => {
       getPromos: hoisted.getPromos,
       getNodeStatus: hoisted.getNodeStatus,
       pingNode: hoisted.pingNode,
+      getPublicPolicy: hoisted.getPublicPolicy,
     },
   }
 })
 
+vi.mock('@/api/news', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/api/news')>()
+  return {
+    ...actual,
+    newsApi: {
+      ...actual.newsApi,
+      listPublic: hoisted.listPublicNews,
+    },
+  }
+})
+
+import { useAuthStore } from '@/stores/authStore'
+import { usePublicSettingsStore } from '@/stores/publicSettingsStore'
+import { ShopKopf } from '../ShopKopf'
 import { ShopStart } from './ShopStart'
 import { useShopStandortStore } from '../shopStandortStore'
 
@@ -130,6 +147,21 @@ describe('ShopStart', () => {
     hoisted.getCatalog.mockReset().mockResolvedValue(SAMPLE_PLANS)
     hoisted.listAddons.mockReset().mockResolvedValue(SAMPLE_ADDONS)
     hoisted.getNodeStatus.mockReset().mockResolvedValue([])
+    hoisted.listPublicNews.mockReset().mockResolvedValue({ items: [], total: 0 })
+    hoisted.getPublicPolicy.mockReset().mockResolvedValue({
+      default_billing_mode: 'prepaid',
+      subscription_discount_percent: 0,
+      refund_guarantee_days: 0,
+      refund_policy_note: '',
+      cancel_grace_days: 7,
+      auto_subdomain_enabled: false,
+      auto_subdomain_zone: '',
+      pause_freeze_max_days_per_90d: 0,
+      shop_checkout_captcha_enabled: false,
+      shop_trustpilot_enabled: false,
+      shop_trustpilot_url: '',
+      shop_discord_invite_url: '',
+    })
     hoisted.getPromos.mockReset().mockResolvedValue({
       banner: null,
       banners: [],
@@ -146,7 +178,7 @@ describe('ShopStart', () => {
     })
   })
 
-  it('zeigt Hero, echte Spiele-Karten ohne steam_game-Enum und rollenbasierte Add-ons', async () => {
+  it('zeigt Storefront 2.0 mit Hero, TrustSection und rollenbasierten Add-ons', async () => {
     zeige()
     expect(
       screen.getByRole('heading', { level: 1, name: i18n.t('shop.hero.titel') }),
@@ -156,11 +188,56 @@ describe('ShopStart', () => {
     expect(screen.getByRole('heading', { name: 'Singra & Tresor Pro' })).toBeInTheDocument()
     expect(screen.getByText(/50 GB Tresorspeicher inklusive/)).toBeInTheDocument()
     expect(screen.getByText(/500\.000 KI-Tokens im Monat/)).toBeInTheDocument()
-    expect(screen.getByText(i18n.t('shop.hero.statusTitel'))).toBeInTheDocument()
-    expect(screen.getAllByText(i18n.t('shop.shortcuts.konto.titel')).length).toBeGreaterThan(0)
-    expect(screen.getByText(i18n.t('shop.katalogBand.titel', { count: 2 }))).toBeInTheDocument()
+    expect(screen.getByText(i18n.t('shop.hero.dockTitel'))).toBeInTheDocument()
+    expect(screen.getByText(i18n.t('shop.trust.prepaidWert'))).toBeInTheDocument()
+    expect(screen.queryByText(i18n.t('shop.trust.trustpilotTitel'))).toBeNull()
     expect(screen.queryByText('steam_game')).toBeNull()
     expect(screen.queryByText(i18n.t('shop.demo.badge'))).toBeNull()
+  })
+
+  it('rendert Hero-Pause-Toggle, kuratierte Schienen ab 2 Spielen und konfigurierte Trust-Links', async () => {
+    hoisted.getCatalog.mockResolvedValue([
+      { ...SAMPLE_PLANS[0], is_featured: true, is_bestseller: true, recent_order_count: 8 },
+      { ...SAMPLE_PLANS[1], is_featured: true, is_bestseller: true, is_new: true },
+    ])
+    hoisted.getPublicPolicy.mockResolvedValue({
+      default_billing_mode: 'prepaid',
+      subscription_discount_percent: 10,
+      refund_guarantee_days: 14,
+      refund_policy_note: '',
+      cancel_grace_days: 7,
+      auto_subdomain_enabled: false,
+      auto_subdomain_zone: '',
+      pause_freeze_max_days_per_90d: 0,
+      shop_checkout_captcha_enabled: false,
+      shop_trustpilot_enabled: true,
+      shop_trustpilot_url: 'https://www.trustpilot.com/review/example.de',
+      shop_discord_invite_url: 'https://discord.gg/maunting',
+    })
+
+    zeige()
+    expect(
+      await screen.findByRole('heading', { name: i18n.t('shop.katalog.meistgemietetTitel') }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('heading', { name: i18n.t('shop.katalog.empfohlenTitel') }),
+    ).toBeInTheDocument()
+    // Neu im Katalog hat nur 1 passendes Spiel (< 2), bleibt daher ausgeblendet
+    expect(screen.queryByRole('heading', { name: i18n.t('shop.katalog.neuTitel') })).toBeNull()
+
+    // Pause/Play-Steuerung im Hero ohne aria-pressed
+    const toggleBtn = screen.getByRole('button', { name: i18n.t('shop.hero.rotationPausieren') })
+    expect(toggleBtn).not.toHaveAttribute('aria-pressed')
+    fireEvent.click(toggleBtn)
+    expect(
+      screen.getByRole('button', { name: i18n.t('shop.hero.rotationFortsetzen') }),
+    ).toBeInTheDocument()
+
+    // Konfigurierte externe Trustpilot- & Discord-Karten erscheinen
+    const trustLink = screen.getByRole('link', { name: /Trustpilot/i })
+    expect(trustLink).toHaveAttribute('href', 'https://www.trustpilot.com/review/example.de')
+    const discordLink = screen.getByRole('link', { name: /Discord/i })
+    expect(discordLink).toHaveAttribute('href', 'https://discord.gg/maunting')
   })
 
   it('filtert die Sammlung ueber Suche und Filter-Tabs', async () => {
@@ -248,13 +325,86 @@ describe('ShopStart', () => {
 
     zeige()
     expect(await screen.findByText('Game-Aware DDoS (Famesystems Game-DDoS)')).toBeInTheDocument()
+    expect(screen.getByText('Game-Aware DDoS · Famesystems Game-DDoS')).toBeInTheDocument()
+    expect(screen.getByText(i18n.t('shop.trust.ddosSpotlightTitelGameAware'))).toBeInTheDocument()
+    expect(screen.getByText('Famesystems Game-DDoS')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'PS5' }))
     expect(screen.getByRole('heading', { name: 'Palworld' })).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Rust' })).toBeNull()
 
     fireEvent.click(screen.getByRole('button', { name: i18n.t('shop.nodeStatus.pingTesten') }))
-    expect(await screen.findByText(/14 ms/)).toBeInTheDocument()
+    expect((await screen.findAllByText(/14 ms/)).length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('rendert ShopNewsTeaser bei veroeffentlichten Beitraegen und blendet leeren Add-ons-Kasten aus', async () => {
+    hoisted.listAddons.mockResolvedValue([])
+    hoisted.listPublicNews.mockResolvedValue({
+      total: 1,
+      items: [
+        {
+          id: 7,
+          slug: 'palworld-update-05',
+          title: 'Palworld Crossplay-Update',
+          summary: 'Volle Unterstützung für dedizierte Crossplay-Welten.',
+          content_markdown: 'Details …',
+          category: 'game_update',
+          related_game_type: 'palworld',
+          sources: [],
+          cover_url: null,
+          is_published: true,
+          is_pinned: false,
+          published_at: '2026-11-24T01:00:00Z',
+          author_display_name: 'Redaktion',
+          created_at: '2026-11-24T01:00:00Z',
+          updated_at: '2026-11-24T01:00:00Z',
+        },
+      ],
+    })
+
+    zeige()
+    expect(
+      await screen.findByRole('heading', { name: i18n.t('shop.newsTeaser.titel') }),
+    ).toBeInTheDocument()
+    expect(screen.getByText('Palworld Crossplay-Update')).toBeInTheDocument()
+    expect(screen.queryByText(i18n.t('shop.addons.leerText'))).toBeNull()
+  })
+
+  it('rendert ShopKopf ohne DE/EN-Switcher und ohne Support-Button', () => {
+    const prevShopEnabled = usePublicSettingsStore.getState().shop_enabled
+    const prevAuth = {
+      isAuthenticated: useAuthStore.getState().isAuthenticated,
+      user: useAuthStore.getState().user,
+    }
+    try {
+      usePublicSettingsStore.setState({ shop_enabled: true })
+      useAuthStore.setState({
+        isAuthenticated: true,
+        user: {
+          id: 1,
+          username: 'tester',
+          email: 'tester@example.com',
+          role: 'admin',
+        } as ReturnType<typeof useAuthStore.getState>['user'],
+      })
+
+      render(
+        <MemoryRouter>
+          <ShopKopf />
+        </MemoryRouter>,
+      )
+      expect(screen.queryByRole('button', { name: 'DE' })).toBeNull()
+      expect(screen.queryByRole('button', { name: 'EN' })).toBeNull()
+      expect(screen.queryByText(i18n.t('shop.kopf.support'))).toBeNull()
+      expect(screen.queryByText(i18n.t('shop.kopf.kiChat'))).toBeNull()
+      expect(screen.getByRole('link', { name: i18n.t('shop.kopf.news') })).toBeInTheDocument()
+      expect(
+        screen.getByRole('link', { name: i18n.t('shop.kopf.dashboard') }),
+      ).toBeInTheDocument()
+    } finally {
+      usePublicSettingsStore.setState({ shop_enabled: prevShopEnabled })
+      useAuthStore.setState(prevAuth)
+    }
   })
 
   it('merkt gewaehlten Standort und Ping-Werte im Standort-Store', async () => {
@@ -287,7 +437,7 @@ describe('ShopStart', () => {
     expect(screen.getByText(/\+3,50/)).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: i18n.t('shop.nodeStatus.pingTesten') }))
-    expect(await screen.findByText(/19 ms/)).toBeInTheDocument()
+    expect((await screen.findAllByText(/19 ms/)).length).toBeGreaterThanOrEqual(2)
     expect(useShopStandortStore.getState().pingMsByNodeId[5]?.ms).toBe(19)
 
     fireEvent.click(screen.getByRole('button', { name: i18n.t('shop.nodeStatus.standortWaehlen') }))

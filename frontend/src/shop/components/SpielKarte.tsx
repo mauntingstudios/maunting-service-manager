@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { ArrowRight } from 'lucide-react'
+import { ArrowRight, ShieldCheck } from 'lucide-react'
 import { formatEuro } from '../preis'
 import type { ShopSpiel } from '../typen'
 import { SpielArtwork } from './SpielArtwork'
@@ -23,11 +23,18 @@ export function SpielKarte({ spiel, rabattLabel, priority = false }: SpielKarteP
   const sprache = i18n.language.startsWith('de') ? 'de' : 'en'
   const ausverkauft = spiel.verfuegbar === false
   const plattformen = (spiel.platforms ?? []).filter((p) => p in PLATTFORM_LABELS)
+  const kurationKey = spiel.isBestseller
+    ? 'shop.katalog.badgeBestseller'
+    : spiel.isFeatured
+      ? 'shop.katalog.badgeFeatured'
+      : spiel.isNew
+        ? 'shop.katalog.badgeNeu'
+        : null
 
   return (
     <Link
       to={`/shop/${spiel.id}`}
-      className="msm-card group relative flex overflow-hidden rounded-2xl border border-white/10 bg-surface-container-low/90 shadow-lg transition-all hover:border-primary/45 hover:bg-surface-container-high/70 focus-visible:ring-2 focus-visible:ring-primary/50"
+      className="msm-card msm-shop-card-lift group relative flex overflow-hidden rounded-2xl border border-white/10 bg-surface-container-low/90 shadow-lg hover:border-primary/45 hover:bg-surface-container-high/70 focus-visible:ring-2 focus-visible:ring-primary/50"
     >
       <article className="msm-game-card flex flex-1 flex-col">
         <div className="relative overflow-hidden">
@@ -36,6 +43,13 @@ export function SpielKarte({ spiel, rabattLabel, priority = false }: SpielKarteP
             priority={priority}
             className={`transition-transform duration-300 group-hover:scale-[1.03] ${ausverkauft ? 'opacity-70 grayscale-[25%]' : ''}`}
           />
+          {kurationKey && !ausverkauft && (
+            <div className="pointer-events-none absolute left-3 top-3">
+              <span className="inline-flex items-center rounded-full border border-primary/45 bg-background/90 px-2.5 py-1 text-label-sm font-semibold text-primary shadow-md backdrop-blur-md">
+                {t(kurationKey)}
+              </span>
+            </div>
+          )}
           {(ausverkauft || rabattLabel) && (
             <div className="pointer-events-none absolute right-3 top-3 flex flex-wrap items-center justify-end gap-1.5">
               {ausverkauft && (
@@ -56,8 +70,8 @@ export function SpielKarte({ spiel, rabattLabel, priority = false }: SpielKarteP
           <h3 className="font-headline text-base font-bold text-on-surface sm:text-lg">
             {spiel.name}
           </h3>
-          {plattformen.length > 0 && (
-            <div className="mt-2 flex flex-wrap gap-1.5">
+          {(plattformen.length > 0 || spiel.ddosGameAware || spiel.ddosProvider) && (
+            <div className="mt-2 flex flex-wrap items-center gap-1.5">
               {plattformen.map((tag) => (
                 <span
                   key={tag}
@@ -66,6 +80,18 @@ export function SpielKarte({ spiel, rabattLabel, priority = false }: SpielKarteP
                   {PLATTFORM_LABELS[tag]}
                 </span>
               ))}
+              {(spiel.ddosGameAware || spiel.ddosProvider) && (
+                <span className="msm-shop-ddos-pill inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-label-sm font-semibold text-status-running">
+                  <ShieldCheck className="h-3 w-3 shrink-0" aria-hidden="true" />
+                  <span>
+                    {spiel.ddosGameAware
+                      ? spiel.ddosProvider
+                        ? `${t('shop.nodeStatus.ddosGameAware')} · ${spiel.ddosProvider}`
+                        : t('shop.nodeStatus.ddosGameAware')
+                      : spiel.ddosProvider}
+                  </span>
+                </span>
+              )}
             </div>
           )}
         </header>

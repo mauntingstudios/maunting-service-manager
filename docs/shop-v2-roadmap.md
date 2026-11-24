@@ -13,7 +13,7 @@ Arbeitsgrundlage für den Umbau von Storefront, RBAC-Sichtbarkeit, Multi-Node-St
 4. [Paket 2: Nodes 2.0, Private Hybrid-Nodes, CPU-Sichtbarkeit & Standort-Wahl (umgesetzt, 24.11.2026)](#paket-2-nodes-20-private-hybrid-nodes-cpu-sichtbarkeit--standort-wahl-umgesetzt-24112026)
 5. [Paket 3: Pop-up- & Ankündigungs-System 2.0 (unten rechts in Shop & Panel) (umgesetzt, 24.11.2026)](#paket-3-pop-up--ankündigungs-system-20-unten-rechts-in-shop--panel-umgesetzt-24112026)
 6. [Paket 4: Integriertes News-System (`/news`, Shop-Teaser, Panel & Admin-CMS) (umgesetzt, 24.11.2026)](#paket-4-integriertes-news-system-news-shop-teaser-panel--admin-cms-umgesetzt-24112026)
-7. [Paket 5: Shop-Storefront, Katalog, Trustpilot-Option & Konfigurator 2.0 (Rework offen: Backend fertig, Frontend-UI wird neu gemacht)](#paket-5-shop-storefront-katalog-trustpilot-option--konfigurator-20-rework-offen-backend-fertig-frontend-ui-wird-neu-gemacht)
+7. [Paket 5: Shop-Storefront, Katalog, Trustpilot-Option & Konfigurator 2.0 (umgesetzt, 24.11.2026)](#paket-5-shop-storefront-katalog-trustpilot-option--konfigurator-20-umgesetzt-24112026)
 8. [Paket 6: Konto- & Abo-Zentrale 2.0 (`/konto` & `/profile` aus einem Guss)](#paket-6-konto--abo-zentrale-20-konto--profile-aus-einem-guss)
 9. [Umsetzungsreihenfolge & Globale Qualitäts-Gates](#9-umsetzungsreihenfolge--globale-qualitäts-gates)
 
@@ -473,7 +473,7 @@ Im bestehenden `frontend/src/shop/pages/ShopStart.tsx` fallen folgende typische 
 
 ---
 
-## Paket 5: Shop-Storefront, Katalog, Trustpilot-Option & Konfigurator 2.0 (Rework offen: Backend fertig, Frontend-UI wird neu gemacht)
+## Paket 5: Shop-Storefront, Katalog, Trustpilot-Option & Konfigurator 2.0 (umgesetzt, 24.11.2026)
 
 ### Ist-Zustand & konkrete Befunde im Code
 
@@ -561,18 +561,18 @@ Im bestehenden `frontend/src/shop/pages/ShopStart.tsx` fallen folgende typische 
 
 ### Umsetzungsstand & Erkenntnisse (Paket 5)
 
-- **Backend umgesetzt & beibehalten:** `ShopPlan` (`backend/models/shop.py`) und die Schemas in `backend/schemas/shop.py` um `is_featured`, `is_bestseller` und `is_new` erweitert (Migration `20261124_04_shop_plan_curation.py`, dient als Parent von Paket-4-Migration `20261124_05`). In `backend/services/shop_catalog_service.py` und `backend/routers/shop.py` werden über `recent_paid_order_counts(db, days=90)` echte bezahlte Bestellzahlen der letzten 90 Tage als `recent_order_count` je Katalog-Tarif geliefert. `backend/services/shop_lifecycle_settings_service.py` ergänzt `shop_trustpilot_enabled`, `shop_trustpilot_url` (strikte HTTPS-Prüfung auf `trustpilot.com` bzw. `*.trustpilot.com` mit `/review/<slug>`, bei aktivem Flag Pflichtfeld) sowie `shop_discord_invite_url` (strikte HTTPS-Prüfung auf `discord.gg/<code>` oder `discord.com/invite/<code>`) und gibt alle drei Werte über `ShopPublicPolicyResponse` aus.
-- **Bewusste Entscheidung bei Trustpilot:** Vorerst ist ausschließlich die trackingfreie `link_card`-Variante ohne externes TrustBox-Skript umgesetzt. Dadurch mussten `frontend/vite.csp.ts`, `backend/main.py`, `install.sh` und `Caddyfile.template` nicht verändert werden und `test_caddy_csp_und_gebaute_csp_sind_dieselbe` bleibt unberührt.
-- **Frontend-Erstentwurf (uncommittet, Rework offen):**
-  - Erster UI-Stand in `HeroShowcase.tsx`, `TrustSection.tsx`, `KatalogSchiene.tsx`, `StandortPingDeck.tsx`, `SpielKarte.tsx`, `ShopKopf.tsx`, `ShopRahmen.tsx`, `ShopStart.tsx` sowie 4-Schritt-`Konfigurator.tsx`, `ShopLifecycleKarte.tsx` und `ShopPlansEditor.tsx`. Dieser UI-Aufschlag wurde nach Nutzer-Feedback vom 24.11.2026 als **Rework offen** zurückgestellt.
-  - **Konkreter Rework-Auftrag für den nächsten Schritt:**
-    1. Den DE/EN-`LanguageSwitcher` vollständig aus dem Shop-Header (`ShopKopf.tsx`) entfernen.
-    2. Die 4 direkt nebeneinander gestapelten Header-Buttons (insbesondere den sinnlosen `Support`-Button) entfernen bzw. sauber auflösen.
-    3. Ein echtes, hochwertiges Storefront-Rework statt kosmetischer Anpassung am alten Layout liefern und dabei auch den Paket-4-Block (`ShopNewsTeaser` / `#shop-news`) stimmig einbauen.
-- **Bisherige Prüfungen & offene Punkte:**
-  - *Backend (`pytest`):* `54 passed` für die Shop-Suites im Zuge des ersten Paket-5-Laufs; da Paket 5 nach dem UI-Rework erneut abgenommen werden muss, steht die abschließende Paket-5-Gesamtabnahme nach dem UI-Umbau noch aus.
-  - *Gefundene Stolpersteine:* `schreibweise.test.ts` lehnt auch in URL-Beispielen `...` ab (konkrete Beispiel-Slugs oder `…` nutzen); nach Ping-Tests dürfen Messwerte in Storefront-Komponenten nicht zu mehrdeutigen Test-Treffern führen.
-  - *Offen:* Komplettes Frontend-UI-Rework für Storefront (`ShopKopf`, `ShopStart`, `HeroShowcase`, `KatalogSchiene`, `StandortPingDeck`, `TrustSection`, `ShopNewsTeaser`), erneute Vitest-/Build-Prüfung und anschließende manuelle Browser-Probe (Desktop `1440px`, Mobil `375px`, `prefers-reduced-motion`, Konsole).
+- **Backend umgesetzt (bereits in Commit `2166a096` enthalten):** `ShopPlan` (`backend/models/shop.py`) und die Schemas in `backend/schemas/shop.py` um `is_featured`, `is_bestseller` und `is_new` erweitert (Migration `20261124_04_shop_plan_curation.py`). `backend/services/shop_catalog_service.py` und `backend/routers/shop.py` liefern echte bezahlte Bestellzahlen der letzten 90 Tage als `recent_order_count`; `backend/services/shop_lifecycle_settings_service.py` ergänzt `shop_trustpilot_enabled`, `shop_trustpilot_url` (HTTPS auf `trustpilot.com` bzw. `*.trustpilot.com` mit `/review/<slug>`) sowie `shop_discord_invite_url` (`discord.gg/<code>` oder `discord.com/invite/<code>`).
+- **Bewusste Entscheidung bei Trustpilot:** Vorerst ist ausschließlich die trackingfreie `link_card`-Variante ohne externes TrustBox-Skript umgesetzt, sodass `frontend/vite.csp.ts`, `backend/main.py`, `install.sh` und `Caddyfile.template` unberührt bleiben.
+- **Frontend-UI-Rework umgesetzt (noch uncommittet):**
+  - **Entschlackter Header (`ShopKopf.tsx`):** `LanguageSwitcher` und `Support`-Button vollständig entfernt; bei eingeloggten Nutzern stehen rechts nur `Dashboard` und `ProfileDropdown`.
+  - **Vollbild-Hero (`HeroShowcase.tsx`):** Große Bühne (`min-h-[540px]` bzw. `lg:min-h-[620px]`) ohne rechte Statusbox, `fetchpriority="high"` ohne `loading="lazy"` am Hauptmotiv, 2 klare CTAs (`Konfigurieren` + `Spiele entdecken`), leuchtende Game-Aware-DDoS-Schutz-Pill (`.msm-shop-ddos-pill`) samt echtem Anbieternamen sowie breites 5er-Dock am unteren Rand mit animierter Fortschrittsleiste (`.msm-shop-hero-progress`) und Pause/Play ohne `aria-pressed`.
+  - **DDoS-Spotlight & Live-Telemetrie (`TrustSection.tsx`, `StandortPingDeck.tsx`, `SpielKarte.tsx`):** Hervorgehobener `.msm-shop-ddos-glow`-Spotlight-Banner mit konfigurierten Anbietern/Profilen; neu gestaltete Node-Karten mit Statuspunkt, visuellem RAM-/Auslastungsbalken (`ram_free_percent`), animierter Latenzleiste, DDoS-Anbieter-Pill und Standort-Auswahl.
+  - **Scroll-Reveals, Carousel & News-Teaser (`index.css`, `useShopReveal.ts`, `KatalogSchiene.tsx`, `ShopNewsTeaser.tsx`, `ShopStart.tsx`):** Scroll-Animationen nativ über `@supports ((animation-timeline: view()) and (animation-range: entry))` (`.msm-shop-reveal`) mit `IntersectionObserver`-Fallback (`useShopReveal`), `overscroll-behavior-x: contain` und barrierefreier Carousel-Region in `KatalogSchiene.tsx`, Integration von `#shop-news` über `ShopNewsTeaser.tsx` sowie Ausblenden der Add-ons-Sektion bei leerer Add-on-Liste.
+- **Verifizierte Tests & Builds (nach letztem UI-Edit):**
+  - Frontend (`vitest` über `ShopStart.test.tsx`, `ShopPlansEditor.test.tsx`, `ShopSpiel.test.tsx`, `ShopKasse.test.tsx`, `ShopTab.test.tsx`, `NewsOverview.test.tsx`, `NewsDetail.test.tsx`, `NewsTab.test.tsx`, `keinNativesTitle.test.ts`): `9` Testdateien, `34 passed`.
+  - `src/locales/schreibweise.test.ts`: `6 passed | 1 failed` (`en: kein Title Case in mehrwortigen Beschriftungen`) ausschließlich bei 4 bereits zuvor vorhandenen fremden Keys (`serverVariables.dateiTabOeffnen`, `settings.shop.betrieb.betreiberAnsichtBadge`, `shop.konto.rechnungen.kontextBadge`, `hoster.products.openShopSettings`), `0` Verstöße in neuen Paket-5-Keys.
+  - Produktions-Builds: `npm run build` (`3729` Module) und `npm run build:desktop` (`3706` Module) jeweils inkl. `npm run check` (`en/de parity: 11511 keys`, `classes: 61 msm-*, 12 animate-*`, `check-leere-catches: 278 <= 279`) mit Exit-Code `0`.
+- **Offen:** Manuelle Browser-Probe (Desktop `1440px` und Mobil `375px` auf `/`, `/shop/:id`, `/shop/:id/kasse`, `/news`, Verhalten mit und ohne `prefers-reduced-motion`, Konsole prüfen) vor oder nach Sichtprüfung durch den Nutzer.
 
 ---
 

@@ -118,6 +118,10 @@ function spielAusPlan(plan: ShopCatalogPlan): ShopSpiel {
     ddosProfile: plan.ddos_profile ?? null,
     ddosGameAware: Boolean(plan.ddos_game_aware),
     geschaetzteSetupSekunden: plan.estimated_setup_seconds ?? 120,
+    isFeatured: Boolean(plan.is_featured),
+    isBestseller: Boolean(plan.is_bestseller),
+    isNew: Boolean(plan.is_new),
+    recentOrderCount: plan.recent_order_count ?? 0,
   }
 }
 
@@ -133,9 +137,25 @@ function ausPlans(plans: ShopCatalogPlan[]): Pick<ShopKatalog, 'spiele' | 'tarif
     const sortiert = [...gamePlans].sort(
       (a, b) => a.price_cents - b.price_cents || a.name.localeCompare(b.name),
     )
+    const isFeatured = gamePlans.some((p) => Boolean(p.is_featured))
+    const isBestseller = gamePlans.some((p) => Boolean(p.is_bestseller))
+    const isNew = gamePlans.some((p) => Boolean(p.is_new))
+    const recentOrderCount = gamePlans.reduce(
+      (sum, p) => sum + Math.max(0, p.recent_order_count ?? 0),
+      0,
+    )
     tarife.set(
       gameType,
-      sortiert.map((plan) => ({ plan, spiel: spielAusPlan(plan) })),
+      sortiert.map((plan) => ({
+        plan,
+        spiel: {
+          ...spielAusPlan(plan),
+          isFeatured,
+          isBestseller,
+          isNew,
+          recentOrderCount,
+        },
+      })),
     )
   }
   return {
