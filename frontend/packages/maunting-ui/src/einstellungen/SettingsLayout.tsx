@@ -26,6 +26,7 @@ export interface SettingsLayoutProps<T extends string> {
   title: string
   description?: string
   showGroupHeaders?: boolean
+  hideHeader?: boolean
   children: ReactNode
 }
 
@@ -36,6 +37,7 @@ export function SettingsLayout<T extends string>({
   title,
   description,
   showGroupHeaders = true,
+  hideHeader = false,
   children,
 }: SettingsLayoutProps<T>) {
   const gruppen = [...new Set(sections.map((section) => section.group ?? ''))]
@@ -44,10 +46,12 @@ export function SettingsLayout<T extends string>({
     <div className="mui-settings grid gap-6 lg:grid-cols-[17.5rem_minmax(0,1fr)] xl:grid-cols-[19rem_minmax(0,1fr)] lg:gap-8">
       <aside className="hidden lg:block">
         <div className="sticky top-6 space-y-5">
-          <div>
-            <h1 className="font-headline text-headline-sm text-on-surface">{title}</h1>
-            {description && <p className="mt-1 text-body-sm text-on-surface-variant">{description}</p>}
-          </div>
+          {!hideHeader && (
+            <div>
+              <h1 className="font-headline text-headline-sm text-on-surface">{title}</h1>
+              {description && <p className="mt-1 text-body-sm text-on-surface-variant">{description}</p>}
+            </div>
+          )}
           <nav aria-label={title} className={showGroupHeaders ? 'space-y-4' : 'space-y-1'}>
             {gruppen.map((gruppe, gruppenIndex) => (
               <div key={gruppe || 'allgemein'}>

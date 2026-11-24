@@ -35,6 +35,12 @@ export function KontoZahlungsmethoden() {
           >
             {t('shop.konto.nav.rechnungen')}
           </Link>
+          <Link
+            to="/konto/bestellungen"
+            className="inline-flex min-h-9 items-center rounded-lg border border-outline-variant/40 px-3 text-sm font-semibold text-on-surface hover:bg-surface-container-high"
+          >
+            {t('shop.konto.zahlungsmethoden.bestellungenLink')}
+          </Link>
         </div>
       </section>
     </div>

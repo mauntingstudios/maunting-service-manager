@@ -632,6 +632,16 @@ Im bestehenden `frontend/src/shop/pages/ShopStart.tsx` fallen folgende typische 
 - Frontend (`vitest`): `Profile.test.tsx`, `KontoTab.test.tsx`, neue/erweiterte Tests für `KontoRahmen` (keine doppelten Header auf `/konto/profil`, Self-Hosted-Ausblendung leerer Shop-Tabs), `KontoAbos` (Kündigungs-Dialog, Immediate-Delete-Bestätigung, Welt-Backup-Anzeige).
 - Browser-Probe: `/konto/abos`, `/konto/bestellungen`, `/konto/rechnungen`, `/konto/profil` und `/profile?tab=security` auf Desktop und Mobil prüfen.
 
+### Umsetzungsstand & Erkenntnisse (Paket 6)
+
+- **Einheitliche Konto- & Profil-Zentrale (`SettingsLayout.tsx`, `Profile.tsx`, `KontoProfil.tsx`, `KontoRahmen.tsx`):**
+  - `SettingsLayout` unterstützt `hideHeader?: boolean`, `Profile` akzeptiert `eingebettet?: boolean`. Dadurch rendert `/konto/profil` über `<Profile eingebettet />` ohne zweite Seitenhülle oder doppelte `<h1>`-Überschrift. `/profile` (inkl. `/profile?tab=security` und Tauri-`TresorSicherheitTab`) bleibt unverändert nutzbar.
+  - Im Self-Hosted-Betrieb ohne aktivierten Shop (`shop_enabled = false`) prüft `KontoRahmen` per `Promise.allSettled`, ob Bestellungen, Abos oder Rechnungen existieren; liegen keine Belege vor, blendet `/konto/profil` die leeren Shop-Tabs aus.
+- **Aufgewertete Konto-Bereiche (`KontoAbos.tsx`, `KontoBestellungen.tsx`, `KontoBestellungDetail.tsx`, `KontoRechnungen.tsx`, `KontoZahlungsmethoden.tsx`, `shopApi.ts`):**
+  - Kündigung und Sofort-Löschen in `KontoAbos` in geführte `@maunting/ui` `Dialog`-Modals mit gepolstertem Innenbereich (`px-6 py-5`) ausgelagert; Abo- und Entitlement-Karten zeigen Status-Indikatorpunkte und getrennt gruppierte Primär-/Gefahrenaktionen.
+  - `KontoBestellungen` zeigt Positions-Zusammenfassung und optionales Rabatt-Badge; `KontoBestellungDetail` bietet eine 3-Schritt-Status-Timeline, Standort-Aufpreise und direkte Links zu Rechnung und Abos.
+  - `KontoRechnungen` ergänzt Typ-Filter (`Alle`, `Rechnungen`, `Gutschriften`), einen `@maunting/ui` Jahres-`Dropdown` sowie direkte Bestellungs-Links neben den PDF- und XRechnung-XML-Downloads.
+
 ---
 
 ## 9. Umsetzungsreihenfolge & Globale Qualitäts-Gates

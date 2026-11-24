@@ -79,6 +79,7 @@ function orderAusApi(dto: Awaited<ReturnType<typeof shopOrderApi.getOrder>>): Or
     nummer: dto.number,
     status: dto.status,
     erstelltAm: dto.created_at,
+    bezahltAm: dto.paid_at,
     spielId: dto.items[0]?.game_type ?? '',
     positionen: dto.items.map((item) => ({
       id: String(item.id),
@@ -88,10 +89,13 @@ function orderAusApi(dto: Awaited<ReturnType<typeof shopOrderApi.getOrder>>): Or
       einzelpreisCent: item.unit_price_cents,
       steuersatzProzent: item.tax_rate_percent,
       gesamtCent: item.gross_cents,
+      standortAufpreisCent: item.node_surcharge_cents ?? 0,
     })),
     nettoCent: dto.net_cents,
     steuerCent: dto.tax_cents,
     bruttoCent: dto.gross_cents,
+    rabattProzent: dto.discount_percent ?? 0,
+    monate: dto.months,
   }
 }
 

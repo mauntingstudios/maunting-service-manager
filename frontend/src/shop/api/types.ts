@@ -34,6 +34,7 @@ export interface OrderItem {
   einzelpreisCent: number
   steuersatzProzent: number
   gesamtCent: number
+  standortAufpreisCent?: number
 }
 
 export interface Order {
@@ -41,11 +42,14 @@ export interface Order {
   nummer: string
   status: OrderStatus
   erstelltAm: string
+  bezahltAm?: string | null
   spielId: string
   positionen: OrderItem[]
   nettoCent: number
   steuerCent: number
   bruttoCent: number
+  rabattProzent?: number
+  monate?: number
   rechnungId?: string
 }
 

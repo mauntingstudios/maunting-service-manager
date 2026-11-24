@@ -7365,7 +7365,10 @@
         "titel": "Bestellungen",
         "leer": "Noch keine Bestellungen",
         "leerText": "Sobald du im Shop bestellst, erscheint der Vorgang hier.",
-        "datum": "Bestellt am {{datum}}"
+        "datum": "Bestellt am {{datum}}",
+        "artikelAnzahl_one": "{{count}} Position",
+        "artikelAnzahl_other": "{{count}} Positionen",
+        "rabatt": "-{{prozent}} % Rabatt"
       },
       "bestellung": {
         "nichtGefunden": "Bestellung nicht gefunden",
@@ -7374,7 +7377,13 @@
         "netto": "Netto",
         "steuer": "Steuer",
         "brutto": "Gesamt",
-        "rechnung": "Rechnung ansehen"
+        "rechnung": "Rechnung ansehen",
+        "schrittErstellt": "Bestellung erfasst",
+        "schrittBezahlt": "Zahlung bestätigt",
+        "schrittBereitgestellt": "Bereitgestellt",
+        "standortAufpreis": "inkl. Standort-Aufpreis {{preis}}",
+        "rabattHinweis": "Enthaltener Laufzeit-/Abo-Rabatt: {{prozent}} %",
+        "zuAbos": "Zu meinen Abos & Servern"
       },
       "rechnungen": {
         "titel": "Rechnungen",
@@ -7388,7 +7397,13 @@
         "grund": "Grund: {{grund}}",
         "xrechnungHinweis": "Rechnungen werden als XRechnung-XML (EN 16931) ausgestellt; das PDF ist die lesbare Kopie.",
         "kontextBadge": "Mein Kundenkonto · Persönliche Belege",
-        "typRechnung": "Shop-Rechnung"
+        "typRechnung": "Shop-Rechnung",
+        "filterAlle": "Alle",
+        "filterRechnungen": "Rechnungen",
+        "filterGutschriften": "Gutschriften",
+        "jahrLabel": "Jahr",
+        "jahrAlle": "Alle Jahre",
+        "zurBestellung": "Bestellung {{nummer}}"
       },
       "zahlungsmethoden": {
         "titel": "Zahlungsmethoden",
@@ -7399,7 +7414,8 @@
         "standard": "Standard",
         "stripeFolgt": "Stripe wird in Phase 2 verbunden. Es werden keine Zahlungsdaten gespeichert.",
         "stripeTitel": "Zahlungsabwicklung über Stripe",
-        "stripeHinweis": "Kartendaten und SEPA-Mandate werden direkt bei Stripe geführt und nicht in MSM gespeichert."
+        "stripeHinweis": "Kartendaten und SEPA-Mandate werden direkt bei Stripe geführt und nicht in MSM gespeichert.",
+        "bestellungenLink": "Bestellungen ansehen"
       },
       "abos": {
         "titel": "Abos",
@@ -7413,6 +7429,8 @@
         "serverOeffnen": "Server öffnen",
         "bereitstellungFehlgeschlagen": "Bereitstellung fehlgeschlagen",
         "kuendigen": "Zum Laufzeitende kündigen",
+        "kuendigenDialogTitel": "Vertrag oder Laufzeit kündigen",
+        "kuendigenDialogBeschreibung": "Wähle aus, was nach dem Ende des Zeitraums mit deinen Daten geschehen soll.",
         "kuendigenBestaetigen": "Kündigung bestätigen",
         "abbrechen": "Abbrechen",
         "kuendigungVorgemerkt": "Zum Laufzeitende gekündigt",
@@ -7425,6 +7443,7 @@
         "sofortLoeschenWarnung": "Achtung: Dieser Server und alle seine Dateien, Welten und Backups werden sofort und unwiderruflich gelöscht. Für die verbleibende Restlaufzeit erfolgt keine automatische Erstattung.",
         "serverNameBestaetigenLabel": "Zur Bestätigung den exakten Servernamen ({{name}}) eingeben:",
         "jetztSofortLoeschen": "Jetzt sofort löschen",
+        "sofortLoeschenDialogTitel": "Server endgültig löschen",
         "sofortLoeschenBestaetigen": "Server endgültig löschen",
         "sofortLoeschenFehler": "Server konnte nicht sofort gelöscht werden.",
         "endgueltigGeloescht": "Endgültig gelöscht",
@@ -7451,7 +7470,8 @@
         "weltBackupsSchliessen": "Backups ausblenden",
         "weltBackupsLeer": "Aktuell sind keine herunterladbaren Welt-Backups vorhanden.",
         "weltBackupsFehler": "Backups konnten nicht geladen werden.",
-        "weltBackupHerunterladen": "Backup laden"
+        "weltBackupHerunterladen": "Backup laden",
+        "statusIndikator": "Status"
       },
       "status": {
         "draft": "Entwurf",

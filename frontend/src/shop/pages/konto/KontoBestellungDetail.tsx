@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, CheckCircle2, Circle } from 'lucide-react'
 import { Badge, Zustandsflaeche } from '@maunting/ui'
 import { shopApi } from '../../api/shopApi'
 import type { Order } from '../../api/types'
@@ -10,8 +10,9 @@ import { formatEuro } from '../../preis'
 
 export function KontoBestellungDetail() {
   const { id } = useParams()
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const [order, setOrder] = useState<Order | null | undefined>(undefined)
+  const datumLocale = i18n.language.startsWith('en') ? 'en-US' : 'de-DE'
 
   useEffect(() => {
     let aktiv = true
@@ -53,6 +54,32 @@ export function KontoBestellungDetail() {
     )
   }
 
+  const bezahlt = Boolean(order.bezahltAm) || ['paid', 'fulfilled', 'refunded'].includes(order.status)
+  const bereitgestellt = order.status === 'fulfilled'
+  const abgebrochen = ['failed', 'cancelled', 'refunded'].includes(order.status)
+  const timeline = [
+    {
+      key: 'created',
+      label: t('shop.konto.bestellung.schrittErstellt'),
+      datum: new Date(order.erstelltAm).toLocaleDateString(datumLocale),
+      aktiv: true,
+    },
+    {
+      key: 'paid',
+      label: t('shop.konto.bestellung.schrittBezahlt'),
+      datum: order.bezahltAm ? new Date(order.bezahltAm).toLocaleDateString(datumLocale) : null,
+      aktiv: bezahlt,
+    },
+    {
+      key: 'fulfilled',
+      label: abgebrochen
+        ? t(ORDER_STATUS_KEY[order.status])
+        : t('shop.konto.bestellung.schrittBereitgestellt'),
+      datum: null,
+      aktiv: bereitgestellt,
+    },
+  ]
+
   return (
     <div className="space-y-4">
       <Link
@@ -68,7 +95,7 @@ export function KontoBestellungDetail() {
           <div>
             <h2 className="font-headline text-lg font-bold text-on-surface">{order.nummer}</h2>
             <p className="mt-1 text-xs text-on-surface-variant">
-              {new Date(order.erstelltAm).toLocaleDateString('de-DE')}
+              {new Date(order.erstelltAm).toLocaleDateString(datumLocale)}
             </p>
           </div>
           <Badge variant={ORDER_STATUS_VARIANT[order.status]}>
@@ -76,13 +103,45 @@ export function KontoBestellungDetail() {
           </Badge>
         </div>
 
+        <ol className="mt-5 grid gap-2 sm:grid-cols-3">
+          {timeline.map((schritt) => (
+            <li
+              key={schritt.key}
+              className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-xs ${
+                schritt.aktiv
+                  ? 'border-primary/30 bg-primary/10 text-on-surface'
+                  : 'border-outline-variant/30 bg-surface-container text-on-surface-variant'
+              }`}
+            >
+              {schritt.aktiv ? (
+                <CheckCircle2 className="h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
+              ) : (
+                <Circle className="h-4 w-4 shrink-0 text-on-surface-variant/60" aria-hidden="true" />
+              )}
+              <div className="min-w-0">
+                <p className="truncate font-semibold">{schritt.label}</p>
+                {schritt.datum && <p className="text-xs text-on-surface-variant">{schritt.datum}</p>}
+              </div>
+            </li>
+          ))}
+        </ol>
+
         <div className="mt-5 space-y-2">
           {order.positionen.map((position) => (
             <div
               key={position.id}
               className="flex flex-wrap items-center justify-between gap-2 border-b border-outline-variant/20 pb-2 text-sm last:border-0"
             >
-              <span className="text-on-surface">{position.bezeichnung}</span>
+              <div className="min-w-0">
+                <span className="text-on-surface">{position.bezeichnung}</span>
+                {(position.standortAufpreisCent ?? 0) > 0 && (
+                  <p className="text-xs text-on-surface-variant">
+                    {t('shop.konto.bestellung.standortAufpreis', {
+                      preis: formatEuro(position.standortAufpreisCent ?? 0),
+                    })}
+                  </p>
+                )}
+              </div>
               <span className="text-on-surface-variant">
                 {position.menge} × {formatEuro(position.einzelpreisCent)}
               </span>
@@ -90,6 +149,12 @@ export function KontoBestellungDetail() {
             </div>
           ))}
         </div>
+
+        {(order.rabattProzent ?? 0) > 0 && (
+          <p className="mt-3 text-xs text-primary">
+            {t('shop.konto.bestellung.rabattHinweis', { prozent: order.rabattProzent })}
+          </p>
+        )}
 
         <dl className="mt-4 space-y-1 border-t border-outline-variant/30 pt-3 text-sm">
           <div className="flex justify-between gap-3">
@@ -106,14 +171,18 @@ export function KontoBestellungDetail() {
           </div>
         </dl>
 
-        {order.rechnungId && (
-          <Link
-            to="/konto/rechnungen"
-            className="mt-4 inline-flex text-sm font-semibold text-primary hover:underline"
-          >
-            {t('shop.konto.bestellung.rechnung')}
-          </Link>
-        )}
+        <div className="mt-4 flex flex-wrap gap-4 text-sm font-semibold">
+          {(order.rechnungId || bezahlt) && (
+            <Link to="/konto/rechnungen" className="text-primary hover:underline">
+              {t('shop.konto.bestellung.rechnung')}
+            </Link>
+          )}
+          {bereitgestellt && (
+            <Link to="/konto/abos" className="text-on-surface-variant hover:text-primary">
+              {t('shop.konto.bestellung.zuAbos')}
+            </Link>
+          )}
+        </div>
       </div>
     </div>
   )

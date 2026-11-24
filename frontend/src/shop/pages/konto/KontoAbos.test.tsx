@@ -414,4 +414,61 @@ describe('KontoAbos', () => {
     })
     expect(await screen.findByText('3 Pausentage in diesem Zeitraum angerechnet')).toBeInTheDocument()
   })
+
+  it('oeffnet den Bestaetigungsdialog fuer Jetzt sofort loeschen mit Servernamen-Pruefung', async () => {
+    listSubscriptionsMock.mockResolvedValueOnce([])
+    listEntitlementsMock.mockResolvedValueOnce([
+      {
+        id: 21,
+        kind: 'server',
+        label: 'Palworld · Schonfrist',
+        status: 'suspended',
+        server_id: 99,
+        server_name: 'Mein-Testserver',
+        provisioning_status: 'suspended',
+        provisioning_error: null,
+        purge_after: '2026-12-20T10:00:00+00:00',
+        purge_reason: 'cancelled',
+        can_customer_purge_now: true,
+        created_at: '2026-11-21T10:00:00+00:00',
+      },
+    ])
+    purgeEntitlementNowMock.mockResolvedValueOnce({
+      id: 21,
+      kind: 'server',
+      label: 'Palworld · Schonfrist',
+      status: 'revoked',
+      server_id: null,
+      server_name: 'Mein-Testserver',
+      provisioning_status: 'purged',
+      provisioning_error: null,
+      purged_at: '2026-11-24T12:00:00+00:00',
+      can_customer_purge_now: false,
+      created_at: '2026-11-21T10:00:00+00:00',
+    })
+
+    render(
+      <MemoryRouter>
+        <KontoAbos />
+      </MemoryRouter>,
+    )
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Jetzt sofort löschen' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(dialog).toBeInTheDocument()
+
+    const bestaetigen = screen.getByRole('button', { name: 'Server endgültig löschen' })
+    expect(bestaetigen).toBeDisabled()
+
+    fireEvent.change(screen.getByLabelText(/Zur Bestätigung den exakten Servernamen/i), {
+      target: { value: 'Mein-Testserver' },
+    })
+    expect(bestaetigen).not.toBeDisabled()
+    fireEvent.click(bestaetigen)
+
+    await waitFor(() => {
+      expect(purgeEntitlementNowMock).toHaveBeenCalledWith('21', 'Mein-Testserver')
+    })
+    expect(await screen.findByText('Endgültig gelöscht')).toBeInTheDocument()
+  })
 })

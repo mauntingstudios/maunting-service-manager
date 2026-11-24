@@ -1,7 +1,18 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { Badge, Button, Input, Zustandsflaeche } from '@maunting/ui'
+import {
+  Badge,
+  Button,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  Input,
+  Zustandsflaeche,
+} from '@maunting/ui'
 import { SanitizedApiError } from '@/api/client'
 import { still } from '@/lib/still'
 import { shopApi } from '../../api/shopApi'
@@ -224,8 +235,19 @@ export function KontoAbos() {
     )
   }
 
+  const bestaetigeAbo = abos.subscriptions.find((s) => s.id === bestaetigeAboId) ?? null
+  const purgeEnt = abos.entitlements.find((e) => e.id === purgeEntId) ?? null
+  const dialogOffen = Boolean(bestaetigeAbo || (purgeEnt && purgeEnt.serverName))
+  const cancelConfirmMismatch =
+    Boolean(bestaetigeAbo?.serverName) &&
+    deletionMode === 'immediate' &&
+    confirmServerName.trim() !== bestaetigeAbo?.serverName?.trim()
+  const purgeNameMismatch =
+    Boolean(purgeEnt?.serverName) &&
+    purgeConfirmName.trim() !== purgeEnt?.serverName?.trim()
+
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
       <div className="space-y-3">
         <h2 className="font-headline text-lg font-bold text-on-surface">
           {t('shop.konto.abos.titel')}
@@ -235,31 +257,48 @@ export function KontoAbos() {
             {verlaengertInfo}
           </p>
         )}
-        {fehler && (
+        {!dialogOffen && fehler && (
           <p role="alert" className="text-sm text-status-destructive">
             {fehler}
           </p>
         )}
         {abos.subscriptions.map((abo) => {
-          const confirmMismatch =
-            deletionMode === 'immediate' &&
-            Boolean(abo.serverName) &&
-            confirmServerName.trim() !== abo.serverName?.trim()
+          const kannVerlaengern =
+            abo.status !== 'cancelled' &&
+            abo.billingMode !== 'lifetime' &&
+            (abo.billingMode === 'prepaid' || abo.cancelAtPeriodEnd) &&
+            Boolean(shopApi.extendSubscription)
+          const kannKuendigen =
+            abo.status !== 'cancelled' &&
+            !abo.cancelAtPeriodEnd &&
+            (abo.billingMode !== 'lifetime' || Boolean(abo.canImmediateDelete && abo.serverName))
+          const punktKlasse =
+            abo.status === 'active'
+              ? 'bg-status-success'
+              : abo.status === 'past_due'
+                ? 'bg-status-warning'
+                : 'bg-outline'
           return (
             <div
               key={abo.id}
               className="msm-card space-y-3 rounded-2xl border border-outline-variant/30 bg-surface-container-low/80 p-4"
             >
               <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <p className="font-headline text-sm font-semibold text-on-surface">{abo.bezeichnung}</p>
-                  <p className="mt-1 text-xs text-on-surface-variant">
-                    {abo.billingMode === 'lifetime'
-                      ? t('shop.konto.abos.lebenslangGueltig')
-                      : t('shop.konto.abos.naechsteZahlung', { datum: abo.naechsteZahlung })}
-                  </p>
+                <div className="flex min-w-0 items-start gap-2.5">
+                  <span
+                    aria-hidden="true"
+                    className={`mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full ${punktKlasse}`}
+                  />
+                  <div className="min-w-0">
+                    <p className="font-headline text-sm font-semibold text-on-surface">{abo.bezeichnung}</p>
+                    <p className="mt-1 text-xs text-on-surface-variant">
+                      {abo.billingMode === 'lifetime'
+                        ? t('shop.konto.abos.lebenslangGueltig')
+                        : t('shop.konto.abos.naechsteZahlung', { datum: abo.naechsteZahlung })}
+                    </p>
+                  </div>
                 </div>
-                <div className="flex flex-wrap items-center gap-3">
+                <div className="flex flex-wrap items-center gap-2.5">
                   <Badge variant={abo.billingMode === 'lifetime' ? 'info' : 'default'}>
                     {(abo.billingMode ?? 'subscription') === 'lifetime'
                       ? t('shop.konto.abos.typLifetime')
@@ -286,10 +325,13 @@ export function KontoAbos() {
                       ? t('shop.preis.einmalig')
                       : formatEuro(abo.preisCent)}
                   </span>
-                  {abo.status !== 'cancelled' &&
-                    abo.billingMode !== 'lifetime' &&
-                    (abo.billingMode === 'prepaid' || abo.cancelAtPeriodEnd) &&
-                    shopApi.extendSubscription && (
+                </div>
+              </div>
+
+              {(kannVerlaengern || kannKuendigen) && (
+                <div className="flex flex-wrap items-center justify-between gap-2 border-t border-outline-variant/25 pt-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    {kannVerlaengern && (
                       <Button
                         variant="secondary"
                         size="sm"
@@ -301,10 +343,8 @@ export function KontoAbos() {
                           : t('shop.konto.abos.verlaengern')}
                       </Button>
                     )}
-                  {abo.status !== 'cancelled' &&
-                    !abo.cancelAtPeriodEnd &&
-                    bestaetigeAboId !== abo.id &&
-                    (abo.billingMode !== 'lifetime' || (abo.canImmediateDelete && abo.serverName)) && (
+                  </div>
+                  {kannKuendigen && (
                     <Button
                       variant="secondary"
                       size="sm"
@@ -318,104 +358,6 @@ export function KontoAbos() {
                       {t('shop.konto.abos.kuendigen')}
                     </Button>
                   )}
-                </div>
-              </div>
-
-              {abo.status !== 'cancelled' && !abo.cancelAtPeriodEnd && bestaetigeAboId === abo.id && (
-                <div className="space-y-3 rounded-xl border border-outline-variant/30 bg-surface-container p-3">
-                  <div className="space-y-2 text-xs text-on-surface">
-                    <label className="flex cursor-pointer items-start gap-2">
-                      <input
-                        type="radio"
-                        name={`cancel-mode-${abo.id}`}
-                        checked={deletionMode === 'grace_period'}
-                        onChange={() => {
-                          setDeletionMode('grace_period')
-                          setConfirmServerName('')
-                        }}
-                      />
-                      <span>
-                        <span className="block font-semibold">{t('shop.konto.abos.modusGrace')}</span>
-                        <span className="text-on-surface-variant">{t('shop.konto.abos.modusGraceHinweis')}</span>
-                      </span>
-                    </label>
-                    <label className="flex cursor-pointer items-start gap-2">
-                      <input
-                        type="radio"
-                        name={`cancel-mode-${abo.id}`}
-                        checked={deletionMode === 'end_of_period_immediate'}
-                        onChange={() => {
-                          setDeletionMode('end_of_period_immediate')
-                          setConfirmServerName('')
-                        }}
-                      />
-                      <span className="font-semibold">{t('shop.konto.abos.modusEndOfPeriod')}</span>
-                    </label>
-                    {abo.canImmediateDelete && abo.serverName && (
-                      <label className="flex cursor-pointer items-start gap-2">
-                        <input
-                          type="radio"
-                          name={`cancel-mode-${abo.id}`}
-                          checked={deletionMode === 'immediate'}
-                          onChange={() => setDeletionMode('immediate')}
-                        />
-                        <span>
-                          <span className="block font-semibold text-status-destructive">
-                            {t('shop.konto.abos.modusImmediate')}
-                          </span>
-                          <span className="text-on-surface-variant">
-                            {t('shop.konto.abos.modusImmediateHinweis')}
-                          </span>
-                        </span>
-                      </label>
-                    )}
-                  </div>
-
-                  {deletionMode === 'immediate' && abo.serverName && (
-                    <div className="space-y-2 rounded-lg border border-status-destructive/30 bg-status-destructive/10 p-2.5 text-xs">
-                      <p className="text-status-destructive">
-                        {t('shop.konto.abos.sofortLoeschenWarnung')}
-                      </p>
-                      <label className="block space-y-1">
-                        <span className="block font-medium text-on-surface">
-                          {t('shop.konto.abos.serverNameBestaetigenLabel', {
-                            name: abo.serverName,
-                          })}
-                        </span>
-                        <Input
-                          value={confirmServerName}
-                          onChange={(e) => setConfirmServerName(e.target.value)}
-                          placeholder={abo.serverName}
-                          aria-label={t('shop.konto.abos.serverNameBestaetigenLabel', {
-                            name: abo.serverName,
-                          })}
-                        />
-                      </label>
-                    </div>
-                  )}
-
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="destructive"
-                      size="sm"
-                      disabled={laufendAboId === abo.id || confirmMismatch}
-                      onClick={() => void kuendigenAusfuehren(abo)}
-                    >
-                      {t('shop.konto.abos.kuendigenBestaetigen')}
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      disabled={laufendAboId === abo.id}
-                      onClick={() => {
-                        setBestaetigeAboId(null)
-                        setDeletionMode('grace_period')
-                        setConfirmServerName('')
-                      }}
-                    >
-                      {t('shop.konto.abos.abbrechen')}
-                    </Button>
-                  </div>
                 </div>
               )}
             </div>
@@ -433,49 +375,74 @@ export function KontoAbos() {
           const purgeDateLabel = entitlement.purgeAfter
             ? entitlement.purgeAfter.slice(0, 10)
             : null
-          const purgeNameMismatch =
-            Boolean(entitlement.serverName) &&
-            purgeConfirmName.trim() !== entitlement.serverName?.trim()
+          const aktiverServer =
+            entitlement.art === 'server' &&
+            entitlement.serverId != null &&
+            entitlement.status === 'active'
+          const hatBackups =
+            entitlement.art === 'server' &&
+            entitlement.serverId != null &&
+            !isPurged &&
+            Boolean(shopApi.listEntitlementBackups)
+          const zahlungsLink =
+            entitlement.status === 'suspended' && entitlement.purgeReason === 'unpaid'
+          const kannSofortLoeschen = Boolean(
+            entitlement.canCustomerPurgeNow && entitlement.serverName,
+          )
+          const hatAktionen = aktiverServer || hatBackups || zahlungsLink || kannSofortLoeschen
+          const punktKlasse =
+            entitlement.status === 'active' && !entitlement.pausedAt
+              ? 'bg-status-success'
+              : entitlement.pausedAt || entitlement.status === 'suspended'
+                ? 'bg-status-warning'
+                : 'bg-outline'
+
           return (
             <div
               key={entitlement.id}
               className="msm-card space-y-3 rounded-2xl border border-outline-variant/30 bg-surface-container-low/80 p-4"
             >
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <p className="font-headline text-sm font-semibold text-on-surface">
-                    {entitlement.bezeichnung}
-                  </p>
-                  <p className="mt-1 text-xs text-on-surface-variant">
-                    {entitlement.art === 'server'
-                      ? t('shop.konto.abos.artServer')
-                      : entitlement.art === 'rolle'
-                        ? t('shop.konto.abos.artRolle')
-                        : t('shop.konto.abos.artAddon')}
-                  </p>
-                  {purgeDateLabel && !isPurged && (
-                    <p
-                      className={
-                        entitlement.purgeReason === 'unpaid'
-                          ? 'mt-1 text-xs text-status-warning'
-                          : 'mt-1 text-xs text-on-surface-variant'
-                      }
-                    >
-                      {entitlement.purgeReason === 'unpaid'
-                        ? t('shop.konto.abos.zahlungsfristBis', { datum: purgeDateLabel })
-                        : t('shop.konto.abos.loeschungAm', { datum: purgeDateLabel })}
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="flex min-w-0 items-start gap-2.5">
+                  <span
+                    aria-hidden="true"
+                    className={`mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full ${punktKlasse}`}
+                  />
+                  <div className="min-w-0">
+                    <p className="font-headline text-sm font-semibold text-on-surface">
+                      {entitlement.bezeichnung}
                     </p>
-                  )}
-                  {entitlement.pausedAt && (
-                    <p className="mt-1 text-xs text-status-warning">
-                      {t('shop.konto.abos.pausiertHinweis')}
+                    <p className="mt-1 text-xs text-on-surface-variant">
+                      {entitlement.art === 'server'
+                        ? t('shop.konto.abos.artServer')
+                        : entitlement.art === 'rolle'
+                          ? t('shop.konto.abos.artRolle')
+                          : t('shop.konto.abos.artAddon')}
                     </p>
-                  )}
-                  {(entitlement.pauseDaysUsed ?? 0) > 0 && (
-                    <p className="mt-0.5 text-xs text-on-surface-variant">
-                      {t('shop.konto.abos.pausentageVerbraucht', { tage: entitlement.pauseDaysUsed })}
-                    </p>
-                  )}
+                    {purgeDateLabel && !isPurged && (
+                      <p
+                        className={
+                          entitlement.purgeReason === 'unpaid'
+                            ? 'mt-1 text-xs text-status-warning'
+                            : 'mt-1 text-xs text-on-surface-variant'
+                        }
+                      >
+                        {entitlement.purgeReason === 'unpaid'
+                          ? t('shop.konto.abos.zahlungsfristBis', { datum: purgeDateLabel })
+                          : t('shop.konto.abos.loeschungAm', { datum: purgeDateLabel })}
+                      </p>
+                    )}
+                    {entitlement.pausedAt && (
+                      <p className="mt-1 text-xs text-status-warning">
+                        {t('shop.konto.abos.pausiertHinweis')}
+                      </p>
+                    )}
+                    {(entitlement.pauseDaysUsed ?? 0) > 0 && (
+                      <p className="mt-0.5 text-xs text-on-surface-variant">
+                        {t('shop.konto.abos.pausentageVerbraucht', { tage: entitlement.pauseDaysUsed })}
+                      </p>
+                    )}
+                  </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   {entitlement.pausedAt && (
@@ -483,76 +450,6 @@ export function KontoAbos() {
                       {t('shop.konto.abos.pausiertStatus')}
                     </Badge>
                   )}
-                  {entitlement.art === 'server' &&
-                    entitlement.serverId != null &&
-                    entitlement.status === 'active' && (
-                      <>
-                        <Link
-                          to={`/servers/${entitlement.serverId}`}
-                          className="rounded-lg border border-primary/30 bg-primary/10 px-3 py-1 text-xs font-medium text-primary transition-colors hover:bg-primary/20"
-                        >
-                          {t('shop.konto.abos.serverOeffnen')}
-                        </Link>
-                        <Link
-                          to={`/servers/${entitlement.serverId}?action=switch`}
-                          className="rounded-lg border border-outline-variant/40 bg-surface-container px-3 py-1 text-xs font-medium text-on-surface transition-colors hover:bg-surface-container-high"
-                        >
-                          {t('shop.konto.abos.spielWechseln')}
-                        </Link>
-                        {shopApi.pauseEntitlement && shopApi.resumeEntitlement && (
-                          <Button
-                            variant="secondary"
-                            size="sm"
-                            disabled={pauseBusyId === entitlement.id}
-                            onClick={() => void togglePause(entitlement)}
-                          >
-                            {pauseBusyId === entitlement.id
-                              ? t('common.loading')
-                              : entitlement.pausedAt
-                                ? t('shop.konto.abos.fortsetzen')
-                                : t('shop.konto.abos.pausieren')}
-                          </Button>
-                        )}
-                      </>
-                    )}
-                  {entitlement.art === 'server' &&
-                    entitlement.serverId != null &&
-                    !isPurged &&
-                    shopApi.listEntitlementBackups && (
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => void toggleBackups(entitlement.id)}
-                      >
-                        {openBackupsEntId === entitlement.id
-                          ? t('shop.konto.abos.weltBackupsSchliessen')
-                          : t('shop.konto.abos.weltBackupsLaden')}
-                      </Button>
-                    )}
-                  {entitlement.status === 'suspended' &&
-                    entitlement.purgeReason === 'unpaid' && (
-                      <Link
-                        to="/konto/zahlungsmethoden"
-                        className="rounded-lg border border-status-warning/40 bg-status-warning/10 px-3 py-1 text-xs font-medium text-status-warning transition-colors hover:bg-status-warning/20"
-                      >
-                        {t('shop.konto.abos.zahlungsmethodePruefen')}
-                      </Link>
-                    )}
-                  {entitlement.canCustomerPurgeNow &&
-                    entitlement.serverName &&
-                    purgeEntId !== entitlement.id && (
-                      <Button
-                        variant="destructive"
-                        size="sm"
-                        onClick={() => {
-                          setFehler(null)
-                          setPurgeConfirmName('')
-                          setPurgeEntId(entitlement.id)
-                        }}
-                      >
-                        {t('shop.konto.abos.jetztSofortLoeschen')}
-                      </Button>
-                    )}
                   {entitlement.status === 'active' &&
                     entitlement.provisioningStatus === 'failed' && (
                       <Badge variant="destructive">
@@ -581,6 +478,75 @@ export function KontoAbos() {
                   </Badge>
                 </div>
               </div>
+
+              {hatAktionen && (
+                <div className="flex flex-wrap items-center justify-between gap-2 border-t border-outline-variant/25 pt-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    {aktiverServer && (
+                      <>
+                        <Link
+                          to={`/servers/${entitlement.serverId}`}
+                          className="rounded-lg border border-primary/30 bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary transition-colors hover:bg-primary/20"
+                        >
+                          {t('shop.konto.abos.serverOeffnen')}
+                        </Link>
+                        <Link
+                          to={`/servers/${entitlement.serverId}?action=switch`}
+                          className="rounded-lg border border-outline-variant/40 bg-surface-container px-3 py-1.5 text-xs font-medium text-on-surface transition-colors hover:bg-surface-container-high"
+                        >
+                          {t('shop.konto.abos.spielWechseln')}
+                        </Link>
+                        {shopApi.pauseEntitlement && shopApi.resumeEntitlement && (
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            disabled={pauseBusyId === entitlement.id}
+                            onClick={() => void togglePause(entitlement)}
+                          >
+                            {pauseBusyId === entitlement.id
+                              ? t('common.loading')
+                              : entitlement.pausedAt
+                                ? t('shop.konto.abos.fortsetzen')
+                                : t('shop.konto.abos.pausieren')}
+                          </Button>
+                        )}
+                      </>
+                    )}
+                    {hatBackups && (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => void toggleBackups(entitlement.id)}
+                      >
+                        {openBackupsEntId === entitlement.id
+                          ? t('shop.konto.abos.weltBackupsSchliessen')
+                          : t('shop.konto.abos.weltBackupsLaden')}
+                      </Button>
+                    )}
+                    {zahlungsLink && (
+                      <Link
+                        to="/konto/zahlungsmethoden"
+                        className="rounded-lg border border-status-warning/40 bg-status-warning/10 px-3 py-1.5 text-xs font-medium text-status-warning transition-colors hover:bg-status-warning/20"
+                      >
+                        {t('shop.konto.abos.zahlungsmethodePruefen')}
+                      </Link>
+                    )}
+                  </div>
+                  {kannSofortLoeschen && (
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      onClick={() => {
+                        setFehler(null)
+                        setPurgeConfirmName('')
+                        setPurgeEntId(entitlement.id)
+                      }}
+                    >
+                      {t('shop.konto.abos.jetztSofortLoeschen')}
+                    </Button>
+                  )}
+                </div>
+              )}
 
               {openBackupsEntId === entitlement.id && (
                 <div className="space-y-2 rounded-xl border border-outline-variant/30 bg-surface-container p-3 text-xs">
@@ -617,54 +583,222 @@ export function KontoAbos() {
                   )}
                 </div>
               )}
-
-              {purgeEntId === entitlement.id && entitlement.serverName && (
-                <div className="space-y-2 rounded-xl border border-status-destructive/30 bg-status-destructive/10 p-3 text-xs">
-                  <p className="text-status-destructive">
-                    {t('shop.konto.abos.sofortLoeschenWarnung')}
-                  </p>
-                  <label className="block space-y-1">
-                    <span className="block font-medium text-on-surface">
-                      {t('shop.konto.abos.serverNameBestaetigenLabel', {
-                        name: entitlement.serverName,
-                      })}
-                    </span>
-                    <Input
-                      value={purgeConfirmName}
-                      onChange={(e) => setPurgeConfirmName(e.target.value)}
-                      placeholder={entitlement.serverName}
-                      aria-label={t('shop.konto.abos.serverNameBestaetigenLabel', {
-                        name: entitlement.serverName,
-                      })}
-                    />
-                  </label>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="destructive"
-                      size="sm"
-                      disabled={laufendPurgeId === entitlement.id || purgeNameMismatch}
-                      onClick={() => void entitlementSofortLoeschen(entitlement)}
-                    >
-                      {t('shop.konto.abos.sofortLoeschenBestaetigen')}
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      disabled={laufendPurgeId === entitlement.id}
-                      onClick={() => {
-                        setPurgeEntId(null)
-                        setPurgeConfirmName('')
-                      }}
-                    >
-                      {t('shop.konto.abos.abbrechen')}
-                    </Button>
-                  </div>
-                </div>
-              )}
             </div>
           )
         })}
       </div>
+
+      <Dialog
+        open={Boolean(bestaetigeAbo)}
+        onOpenChange={(open) => {
+          if (!open && !laufendAboId) {
+            setBestaetigeAboId(null)
+            setDeletionMode('grace_period')
+            setConfirmServerName('')
+            setFehler(null)
+          }
+        }}
+      >
+        <DialogContent
+          aria-labelledby="abo-kuendigen-titel"
+          className="flex max-h-[90dvh] max-w-lg flex-col overflow-hidden p-0"
+        >
+          <DialogHeader>
+            <DialogTitle id="abo-kuendigen-titel">
+              {t('shop.konto.abos.kuendigenDialogTitel')}
+            </DialogTitle>
+            <DialogDescription>
+              {bestaetigeAbo
+                ? `${bestaetigeAbo.bezeichnung} · ${t('shop.konto.abos.kuendigenDialogBeschreibung')}`
+                : ''}
+            </DialogDescription>
+          </DialogHeader>
+          {bestaetigeAbo && (
+            <div className="space-y-4 overflow-y-auto px-6 py-5">
+              {fehler && (
+                <p role="alert" className="text-sm text-status-destructive">
+                  {fehler}
+                </p>
+              )}
+              <div className="space-y-2.5 text-xs text-on-surface">
+                <label className="flex cursor-pointer items-start gap-2.5 rounded-xl border border-outline-variant/30 bg-surface-container-low p-3">
+                  <input
+                    type="radio"
+                    name={`cancel-mode-${bestaetigeAbo.id}`}
+                    checked={deletionMode === 'grace_period'}
+                    onChange={() => {
+                      setDeletionMode('grace_period')
+                      setConfirmServerName('')
+                    }}
+                  />
+                  <span>
+                    <span className="block font-semibold">{t('shop.konto.abos.modusGrace')}</span>
+                    <span className="mt-0.5 block text-on-surface-variant">
+                      {t('shop.konto.abos.modusGraceHinweis')}
+                    </span>
+                  </span>
+                </label>
+                <label className="flex cursor-pointer items-start gap-2.5 rounded-xl border border-outline-variant/30 bg-surface-container-low p-3">
+                  <input
+                    type="radio"
+                    name={`cancel-mode-${bestaetigeAbo.id}`}
+                    checked={deletionMode === 'end_of_period_immediate'}
+                    onChange={() => {
+                      setDeletionMode('end_of_period_immediate')
+                      setConfirmServerName('')
+                    }}
+                  />
+                  <span className="font-semibold">{t('shop.konto.abos.modusEndOfPeriod')}</span>
+                </label>
+                {bestaetigeAbo.canImmediateDelete && bestaetigeAbo.serverName && (
+                  <label className="flex cursor-pointer items-start gap-2.5 rounded-xl border border-status-destructive/30 bg-status-destructive/5 p-3">
+                    <input
+                      type="radio"
+                      name={`cancel-mode-${bestaetigeAbo.id}`}
+                      checked={deletionMode === 'immediate'}
+                      onChange={() => setDeletionMode('immediate')}
+                    />
+                    <span>
+                      <span className="block font-semibold text-status-destructive">
+                        {t('shop.konto.abos.modusImmediate')}
+                      </span>
+                      <span className="mt-0.5 block text-on-surface-variant">
+                        {t('shop.konto.abos.modusImmediateHinweis')}
+                      </span>
+                    </span>
+                  </label>
+                )}
+              </div>
+
+              {deletionMode === 'immediate' && bestaetigeAbo.serverName && (
+                <div className="space-y-2 rounded-xl border border-status-destructive/30 bg-status-destructive/10 p-3 text-xs">
+                  <p className="text-status-destructive">
+                    {t('shop.konto.abos.sofortLoeschenWarnung')}
+                  </p>
+                  <label className="block space-y-1.5">
+                    <span className="block font-medium text-on-surface">
+                      {t('shop.konto.abos.serverNameBestaetigenLabel', {
+                        name: bestaetigeAbo.serverName,
+                      })}
+                    </span>
+                    <Input
+                      value={confirmServerName}
+                      onChange={(e) => setConfirmServerName(e.target.value)}
+                      placeholder={bestaetigeAbo.serverName}
+                      aria-label={t('shop.konto.abos.serverNameBestaetigenLabel', {
+                        name: bestaetigeAbo.serverName,
+                      })}
+                    />
+                  </label>
+                </div>
+              )}
+            </div>
+          )}
+          {bestaetigeAbo && (
+            <DialogFooter>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={laufendAboId === bestaetigeAbo.id}
+                onClick={() => {
+                  setBestaetigeAboId(null)
+                  setDeletionMode('grace_period')
+                  setConfirmServerName('')
+                  setFehler(null)
+                }}
+              >
+                {t('shop.konto.abos.abbrechen')}
+              </Button>
+              <Button
+                variant="destructive"
+                size="sm"
+                disabled={laufendAboId === bestaetigeAbo.id || cancelConfirmMismatch}
+                onClick={() => void kuendigenAusfuehren(bestaetigeAbo)}
+              >
+                {t('shop.konto.abos.kuendigenBestaetigen')}
+              </Button>
+            </DialogFooter>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(purgeEnt && purgeEnt.serverName)}
+        onOpenChange={(open) => {
+          if (!open && !laufendPurgeId) {
+            setPurgeEntId(null)
+            setPurgeConfirmName('')
+            setFehler(null)
+          }
+        }}
+      >
+        <DialogContent
+          aria-labelledby="entitlement-loeschen-titel"
+          className="flex max-h-[90dvh] max-w-lg flex-col overflow-hidden p-0"
+        >
+          <DialogHeader>
+            <DialogTitle id="entitlement-loeschen-titel">
+              {t('shop.konto.abos.sofortLoeschenDialogTitel')}
+            </DialogTitle>
+            <DialogDescription>
+              {purgeEnt?.serverName || purgeEnt?.bezeichnung || ''}
+            </DialogDescription>
+          </DialogHeader>
+          {purgeEnt && purgeEnt.serverName && (
+            <div className="space-y-4 overflow-y-auto px-6 py-5 text-xs">
+              {fehler && (
+                <p role="alert" className="text-sm text-status-destructive">
+                  {fehler}
+                </p>
+              )}
+              <div className="space-y-2 rounded-xl border border-status-destructive/30 bg-status-destructive/10 p-3">
+                <p className="text-status-destructive">
+                  {t('shop.konto.abos.sofortLoeschenWarnung')}
+                </p>
+                <label className="block space-y-1.5">
+                  <span className="block font-medium text-on-surface">
+                    {t('shop.konto.abos.serverNameBestaetigenLabel', {
+                      name: purgeEnt.serverName,
+                    })}
+                  </span>
+                  <Input
+                    value={purgeConfirmName}
+                    onChange={(e) => setPurgeConfirmName(e.target.value)}
+                    placeholder={purgeEnt.serverName}
+                    aria-label={t('shop.konto.abos.serverNameBestaetigenLabel', {
+                      name: purgeEnt.serverName,
+                    })}
+                  />
+                </label>
+              </div>
+            </div>
+          )}
+          {purgeEnt && purgeEnt.serverName && (
+            <DialogFooter>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={laufendPurgeId === purgeEnt.id}
+                onClick={() => {
+                  setPurgeEntId(null)
+                  setPurgeConfirmName('')
+                  setFehler(null)
+                }}
+              >
+                {t('shop.konto.abos.abbrechen')}
+              </Button>
+              <Button
+                variant="destructive"
+                size="sm"
+                disabled={laufendPurgeId === purgeEnt.id || purgeNameMismatch}
+                onClick={() => void entitlementSofortLoeschen(purgeEnt)}
+              >
+                {t('shop.konto.abos.sofortLoeschenBestaetigen')}
+              </Button>
+            </DialogFooter>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

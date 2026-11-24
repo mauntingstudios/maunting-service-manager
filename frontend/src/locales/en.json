@@ -7365,7 +7365,10 @@
         "titel": "Orders",
         "leer": "No orders yet",
         "leerText": "Once you place an order, it shows up here.",
-        "datum": "Ordered on {{datum}}"
+        "datum": "Ordered on {{datum}}",
+        "artikelAnzahl_one": "{{count}} item",
+        "artikelAnzahl_other": "{{count}} items",
+        "rabatt": "-{{prozent}}% discount"
       },
       "bestellung": {
         "nichtGefunden": "Order not found",
@@ -7374,7 +7377,13 @@
         "netto": "Net",
         "steuer": "Tax",
         "brutto": "Total",
-        "rechnung": "View invoice"
+        "rechnung": "View invoice",
+        "schrittErstellt": "Order placed",
+        "schrittBezahlt": "Payment confirmed",
+        "schrittBereitgestellt": "Provisioned",
+        "standortAufpreis": "incl. location surcharge {{preis}}",
+        "rabattHinweis": "Included term/subscription discount: {{prozent}}%",
+        "zuAbos": "Go to subscriptions & servers"
       },
       "rechnungen": {
         "titel": "Invoices",
@@ -7388,7 +7397,13 @@
         "grund": "Reason: {{grund}}",
         "xrechnungHinweis": "Invoices are issued as XRechnung XML (EN 16931); the PDF is the readable copy.",
         "kontextBadge": "My customer account · Personal receipts",
-        "typRechnung": "Shop invoice"
+        "typRechnung": "Shop invoice",
+        "filterAlle": "All",
+        "filterRechnungen": "Invoices",
+        "filterGutschriften": "Credit notes",
+        "jahrLabel": "Year",
+        "jahrAlle": "All years",
+        "zurBestellung": "Order {{nummer}}"
       },
       "zahlungsmethoden": {
         "titel": "Payment methods",
@@ -7399,7 +7414,8 @@
         "standard": "Default",
         "stripeFolgt": "Stripe will be connected in phase 2. No payment data is stored.",
         "stripeTitel": "Payments via Stripe",
-        "stripeHinweis": "Card details and SEPA mandates stay with Stripe and are never stored in MSM."
+        "stripeHinweis": "Card details and SEPA mandates stay with Stripe and are never stored in MSM.",
+        "bestellungenLink": "View orders"
       },
       "abos": {
         "titel": "Subscriptions",
@@ -7413,6 +7429,8 @@
         "serverOeffnen": "Open server",
         "bereitstellungFehlgeschlagen": "Provisioning failed",
         "kuendigen": "Cancel at period end",
+        "kuendigenDialogTitel": "Cancel subscription or term",
+        "kuendigenDialogBeschreibung": "Choose what should happen to your server data when the period ends.",
         "kuendigenBestaetigen": "Confirm cancellation",
         "abbrechen": "Cancel",
         "kuendigungVorgemerkt": "Cancels at period end",
@@ -7425,6 +7443,7 @@
         "sofortLoeschenWarnung": "Warning: This server and all of its files, worlds and backups will be deleted immediately and cannot be recovered. No automatic refund is issued for the remaining billing days.",
         "serverNameBestaetigenLabel": "Type the exact server name ({{name}}) to confirm:",
         "jetztSofortLoeschen": "Delete immediately",
+        "sofortLoeschenDialogTitel": "Delete server permanently",
         "sofortLoeschenBestaetigen": "Delete server permanently",
         "sofortLoeschenFehler": "Could not delete the server immediately.",
         "endgueltigGeloescht": "Permanently deleted",
@@ -7451,7 +7470,8 @@
         "weltBackupsSchliessen": "Hide backups",
         "weltBackupsLeer": "No downloadable world backups are currently available.",
         "weltBackupsFehler": "Could not load backups.",
-        "weltBackupHerunterladen": "Download backup"
+        "weltBackupHerunterladen": "Download backup",
+        "statusIndikator": "Status"
       },
       "status": {
         "draft": "Draft",

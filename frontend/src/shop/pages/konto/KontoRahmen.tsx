@@ -1,4 +1,5 @@
-import { Link, NavLink, Outlet } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import {
   ArrowLeft,
@@ -11,29 +12,63 @@ import {
   User,
 } from 'lucide-react'
 import { buttonClasses } from '@maunting/ui'
+import { shopInvoiceApi, shopOrderApi } from '@/api/shop'
 import { Avatar } from '@/components/app/Avatar'
 import { useHasPermission } from '@/hooks/useHasPermission'
 import { PANEL_HOME } from '@/lib/panelWege'
 import { useAuthStore } from '@/stores/authStore'
 import { usePublicSettingsStore } from '@/stores/publicSettingsStore'
 
-const EINTRAEGE = [
+const SHOP_EINTRAEGE = [
   { to: '/konto/bestellungen', labelKey: 'shop.konto.nav.bestellungen', icon: ShoppingBag },
   { to: '/konto/rechnungen', labelKey: 'shop.konto.nav.rechnungen', icon: ReceiptText },
   { to: '/konto/zahlungsmethoden', labelKey: 'shop.konto.nav.zahlungsmethoden', icon: CreditCard },
   { to: '/konto/abos', labelKey: 'shop.konto.nav.abos', icon: Repeat },
-  { to: '/konto/profil', labelKey: 'shop.konto.nav.profil', icon: User },
 ]
+
+const PROFIL_EINTRAG = {
+  to: '/konto/profil',
+  labelKey: 'shop.konto.nav.profil',
+  icon: User,
+}
 
 export function KontoRahmen() {
   const { t } = useTranslation()
+  const location = useLocation()
   const user = useAuthStore((s) => s.user)
   const canUseAi = useHasPermission('ai.chat.use')
   const shopEnabled = usePublicSettingsStore((s) => s.shop_enabled)
+  const [hatShopDaten, setHatShopDaten] = useState(false)
+
+  useEffect(() => {
+    if (shopEnabled) {
+      setHatShopDaten(false)
+      return
+    }
+    let aktiv = true
+    void Promise.allSettled([
+      shopOrderApi.listOrders(),
+      shopOrderApi.listSubscriptions(),
+      shopInvoiceApi.list(),
+    ]).then((ergebnisse) => {
+      if (!aktiv) return
+      const gefunden = ergebnisse.some(
+        (res) => res.status === 'fulfilled' && Array.isArray(res.value) && res.value.length > 0,
+      )
+      setHatShopDaten(gefunden)
+    })
+    return () => {
+      aktiv = false
+    }
+  }, [shopEnabled])
+
+  const aufProfilRoute = location.pathname === '/konto/profil'
+  const zeigeShopTabs = shopEnabled || hatShopDaten || !aufProfilRoute
+  const eintraege = zeigeShopTabs ? [...SHOP_EINTRAEGE, PROFIL_EINTRAG] : [PROFIL_EINTRAG]
 
   return (
     <section className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-      <div className="flex flex-wrap items-center justify-between gap-4">
+      <div className="msm-card flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-outline-variant/30 bg-surface-container-low/75 p-5">
         <div className="flex min-w-0 items-center gap-4">
           {user && (
             <Avatar
@@ -70,13 +105,13 @@ export function KontoRahmen() {
         </div>
       </div>
 
-      <nav className="mt-6 flex flex-wrap gap-2" aria-label={t('shop.konto.navigation')}>
-        {EINTRAEGE.map(({ to, labelKey, icon: Icon }) => (
+      <nav className="mt-5 flex flex-wrap gap-2" aria-label={t('shop.konto.navigation')}>
+        {eintraege.map(({ to, labelKey, icon: Icon }) => (
           <NavLink
             key={to}
             to={to}
             className={({ isActive }) =>
-              `inline-flex min-h-11 items-center gap-2 rounded-lg border px-3 text-sm font-semibold transition-colors ${
+              `inline-flex min-h-11 items-center gap-2 rounded-lg border px-3.5 text-sm font-semibold transition-colors ${
                 isActive
                   ? 'border-primary/50 bg-primary/15 text-primary'
                   : 'border-outline-variant/40 bg-surface-container text-on-surface-variant hover:text-on-surface'

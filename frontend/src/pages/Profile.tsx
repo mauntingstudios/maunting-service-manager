@@ -29,7 +29,12 @@ const FRUEHERE_REITER: Record<string, TabId> = {
   credentials: 'connections',
 }
 
-export function Profile() {
+export interface ProfileProps {
+  /** Wenn innerhalb von `KontoRahmen` eingebettet, wird keine zweite Seitenhülle oder H1 gerendert. */
+  eingebettet?: boolean
+}
+
+export function Profile({ eingebettet = false }: ProfileProps = {}) {
   const { t } = useTranslation()
   const [searchParams, setSearchParams] = useSearchParams()
   const canUseAi = useHasPermission('ai.chat.use')
@@ -58,39 +63,44 @@ export function Profile() {
 
   const waehle = (tab: TabId) => setSearchParams({ tab }, { replace: true })
 
-  return (
-    <div className="msm-page">
-      <SettingsLayout
-        sections={sections}
-        active={activeTab}
-        onChange={waehle}
-        title={t('profile.title')}
-        description={t('profile.subtitle')}
-      >
-        {activeTab === 'profile' && <ProfilTab social={social} />}
-        {activeTab === 'account' && <KontoTab />}
-        {activeTab === 'security' && (
-          <div className="space-y-6">
-            <PasswordTab />
-            <TwoFactorTab />
-            {social && <MessengerSicherheitTab />}
-            {typeof window !== 'undefined' &&
-              ('__TAURI_INTERNALS__' in window || '__TAURI__' in window) &&
-              publicSettings.vault_enabled && <TresorSicherheitTab />}
-            <DevicesTab social={showDeviceE2ee} />
-          </div>
-        )}
-        {activeTab === 'social' && <SocialTab />}
-        {activeTab === 'connections' && (
-          <div className="space-y-6">
-            <LinkedAccountsTab />
-            <CredentialsTab />
-          </div>
-        )}
-        {activeTab === 'audio' && <AudioTab />}
-        {activeTab === 'ai' && <AiTab />}
-        {activeTab === 'danger' && <DangerZoneTab />}
-      </SettingsLayout>
-    </div>
+  const inhalt = (
+    <SettingsLayout
+      sections={sections}
+      active={activeTab}
+      onChange={waehle}
+      title={t('profile.title')}
+      description={t('profile.subtitle')}
+      hideHeader={eingebettet}
+    >
+      {activeTab === 'profile' && <ProfilTab social={social} />}
+      {activeTab === 'account' && <KontoTab />}
+      {activeTab === 'security' && (
+        <div className="space-y-6">
+          <PasswordTab />
+          <TwoFactorTab />
+          {social && <MessengerSicherheitTab />}
+          {typeof window !== 'undefined' &&
+            ('__TAURI_INTERNALS__' in window || '__TAURI__' in window) &&
+            publicSettings.vault_enabled && <TresorSicherheitTab />}
+          <DevicesTab social={showDeviceE2ee} />
+        </div>
+      )}
+      {activeTab === 'social' && <SocialTab />}
+      {activeTab === 'connections' && (
+        <div className="space-y-6">
+          <LinkedAccountsTab />
+          <CredentialsTab />
+        </div>
+      )}
+      {activeTab === 'audio' && <AudioTab />}
+      {activeTab === 'ai' && <AiTab />}
+      {activeTab === 'danger' && <DangerZoneTab />}
+    </SettingsLayout>
   )
+
+  if (eingebettet) {
+    return inhalt
+  }
+
+  return <div className="msm-page">{inhalt}</div>
 }
