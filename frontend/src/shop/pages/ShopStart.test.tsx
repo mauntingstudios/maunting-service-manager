@@ -195,7 +195,7 @@ describe('ShopStart', () => {
     expect(screen.queryByText(i18n.t('shop.demo.badge'))).toBeNull()
   })
 
-  it('rendert Hero-Pause-Toggle, kuratierte Schienen ab 2 Spielen und konfigurierte Trust-Links', async () => {
+  it('rendert Hero-Pause-Toggle, integrierte Kurationsfilter und konfigurierte Trust-Links', async () => {
     hoisted.getCatalog.mockResolvedValue([
       { ...SAMPLE_PLANS[0], is_featured: true, is_bestseller: true, recent_order_count: 8 },
       { ...SAMPLE_PLANS[1], is_featured: true, is_bestseller: true, is_new: true },
@@ -216,14 +216,21 @@ describe('ShopStart', () => {
     })
 
     zeige()
+    const neuFilterBtn = await screen.findByRole('button', { name: i18n.t('shop.katalog.badgeNeu') })
     expect(
-      await screen.findByRole('heading', { name: i18n.t('shop.katalog.meistgemietetTitel') }),
+      screen.getByRole('button', { name: i18n.t('shop.katalog.badgeBestseller') }),
     ).toBeInTheDocument()
     expect(
-      screen.getByRole('heading', { name: i18n.t('shop.katalog.empfohlenTitel') }),
+      screen.getByRole('button', { name: i18n.t('shop.katalog.badgeFeatured') }),
     ).toBeInTheDocument()
-    // Neu im Katalog hat nur 1 passendes Spiel (< 2), bleibt daher ausgeblendet
-    expect(screen.queryByRole('heading', { name: i18n.t('shop.katalog.neuTitel') })).toBeNull()
+    // Keine doppelten Katalog-Schienen-Sektionen oberhalb des Vollkatalogs
+    expect(screen.queryByRole('heading', { name: i18n.t('shop.katalog.meistgemietetTitel') })).toBeNull()
+    expect(screen.queryByRole('heading', { name: i18n.t('shop.katalog.empfohlenTitel') })).toBeNull()
+
+    fireEvent.click(neuFilterBtn)
+    expect(screen.getByRole('heading', { name: 'Rust' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Palworld' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('shop.sammlung.alleSpiele') }))
 
     // Pause/Play-Steuerung im Hero ohne aria-pressed
     const toggleBtn = screen.getByRole('button', { name: i18n.t('shop.hero.rotationPausieren') })
@@ -401,6 +408,12 @@ describe('ShopStart', () => {
       expect(
         screen.getByRole('link', { name: i18n.t('shop.kopf.dashboard') }),
       ).toBeInTheDocument()
+
+      const mobileMenuBtn = screen.getByRole('button', { name: i18n.t('shop.kopf.menueOeffnen') })
+      expect(mobileMenuBtn).toHaveAttribute('aria-expanded', 'false')
+      fireEvent.click(mobileMenuBtn)
+      expect(mobileMenuBtn).toHaveAttribute('aria-expanded', 'true')
+      expect(screen.getAllByRole('link', { name: i18n.t('shop.kopf.news') })).toHaveLength(2)
     } finally {
       usePublicSettingsStore.setState({ shop_enabled: prevShopEnabled })
       useAuthStore.setState(prevAuth)

@@ -1,23 +1,19 @@
 import { useState, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
+  ArrowRight,
   Megaphone,
   Plus,
   Edit2,
   Trash2,
   Eye,
   Calendar,
-  Bold,
-  Italic,
-  Heading,
-  List,
-  ListOrdered,
-  Link,
-  Code,
   CheckCircle,
   Clock,
   ExternalLink,
   Save,
+  Sparkles,
+  Wrench,
   X,
 } from 'lucide-react'
 import {
@@ -31,13 +27,13 @@ import {
   type PopupAudience,
   type PopupTone,
 } from '@/api/popups'
-import { Button, Dropdown, Switch, DateTimePicker, Kurzinfo } from '@maunting/ui'
+import { Button, Dropdown, Switch, DateTimePicker, Kurzinfo, Spinner } from '@maunting/ui'
 import { toast } from '@/stores/toastStore'
 import { confirm } from '@/stores/confirmStore'
 import { useHasPermission } from '@/hooks/useHasPermission'
+import { AiMarkdown } from '@/components/ai/AiMarkdown'
+import { MarkdownFormatLeiste } from '@/components/editor/MarkdownFormatLeiste'
 import { PanelPopupModal } from '@/components/popups/PanelPopupModal'
-
-import { Spinner } from '@maunting/ui'
 export function PopupTab() {
   const { t, i18n } = useTranslation()
   const canWrite = useHasPermission('panel.settings.write')
@@ -46,6 +42,7 @@ export function PopupTab() {
   const [loading, setLoading] = useState(true)
   const [editingPopup, setEditingPopup] = useState<PanelPopup | null>(null)
   const [isCreating, setIsCreating] = useState(false)
+  const [editorMode, setEditorMode] = useState<'write' | 'preview'>('write')
   const [previewPopup, setPreviewPopup] = useState<PanelPopup | null>(null)
 
   // Form State
@@ -89,6 +86,7 @@ export function PopupTab() {
     setEndAt('')
     setButtonText('')
     setButtonUrl('')
+    setEditorMode('write')
     setIsCreating(true)
   }
 
@@ -103,11 +101,13 @@ export function PopupTab() {
     setEndAt(p.end_at ? p.end_at.substring(0, 16) : '')
     setButtonText(p.button_text || '')
     setButtonUrl(p.button_url || '')
+    setEditorMode('write')
     setIsCreating(false)
   }
 
   const cancelEdit = () => {
     setEditingPopup(null)
+    setEditorMode('write')
     setIsCreating(false)
   }
 
@@ -301,85 +301,109 @@ export function PopupTab() {
               </div>
             </div>
 
-            {/* Markdown Toolbar & Content */}
-            <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <label htmlFor="popup-content-input" className="block font-label-md text-label-md text-on-surface-variant uppercase tracking-wider">
-                  {t('popups.fieldContent')} *
-                </label>
-                <div className="flex items-center gap-1 bg-surface-container-high rounded-lg p-1 border border-outline-variant/30">
-                  <Kurzinfo text={t('popups.markdownBold')}>
-                    <button
-                      type="button"
-                      aria-label={t('popups.markdownBold')}
-                      onClick={() => insertMarkdown('**', '**')}
-                      className="p-1.5 rounded hover:bg-surface-container-highest text-on-surface-variant hover:text-on-surface text-xs"
+            {/* Markdown Toolbar, Content & Live-Vorschau */}
+            <MarkdownFormatLeiste
+              label={t('popups.fieldContent')}
+              htmlFor="popup-content-input"
+              required
+              mode={editorMode}
+              onModeChange={setEditorMode}
+              onInsert={insertMarkdown}
+              headingPrefix="### "
+              headingLabel={t('popups.markdownHeading')}
+              preview={
+                <div
+                  className={`mx-auto max-w-md rounded-2xl border bg-surface-container-high/95 p-4 shadow-xl backdrop-blur-xl ${
+                    tone === 'promo'
+                      ? 'border-primary/45 ring-1 ring-primary/20'
+                      : tone === 'maintenance'
+                        ? 'border-status-warning/45'
+                        : 'border-primary/35'
+                  }`}
+                >
+                  <div className="flex items-start gap-3">
+                    <span
+                      className={`grid h-9 w-9 shrink-0 place-items-center rounded-xl ${
+                        tone === 'maintenance'
+                          ? 'bg-status-warning/15 text-status-warning'
+                          : 'bg-primary/15 text-primary'
+                      }`}
                     >
-                      <Bold className="w-3.5 h-3.5" />
-                    </button>
-                  </Kurzinfo>
-                  <Kurzinfo text={t('popups.markdownItalic')}>
-                    <button
-                      type="button"
-                      aria-label={t('popups.markdownItalic')}
-                      onClick={() => insertMarkdown('*', '*')}
-                      className="p-1.5 rounded hover:bg-surface-container-highest text-on-surface-variant hover:text-on-surface text-xs"
-                    >
-                      <Italic className="w-3.5 h-3.5" />
-                    </button>
-                  </Kurzinfo>
-                  <Kurzinfo text={t('popups.markdownHeading')}>
-                    <button
-                      type="button"
-                      aria-label={t('popups.markdownHeading')}
-                      onClick={() => insertMarkdown('### ')}
-                      className="p-1.5 rounded hover:bg-surface-container-highest text-on-surface-variant hover:text-on-surface text-xs"
-                    >
-                      <Heading className="w-3.5 h-3.5" />
-                    </button>
-                  </Kurzinfo>
-                  <Kurzinfo text={t('popups.markdownList')}>
-                    <button
-                      type="button"
-                      aria-label={t('popups.markdownList')}
-                      onClick={() => insertMarkdown('- ')}
-                      className="p-1.5 rounded hover:bg-surface-container-highest text-on-surface-variant hover:text-on-surface text-xs"
-                    >
-                      <List className="w-3.5 h-3.5" />
-                    </button>
-                  </Kurzinfo>
-                  <Kurzinfo text={t('popups.markdownOrderedList')}>
-                    <button
-                      type="button"
-                      aria-label={t('popups.markdownOrderedList')}
-                      onClick={() => insertMarkdown('1. ')}
-                      className="p-1.5 rounded hover:bg-surface-container-highest text-on-surface-variant hover:text-on-surface text-xs"
-                    >
-                      <ListOrdered className="w-3.5 h-3.5" />
-                    </button>
-                  </Kurzinfo>
-                  <Kurzinfo text={t('popups.markdownLink')}>
-                    <button
-                      type="button"
-                      aria-label={t('popups.markdownLink')}
-                      onClick={() => insertMarkdown('[', '](https://example.com)')}
-                      className="p-1.5 rounded hover:bg-surface-container-highest text-on-surface-variant hover:text-on-surface text-xs"
-                    >
-                      <Link className="w-3.5 h-3.5" />
-                    </button>
-                  </Kurzinfo>
-                  <Kurzinfo text={t('popups.markdownCode')} seite="ende">
-                    <button
-                      type="button"
-                      aria-label={t('popups.markdownCode')}
-                      onClick={() => insertMarkdown('`', '`')}
-                      className="p-1.5 rounded hover:bg-surface-container-highest text-on-surface-variant hover:text-on-surface text-xs"
-                    >
-                      <Code className="w-3.5 h-3.5" />
-                    </button>
-                  </Kurzinfo>
+                      {tone === 'promo' ? (
+                        <Sparkles className="h-4 w-4" aria-hidden="true" />
+                      ) : tone === 'maintenance' ? (
+                        <Wrench className="h-4 w-4" aria-hidden="true" />
+                      ) : (
+                        <Megaphone className="h-4 w-4" aria-hidden="true" />
+                      )}
+                    </span>
+                    <div className="min-w-0 flex-1 space-y-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span
+                          className={`rounded-full border px-2 py-0.5 text-label-sm font-semibold ${
+                            tone === 'maintenance'
+                              ? 'border-status-warning/35 bg-status-warning/10 text-status-warning'
+                              : 'border-primary/30 bg-primary/10 text-primary'
+                          }`}
+                        >
+                          {tone === 'promo'
+                            ? t('popups.tonePromo')
+                            : tone === 'maintenance'
+                              ? t('popups.toneMaintenance')
+                              : t('popups.toneInfo')}
+                        </span>
+                        <span className="text-label-sm text-on-surface-variant">
+                          {audience === 'shop'
+                            ? t('popups.audienceShop')
+                            : audience === 'panel'
+                              ? t('popups.audiencePanel')
+                              : t('popups.audienceAll')}
+                        </span>
+                      </div>
+                      <h4 className="font-headline text-sm font-bold text-on-surface">
+                        {title.trim() || t('popups.fieldTitle')}
+                      </h4>
+                      <div className="text-xs leading-relaxed text-on-surface-variant">
+                        {contentMarkdown.trim() ? (
+                          <AiMarkdown content={contentMarkdown} />
+                        ) : (
+                          <p>{t('popups.vorschauLeer')}</p>
+                        )}
+                      </div>
+                      {buttonText.trim() && (
+                        <div className="pt-1">
+                          <span className="inline-flex items-center gap-1 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-on-primary">
+                            <span>{buttonText.trim()}</span>
+                            <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </div>
-              </div>
+              }
+              footer={
+                <div
+                  id="popup-content-meta"
+                  className="flex items-center justify-between gap-3 text-xs"
+                >
+                  <span className="text-on-surface-variant">
+                    {t('popups.contentLengthHint')}
+                  </span>
+                  <span
+                    className={
+                      contentMarkdown.length > POPUP_CONTENT_MAX_LENGTH
+                        ? 'font-medium text-status-destructive shrink-0'
+                        : contentMarkdown.length >= POPUP_CONTENT_MAX_LENGTH - 60
+                          ? 'font-medium text-status-warning shrink-0'
+                          : 'text-on-surface-variant shrink-0'
+                    }
+                  >
+                    {contentMarkdown.length} / {POPUP_CONTENT_MAX_LENGTH}
+                  </span>
+                </div>
+              }
+            >
               <textarea
                 id="popup-content-input"
                 ref={textareaRef}
@@ -390,28 +414,9 @@ export function PopupTab() {
                 maxLength={POPUP_CONTENT_MAX_LENGTH}
                 required
                 aria-describedby="popup-content-meta"
-                className="msm-input font-mono text-sm leading-relaxed"
+                className="w-full bg-transparent px-3.5 py-3 font-mono text-sm leading-relaxed text-on-surface focus:outline-none"
               />
-              <div
-                id="popup-content-meta"
-                className="flex items-center justify-between gap-3 mt-1.5 text-xs"
-              >
-                <span className="text-on-surface-variant">
-                  {t('popups.contentLengthHint')}
-                </span>
-                <span
-                  className={
-                    contentMarkdown.length > POPUP_CONTENT_MAX_LENGTH
-                      ? 'font-medium text-status-destructive shrink-0'
-                      : contentMarkdown.length >= POPUP_CONTENT_MAX_LENGTH - 60
-                        ? 'font-medium text-status-warning shrink-0'
-                        : 'text-on-surface-variant shrink-0'
-                  }
-                >
-                  {contentMarkdown.length} / {POPUP_CONTENT_MAX_LENGTH}
-                </span>
-              </div>
-            </div>
+            </MarkdownFormatLeiste>
 
             {/* Zeitraum (Start / Ende) */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -495,7 +500,7 @@ export function PopupTab() {
           <div className="flex items-center justify-end gap-3 pt-4 border-t border-outline-variant/30">
             <Button type="button" variant="secondary" onClick={openPreview}>
               <Eye className="w-4 h-4 mr-1.5" />
-              {t('popups.preview')}
+              {t('popups.alsModalTesten')}
             </Button>
             <Button type="button" variant="ghost" onClick={cancelEdit}>
               {t('common.cancel')}
@@ -643,7 +648,7 @@ export function PopupTab() {
                             size="sm"
                             onClick={() => handleDelete(p)}
                             aria-label={t('common.delete')}
-                            className="text-on-surface-variant hover:text-error"
+                            className="text-on-surface-variant hover:text-status-destructive"
                           >
                             <Trash2 className="w-4 h-4" />
                           </Button>

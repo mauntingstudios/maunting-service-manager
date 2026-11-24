@@ -6954,7 +6954,8 @@
       "zumShop": "Open shop",
       "kiChat": "AI chat",
       "bereiche": "Shop sections",
-      "support": "Support"
+      "support": "Support",
+      "menueOeffnen": "Open menu"
     },
     "fuss": {
       "zumInhalt": "Skip to content",
@@ -10270,7 +10271,11 @@
     "contentLengthHint": "Compact bottom-right card: keep it short and easy to scan.",
     "contentTooLong": "Content must be at most {{max}} characters.",
     "regionLabel": "Announcement",
-    "queuePosition": "{{current}} of {{total}}"
+    "queuePosition": "{{current}} of {{total}}",
+    "modusSchreiben": "Write",
+    "modusVorschau": "Live preview",
+    "vorschauLeer": "No content yet for preview.",
+    "alsModalTesten": "Test pop-up"
   },
   "desktopBadge": {
     "tooltip": "Download Maunting Smart System desktop app",

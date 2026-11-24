@@ -15,7 +15,6 @@ import { api } from '@/api/client'
 import { AiAutonomyButton } from '@/components/ai/AiAutonomyButton'
 import { AiChat } from '@/components/ai/AiChat'
 import { type AiChatScope } from '@/components/ai/chatScope'
-import { AufgabenAnsicht } from '@/components/ai/AufgabenAnsicht'
 import { GuardianAnsicht } from '@/components/ai/GuardianAnsicht'
 import { WorkerAnsicht } from '@/components/ai/WorkerAnsicht'
 import { SprachAnsicht } from '@/components/ai/voice/SprachAnsicht'
@@ -27,7 +26,7 @@ import { SingraProjectsView } from '@/components/ai/singra/SingraProjectsView'
 import { SingraKnowledgeView } from '@/components/ai/singra/SingraKnowledgeView'
 import { SingraMemoryView } from '@/components/ai/singra/SingraMemoryView'
 import { SingraFilesView } from '@/components/ai/singra/SingraFilesView'
-import { SingraToolsView } from '@/components/ai/singra/SingraToolsView'
+import { SingraToolsView, type ToolSubTab } from '@/components/ai/singra/SingraToolsView'
 import { SingraHistoryView } from '@/components/ai/singra/SingraHistoryView'
 import { useHasPermission } from '@/hooks/useHasPermission'
 import { aiChatPreferenceKeys, readAiProviderChoice } from '@/lib/aiChatPreferences'
@@ -43,9 +42,10 @@ interface ServerOption {
   name: string
 }
 
-type Ansicht = 'text' | 'sprache' | 'guardian' | 'worker' | 'aufgaben'
+type Ansicht = 'text' | 'sprache' | 'guardian' | 'worker'
 
-const ANSICHTEN: readonly Ansicht[] = ['text', 'sprache', 'guardian', 'worker', 'aufgaben']
+const ANSICHTEN: readonly Ansicht[] = ['text', 'sprache', 'guardian', 'worker']
+const TOOL_TABS: readonly ToolSubTab[] = ['mcp', 'tasks', 'workers', 'guardian']
 const BEREICHE: readonly SingraSection[] = [
   'chat',
   'projekte',
@@ -67,6 +67,14 @@ function bereichAusAbfrage(wert: string | null): SingraSection {
   return (BEREICHE as readonly string[]).includes(wert ?? '')
     ? (wert as SingraSection)
     : 'chat'
+}
+
+function toolTabAusAbfrage(wert: string | null, canManageTasks: boolean): ToolSubTab {
+  if ((TOOL_TABS as readonly string[]).includes(wert ?? '')) {
+    const tab = wert as ToolSubTab
+    return tab === 'tasks' && !canManageTasks ? 'mcp' : tab
+  }
+  return 'mcp'
 }
 
 function Umschalter({ aktiv, onClick, icon, label, shortLabel }: {
@@ -140,14 +148,33 @@ export function Ai({
   }, [])
 
   const workerId = suchParameter.get('id')
+  const legacyAufgaben = suchParameter.get('ansicht') === 'aufgaben'
   const gewuenscht = ansichtAusAbfrage(suchParameter.get('ansicht'), workerId)
   const ansicht: Ansicht =
-    (gewuenscht === 'sprache' && !sprachkonfiguration)
-      || (gewuenscht === 'aufgaben' && !canManageTasks)
-      ? 'text'
-      : gewuenscht
+    gewuenscht === 'sprache' && !sprachkonfiguration ? 'text' : gewuenscht
 
-  const activeSection = bereichAusAbfrage(suchParameter.get('bereich'))
+  const activeSection: SingraSection =
+    legacyAufgaben && canManageTasks
+      ? 'tools'
+      : bereichAusAbfrage(suchParameter.get('bereich'))
+  const activeToolTab: ToolSubTab =
+    legacyAufgaben && canManageTasks
+      ? 'tasks'
+      : toolTabAusAbfrage(suchParameter.get('tool'), canManageTasks)
+
+  useEffect(() => {
+    if (suchParameter.get('ansicht') !== 'aufgaben') return
+    const naechste = new URLSearchParams(suchParameter)
+    naechste.delete('ansicht')
+    naechste.delete('id')
+    if (canManageTasks) {
+      naechste.set('bereich', 'tools')
+      naechste.set('tool', 'tasks')
+    } else {
+      naechste.delete('tool')
+    }
+    setzeSuchParameter(naechste, { replace: true })
+  }, [canManageTasks, setzeSuchParameter, suchParameter])
 
   const setzeAnsicht = (neu: Ansicht) => {
     const naechste = new URLSearchParams(suchParameter)
@@ -157,14 +184,46 @@ export function Ai({
     setzeSuchParameter(naechste, { replace: true })
   }
 
+  const handleSwitchChatMode = (mode: 'sprache' | 'guardian' | 'aufgaben') => {
+    if (mode === 'aufgaben') {
+      const naechste = new URLSearchParams(suchParameter)
+      naechste.delete('ansicht')
+      naechste.delete('id')
+      if (canManageTasks) {
+        naechste.set('bereich', 'tools')
+        naechste.set('tool', 'tasks')
+      } else {
+        naechste.delete('tool')
+      }
+      setzeSuchParameter(naechste, { replace: true })
+      return
+    }
+    setzeAnsicht(mode)
+  }
+
   const setActiveSection = (section: SingraSection) => {
     const naechste = new URLSearchParams(suchParameter)
     if (section === 'chat') naechste.delete('bereich')
     else naechste.set('bereich', section)
+    if (section !== 'tools') naechste.delete('tool')
     naechste.delete('ansicht')
     naechste.delete('id')
     setzeSuchParameter(naechste, { replace: true })
   }
+
+  const handleToolTabChange = useCallback(
+    (tab: ToolSubTab) => {
+      const nextTab = tab === 'tasks' && !canManageTasks ? 'mcp' : tab
+      const naechste = new URLSearchParams(suchParameter)
+      naechste.set('bereich', 'tools')
+      if (nextTab === 'mcp') naechste.delete('tool')
+      else naechste.set('tool', nextTab)
+      naechste.delete('ansicht')
+      naechste.delete('id')
+      setzeSuchParameter(naechste, { replace: true })
+    },
+    [canManageTasks, setzeSuchParameter, suchParameter],
+  )
 
   const loadConversations = useCallback(async () => {
     if (!canChat || typeof aiApi.listConversations !== 'function') return
@@ -386,8 +445,6 @@ export function Ai({
         />
       ) : ansicht === 'guardian' ? (
         <GuardianAnsicht />
-      ) : ansicht === 'aufgaben' ? (
-        <AufgabenAnsicht />
       ) : ansicht === 'worker' && workerId ? (
         <WorkerAnsicht key={workerId} conversationId={workerId} />
       ) : (
@@ -485,6 +542,8 @@ export function Ai({
               />
             ) : activeSection === 'tools' ? (
               <SingraToolsView
+                initialSubTab={activeToolTab}
+                onSubTabChange={handleToolTabChange}
                 appFaehigkeiten={appFaehigkeiten}
               />
             ) : activeSection === 'verlauf' ? (
@@ -502,7 +561,7 @@ export function Ai({
               <AiChat
                 key={activeProjectId ? `project-${activeProjectId}` : 'global-chat'}
                 scope={chatScope}
-                onSwitchMode={setzeAnsicht}
+                onSwitchMode={handleSwitchChatMode}
                 canTasks={canManageTasks}
                 hasVoice={Boolean(sprachkonfiguration)}
                 appFaehigkeiten={appFaehigkeiten}

@@ -25,7 +25,6 @@ import { still } from '@/lib/still'
 import { useTageszeitMotiv } from '@/lib/tageszeit'
 import { formatAddonBenefits } from '../addonBenefits'
 import { HeroShowcase, type ShopDdosHighlight } from '../components/HeroShowcase'
-import { KatalogSchiene } from '../components/KatalogSchiene'
 import { ShopNewsTeaser } from '../components/ShopNewsTeaser'
 import { SpielKarte } from '../components/SpielKarte'
 import { StandortPingDeck } from '../components/StandortPingDeck'
@@ -35,7 +34,13 @@ import { useShopReveal } from '../useShopReveal'
 import { useShopStandortStore } from '../shopStandortStore'
 import { useShopKatalog } from '../useShopKatalog'
 
-type KatalogFilter = 'alle' | 'verfuegbar' | 'mods'
+type KatalogFilter =
+  | 'alle'
+  | 'bestseller'
+  | 'empfohlen'
+  | 'neu'
+  | 'verfuegbar'
+  | 'mods'
 type PlattformFilter = 'alle' | 'pc' | 'ps5' | 'xbox' | 'crossplay'
 
 function addonKategorieLabelKey(category: ShopAddonCategory): string {
@@ -228,7 +233,12 @@ export function ShopStart() {
 
   const gefiltert = useMemo(() => {
     const begriff = suche.trim().toLowerCase()
-    return spiele.filter((spiel) => {
+    const treffer = spiele.filter((spiel) => {
+      if (filter === 'bestseller' && !spiel.isBestseller && (spiel.recentOrderCount ?? 0) === 0) {
+        return false
+      }
+      if (filter === 'empfohlen' && !spiel.isFeatured) return false
+      if (filter === 'neu' && !spiel.isNew) return false
       if (filter === 'verfuegbar' && spiel.verfuegbar === false) return false
       if (filter === 'mods' && !spiel.unterstuetztMods && !spiel.unterstuetztWorkshop) {
         return false
@@ -243,6 +253,15 @@ export function ShopStart() {
       const text = [spiel.name, ...spiel.tags].join(' ').toLowerCase()
       return text.includes(begriff)
     })
+
+    if (filter === 'bestseller') {
+      return [...treffer].sort(
+        (a, b) =>
+          (b.recentOrderCount ?? 0) - (a.recentOrderCount ?? 0) ||
+          Number(Boolean(b.isBestseller)) - Number(Boolean(a.isBestseller)),
+      )
+    }
+    return treffer
   }, [suche, filter, plattformFilter, spiele])
 
   const renderAddonVorteile = (addon: ShopCatalogAddon) =>
@@ -288,6 +307,15 @@ export function ShopStart() {
 
   const filterTabs: Array<{ id: KatalogFilter; label: string }> = [
     { id: 'alle', label: t('shop.sammlung.alleSpiele') },
+    ...(bestsellerSpiele.length > 0
+      ? [{ id: 'bestseller' as const, label: t('shop.katalog.badgeBestseller') }]
+      : []),
+    ...(empfohleneSpiele.length > 0
+      ? [{ id: 'empfohlen' as const, label: t('shop.katalog.badgeFeatured') }]
+      : []),
+    ...(neueSpiele.length > 0
+      ? [{ id: 'neu' as const, label: t('shop.katalog.badgeNeu') }]
+      : []),
     { id: 'verfuegbar', label: t('shop.sammlung.sofortVerfuegbar') },
     { id: 'mods', label: t('shop.sammlung.mitMods') },
   ]
@@ -318,131 +346,98 @@ export function ShopStart() {
         ddosSummary={ddosSummary}
       />
 
-      <KatalogSchiene
-        id="shop-meistgemietet"
-        kicker={t('shop.katalog.meistgemietetKicker')}
-        titel={t('shop.katalog.meistgemietetTitel')}
-        beschreibung={t('shop.katalog.meistgemietetText')}
-        spiele={bestsellerSpiele}
-        rabattFuerSpiel={rabattFuerSpiel}
-      />
-
-      <KatalogSchiene
-        id="shop-empfohlen"
-        kicker={t('shop.katalog.empfohlenKicker')}
-        titel={t('shop.katalog.empfohlenTitel')}
-        beschreibung={t('shop.katalog.empfohlenText')}
-        spiele={empfohleneSpiele}
-        rabattFuerSpiel={rabattFuerSpiel}
-      />
-
-      <KatalogSchiene
-        id="shop-neu"
-        kicker={t('shop.katalog.neuKicker')}
-        titel={t('shop.katalog.neuTitel')}
-        beschreibung={t('shop.katalog.neuText')}
-        spiele={neueSpiele}
-        rabattFuerSpiel={rabattFuerSpiel}
-      />
-
-      <StandortPingDeck
-        nodeStatuses={nodeStatuses}
-        ausgewaehlteNodeId={ausgewaehlteNodeId}
-        onSelectNode={(nodeId) => setAusgewaehlteNodeId(nodeId)}
-        pingWerte={pingWerte}
-        besterPingNodeId={besterPingNodeId}
-        pingBusy={pingBusy}
-        onRunPingTest={() => void pingTesten()}
-      />
-
       <section
         id="shop-spiele"
         data-shop-reveal
-        className="msm-shop-reveal msm-shop-reveal-fallback mx-auto max-w-7xl px-4 py-14 sm:px-6 lg:px-8"
+        className="msm-shop-reveal msm-shop-reveal-fallback mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8"
       >
-        <div className="mx-auto max-w-2xl text-center">
-          <div className="inline-flex items-center gap-2 rounded-full border border-status-running/35 bg-status-running/10 px-3 py-1 text-label-sm font-semibold text-status-running">
-            <Gamepad2 className="h-3.5 w-3.5" aria-hidden="true" />
-            <span>{t('shop.sammlung.eyebrow')}</span>
-          </div>
-          <h2 className="mt-3 font-headline text-3xl font-extrabold tracking-tight text-on-surface sm:text-4xl">
-            {t('shop.sammlung.titel')}
-          </h2>
-          <p className="mt-2 text-sm text-on-surface-variant sm:text-base">
-            {t('shop.sammlung.untertitel')}
-          </p>
-
-          <label className="relative mx-auto mt-6 block max-w-lg">
-            <span className="sr-only">{t('shop.sammlung.suche')}</span>
-            <Search
-              className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-on-surface-variant"
-              aria-hidden="true"
-            />
-            <input
-              type="search"
-              value={suche}
-              onChange={(event) => setSuche(event.target.value)}
-              placeholder={t('shop.sammlung.suche')}
-              className="msm-input w-full pl-10"
-            />
-          </label>
-
-          {spiele.length > 0 && (
-            <div
-              className="mt-4 flex flex-wrap justify-center gap-2"
-              role="group"
-              aria-label={t('shop.sammlung.kategorien')}
-            >
-              {filterTabs.map((tab) => {
-                const aktiv = filter === tab.id
-                return (
-                  <button
-                    key={tab.id}
-                    type="button"
-                    onClick={() => setFilter(tab.id)}
-                    aria-pressed={aktiv}
-                    className={`rounded-full border px-3.5 py-1.5 text-xs font-semibold transition-colors ${
-                      aktiv
-                        ? 'border-primary/55 bg-primary/15 text-primary'
-                        : 'border-outline-variant/40 bg-surface-container-low text-on-surface-variant hover:text-on-surface'
-                    }`}
-                  >
-                    {tab.label}
-                  </button>
-                )
-              })}
+        <div className="flex flex-col gap-5">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <div className="inline-flex items-center gap-2 rounded-full border border-status-running/35 bg-status-running/10 px-3 py-1 text-label-sm font-semibold text-status-running">
+                <Gamepad2 className="h-3.5 w-3.5" aria-hidden="true" />
+                <span>{t('shop.sammlung.eyebrow')}</span>
+              </div>
+              <h2 className="mt-2.5 font-headline text-3xl font-extrabold tracking-tight text-on-surface sm:text-4xl">
+                {t('shop.sammlung.titel')}
+              </h2>
+              <p className="mt-1 text-sm text-on-surface-variant sm:text-base">
+                {t('shop.sammlung.untertitel')}
+              </p>
             </div>
-          )}
+
+            <label className="relative block w-full lg:max-w-xs">
+              <span className="sr-only">{t('shop.sammlung.suche')}</span>
+              <Search
+                className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-on-surface-variant"
+                aria-hidden="true"
+              />
+              <input
+                type="search"
+                value={suche}
+                onChange={(event) => setSuche(event.target.value)}
+                placeholder={t('shop.sammlung.suche')}
+                className="msm-input w-full pl-10"
+              />
+            </label>
+          </div>
 
           {spiele.length > 0 && (
-            <div
-              className="mt-2.5 flex flex-wrap justify-center gap-1.5"
-              role="group"
-              aria-label={t('shop.sammlung.plattformFilter')}
-            >
-              {plattformTabs.map((ptab) => {
-                const aktiv = plattformFilter === ptab.id
-                return (
-                  <button
-                    key={ptab.id}
-                    type="button"
-                    onClick={() => setPlattformFilter(ptab.id)}
-                    aria-pressed={aktiv}
-                    className={`rounded-full border px-3 py-1 text-label-sm font-semibold transition-colors ${
-                      aktiv
-                        ? 'border-primary/55 bg-primary/15 text-primary'
-                        : 'border-outline-variant/35 bg-surface-container-low/70 text-on-surface-variant hover:text-on-surface'
-                    }`}
-                  >
-                    {ptab.label}
-                  </button>
-                )
-              })}
+            <div className="flex flex-col gap-3 rounded-2xl border border-white/10 bg-surface-container-low/65 p-3.5 lg:flex-row lg:items-center lg:justify-between">
+              <div
+                className="flex flex-wrap items-center gap-1.5"
+                role="group"
+                aria-label={t('shop.sammlung.kategorien')}
+              >
+                {filterTabs.map((tab) => {
+                  const aktiv = filter === tab.id
+                  return (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      onClick={() => setFilter(tab.id)}
+                      aria-pressed={aktiv}
+                      className={`rounded-full border px-3.5 py-1.5 text-xs font-semibold transition-colors ${
+                        aktiv
+                          ? 'border-primary/55 bg-primary/15 text-primary'
+                          : 'border-outline-variant/40 bg-surface-container-low text-on-surface-variant hover:text-on-surface'
+                      }`}
+                    >
+                      {tab.label}
+                    </button>
+                  )
+                })}
+              </div>
+
+              <div
+                className="flex flex-wrap items-center gap-1.5"
+                role="group"
+                aria-label={t('shop.sammlung.plattformFilter')}
+              >
+                {plattformTabs.map((ptab) => {
+                  const aktiv = plattformFilter === ptab.id
+                  return (
+                    <button
+                      key={ptab.id}
+                      type="button"
+                      onClick={() => setPlattformFilter(ptab.id)}
+                      aria-pressed={aktiv}
+                      className={`rounded-full border px-3 py-1 text-label-sm font-semibold transition-colors ${
+                        aktiv
+                          ? 'border-primary/55 bg-primary/15 text-primary'
+                          : 'border-outline-variant/35 bg-surface-container-low/70 text-on-surface-variant hover:text-on-surface'
+                      }`}
+                    >
+                      {ptab.label}
+                    </button>
+                  )
+                })}
+              </div>
             </div>
           )}
         </div>
 
-        <div className="mt-10">
+        <div className="mt-8">
           {loading ? (
             <div className="flex items-center justify-center gap-3 py-16 text-sm text-on-surface-variant">
               <Spinner size="sm" />
@@ -492,6 +487,16 @@ export function ShopStart() {
           )}
         </div>
       </section>
+
+      <StandortPingDeck
+        nodeStatuses={nodeStatuses}
+        ausgewaehlteNodeId={ausgewaehlteNodeId}
+        onSelectNode={(nodeId) => setAusgewaehlteNodeId(nodeId)}
+        pingWerte={pingWerte}
+        besterPingNodeId={besterPingNodeId}
+        pingBusy={pingBusy}
+        onRunPingTest={() => void pingTesten()}
+      />
 
       <ShopNewsTeaser />
 

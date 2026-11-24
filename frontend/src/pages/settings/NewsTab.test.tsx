@@ -106,9 +106,14 @@ describe('NewsTab Editorial CMS', () => {
       target: { value: '**Wichtig:** Update ist da.' },
     })
 
-    // Live-Vorschau pruefen
+    // Live-Vorschau pruefen (inkl. gemeinsamer Markdown-Leiste & Ueberschrift)
+    expect(screen.getByRole('button', { name: i18n.t('popups.markdownBold') })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Live-Vorschau' }))
-    expect(await screen.findByText('Wichtig:')).toBeInTheDocument()
+    expect(
+      await screen.findByRole('heading', { level: 4, name: 'Palworld Server Patch' }),
+    ).toBeInTheDocument()
+    expect(screen.getAllByText('Neue Speicher-Optimierung.').length).toBeGreaterThanOrEqual(2)
+    expect(screen.getByText('Wichtig:')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Schreiben' }))
 
     // Quelle hinzufuegen

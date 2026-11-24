@@ -148,7 +148,7 @@ export function gruppiereWorker(workers: AiWorkerInfo[]): WorkerGruppe[] {
   return gruppen
 }
 
-type ToolSubTab = 'mcp' | 'tasks' | 'workers' | 'guardian'
+export type ToolSubTab = 'mcp' | 'tasks' | 'workers' | 'guardian'
 
 interface ServerOption {
   id: number
@@ -157,6 +157,7 @@ interface ServerOption {
 
 interface SingraToolsViewProps {
   initialSubTab?: ToolSubTab
+  onSubTabChange?: (tab: ToolSubTab) => void
   initialWorkerId?: string | null
   appFaehigkeiten?: {
     computer_use?: boolean | null
@@ -172,6 +173,7 @@ const TRANSPORT_OPTIONS: Array<{ value: 'http' | 'sse' | 'stdio'; label: string 
 
 export function SingraToolsView({
   initialSubTab = 'mcp',
+  onSubTabChange,
   initialWorkerId = null,
   appFaehigkeiten,
 }: SingraToolsViewProps) {
@@ -179,7 +181,9 @@ export function SingraToolsView({
   const canManageTasks = useHasPermission('ai.tasks.manage')
   const canManageGlobalSettings = useHasPermission('ai.settings.manage')
 
-  const [subTab, setSubTab] = useState<ToolSubTab>(initialSubTab)
+  const [subTab, setSubTab] = useState<ToolSubTab>(() =>
+    initialSubTab === 'tasks' && !canManageTasks ? 'mcp' : initialSubTab,
+  )
   const [selectedWorkerId, setSelectedWorkerId] = useState<string | null>(initialWorkerId)
   const [servers, setServers] = useState<ServerOption[]>([])
   const [workers, setWorkers] = useState<AiWorkerInfo[]>([])
@@ -222,9 +226,19 @@ export function SingraToolsView({
     [desktopApp, mcpDraft.transport],
   )
 
+  const selectSubTab = useCallback(
+    (nextTab: ToolSubTab) => {
+      const sanitized: ToolSubTab = nextTab === 'tasks' && !canManageTasks ? 'mcp' : nextTab
+      setSubTab(sanitized)
+      onSubTabChange?.(sanitized)
+    },
+    [canManageTasks, onSubTabChange],
+  )
+
   useEffect(() => {
-    if (initialSubTab) setSubTab(initialSubTab)
-  }, [initialSubTab])
+    const sanitized: ToolSubTab = initialSubTab === 'tasks' && !canManageTasks ? 'mcp' : initialSubTab
+    setSubTab(sanitized)
+  }, [initialSubTab, canManageTasks])
 
   useEffect(() => {
     if (initialWorkerId) {
@@ -235,10 +249,10 @@ export function SingraToolsView({
 
   useEffect(() => {
     let active = true
-    if (canUseAutonomy) {
+    if (canUseAutonomy && typeof api === 'function') {
       api<ServerOption[]>('/servers')
         .then((rows) => {
-          if (active) setServers(rows)
+          if (active && Array.isArray(rows)) setServers(rows)
         })
         .catch(() => undefined)
     }
@@ -251,9 +265,15 @@ export function SingraToolsView({
     setLoadingMcp(true)
     try {
       const [mcpRows, workerRows, teamRows] = await Promise.all([
-        aiApi.listMcpServers().catch(() => [] as AiMcpServer[]),
-        aiApi.listWorkers().catch(() => [] as AiWorkerInfo[]),
-        teamsApi.list().catch(() => [] as Team[]),
+        typeof aiApi?.listMcpServers === 'function'
+          ? aiApi.listMcpServers().catch(() => [] as AiMcpServer[])
+          : Promise.resolve([] as AiMcpServer[]),
+        typeof aiApi?.listWorkers === 'function'
+          ? aiApi.listWorkers().catch(() => [] as AiWorkerInfo[])
+          : Promise.resolve([] as AiWorkerInfo[]),
+        typeof teamsApi?.list === 'function'
+          ? teamsApi.list().catch(() => [] as Team[])
+          : Promise.resolve([] as Team[]),
       ])
       setMcpServers(mcpRows)
       setWorkers(workerRows)
@@ -269,7 +289,9 @@ export function SingraToolsView({
 
   useEffect(() => {
     const refreshWorkers = () => {
-      aiApi.listWorkers().then(setWorkers).catch(() => undefined)
+      if (typeof aiApi?.listWorkers === 'function') {
+        aiApi.listWorkers().then(setWorkers).catch(() => undefined)
+      }
     }
     window.addEventListener(AI_ZUSTELLUNG_EVENT, refreshWorkers)
     return () => window.removeEventListener(AI_ZUSTELLUNG_EVENT, refreshWorkers)
@@ -542,7 +564,7 @@ export function SingraToolsView({
         <div className="grid grid-cols-2 gap-2 sm:hidden">
           <button
             type="button"
-            onClick={() => setSubTab('mcp')}
+            onClick={() => selectSubTab('mcp')}
             className={[
               'flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-xs font-medium transition-colors border',
               subTab === 'mcp'
@@ -557,7 +579,7 @@ export function SingraToolsView({
           {canManageTasks && (
             <button
               type="button"
-              onClick={() => setSubTab('tasks')}
+              onClick={() => selectSubTab('tasks')}
               className={[
                 'flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-xs font-medium transition-colors border',
                 subTab === 'tasks'
@@ -566,13 +588,13 @@ export function SingraToolsView({
               ].join(' ')}
             >
               <CalendarClock className="h-4 w-4 shrink-0" aria-hidden="true" />
-              <span className="truncate">Aufgaben</span>
+              <span className="truncate">Geplante Aufträge</span>
             </button>
           )}
 
           <button
             type="button"
-            onClick={() => setSubTab('workers')}
+            onClick={() => selectSubTab('workers')}
             className={[
               'flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-xs font-medium transition-colors border',
               subTab === 'workers'
@@ -586,7 +608,7 @@ export function SingraToolsView({
 
           <button
             type="button"
-            onClick={() => setSubTab('guardian')}
+            onClick={() => selectSubTab('guardian')}
             className={[
               'flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-xs font-medium transition-colors border',
               subTab === 'guardian'
@@ -602,7 +624,7 @@ export function SingraToolsView({
         <div className="hidden sm:flex items-center gap-1.5 overflow-x-auto msm-ohne-rollbalken pb-1">
           <button
             type="button"
-            onClick={() => setSubTab('mcp')}
+            onClick={() => selectSubTab('mcp')}
             className={[
               'inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-medium transition-colors shrink-0 border',
               subTab === 'mcp'
@@ -617,7 +639,7 @@ export function SingraToolsView({
           {canManageTasks && (
             <button
               type="button"
-              onClick={() => setSubTab('tasks')}
+              onClick={() => selectSubTab('tasks')}
               className={[
                 'inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-medium transition-colors shrink-0 border',
                 subTab === 'tasks'
@@ -626,13 +648,13 @@ export function SingraToolsView({
               ].join(' ')}
             >
               <CalendarClock className="h-3.5 w-3.5" aria-hidden="true" />
-              <span>Geplante Aufgaben</span>
+              <span>Geplante Aufträge</span>
             </button>
           )}
 
           <button
             type="button"
-            onClick={() => setSubTab('workers')}
+            onClick={() => selectSubTab('workers')}
             className={[
               'inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-medium transition-colors shrink-0 border',
               subTab === 'workers'
@@ -646,7 +668,7 @@ export function SingraToolsView({
 
           <button
             type="button"
-            onClick={() => setSubTab('guardian')}
+            onClick={() => selectSubTab('guardian')}
             className={[
               'inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-medium transition-colors shrink-0 border',
               subTab === 'guardian'

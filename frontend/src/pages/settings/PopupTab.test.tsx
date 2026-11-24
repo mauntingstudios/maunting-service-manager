@@ -152,8 +152,17 @@ describe('PopupTab', () => {
     expect(screen.getByText(`0 / ${popupsApi.POPUP_CONTENT_MAX_LENGTH}`)).toBeInTheDocument()
 
     fireEvent.change(screen.getByLabelText(/Titel/i), { target: { value: 'Shop Aktion' } })
-    fireEvent.change(textarea, { target: { value: 'Kurzer Text' } })
-    expect(screen.getByText(`11 / ${popupsApi.POPUP_CONTENT_MAX_LENGTH}`)).toBeInTheDocument()
+    fireEvent.change(textarea, { target: { value: '**Kurzer Text**' } })
+    expect(screen.getByText(`15 / ${popupsApi.POPUP_CONTENT_MAX_LENGTH}`)).toBeInTheDocument()
+
+    // Inline Live-Vorschau analog zum News-Editor
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('popups.modusVorschau') }))
+    expect(await screen.findByText('Shop Aktion')).toBeInTheDocument()
+    expect(screen.getByText('Kurzer Text')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('popups.modusSchreiben') }))
+    fireEvent.change(screen.getByPlaceholderText(i18n.t('popups.bodyPlaceholder')), {
+      target: { value: 'Kurzer Text' },
+    })
 
     fireEvent.click(screen.getByRole('button', { name: i18n.t('popups.fieldAudience') }))
     fireEvent.click(await screen.findByRole('option', { name: i18n.t('popups.audienceShop') }))

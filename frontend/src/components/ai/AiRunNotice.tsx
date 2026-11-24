@@ -134,12 +134,16 @@ export function AiRunNotice() {
   // gemountet) und keine Glocke (unterdrueckt).
   const suchParameter = new URLSearchParams(ort.search)
   const ansichtParam = ort.pathname.startsWith('/ai') ? suchParameter.get('ansicht') : null
+  const bereichParam = ort.pathname.startsWith('/ai') ? suchParameter.get('bereich') : null
+  const toolParam = ort.pathname.startsWith('/ai') ? suchParameter.get('tool') : null
   const offenesFenster: AiConversationKind | null = ort.pathname.startsWith('/ai')
     ? (ansichtParam === 'guardian'
         ? 'guardian'
         : ansichtParam === 'worker'
           ? 'worker'
-          : ansichtParam === 'sprache' || ansichtParam === 'aufgaben'
+          : ansichtParam === 'sprache' ||
+              ansichtParam === 'aufgaben' ||
+              (bereichParam === 'tools' && toolParam === 'tasks')
             ? null
             : 'primary')
     : null

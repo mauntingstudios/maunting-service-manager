@@ -2,18 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } fro
 import { Link, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import {
-  Bold,
   Bot,
   CalendarClock,
   Copy,
   Edit2,
   ExternalLink,
-  Eye,
-  Heading,
   ImagePlus,
-  Italic,
-  Link as LinkIcon,
-  List,
   Newspaper,
   Pin,
   Plus,
@@ -35,6 +29,7 @@ import {
   type NewsSourceItem,
 } from '@/api/news'
 import { AiMarkdown } from '@/components/ai/AiMarkdown'
+import { MarkdownFormatLeiste } from '@/components/editor/MarkdownFormatLeiste'
 import { useHasPermission } from '@/hooks/useHasPermission'
 import { still } from '@/lib/still'
 import { confirm } from '@/stores/confirmStore'
@@ -435,11 +430,11 @@ export function NewsTab() {
                   <span>{t('news.cms.singularityOeffnen')}</span>
                 </Button>
               )}
-              {canManageTasks && (
+              {canManageTasks && canUseAi && (
                 <Button
                   variant="primary"
                   size="sm"
-                  onClick={() => navigate('/ai?ansicht=aufgaben')}
+                  onClick={() => navigate('/ai?bereich=tools&tool=tasks')}
                   className="gap-1.5"
                 >
                   <CalendarClock className="h-3.5 w-3.5" aria-hidden="true" />
@@ -485,7 +480,7 @@ export function NewsTab() {
                 value={title}
                 onChange={(e) => applyTitleChange(e.target.value)}
                 placeholder={t('news.cms.feldTitelPlaceholder')}
-                className="h-10 w-full rounded-xl border border-outline-variant/50 bg-surface-container-low px-3.5 text-sm text-on-surface focus:border-primary focus:outline-none"
+                className="msm-input"
                 required
               />
             </div>
@@ -507,7 +502,7 @@ export function NewsTab() {
                   setSlug(e.target.value)
                 }}
                 placeholder="palworld-patch-v2"
-                className="h-10 w-full rounded-xl border border-outline-variant/50 bg-surface-container-low px-3.5 font-mono text-sm text-on-surface focus:border-primary focus:outline-none"
+                className="msm-input font-mono"
               />
               <p className="mt-1 text-label-sm text-on-surface-variant">
                 /news/{slug || autoSlugFromTitle(title) || 'artikel'}
@@ -530,7 +525,7 @@ export function NewsTab() {
               value={summary}
               onChange={(e) => setSummary(e.target.value)}
               placeholder={t('news.cms.feldZusammenfassungPlaceholder')}
-              className="w-full rounded-xl border border-outline-variant/50 bg-surface-container-low px-3.5 py-2.5 text-sm text-on-surface focus:border-primary focus:outline-none"
+              className="msm-input"
             />
           </div>
 
@@ -573,111 +568,93 @@ export function NewsTab() {
                 value={authorDisplayName}
                 onChange={(e) => setAuthorDisplayName(e.target.value)}
                 placeholder={t('news.cms.feldAutorPlaceholder')}
-                className="h-10 w-full rounded-xl border border-outline-variant/50 bg-surface-container-low px-3.5 text-sm text-on-surface focus:border-primary focus:outline-none"
+                className="msm-input"
               />
             </div>
           </div>
 
-          <div className="space-y-2">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="text-xs font-semibold uppercase tracking-wider text-on-surface-variant">
-                {t('news.cms.feldInhalt')} *
-              </span>
-
-              <div className="flex items-center gap-1 rounded-xl border border-outline-variant/40 bg-surface-container-low p-1">
-                <button
-                  type="button"
-                  onClick={() => setEditorMode('write')}
-                  aria-pressed={editorMode === 'write'}
-                  className={`rounded-lg px-2.5 py-1 text-xs font-semibold transition-colors ${
-                    editorMode === 'write'
-                      ? 'bg-primary text-on-primary'
-                      : 'text-on-surface-variant hover:text-on-surface'
-                  }`}
-                >
-                  {t('news.cms.modusSchreiben')}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setEditorMode('preview')}
-                  aria-pressed={editorMode === 'preview'}
-                  className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-semibold transition-colors ${
-                    editorMode === 'preview'
-                      ? 'bg-primary text-on-primary'
-                      : 'text-on-surface-variant hover:text-on-surface'
-                  }`}
-                >
-                  <Eye className="h-3.5 w-3.5" aria-hidden="true" />
-                  <span>{t('news.cms.modusVorschau')}</span>
-                </button>
-              </div>
-            </div>
-
-            {editorMode === 'write' ? (
-              <div className="overflow-hidden rounded-xl border border-outline-variant/50 bg-surface-container-low">
-                <div className="flex flex-wrap items-center gap-1 border-b border-outline-variant/30 bg-surface-container/60 px-2.5 py-1.5">
-                  <button
-                    type="button"
-                    onClick={() => insertMarkdown('**', '**')}
-                    aria-label={t('news.cms.formatFett')}
-                    className="rounded-lg p-1.5 text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"
-                  >
-                    <Bold className="h-4 w-4" aria-hidden="true" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => insertMarkdown('*', '*')}
-                    aria-label={t('news.cms.formatKursiv')}
-                    className="rounded-lg p-1.5 text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"
-                  >
-                    <Italic className="h-4 w-4" aria-hidden="true" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => insertMarkdown('## ', '')}
-                    aria-label={t('news.cms.formatUeberschrift')}
-                    className="rounded-lg p-1.5 text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"
-                  >
-                    <Heading className="h-4 w-4" aria-hidden="true" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => insertMarkdown('- ', '')}
-                    aria-label={t('news.cms.formatListe')}
-                    className="rounded-lg p-1.5 text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"
-                  >
-                    <List className="h-4 w-4" aria-hidden="true" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => insertMarkdown('[', '](https://)')}
-                    aria-label={t('news.cms.formatLink')}
-                    className="rounded-lg p-1.5 text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"
-                  >
-                    <LinkIcon className="h-4 w-4" aria-hidden="true" />
-                  </button>
-                </div>
-
-                <textarea
-                  ref={textareaRef}
-                  rows={10}
-                  value={contentMarkdown}
-                  onChange={(e) => setContentMarkdown(e.target.value)}
-                  placeholder={t('news.cms.feldInhaltPlaceholder')}
-                  className="w-full bg-transparent px-3.5 py-3 font-mono text-sm text-on-surface focus:outline-none"
-                  required
-                />
-              </div>
-            ) : (
-              <div className="min-h-[220px] rounded-xl border border-outline-variant/50 bg-surface-container-low/70 p-4">
-                {contentMarkdown.trim() ? (
-                  <AiMarkdown content={contentMarkdown} />
-                ) : (
-                  <p className="text-sm text-on-surface-variant">{t('news.cms.vorschauLeer')}</p>
+          <MarkdownFormatLeiste
+            label={t('news.cms.feldInhalt')}
+            htmlFor="news-content-input"
+            required
+            mode={editorMode}
+            onModeChange={setEditorMode}
+            onInsert={insertMarkdown}
+            headingPrefix="## "
+            headingLabel={t('news.cms.formatUeberschrift')}
+            linkSuffix="](https://)"
+            writeLabel={t('news.cms.modusSchreiben')}
+            previewLabel={t('news.cms.modusVorschau')}
+            preview={
+              <article className="space-y-4">
+                {activeCoverUrl && (
+                  <div className="overflow-hidden rounded-xl border border-outline-variant/30">
+                    <img
+                      src={activeCoverUrl}
+                      alt={title || t('news.cms.coverTitel')}
+                      className="aspect-[21/9] w-full object-cover"
+                    />
+                  </div>
                 )}
-              </div>
-            )}
-          </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant={categoryBadgeVariant(category)}>
+                    {t(`news.kategorien.${category}`)}
+                  </Badge>
+                  {isPinned && (
+                    <Badge variant="info">
+                      <Pin className="mr-1 inline h-3 w-3" aria-hidden="true" />
+                      {t('news.angepinnt')}
+                    </Badge>
+                  )}
+                  {authorDisplayName.trim() && (
+                    <span className="text-xs text-on-surface-variant">
+                      {authorDisplayName.trim()}
+                    </span>
+                  )}
+                </div>
+                <h4 className="font-headline text-xl font-extrabold text-on-surface">
+                  {title.trim() || t('news.cms.feldTitelPlaceholder')}
+                </h4>
+                {summary.trim() && (
+                  <p className="text-sm leading-relaxed text-on-surface-variant">{summary.trim()}</p>
+                )}
+                <div className="border-t border-outline-variant/25 pt-3">
+                  {contentMarkdown.trim() ? (
+                    <AiMarkdown content={contentMarkdown} />
+                  ) : (
+                    <p className="text-sm text-on-surface-variant">{t('news.cms.vorschauLeer')}</p>
+                  )}
+                </div>
+                {sources.some((s) => s.title.trim() && isValidHttpsUrl(s.url)) && (
+                  <div className="border-t border-outline-variant/25 pt-3">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-on-surface-variant">
+                      {t('news.cms.quellenTitel')}
+                    </p>
+                    <ul className="mt-1.5 space-y-1 text-xs text-primary">
+                      {sources
+                        .filter((s) => s.title.trim() && isValidHttpsUrl(s.url))
+                        .map((s, idx) => (
+                          <li key={idx}>
+                            {s.title} · {s.url}
+                          </li>
+                        ))}
+                    </ul>
+                  </div>
+                )}
+              </article>
+            }
+          >
+            <textarea
+              id="news-content-input"
+              ref={textareaRef}
+              rows={10}
+              value={contentMarkdown}
+              onChange={(e) => setContentMarkdown(e.target.value)}
+              placeholder={t('news.cms.feldInhaltPlaceholder')}
+              className="w-full bg-transparent px-3.5 py-3 font-mono text-sm leading-relaxed text-on-surface focus:outline-none"
+              required
+            />
+          </MarkdownFormatLeiste>
 
           <div className="grid gap-6 md:grid-cols-2">
             <div className="space-y-3 rounded-xl border border-outline-variant/40 bg-surface-container-low/60 p-4">

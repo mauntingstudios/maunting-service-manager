@@ -48,7 +48,7 @@ export function StandortPingDeck({
       id="shop-standorte"
       aria-label={t('shop.nodeStatus.titel')}
       data-shop-reveal
-      className="msm-shop-reveal msm-shop-reveal-fallback mx-auto max-w-7xl px-4 pt-12 sm:px-6 lg:px-8"
+      className="msm-shop-reveal msm-shop-reveal-fallback mx-auto max-w-7xl px-4 pb-12 pt-2 sm:px-6 lg:px-8"
     >
       <div className="msm-card rounded-2xl border border-outline-variant/30 bg-surface-container-low/85 p-5 shadow-xl sm:p-7">
         <div className="flex flex-wrap items-center justify-between gap-4">
