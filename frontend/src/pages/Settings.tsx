@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { Globe, Mail, Gamepad2, Flame, KeyRound, Shield, Cloud, FileText, LifeBuoy, ShieldAlert, Bot, Plug, Megaphone, CloudCog, MessageSquare, HardDrive, Search, ShoppingBag } from 'lucide-react'
+import { Globe, Mail, Gamepad2, Flame, KeyRound, Shield, Cloud, FileText, LifeBuoy, ShieldAlert, Bot, Plug, Megaphone, Newspaper, CloudCog, MessageSquare, HardDrive, Search, ShoppingBag } from 'lucide-react'
 import { SettingsLayout, type SettingsSectionEintrag } from '@maunting/ui'
 import { GeneralTab } from './settings/GeneralTab'
 import { EmailTab } from './settings/EmailTab'
@@ -19,6 +20,7 @@ import { MessengerTab } from './settings/MessengerTab'
 import { HosterTab } from './settings/HosterTab'
 import { ShopTab } from './settings/ShopTab'
 import { PopupTab } from './settings/PopupTab'
+import { NewsTab } from './settings/NewsTab'
 import { VaultStorageTab } from './settings/VaultStorageTab'
 import { useHasPermission } from '@/hooks/useHasPermission'
 
@@ -39,15 +41,27 @@ type TabId =
   | 'vaultStorage'
   | 'messenger'
   | 'popup'
+  | 'news'
   | 'hoster'
   | 'shop'
 
 export function Settings() {
   const { t } = useTranslation()
+  const [searchParams] = useSearchParams()
   const canManageBackup = useHasPermission('panel.settings.write')
+  const canManageNews =
+    useHasPermission('panel.news.manage') ||
+    useHasPermission('panel.settings.write') ||
+    useHasPermission('shop.write')
   const canReadHoster = useHasPermission('panel.hoster.read')
   const canWriteHoster = useHasPermission('panel.hoster.write')
-  const [activeTab, setActiveTab] = useState<TabId>('general')
+  const initialTab = (searchParams.get('tab') as TabId | null) || 'general'
+  const [activeTab, setActiveTab] = useState<TabId>(initialTab)
+
+  useEffect(() => {
+    const queryTab = searchParams.get('tab') as TabId | null
+    if (queryTab) setActiveTab(queryTab)
+  }, [searchParams])
 
   useEffect(() => {
     const handler = (event: Event) => {
@@ -81,6 +95,9 @@ export function Settings() {
       : []),
     { id: 'supportWidget', label: t('settings.tabs.supportWidget'), icon: LifeBuoy, group: t('settings.groups.erweitert') },
     { id: 'popup', label: t('settings.tabs.popup'), icon: Megaphone, group: t('settings.groups.erweitert') },
+    ...(canManageNews
+      ? [{ id: 'news' as const, label: t('settings.tabs.news'), icon: Newspaper, group: t('settings.groups.erweitert') }]
+      : []),
   ]
 
   const aktiv = sections.some((section) => section.id === activeTab) ? activeTab : 'general'
@@ -104,6 +121,7 @@ export function Settings() {
         {aktiv === 'imprint' && <ImprintTab />}
         {aktiv === 'supportWidget' && <SupportWidgetTab />}
         {aktiv === 'popup' && <PopupTab />}
+        {aktiv === 'news' && canManageNews && <NewsTab />}
         {aktiv === 'backup' && <BackupTab />}
         {aktiv === 'security' && <SecurityTab />}
         {aktiv === 'searchEngine' && <SearchEngineTab />}

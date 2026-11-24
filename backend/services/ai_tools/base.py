@@ -60,6 +60,8 @@ MAX_LISTED_SERVERS = 60
 MAX_INCIDENT_ATTEMPTS = 8
 MAX_TESTMAILS_JE_STUNDE = 3
 MAX_LISTED_POPUPS = 25
+MAX_LISTED_NEWS = 25
+MAX_NEWS_INHALT_CHARS = 8_000
 # Ein Pop-up darf 32.000 Zeichen tragen; fuenfundzwanzig davon waeren das halbe
 # Kontextfenster fuer eine Liste. Abgeschnitten wird deshalb — aber **sichtbar**:
 # `popups_read` setzt dann `content_truncated`, und `propose_popup_set` ersetzt

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 from typing import TYPE_CHECKING
+from urllib.parse import urlparse
 
 from sqlalchemy.orm import Session
 
@@ -25,6 +26,9 @@ DEFAULT_AUTO_SUBDOMAIN_ENABLED = False
 DEFAULT_AUTO_SUBDOMAIN_ZONE = ""
 DEFAULT_PAUSE_FREEZE_MAX_DAYS_PER_90D = 0
 DEFAULT_SHOP_CHECKOUT_CAPTCHA_ENABLED = False
+DEFAULT_SHOP_TRUSTPILOT_ENABLED = False
+DEFAULT_SHOP_TRUSTPILOT_URL = ""
+DEFAULT_SHOP_DISCORD_INVITE_URL = ""
 
 _K_CANCEL_GRACE = "shop_lifecycle_cancel_grace_days"
 _K_UNPAID_ENABLED = "shop_lifecycle_unpaid_auto_delete_enabled"
@@ -38,6 +42,9 @@ _K_AUTO_SUBDOMAIN_ENABLED = "shop_policy_auto_subdomain_enabled"
 _K_AUTO_SUBDOMAIN_ZONE = "shop_policy_auto_subdomain_zone"
 _K_PAUSE_FREEZE_DAYS = "shop_policy_pause_freeze_max_days_per_90d"
 _K_CHECKOUT_CAPTCHA = "shop_policy_checkout_captcha_enabled"
+_K_TRUSTPILOT_ENABLED = "shop_policy_trustpilot_enabled"
+_K_TRUSTPILOT_URL = "shop_policy_trustpilot_url"
+_K_DISCORD_INVITE_URL = "shop_policy_discord_invite_url"
 
 
 class LifecycleSettingsError(ValueError):
@@ -61,6 +68,59 @@ def _parse_bool(raw: str | None, default: bool) -> bool:
 
 
 _DOMAIN_ZONE_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$")
+
+
+def _has_control_or_space(raw: str) -> bool:
+    return any(ch.isspace() or ord(ch) < 32 for ch in raw)
+
+
+def _validate_trustpilot_url(raw: object) -> str:
+    cleaned = str(raw or "").strip()
+    if not cleaned:
+        return ""
+    if len(cleaned) > 512 or _has_control_or_space(cleaned):
+        raise LifecycleSettingsError(
+            "Trustpilot-URL darf keine Leer- oder Steuerzeichen enthalten"
+        )
+    parsed = urlparse(cleaned)
+    host = (parsed.hostname or "").lower()
+    if parsed.scheme.lower() != "https" or not (
+        host == "trustpilot.com" or host.endswith(".trustpilot.com")
+    ):
+        raise LifecycleSettingsError(
+            "Trustpilot-URL muss mit https:// auf trustpilot.com zeigen"
+        )
+    parts = [p for p in parsed.path.split("/") if p]
+    if len(parts) < 2 or parts[0].lower() != "review" or not parts[1]:
+        raise LifecycleSettingsError(
+            "Trustpilot-URL muss auf einen /review/<domain>-Pfad zeigen"
+        )
+    return cleaned
+
+
+def _validate_discord_invite_url(raw: object) -> str:
+    cleaned = str(raw or "").strip()
+    if not cleaned:
+        return ""
+    if len(cleaned) > 512 or _has_control_or_space(cleaned):
+        raise LifecycleSettingsError(
+            "Discord-Link darf keine Leer- oder Steuerzeichen enthalten"
+        )
+    parsed = urlparse(cleaned)
+    host = (parsed.hostname or "").lower()
+    parts = [p for p in parsed.path.split("/") if p]
+    valid_gg = host == "discord.gg" and len(parts) >= 1 and bool(parts[0])
+    valid_invite = (
+        host in {"discord.com", "www.discord.com"}
+        and len(parts) >= 2
+        and parts[0].lower() == "invite"
+        and bool(parts[1])
+    )
+    if parsed.scheme.lower() != "https" or not (valid_gg or valid_invite):
+        raise LifecycleSettingsError(
+            "Discord-Link muss mit https://discord.gg/... oder https://discord.com/invite/... beginnen"
+        )
+    return cleaned
 
 
 def _normalize_zone(raw: object) -> str:
@@ -171,6 +231,26 @@ def read(db: Session | None = None) -> dict[str, object]:
             ),
             DEFAULT_SHOP_CHECKOUT_CAPTCHA_ENABLED,
         ),
+        "shop_trustpilot_enabled": _parse_bool(
+            PanelSettingsService.get(
+                _K_TRUSTPILOT_ENABLED,
+                "true" if DEFAULT_SHOP_TRUSTPILOT_ENABLED else "false",
+                db=db,
+            ),
+            DEFAULT_SHOP_TRUSTPILOT_ENABLED,
+        ),
+        "shop_trustpilot_url": (
+            PanelSettingsService.get(
+                _K_TRUSTPILOT_URL, DEFAULT_SHOP_TRUSTPILOT_URL, db=db
+            )
+            or ""
+        ).strip()[:512],
+        "shop_discord_invite_url": (
+            PanelSettingsService.get(
+                _K_DISCORD_INVITE_URL, DEFAULT_SHOP_DISCORD_INVITE_URL, db=db
+            )
+            or ""
+        ).strip()[:512],
     }
 
 
@@ -292,6 +372,25 @@ def update(values: dict[str, object], db: Session | None = None) -> dict[str, ob
         if "shop_checkout_captcha_enabled" in values and values["shop_checkout_captcha_enabled"] is not None
         else bool(current["shop_checkout_captcha_enabled"])
     )
+    next_trustpilot_enabled = (
+        bool(values["shop_trustpilot_enabled"])
+        if "shop_trustpilot_enabled" in values and values["shop_trustpilot_enabled"] is not None
+        else bool(current["shop_trustpilot_enabled"])
+    )
+    next_trustpilot_url = (
+        _validate_trustpilot_url(values["shop_trustpilot_url"])
+        if "shop_trustpilot_url" in values and values["shop_trustpilot_url"] is not None
+        else _validate_trustpilot_url(current["shop_trustpilot_url"])
+    )
+    if next_trustpilot_enabled and not next_trustpilot_url:
+        raise LifecycleSettingsError(
+            "Bei aktiviertem Trustpilot muss eine gueltige Trustpilot-Profil-URL hinterlegt werden"
+        )
+    next_discord_invite_url = (
+        _validate_discord_invite_url(values["shop_discord_invite_url"])
+        if "shop_discord_invite_url" in values and values["shop_discord_invite_url"] is not None
+        else _validate_discord_invite_url(current["shop_discord_invite_url"])
+    )
 
     PanelSettingsService.set(_K_CANCEL_GRACE, str(next_grace))
     PanelSettingsService.set(_K_UNPAID_ENABLED, "true" if next_unpaid_enabled else "false")
@@ -307,6 +406,11 @@ def update(values: dict[str, object], db: Session | None = None) -> dict[str, ob
     PanelSettingsService.set(
         _K_CHECKOUT_CAPTCHA, "true" if next_checkout_captcha else "false"
     )
+    PanelSettingsService.set(
+        _K_TRUSTPILOT_ENABLED, "true" if next_trustpilot_enabled else "false"
+    )
+    PanelSettingsService.set(_K_TRUSTPILOT_URL, next_trustpilot_url)
+    PanelSettingsService.set(_K_DISCORD_INVITE_URL, next_discord_invite_url)
     return read(db=db)
 
 
@@ -326,6 +430,9 @@ def public_policy(db: Session | None = None) -> dict[str, object]:
         "auto_subdomain_zone": cfg["auto_subdomain_zone"],
         "pause_freeze_max_days_per_90d": cfg["pause_freeze_max_days_per_90d"],
         "shop_checkout_captcha_enabled": cfg["shop_checkout_captcha_enabled"],
+        "shop_trustpilot_enabled": cfg["shop_trustpilot_enabled"],
+        "shop_trustpilot_url": cfg["shop_trustpilot_url"],
+        "shop_discord_invite_url": cfg["shop_discord_invite_url"],
     }
 
 

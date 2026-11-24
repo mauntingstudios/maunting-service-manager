@@ -46,6 +46,9 @@ class ShopPlanWrite(BaseModel):
     artwork_mode: ArtworkMode = "steam"
     active: bool = True
     sort_order: int = Field(0, ge=-100_000, le=100_000)
+    is_featured: bool = False
+    is_bestseller: bool = False
+    is_new: bool = False
 
 
 class ShopPlanUpdate(BaseModel):
@@ -80,6 +83,9 @@ class ShopPlanUpdate(BaseModel):
     artwork_mode: ArtworkMode | None = None
     active: bool | None = None
     sort_order: int | None = Field(None, ge=-100_000, le=100_000)
+    is_featured: bool | None = None
+    is_bestseller: bool | None = None
+    is_new: bool | None = None
 
 
 class ShopArtworkResponse(BaseModel):
@@ -116,6 +122,9 @@ class ShopPlanResponse(BaseModel):
     artwork_mode: ArtworkMode
     active: bool
     sort_order: int
+    is_featured: bool = False
+    is_bestseller: bool = False
+    is_new: bool = False
     created_at: datetime
     updated_at: datetime
     artwork: ShopArtworkResponse
@@ -503,6 +512,9 @@ class ShopLifecycleSettingsPayload(BaseModel):
     auto_subdomain_zone: str = Field("", max_length=128)
     pause_freeze_max_days_per_90d: int = Field(0, ge=0, le=90)
     shop_checkout_captcha_enabled: bool = False
+    shop_trustpilot_enabled: bool = False
+    shop_trustpilot_url: str = Field("", max_length=512)
+    shop_discord_invite_url: str = Field("", max_length=512)
 
 
 class ShopLifecycleSettingsResponse(ShopLifecycleSettingsPayload):
@@ -519,6 +531,9 @@ class ShopPublicPolicyResponse(BaseModel):
     auto_subdomain_zone: str = ""
     pause_freeze_max_days_per_90d: int = 0
     shop_checkout_captcha_enabled: bool = False
+    shop_trustpilot_enabled: bool = False
+    shop_trustpilot_url: str = ""
+    shop_discord_invite_url: str = ""
 
 
 class ShopPublicNodeStatusResponse(BaseModel):
@@ -838,6 +853,10 @@ class ShopCatalogPlan(BaseModel):
     ddos_provider: str | None = None
     ddos_profile: str | None = None
     ddos_game_aware: bool = False
+    is_featured: bool = False
+    is_bestseller: bool = False
+    is_new: bool = False
+    recent_order_count: int = 0
 
 
 class ShopAvailabilityRequest(BaseModel):

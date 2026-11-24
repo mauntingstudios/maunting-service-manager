@@ -8,8 +8,16 @@ from sqlalchemy.orm import Session
 from fastapi import HTTPException
 
 from models import User
+from schemas.news import (
+    MAX_NEWS_SOURCES,
+    NEWS_CATEGORIES,
+    NEWS_GAME_TYPE_RE,
+    NewsPostCreate,
+    NewsPostUpdate,
+    NewsSourceItem,
+)
 from schemas.popup import POPUP_CONTENT_MAX_LENGTH, _validate_popup_button_url
-from services import audit_service, permission_service, ai_task_service
+from services import audit_service, news_service, permission_service, ai_task_service
 from services.ai_action_errors import AiActionValidationError
 from services.ai_redaction import redact_sensitive_text
 from services.ai_proposals.base import _AusfuehrungsRahmen, _Ausgefuehrt
@@ -29,6 +37,20 @@ _POPUP_FELDER = frozenset({
 
 _POPUP_AUDIENCES = frozenset({"all", "shop", "panel"})
 _POPUP_TONES = frozenset({"info", "promo", "maintenance"})
+
+_NEWS_FELDER = frozenset({
+    "post_id",
+    "title",
+    "summary",
+    "content_markdown",
+    "category",
+    "related_game_type",
+    "sources",
+    "is_published",
+    "is_pinned",
+    "author_display_name",
+})
+_NEWS_CATEGORIES = frozenset(NEWS_CATEGORIES)
 
 # Was beim Aendern unberuehrt bleibt, wenn das Modell es nicht nennt. Genannt
 # werden muss ein Feld auch dann, wenn es auf `null` soll — deshalb entscheidet
@@ -189,6 +211,164 @@ def _popup_set_payload(db: Session, user: User, rest: dict) -> tuple[dict, dict]
     }
     return payload, preview
 
+
+def _news_upsert_payload(db: Session, user: User, rest: dict) -> tuple[dict, dict]:
+    """Nutzlast fuer `propose_news_upsert` (anlegen oder aktualisieren)."""
+    from models import NewsPost
+
+    if set(rest) - _NEWS_FELDER:
+        raise AiActionValidationError("News-Tool hat ungueltige Argumente")
+
+    roh_id = rest.get("post_id")
+    if isinstance(roh_id, str) and not roh_id.strip():
+        roh_id = None
+    post_id: int | None = None
+    bestehend: NewsPost | None = None
+    if roh_id is not None:
+        try:
+            post_id = int(roh_id)
+        except (TypeError, ValueError):
+            raise AiActionValidationError(
+                "post_id muss eine Kennung aus news_read sein"
+            ) from None
+        bestehend = news_service.get_admin_news_by_id(db, post_id)
+        if bestehend is None:
+            raise AiActionValidationError(f"News-Beitrag {post_id} gibt es nicht")
+
+    title = str(rest["title"]).strip() if rest.get("title") is not None else None
+    summary = str(rest["summary"]).strip() if rest.get("summary") is not None else None
+    content_markdown = (
+        str(rest["content_markdown"]).strip()
+        if rest.get("content_markdown") is not None
+        else None
+    )
+
+    if bestehend is None:
+        if not title or not content_markdown:
+            raise AiActionValidationError(
+                "Ein neuer News-Beitrag erfordert title und content_markdown"
+            )
+    elif not any(feld in rest for feld in _NEWS_FELDER - {"post_id"}):
+        raise AiActionValidationError(
+            "Es wurde nichts genannt, das geaendert werden soll"
+        )
+
+    if title == "":
+        raise AiActionValidationError("Der Titel darf nicht leer sein")
+    if content_markdown == "":
+        raise AiActionValidationError("Der Inhalt darf nicht leer sein")
+    if title is not None and len(title) > 200:
+        raise AiActionValidationError("Der Titel darf hoechstens 200 Zeichen lang sein")
+    if summary is not None and len(summary) > 400:
+        raise AiActionValidationError("Die Zusammenfassung darf hoechstens 400 Zeichen lang sein")
+
+    category: str | None = None
+    if "category" in rest and rest["category"] is not None:
+        category = str(rest["category"]).strip()
+        if category not in _NEWS_CATEGORIES:
+            raise AiActionValidationError("Ungueltige News-Kategorie")
+
+    related_game_type: str | None = None
+    has_game_type = "related_game_type" in rest
+    if has_game_type and rest["related_game_type"] is not None:
+        gt_clean = str(rest["related_game_type"]).strip().lower()
+        if gt_clean:
+            if not NEWS_GAME_TYPE_RE.fullmatch(gt_clean):
+                raise AiActionValidationError("Ungueltiges Spiel-Kuerzel")
+            related_game_type = gt_clean
+
+    sources_out: list[dict[str, str]] | None = None
+    if "sources" in rest:
+        raw_sources = rest["sources"]
+        if raw_sources is None:
+            sources_out = []
+        elif not isinstance(raw_sources, list):
+            raise AiActionValidationError("sources muss eine Liste sein")
+        else:
+            if len(raw_sources) > MAX_NEWS_SOURCES:
+                raise AiActionValidationError(f"Hoechstens {MAX_NEWS_SOURCES} Quellen erlaubt")
+            sources_out = []
+            for idx, entry in enumerate(raw_sources):
+                if not isinstance(entry, dict):
+                    raise AiActionValidationError(f"Quelle {idx + 1} muss ein Objekt sein")
+                try:
+                    item = NewsSourceItem(
+                        title=str(entry.get("title") or ""),
+                        url=str(entry.get("url") or ""),
+                    )
+                except ValueError as exc:
+                    raise AiActionValidationError(str(exc)) from None
+                sources_out.append({"title": item.title, "url": item.url})
+
+    author_display_name: str | None = None
+    has_author = "author_display_name" in rest
+    if has_author and rest["author_display_name"] is not None:
+        author_display_name = redact_sensitive_text(str(rest["author_display_name"]).strip())[:120] or None
+
+    payload: dict = {"post_id": post_id}
+    if title is not None:
+        payload["title"] = redact_sensitive_text(title)
+    if summary is not None:
+        payload["summary"] = redact_sensitive_text(summary)
+    if content_markdown is not None:
+        payload["content_markdown"] = redact_sensitive_text(content_markdown)
+    if category is not None:
+        payload["category"] = category
+    elif bestehend is None:
+        payload["category"] = "announcement"
+    if has_game_type:
+        payload["related_game_type"] = related_game_type
+    if sources_out is not None:
+        payload["sources"] = sources_out
+    if "is_published" in rest:
+        payload["is_published"] = bool(rest["is_published"])
+    elif bestehend is None:
+        payload["is_published"] = False
+    if "is_pinned" in rest:
+        payload["is_pinned"] = bool(rest["is_pinned"])
+    if has_author:
+        payload["author_display_name"] = author_display_name
+
+    will_touch_public = bool(payload.get("is_published")) or (
+        bestehend is not None and bool(bestehend.is_published)
+    )
+    effective_sources = (
+        payload["sources"]
+        if "sources" in payload
+        else [
+            {"title": s.title, "url": s.url}
+            for s in news_service.parse_sources(bestehend.sources_json if bestehend else None)
+        ]
+    )
+    preview: dict = {
+        "operation": "news_update" if bestehend is not None else "news_create",
+        "post_id": post_id,
+        "title": payload.get(
+            "title",
+            redact_sensitive_text(str(bestehend.title)) if bestehend else "",
+        ),
+        "summary": payload.get(
+            "summary",
+            redact_sensitive_text(str(bestehend.summary or "")) if bestehend else "",
+        ),
+        "category": payload.get(
+            "category",
+            str(bestehend.category) if bestehend else "announcement",
+        ),
+        "is_published": payload.get(
+            "is_published",
+            bool(bestehend.is_published) if bestehend else False,
+        ),
+        "sources_count": len(effective_sources),
+        "content_preview": payload.get(
+            "content_markdown",
+            redact_sensitive_text(str(bestehend.content_markdown)) if bestehend else "",
+        )[:300],
+    }
+    if will_touch_public:
+        preview["always_confirm"] = True
+    return payload, preview
+
 def _task_set_payload(db: Session, user: User, arguments: dict) -> tuple[dict, dict]:
     """Nutzlast fuer `propose_task_set` — anlegen oder aendern.
 
@@ -310,6 +490,64 @@ def _ausfuehren_popup_set(db: Session, rahmen: _AusfuehrungsRahmen) -> _Ausgefue
     db.commit()
     db.refresh(popup)
     return _Ausgefuehrt(result={"created": True, "popup_id": popup.id, "title": popup.title})
+
+
+def _ausfuehren_news_upsert(db: Session, rahmen: _AusfuehrungsRahmen) -> _Ausgefuehrt:
+    p = dict(rahmen.payload)
+    post_id = p.pop("post_id", None)
+    sources = [
+        NewsSourceItem(title=item["title"], url=item["url"])
+        for item in (p.pop("sources", None) or [])
+    ] if "sources" in p else None
+
+    if post_id is not None:
+        post = news_service.get_admin_news_by_id(db, int(post_id))
+        if post is None:
+            raise AiActionValidationError(
+                f"News-Beitrag {post_id} gibt es nicht mehr — er wurde inzwischen geloescht"
+            )
+        update_fields = dict(p)
+        if sources is not None:
+            update_fields["sources"] = sources
+        updated = news_service.update_news_post(
+            db,
+            post,
+            NewsPostUpdate(**update_fields),
+            actor=rahmen.active_user,
+        )
+        return _Ausgefuehrt(
+            result={
+                "updated": True,
+                "post_id": updated.id,
+                "slug": updated.slug,
+                "title": updated.title,
+                "is_published": bool(updated.is_published),
+            }
+        )
+
+    create_data = NewsPostCreate(
+        title=str(p["title"]),
+        summary=str(p.get("summary") or ""),
+        content_markdown=str(p["content_markdown"]),
+        category=p.get("category") or "announcement",
+        related_game_type=p.get("related_game_type"),
+        sources=sources or [],
+        is_published=bool(p.get("is_published", False)),
+        is_pinned=bool(p.get("is_pinned", False)),
+        author_display_name=p.get("author_display_name"),
+    )
+    created = news_service.create_news_post(
+        db, create_data, author=rahmen.active_user
+    )
+    return _Ausgefuehrt(
+        result={
+            "created": True,
+            "post_id": created.id,
+            "slug": created.slug,
+            "title": created.title,
+            "is_published": bool(created.is_published),
+        }
+    )
 
 def _ausfuehren_task_set(db: Session, rahmen: _AusfuehrungsRahmen) -> _Ausgefuehrt:
     # **Die Felder werden hier erneut geprueft**, nicht nur

@@ -1,4 +1,4 @@
-import { Activity, AlertTriangle, Blocks, Bot, CalendarClock, ChevronDown, Database, Eye, FilePenLine, FileX, Globe, HardDriveDownload, HardDriveUpload, Mail, Network, Package, Plug, Power, ServerCog, ShieldCheck, SlidersHorizontal, Trash2, Users, Wrench } from 'lucide-react'
+import { Activity, AlertTriangle, Blocks, Bot, CalendarClock, ChevronDown, Database, Eye, FilePenLine, FileX, Globe, HardDriveDownload, HardDriveUpload, Mail, Network, Newspaper, Package, Plug, Power, ServerCog, ShieldCheck, SlidersHorizontal, Trash2, Users, Wrench } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -122,6 +122,11 @@ const TATSACHEN: readonly string[] = [
   'database',
   'table',
   'destructive',
+  'category',
+  'summary',
+  'related_game_type',
+  'sources_count',
+  'is_published',
 ]
 
 function tatsachenZeilen(preview: Record<string, unknown>): [string, string][] {
@@ -248,6 +253,7 @@ export function AiActionProposalCard({
     // fuer alles, was einen Server anfasst.
     propose_task_set: CalendarClock,
     propose_task_delete: CalendarClock,
+    propose_news_upsert: Newspaper,
     // Auch die eingebauten Zeitplaene sind Uhren: eingestellt wird, **wann**
     // neu gestartet oder gesichert wird — nicht der Vorgang selbst.
     propose_restart_schedule_set: CalendarClock,

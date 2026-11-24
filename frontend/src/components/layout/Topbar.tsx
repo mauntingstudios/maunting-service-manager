@@ -1,8 +1,10 @@
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { ArrowLeft, CreditCard, ExternalLink, LifeBuoy, LogOut, Menu, ReceiptText, ShieldCheck, ShoppingBag, User as UserIcon, X } from 'lucide-react'
+import { ArrowLeft, CreditCard, ExternalLink, LifeBuoy, LogOut, Menu, Newspaper, ReceiptText, ShieldCheck, ShoppingBag, User as UserIcon, X } from 'lucide-react'
 import { Blatteintrag, Blattmenue, Kurzinfo } from '@maunting/ui'
+import { newsApi } from '@/api/news'
+import { still } from '@/lib/still'
 import { Avatar } from '@/components/app/Avatar'
 import { Logo } from '@/components/Logo'
 import { ProfileDropdown, type ProfileDropdownItem } from '@/components/app/ProfileDropdown'
@@ -90,11 +92,36 @@ export function Topbar({ onOpenWallet, presenceStatus: propPresenceStatus, effec
   const customBrand = usePublicSettingsStore((s) => s.branding?.custom_name || '')
   const brandMarkText = customBrand || 'MSM'
   const [blattOffen, setBlattOffen] = useState(false)
+  const canManageNews =
+    useHasPermission('panel.news.manage') ||
+    useHasPermission('panel.settings.write') ||
+    useHasPermission('shop.write')
+  const [publishedNewsCount, setPublishedNewsCount] = useState(0)
 
   // Die Hülle meldet die Präsenz; ein zweiter Melder schriebe bei jedem
   // Routenwechsel doppelt.
   const presenceStatus = propPresenceStatus ?? 'auto'
   const handlePresenceChange = onPresenceChange ?? (() => {})
+
+  useEffect(() => {
+    if (!isOnline || typeof newsApi?.getSummary !== 'function') return
+    let aktiv = true
+    newsApi
+      .getSummary()
+      .then((res) => {
+        if (aktiv && typeof res?.published_count === 'number') {
+          setPublishedNewsCount(res.published_count)
+        }
+      })
+      .catch((err) => {
+        still(err, 'Topbar.newsSummary')
+      })
+    return () => {
+      aktiv = false
+    }
+  }, [isOnline])
+
+  const showNewsLink = publishedNewsCount > 0 || canManageNews
 
   useEffect(() => {
     if (!isOnline) return
@@ -145,6 +172,16 @@ export function Topbar({ onOpenWallet, presenceStatus: propPresenceStatus, effec
             },
           ]
         : []),
+    ...(showNewsLink
+      ? [
+          {
+            key: 'news',
+            label: t('nav.news'),
+            icon: <Newspaper className="h-4 w-4" />,
+            onClick: () => navigate('/news'),
+          },
+        ]
+      : []),
     ...(canViewOperatorDocs
       ? []
       : [
@@ -389,6 +426,13 @@ export function Topbar({ onOpenWallet, presenceStatus: propPresenceStatus, effec
                 icon={<CreditCard className="h-4 w-4" aria-hidden="true" />}
                 label={t('mss.vault.walletModus', 'Smartcard-Wallet')}
                 onClick={() => { setBlattOffen(false); onOpenWallet() }}
+              />
+            )}
+            {showNewsLink && (
+              <Blatteintrag
+                icon={<Newspaper className="h-4 w-4" aria-hidden="true" />}
+                label={t('nav.news')}
+                onClick={() => { setBlattOffen(false); navigate('/news') }}
               />
             )}
             <Blatteintrag

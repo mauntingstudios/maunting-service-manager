@@ -135,6 +135,9 @@ class Settings(BaseSettings):
     # Eigene Whitelabel-Logos (default, birthday, halloween, christmas) als WebP.
     # Dev/Test via MSM_BRANDING_DIR ueberschreibbar (z. B. tmp_path).
     branding_dir: str = "/opt/msm/branding"
+    # Titelbilder fuer Neuigkeiten-Artikel (WebP, sanitisiert).
+    # Dev/Test via MSM_NEWS_COVERS_DIR ueberschreibbar (z. B. tmp_path).
+    news_covers_dir: str = "/opt/msm/news-covers"
     local_agent_env_file: str = "/opt/msm/msm-agent/.env"
     # Direkter Enrollment-/Handshake-Token fuer den lokalen Agent (bei 3-User-Isolation
     # kann msm die msm-agent/.env nicht direkt lesen; install.sh setzt ihn hier).

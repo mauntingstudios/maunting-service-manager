@@ -569,6 +569,16 @@ def test_gehirn_und_worker_koennen_pop_ups_lesen_und_aendern() -> None:
         )
 
 
+def test_gehirn_worker_und_aufgaben_koennen_news_kuratieren() -> None:
+    """Singularity darf sowohl im Chat als auch ueber Aufgaben News lesen und entwerfen."""
+    news = ai_tool_registry.NEWS_TOOLS
+    assert news == {"news_read", "propose_news_upsert"}
+    assert news <= ai_tool_registry.GEHIRN_TOOLS
+    assert news & ai_tool_registry.worker_ausschluss() == set()
+    assert "news_read" in ai_tool_registry.aufgaben_tools("report")
+    assert news <= ai_tool_registry.aufgaben_tools("act")
+
+
 def test_der_worker_fragt_ueber_die_meldestelle_nie_direkt() -> None:
     """`ask_user` faellt namentlich weg, `worker_frage` bleibt.
 

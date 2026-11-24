@@ -652,6 +652,7 @@ DOCS_TOOLS = _mit_gruppe("docs")
 MAIL_TOOLS = _mit_gruppe("mailbox")
 CALENDAR_TOOLS = _mit_gruppe("calendar")
 POPUP_TOOLS = _mit_gruppe("popup")
+NEWS_TOOLS = _mit_gruppe("news")
 SHOP_TOOLS = _mit_gruppe("shop")
 TASK_TOOLS = _mit_gruppe("tasks")
 NOTES_TOOLS = _mit_gruppe("notes")
@@ -661,7 +662,7 @@ ATTACHMENT_TOOLS = _mit_gruppe("attachments")
 # Werkzeug mehr, das den Messenger anfasst. Siehe docs/agent-rules/security.md,
 # Abschnitt 5.1.
 CHAT_INTERACTION_TOOLS = (
-    MAIL_TOOLS | CALENDAR_TOOLS | POPUP_TOOLS | SHOP_TOOLS | TASK_TOOLS | NOTES_TOOLS | ATTACHMENT_TOOLS
+    MAIL_TOOLS | CALENDAR_TOOLS | POPUP_TOOLS | NEWS_TOOLS | SHOP_TOOLS | TASK_TOOLS | NOTES_TOOLS | ATTACHMENT_TOOLS
 )
 ASK_TOOLS = _mit_art("ask")
 DELEGATION_TOOLS = _mit_art("delegation")
@@ -1034,6 +1035,7 @@ AUFGABEN_LESEN = frozenset({
     "email_search",
     "email_read",
     "calendar_read",
+    "news_read",
     # Damit ein Auftrag ueber die eigenen Auftraege berichten kann. Liest
     # ausschliesslich, was diesem Benutzer gehoert.
     "list_tasks",
@@ -1095,6 +1097,8 @@ AUFGABEN_HANDELN = frozenset({
     "propose_email_send",
     "propose_calendar_event_create",
     "propose_calendar_event_update",
+    # Redaktionelle News-Entwuerfe (mit is_published=True greift verlangt_klick).
+    "propose_news_upsert",
 })
 
 

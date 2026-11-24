@@ -87,6 +87,7 @@ from .doc import (
     Document,
 )
 from .panel_popup import PanelPopup, UserPopupState
+from .news_post import NewsPost
 from .vault_entry import VaultEntry
 from .vault_hint import VaultHint
 from .vault_user_setting import VaultUserSetting
@@ -176,7 +177,7 @@ __all__ = [
     "UserCredential", "ServerCredentialBinding",
     "CREDENTIAL_KINDS", "KIND_GITHUB_TOKEN", "KIND_STEAM_ACCOUNT",
     "UserMailbox", "UserCalendar", "CalendarEvent", "Note",
-    "PanelPopup", "UserPopupState",
+    "PanelPopup", "UserPopupState", "NewsPost",
     "VaultEntry", "VaultHint", "VaultUserSetting", "VaultBlindBucket", "VaultBlob", "VaultBucketFormat", "VaultBucketTombstone", "VaultEingang", "VaultSicherungszugang",
     "UserAchievement", "UserActivityTime", "UserFriend", "UserInfo", "UserPresence", "UserPresenceSession",
     "E2eeAccount", "E2eeAccountKeyVault", "E2eeChatKey", "E2eeChatState",

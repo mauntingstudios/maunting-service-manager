@@ -512,7 +512,10 @@ def test_the_tool_catalogue_stays_within_a_stated_budget(
         # 107.221 Zeichen Panel (136 Werkzeuge) mit `read_shop_catalog`,
         # `propose_shop_plan_upsert` (maxItems=100, currency/billing_interval),
         # `propose_shop_coupon_upsert`, `propose_shop_addon_upsert`.
-        assert len(katalog) < 113_000, (
+        # Stand 24.11.2026 (News-System): 114.531 Zeichen App (147 Werkzeuge),
+        # 109.459 Zeichen Panel (141 Werkzeuge) mit `news_read` und
+        # `propose_news_upsert`.
+        assert len(katalog) < 116_000, (
             f"Der Werkzeugkatalog der Herkunft '{herkunft}' ist auf "
             f"{len(katalog)} Zeichen gewachsen. Er geht in jeder Runde mit und "
             "taucht in keiner Budgetrechnung auf. Wer die Grenze anhebt, misst "

@@ -12,8 +12,8 @@ Arbeitsgrundlage für den Umbau von Storefront, RBAC-Sichtbarkeit, Multi-Node-St
 3. [Paket 1: Strikte RBAC-Sichtbarkeit, Support-Widget-Fix & Modus-Trennung (umgesetzt, 24.11.2026)](#paket-1-strikte-rbac-sichtbarkeit-support-widget-fix--modus-trennung-umgesetzt-24112026)
 4. [Paket 2: Nodes 2.0, Private Hybrid-Nodes, CPU-Sichtbarkeit & Standort-Wahl (umgesetzt, 24.11.2026)](#paket-2-nodes-20-private-hybrid-nodes-cpu-sichtbarkeit--standort-wahl-umgesetzt-24112026)
 5. [Paket 3: Pop-up- & Ankündigungs-System 2.0 (unten rechts in Shop & Panel) (umgesetzt, 24.11.2026)](#paket-3-pop-up--ankündigungs-system-20-unten-rechts-in-shop--panel-umgesetzt-24112026)
-6. [Paket 4: Integriertes News-System (`/news`, Shop-Teaser, Panel & Admin-CMS)](#paket-4-integriertes-news-system-news-shop-teaser-panel--admin-cms)
-7. [Paket 5: Shop-Storefront, Katalog, Trustpilot-Option & Konfigurator 2.0](#paket-5-shop-storefront-katalog-trustpilot-option--konfigurator-20)
+6. [Paket 4: Integriertes News-System (`/news`, Shop-Teaser, Panel & Admin-CMS) (umgesetzt, 24.11.2026)](#paket-4-integriertes-news-system-news-shop-teaser-panel--admin-cms-umgesetzt-24112026)
+7. [Paket 5: Shop-Storefront, Katalog, Trustpilot-Option & Konfigurator 2.0 (Rework offen: Backend fertig, Frontend-UI wird neu gemacht)](#paket-5-shop-storefront-katalog-trustpilot-option--konfigurator-20-rework-offen-backend-fertig-frontend-ui-wird-neu-gemacht)
 8. [Paket 6: Konto- & Abo-Zentrale 2.0 (`/konto` & `/profile` aus einem Guss)](#paket-6-konto--abo-zentrale-20-konto--profile-aus-einem-guss)
 9. [Umsetzungsreihenfolge & Globale Qualitäts-Gates](#9-umsetzungsreihenfolge--globale-qualitäts-gates)
 
@@ -384,7 +384,7 @@ Im bestehenden `frontend/src/shop/pages/ShopStart.tsx` fallen folgende typische 
 
 ---
 
-## Paket 4: Integriertes News-System (`/news`, Shop-Teaser, Panel & Admin-CMS)
+## Paket 4: Integriertes News-System (`/news`, Shop-Teaser, Panel & Admin-CMS) (umgesetzt, 24.11.2026)
 
 ### Ist-Zustand & konkrete Befunde im Code
 
@@ -429,7 +429,10 @@ Im bestehenden `frontend/src/shop/pages/ShopStart.tsx` fallen folgende typische 
      - Kontext-Hinweis „Passende Spiel-News“ auf `ShopSpiel.tsx`, wenn für dieses `game_type` veröffentlichte News vorliegen.
      - Kompakter News-Link im Profil-/Hilfe- bzw. Topbar-Bereich von `Shell.tsx` (ohne die mittlere Haupt-Tabbar zu überladen; z. B. im User-Menü und im mobilen `Blattmenue` sowie als optionaler Link vom Dashboard aus, sobald mindestens 1 veröffentlichter Beitrag existiert).
    - **Admin-Verwaltung (`frontend/src/pages/settings/NewsTab.tsx`):**
-     - Eigener Bereich unter **Einstellungen → Neuigkeiten** (bzw. direkt verlinkt aus Shop-Einstellungen): Liste aller Entwürfe/Beiträge, Kategorie-`Dropdown`, optionales Spiel-`Dropdown` (`related_game_type`), automatische Slug-Erzeugung mit Editiermöglichkeit, Markdown-Editor mit Vorschau (`AiMarkdown`) und Cover-Bildupload.
+     - Hochwertiges Editorial-CMS unter **Einstellungen → Neuigkeiten** (bzw. direkt verlinkt aus Shop-Einstellungen): Liste aller Entwürfe/Beiträge, Kategorie-`Dropdown`, optionales Spiel-`Dropdown` (`related_game_type`), automatische Slug-Erzeugung mit Editiermöglichkeit, strukturierter Artikel-Editor mit Live-Vorschau (`AiMarkdown`), Quellen-/Link-Angaben und Cover-Bildupload (deutlich reifer als der kompakte Pop-up-Editor).
+   - **Singularity-KI-Tools, Aufgaben-Automatisierung & Welt-/Branchen-News-Kuration:**
+     - Eigene KI-Werkzeuge (`news_read` zum Lesen vorhandener Entwürfe/Beiträge und `propose_news_upsert` zum Vorschlagen neuer Beiträge oder Updates über das Freigabe-System), nutzbar sowohl direkt im Chat als auch geplant über das KI-Aufgabensystem (`ai_task_service`).
+     - Für Betreiber und kleine Teams entsteht ein KI-gestützter Kuratierungs-Workflow für relevante Spiele-, Tech- und Welt-Neuigkeiten (über die vorhandene Websuche/Web-Lese-Tools werden reale Quellen ausgewertet und als Entwurf zur menschlichen Freigabe vorgeschlagen, niemals mit erfundenen Quellen oder Blindveröffentlichung ohne Review).
 
 ### Betroffene Dateien
 
@@ -453,9 +456,24 @@ Im bestehenden `frontend/src/shop/pages/ShopStart.tsx` fallen folgende typische 
 - Frontend (`vitest`): `NewsOverview`, `NewsDetail` (inkl. CTA zum verknüpften Shop-Spiel), `NewsTab` Admin-Editor.
 - Browser-Probe: Beitrag im Admin erstellen + Bild hochladen + veröffentlichen -> auf `/news`, `/news/:slug`, von `/` und vom `/dashboard` aus aufrufen -> Konsole sauber.
 
+### Umsetzungsstand & Erkenntnisse (Paket 4)
+
+- **Backend umgesetzt:** `NewsPost`-Modell (`backend/models/news_post.py`, exportiert in `backend/models/__init__.py`), idempotente Migration `20261124_05_news_posts.py` (Single-Head `20261124_05` auf Parent `20261124_04`), globales Recht `panel.news.manage` in `backend/services/permission_catalog.py`, Schemas (`backend/schemas/news.py`), Service (`backend/services/news_service.py` mit Cover-Verarbeitung über `wallpaper_service.sanitize_and_compress_wallpaper` plus `resolve_scoped_dir` in `config.news_covers_dir` sowie strenger HTTPS-Quellenprüfung bis maximal 10 Quellen) und Router (`backend/routers/news.py`, Admin-CRUD + Cover-Upload mit RBAC & CSRF sowie öffentliche Endpunkte `/api/news`, `/api/news/summary`, `/api/news/{slug}`, `/api/news/{slug}/cover` inkl. ETag/304).
+- **Singularity-KI umgesetzt:** Neue Werkzeuge `news_read` und `propose_news_upsert` (`backend/services/ai_tools/personal_tools.py`), Berechtigungs- und Ausführungslogik in `backend/services/ai_proposals/base.py` und `task_proposals.py` (`always_confirm: true` beim Veröffentlichen, während KI-Aufgaben Entwürfe mit `is_published: false` und geprüften HTTPS-Quellen direkt anlegen können), Redaktions-Prompt `NEWS_REDAKTION` in `backend/services/ai_prompt.py` sowie Aufnahme in `CHAT_INTERACTION_TOOLS`, `AUFGABEN_LESEN` und `AUFGABEN_HANDELN` (`backend/services/ai_tool_registry.py`), plus Frontend-Anbindung in `frontend/src/api/ai.ts`, `frontend/src/components/ai/AiActionProposalCard.tsx` und `frontend/src/features/permissions/PermissionEditor.tsx`.
+- **Frontend umgesetzt:** `frontend/src/api/news.ts`, öffentliche News-Routen `/news` und `/news/:slug` über `NewsWeiche.tsx` (Panel-Rahmen bei Anmeldung oder Shop-Rahmen für Gäste), `NewsOverview.tsx` (Kategorie-/Suchfilter, angepinnter Lead-Artikel, Karten-Grid, Quellenhinweise), `NewsDetail.tsx` (Markdown-Ansicht, Quellenliste, Spiel-CTA), Editorial-CMS `NewsTab.tsx` unter Einstellungen (`Settings.tsx?tab=news`), bedingter `/news`-Menüeintrag in `Topbar.tsx`, `/news`-Links in `ShopKopf.tsx` und `ShopRahmen.tsx`, passende Spiel-News in `ShopSpiel.tsx` sowie DE/EN-Übersetzungen in `frontend/src/locales/{de,en}.json`.
+- **Verifizierte Tests & Builds:**
+  - Backend (`pytest` gegen WSL2-PostgreSQL über `tests/test_news.py`, `tests/test_ai_tool_registry.py`, `tests/test_ai_werkzeug_mengen.py`, `tests/test_ai_tool_handler_contract.py`, `tests/test_ai_tool_drift.py`, `tests/test_permission_catalog_ui_contract.py`): `120 passed, 1 failed`. `tests/test_news.py` (`5 passed`) sowie alle 4 KI-Vertragstests (`109` Tests) bestanden; der einzige Fehler in `test_permission_catalog_ui_contract.py::test_every_permission_key_is_assigned_to_a_group` betrifft ausschließlich das bereits vorab bestehende fremde Recht `ai.projects.preview` (`panel.news.manage` ist zugeordnet).
+  - Frontend (`vitest` nach finalen UI-Typkorrekturen über `NewsOverview.test.tsx`, `NewsDetail.test.tsx`, `NewsTab.test.tsx`, `ShopSpiel.test.tsx`, `keinNativesTitle.test.ts`): `5` Testdateien, `15 passed`.
+  - `src/locales/schreibweise.test.ts`: `6 passed | 1 failed` (`en: kein Title Case in mehrwortigen Beschriftungen`) ausschließlich wegen 4 bereits vorab bestehender fremder Keys (`serverVariables.dateiTabOeffnen`, `settings.shop.betrieb.betreiberAnsichtBadge`, `shop.konto.rechnungen.kontextBadge`, `hoster.products.openShopSettings`), ohne Verstöße in Paket 4.
+  - Produktions-Builds nach finaler Korrektur: `npm run build` (`3727` Module) und `npm run build:desktop` (`3706` Module) jeweils inkl. `npm run check` (`en/de parity: 11500 keys`, `classes: 56 msm-*, 12 animate-*`, `check-leere-catches: 278 <= 279`) mit Exit-Code `0`.
+- **Offene Punkte & Stolpersteine:**
+  - *CSRF-Cookie-Name in Tests:* Login setzt `__Secure-csrf_token` (nicht `msm_csrf`).
+  - *UI-Prop-Verträge:* `@maunting/ui` nutzt `Zustandsflaeche` (`art`, `titel`, `text`, `icon`), `Switch` (`onCheckedChange`), `Spinner` ohne `label`-Prop sowie `Badge` mit `default`/`destructive` statt `neutral`/`error`; Destructive-Utility-Klassen heißen `status-destructive` statt `status-error`.
+  - *Offen:* Einbindung des `ShopNewsTeaser`-Blocks (`#shop-news`) auf der Shop-Startseite im Rahmen des anstehenden Paket-5-UI-Reworks sowie die manuelle Browser-Probe (Artikel + Cover-Upload im Admin und Prüfung auf `/news`, `/news/:slug`, `/` und `/dashboard` inkl. Browser-Konsole).
+
 ---
 
-## Paket 5: Shop-Storefront, Katalog, Trustpilot-Option & Konfigurator 2.0
+## Paket 5: Shop-Storefront, Katalog, Trustpilot-Option & Konfigurator 2.0 (Rework offen: Backend fertig, Frontend-UI wird neu gemacht)
 
 ### Ist-Zustand & konkrete Befunde im Code
 
@@ -540,6 +558,21 @@ Im bestehenden `frontend/src/shop/pages/ShopStart.tsx` fallen folgende typische 
 - Backend (`pytest`): `test_caddy_csp_und_gebaute_csp_sind_dieselbe`, Katalog-Flags (`is_featured`, `is_bestseller`, `is_new`), strikte Trustpilot-/Discord-URL-Validierung (422 bei Phishing-/HTTP-URLs).
 - Frontend (`vitest`): Tests für `HeroShowcase` (Pause/Play ohne doppeltes `aria-pressed`, Slide-Wechsel), `StandortPingDeck` (Auswahl + Status), `KatalogSchiene` (Tastatur/Next/Prev), `Konfigurator` (Standort + Aufpreis), `TrustSection` (ausgeblendet bei deaktiviertem Trustpilot, Tracking-Schutz bei `trustbox`).
 - Browser-Probe: Desktop (1440px) und Mobil (375px) auf `/`, `/shop/:id`, `/shop/:id/kasse`, `/news` prüfen, Animations-Verhalten mit und ohne `prefers-reduced-motion` testen, Konsole prüfen.
+
+### Umsetzungsstand & Erkenntnisse (Paket 5)
+
+- **Backend umgesetzt & beibehalten:** `ShopPlan` (`backend/models/shop.py`) und die Schemas in `backend/schemas/shop.py` um `is_featured`, `is_bestseller` und `is_new` erweitert (Migration `20261124_04_shop_plan_curation.py`, dient als Parent von Paket-4-Migration `20261124_05`). In `backend/services/shop_catalog_service.py` und `backend/routers/shop.py` werden über `recent_paid_order_counts(db, days=90)` echte bezahlte Bestellzahlen der letzten 90 Tage als `recent_order_count` je Katalog-Tarif geliefert. `backend/services/shop_lifecycle_settings_service.py` ergänzt `shop_trustpilot_enabled`, `shop_trustpilot_url` (strikte HTTPS-Prüfung auf `trustpilot.com` bzw. `*.trustpilot.com` mit `/review/<slug>`, bei aktivem Flag Pflichtfeld) sowie `shop_discord_invite_url` (strikte HTTPS-Prüfung auf `discord.gg/<code>` oder `discord.com/invite/<code>`) und gibt alle drei Werte über `ShopPublicPolicyResponse` aus.
+- **Bewusste Entscheidung bei Trustpilot:** Vorerst ist ausschließlich die trackingfreie `link_card`-Variante ohne externes TrustBox-Skript umgesetzt. Dadurch mussten `frontend/vite.csp.ts`, `backend/main.py`, `install.sh` und `Caddyfile.template` nicht verändert werden und `test_caddy_csp_und_gebaute_csp_sind_dieselbe` bleibt unberührt.
+- **Frontend-Erstentwurf (uncommittet, Rework offen):**
+  - Erster UI-Stand in `HeroShowcase.tsx`, `TrustSection.tsx`, `KatalogSchiene.tsx`, `StandortPingDeck.tsx`, `SpielKarte.tsx`, `ShopKopf.tsx`, `ShopRahmen.tsx`, `ShopStart.tsx` sowie 4-Schritt-`Konfigurator.tsx`, `ShopLifecycleKarte.tsx` und `ShopPlansEditor.tsx`. Dieser UI-Aufschlag wurde nach Nutzer-Feedback vom 24.11.2026 als **Rework offen** zurückgestellt.
+  - **Konkreter Rework-Auftrag für den nächsten Schritt:**
+    1. Den DE/EN-`LanguageSwitcher` vollständig aus dem Shop-Header (`ShopKopf.tsx`) entfernen.
+    2. Die 4 direkt nebeneinander gestapelten Header-Buttons (insbesondere den sinnlosen `Support`-Button) entfernen bzw. sauber auflösen.
+    3. Ein echtes, hochwertiges Storefront-Rework statt kosmetischer Anpassung am alten Layout liefern und dabei auch den Paket-4-Block (`ShopNewsTeaser` / `#shop-news`) stimmig einbauen.
+- **Bisherige Prüfungen & offene Punkte:**
+  - *Backend (`pytest`):* `54 passed` für die Shop-Suites im Zuge des ersten Paket-5-Laufs; da Paket 5 nach dem UI-Rework erneut abgenommen werden muss, steht die abschließende Paket-5-Gesamtabnahme nach dem UI-Umbau noch aus.
+  - *Gefundene Stolpersteine:* `schreibweise.test.ts` lehnt auch in URL-Beispielen `...` ab (konkrete Beispiel-Slugs oder `…` nutzen); nach Ping-Tests dürfen Messwerte in Storefront-Komponenten nicht zu mehrdeutigen Test-Treffern führen.
+  - *Offen:* Komplettes Frontend-UI-Rework für Storefront (`ShopKopf`, `ShopStart`, `HeroShowcase`, `KatalogSchiene`, `StandortPingDeck`, `TrustSection`, `ShopNewsTeaser`), erneute Vitest-/Build-Prüfung und anschließende manuelle Browser-Probe (Desktop `1440px`, Mobil `375px`, `prefers-reduced-motion`, Konsole).
 
 ---
 

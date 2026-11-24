@@ -53,6 +53,9 @@ const DocumentShareClaim = lazy(() => import('./pages/DocumentShareClaim').then(
 const Benutzerprofil = lazy(() => import('./pages/Benutzerprofil').then(module => ({ default: module.Benutzerprofil })))
 const ShopWeiche = lazy(() => import('./shop/ShopWeiche').then(module => ({ default: module.ShopWeiche })))
 const ShopRahmen = lazy(() => import('./shop/ShopRahmen').then(module => ({ default: module.ShopRahmen })))
+const NewsWeiche = lazy(() => import('./pages/NewsWeiche').then(module => ({ default: module.NewsWeiche })))
+const NewsOverview = lazy(() => import('./pages/NewsOverview').then(module => ({ default: module.NewsOverview })))
+const NewsDetail = lazy(() => import('./pages/NewsDetail').then(module => ({ default: module.NewsDetail })))
 const ShopStart = lazy(() => import('./shop/pages/ShopStart').then(module => ({ default: module.ShopStart })))
 const ShopSpiel = lazy(() => import('./shop/pages/ShopSpiel').then(module => ({ default: module.ShopSpiel })))
 const ShopKasse = lazy(() => import('./shop/pages/ShopKasse').then(module => ({ default: module.ShopKasse })))
@@ -77,20 +80,23 @@ import { SaisonDeko } from './season/SaisonDeko'
 
 function App() {
   const location = useLocation()
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
+  const shopEnabled = usePublicSettingsStore((s) => s.shop_enabled)
+  const calendarEnabled = usePublicSettingsStore((s) => s.calendar_enabled)
+  const notesEnabled = usePublicSettingsStore((s) => s.notes_enabled)
+  const docsEnabled = usePublicSettingsStore((s) => s.docs_enabled)
+  const socialEnabled = usePublicSettingsStore((s) => s.social_enabled)
+  const isNewsPath = location.pathname === '/news' || location.pathname.startsWith('/news/')
   const istShopRoute =
     location.pathname === '/' ||
     location.pathname.startsWith('/shop') ||
-    location.pathname.startsWith('/konto')
+    location.pathname.startsWith('/konto') ||
+    (shopEnabled && isNewsPath)
   const [setupRequired, setSetupRequired] = useState<boolean | null>(null)
   const [setupEmailConfigured, setSetupEmailConfigured] = useState(false)
   const [privacyNoticeVisible, setPrivacyNoticeVisible] = useState(true)
   // Einzelne Felder statt des ganzen Stores: sonst zeichnete jede Änderung am
   // Benutzer (Avatar, Status) den ganzen Routenbaum samt Shell neu.
-  const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
-  const calendarEnabled = usePublicSettingsStore((s) => s.calendar_enabled)
-  const notesEnabled = usePublicSettingsStore((s) => s.notes_enabled)
-  const docsEnabled = usePublicSettingsStore((s) => s.docs_enabled)
-  const socialEnabled = usePublicSettingsStore((s) => s.social_enabled)
 
   // Der Konto-Schluessel wird auch ausserhalb des Messengers nachgeholt. Der
   // Lauf ist idempotent und still; er sendet nur an freigegebene Geraete.
@@ -152,6 +158,12 @@ function App() {
           <Route path="shop/:spielId" element={<ShopSpiel />} />
           <Route path="shop/:spielId/kasse" element={<ShopKasse />} />
           <Route path="shop/addon/:addonId/kasse" element={<ShopKasse />} />
+        </Route>
+
+        {/* Integriertes News-System für Storefront und Self-Hosted-Community */}
+        <Route element={<NewsWeiche />}>
+          <Route path="/news" element={<NewsOverview />} />
+          <Route path="/news/:slug" element={<NewsDetail />} />
         </Route>
 
         {/* Kundenbereich bleibt fuer bestehende Abos/Rechnungen/Profil auch

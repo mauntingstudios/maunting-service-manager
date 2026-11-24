@@ -73,6 +73,7 @@ from routers import (
     shop_router,
     user_integrations_router,
     popups_router,
+    news_router,
     calendar_router,
     notes_router,
     docs_router,
@@ -592,6 +593,7 @@ app.include_router(credentials_router)
 app.include_router(teams_router)
 app.include_router(user_integrations_router)
 app.include_router(popups_router)
+app.include_router(news_router)
 app.include_router(calendar_router)
 app.include_router(notes_router)
 # Dokumente: REST fuer Nutzer, /internal/docs nur fuer den Hocuspocus-Sidecar.

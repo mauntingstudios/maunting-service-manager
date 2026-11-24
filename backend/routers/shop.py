@@ -172,8 +172,11 @@ def _shop_error(exc: shop_catalog_service.ShopConfigurationError) -> HTTPExcepti
 @router.get("/catalog", response_model=list[ShopCatalogPlan])
 def get_catalog(db: Session = Depends(get_db)) -> list[ShopCatalogPlan]:
     """Aktive Tarife ohne Anmeldung. Keine Node-/Rollen-IDs."""
+    order_counts = shop_catalog_service.recent_paid_order_counts(db)
     return [
-        shop_catalog_service.catalog_plan(db, plan)
+        shop_catalog_service.catalog_plan(
+            db, plan, recent_order_count=order_counts.get(plan.id, 0)
+        )
         for plan in shop_catalog_service.list_plans(db, active_only=True)
     ]
 

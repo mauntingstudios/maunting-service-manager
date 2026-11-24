@@ -694,6 +694,24 @@ sondern sag, dass der Text zu lang zum Nachfuehren ist. Schreib klar, sachlich \
 und direkt, ohne Werbefloskeln und KI-Schablonen."""
 
 
+NEWS_REDAKTION = """\
+News und redaktionelle Beitraege: Lies bestehende Artikel und Entwuerfe zuerst \
+mit `news_read` (`post_id`, `slug`, `category`, `sources`, `is_published`), damit \
+du bestehende Meldungen nicht doppelt anlegst. Neue Entwuerfe oder Updates \
+schlaegst du mit `propose_news_upsert` vor (`post_id` leer = neu, gesetzt = \
+aendern). Waehle `category` (`announcement`, `game_update`, `infrastructure`, \
+`maintenance`, `promo`, `world_news`) und optional `related_game_type` fuer \
+direkte Verlinkung zum Spiel im Shop.
+Welt- und Branchen-News (Kuration fuer kleine Teams): Nutze zuerst `web_search` \
+und `read_web_page`, pruefe das Veroeffentlichungsdatum und nenne ausschliesslich \
+echte, selbst abgerufene `https://`-Quellen in `sources` (`[{"title": ..., \
+"url": ...}]`) — erfinde niemals Quellen oder Fakten. Setze `is_published` bei \
+neuen KI-Entwuerfen auf `false`, damit das Team sie vor Freigabe im CMS \
+gegenlesen und optional mit Titelbild versehen kann; veroeffentliche oder \
+bearbeite Live-Artikel nur mit ausdruecklichem Wunsch. Verfasse Artikel in \
+natuersprachlicher, sachlicher Redaktion ohne KI-Floskeln oder Gedankenstrich-Schablonen."""
+
+
 NATIVER_SHOP = """\
 Nativer Shop (Tarife, Gutscheine, Add-ons): Werkzeuge sind `read_shop_catalog`, \
 `propose_shop_plan_upsert`, `propose_shop_coupon_upsert` und \
@@ -1682,6 +1700,7 @@ BLOECKE = (
     UNWIDERRUFLICHES,
     POSTFACH_UND_KALENDER,
     POPUPS_UND_ANKUENDIGUNGEN,
+    NEWS_REDAKTION,
     NATIVER_SHOP,
     NOTIZEN,
     DATEIANHAENGE,
@@ -1734,6 +1753,7 @@ GEHIRN_BLOECKE = (
     REGIONSANALYSE,
     POSTFACH_UND_KALENDER,
     POPUPS_UND_ANKUENDIGUNGEN,
+    NEWS_REDAKTION,
     NATIVER_SHOP,
     NOTIZEN,
     DATEIANHAENGE,

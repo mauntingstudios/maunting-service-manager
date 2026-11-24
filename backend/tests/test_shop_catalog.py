@@ -143,3 +143,170 @@ class TestShopCatalog:
         ).json()
         catalog = client.get("/api/shop/catalog")
         assert all(plan["id"] != created["id"] for plan in catalog.json())
+
+    def test_curation_flags_and_recent_order_counts(
+        self,
+        client: TestClient,
+        owner_user: User,
+        owner_cookies: dict,
+        csrf_token: str,
+        db,
+    ):
+        from models import ShopOrder, ShopOrderItem
+
+        created = _create(
+            client,
+            owner_cookies,
+            csrf_token,
+            {**_payload(), "is_featured": True, "is_bestseller": True, "is_new": False},
+        ).json()
+        plan_id = created["id"]
+
+        paid_order = ShopOrder(
+            number=f"MSM-CUR-{uuid4().hex[:6]}",
+            user_id=owner_user.id,
+            status="paid",
+            currency="EUR",
+            months=1,
+            net_cents=587,
+            tax_cents=112,
+            gross_cents=699,
+            payment_provider="demo",
+        )
+        cancelled_order = ShopOrder(
+            number=f"MSM-CAN-{uuid4().hex[:6]}",
+            user_id=owner_user.id,
+            status="cancelled",
+            currency="EUR",
+            months=1,
+            net_cents=587,
+            tax_cents=112,
+            gross_cents=699,
+            payment_provider="demo",
+        )
+        db.add_all([paid_order, cancelled_order])
+        db.flush()
+        db.add_all(
+            [
+                ShopOrderItem(
+                    order_id=paid_order.id,
+                    kind="plan",
+                    plan_id=plan_id,
+                    game_type="palworld",
+                    name=created["name"],
+                    quantity=2,
+                    unit_price_cents=699,
+                    tax_rate_percent=19,
+                    net_cents=1174,
+                    tax_cents=224,
+                    gross_cents=1398,
+                ),
+                ShopOrderItem(
+                    order_id=cancelled_order.id,
+                    kind="plan",
+                    plan_id=plan_id,
+                    game_type="palworld",
+                    name=created["name"],
+                    quantity=5,
+                    unit_price_cents=699,
+                    tax_rate_percent=19,
+                    net_cents=2937,
+                    tax_cents=558,
+                    gross_cents=3495,
+                ),
+            ]
+        )
+        db.commit()
+
+        catalog = client.get("/api/shop/catalog")
+        assert catalog.status_code == 200
+        eintrag = next(plan for plan in catalog.json() if plan["id"] == plan_id)
+        assert eintrag["is_featured"] is True
+        assert eintrag["is_bestseller"] is True
+        assert eintrag["is_new"] is False
+        assert eintrag["recent_order_count"] == 2
+
+        upd = client.patch(
+            f"/api/shop/plans/{plan_id}",
+            cookies=owner_cookies,
+            headers={"X-CSRF-Token": csrf_token},
+            json={"is_new": True, "is_featured": False},
+        )
+        assert upd.status_code == 200
+        assert upd.json()["is_new"] is True
+        assert upd.json()["is_featured"] is False
+
+
+class TestShopTrustSettings:
+    def test_trustpilot_and_discord_validation_and_public_policy(
+        self, client: TestClient, owner_cookies: dict, csrf_token: str
+    ):
+        headers = {"X-CSRF-Token": csrf_token}
+        base = client.get("/api/shop/admin/lifecycle-settings", cookies=owner_cookies)
+        assert base.status_code == 200
+        cfg = base.json()
+
+        # Aktiviertes Trustpilot ohne URL muss 422 liefern
+        missing_url = client.put(
+            "/api/shop/admin/lifecycle-settings",
+            cookies=owner_cookies,
+            headers=headers,
+            json={**cfg, "shop_trustpilot_enabled": True, "shop_trustpilot_url": ""},
+        )
+        assert missing_url.status_code == 422
+
+        # Phishing- oder HTTP-URLs werden strikt abgelehnt
+        for bad_tp in (
+            "http://www.trustpilot.com/review/example.de",
+            "https://evil-trustpilot.com/review/example.de",
+            "https://www.trustpilot.com/users/123",
+            "javascript:alert(1)",
+        ):
+            bad_resp = client.put(
+                "/api/shop/admin/lifecycle-settings",
+                cookies=owner_cookies,
+                headers=headers,
+                json={**cfg, "shop_trustpilot_enabled": True, "shop_trustpilot_url": bad_tp},
+            )
+            assert bad_resp.status_code == 422
+
+        for bad_dc in ("http://discord.gg/abc", "https://evil.example/invite/abc"):
+            bad_dc_resp = client.put(
+                "/api/shop/admin/lifecycle-settings",
+                cookies=owner_cookies,
+                headers=headers,
+                json={**cfg, "shop_discord_invite_url": bad_dc},
+            )
+            assert bad_dc_resp.status_code == 422
+
+        ok_resp = client.put(
+            "/api/shop/admin/lifecycle-settings",
+            cookies=owner_cookies,
+            headers=headers,
+            json={
+                **cfg,
+                "shop_trustpilot_enabled": True,
+                "shop_trustpilot_url": "https://www.trustpilot.com/review/example.de",
+                "shop_discord_invite_url": "https://discord.gg/maunting",
+            },
+        )
+        assert ok_resp.status_code == 200
+        public = client.get("/api/shop/public-policy")
+        assert public.status_code == 200
+        assert public.json()["shop_trustpilot_enabled"] is True
+        assert public.json()["shop_trustpilot_url"] == "https://www.trustpilot.com/review/example.de"
+        assert public.json()["shop_discord_invite_url"] == "https://discord.gg/maunting"
+
+        # Zustand wieder sauber zuruecksetzen
+        reset_resp = client.put(
+            "/api/shop/admin/lifecycle-settings",
+            cookies=owner_cookies,
+            headers=headers,
+            json={
+                **cfg,
+                "shop_trustpilot_enabled": False,
+                "shop_trustpilot_url": "",
+                "shop_discord_invite_url": "",
+            },
+        )
+        assert reset_resp.status_code == 200

@@ -163,6 +163,7 @@ GLOBAL_PERMISSIONS: tuple[PermissionDef, ...] = (
     PermissionDef("panel.oauth.test",          "panel",   "OAuth-Provider-Verbindung testen"),
     # Panel Pop-ups & Ankündigungen
     PermissionDef("panel.popups.manage",       "panel",   "Panel-weite Pop-ups und Ankündigungen verwalten"),
+    PermissionDef("panel.news.manage",         "panel",   "Neuigkeiten und Artikel erstellen, bearbeiten und veröffentlichen"),
     # Hoster-Anbindung (Phase 6). Bewusst getrennt von panel.settings.*, damit
     # ein Support-Mitarbeiter Vertraege einsehen kann, ohne API-Keys rotieren
     # oder Produkte umkonfigurieren zu duerfen.

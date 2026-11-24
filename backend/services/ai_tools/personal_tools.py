@@ -7,8 +7,9 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 from models import User
+from schemas.news import MAX_NEWS_SOURCES, NEWS_CATEGORIES
 from schemas.popup import POPUP_CONTENT_MAX_LENGTH
-from services import permission_service
+from services import news_service, permission_service
 from services.ai_action_errors import AiActionValidationError
 from services.ai_redaction import redact_sensitive_text
 from services.ai_tools.base import (
@@ -17,7 +18,9 @@ from services.ai_tools.base import (
     _RATIONALE_SCHEMA,
     _RATIONALE_REQUIRED,
     MAX_KALENDER_VORKOMMEN,
+    MAX_LISTED_NEWS,
     MAX_LISTED_POPUPS,
+    MAX_NEWS_INHALT_CHARS,
     MAX_POPUP_INHALT_CHARS,
     MAX_TESTMAILS_JE_STUNDE,
 )
@@ -360,6 +363,52 @@ def _mailbox_and_calendar_tool_definitions() -> list[dict]:
                     "maxLength": 2048,
                     "description": "Relativer Pfad (/shop) oder http(s)-Link; null entfernt.",
                 },
+                **_RATIONALE_SCHEMA,
+            },
+            [*_RATIONALE_REQUIRED],
+        ),
+    ]
+
+
+def _news_tool_definitions() -> list[dict]:
+    """Redaktionelle News-Werkzeuge (Lesen und Entwurfs-/Artikel-Vorschlag)."""
+    return [
+        _function(
+            "news_read",
+            "Listet News-Beiträge (Entwürfe und veröffentlichte) samt `post_id`, Slug, Kategorie und Quellen.",
+            {
+                "only_published": {"type": "boolean"},
+                "category": {"type": "string", "enum": list(NEWS_CATEGORIES)},
+                "limit": {"type": "integer", "minimum": 1, "maximum": MAX_LISTED_NEWS},
+            },
+            [],
+        ),
+        _function(
+            "propose_news_upsert",
+            "Schlägt einen News-Beitrag vor (ohne `post_id` neu als Entwurf, mit `post_id` aus news_read als Änderung).",
+            {
+                "post_id": {"type": "integer"},
+                "title": {"type": "string", "maxLength": 200},
+                "summary": {"type": "string", "maxLength": 400},
+                "content_markdown": {"type": "string", "maxLength": 64000},
+                "category": {"type": "string", "enum": list(NEWS_CATEGORIES)},
+                "related_game_type": {"type": ["string", "null"], "maxLength": 64},
+                "sources": {
+                    "type": "array",
+                    "maxItems": MAX_NEWS_SOURCES,
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "title": {"type": "string", "maxLength": 160},
+                            "url": {"type": "string", "maxLength": 2048},
+                        },
+                        "required": ["title", "url"],
+                        "additionalProperties": False,
+                    },
+                },
+                "is_published": {"type": "boolean"},
+                "is_pinned": {"type": "boolean"},
+                "author_display_name": {"type": ["string", "null"], "maxLength": 120},
                 **_RATIONALE_SCHEMA,
             },
             [*_RATIONALE_REQUIRED],
@@ -774,6 +823,56 @@ def _lies_popups(
     return {"popups": eintraege, "count": len(eintraege)}
 
 
+def _lies_news(
+    db: Session, *, user: User, arguments: dict, lauf: dict | None = None
+) -> dict:
+    if not news_service.has_news_manage_permission(db, user):
+        raise AiActionValidationError("News-Einsicht ist nicht erlaubt")
+    if set(arguments) - {"only_published", "category", "limit"}:
+        raise AiActionValidationError("News-Tool hat ungueltige Argumente")
+    from models import NewsPost
+
+    abfrage = db.query(NewsPost).order_by(NewsPost.id.desc())
+    if str(arguments.get("only_published", "")).strip().lower() in ("true", "1"):
+        abfrage = abfrage.filter(NewsPost.is_published.is_(True))
+    category = arguments.get("category")
+    if category is not None:
+        cat_clean = str(category).strip()
+        if cat_clean not in NEWS_CATEGORIES:
+            raise AiActionValidationError("Ungueltige News-Kategorie")
+        abfrage = abfrage.filter(NewsPost.category == cat_clean)
+    limit = _positive_int(
+        arguments.get("limit"),
+        name="limit",
+        default=MAX_LISTED_NEWS,
+        minimum=1,
+        maximum=MAX_LISTED_NEWS,
+    )
+    rows = abfrage.limit(limit).all()
+    eintraege = []
+    for post in rows:
+        inhalt = redact_sensitive_text(str(post.content_markdown or ""))
+        gekuerzt = len(inhalt) > MAX_NEWS_INHALT_CHARS
+        eintraege.append({
+            "post_id": post.id,
+            "slug": post.slug,
+            "title": redact_sensitive_text(str(post.title or "")),
+            "summary": redact_sensitive_text(str(post.summary or "")),
+            "category": post.category,
+            "related_game_type": post.related_game_type,
+            "is_published": bool(post.is_published),
+            "is_pinned": bool(post.is_pinned),
+            "published_at": post.published_at.isoformat() if post.published_at else None,
+            "sources": [
+                {"title": redact_sensitive_text(s.title), "url": s.url}
+                for s in news_service.parse_sources(post.sources_json)
+            ],
+            "content_markdown": inhalt[:MAX_NEWS_INHALT_CHARS],
+            "content_truncated": gekuerzt,
+        })
+    return {"posts": eintraege, "count": len(eintraege)}
+
+
 def _lies_kalender(
     db: Session, *, user: User, arguments: dict, lauf: dict | None = None
 ) -> dict:
@@ -907,6 +1006,13 @@ _PERSONAL_WERKZEUGE = {
         hinweis="Listet die Ankuendigungen des Panels.",
         global_handler=_lies_popups,
     ),
+    "news_read": dict(
+        art="global_read",
+        gruppe="news",
+        angebot=("panel.news.manage", "panel.settings.write", "shop.write"),
+        hinweis="Listet redaktionelle News-Beitraege und Entwuerfe.",
+        global_handler=_lies_news,
+    ),
     "calendar_read": dict(
         art="global_read",
         gruppe="calendar",
@@ -998,6 +1104,20 @@ _PERSONAL_WERKZEUGE = {
             "services.ai_proposals.task_proposals._ausfuehren_popup_set"
         ),
     ),
+    "propose_news_upsert": dict(
+        art="global_write",
+        gruppe="news",
+        recht="panel.news.manage",
+        recht_global=True,
+        angebot=("panel.news.manage", "panel.settings.write", "shop.write"),
+        hinweis="Erstellt einen News-Entwurf oder aktualisiert einen News-Beitrag.",
+        vorschlag=spaet_vorschlag(
+            "services.ai_proposals.task_proposals._news_upsert_payload"
+        ),
+        ausfuehren=spaet(
+            "services.ai_proposals.task_proposals._ausfuehren_news_upsert"
+        ),
+    ),
     "propose_note_create": dict(
         art="global_write",
         gruppe="notes",
@@ -1043,6 +1163,7 @@ _PERSONAL_WERKZEUGE = {
 # beginnt. Die Liste bleibt die Katalog-Reihenfolge.
 DEFINITIONEN = [
     *_mailbox_and_calendar_tool_definitions(),
+    *_news_tool_definitions(),
     *_notes_tool_definitions(),
     *_attachment_tool_definitions(),
 ]

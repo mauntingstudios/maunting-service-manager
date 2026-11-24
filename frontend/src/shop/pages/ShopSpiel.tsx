@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Newspaper } from 'lucide-react'
 import { Badge, Dropdown, Spinner, Zustandsflaeche } from '@maunting/ui'
+import { newsApi, type NewsPostPublic } from '@/api/news'
 import {
   shopCatalogApi,
   type ShopNodeAvailabilityItem,
@@ -34,6 +35,7 @@ export function ShopSpiel() {
   )
   const [kapazitaetFrei, setKapazitaetFrei] = useState<boolean | null>(null)
   const [publicPolicy, setPublicPolicy] = useState<ShopPublicPolicyDto | null>(null)
+  const [gameNews, setGameNews] = useState<NewsPostPublic[]>([])
   const [nodeStatuses, setNodeStatuses] = useState<ShopPublicNodeStatusDto[]>([])
   const [nodeAvailability, setNodeAvailability] = useState<
     Record<number, ShopNodeAvailabilityItem>
@@ -57,6 +59,26 @@ export function ShopSpiel() {
       aktiv = false
     }
   }, [])
+
+  useEffect(() => {
+    if (!spiel?.id || typeof newsApi?.listPublic !== 'function') {
+      setGameNews([])
+      return
+    }
+    let aktiv = true
+    newsApi
+      .listPublic({ game_type: spiel.id, limit: 3 })
+      .then((res) => {
+        if (aktiv) setGameNews(Array.isArray(res?.items) ? res.items : [])
+      })
+      .catch((err) => {
+        still(err, 'ShopSpiel.getGameNews')
+        if (aktiv) setGameNews([])
+      })
+    return () => {
+      aktiv = false
+    }
+  }, [spiel?.id])
 
   useEffect(() => {
     let aktiv = true
@@ -286,6 +308,37 @@ export function ShopSpiel() {
                   aria-label={t('shop.spiel.tarif')}
                 />
               </label>
+            )}
+
+            {gameNews.length > 0 && (
+              <div className="mt-6 rounded-2xl border border-outline-variant/35 bg-surface-container-low/65 p-4">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-primary">
+                    <Newspaper className="h-3.5 w-3.5" aria-hidden="true" />
+                    <span>{t('shop.spiel.passendeNews')}</span>
+                  </p>
+                  <Link
+                    to="/news"
+                    className="inline-flex items-center gap-1 text-xs font-medium text-on-surface-variant hover:text-primary"
+                  >
+                    <span>{t('news.alleAnsehen')}</span>
+                    <ArrowRight className="h-3 w-3" aria-hidden="true" />
+                  </Link>
+                </div>
+                <ul className="mt-3 space-y-2">
+                  {gameNews.map((item) => (
+                    <li key={item.slug}>
+                      <Link
+                        to={`/news/${item.slug}`}
+                        className="flex items-center justify-between gap-3 rounded-xl px-2.5 py-1.5 text-sm text-on-surface transition-colors hover:bg-surface-container-high hover:text-primary"
+                      >
+                        <span className="truncate font-medium">{item.title}</span>
+                        <ArrowRight className="h-3.5 w-3.5 shrink-0 text-on-surface-variant" aria-hidden="true" />
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </div>
             )}
           </div>
 

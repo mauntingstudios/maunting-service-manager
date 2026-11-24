@@ -54,8 +54,8 @@ MENGEN = {
         "desktop_steuern", "desktop_system", "email_read", "email_search",
         "execute_server_action", "forget_skill", "get_document_outline", "learn_skill",
         "learn_team_skill", "list_blueprints", "list_document_comments", "list_documents",
-        "list_my_servers", "list_roles", "list_tasks", "list_teams", "list_users", "notes_read",
-        "popups_read", "project_create", "project_workspace", "read_audit_summary",
+        "list_my_servers", "list_roles", "list_tasks", "list_teams", "list_users", "news_read",
+        "notes_read", "popups_read", "project_create", "project_workspace", "read_audit_summary",
         "read_blueprint", "read_chat_attachment", "read_docs", "read_document",
         "read_document_selection", "read_document_skill", "read_document_structure",
         "read_hoster_integration_guide", "read_hoster_setup", "read_node_capacity",
@@ -75,7 +75,7 @@ MENGEN = {
         "execute_server_action", "forget_skill", "frontend_read", "get_document_outline", "learn_skill",
         "learn_team_skill", "list_blueprints", "list_document_comments", "list_documents",
         "list_my_servers", "list_roles", "list_server_files", "list_tasks", "list_teams", "list_users",
-        "notes_read", "popups_read", "project_create", "project_workspace",
+        "news_read", "notes_read", "popups_read", "project_create", "project_workspace",
         "read_ai_action_history", "read_audit_summary", "read_blueprint", "read_chat_attachment", "read_config",
         "read_database", "read_docs", "read_document", "read_document_selection",
         "read_document_skill", "read_document_structure", "read_guardian_incidents",
@@ -101,7 +101,7 @@ MENGEN = {
         "propose_frontend_action", "propose_frontend_settings",
         "propose_guardian_tuning", "propose_hoster_integration", "propose_hoster_product",
         "propose_mod_batch_install", "propose_mod_delete", "propose_mod_install", "propose_mod_toggle", "propose_modpack_install",
-        "propose_note_create", "propose_note_delete", "propose_note_update",
+        "propose_news_upsert", "propose_note_create", "propose_note_delete", "propose_note_update",
         "propose_popup_set", "propose_restart_schedule_set", "propose_role_delete",
         "propose_role_set", "propose_server_blueprint_switch", "propose_server_create",
         "propose_server_delete", "propose_server_lifecycle", "propose_server_repair",
@@ -171,10 +171,10 @@ MENGEN = {
     "TASK_TOOLS": ["list_tasks", "propose_task_delete", "propose_task_set", "send_test_email"],
     "ATTACHMENT_TOOLS": ["read_chat_attachment", "search_chat_attachments"],
     "CHAT_INTERACTION_TOOLS": [
-        "calendar_read", "email_read", "email_search", "list_tasks", "notes_read",
+        "calendar_read", "email_read", "email_search", "list_tasks", "news_read", "notes_read",
         "popups_read", "propose_calendar_event_create", "propose_calendar_event_delete",
-        "propose_calendar_event_update", "propose_email_send", "propose_note_create",
-        "propose_note_delete", "propose_note_update", "propose_popup_set",
+        "propose_calendar_event_update", "propose_email_send", "propose_news_upsert",
+        "propose_note_create", "propose_note_delete", "propose_note_update", "propose_popup_set",
         "propose_shop_addon_upsert", "propose_shop_coupon_upsert", "propose_shop_plan_upsert",
         "propose_task_delete", "propose_task_set", "read_chat_attachment", "read_shop_catalog",
         "search_chat_attachments", "send_test_email",
@@ -213,7 +213,7 @@ MENGEN = {
     "AUFGABEN_LESEN": [
         "analyze_region", "calendar_read", "check_server_reachability", "email_read",
         "email_search", "list_blueprints", "list_my_servers", "list_server_files",
-        "list_tasks", "read_ai_action_history", "read_blueprint", "read_config",
+        "list_tasks", "news_read", "read_ai_action_history", "read_blueprint", "read_config",
         "read_docs", "read_guardian_incidents", "read_mod_updates", "read_node_capacity",
         "read_node_health", "read_server_backups", "read_server_capacity",
         "read_server_logs", "read_server_mods", "read_server_network", "read_server_ports",
@@ -225,19 +225,20 @@ MENGEN = {
         "propose_calendar_event_create", "propose_calendar_event_update",
         "propose_config_patch", "propose_config_set", "propose_config_update",
         "propose_email_send", "propose_mod_install", "propose_mod_toggle",
-        "propose_restart_schedule_set", "propose_server_lifecycle", "propose_server_repair",
+        "propose_news_upsert", "propose_restart_schedule_set", "propose_server_lifecycle",
+        "propose_server_repair",
     ],
 }
 
 KATALOG = [
-    (False, False, "off", 138, "0d71ac8b6c4fe864dad94af3266a53dde77032e6806d54d2096ebb81d983af82"),
-    (False, False, "review", 138, "ca724c7ae0581c24fb55c00ce650d6c760a6c44136ba5ec0e1c5308ba442b4b0"),
-    (False, True, "off", 140, "bbd5316b18ef8e6c19fedf6a3d97bc547c3f6ae7b5fb6140ac345be3507ae6ec"),
-    (False, True, "review", 140, "cfe3aab7b25306f9d6f31c4c607af2c32d02f764541d5ed793536cca9ef91a75"),
-    (True, False, "off", 140, "5d6adc0ef2682488a55eae6335bf817326632760ceb4d9c1db9155ced70ebec2"),
-    (True, False, "review", 140, "3924f86b36a74be587864e767e17ae77c2cf0eb4a17aff0fb7148d6dda71d630"),
-    (True, True, "off", 142, "3aa7d7321ef889a34786008a45e4d2cc7fbade680f3bd2f583c5581a58691438"),
-    (True, True, "review", 142, "de61029e1c821767d48d89501d091d5bd4fadbf6630b4dea9a2463645886c777"),
+    (False, False, "off", 140, "6dae25290b60d5bc537991d6d88082c8fcfecd6802b314b562bce38829c83cec"),
+    (False, False, "review", 140, "428d33689397f350900c9abc5def81d4ba2c49d7ab7fd36edf2aa1ffe929cb24"),
+    (False, True, "off", 142, "7acde4b7a33da69608028bb28faa12dce5acb145652e0a5ac15fc980e7c6ca85"),
+    (False, True, "review", 142, "34d597fa72d8a04b2006333c25db4290cf5bbf7b2d0212d2b4e14a5b3184e55c"),
+    (True, False, "off", 142, "cc0c67e9c4cb3b1eb2ba72ca7529a94bb5a59a3239084e9dcaf11f27d7fe010a"),
+    (True, False, "review", 142, "8867e4557bf8f5ec4435c8429f35e3cb356dae7a2c4e176d3dd6dc9c40eeaf27"),
+    (True, True, "off", 144, "2ee20f3b7a0d7a88b6da262f9b3951ba701ff088c0fefc844a673bda58ae62da"),
+    (True, True, "review", 144, "6484d04063218c6c3dc0217961f7e5ea0c97b4f3a94da2b28132bd73cc8f6e4c"),
 ]
 
 SPRACHE_KATALOG_HASH = "d616c67eee2793c462ef37b9540cffa53dc445688fbd8a890aa3e82bc41cf266"
@@ -347,4 +348,4 @@ def test_der_import_der_ki_schicht_bleibt_moeglich() -> None:
         "services.ai_tool_compat",
     ):
         importlib.import_module(modul)
-    assert len(registry.WERKZEUGE) == 145
+    assert len(registry.WERKZEUGE) == 147

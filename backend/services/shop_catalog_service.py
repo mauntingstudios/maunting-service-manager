@@ -7,14 +7,16 @@ fuer Custom-Galerie und Steam-Artwork.
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 import re
 import time
 from typing import Any
 
+from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from models import Node, Role, ShopPlan
+from models import Node, Role, ShopOrder, ShopOrderItem, ShopPlan
 from schemas.shop import (
     ShopArtworkResponse,
     ShopCatalogPlan,
@@ -335,6 +337,9 @@ def plan_response(db: Session, plan: ShopPlan) -> ShopPlanResponse:
         artwork_mode=plan.artwork_mode,
         active=plan.active,
         sort_order=plan.sort_order,
+        is_featured=bool(getattr(plan, "is_featured", False)),
+        is_bestseller=bool(getattr(plan, "is_bestseller", False)),
+        is_new=bool(getattr(plan, "is_new", False)),
         created_at=plan.created_at,
         updated_at=plan.updated_at,
         artwork=_artwork(db, plan),
@@ -588,7 +593,34 @@ def ping_public_node(db: Session, node_id: int) -> ShopNodePingResponse | None:
         )
 
 
-def catalog_plan(db: Session, plan: ShopPlan) -> ShopCatalogPlan:
+def recent_paid_order_counts(db: Session, *, days: int = 90) -> dict[int, int]:
+    """Zaehlt bezahlte Plan-Bestellungen je plan_id innerhalb der letzten N Tage."""
+    cutoff = datetime.now(timezone.utc) - timedelta(days=max(1, days))
+    rows = (
+        db.query(
+            ShopOrderItem.plan_id,
+            func.coalesce(func.sum(ShopOrderItem.quantity), 0),
+        )
+        .join(ShopOrder, ShopOrderItem.order_id == ShopOrder.id)
+        .filter(
+            ShopOrder.status == "paid",
+            ShopOrderItem.kind == "plan",
+            ShopOrderItem.plan_id.is_not(None),
+            func.coalesce(ShopOrder.paid_at, ShopOrder.created_at) >= cutoff,
+        )
+        .group_by(ShopOrderItem.plan_id)
+        .all()
+    )
+    return {
+        int(plan_id): int(total)
+        for plan_id, total in rows
+        if plan_id is not None and int(total or 0) > 0
+    }
+
+
+def catalog_plan(
+    db: Session, plan: ShopPlan, *, recent_order_count: int = 0
+) -> ShopCatalogPlan:
     from services import node_placement_service
 
     meta = _game_meta(plan.game_type)
@@ -642,4 +674,8 @@ def catalog_plan(db: Session, plan: ShopPlan) -> ShopCatalogPlan:
         ddos_provider=ddos_provider,
         ddos_profile=ddos_profile,
         ddos_game_aware=ddos_game_aware,
+        is_featured=bool(getattr(plan, "is_featured", False)),
+        is_bestseller=bool(getattr(plan, "is_bestseller", False)),
+        is_new=bool(getattr(plan, "is_new", False)),
+        recent_order_count=max(0, int(recent_order_count)),
     )

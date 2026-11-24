@@ -222,6 +222,13 @@ def _require_tool_permission(
             raise AiActionValidationError("AI-Aktion ist nicht erlaubt")
         return
 
+    if tool_name == "propose_news_upsert":
+        from services import news_service
+
+        if not news_service.has_news_manage_permission(db, user):
+            raise AiActionValidationError("AI-Aktion ist nicht erlaubt")
+        return
+
     permissions = _permission_for(tool_name, payload)
     if not permissions:
         raise AiActionValidationError("AI-Aktion ist nicht erlaubt")

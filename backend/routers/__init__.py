@@ -49,6 +49,7 @@ from .hoster_api import router as hoster_api_router, redeem_router as hoster_han
 from .shop import router as shop_router
 from .user_integrations import router as user_integrations_router
 from .popups import router as popups_router
+from .news import router as news_router
 from .calendar import router as calendar_router
 from .notes import router as notes_router
 from .docs import router as docs_router
@@ -113,6 +114,7 @@ __all__ = [
     "shop_router",
     "user_integrations_router",
     "popups_router",
+    "news_router",
     "calendar_router",
     "notes_router",
     "docs_router",
