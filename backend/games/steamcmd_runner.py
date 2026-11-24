@@ -714,6 +714,7 @@ def _build_steamcmd_install_args(
     platform: str | None,
     validate: bool,
     beta_branch: str | None,
+    beta_password: str | None = None,
     extra_args: list[str] | None,
 ) -> list[str]:
     """Erstellt die SteamCMD-Kommandozeilenargumente für App-Installation/Update."""
@@ -730,6 +731,9 @@ def _build_steamcmd_install_args(
     branch = (beta_branch or "").strip() or None
     if branch and branch != "public":
         steam_args.extend(["-beta", branch])
+        pw = (beta_password or "").strip()
+        if pw and not any(ch.isspace() or ord(ch) < 32 for ch in pw):
+            steam_args.extend(["-betapassword", pw])
     if validate:
         steam_args.append("validate")
     if extra_args:
@@ -852,6 +856,7 @@ def run_steamcmd_install(
     steamcmd_image: str | None = None,
     validate: bool = True,
     beta_branch: str | None = None,
+    beta_password: str | None = None,
     node: Any | None = None,
 ) -> dict:
     """Lädt/aktualisiert eine Steam-App in `install_dir` via ephemerem
@@ -883,12 +888,17 @@ def run_steamcmd_install(
     if login_err is not None:
         return login_err
 
+    pw_clean = (beta_password or "").strip()
+    if pw_clean:
+        secrets_to_redact = [*secrets_to_redact, pw_clean]
+
     steam_args = _build_steamcmd_install_args(
         app_id,
         login_args,
         platform=platform,
         validate=validate,
         beta_branch=beta_branch,
+        beta_password=pw_clean or None,
         extra_args=extra_args,
     )
 

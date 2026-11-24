@@ -345,6 +345,7 @@ export function ShopStart() {
         onlineNodesCount={onlineNodesCount}
         ddosHighlight={ddosHighlight}
         heroMode={publicPolicy?.shop_hero_mode ?? 'auto_paid'}
+        shortDurationPolicy={publicPolicy}
       />
 
       <TrustSection
@@ -490,6 +491,7 @@ export function ShopStart() {
                     key={spiel.id}
                     spiel={spiel}
                     rabattLabel={rabattFuerSpiel(spiel.id)}
+                    shortDurationPolicy={publicPolicy}
                   />
                 ))}
               </div>

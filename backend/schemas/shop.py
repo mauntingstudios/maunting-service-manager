@@ -22,6 +22,7 @@ class ShopPlanWrite(BaseModel):
     price_cents: int = Field(..., ge=0, le=100_000_000)
     lifetime_price_cents: int | None = Field(None, ge=0, le=100_000_000)
     allow_game_switch: bool = True
+    allow_short_durations: bool = True
     currency: str = Field("EUR", min_length=3, max_length=3)
     billing_interval: BillingInterval = "month"
     tax_rate_percent: int = Field(19, ge=0, le=100)
@@ -61,6 +62,7 @@ class ShopPlanUpdate(BaseModel):
     price_cents: int | None = Field(None, ge=0, le=100_000_000)
     lifetime_price_cents: int | None = Field(None, ge=0, le=100_000_000)
     allow_game_switch: bool | None = None
+    allow_short_durations: bool | None = None
     currency: str | None = Field(None, min_length=3, max_length=3)
     billing_interval: BillingInterval | None = None
     tax_rate_percent: int | None = Field(None, ge=0, le=100)
@@ -107,6 +109,7 @@ class ShopPlanResponse(BaseModel):
     price_cents: int
     lifetime_price_cents: int | None = None
     allow_game_switch: bool = True
+    allow_short_durations: bool = True
     currency: str
     billing_interval: str
     tax_rate_percent: int
@@ -235,11 +238,27 @@ class ShopAddonSwitchRequest(BaseModel):
 
 
 OrderMonths = Literal[1, 3, 12]
+ShortDurationDays = Literal[3, 7, 14]
 BillingMode = Literal["prepaid", "subscription", "lifetime"]
 OrderStatus = Literal["pending_payment", "paid", "cancelled", "refunded", "failed"]
 SubscriptionStatus = Literal["active", "past_due", "cancelled"]
 EntitlementKind = Literal["server", "role", "addon"]
 EntitlementStatus = Literal["active", "suspended", "revoked"]
+
+
+class ShopShortDurationTier(BaseModel):
+    days: ShortDurationDays
+    enabled: bool = True
+    price_factor_percent: int = Field(..., ge=5, le=100)
+    min_price_cents: int = Field(199, ge=100, le=100_000)
+
+
+def _default_short_duration_tiers() -> list[ShopShortDurationTier]:
+    return [
+        ShopShortDurationTier(days=3, enabled=True, price_factor_percent=25, min_price_cents=199),
+        ShopShortDurationTier(days=7, enabled=True, price_factor_percent=40, min_price_cents=299),
+        ShopShortDurationTier(days=14, enabled=True, price_factor_percent=65, min_price_cents=499),
+    ]
 
 
 class ShopOrderCreate(BaseModel):
@@ -248,6 +267,7 @@ class ShopOrderCreate(BaseModel):
     plan_id: int | None = Field(None, ge=1)
     addon_id: int | None = Field(None, ge=1)
     months: OrderMonths = 1
+    duration_days: ShortDurationDays | None = None
     billing_mode: BillingMode = "subscription"
     ram_mb: int | None = Field(None, ge=0, le=4_194_304)
     cpu: int | None = Field(None, ge=0, le=10_000)
@@ -268,6 +288,11 @@ class ShopOrderCreate(BaseModel):
     def _validate_target(self) -> "ShopOrderCreate":
         if bool(self.plan_id is not None) == bool(self.addon_id is not None):
             raise ValueError("Genau plan_id oder addon_id muss angegeben sein")
+        if self.duration_days is not None:
+            if self.billing_mode != "prepaid":
+                raise ValueError("Kurzzeit-Laufzeiten sind nur im Prepaid-Modus verfuegbar")
+            if self.plan_id is None:
+                raise ValueError("Kurzzeit-Laufzeiten sind nur fuer Server-Tarife verfuegbar")
         return self
 
 
@@ -438,6 +463,7 @@ class ShopOrderItemResponse(BaseModel):
     slots: int | None
     preferred_node_id: int | None = None
     node_surcharge_cents: int = 0
+    duration_days: int | None = None
 
 
 class ShopOrderResponse(BaseModel):
@@ -449,6 +475,7 @@ class ShopOrderResponse(BaseModel):
     billing_mode: BillingMode = "subscription"
     extend_subscription_id: int | None = None
     months: int
+    duration_days: int | None = None
     discount_percent: int
     coupon_code: str | None = None
     coupon_discount_cents: int = 0
@@ -484,6 +511,7 @@ class ShopSubscriptionResponse(BaseModel):
 
 class ShopSubscriptionExtendRequest(BaseModel):
     months: OrderMonths = 1
+    duration_days: ShortDurationDays | None = None
 
 
 class ShopSubscriptionCancelRequest(BaseModel):
@@ -523,6 +551,13 @@ class ShopLifecycleSettingsPayload(BaseModel):
     shop_trustpilot_url: str = Field("", max_length=512)
     shop_discord_invite_url: str = Field("", max_length=512)
     shop_hero_mode: HeroMode = "auto_paid"
+    shop_short_durations_enabled: bool = False
+    shop_short_duration_tiers: list[ShopShortDurationTier] = Field(
+        default_factory=_default_short_duration_tiers
+    )
+    shop_game_switch_cooldown_hours: int = Field(24, ge=0, le=720)
+    shop_game_switch_max_per_30d: int = Field(4, ge=0, le=100)
+    shop_game_switch_allow_higher_price_plan: bool = False
 
 
 class ShopLifecycleSettingsResponse(ShopLifecycleSettingsPayload):
@@ -543,6 +578,13 @@ class ShopPublicPolicyResponse(BaseModel):
     shop_trustpilot_url: str = ""
     shop_discord_invite_url: str = ""
     shop_hero_mode: HeroMode = "auto_paid"
+    shop_short_durations_enabled: bool = False
+    shop_short_duration_tiers: list[ShopShortDurationTier] = Field(
+        default_factory=_default_short_duration_tiers
+    )
+    shop_game_switch_cooldown_hours: int = Field(24, ge=0, le=720)
+    shop_game_switch_max_per_30d: int = Field(4, ge=0, le=100)
+    shop_game_switch_allow_higher_price_plan: bool = False
 
 
 class ShopPublicNodeStatusResponse(BaseModel):
@@ -847,6 +889,7 @@ class ShopCatalogPlan(BaseModel):
     price_cents: int
     lifetime_price_cents: int | None = None
     allow_game_switch: bool = True
+    allow_short_durations: bool = True
     currency: str
     billing_interval: str
     tax_rate_percent: int

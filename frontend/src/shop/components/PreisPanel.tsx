@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next'
 import { AlertTriangle } from 'lucide-react'
 import { Button } from '@maunting/ui'
+import type { ShopShortDurationTierDto } from '@/api/shop'
 import { formatEuro, preisAufschluesselung } from '../preis'
 import type { Konfiguration, ShopSpiel } from '../typen'
 
@@ -10,6 +11,7 @@ interface PreisPanelProps {
   onWeiter?: () => void
   verfuegbar?: boolean
   aboRabattProzent?: number
+  shortDurationTiers?: ShopShortDurationTierDto[]
   erstattungTage?: number
   erstattungHinweis?: string
 }
@@ -20,14 +22,21 @@ export function PreisPanel({
   onWeiter,
   verfuegbar = true,
   aboRabattProzent = 0,
+  shortDurationTiers = [],
   erstattungTage = 0,
   erstattungHinweis = '',
 }: PreisPanelProps) {
   const { t } = useTranslation()
-  const preis = preisAufschluesselung(spiel, konfiguration, aboRabattProzent)
+  const preis = preisAufschluesselung(spiel, konfiguration, aboRabattProzent, shortDurationTiers)
   const istLifetime =
     (konfiguration.abrechnungsModus ?? 'prepaid') === 'lifetime' &&
     (spiel.lifetimePreisCent ?? 0) > 0
+  const gewaehlteTage =
+    (konfiguration.abrechnungsModus ?? 'prepaid') === 'prepaid' &&
+    konfiguration.laufzeitTage != null &&
+    shortDurationTiers.some((tier) => tier.enabled && tier.days === konfiguration.laufzeitTage)
+      ? konfiguration.laufzeitTage
+      : null
 
   const zeilen = [
     { label: t('shop.preis.grundpreis'), cent: preis.grundpreisCent },
@@ -71,7 +80,13 @@ export function PreisPanel({
 
       <div className="border-t border-outline-variant/30 pt-3" aria-live="polite">
         <div className="flex items-center justify-between gap-3 text-sm text-on-surface-variant">
-          <span>{istLifetime ? t('shop.spiel.lifetimeTitel') : t('shop.preis.monat')}</span>
+          <span>
+            {istLifetime
+              ? t('shop.spiel.lifetimeTitel')
+              : gewaehlteTage != null
+                ? t('shop.preis.kurzzeitPrepaid', { tage: gewaehlteTage })
+                : t('shop.preis.monat')}
+          </span>
           <span className="tabular-nums">
             {istLifetime ? t('shop.preis.einmalig') : formatEuro(preis.monatCent)}
           </span>

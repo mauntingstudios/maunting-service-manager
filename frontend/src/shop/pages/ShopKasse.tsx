@@ -91,6 +91,11 @@ export function ShopKasse() {
     }
   }, [istAngemeldet, user?.email, email])
 
+  const kurzzeitStufen =
+    publicPolicy?.shop_short_durations_enabled && spiel?.allowShortDurations !== false
+      ? (publicPolicy.shop_short_duration_tiers ?? [])
+      : []
+
   const basisSumme = (() => {
     if (istAddon && addon) {
       const rabatt = RABATT_PROZENT[addonMonate]
@@ -101,6 +106,7 @@ export function ShopKasse() {
         spiel,
         konfiguration,
         publicPolicy?.subscription_discount_percent ?? 0,
+        kurzzeitStufen,
       ).gesamtCent
     }
     return 0
@@ -224,12 +230,20 @@ export function ShopKasse() {
 
     try {
       const billingMode = istAddon ? 'prepaid' : (konfiguration!.abrechnungsModus ?? 'prepaid')
+      const hatKurzzeit =
+        !istAddon &&
+        billingMode === 'prepaid' &&
+        konfiguration!.laufzeitTage != null &&
+        kurzzeitStufen.some((tier) => tier.enabled && tier.days === konfiguration!.laufzeitTage)
       const baseOrderPayload = {
         months: istAddon
           ? addonMonate
-          : billingMode === 'lifetime'
+          : billingMode === 'lifetime' || hatKurzzeit
             ? (1 as const)
             : konfiguration!.laufzeitMonate,
+        ...(hatKurzzeit && konfiguration!.laufzeitTage != null
+          ? { duration_days: konfiguration!.laufzeitTage }
+          : {}),
         billing_mode: billingMode,
         ...(gutscheinVorschau?.valid ? { coupon_code: gutscheinVorschau.code } : {}),
         ...(istCheckoutCaptchaAktiv ? { captcha_token: captchaToken } : {}),
@@ -615,7 +629,13 @@ export function ShopKasse() {
                     <dd className="text-on-surface">
                       {konfiguration.abrechnungsModus === 'lifetime'
                         ? t('shop.preis.einmalig')
-                        : t('shop.spiel.monate', { count: konfiguration.laufzeitMonate })}
+                        : (konfiguration.abrechnungsModus ?? 'prepaid') === 'prepaid' &&
+                            konfiguration.laufzeitTage != null &&
+                            kurzzeitStufen.some(
+                              (tier) => tier.enabled && tier.days === konfiguration.laufzeitTage,
+                            )
+                          ? t('shop.spiel.tage', { count: konfiguration.laufzeitTage })
+                          : t('shop.spiel.monate', { count: konfiguration.laufzeitMonate })}
                     </dd>
                   </div>
                   {gutscheinVorschau?.valid && (

@@ -321,4 +321,41 @@ describe('ShopSpiel', () => {
     expect(screen.getByText(i18n.t('shop.nodeStatus.standardStandort'))).toBeInTheDocument()
     expect(screen.getByRole('button', { name: i18n.t('shop.nodeStatus.pingTesten') })).toBeInTheDocument()
   })
+
+  it('bietet aktive Kurzzeit-Laufzeiten im Prepaid-Modus an und sperrt sie beim Wechsel auf Abo', async () => {
+    hoisted.getPublicPolicy.mockResolvedValue({
+      default_billing_mode: 'prepaid',
+      subscription_discount_percent: 10,
+      refund_guarantee_days: 0,
+      refund_policy_note: '',
+      cancel_grace_days: 7,
+      auto_subdomain_enabled: false,
+      auto_subdomain_zone: '',
+      shop_short_durations_enabled: true,
+      shop_short_duration_tiers: [
+        { days: 3, enabled: true, price_factor_percent: 25, min_price_cents: 199 },
+        { days: 7, enabled: true, price_factor_percent: 40, min_price_cents: 299 },
+        { days: 14, enabled: false, price_factor_percent: 65, min_price_cents: 499 },
+      ],
+    })
+    hoisted.getCatalog.mockResolvedValue([{ ...PALWORLD_PLAN, price_cents: 1000, allow_short_durations: true }])
+    zeige('/shop/palworld')
+
+    const dreitageBtn = await screen.findByRole('button', {
+      name: (name) => name.includes('3 Tage'),
+    })
+    expect(dreitageBtn).not.toBeDisabled()
+    expect(screen.queryByRole('button', { name: (name) => name.includes('14 Tage') })).toBeNull()
+
+    fireEvent.click(dreitageBtn)
+    expect(dreitageBtn).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getAllByText(/2,50/).length).toBeGreaterThanOrEqual(2)
+
+    const aboBtn = screen.getByRole('button', {
+      name: (name) => name.includes(i18n.t('shop.spiel.aboTitel')),
+    })
+    fireEvent.click(aboBtn)
+    expect(dreitageBtn).toBeDisabled()
+    expect(screen.getByText(i18n.t('shop.spiel.kurzzeitNurPrepaid'))).toBeInTheDocument()
+  })
 })

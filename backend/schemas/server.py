@@ -255,6 +255,9 @@ class ServerResponse(BaseModel):
     auth_required: bool = False
     auto_restart: bool
     auto_update_paused: bool = False
+    steam_branch: str | None = None
+    has_branch_password: bool = False
+    last_blueprint_switch_at: datetime | None = None
     public_hostname: str | None = None
     restart_interval_hours: int | None
     restart_time_utc: str | None
@@ -396,3 +399,70 @@ class ServerVariablesUpdateResponse(BaseModel):
     variables: ServerVariablesResponse
     changed_keys: list[str] = Field(default_factory=list)
     restart_recommended: bool = False
+
+
+class SwitchOptionItem(BaseModel):
+    id: str
+    name: str
+    description: str | None = None
+    tagline: str | None = None
+    category: str = ""
+    platforms: list[str] = Field(default_factory=lambda: ["pc"])
+    artwork_url: str | None = None
+    min_ram_mb: int | None = None
+    min_cpu: int | None = None
+    min_price_cents: int | None = None
+    is_current: bool = False
+    selectable: bool = True
+    blocked_reason: str | None = None
+
+
+class SwitchOptionsResponse(BaseModel):
+    mode: Literal["shop_customer", "full"]
+    current_game_type: str
+    switch_allowed: bool = True
+    cooldown_hours: int = 0
+    cooldown_remaining_seconds: int = 0
+    max_per_30d: int = 0
+    switches_last_30d: int = 0
+    allow_higher_price_plan: bool = True
+    current_plan_price_cents: int | None = None
+    options: list[SwitchOptionItem] = Field(default_factory=list)
+
+
+class SwitchBranchRequest(BaseModel):
+    branch: str = Field(..., min_length=1, max_length=64)
+    branch_password: str | None = Field(None, max_length=128)
+    clear_password: bool = False
+
+
+class MinecraftVersionItem(BaseModel):
+    version: str
+    release_type: Literal["release", "snapshot", "latest"] = "release"
+    published_at: str | None = None
+    relation: Literal["upgrade", "same", "downgrade", "latest"] = "upgrade"
+
+
+class MinecraftEditionItem(BaseModel):
+    id: str
+    name: str
+    provider: str
+    is_current: bool = False
+    selectable: bool = True
+    blocked_reason: str | None = None
+
+
+class MinecraftVersionsResponse(BaseModel):
+    provider: str
+    env_key: str = "VERSION"
+    current_version: str
+    supports_downgrade_warning: bool = True
+    is_shop_customer: bool = False
+    versions: list[MinecraftVersionItem] = Field(default_factory=list)
+    editions: list[MinecraftEditionItem] = Field(default_factory=list)
+
+
+class MinecraftSwitchVersionRequest(BaseModel):
+    target_version: str = Field(..., min_length=1, max_length=64)
+    reset_world: bool = False
+    confirm_downgrade_keep_world: bool = False

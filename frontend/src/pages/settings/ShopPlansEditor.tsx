@@ -60,6 +60,7 @@ interface Draft {
   taxRate: string
   lifetimeEuro: string
   allowGameSwitch: boolean
+  allowShortDurations: boolean
   artworkMode: ShopArtworkMode
   active: boolean
   isFeatured: boolean
@@ -135,6 +136,7 @@ const LEER: Draft = {
   taxRate: '19',
   lifetimeEuro: '',
   allowGameSwitch: true,
+  allowShortDurations: true,
   artworkMode: 'steam',
   active: true,
   isFeatured: false,
@@ -189,6 +191,7 @@ function planZuDraft(plan: ShopPlan): Draft {
         ? centInEuro(plan.lifetime_price_cents)
         : '',
     allowGameSwitch: plan.allow_game_switch ?? true,
+    allowShortDurations: plan.allow_short_durations ?? true,
     artworkMode: plan.artwork_mode,
     active: plan.active,
     isFeatured: Boolean(plan.is_featured),
@@ -247,6 +250,7 @@ function draftZuPayload(draft: Draft, editing: ShopPlan | null): ShopPlanWrite {
     price_per_slot_step_cents: euroInCent(draft.pricePerSlotEuro),
     lifetime_price_cents: draft.lifetimeEuro.trim() ? euroInCent(draft.lifetimeEuro) : null,
     allow_game_switch: draft.allowGameSwitch,
+    allow_short_durations: draft.allowShortDurations,
     node_id: null,
     role_id: null,
     artwork_mode: draft.artworkMode,
@@ -1113,6 +1117,16 @@ export function ShopPlansEditor({ onPlansLoaded }: ShopPlansEditorProps = {}) {
                       checked={draft.allowGameSwitch}
                       onCheckedChange={(wert) => setze('allowGameSwitch', wert)}
                       aria-label={t('settings.shop.plans.allowGameSwitch')}
+                    />
+                  </label>
+                  <label className="flex items-center justify-between gap-4 rounded-xl border border-outline-variant/30 bg-surface-container p-3">
+                    <span className="text-sm font-medium text-on-surface">
+                      {t('settings.shop.plans.allowShortDurations')}
+                    </span>
+                    <Switch
+                      checked={draft.allowShortDurations}
+                      onCheckedChange={(wert) => setze('allowShortDurations', wert)}
+                      aria-label={t('settings.shop.plans.allowShortDurations')}
                     />
                   </label>
                   <label className="flex items-center justify-between gap-4 rounded-xl border border-outline-variant/30 bg-surface-container p-3">

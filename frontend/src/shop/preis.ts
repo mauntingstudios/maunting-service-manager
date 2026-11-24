@@ -1,6 +1,8 @@
+import type { ShopPublicPolicyDto, ShopShortDurationTierDto } from '@/api/shop'
 import type {
   Konfiguration,
   LaufzeitMonate,
+  LaufzeitTage,
   PreisAufschluesselung,
   ShopSpiel,
 } from './typen'
@@ -9,6 +11,53 @@ export const RABATT_PROZENT: Record<LaufzeitMonate, number> = {
   1: 0,
   3: 5,
   12: 20,
+}
+
+export function kurzzeitPreisCent(
+  monatCent: number,
+  tier: Pick<ShopShortDurationTierDto, 'price_factor_percent' | 'min_price_cents'>,
+): number {
+  const anteil = Math.floor((Math.round(monatCent) * tier.price_factor_percent + 50) / 100)
+  return Math.max(tier.min_price_cents, anteil)
+}
+
+export function aktiveKurzzeitStufen(
+  spiel: Pick<ShopSpiel, 'allowShortDurations'>,
+  policy?: Pick<
+    ShopPublicPolicyDto,
+    'shop_short_durations_enabled' | 'shop_short_duration_tiers'
+  > | null,
+): ShopShortDurationTierDto[] {
+  if (!policy?.shop_short_durations_enabled || spiel.allowShortDurations === false) {
+    return []
+  }
+  return (policy.shop_short_duration_tiers ?? [])
+    .filter((tier) => tier.enabled)
+    .sort((a, b) => a.days - b.days)
+}
+
+export function niedrigsterEinstiegsPreis(
+  spiel: ShopSpiel,
+  policy?: Pick<
+    ShopPublicPolicyDto,
+    'shop_short_durations_enabled' | 'shop_short_duration_tiers'
+  > | null,
+): { cent: number; tage: LaufzeitTage | null } {
+  const stufen = aktiveKurzzeitStufen(spiel, policy)
+  if (stufen.length === 0) {
+    return { cent: spiel.grundpreisCent, tage: null }
+  }
+  let bester = {
+    cent: kurzzeitPreisCent(spiel.grundpreisCent, stufen[0]),
+    tage: stufen[0].days as LaufzeitTage,
+  }
+  for (const tier of stufen.slice(1)) {
+    const wert = kurzzeitPreisCent(spiel.grundpreisCent, tier)
+    if (wert < bester.cent) {
+      bester = { cent: wert, tage: tier.days as LaufzeitTage }
+    }
+  }
+  return bester
 }
 
 export function cpuZuProzent(wert: number): number {
@@ -38,6 +87,7 @@ export function preisAufschluesselung(
   spiel: ShopSpiel,
   konfiguration: Konfiguration,
   aboRabattProzent = 0,
+  shortDurationTiers: ShopShortDurationTierDto[] = [],
 ): PreisAufschluesselung {
   const ramStep = spiel.ramStepGb && spiel.ramStepGb > 0 ? spiel.ramStepGb : 1
   const cpuStep = spiel.cpuStep && spiel.cpuStep > 0 ? spiel.cpuStep : 1
@@ -70,6 +120,23 @@ export function preisAufschluesselung(
       monatCent,
       rabattProzent: 0,
       gesamtCent,
+    }
+  }
+  const tage = konfiguration.laufzeitTage ?? null
+  if (modus === 'prepaid' && tage != null && spiel.allowShortDurations !== false) {
+    const tier = shortDurationTiers.find((t) => t.enabled && t.days === tage)
+    if (tier) {
+      return {
+        grundpreisCent: spiel.grundpreisCent,
+        ramCent,
+        cpuCent,
+        slotsCent,
+        kiCent,
+        standortCent,
+        monatCent,
+        rabattProzent: 0,
+        gesamtCent: kurzzeitPreisCent(monatCent, tier),
+      }
     }
   }
   let rabattProzent = RABATT_PROZENT[konfiguration.laufzeitMonate]

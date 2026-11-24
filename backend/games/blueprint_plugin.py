@@ -446,6 +446,18 @@ class BlueprintPlugin(GamePlugin):
                     "[MSM] Reinstall: hole aktuelle Spiel-Binaries von Steam "
                     "(Configs werden gesichert, Workshop-Mods nicht neu installiert).\n",
                 )
+            branch_password: str | None = None
+            enc_branch_pw = getattr(srv, "steam_branch_password_encrypted", None)
+            if enc_branch_pw:
+                try:
+                    from services.auth_service import AuthService
+
+                    branch_password = AuthService.decrypt_secret(
+                        enc_branch_pw,
+                        aad=f"msm:server:{srv.id}:steam-branch-password",
+                    )
+                except Exception:
+                    branch_password = None
             result = perform_install_with_protection(
                 srv,
                 lambda: run_steamcmd_install(
@@ -457,7 +469,8 @@ class BlueprintPlugin(GamePlugin):
                     # intentionally not passing steamcmd_image; use the dedicated STEAMCMD_IMAGE
                     # which has the pre-installed binary at the expected path
                     validate=validate_flag,
-                    beta_branch=_steam_effective_branch(bp.source.steam),
+                    beta_branch=_steam_effective_branch(bp.source.steam, server=srv),
+                    beta_password=branch_password,
                     node=getattr(srv, "node", None),
                 ),
                 blueprint=bp,

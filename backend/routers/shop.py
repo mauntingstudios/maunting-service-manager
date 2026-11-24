@@ -865,10 +865,14 @@ def extend_my_subscription(
     if abo is None:
         raise HTTPException(status_code=404, detail="Abo nicht gefunden")
     months = payload.months if payload is not None else 1
+    duration_days = payload.duration_days if payload is not None else None
     try:
         order = shop_order_service.extend_subscription(
-            db, user, abo, months=months
+            db, user, abo, months=months, duration_days=duration_days
         )
+    except shop_order_service.ShopDurationValidationError as exc:
+        db.rollback()
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     except shop_order_service.ShopOrderError as exc:
         db.rollback()
         raise HTTPException(status_code=409, detail=str(exc)) from exc

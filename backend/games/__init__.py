@@ -65,6 +65,20 @@ def list_game_info() -> list[dict]:
             BlueprintSourceType.HTTP,
             BlueprintSourceType.GITHUB,
         )
+        versioning = getattr(bp.meta, "versioning", None)
+        steam_branches = (
+            [
+                {
+                    "id": b.id,
+                    "label": b.label,
+                    "description": b.description,
+                    "requires_password": bool(b.requiresPassword),
+                }
+                for b in bp.source.steam.effective_branches()
+            ]
+            if src_type == BlueprintSourceType.STEAM and bp.source.steam is not None
+            else []
+        )
         out.append({
             "id": bp.meta.id,
             "name": bp.meta.name,
@@ -72,6 +86,9 @@ def list_game_info() -> list[dict]:
             "edition": bp.meta.edition,
             "platform": "linux",
             "category": bp.meta.category.value,
+            "source_type": src_type.value,
+            "supports_version_switch": versioning is not None,
+            "steam_branches": steam_branches,
             "mod_support": bp_mods.supportsMods,
             "supports_steam_workshop": bp_mods.supportsSteamWorkshop,
             "supports_curseforge": bp_mods.supportsCurseForge,

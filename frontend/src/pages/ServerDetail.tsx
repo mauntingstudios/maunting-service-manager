@@ -8,6 +8,7 @@ import {
   Database,
   Download,
   FileText,
+  GitBranch,
   Hammer,
   HardDrive,
   History,
@@ -72,6 +73,7 @@ import { DatabaseManager } from "@/components/server/DatabaseManager";
 import { OutgoingWebhooksPanel } from "@/components/server/OutgoingWebhooksPanel";
 import { frontendApi, type FrontendOverview } from "@/api/frontend";
 import { SwitchBlueprintDialog } from "@/components/server/SwitchBlueprintDialog";
+import { ServerVersionBranchDialog } from "@/components/server/ServerVersionBranchDialog";
 import { ServerWallpaperDialog } from "@/components/server/ServerWallpaperDialog";
 import { useServerWallpaperStore, wallpaperMotiv, wallpaperNavigationsState, type WallpaperNavigationsState } from "@/stores/serverWallpaperStore";
 
@@ -205,6 +207,7 @@ export function ServerDetail() {
 
   const [showEditNetwork, setShowEditNetwork] = useState(false);
   const [showSwitchBlueprint, setShowSwitchBlueprint] = useState(false);
+  const [showVersionBranch, setShowVersionBranch] = useState(false);
   const [showWallpaper, setShowWallpaper] = useState(false);
   const [savingNetwork, setSavingNetwork] = useState(false);
   // Optimistic transient status for instant UI feedback (overwritten by next poll/fetch)
@@ -342,6 +345,7 @@ export function ServerDetail() {
     setShowEditNetwork(false);
     setShowEditResource(false);
     setShowSwitchBlueprint(false);
+    setShowVersionBranch(false);
     setShowWallpaper(false);
   }, [serverId]);
 
@@ -488,6 +492,14 @@ export function ServerDetail() {
   const showServerFileUpdates = !!gameInfo?.supports_server_file_updates;
 
   const isDatabaseServer = server?.server_kind === "database";
+  const isMinecraftVersionServer = Boolean(
+    gameInfo?.supports_version_switch || server?.game_type?.startsWith("minecraft_"),
+  );
+  const isSteamBranchServer = Boolean(
+    gameInfo?.source_type === "steam" || server?.steam_branch,
+  );
+  const showVersionBranchAction =
+    !isDatabaseServer && (isMinecraftVersionServer || isSteamBranchServer);
   const isFrontendServer = gameInfo?.category === "frontend";
   const [frontendOverview, setFrontendOverview] = useState<FrontendOverview | null>(null);
 
@@ -1199,6 +1211,19 @@ export function ServerDetail() {
             disabled: !!actionLoading || isNodeUnreachable || effectiveStatus !== "stopped",
             onSelect: () => setShowSwitchBlueprint(true),
           } satisfies ActionMenuItem,
+          ...(showVersionBranchAction
+            ? [
+                {
+                  key: "version-branch",
+                  label: isSteamBranchServer
+                    ? t("servers.steamBranchAction")
+                    : t("servers.minecraftVersionAction"),
+                  icon: <GitBranch className="h-4 w-4" />,
+                  disabled: !!actionLoading || isNodeUnreachable || effectiveStatus !== "stopped",
+                  onSelect: () => setShowVersionBranch(true),
+                } satisfies ActionMenuItem,
+              ]
+            : []),
         ]
       : []),
     ...(hasServerFiles && showServerFileUpdates && showInstallAction
@@ -1428,6 +1453,24 @@ export function ServerDetail() {
                 )}
               </>
             )}
+
+            {canInstallOrSwitch &&
+              showInstallAction &&
+              showVersionBranchAction &&
+              canWriteServerConfig && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  type="button"
+                  onClick={() => setShowVersionBranch(true)}
+                  disabled={!!actionLoading || isNodeUnreachable || effectiveStatus !== "stopped"}
+                  aria-label={t("servers.versionBranchButton")}
+                  className="inline-flex min-h-[44px] md:min-h-[38px] items-center gap-1.5 disabled:opacity-50"
+                >
+                  <GitBranch className="w-4 h-4" />
+                  <span className="hidden md:inline">{t("servers.versionBranchButton")}</span>
+                </Button>
+              )}
 
             {moreActionItems.length > 0 && (
               <ActionMenu
@@ -1803,6 +1846,18 @@ export function ServerDetail() {
           onClose={() => setShowSwitchBlueprint(false)}
           server={server}
           onSwitched={fetchAll}
+        />
+      )}
+
+      {server && showVersionBranchAction && (
+        <ServerVersionBranchDialog
+          open={showVersionBranch}
+          onClose={() => setShowVersionBranch(false)}
+          server={server}
+          gameInfo={gameInfo}
+          isMinecraft={isMinecraftVersionServer}
+          isSteam={isSteamBranchServer}
+          onUpdated={fetchAll}
         />
       )}
 

@@ -1,7 +1,8 @@
 import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { ArrowRight, ShieldCheck } from 'lucide-react'
-import { formatEuro } from '../preis'
+import type { ShopPublicPolicyDto } from '@/api/shop'
+import { formatEuro, niedrigsterEinstiegsPreis } from '../preis'
 import type { ShopSpiel } from '../typen'
 import { SpielArtwork } from './SpielArtwork'
 
@@ -9,6 +10,10 @@ interface SpielKarteProps {
   spiel: ShopSpiel
   rabattLabel?: string | null
   priority?: boolean
+  shortDurationPolicy?: Pick<
+    ShopPublicPolicyDto,
+    'shop_short_durations_enabled' | 'shop_short_duration_tiers'
+  > | null
 }
 
 const PLATTFORM_LABELS: Record<string, string> = {
@@ -18,11 +23,17 @@ const PLATTFORM_LABELS: Record<string, string> = {
   crossplay: 'Crossplay',
 }
 
-export function SpielKarte({ spiel, rabattLabel, priority = false }: SpielKarteProps) {
+export function SpielKarte({
+  spiel,
+  rabattLabel,
+  priority = false,
+  shortDurationPolicy = null,
+}: SpielKarteProps) {
   const { t, i18n } = useTranslation()
   const sprache = i18n.language.startsWith('de') ? 'de' : 'en'
   const ausverkauft = spiel.verfuegbar === false
   const plattformen = (spiel.platforms ?? []).filter((p) => p in PLATTFORM_LABELS)
+  const einstieg = niedrigsterEinstiegsPreis(spiel, shortDurationPolicy)
   const kurationKey = spiel.isBestseller
     ? 'shop.katalog.badgeBestseller'
     : spiel.isFeatured
@@ -110,7 +121,12 @@ export function SpielKarte({ spiel, rabattLabel, priority = false }: SpielKarteP
         <footer className="mt-4 flex items-center justify-between gap-3 border-t border-white/10 px-4 py-3.5 sm:px-5">
           <div>
             <p className="font-headline text-sm font-bold text-primary">
-              {t('shop.karte.abPreis', { preis: formatEuro(spiel.grundpreisCent) })}
+              {einstieg.tage != null
+                ? t('shop.karte.abPreisTage', {
+                    preis: formatEuro(einstieg.cent),
+                    count: einstieg.tage,
+                  })
+                : t('shop.karte.abPreis', { preis: formatEuro(einstieg.cent) })}
             </p>
             <p className="text-xs text-on-surface-variant">
               {t('shop.karte.slots', { count: spiel.standardSlots })}

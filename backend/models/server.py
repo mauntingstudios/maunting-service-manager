@@ -195,6 +195,11 @@ class Server(Base):
     auto_update_paused: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false", nullable=False
     )
+    last_blueprint_switch_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    steam_branch: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    steam_branch_password_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Stabile öffentliche Verbindungs-Subdomain & Cloudflare-DNS-Referenzen (Phase 6).
     public_hostname: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -241,6 +246,10 @@ class Server(Base):
         Instanz), sonst ``application``. Beides entsteht nur zusammen
         (``ServerCreate`` erzwingt es, der Blueprint-Wechsel sperrt es)."""
         return "database" if self.game_type == "postgres" else "application"
+
+    @property
+    def has_branch_password(self) -> bool:
+        return bool(self.steam_branch_password_encrypted)
 
     @property
     def started_at(self) -> datetime | None:

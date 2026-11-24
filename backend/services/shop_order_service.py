@@ -58,6 +58,18 @@ class ShopCapacityError(ShopOrderError):
     """Keine freie Node-Kapazitaet mehr vorhanden (Ausverkaufsschutz, HTTP 409)."""
 
 
+class ShopDurationValidationError(ShopOrderError):
+    """Ungueltige oder nicht freigeschaltete Kurzzeit-Laufzeit (HTTP 422)."""
+
+
+def calc_short_duration_gross_cents(
+    monthly_cents: int, *, price_factor_percent: int, min_price_cents: int
+) -> int:
+    """Berechnet den Kurzzeit-Bruttopreis mit Half-Up-Rundung und Mindestpreis."""
+    anteil = (int(monthly_cents) * int(price_factor_percent) + 50) // 100
+    return max(int(min_price_cents), anteil)
+
+
 def _now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -205,6 +217,7 @@ def _resolve_plan_spec(
         "slots": slots,
         "preferred_node_id": preferred_node_id,
         "node_surcharge_cents": node_surcharge_cents,
+        "allow_short_durations": bool(getattr(plan, "allow_short_durations", True)),
     }
 
 
@@ -265,19 +278,47 @@ def create_order(
         if raw_mode in ("prepaid", "subscription", "lifetime")
         else "subscription"
     )
-    months = 1 if billing_mode == "lifetime" else payload.months
-    discount = 0 if billing_mode == "lifetime" else DURATION_DISCOUNTS[months]
+    duration_days = getattr(payload, "duration_days", None)
+    short_tier: dict[str, object] | None = None
+    if duration_days is not None:
+        if spec["kind"] != "plan" or billing_mode != "prepaid":
+            raise ShopOrderError(
+                "Kurzzeit-Laufzeiten stehen nur im Prepaid-Modus fuer Server-Tarife bereit"
+            )
+        if not bool(spec.get("allow_short_durations", True)):
+            raise ShopOrderError(
+                "Kurzzeit-Laufzeiten sind fuer diesen Tarif deaktiviert"
+            )
+        short_tier = shop_lifecycle_settings_service.active_short_duration_tier(
+            duration_days, db=db
+        )
+        if short_tier is None:
+            raise ShopOrderError("Diese Kurzzeit-Laufzeit ist derzeit nicht aktiviert")
+
+    months = 1 if (billing_mode == "lifetime" or duration_days is not None) else payload.months
+    discount = (
+        0
+        if (billing_mode == "lifetime" or duration_days is not None)
+        else DURATION_DISCOUNTS[months]
+    )
     if billing_mode == "subscription" and months == 1:
         sub_disc = shop_lifecycle_settings_service.subscription_discount_percent(db=db)
         if sub_disc > 0:
             discount = min(50, discount + sub_disc)
     monatlich = int(spec["monatlich"])  # type: ignore[arg-type]
     tax_rate_percent = int(spec["tax_rate_percent"])  # type: ignore[arg-type]
-    brutto_vor_gutschein = (
-        monatlich
-        if billing_mode == "lifetime"
-        else round(monatlich * months * (1 - discount / 100))
-    )
+    if short_tier is not None and duration_days is not None:
+        brutto_vor_gutschein = calc_short_duration_gross_cents(
+            monatlich,
+            price_factor_percent=int(short_tier["price_factor_percent"]),  # type: ignore[arg-type]
+            min_price_cents=int(short_tier["min_price_cents"]),  # type: ignore[arg-type]
+        )
+    else:
+        brutto_vor_gutschein = (
+            monatlich
+            if billing_mode == "lifetime"
+            else round(monatlich * months * (1 - discount / 100))
+        )
     coupon_code: str | None = None
     coupon_discount_cents = 0
     if payload.coupon_code and payload.coupon_code.strip():
@@ -308,6 +349,7 @@ def create_order(
         billing_interval=str(spec["billing_interval"]),
         billing_mode=billing_mode,
         months=months,
+        duration_days=duration_days,
         discount_percent=discount,
         coupon_code=coupon_code,
         coupon_discount_cents=coupon_discount_cents,
@@ -326,6 +368,11 @@ def create_order(
     db.flush()
     order.number = f"MSM-{_now().year}-{order.id:06d}"
 
+    item_name = (
+        f"{spec['name']} · {duration_days} Tage Prepaid"
+        if duration_days is not None
+        else str(spec["name"])
+    )
     db.add(
         ShopOrderItem(
             order_id=order.id,
@@ -333,7 +380,7 @@ def create_order(
             plan_id=spec["plan_id"],  # type: ignore[arg-type]
             addon_id=spec["addon_id"],  # type: ignore[arg-type]
             game_type=str(spec["game_type"]),
-            name=str(spec["name"]),
+            name=item_name,
             quantity=1,
             unit_price_cents=monatlich,
             tax_rate_percent=tax_rate_percent,
@@ -345,6 +392,7 @@ def create_order(
             slots=spec["slots"],  # type: ignore[arg-type]
             preferred_node_id=spec.get("preferred_node_id"),  # type: ignore[arg-type]
             node_surcharge_cents=int(spec.get("node_surcharge_cents") or 0),  # type: ignore[arg-type]
+            duration_days=duration_days,
         )
     )
     db.commit()
@@ -456,7 +504,11 @@ def _apply_subscription_extension(
     if end.tzinfo is None:
         end = end.replace(tzinfo=timezone.utc)
     base = end if end > jetzt else jetzt
-    target_sub.current_period_end = _add_months(base, order.months)
+    order_days = getattr(order, "duration_days", None)
+    if order_days is not None and int(order_days) > 0:
+        target_sub.current_period_end = base + timedelta(days=int(order_days))
+    else:
+        target_sub.current_period_end = _add_months(base, order.months)
     target_sub.status = "active"
     target_sub.cancel_at_period_end = (
         getattr(target_sub, "billing_mode", "subscription") == "prepaid"
@@ -473,6 +525,7 @@ def _grant_entitlements(db: Session, order: ShopOrder, jetzt: datetime) -> None:
         .all()
     )
     billing_mode = getattr(order, "billing_mode", "subscription")
+    order_days = getattr(order, "duration_days", None)
     for item in items:
         vorhanden = (
             db.query(ShopSubscription)
@@ -496,9 +549,13 @@ def _grant_entitlements(db: Session, order: ShopOrder, jetzt: datetime) -> None:
                         0
                         if billing_mode == "lifetime"
                         else (
-                            max(1, round(item.gross_cents / order.months))
-                            if item.gross_cents > 0
-                            else 0
+                            item.unit_price_cents
+                            if order_days is not None
+                            else (
+                                max(1, round(item.gross_cents / order.months))
+                                if item.gross_cents > 0
+                                else 0
+                            )
                         )
                     ),
                     tax_rate_percent=item.tax_rate_percent,
@@ -506,7 +563,11 @@ def _grant_entitlements(db: Session, order: ShopOrder, jetzt: datetime) -> None:
                     current_period_end=(
                         jetzt + timedelta(days=36500)
                         if billing_mode == "lifetime"
-                        else _add_months(jetzt, order.months)
+                        else (
+                            jetzt + timedelta(days=int(order_days))
+                            if order_days is not None and int(order_days) > 0
+                            else _add_months(jetzt, order.months)
+                        )
                     ),
                     cancel_at_period_end=(billing_mode == "prepaid"),
                 )
@@ -562,6 +623,7 @@ def _grant_entitlements(db: Session, order: ShopOrder, jetzt: datetime) -> None:
                     cpu=item.cpu,
                     slots=item.slots,
                     preferred_node_id=getattr(item, "preferred_node_id", None),
+                    duration_days=order_days,
                 )
             )
 
@@ -1021,9 +1083,27 @@ def extend_subscription(
     subscription: ShopSubscription,
     *,
     months: int = 1,
+    duration_days: int | None = None,
 ) -> ShopOrder:
     """Erstellt eine Prepaid-Verlaengerungsbestellung ohne Datenverlust."""
-    if months not in DURATION_DISCOUNTS:
+    short_tier: dict[str, object] | None = None
+    if duration_days is not None:
+        if subscription.addon_id is not None:
+            raise ShopDurationValidationError(
+                "Kurzzeit-Verlaengerungen sind fuer Add-ons nicht verfuegbar"
+            )
+        if subscription.plan_id is not None:
+            plan = db.query(ShopPlan).filter(ShopPlan.id == subscription.plan_id).first()
+            if plan is not None and not bool(getattr(plan, "allow_short_durations", True)):
+                raise ShopDurationValidationError(
+                    "Kurzzeit-Laufzeiten sind fuer diesen Tarif deaktiviert"
+                )
+        short_tier = shop_lifecycle_settings_service.active_short_duration_tier(
+            duration_days, db=db
+        )
+        if short_tier is None:
+            raise ShopDurationValidationError("Diese Kurzzeit-Laufzeit ist nicht aktiv")
+    elif months not in DURATION_DISCOUNTS:
         raise ShopOrderError("Ungueltige Laufzeit fuer die Verlaengerung")
 
     ents = (
@@ -1068,8 +1148,20 @@ def extend_subscription(
         if orig_item is not None
         else int(subscription.tax_rate_percent)
     )
-    discount = DURATION_DISCOUNTS[months]
-    brutto = max(0, round(monatlich * months * (1 - discount / 100)))
+    if short_tier is not None and duration_days is not None:
+        eff_months = 1
+        discount = 0
+        brutto = calc_short_duration_gross_cents(
+            monatlich,
+            price_factor_percent=int(short_tier["price_factor_percent"]),  # type: ignore[arg-type]
+            min_price_cents=int(short_tier["min_price_cents"]),  # type: ignore[arg-type]
+        )
+        verlaengerung_name = f"{subscription.name} (+{duration_days} Tage Prepaid)"
+    else:
+        eff_months = months
+        discount = DURATION_DISCOUNTS[eff_months]
+        brutto = max(0, round(monatlich * eff_months * (1 - discount / 100)))
+        verlaengerung_name = f"{subscription.name} (+{eff_months} Mon.)"
     netto = round(brutto * 100 / (100 + tax_rate))
     steuer = brutto - netto
 
@@ -1081,7 +1173,8 @@ def extend_subscription(
         billing_interval=subscription.billing_interval,
         billing_mode="prepaid",
         extend_subscription_id=subscription.id,
-        months=months,
+        months=eff_months,
+        duration_days=duration_days,
         discount_percent=discount,
         coupon_code=None,
         coupon_discount_cents=0,
@@ -1110,7 +1203,7 @@ def extend_subscription(
             plan_id=subscription.plan_id,
             addon_id=subscription.addon_id,
             game_type=subscription.game_type,
-            name=f"{subscription.name} (+{months} Mon.)",
+            name=verlaengerung_name,
             quantity=1,
             unit_price_cents=monatlich,
             tax_rate_percent=tax_rate,
@@ -1120,6 +1213,7 @@ def extend_subscription(
             ram_mb=orig_item.ram_mb if orig_item is not None else None,
             cpu=orig_item.cpu if orig_item is not None else None,
             slots=orig_item.slots if orig_item is not None else None,
+            duration_days=duration_days,
         )
     )
     db.commit()
@@ -1331,6 +1425,7 @@ def order_response(db: Session, order: ShopOrder) -> ShopOrderResponse:
         billing_mode=getattr(order, "billing_mode", "subscription"),
         extend_subscription_id=getattr(order, "extend_subscription_id", None),
         months=order.months,
+        duration_days=getattr(order, "duration_days", None),
         discount_percent=order.discount_percent,
         coupon_code=order.coupon_code,
         coupon_discount_cents=order.coupon_discount_cents,
@@ -1362,6 +1457,7 @@ def order_response(db: Session, order: ShopOrder) -> ShopOrderResponse:
                 node_surcharge_cents=max(
                     0, int(getattr(item, "node_surcharge_cents", 0) or 0)
                 ),
+                duration_days=getattr(item, "duration_days", None),
             )
             for item in order_items(db, order.id)
         ],

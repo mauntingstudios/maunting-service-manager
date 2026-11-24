@@ -123,6 +123,7 @@ function spielAusPlan(plan: ShopCatalogPlan): ShopSpiel {
     platforms: plan.platforms ?? ['pc'],
     lifetimePreisCent: plan.lifetime_price_cents ?? null,
     allowGameSwitch: plan.allow_game_switch ?? true,
+    allowShortDurations: plan.allow_short_durations ?? true,
     ddosProvider: plan.ddos_provider ?? null,
     ddosProfile: plan.ddos_profile ?? null,
     ddosGameAware: Boolean(plan.ddos_game_aware),

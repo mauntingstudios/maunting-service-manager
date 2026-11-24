@@ -14,6 +14,11 @@ import {
   Zustandsflaeche,
 } from '@maunting/ui'
 import { SanitizedApiError } from '@/api/client'
+import {
+  shopCatalogApi,
+  type ShortDurationDays,
+  type ShopPublicPolicyDto,
+} from '@/api/shop'
 import { still } from '@/lib/still'
 import { shopApi } from '../../api/shopApi'
 import type {
@@ -22,7 +27,7 @@ import type {
   Subscription,
   SubscriptionDeletionMode,
 } from '../../api/types'
-import { formatEuro } from '../../preis'
+import { formatEuro, kurzzeitPreisCent, RABATT_PROZENT } from '../../preis'
 
 export function KontoAbos() {
   const { t } = useTranslation()
@@ -35,6 +40,8 @@ export function KontoAbos() {
   const [purgeConfirmName, setPurgeConfirmName] = useState('')
   const [laufendPurgeId, setLaufendPurgeId] = useState<string | null>(null)
   const [extendingAboId, setExtendingAboId] = useState<string | null>(null)
+  const [extendDialogAboId, setExtendDialogAboId] = useState<string | null>(null)
+  const [publicPolicy, setPublicPolicy] = useState<ShopPublicPolicyDto | null>(null)
   const [verlaengertInfo, setVerlaengertInfo] = useState<string | null>(null)
   const [openBackupsEntId, setOpenBackupsEntId] = useState<string | null>(null)
   const [backupsByEnt, setBackupsByEnt] = useState<Record<string, GraceBackup[]>>({})
@@ -81,19 +88,31 @@ export function KontoAbos() {
     setAbos({ subscriptions, entitlements })
   }
 
-  async function verlaengernAusfuehren(abo: Subscription) {
+  async function verlaengernAusfuehren(
+    abo: Subscription,
+    months: 1 | 3 | 12 = 1,
+    durationDays?: ShortDurationDays | null,
+  ) {
     if (!shopApi.extendSubscription || extendingAboId) return
     setFehler(null)
     setVerlaengertInfo(null)
     setExtendingAboId(abo.id)
     try {
-      const ergebnis = await shopApi.extendSubscription(abo.id, 1)
+      const ergebnis =
+        durationDays != null
+          ? await shopApi.extendSubscription(abo.id, 1, durationDays)
+          : await shopApi.extendSubscription(abo.id, months)
       if (ergebnis.checkoutUrl) {
         window.location.assign(ergebnis.checkoutUrl)
         return
       }
       await neuladen()
-      setVerlaengertInfo(t('shop.konto.abos.verlaengertErfolg'))
+      setExtendDialogAboId(null)
+      setVerlaengertInfo(
+        durationDays != null
+          ? t('shop.konto.abos.verlaengertErfolgTage', { tage: durationDays })
+          : t('shop.konto.abos.verlaengertErfolg'),
+      )
     } catch (error) {
       setFehler(
         error instanceof SanitizedApiError
@@ -133,6 +152,12 @@ export function KontoAbos() {
       .catch(() => {
         if (aktiv) setAbos({ subscriptions: [], entitlements: [] })
       })
+    shopCatalogApi
+      .getPublicPolicy?.()
+      .then((policy) => {
+        if (aktiv) setPublicPolicy(policy)
+      })
+      .catch(() => {})
     return () => {
       aktiv = false
     }
@@ -237,7 +262,15 @@ export function KontoAbos() {
 
   const bestaetigeAbo = abos.subscriptions.find((s) => s.id === bestaetigeAboId) ?? null
   const purgeEnt = abos.entitlements.find((e) => e.id === purgeEntId) ?? null
-  const dialogOffen = Boolean(bestaetigeAbo || (purgeEnt && purgeEnt.serverName))
+  const extendDialogAbo = abos.subscriptions.find((s) => s.id === extendDialogAboId) ?? null
+  const aktiveKurzzeitStufen = publicPolicy?.shop_short_durations_enabled
+    ? (publicPolicy.shop_short_duration_tiers ?? [])
+        .filter((tier) => tier.enabled)
+        .sort((a, b) => a.days - b.days)
+    : []
+  const dialogOffen = Boolean(
+    bestaetigeAbo || extendDialogAbo || (purgeEnt && purgeEnt.serverName),
+  )
   const cancelConfirmMismatch =
     Boolean(bestaetigeAbo?.serverName) &&
     deletionMode === 'immediate' &&
@@ -331,18 +364,30 @@ export function KontoAbos() {
               {(kannVerlaengern || kannKuendigen) && (
                 <div className="flex flex-wrap items-center justify-between gap-2 border-t border-outline-variant/25 pt-3">
                   <div className="flex flex-wrap items-center gap-2">
-                    {kannVerlaengern && (
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        disabled={extendingAboId === abo.id}
-                        onClick={() => void verlaengernAusfuehren(abo)}
-                      >
-                        {extendingAboId === abo.id
-                          ? t('shop.konto.abos.verlaengernLaeuft')
-                          : t('shop.konto.abos.verlaengern')}
-                      </Button>
-                    )}
+                    {kannVerlaengern && (() => {
+                      const mitAuswahl = aktiveKurzzeitStufen.length > 0 && abo.addonId == null
+                      return (
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          disabled={extendingAboId === abo.id}
+                          onClick={() => {
+                            if (mitAuswahl) {
+                              setFehler(null)
+                              setExtendDialogAboId(abo.id)
+                            } else {
+                              void verlaengernAusfuehren(abo)
+                            }
+                          }}
+                        >
+                          {extendingAboId === abo.id
+                            ? t('shop.konto.abos.verlaengernLaeuft')
+                            : mitAuswahl
+                              ? t('shop.konto.abos.verlaengernAuswahl')
+                              : t('shop.konto.abos.verlaengern')}
+                        </Button>
+                      )
+                    })()}
                   </div>
                   {kannKuendigen && (
                     <Button
@@ -797,6 +842,104 @@ export function KontoAbos() {
               </Button>
             </DialogFooter>
           )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(extendDialogAbo)}
+        onOpenChange={(open) => {
+          if (!open && extendingAboId !== extendDialogAbo?.id) {
+            setExtendDialogAboId(null)
+            setFehler(null)
+          }
+        }}
+      >
+        <DialogContent
+          aria-labelledby="abo-verlaengern-titel"
+          className="flex max-h-[90dvh] max-w-lg flex-col overflow-hidden p-0"
+        >
+          <DialogHeader>
+            <DialogTitle id="abo-verlaengern-titel">
+              {t('shop.konto.abos.verlaengernDialogTitel')}
+            </DialogTitle>
+            <DialogDescription>{extendDialogAbo?.bezeichnung || ''}</DialogDescription>
+          </DialogHeader>
+          {extendDialogAbo && (
+            <div className="space-y-4 overflow-y-auto px-6 py-5 text-sm">
+              <p className="text-xs text-on-surface-variant">
+                {t('shop.konto.abos.verlaengernDialogText')}
+              </p>
+              {fehler && (
+                <p role="alert" className="text-sm text-status-destructive">
+                  {fehler}
+                </p>
+              )}
+              {aktiveKurzzeitStufen.length > 0 && (
+                <div className="grid gap-2 sm:grid-cols-3">
+                  {aktiveKurzzeitStufen.map((tier) => (
+                    <Button
+                      key={`extend-${tier.days}`}
+                      variant="secondary"
+                      size="sm"
+                      disabled={extendingAboId === extendDialogAbo.id}
+                      onClick={() => void verlaengernAusfuehren(extendDialogAbo, 1, tier.days)}
+                      className="flex h-auto flex-col items-start gap-0.5 py-2.5 text-left"
+                    >
+                      <span className="font-semibold text-on-surface">
+                        {t('shop.spiel.tage', { count: tier.days })}
+                      </span>
+                      {extendDialogAbo.preisCent > 0 && (
+                        <span className="text-xs tabular-nums text-primary">
+                          {formatEuro(kurzzeitPreisCent(extendDialogAbo.preisCent, tier))}
+                        </span>
+                      )}
+                    </Button>
+                  ))}
+                </div>
+              )}
+              <div className="grid gap-2 sm:grid-cols-3">
+                {([1, 3, 12] as const).map((monate) => {
+                  const rabatt = RABATT_PROZENT[monate]
+                  const preisCent =
+                    extendDialogAbo.preisCent > 0
+                      ? Math.round(extendDialogAbo.preisCent * monate * (1 - rabatt / 100))
+                      : 0
+                  return (
+                    <Button
+                      key={`extend-m-${monate}`}
+                      variant="secondary"
+                      size="sm"
+                      disabled={extendingAboId === extendDialogAbo.id}
+                      onClick={() => void verlaengernAusfuehren(extendDialogAbo, monate)}
+                      className="flex h-auto flex-col items-start gap-0.5 py-2.5 text-left"
+                    >
+                      <span className="font-semibold text-on-surface">
+                        {t('shop.spiel.monate', { count: monate })}
+                      </span>
+                      {preisCent > 0 && (
+                        <span className="text-xs tabular-nums text-primary">
+                          {formatEuro(preisCent)}
+                        </span>
+                      )}
+                    </Button>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={extendingAboId === extendDialogAbo?.id}
+              onClick={() => {
+                setExtendDialogAboId(null)
+                setFehler(null)
+              }}
+            >
+              {t('shop.konto.abos.abbrechen')}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

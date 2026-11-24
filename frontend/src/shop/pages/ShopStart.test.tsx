@@ -523,4 +523,32 @@ describe('ShopStart', () => {
     )
     expect(screen.getByRole('heading', { level: 3, name: 'Game 08' })).toBeInTheDocument()
   })
+
+  it('zeigt bei aktiven Kurzzeit-Tarifen den guenstigsten 3-Tage-Einstiegspreis auf Hero und Karte', async () => {
+    hoisted.getCatalog.mockResolvedValue([
+      {
+        ...SAMPLE_PLANS[0],
+        price_cents: 1000,
+        allow_short_durations: true,
+      },
+    ])
+    hoisted.getPublicPolicy.mockResolvedValue({
+      default_billing_mode: 'prepaid',
+      subscription_discount_percent: 0,
+      refund_guarantee_days: 0,
+      refund_policy_note: '',
+      cancel_grace_days: 7,
+      auto_subdomain_enabled: false,
+      auto_subdomain_zone: '',
+      shop_short_durations_enabled: true,
+      shop_short_duration_tiers: [
+        { days: 3, enabled: true, price_factor_percent: 25, min_price_cents: 199 },
+        { days: 7, enabled: true, price_factor_percent: 40, min_price_cents: 299 },
+        { days: 14, enabled: true, price_factor_percent: 65, min_price_cents: 499 },
+      ],
+    })
+
+    zeige()
+    expect((await screen.findAllByText(/2,50.*3 Tage/)).length).toBeGreaterThanOrEqual(2)
+  })
 })

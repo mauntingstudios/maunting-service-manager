@@ -60,6 +60,7 @@ export type SubscriptionDeletionMode =
 
 export interface Subscription {
   id: string
+  addonId?: number | null
   bezeichnung: string
   status: 'active' | 'past_due' | 'cancelled'
   intervall: 'month'

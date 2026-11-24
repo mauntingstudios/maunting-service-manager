@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import threading
 import time
 import uuid
@@ -1509,6 +1510,249 @@ def sync_desired_state_to_agent(db: Session, server: Server) -> bool:
         return False
 
 
+_STEAM_BRANCH_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$")
+
+
+def _resolve_shop_switch_context(db: Session, server: Server, user_id: int | None) -> dict:
+    from models import ShopEntitlement, ShopOrderItem, ShopPlan, User
+    from services import permission_service
+
+    ent = (
+        db.query(ShopEntitlement)
+        .filter(
+            ShopEntitlement.server_id == server.id,
+            ShopEntitlement.kind == "server",
+            ShopEntitlement.status == "active",
+        )
+        .order_by(ShopEntitlement.id.desc())
+        .first()
+    )
+    plan = None
+    if ent is not None:
+        plan_id = ent.plan_id
+        if plan_id is None and ent.order_item_id is not None:
+            item_row = (
+                db.query(ShopOrderItem)
+                .filter(ShopOrderItem.id == ent.order_item_id)
+                .first()
+            )
+            if item_row is not None:
+                plan_id = item_row.plan_id
+        if plan_id is not None:
+            plan = db.query(ShopPlan).filter(ShopPlan.id == plan_id).first()
+
+    if user_id is None or ent is None:
+        return {"is_restricted_customer": False, "entitlement": ent, "plan": plan}
+
+    acting_user = db.query(User).filter(User.id == user_id).first()
+    is_privileged = acting_user is not None and (
+        getattr(acting_user, "is_owner", False)
+        or permission_service.has_global_permission(db, acting_user, "shop.manage")
+        or permission_service.has_global_permission(db, acting_user, "servers.create")
+    )
+    return {
+        "is_restricted_customer": not is_privileged,
+        "entitlement": ent,
+        "plan": plan,
+    }
+
+
+def _switch_abuse_stats(db: Session, server: Server) -> tuple[int, int, int, int, bool]:
+    from models import AuditLog
+    from services import shop_lifecycle_settings_service
+
+    cooldown_hours = shop_lifecycle_settings_service.game_switch_cooldown_hours(db=db)
+    max_per_30d = shop_lifecycle_settings_service.game_switch_max_per_30d(db=db)
+    allow_higher_price = shop_lifecycle_settings_service.game_switch_allow_higher_price_plan(db=db)
+
+    now = datetime.now(timezone.utc)
+    cooldown_remaining_seconds = 0
+    last_switch = getattr(server, "last_blueprint_switch_at", None)
+    if cooldown_hours > 0 and last_switch is not None:
+        if last_switch.tzinfo is None:
+            last_switch = last_switch.replace(tzinfo=timezone.utc)
+        unlock_at = last_switch + timedelta(hours=cooldown_hours)
+        if unlock_at > now:
+            cooldown_remaining_seconds = max(1, int((unlock_at - now).total_seconds()))
+
+    cutoff_30d = now - timedelta(days=30)
+    switches_last_30d = (
+        db.query(AuditLog)
+        .filter(
+            AuditLog.action == "server.blueprint.switch",
+            AuditLog.target_id == str(server.id),
+            AuditLog.created_at >= cutoff_30d,
+        )
+        .count()
+    )
+    return (
+        cooldown_hours,
+        cooldown_remaining_seconds,
+        max_per_30d,
+        int(switches_last_30d),
+        allow_higher_price,
+    )
+
+
+def get_switch_options(db: Session, server: Server, user_id: int | None = None) -> dict:
+    """Liefert waehlbare Ziel-Spiele (fuer Shop-Kunden) oder alle Blueprints."""
+    from blueprints import get_registry
+    from models import ShopPlan
+
+    ctx = _resolve_shop_switch_context(db, server, user_id)
+    is_customer = bool(ctx["is_restricted_customer"])
+    current_plan = ctx["plan"]
+    (
+        cooldown_hours,
+        cooldown_remaining_seconds,
+        max_per_30d,
+        switches_last_30d,
+        allow_higher_price,
+    ) = _switch_abuse_stats(db, server)
+
+    plan_allows_switch = bool(getattr(current_plan, "allow_game_switch", True)) if current_plan else True
+    global_blocked_reason: str | None = None
+    if is_customer:
+        if not plan_allows_switch:
+            global_blocked_reason = "disabled"
+        elif cooldown_remaining_seconds > 0:
+            global_blocked_reason = "cooldown"
+        elif max_per_30d > 0 and switches_last_30d >= max_per_30d:
+            global_blocked_reason = "limit_30d"
+
+    registry = get_registry()
+    options: list[dict] = []
+
+    if is_customer:
+        active_plans = (
+            db.query(ShopPlan)
+            .filter(ShopPlan.active.is_(True))
+            .order_by(ShopPlan.sort_order.asc(), ShopPlan.price_cents.asc())
+            .all()
+        )
+        plans_by_game: dict[str, list[ShopPlan]] = {}
+        for p in active_plans:
+            plans_by_game.setdefault(p.game_type, []).append(p)
+
+        seen_ids: set[str] = set()
+        for bp_entry in registry.list():
+            bp_id = bp_entry.blueprint.meta.id
+            if bp_id == "postgres" or bp_id in seen_ids:
+                continue
+            seen_ids.add(bp_id)
+            bp = bp_entry.blueprint
+            category_val = getattr(bp.meta.category, "value", str(bp.meta.category))
+            if category_val not in ("steam_game", "non_steam_game"):
+                continue
+            target_plans = plans_by_game.get(bp_id) or []
+            if not target_plans and bp_id != server.game_type:
+                continue
+
+            min_ram_vals = [p.ram_included_mb for p in target_plans if p.ram_included_mb is not None]
+            bp_min_ram = getattr(getattr(bp, "resources", None), "minMemoryMb", None)
+            if bp_min_ram is not None:
+                min_ram_vals.append(int(bp_min_ram))
+            min_ram_mb = min(min_ram_vals) if min_ram_vals else None
+
+            min_cpu_vals = [p.cpu_included for p in target_plans if p.cpu_included is not None]
+            min_cpu = min(min_cpu_vals) if min_cpu_vals else None
+            min_price_cents = min((int(p.price_cents) for p in target_plans), default=None)
+
+            is_current = bp_id == server.game_type
+            reason: str | None = None
+            if is_current:
+                reason = "current"
+            elif global_blocked_reason is not None:
+                reason = global_blocked_reason
+            elif (
+                bp_min_ram is not None
+                and server.ram_limit_mb is not None
+                and server.ram_limit_mb > 0
+                and int(bp_min_ram) > int(server.ram_limit_mb)
+            ):
+                reason = "insufficient_ram"
+            elif (
+                min_ram_mb is not None
+                and server.ram_limit_mb is not None
+                and server.ram_limit_mb > 0
+                and int(min_ram_mb) > int(server.ram_limit_mb)
+            ):
+                reason = "insufficient_ram"
+            elif (
+                min_cpu is not None
+                and server.cpu_limit_percent is not None
+                and server.cpu_limit_percent > 0
+                and (int(min_cpu) * 100) > int(server.cpu_limit_percent)
+            ):
+                reason = "insufficient_cpu"
+            elif (
+                not allow_higher_price
+                and current_plan is not None
+                and min_price_cents is not None
+                and min_price_cents > int(current_plan.price_cents)
+            ):
+                reason = "higher_price_plan"
+
+            options.append(
+                {
+                    "id": bp_id,
+                    "name": bp.meta.name,
+                    "description": bp.meta.shopTagline or bp.meta.description,
+                    "tagline": bp.meta.shopTagline,
+                    "category": category_val,
+                    "platforms": list(getattr(bp.meta, "platforms", None) or ["pc"]),
+                    "artwork_url": f"/api/shop/artwork/{bp_id}",
+                    "min_ram_mb": min_ram_mb,
+                    "min_cpu": min_cpu,
+                    "min_price_cents": min_price_cents,
+                    "is_current": is_current,
+                    "selectable": reason is None,
+                    "blocked_reason": reason,
+                }
+            )
+    else:
+        seen_ids: set[str] = set()
+        for bp_entry in registry.list():
+            bp_id = bp_entry.blueprint.meta.id
+            if bp_id == "postgres" or bp_id in seen_ids:
+                continue
+            seen_ids.add(bp_id)
+            bp = bp_entry.blueprint
+            category_val = getattr(bp.meta.category, "value", str(bp.meta.category))
+            is_current = bp_id == server.game_type
+            options.append(
+                {
+                    "id": bp_id,
+                    "name": bp.meta.name,
+                    "description": bp.meta.description,
+                    "tagline": getattr(bp.meta, "shopTagline", None),
+                    "category": category_val,
+                    "platforms": list(getattr(bp.meta, "platforms", None) or ["pc"]),
+                    "artwork_url": f"/api/shop/artwork/{bp_id}",
+                    "min_ram_mb": getattr(getattr(bp, "resources", None), "minMemoryMb", None),
+                    "min_cpu": None,
+                    "min_price_cents": None,
+                    "is_current": is_current,
+                    "selectable": not is_current,
+                    "blocked_reason": "current" if is_current else None,
+                }
+            )
+
+    options.sort(key=lambda item: (not item["is_current"], item["name"].lower()))
+    return {
+        "mode": "shop_customer" if is_customer else "full",
+        "current_game_type": server.game_type,
+        "switch_allowed": (global_blocked_reason is None) if is_customer else True,
+        "cooldown_hours": cooldown_hours if is_customer else 0,
+        "cooldown_remaining_seconds": cooldown_remaining_seconds if is_customer else 0,
+        "max_per_30d": max_per_30d if is_customer else 0,
+        "switches_last_30d": switches_last_30d,
+        "allow_higher_price_plan": allow_higher_price if is_customer else True,
+        "current_plan_price_cents": int(current_plan.price_cents) if current_plan is not None else None,
+        "options": options,
+    }
+
+
 def switch_server_blueprint(db: Session, server: Server, new_blueprint_id: str, user_id: int | None = None) -> dict:
     """Wechselt das Spiel / den Blueprint eines gestoppten Servers.
 
@@ -1555,129 +1799,136 @@ def switch_server_blueprint(db: Session, server: Server, new_blueprint_id: str, 
             },
         )
 
-    if user_id is not None:
-        from models import ShopEntitlement, ShopOrderItem, ShopPlan, User
-        from services import permission_service
-
-        acting_user = db.query(User).filter(User.id == user_id).first()
-        is_shop_admin = acting_user is not None and (
-            getattr(acting_user, "is_owner", False)
-            or permission_service.has_global_permission(db, acting_user, "shop.manage")
-        )
-        if not is_shop_admin:
-            ent = (
-                db.query(ShopEntitlement)
-                .filter(
-                    ShopEntitlement.server_id == server.id,
-                    ShopEntitlement.kind == "server",
-                    ShopEntitlement.status == "active",
-                )
-                .order_by(ShopEntitlement.id.desc())
-                .first()
+    ctx = _resolve_shop_switch_context(db, server, user_id)
+    if ctx["is_restricted_customer"]:
+        plan = ctx["plan"]
+        if plan is not None and not getattr(plan, "allow_game_switch", True):
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "code": "game_switch_disabled",
+                    "message": "Spielwechsel ist fuer diesen Tarif nicht freigeschaltet.",
+                },
             )
-            if ent is not None:
-                plan_id = ent.plan_id
-                if plan_id is None and ent.order_item_id is not None:
-                    item_row = (
-                        db.query(ShopOrderItem)
-                        .filter(ShopOrderItem.id == ent.order_item_id)
-                        .first()
-                    )
-                    if item_row is not None:
-                        plan_id = item_row.plan_id
-                plan = (
-                    db.query(ShopPlan).filter(ShopPlan.id == plan_id).first()
-                    if plan_id is not None
-                    else None
+        (
+            _cooldown_h,
+            cooldown_rem_sec,
+            max_per_30d,
+            switches_30d,
+            allow_higher_price,
+        ) = _switch_abuse_stats(db, server)
+        if cooldown_rem_sec > 0:
+            raise HTTPException(
+                status_code=429,
+                detail={
+                    "code": "game_switch_cooldown",
+                    "message": "Bitte warte den aktiven Spielwechsel-Cooldown ab.",
+                    "retry_after_seconds": cooldown_rem_sec,
+                },
+            )
+        if max_per_30d > 0 and switches_30d >= max_per_30d:
+            raise HTTPException(
+                status_code=429,
+                detail={
+                    "code": "game_switch_limit_reached",
+                    "message": "Das monatliche Limit fuer Spielwechsel wurde erreicht.",
+                },
+            )
+        from models import ShopPlan
+
+        category_val = getattr(
+            entry.blueprint.meta.category,
+            "value",
+            str(entry.blueprint.meta.category),
+        )
+        if category_val not in ("steam_game", "non_steam_game"):
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "code": "game_switch_invalid_category",
+                    "message": "Nur Gameserver-Blueprints koennen per Spielwechsel ausgewaehlt werden.",
+                },
+            )
+        bp_min_ram = getattr(
+            getattr(entry.blueprint, "resources", None), "minMemoryMb", None
+        )
+        if (
+            bp_min_ram is not None
+            and server.ram_limit_mb is not None
+            and server.ram_limit_mb > 0
+            and int(bp_min_ram) > int(server.ram_limit_mb)
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "code": "game_switch_insufficient_ram",
+                    "message": "Der gewaehlte Tarif bietet nicht genug RAM fuer dieses Spiel.",
+                },
+            )
+        target_plans = (
+            db.query(ShopPlan)
+            .filter(
+                ShopPlan.game_type == new_blueprint_id,
+                ShopPlan.active.is_(True),
+            )
+            .all()
+        )
+        if target_plans:
+            min_price_req = min(int(p.price_cents) for p in target_plans)
+            if (
+                not allow_higher_price
+                and plan is not None
+                and min_price_req > int(plan.price_cents)
+            ):
+                raise HTTPException(
+                    status_code=403,
+                    detail={
+                        "code": "game_switch_higher_price_plan",
+                        "message": "Dieses Spiel erfordert einen hoeherwertigen Tarif.",
+                    },
                 )
-                if plan is not None and not getattr(plan, "allow_game_switch", True):
-                    raise HTTPException(
-                        status_code=403,
-                        detail={
-                            "code": "game_switch_disabled",
-                            "message": "Spielwechsel ist fuer diesen Tarif nicht freigeschaltet.",
-                        },
-                    )
-                category_val = getattr(
-                    entry.blueprint.meta.category,
-                    "value",
-                    str(entry.blueprint.meta.category),
+            min_ram_req = min(
+                (
+                    p.ram_included_mb
+                    for p in target_plans
+                    if p.ram_included_mb is not None
+                ),
+                default=None,
+            )
+            if (
+                min_ram_req is not None
+                and server.ram_limit_mb is not None
+                and server.ram_limit_mb > 0
+                and min_ram_req > server.ram_limit_mb
+            ):
+                raise HTTPException(
+                    status_code=400,
+                    detail={
+                        "code": "game_switch_insufficient_ram",
+                        "message": "Der gewaehlte Tarif bietet nicht genug RAM fuer dieses Spiel.",
+                    },
                 )
-                if category_val not in ("steam_game", "non_steam_game"):
-                    raise HTTPException(
-                        status_code=400,
-                        detail={
-                            "code": "game_switch_invalid_category",
-                            "message": "Nur Gameserver-Blueprints koennen per Spielwechsel ausgewaehlt werden.",
-                        },
-                    )
-                bp_min_ram = getattr(
-                    getattr(entry.blueprint, "resources", None), "minMemoryMb", None
+            min_cpu_req = min(
+                (
+                    p.cpu_included
+                    for p in target_plans
+                    if p.cpu_included is not None
+                ),
+                default=None,
+            )
+            if (
+                min_cpu_req is not None
+                and server.cpu_limit_percent is not None
+                and server.cpu_limit_percent > 0
+                and (min_cpu_req * 100) > server.cpu_limit_percent
+            ):
+                raise HTTPException(
+                    status_code=400,
+                    detail={
+                        "code": "game_switch_insufficient_cpu",
+                        "message": "Der gewaehlte Tarif bietet nicht genug CPU-Leistung fuer dieses Spiel.",
+                    },
                 )
-                if (
-                    bp_min_ram is not None
-                    and server.ram_limit_mb is not None
-                    and server.ram_limit_mb > 0
-                    and int(bp_min_ram) > int(server.ram_limit_mb)
-                ):
-                    raise HTTPException(
-                        status_code=400,
-                        detail={
-                            "code": "game_switch_insufficient_ram",
-                            "message": "Der gewaehlte Tarif bietet nicht genug RAM fuer dieses Spiel.",
-                        },
-                    )
-                target_plans = (
-                    db.query(ShopPlan)
-                    .filter(
-                        ShopPlan.game_type == new_blueprint_id,
-                        ShopPlan.active.is_(True),
-                    )
-                    .all()
-                )
-                if target_plans:
-                    min_ram_req = min(
-                        (
-                            p.ram_included_mb
-                            for p in target_plans
-                            if p.ram_included_mb is not None
-                        ),
-                        default=None,
-                    )
-                    if (
-                        min_ram_req is not None
-                        and server.ram_limit_mb is not None
-                        and server.ram_limit_mb > 0
-                        and min_ram_req > server.ram_limit_mb
-                    ):
-                        raise HTTPException(
-                            status_code=400,
-                            detail={
-                                "code": "game_switch_insufficient_ram",
-                                "message": "Der gewaehlte Tarif bietet nicht genug RAM fuer dieses Spiel.",
-                            },
-                        )
-                    min_cpu_req = min(
-                        (
-                            p.cpu_included
-                            for p in target_plans
-                            if p.cpu_included is not None
-                        ),
-                        default=None,
-                    )
-                    if (
-                        min_cpu_req is not None
-                        and server.cpu_limit_percent is not None
-                        and server.cpu_limit_percent > 0
-                        and (min_cpu_req * 100) > server.cpu_limit_percent
-                    ):
-                        raise HTTPException(
-                            status_code=400,
-                            detail={
-                                "code": "game_switch_insufficient_cpu",
-                                "message": "Der gewaehlte Tarif bietet nicht genug CPU-Leistung fuer dieses Spiel.",
-                            },
-                        )
 
     old_game_type = server.game_type
 
@@ -1739,7 +1990,24 @@ def switch_server_blueprint(db: Session, server: Server, new_blueprint_id: str, 
     files_removed = wipe_server_root(db, server)
 
     # 3. Game Type / Blueprint ID im Server Model aktualisieren
+    from services import audit_service
+
     server.game_type = new_blueprint_id
+    server.last_blueprint_switch_at = datetime.now(timezone.utc)
+    server.steam_branch = None
+    server.steam_branch_password_encrypted = None
+    audit_service.record_privileged_action(
+        db,
+        user_id=user_id,
+        action="server.blueprint.switch",
+        target_type="server",
+        target_id=server.id,
+        details={
+            "old_blueprint": old_game_type,
+            "new_blueprint": new_blueprint_id,
+            "backup_id": getattr(backup_record, "id", None),
+        },
+    )
     db.commit()
     db.refresh(server)
 
@@ -1794,5 +2062,151 @@ def switch_server_blueprint(db: Session, server: Server, new_blueprint_id: str, 
         # Oberflaeche und die KI das Aufraeumen **belegen** koennen statt es zu
         # behaupten: genau diese Behauptung war der Betriebsfehler.
         "files_removed": files_removed,
+        "status": server.status,
+    }
+
+
+def switch_steam_branch(
+    db: Session,
+    server: Server,
+    branch: str,
+    *,
+    branch_password: str | None = None,
+    clear_password: bool = False,
+    user_id: int | None = None,
+) -> dict:
+    """Wechselt den Steam-Depot-Branch eines gestoppten Steam-Servers inkl. Pflicht-Backup."""
+    if server.status != "stopped":
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "server_must_be_stopped",
+                "message": "Der Server muss gestoppt sein, um den Steam-Branch zu wechseln.",
+            },
+        )
+
+    from blueprints import get_registry
+
+    entry = get_registry().get(server.game_type)
+    if entry is None:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "blueprint_not_found", "message": "Blueprint nicht gefunden."},
+        )
+    bp = entry.blueprint
+    source_type = getattr(bp.source.type, "value", str(bp.source.type))
+    if source_type != "steam" or bp.source.steam is None:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "not_a_steam_server",
+                "message": "Branch-Wechsel steht nur fuer Steam-Server zur Verfuegung.",
+            },
+        )
+
+    branch_clean = (branch or "").strip()
+    if not _STEAM_BRANCH_RE.fullmatch(branch_clean):
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "invalid_branch_name",
+                "message": "Ungueltiger Branch-Name (nur Buchstaben, Ziffern, Punkt, Bindestrich, Unterstrich).",
+            },
+        )
+
+    pw_clean = branch_password.strip() if isinstance(branch_password, str) else None
+    if pw_clean == "":
+        pw_clean = None
+    if pw_clean and any(ch.isspace() or ord(ch) < 32 for ch in pw_clean):
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "invalid_branch_password",
+                "message": "Beta-Passwort darf keine Leer- oder Steuerzeichen enthalten.",
+            },
+        )
+
+    ctx = _resolve_shop_switch_context(db, server, user_id)
+    if ctx["is_restricted_customer"]:
+        default_branch = (bp.source.steam.branch or "public").strip() or "public"
+        allowed = {"public", default_branch}
+        for b in getattr(bp.source.steam, "branches", None) or []:
+            if not getattr(b, "requiresPassword", False):
+                allowed.add(b.id)
+        if branch_clean not in allowed or pw_clean is not None or clear_password:
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "code": "branch_not_allowed",
+                    "message": "Dieser Steam-Branch ist fuer deinen Tarif nicht freigegeben.",
+                },
+            )
+
+    from services.backup_orchestrator import create_server_backup
+    from services.auth_service import AuthService
+    from services import audit_service
+
+    try:
+        ts = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+        backup_record = create_server_backup(
+            server.id,
+            db,
+            name=f"pre-branch-{branch_clean}-{ts}",
+            timeout_seconds=600,
+        )
+        if backup_record is None or backup_record.verified_at is None:
+            raise RuntimeError("Backup ist nicht nachweisbar erfolgreich.")
+    except Exception as exc:
+        logger.error("Pre-Branch Backup fuer Server ID=%s fehlgeschlagen: %s", server.id, exc)
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "code": "pre_switch_backup_failed",
+                "message": f"Pflicht-Backup vor Branch-Wechsel fehlgeschlagen: {exc}",
+            },
+        )
+
+    old_branch = server.steam_branch or (bp.source.steam.branch or "public")
+    server.steam_branch = branch_clean
+    if branch_clean == "public" or clear_password:
+        server.steam_branch_password_encrypted = None
+    elif pw_clean is not None:
+        server.steam_branch_password_encrypted = AuthService.encrypt_secret(
+            pw_clean,
+            aad=f"msm:server:{server.id}:steam-branch-password",
+        )
+
+    audit_service.record_privileged_action(
+        db,
+        user_id=user_id,
+        action="server.steam_branch.switch",
+        target_type="server",
+        target_id=server.id,
+        details={
+            "old_branch": old_branch,
+            "new_branch": branch_clean,
+            "has_password": bool(server.steam_branch_password_encrypted),
+            "backup_id": getattr(backup_record, "id", None),
+        },
+    )
+    db.commit()
+    db.refresh(server)
+
+    plugin = get_plugin(server.game_type)
+    if plugin:
+        _set_status(db, server, "updating", f"Steam-Branch '{branch_clean}' wird geladen")
+        try:
+            plugin.install(server)
+        except Exception as exc:
+            logger.error("SteamCMD-Lauf nach Branch-Wechsel fehlgeschlagen: %s", exc)
+
+    sync_desired_state_to_agent(db, server)
+    return {
+        "message": f"Steam-Branch auf '{branch_clean}' gewechselt.",
+        "server_id": server.id,
+        "old_branch": old_branch,
+        "steam_branch": branch_clean,
+        "has_branch_password": bool(server.steam_branch_password_encrypted),
+        "backup_id": getattr(backup_record, "id", None),
         "status": server.status,
     }

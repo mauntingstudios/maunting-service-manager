@@ -108,6 +108,9 @@ export interface Server {
   wallpaper_source?: WallpaperSource
   /** Inhalts-Version für `?v=` (`custom-{id}` / `steam-{app_id}`, null = Panorama). */
   wallpaper_version?: string | null
+  steam_branch?: string | null
+  has_branch_password?: boolean
+  last_blueprint_switch_at?: string | null
 }
 
 export type WallpaperSource = 'custom' | 'steam' | 'panorama'
@@ -293,6 +296,13 @@ export interface BlueprintPortDef {
   role?: string
 }
 
+export interface SteamBranchOption {
+  id: string
+  label: string
+  description?: string | null
+  requires_password: boolean
+}
+
 export interface GameInfo {
   id: string
   name: string
@@ -300,6 +310,9 @@ export interface GameInfo {
   edition?: string | null
   platform: string
   category?: string
+  source_type?: 'steam' | 'http' | 'github' | 'dockerOnly' | 'custom' | 'manualUpload'
+  supports_version_switch?: boolean
+  steam_branches?: SteamBranchOption[]
   mod_support: boolean
   supports_steam_workshop: boolean
   supports_curseforge?: boolean
@@ -332,6 +345,61 @@ export interface BlueprintListEntry {
   mod_provider?: 'curseforge' | 'steam' | null
   mod_injection: 'none' | 'startupArg' | 'file'
   ports: BlueprintPortDef[]
+}
+
+export interface SwitchOptionItem {
+  id: string
+  name: string
+  description?: string | null
+  tagline?: string | null
+  category: string
+  platforms: string[]
+  artwork_url?: string | null
+  min_ram_mb?: number | null
+  min_cpu?: number | null
+  min_price_cents?: number | null
+  is_current: boolean
+  selectable: boolean
+  blocked_reason?: string | null
+}
+
+export interface SwitchOptionsResponse {
+  mode: 'shop_customer' | 'full'
+  current_game_type: string
+  switch_allowed: boolean
+  cooldown_hours: number
+  cooldown_remaining_seconds: number
+  max_per_30d: number
+  switches_last_30d: number
+  allow_higher_price_plan: boolean
+  current_plan_price_cents?: number | null
+  options: SwitchOptionItem[]
+}
+
+export interface MinecraftVersionItem {
+  version: string
+  release_type: 'release' | 'snapshot' | 'latest'
+  published_at?: string | null
+  relation: 'upgrade' | 'same' | 'downgrade' | 'latest'
+}
+
+export interface MinecraftEditionItem {
+  id: string
+  name: string
+  provider: string
+  is_current: boolean
+  selectable: boolean
+  blocked_reason?: string | null
+}
+
+export interface MinecraftVersionsResponse {
+  provider: string
+  env_key: string
+  current_version: string
+  supports_downgrade_warning: boolean
+  is_shop_customer: boolean
+  versions: MinecraftVersionItem[]
+  editions: MinecraftEditionItem[]
 }
 
 export interface VersionInfo {

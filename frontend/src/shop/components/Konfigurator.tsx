@@ -1,17 +1,22 @@
 import { useTranslation } from 'react-i18next'
 import { Activity, Check, Cpu, Server, ShieldCheck, Wrench } from 'lucide-react'
 import { Button, Dropdown } from '@maunting/ui'
-import type { ShopNodeAvailabilityItem, ShopPublicNodeStatusDto } from '@/api/shop'
-import { formatCpuLabel, formatEuro } from '../preis'
+import type {
+  ShopNodeAvailabilityItem,
+  ShopPublicNodeStatusDto,
+  ShopShortDurationTierDto,
+} from '@/api/shop'
+import { formatCpuLabel, formatEuro, kurzzeitPreisCent } from '../preis'
 import { standortAnzeigeName } from '../standortName'
 import type { ShopPingMessung } from '../shopStandortStore'
-import type { AbrechnungsModus, Konfiguration, LaufzeitMonate, ShopSpiel } from '../typen'
+import type { AbrechnungsModus, Konfiguration, LaufzeitMonate, LaufzeitTage, ShopSpiel } from '../typen'
 
 interface KonfiguratorProps {
   spiel: ShopSpiel
   konfiguration: Konfiguration
   onChange: (naechste: Konfiguration) => void
   aboRabattProzent?: number
+  shortDurationTiers?: ShopShortDurationTierDto[]
   nodeStatuses?: ShopPublicNodeStatusDto[]
   nodeAvailabilityById?: Record<number, ShopNodeAvailabilityItem>
   pingMsByNodeId?: Record<number, ShopPingMessung>
@@ -38,6 +43,7 @@ export function Konfigurator({
   konfiguration,
   onChange,
   aboRabattProzent = 0,
+  shortDurationTiers = [],
   nodeStatuses = [],
   nodeAvailabilityById = {},
   pingMsByNodeId = {},
@@ -54,12 +60,31 @@ export function Konfigurator({
 
   const abrechnungsModus = konfiguration.abrechnungsModus ?? 'prepaid'
   const hatLifetime = (spiel.lifetimePreisCent ?? 0) > 0
+  const aktiveTagesStufen =
+    spiel.allowShortDurations === false
+      ? []
+      : shortDurationTiers.filter((tier) => tier.enabled)
   const setzeAbrechnungsModus = (modus: AbrechnungsModus) => {
     onChange({
       ...konfiguration,
       abrechnungsModus: modus,
       laufzeitMonate:
         modus === 'subscription' || modus === 'lifetime' ? 1 : konfiguration.laufzeitMonate,
+      laufzeitTage: modus === 'prepaid' ? (konfiguration.laufzeitTage ?? null) : null,
+    })
+  }
+  const setzeTage = (tage: LaufzeitTage) => {
+    onChange({
+      ...konfiguration,
+      laufzeitTage: tage,
+      laufzeitMonate: 1,
+    })
+  }
+  const setzeMonate = (monate: LaufzeitMonate) => {
+    onChange({
+      ...konfiguration,
+      laufzeitTage: null,
+      laufzeitMonate: monate,
     })
   }
   const maxSlots =
@@ -402,20 +427,55 @@ export function Konfigurator({
         </div>
 
         {abrechnungsModus !== 'lifetime' && (
-          <div className="space-y-1.5">
+          <div className="space-y-2">
             <span className="block text-xs font-medium uppercase tracking-wider text-on-surface-variant">
               {t('shop.spiel.laufzeit')}
             </span>
+            {aktiveTagesStufen.length > 0 && (
+              <div
+                className="flex flex-wrap gap-2"
+                role="group"
+                aria-label={t('shop.spiel.kurzzeitLaufzeiten')}
+              >
+                {aktiveTagesStufen.map((tier) => {
+                  const gesperrt = abrechnungsModus === 'subscription'
+                  const aktiv = !gesperrt && konfiguration.laufzeitTage === tier.days
+                  const vorschauPreis = kurzzeitPreisCent(spiel.grundpreisCent, tier)
+                  return (
+                    <button
+                      key={`tage-${tier.days}`}
+                      type="button"
+                      disabled={gesperrt}
+                      onClick={() => setzeTage(tier.days)}
+                      aria-pressed={aktiv}
+                      className={`min-h-11 flex-1 rounded-lg border px-2.5 text-sm font-semibold transition-colors ${
+                        gesperrt
+                          ? 'cursor-not-allowed border-outline-variant/25 bg-surface-container/40 text-on-surface-variant/50'
+                          : aktiv
+                            ? 'border-primary/50 bg-primary/15 text-primary'
+                            : 'border-outline-variant/40 bg-surface-container text-on-surface-variant hover:text-on-surface'
+                      }`}
+                    >
+                      <span className="block">{t('shop.spiel.tage', { count: tier.days })}</span>
+                      <span className="block text-label-sm font-normal tabular-nums opacity-85">
+                        {t('shop.karte.abWert', { preis: formatEuro(vorschauPreis) })}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
             <div className="flex gap-2" role="group" aria-label={t('shop.spiel.laufzeit')}>
               {LAUFZEITEN.map((monate) => {
-                const aktiv = konfiguration.laufzeitMonate === monate
+                const aktiv =
+                  konfiguration.laufzeitTage == null && konfiguration.laufzeitMonate === monate
                 const gesperrt = abrechnungsModus === 'subscription' && monate !== 1
                 return (
                   <button
                     key={monate}
                     type="button"
                     disabled={gesperrt}
-                    onClick={() => setze('laufzeitMonate', monate)}
+                    onClick={() => setzeMonate(monate)}
                     aria-pressed={aktiv}
                     className={`min-h-11 flex-1 rounded-lg border px-2 text-sm font-semibold transition-colors ${
                       gesperrt
@@ -431,7 +491,11 @@ export function Konfigurator({
               })}
             </div>
             {abrechnungsModus === 'subscription' && (
-              <p className="text-xs text-on-surface-variant">{t('shop.spiel.aboIntervallHinweis')}</p>
+              <p className="text-xs text-on-surface-variant">
+                {aktiveTagesStufen.length > 0
+                  ? t('shop.spiel.kurzzeitNurPrepaid')
+                  : t('shop.spiel.aboIntervallHinweis')}
+              </p>
             )}
           </div>
         )}

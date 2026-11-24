@@ -36,6 +36,7 @@ export interface ShopSpiel {
   platforms?: string[]
   lifetimePreisCent?: number | null
   allowGameSwitch?: boolean
+  allowShortDurations?: boolean
   ddosProvider?: string | null
   ddosProfile?: string | null
   ddosGameAware?: boolean
@@ -49,6 +50,7 @@ export interface ShopSpiel {
 }
 
 export type LaufzeitMonate = 1 | 3 | 12
+export type LaufzeitTage = 3 | 7 | 14
 export type AbrechnungsModus = 'prepaid' | 'subscription' | 'lifetime'
 
 export interface Konfiguration {
@@ -56,6 +58,7 @@ export interface Konfiguration {
   cpu: number
   slots: number
   laufzeitMonate: LaufzeitMonate
+  laufzeitTage?: LaufzeitTage | null
   abrechnungsModus?: AbrechnungsModus
   mods: boolean
   kiZugang: boolean
@@ -88,6 +91,7 @@ export function standardKonfiguration(spiel: ShopSpiel): Konfiguration {
     cpu: spiel.standardCpu,
     slots: spiel.standardSlots,
     laufzeitMonate: 1,
+    laufzeitTage: null,
     abrechnungsModus: 'prepaid',
     mods: false,
     kiZugang: false,

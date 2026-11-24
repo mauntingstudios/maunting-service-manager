@@ -74,6 +74,9 @@ class ShopPlan(Base):
     allow_game_switch: Mapped[bool] = mapped_column(
         Boolean, default=True, server_default="1", nullable=False
     )
+    allow_short_durations: Mapped[bool] = mapped_column(
+        Boolean, default=True, server_default="1", nullable=False
+    )
     currency: Mapped[str] = mapped_column(String(3), default="EUR", nullable=False)
     billing_interval: Mapped[str] = mapped_column(
         String(16), default="month", nullable=False
@@ -154,6 +157,10 @@ class ShopOrder(Base):
         ),
         CheckConstraint("months > 0", name="ck_shop_orders_months"),
         CheckConstraint(
+            "duration_days IS NULL OR duration_days > 0",
+            name="ck_shop_orders_duration_days",
+        ),
+        CheckConstraint(
             "discount_percent >= 0 AND discount_percent <= 100",
             name="ck_shop_orders_discount",
         ),
@@ -195,6 +202,7 @@ class ShopOrder(Base):
         nullable=True,
     )
     months: Mapped[int] = mapped_column(Integer, nullable=False)
+    duration_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
     discount_percent: Mapped[int] = mapped_column(
         Integer, default=0, nullable=False
     )
@@ -381,6 +389,10 @@ class ShopOrderItem(Base):
             "node_surcharge_cents >= 0",
             name="ck_shop_order_items_node_surcharge",
         ),
+        CheckConstraint(
+            "duration_days IS NULL OR duration_days > 0",
+            name="ck_shop_order_items_duration_days",
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
@@ -417,6 +429,7 @@ class ShopOrderItem(Base):
     node_surcharge_cents: Mapped[int] = mapped_column(
         Integer, default=0, server_default="0", nullable=False
     )
+    duration_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class ShopSubscription(Base):
@@ -543,6 +556,10 @@ class ShopEntitlement(Base):
             "purge_reason IS NULL OR purge_reason IN ('voluntary_cancel', 'unpaid', 'refund')",
             name="ck_shop_entitlements_purge_reason",
         ),
+        CheckConstraint(
+            "duration_days IS NULL OR duration_days > 0",
+            name="ck_shop_entitlements_duration_days",
+        ),
         Index("ix_shop_entitlements_purge_after", "status", "purge_after"),
     )
 
@@ -616,6 +633,7 @@ class ShopEntitlement(Base):
     pause_days_used: Mapped[int] = mapped_column(
         Integer, default=0, server_default="0", nullable=False
     )
+    duration_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class ShopInvoiceSequence(Base):

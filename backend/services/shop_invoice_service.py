@@ -153,16 +153,20 @@ def _lines_from_order(db: Session, order: ShopOrder) -> list[ShopInvoiceLine]:
         .order_by(ShopOrderItem.id.asc())
         .all()
     )
+    order_days = getattr(order, "duration_days", None)
     zeilen: list[ShopInvoiceLine] = []
     for position, item in enumerate(artikel, start=1):
         satz = item.tax_rate_percent
         netto = (
             round(item.gross_cents * 100 / (100 + satz)) if satz else item.gross_cents
         )
+        desc = item.name
+        if order_days and f"{order_days} Tage" not in desc:
+            desc = f"{desc} ({order_days} Tage Prepaid)"
         zeilen.append(
             ShopInvoiceLine(
                 position=position,
-                description=item.name,
+                description=desc,
                 quantity=item.quantity,
                 unit_code="C62",
                 unit_price_cents=round(netto / item.quantity),

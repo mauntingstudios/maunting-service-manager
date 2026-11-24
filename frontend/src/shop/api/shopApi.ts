@@ -1,6 +1,7 @@
 import { SanitizedApiError } from '@/api/client'
 import {
   shopOrderApi,
+  type ShortDurationDays,
   type ShopEntitlementDto,
   type ShopSubscriptionDto,
 } from '@/api/shop'
@@ -27,6 +28,7 @@ export interface ShopApi {
   extendSubscription?(
     id: string,
     months?: 1 | 3 | 12,
+    durationDays?: ShortDurationDays | null,
   ): Promise<{ orderNumber: string; checkoutUrl?: string }>
   listEntitlements(): Promise<Entitlement[]>
   listEntitlementBackups?(id: string): Promise<GraceBackup[]>
@@ -41,6 +43,7 @@ export interface ShopApi {
 function subscriptionAusApi(dto: ShopSubscriptionDto): Subscription {
   return {
     id: String(dto.id),
+    addonId: dto.addon_id ?? null,
     bezeichnung: dto.name,
     status: dto.status,
     intervall: 'month',
@@ -135,8 +138,11 @@ export const shopApi: ShopApi = {
   },
   listEntitlements: async () =>
     (await shopOrderApi.listEntitlements()).map(entitlementAusApi),
-  extendSubscription: async (id, months = 1) => {
-    const order = await shopOrderApi.extendSubscription(id, months)
+  extendSubscription: async (id, months = 1, durationDays) => {
+    const order =
+      durationDays != null
+        ? await shopOrderApi.extendSubscription(id, months, durationDays)
+        : await shopOrderApi.extendSubscription(id, months)
     try {
       const stripe = await shopOrderApi.checkout(order.id)
       return { orderNumber: order.number, checkoutUrl: stripe.checkout_url }

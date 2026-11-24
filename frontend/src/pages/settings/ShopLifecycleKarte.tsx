@@ -7,9 +7,16 @@ import {
   shopAdminOpsApi,
   type ShopHeroMode,
   type ShopLifecycleSettingsDto,
+  type ShopShortDurationTierDto,
 } from '@/api/shop'
 import { still } from '@/lib/still'
 import { toast } from '@/stores/toastStore'
+
+const DEFAULT_SHORT_DURATION_TIERS: ShopShortDurationTierDto[] = [
+  { days: 3, enabled: true, price_factor_percent: 25, min_price_cents: 199 },
+  { days: 7, enabled: true, price_factor_percent: 40, min_price_cents: 299 },
+  { days: 14, enabled: true, price_factor_percent: 65, min_price_cents: 499 },
+]
 
 const DEFAULT_SETTINGS: ShopLifecycleSettingsDto = {
   cancel_grace_days: 7,
@@ -28,6 +35,11 @@ const DEFAULT_SETTINGS: ShopLifecycleSettingsDto = {
   shop_trustpilot_url: '',
   shop_discord_invite_url: '',
   shop_hero_mode: 'auto_paid',
+  shop_short_durations_enabled: false,
+  shop_short_duration_tiers: DEFAULT_SHORT_DURATION_TIERS,
+  shop_game_switch_cooldown_hours: 24,
+  shop_game_switch_max_per_30d: 4,
+  shop_game_switch_allow_higher_price_plan: false,
 }
 
 function parseReminderList(raw: string): number[] {
@@ -466,6 +478,165 @@ export function ShopLifecycleKarte({ flat = false }: { flat?: boolean } = {}) {
               {t('settings.shop.lifecycle.discordInviteUrlHint')}
             </p>
           </div>
+        </div>
+
+        <div className="space-y-4 rounded-xl border border-outline-variant/30 bg-surface-container p-4">
+          <div className="flex items-start gap-3">
+            <Switch
+              checked={Boolean(daten.shop_short_durations_enabled)}
+              onCheckedChange={(checked) =>
+                setDaten((alt) => ({ ...alt, shop_short_durations_enabled: checked }))
+              }
+              aria-label={t('settings.shop.lifecycle.shortDurationsEnabled')}
+            />
+            <div className="flex-1">
+              <span className="block text-sm font-medium text-on-surface">
+                {t('settings.shop.lifecycle.shortDurationsEnabled')}
+              </span>
+              <p className="text-xs text-on-surface-variant">
+                {t('settings.shop.lifecycle.shortDurationsEnabledHint')}
+              </p>
+            </div>
+          </div>
+
+          {daten.shop_short_durations_enabled && (
+            <div className="space-y-3 border-t border-outline-variant/25 pt-3">
+              {(daten.shop_short_duration_tiers ?? DEFAULT_SHORT_DURATION_TIERS).map((tier) => {
+                const updateTier = (patch: Partial<ShopShortDurationTierDto>) => {
+                  setDaten((alt) => ({
+                    ...alt,
+                    shop_short_duration_tiers: (
+                      alt.shop_short_duration_tiers ?? DEFAULT_SHORT_DURATION_TIERS
+                    ).map((row) => (row.days === tier.days ? { ...row, ...patch } : row)),
+                  }))
+                }
+                return (
+                  <div
+                    key={tier.days}
+                    className="grid items-end gap-3 rounded-xl border border-outline-variant/25 bg-surface-container-low/70 p-3 sm:grid-cols-[auto_1fr_1fr]"
+                  >
+                    <label className="flex items-center gap-2.5 self-center">
+                      <Switch
+                        checked={tier.enabled}
+                        onCheckedChange={(checked) => updateTier({ enabled: checked })}
+                        aria-label={t('settings.shop.lifecycle.shortDurationDayLabel', {
+                          days: tier.days,
+                        })}
+                      />
+                      <span className="min-w-[4.5rem] text-sm font-semibold text-on-surface">
+                        {t('settings.shop.lifecycle.shortDurationDayLabel', { days: tier.days })}
+                      </span>
+                    </label>
+                    <Input
+                      type="number"
+                      min={5}
+                      max={100}
+                      label={t('settings.shop.lifecycle.shortDurationFactorLabel')}
+                      value={tier.price_factor_percent}
+                      onChange={(e) => {
+                        const n = Number(e.target.value)
+                        updateTier({
+                          price_factor_percent: Number.isFinite(n)
+                            ? Math.max(5, Math.min(100, Math.round(n)))
+                            : 5,
+                        })
+                      }}
+                    />
+                    <Input
+                      type="number"
+                      min={100}
+                      max={100000}
+                      label={t('settings.shop.lifecycle.shortDurationMinPriceLabel')}
+                      value={tier.min_price_cents}
+                      onChange={(e) => {
+                        const n = Number(e.target.value)
+                        updateTier({
+                          min_price_cents: Number.isFinite(n)
+                            ? Math.max(100, Math.min(100000, Math.round(n)))
+                            : 100,
+                        })
+                      }}
+                    />
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+
+        <div className="space-y-3 rounded-xl border border-outline-variant/30 bg-surface-container p-4 sm:col-span-2">
+          <div>
+            <span className="block text-sm font-medium text-on-surface">
+              {t('settings.shop.lifecycle.gameSwitchSectionTitle')}
+            </span>
+            <p className="mt-1 text-xs text-on-surface-variant">
+              {t('settings.shop.lifecycle.gameSwitchSectionHint')}
+            </p>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div>
+              <Input
+                type="number"
+                min={0}
+                max={720}
+                label={t('settings.shop.lifecycle.gameSwitchCooldownLabel')}
+                value={daten.shop_game_switch_cooldown_hours ?? 24}
+                onChange={(e) => {
+                  const n = Number(e.target.value)
+                  setDaten((alt) => ({
+                    ...alt,
+                    shop_game_switch_cooldown_hours: Number.isFinite(n)
+                      ? Math.max(0, Math.min(720, Math.round(n)))
+                      : 0,
+                  }))
+                }}
+              />
+              <p className="mt-1 text-xs text-on-surface-variant">
+                {t('settings.shop.lifecycle.gameSwitchCooldownHint')}
+              </p>
+            </div>
+            <div>
+              <Input
+                type="number"
+                min={0}
+                max={100}
+                label={t('settings.shop.lifecycle.gameSwitchMaxPer30dLabel')}
+                value={daten.shop_game_switch_max_per_30d ?? 4}
+                onChange={(e) => {
+                  const n = Number(e.target.value)
+                  setDaten((alt) => ({
+                    ...alt,
+                    shop_game_switch_max_per_30d: Number.isFinite(n)
+                      ? Math.max(0, Math.min(100, Math.round(n)))
+                      : 0,
+                  }))
+                }}
+              />
+              <p className="mt-1 text-xs text-on-surface-variant">
+                {t('settings.shop.lifecycle.gameSwitchMaxPer30dHint')}
+              </p>
+            </div>
+          </div>
+          <label className="flex items-start gap-3 pt-1">
+            <Switch
+              checked={Boolean(daten.shop_game_switch_allow_higher_price_plan)}
+              onCheckedChange={(checked) =>
+                setDaten((alt) => ({
+                  ...alt,
+                  shop_game_switch_allow_higher_price_plan: checked,
+                }))
+              }
+              aria-label={t('settings.shop.lifecycle.gameSwitchAllowHigherPriceLabel')}
+            />
+            <div className="flex-1">
+              <span className="block text-sm font-medium text-on-surface">
+                {t('settings.shop.lifecycle.gameSwitchAllowHigherPriceLabel')}
+              </span>
+              <p className="mt-0.5 text-xs text-on-surface-variant">
+                {t('settings.shop.lifecycle.gameSwitchAllowHigherPriceHint')}
+              </p>
+            </div>
+          </label>
         </div>
       </div>
 

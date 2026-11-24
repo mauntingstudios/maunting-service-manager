@@ -273,8 +273,16 @@ def _parse_appmanifest_build_id(manifest_path: Path) -> str | None:
     return _parse_appmanifest_content(text)
 
 
-def _steam_effective_branch(steam: Any | None) -> str:
-    """Blueprint ``source.steam.branch`` oder ``public``."""
+_STEAM_BRANCH_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$")
+
+
+def _steam_effective_branch(steam: Any | None, server: Any | None = None) -> str:
+    """Server-Override ``server.steam_branch`` oder Blueprint ``source.steam.branch`` bzw. ``public``."""
+    srv_branch = getattr(server, "steam_branch", None) if server is not None else None
+    if isinstance(srv_branch, str):
+        cleaned = srv_branch.strip()
+        if cleaned and _STEAM_BRANCH_RE.fullmatch(cleaned):
+            return cleaned
     if steam is None:
         return "public"
     raw = getattr(steam, "branch", None)
@@ -778,7 +786,7 @@ def check_server_file_update(server: Any, blueprint: Blueprint) -> dict[str, Any
     if src_type == "steam":
         steam_cfg = bp_source.steam
         steam_app_id = str(steam_cfg.appId or "") if steam_cfg else ""
-        depot_branch = _steam_effective_branch(steam_cfg)
+        depot_branch = _steam_effective_branch(steam_cfg, server=server)
         
         local_build = None
         if client is not None:

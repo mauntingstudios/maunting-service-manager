@@ -25,6 +25,12 @@ from schemas import (
     WallpaperGalleryItem,
 )
 from schemas.postgres import PostgresOneTimeCredential
+from schemas.server import (
+    MinecraftSwitchVersionRequest,
+    MinecraftVersionsResponse,
+    SwitchBranchRequest,
+    SwitchOptionsResponse,
+)
 from dependencies import (
     get_current_user,
     get_current_user_for_ws,
@@ -975,6 +981,98 @@ def switch_server_blueprint_endpoint(
 
     from services.server_lifecycle_service import switch_server_blueprint
     return switch_server_blueprint(db, server, body.new_blueprint_id, user_id=user.id)
+
+
+@router.get("/{server_id}/switch-options", response_model=SwitchOptionsResponse)
+def get_switch_options_endpoint(
+    server_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict:
+    """Liefert verfügbare Spiele/Blueprints inkl. Kunden-Cooldown und Kompatibilität."""
+    require_server_permission(user, server_id, db, "server.config.write")
+
+    server = db.query(Server).filter(Server.id == server_id).first()
+    if not server:
+        raise HTTPException(status_code=404, detail="Server nicht gefunden")
+
+    from services.server_lifecycle_service import get_switch_options
+    return get_switch_options(db, server, user_id=user.id)
+
+
+@router.post("/{server_id}/switch-branch")
+def switch_steam_branch_endpoint(
+    server_id: int,
+    body: SwitchBranchRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    _: None = Depends(verify_csrf),
+) -> dict:
+    """Wechselt den Steam-Depot-Branch eines gestoppten Steam-Servers inkl. Pflicht-Backup."""
+    require_server_permission(user, server_id, db, "server.config.write")
+
+    server = db.query(Server).filter(Server.id == server_id).first()
+    if not server:
+        raise HTTPException(status_code=404, detail="Server nicht gefunden")
+
+    from services.server_lifecycle_service import switch_steam_branch
+    return switch_steam_branch(
+        db,
+        server,
+        body.branch,
+        branch_password=body.branch_password,
+        clear_password=body.clear_password,
+        user_id=user.id,
+    )
+
+
+@router.get("/{server_id}/minecraft/versions", response_model=MinecraftVersionsResponse)
+def list_minecraft_versions_endpoint(
+    server_id: int,
+    include_snapshots: bool = Query(False),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict:
+    """Liefert unterstützte Minecraft-Versionen und verfügbare Server-Editionen."""
+    require_server_permission(user, server_id, db, "server.config.write")
+
+    server = db.query(Server).filter(Server.id == server_id).first()
+    if not server:
+        raise HTTPException(status_code=404, detail="Server nicht gefunden")
+
+    from services.minecraft_version_service import list_minecraft_versions
+    return list_minecraft_versions(
+        db,
+        server,
+        include_snapshots=include_snapshots,
+        user_id=user.id,
+    )
+
+
+@router.post("/{server_id}/minecraft/switch-version")
+def switch_minecraft_version_endpoint(
+    server_id: int,
+    body: MinecraftSwitchVersionRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    _: None = Depends(verify_csrf),
+) -> dict:
+    """Wechselt die Minecraft-Version inkl. Pflicht-Backup und optionalem Welt-Reset."""
+    require_server_permission(user, server_id, db, "server.config.write")
+
+    server = db.query(Server).filter(Server.id == server_id).first()
+    if not server:
+        raise HTTPException(status_code=404, detail="Server nicht gefunden")
+
+    from services.minecraft_version_service import switch_minecraft_version
+    return switch_minecraft_version(
+        db,
+        server,
+        body.target_version,
+        reset_world=body.reset_world,
+        confirm_downgrade_keep_world=body.confirm_downgrade_keep_world,
+        user_id=user.id,
+    )
 
 
 @router.get("/{server_id}/config-files")

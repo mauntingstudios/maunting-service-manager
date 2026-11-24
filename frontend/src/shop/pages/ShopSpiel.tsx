@@ -368,6 +368,11 @@ export function ShopSpiel() {
             konfiguration={aktuelleKonfiguration}
             onChange={setKonfiguration}
             aboRabattProzent={publicPolicy?.subscription_discount_percent ?? 0}
+            shortDurationTiers={
+              publicPolicy?.shop_short_durations_enabled
+                ? (publicPolicy.shop_short_duration_tiers ?? [])
+                : []
+            }
             nodeStatuses={sichtbareNodes}
             nodeAvailabilityById={nodeAvailability}
             pingMsByNodeId={pingMsByNodeId}
@@ -387,6 +392,11 @@ export function ShopSpiel() {
           verfuegbar={verfuegbar}
           onWeiter={weiter}
           aboRabattProzent={publicPolicy?.subscription_discount_percent ?? 0}
+          shortDurationTiers={
+            publicPolicy?.shop_short_durations_enabled
+              ? (publicPolicy.shop_short_duration_tiers ?? [])
+              : []
+          }
           erstattungTage={publicPolicy?.refund_guarantee_days ?? 0}
           erstattungHinweis={publicPolicy?.refund_policy_note ?? ''}
         />

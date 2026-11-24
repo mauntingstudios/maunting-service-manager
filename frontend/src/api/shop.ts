@@ -5,6 +5,14 @@ export type ShopArtworkSource = 'steam' | 'custom' | 'none' | 'panorama'
 export type ShopArtworkMode = 'steam' | 'custom' | 'none'
 export type ShopBillingMode = 'prepaid' | 'subscription' | 'lifetime'
 export type ShopHeroMode = 'auto_paid' | 'manual'
+export type ShortDurationDays = 3 | 7 | 14
+
+export interface ShopShortDurationTierDto {
+  days: ShortDurationDays
+  enabled: boolean
+  price_factor_percent: number
+  min_price_cents: number
+}
 
 export interface ShopArtwork {
   source: ShopArtworkSource
@@ -43,6 +51,7 @@ export interface ShopPlan {
   price_per_slot_step_cents: number
   lifetime_price_cents?: number | null
   allow_game_switch?: boolean
+  allow_short_durations?: boolean
   node_id: number | null
   role_id: number | null
   artwork_mode: ShopArtworkMode
@@ -101,6 +110,7 @@ export interface ShopCatalogPlan {
   price_per_slot_step_cents: number
   lifetime_price_cents?: number | null
   allow_game_switch?: boolean
+  allow_short_durations?: boolean
   artwork: ShopArtwork
   available?: boolean
   availability_reason?: string | null
@@ -161,6 +171,11 @@ export interface ShopPublicPolicyDto {
   shop_trustpilot_url?: string
   shop_discord_invite_url?: string
   shop_hero_mode?: ShopHeroMode
+  shop_short_durations_enabled?: boolean
+  shop_short_duration_tiers?: ShopShortDurationTierDto[]
+  shop_game_switch_cooldown_hours?: number
+  shop_game_switch_max_per_30d?: number
+  shop_game_switch_allow_higher_price_plan?: boolean
 }
 
 export interface ShopGraceBackupDto {
@@ -210,6 +225,7 @@ export interface ShopPlanWrite {
   price_per_slot_step_cents?: number
   lifetime_price_cents?: number | null
   allow_game_switch?: boolean
+  allow_short_durations?: boolean
   node_id?: number | null
   role_id?: number | null
   artwork_mode?: ShopArtworkMode
@@ -531,6 +547,7 @@ export interface ShopOrderItemDto {
   slots: number | null
   preferred_node_id?: number | null
   node_surcharge_cents?: number
+  duration_days?: number | null
 }
 
 export interface ShopOrderDto {
@@ -542,6 +559,7 @@ export interface ShopOrderDto {
   billing_mode?: ShopBillingMode
   extend_subscription_id?: number | null
   months: number
+  duration_days?: number | null
   discount_percent: number
   coupon_code?: string | null
   coupon_discount_cents?: number
@@ -559,6 +577,7 @@ export interface ShopOrderCreate {
   plan_id?: number | null
   addon_id?: number | null
   months: 1 | 3 | 12
+  duration_days?: ShortDurationDays | null
   billing_mode?: ShopBillingMode
   ram_mb?: number | null
   cpu?: number | null
@@ -640,6 +659,11 @@ export interface ShopLifecycleSettingsDto {
   shop_trustpilot_url?: string
   shop_discord_invite_url?: string
   shop_hero_mode?: ShopHeroMode
+  shop_short_durations_enabled?: boolean
+  shop_short_duration_tiers?: ShopShortDurationTierDto[]
+  shop_game_switch_cooldown_hours?: number
+  shop_game_switch_max_per_30d?: number
+  shop_game_switch_allow_higher_price_plan?: boolean
 }
 
 export const shopOrderApi = {
@@ -676,10 +700,16 @@ export const shopOrderApi = {
       method: 'POST',
       ...(payload ? { body: JSON.stringify(payload) } : {}),
     }),
-  extendSubscription: (id: number | string, months: 1 | 3 | 12 = 1) =>
+  extendSubscription: (
+    id: number | string,
+    months: 1 | 3 | 12 = 1,
+    durationDays?: ShortDurationDays | null,
+  ) =>
     api<ShopOrderDto>(`/shop/subscriptions/${id}/extend`, {
       method: 'POST',
-      body: JSON.stringify({ months }),
+      body: JSON.stringify(
+        durationDays != null ? { months, duration_days: durationDays } : { months },
+      ),
     }),
   listEntitlements: () => api<ShopEntitlementDto[]>('/shop/entitlements'),
   listEntitlementBackups: (id: number | string) =>

@@ -3,9 +3,12 @@ import {
   cpuZuProzent,
   formatCpuLabel,
   formatEuro,
+  kurzzeitPreisCent,
+  niedrigsterEinstiegsPreis,
   preisAufschluesselung,
   RABATT_PROZENT,
 } from './preis'
+import type { ShopShortDurationTierDto } from '@/api/shop'
 import { SHOP_SPIELE } from './mockKatalog'
 import { standardKonfiguration } from './typen'
 
@@ -103,5 +106,36 @@ describe('Shop-Preislogik', () => {
       standortAufpreisCent: 350,
     })
     expect(lifetimePreis.gesamtCent).toBe(10000 + 350 * 12)
+  })
+
+  it('berechnet Kurzzeit-Laufzeiten mit Mindestpreis und Einstiegspreis', () => {
+    const stufen: ShopShortDurationTierDto[] = [
+      { days: 3, enabled: true, price_factor_percent: 25, min_price_cents: 199 },
+      { days: 7, enabled: true, price_factor_percent: 40, min_price_cents: 299 },
+      { days: 14, enabled: false, price_factor_percent: 65, min_price_cents: 499 },
+    ]
+    // 25% von 999 = 249.75 -> half-up 250; 25% von 500 = 125 -> Mindestpreis 199
+    expect(kurzzeitPreisCent(999, stufen[0])).toBe(250)
+    expect(kurzzeitPreisCent(500, stufen[0])).toBe(199)
+
+    const ergebnis = preisAufschluesselung(
+      { ...palworld, grundpreisCent: 1000, allowShortDurations: true },
+      { ...standardKonfiguration(palworld), abrechnungsModus: 'prepaid', laufzeitTage: 7 },
+      0,
+      stufen,
+    )
+    expect(ergebnis.gesamtCent).toBe(400)
+
+    const einstieg = niedrigsterEinstiegsPreis(
+      { ...palworld, grundpreisCent: 1000, allowShortDurations: true },
+      { shop_short_durations_enabled: true, shop_short_duration_tiers: stufen },
+    )
+    expect(einstieg).toEqual({ cent: 250, tage: 3 })
+
+    const deaktiviert = niedrigsterEinstiegsPreis(
+      { ...palworld, grundpreisCent: 1000, allowShortDurations: false },
+      { shop_short_durations_enabled: true, shop_short_duration_tiers: stufen },
+    )
+    expect(deaktiviert).toEqual({ cent: 1000, tage: null })
   })
 })

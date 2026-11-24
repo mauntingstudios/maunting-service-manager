@@ -12,9 +12,9 @@ import {
   Sparkles,
 } from 'lucide-react'
 import { Badge, buttonClasses } from '@maunting/ui'
-import type { ShopHeroMode, ShopPublicBadgePromo } from '@/api/shop'
+import type { ShopHeroMode, ShopPublicBadgePromo, ShopPublicPolicyDto } from '@/api/shop'
 import type { HeaderHintergrundVariante } from '@/lib/tageszeit'
-import { formatEuro } from '../preis'
+import { formatEuro, niedrigsterEinstiegsPreis } from '../preis'
 import { motivFuer } from '../spielArtwork'
 import type { ShopSpiel } from '../typen'
 
@@ -35,6 +35,10 @@ interface HeroShowcaseProps {
   onlineNodesCount: number
   ddosHighlight?: ShopDdosHighlight | null
   heroMode?: ShopHeroMode
+  shortDurationPolicy?: Pick<
+    ShopPublicPolicyDto,
+    'shop_short_durations_enabled' | 'shop_short_duration_tiers'
+  > | null
 }
 
 const PLATTFORM_LABELS: Record<string, string> = {
@@ -53,6 +57,7 @@ export function HeroShowcase({
   onlineNodesCount,
   ddosHighlight,
   heroMode = 'auto_paid',
+  shortDurationPolicy = null,
 }: HeroShowcaseProps) {
   const { t, i18n } = useTranslation()
   const sprache = i18n.language.startsWith('de') ? 'de' : 'en'
@@ -239,11 +244,19 @@ export function HeroShowcase({
 
           {(heroSpiel || showDdosPill) && (
             <div className="mt-5 flex flex-wrap items-center gap-2 font-mono text-xs tabular-nums sm:text-sm">
-              {heroSpiel && (
-                <span className="rounded-lg border border-white/15 bg-background/80 px-3 py-1 font-semibold text-white backdrop-blur-md">
-                  {t('shop.karte.abPreis', { preis: formatEuro(heroSpiel.grundpreisCent) })}
-                </span>
-              )}
+              {heroSpiel && (() => {
+                const einstieg = niedrigsterEinstiegsPreis(heroSpiel, shortDurationPolicy)
+                return (
+                  <span className="rounded-lg border border-white/15 bg-background/80 px-3 py-1 font-semibold text-white backdrop-blur-md">
+                    {einstieg.tage != null
+                      ? t('shop.karte.abPreisTage', {
+                          preis: formatEuro(einstieg.cent),
+                          count: einstieg.tage,
+                        })
+                      : t('shop.karte.abPreis', { preis: formatEuro(einstieg.cent) })}
+                  </span>
+                )
+              })()}
               {plattformen.map((tag) => (
                 <span
                   key={tag}
@@ -386,7 +399,15 @@ export function HeroShowcase({
                         )}
                       </div>
                       <p className="text-xs tabular-nums text-on-surface-variant">
-                        {t('shop.karte.abPreis', { preis: formatEuro(spiel.grundpreisCent) })}
+                        {(() => {
+                          const einstieg = niedrigsterEinstiegsPreis(spiel, shortDurationPolicy)
+                          return einstieg.tage != null
+                            ? t('shop.karte.abPreisTage', {
+                                preis: formatEuro(einstieg.cent),
+                                count: einstieg.tage,
+                              })
+                            : t('shop.karte.abPreis', { preis: formatEuro(einstieg.cent) })
+                        })()}
                       </p>
                     </div>
 
