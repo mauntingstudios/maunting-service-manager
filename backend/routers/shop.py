@@ -1173,8 +1173,11 @@ def list_plans(
     db: Session = Depends(get_db),
     _: User = Depends(_require_shop_perm("shop.read", "panel.settings.read")),
 ) -> list[ShopPlanResponse]:
+    order_counts = shop_catalog_service.recent_paid_order_counts(db)
     return [
-        shop_catalog_service.plan_response(db, plan)
+        shop_catalog_service.plan_response(
+            db, plan, recent_order_count=order_counts.get(plan.id, 0)
+        )
         for plan in shop_catalog_service.list_plans(db)
     ]
 

@@ -5043,7 +5043,13 @@
         "badgePinned": "Hero",
         "promoHighlightText": "Update or promo highlight",
         "promoHighlightPlaceholder": "e.g. Major update or new patch",
-        "allowShortDurations": "Allow short-term durations (3/7/14 days)"
+        "allowShortDurations": "Allow short-term durations (3/7/14 days)",
+        "bestellungen30Tage_one": "{{count}} order (90 days)",
+        "bestellungen30Tage_other": "{{count}} orders (90 days)",
+        "topSpieleTitel": "Most rented (last 90 days)",
+        "kurzzeitVorschauTitel": "Short-term pricing preview",
+        "kurzzeitVorschauHinweis": "Calculated from the monthly price using the global day tiers under Operations.",
+        "kurzzeitVorschauInaktiv": "Short-term durations are globally disabled. Enable them under Operations if needed."
       },
       "addons": {
         "titel": "Add-ons",
@@ -5137,6 +5143,10 @@
         "stripeFehler": "Stripe sync failed.",
         "codeFehler": "Code must be 3–48 characters long (A–Z, 0–9, _ or -).",
         "wertFehler": "Please enter a valid discount value.",
+        "abschnittBasis": "Code & discount",
+        "abschnittBedingungen": "Limits & schedule",
+        "abschnittDarstellung": "Storefront display",
+        "stripeAutoHinweis": "Coupons are applied server-side during checkout and automatically created in Stripe via API when Stripe is configured.",
         "speichern": "Save",
         "abbrechen": "Cancel"
       },

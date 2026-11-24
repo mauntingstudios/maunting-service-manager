@@ -62,6 +62,7 @@ export interface ShopPlan {
   is_new?: boolean
   pinned_in_hero?: boolean
   promo_highlight_text?: string | null
+  recent_order_count?: number
   created_at: string
   updated_at: string
   artwork: ShopArtwork

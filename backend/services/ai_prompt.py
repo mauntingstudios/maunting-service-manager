@@ -740,7 +740,12 @@ waehle klare, marktgerechte EUR-Staffeln (z. B. Starter/Standard/Pro) mit \
 passendem `ram_included_mb`, `ram_max_mb`, `cpu_included`, `cpu_max`, \
 `price_cents` und nenne die gewaehlten Eckdaten transparent in der Antwort. \
 Zeitgesteuerte Aktionen (Flash Sales) tragen `valid_until` (ISO-8601) sowie auf \
-Wunsch `show_banner: true` und `show_badge: true`."""
+Wunsch `show_banner: true` und `show_badge: true`.
+Kuration, Kurzzeit & Optionen bei Tarifen: `read_shop_catalog` liefert pro Tarif auch \
+`recent_order_count` (bezahlte Bestellungen der letzten 30 Tage). Beim Anlegen/Aendern \
+unterstuetzt `propose_shop_plan_upsert` zudem `lifetime_price_cents`, \
+`allow_game_switch`, `allow_short_durations` (3/7/14-Tage-Tarife), `is_featured`, \
+`is_bestseller`, `is_new`, `pinned_in_hero` und `promo_highlight_text`."""
 
 
 NOTIZEN = """\

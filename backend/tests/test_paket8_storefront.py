@@ -197,3 +197,156 @@ def test_private_node_never_leaks_ddos_and_five_mixed_nodes_avoid_false_uniform_
 
         client.get("/api/shop/artwork/palworld?variant=bogus")
         assert m_art.call_args.kwargs.get("variant") is None
+
+
+def test_admin_plans_recent_orders_ai_fields_and_coupon_auto_stripe_sync(
+    client: TestClient, owner_cookies: dict, db
+) -> None:
+    from unittest.mock import patch
+
+    from models import ShopOrder, ShopOrderItem
+    from schemas.shop import ShopCouponWrite
+    from services import shop_coupon_service, stripe_service
+    from services.ai_proposals import shop_proposals
+    from services.ai_tools import shop_tools
+
+    admin = db.query(User).filter(User.id == 1).first()
+    if admin is None:
+        db.add(
+            User(
+                id=1,
+                username="admin_p8_extra",
+                email="admin_p8_extra@example.com",
+                password_hash="x",
+                is_owner=True,
+            )
+        )
+        db.commit()
+
+    plan = shop_catalog_service.create_plan(
+        db,
+        ShopPlanWrite(
+            game_type="palworld",
+            name="Palworld KI & Stats",
+            price_cents=1200,
+            lifetime_price_cents=19900,
+            allow_game_switch=False,
+            allow_short_durations=True,
+            is_featured=True,
+            is_bestseller=True,
+            is_new=True,
+            pinned_in_hero=True,
+            promo_highlight_text="Herbst-Patch",
+        ),
+        actor_id=1,
+    )
+    order = ShopOrder(
+        number="MSM-TEST-STATS-1",
+        user_id=1,
+        status="paid",
+        currency="EUR",
+        months=1,
+        billing_mode="prepaid",
+        net_cents=1008,
+        tax_cents=192,
+        gross_cents=1200,
+    )
+    db.add(order)
+    db.flush()
+    db.add(
+        ShopOrderItem(
+            order_id=order.id,
+            kind="plan",
+            plan_id=plan.id,
+            game_type="palworld",
+            name=plan.name,
+            quantity=1,
+            unit_price_cents=1200,
+            tax_rate_percent=19,
+            net_cents=1008,
+            tax_cents=192,
+            gross_cents=1200,
+        )
+    )
+    db.commit()
+
+    # 1. Admin plans endpoint liefert recent_order_count
+    admin_res = client.get("/api/shop/plans", cookies=owner_cookies)
+    assert admin_res.status_code == 200
+    found = next(p for p in admin_res.json() if p["id"] == plan.id)
+    assert found["recent_order_count"] == 1
+
+    # 2. Singra AI Tool liest und validiert alle neuen Tarif-Felder
+    owner_user = db.query(User).filter(User.is_owner.is_(True)).first()
+    assert owner_user is not None
+    catalog_data = shop_tools._lies_shop_catalog(
+        db, user=owner_user, arguments={"include": ["plans"]}
+    )
+    ai_plan = next(p for p in catalog_data["plans"] if p["id"] == plan.id)
+    assert ai_plan["lifetime_price_cents"] == 19900
+    assert ai_plan["allow_game_switch"] is False
+    assert ai_plan["allow_short_durations"] is True
+    assert ai_plan["is_bestseller"] is True
+    assert ai_plan["pinned_in_hero"] is True
+    assert ai_plan["promo_highlight_text"] == "Herbst-Patch"
+    assert ai_plan["recent_order_count"] == 1
+
+    norm, _preview = shop_proposals._normalize_single_plan(
+        db,
+        {
+            "game_type": "palworld",
+            "name": "Singra Neu",
+            "price_cents": 999,
+            "lifetime_price_cents": 15900,
+            "allow_game_switch": True,
+            "allow_short_durations": False,
+            "is_bestseller": True,
+            "promo_highlight_text": "Neu via KI",
+        },
+    )
+    assert norm["fields"]["lifetime_price_cents"] == 15900
+    assert norm["fields"]["allow_short_durations"] is False
+    assert norm["fields"]["is_bestseller"] is True
+    assert norm["fields"]["promo_highlight_text"] == "Neu via KI"
+
+    # 3. Gutschein-Erstellung synct automatisch zu Stripe wenn konfiguriert
+    with (
+        patch("services.stripe_settings_service.resolve_secret_key", return_value="sk_test_123"),
+        patch(
+            "services.stripe_service.create_coupon_and_promotion_code",
+            return_value=("cpn_auto_1", "promo_auto_1"),
+        ),
+    ):
+        synced_coupon = shop_coupon_service.create_coupon(
+            db,
+            ShopCouponWrite(
+                code="AUTOSTRIPE10",
+                name="Auto Stripe",
+                discount_type="percent",
+                discount_value=10,
+            ),
+            actor_id=1,
+        )
+        assert synced_coupon.stripe_coupon_id == "cpn_auto_1"
+        assert synced_coupon.stripe_promotion_code_id == "promo_auto_1"
+
+    # Und bricht bei Stripe-Fehler das Anlegen nicht ab
+    with (
+        patch("services.stripe_settings_service.resolve_secret_key", return_value="sk_test_123"),
+        patch(
+            "services.stripe_service.create_coupon_and_promotion_code",
+            side_effect=stripe_service.StripeError("API timeout"),
+        ),
+    ):
+        fallback_coupon = shop_coupon_service.create_coupon(
+            db,
+            ShopCouponWrite(
+                code="FALLBACK20",
+                name="Fallback Rabatt",
+                discount_type="percent",
+                discount_value=20,
+            ),
+            actor_id=1,
+        )
+        assert fallback_coupon.stripe_coupon_id is None
+        assert fallback_coupon.code == "FALLBACK20"

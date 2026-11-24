@@ -5043,7 +5043,13 @@
         "badgePinned": "Hero",
         "promoHighlightText": "Update- oder Aktions-Hinweis",
         "promoHighlightPlaceholder": "z. B. Großes Update · neuer Patch",
-        "allowShortDurations": "Kurzzeit-Tarife erlauben (3/7/14 Tage)"
+        "allowShortDurations": "Kurzzeit-Tarife erlauben (3/7/14 Tage)",
+        "bestellungen30Tage_one": "{{count}} Bestellung (90 Tage)",
+        "bestellungen30Tage_other": "{{count}} Bestellungen (90 Tage)",
+        "topSpieleTitel": "Meistgemietet (letzte 90 Tage)",
+        "kurzzeitVorschauTitel": "Vorschau Kurzzeit-Preise",
+        "kurzzeitVorschauHinweis": "Berechnet aus dem Monatspreis anhand der globalen Tages-Faktoren unter Betrieb.",
+        "kurzzeitVorschauInaktiv": "Kurzzeit-Laufzeiten sind global deaktiviert. Aktiviere sie bei Bedarf unter Betrieb."
       },
       "addons": {
         "titel": "Add-ons",
@@ -5137,6 +5143,10 @@
         "stripeFehler": "Stripe-Synchronisierung fehlgeschlagen.",
         "codeFehler": "Der Code braucht 3–48 Zeichen (A–Z, 0–9, _ oder -).",
         "wertFehler": "Bitte einen gültigen Rabattwert angeben.",
+        "abschnittBasis": "Code & Rabatt",
+        "abschnittBedingungen": "Bedingungen & Zeitraum",
+        "abschnittDarstellung": "Anzeige im Shop",
+        "stripeAutoHinweis": "Gutscheine werden beim Checkout serverseitig abgezogen und bei aktiviertem Stripe automatisch per API angelegt.",
         "speichern": "Speichern",
         "abbrechen": "Abbrechen"
       },

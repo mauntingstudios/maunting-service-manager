@@ -61,6 +61,14 @@ _PLAN_ITEM_FELDER = frozenset(
         "artwork_mode",
         "active",
         "sort_order",
+        "lifetime_price_cents",
+        "allow_game_switch",
+        "allow_short_durations",
+        "is_featured",
+        "is_bestseller",
+        "is_new",
+        "pinned_in_hero",
+        "promo_highlight_text",
     }
 )
 
@@ -301,8 +309,33 @@ def _normalize_single_plan(db: Session, raw: dict[str, Any]) -> tuple[dict[str, 
         if eff_inc is not None and eff_max is not None and eff_max < eff_inc:
             fields["slots_max"] = eff_inc
 
-    if "active" in raw and raw["active"] is not None:
-        fields["active"] = bool(raw["active"])
+    if "lifetime_price_cents" in raw:
+        lifetime = _int_oder_none(raw["lifetime_price_cents"], feld="lifetime_price_cents")
+        if lifetime is not None and lifetime < 0:
+            raise AiActionValidationError("lifetime_price_cents muss >= 0 sein")
+        fields["lifetime_price_cents"] = None if lifetime == 0 else lifetime
+
+    if "promo_highlight_text" in raw:
+        promo_txt = (
+            str(raw["promo_highlight_text"]).strip()
+            if raw["promo_highlight_text"] is not None
+            else ""
+        )
+        fields["promo_highlight_text"] = (
+            redact_sensitive_text(promo_txt)[:80] if promo_txt else None
+        )
+
+    for bool_field in (
+        "active",
+        "allow_game_switch",
+        "allow_short_durations",
+        "is_featured",
+        "is_bestseller",
+        "is_new",
+        "pinned_in_hero",
+    ):
+        if bool_field in raw and raw[bool_field] is not None:
+            fields[bool_field] = bool(raw[bool_field])
 
     # Pydantic- & Katalog-Vorabpruefung vor Erzeugung der Vorschlagskarte.
     try:

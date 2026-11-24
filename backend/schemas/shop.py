@@ -135,6 +135,7 @@ class ShopPlanResponse(BaseModel):
     is_new: bool = False
     pinned_in_hero: bool = False
     promo_highlight_text: str | None = Field(None, max_length=80)
+    recent_order_count: int = 0
     created_at: datetime
     updated_at: datetime
     artwork: ShopArtworkResponse

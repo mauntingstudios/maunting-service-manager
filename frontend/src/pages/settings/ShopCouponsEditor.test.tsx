@@ -82,6 +82,16 @@ describe('ShopCouponsEditor', () => {
       screen.getByRole('button', { name: i18n.t('settings.shop.coupons.neu') }),
     )
     expect(await screen.findByRole('dialog')).toBeInTheDocument()
+    expect(screen.getByText(i18n.t('settings.shop.coupons.abschnittBasis'))).toBeInTheDocument()
+    expect(
+      screen.getByText(i18n.t('settings.shop.coupons.abschnittBedingungen')),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(i18n.t('settings.shop.coupons.abschnittDarstellung')),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(i18n.t('settings.shop.coupons.stripeAutoHinweis')),
+    ).toBeInTheDocument()
 
     fireEvent.change(screen.getByLabelText(i18n.t('settings.shop.coupons.code')), {
       target: { value: 'HERBST15' },

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 import json
+import logging
 import re
 from typing import Any
 
@@ -21,8 +22,10 @@ from schemas.shop import (
     ShopPublicPromosResponse,
     ShopStatsResponse,
 )
-from services import audit_service, stripe_service
+from services import audit_service, stripe_service, stripe_settings_service
 from services.shop_catalog_service import ShopConfigurationError
+
+logger = logging.getLogger(__name__)
 
 
 _CODE_RE = re.compile(r"^[A-Z0-9_-]{3,48}$")
@@ -182,6 +185,15 @@ def create_coupon(
     )
     db.commit()
     db.refresh(coupon)
+    if stripe_settings_service.resolve_secret_key():
+        try:
+            coupon = sync_coupon_to_stripe(db, coupon, actor_id=actor_id)
+        except stripe_service.StripeError as exc:
+            logger.warning(
+                "Automatischer Stripe-Sync fuer Gutschein %s fehlgeschlagen: %s",
+                coupon.code,
+                exc,
+            )
     return coupon
 
 

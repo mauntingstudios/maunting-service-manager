@@ -414,89 +414,100 @@ export function ShopCouponsEditor() {
           </DialogHeader>
 
           <div className="flex-1 space-y-5 overflow-y-auto p-6">
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Input
-                label={t('settings.shop.coupons.code')}
-                value={draft.code}
-                onChange={(event) => setze('code', event.target.value.toUpperCase())}
-                maxLength={48}
-              />
-              <Input
-                label={t('settings.shop.coupons.name')}
-                value={draft.name}
-                onChange={(event) => setze('name', event.target.value)}
-                maxLength={128}
-              />
-            </div>
-
-            <div className="grid gap-3 sm:grid-cols-3">
-              <label className="space-y-1.5">
-                <span className="block text-sm font-medium text-on-surface">
-                  {t('settings.shop.coupons.rabattTyp')}
-                </span>
-                <Dropdown
-                  value={draft.discountType}
-                  onChange={(wert) =>
-                    setze('discountType', wert as ShopCouponDiscountType)
-                  }
-                  options={[
-                    { value: 'percent', label: t('settings.shop.coupons.typProzent') },
-                    { value: 'fixed_cents', label: t('settings.shop.coupons.typFest') },
-                  ]}
-                  aria-label={t('settings.shop.coupons.rabattTyp')}
+            <div className="space-y-3 rounded-xl border border-outline-variant/30 bg-surface-container/60 p-4">
+              <p className="text-xs font-semibold uppercase tracking-wider text-on-surface-variant">
+                {t('settings.shop.coupons.abschnittBasis')}
+              </p>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Input
+                  label={t('settings.shop.coupons.code')}
+                  value={draft.code}
+                  onChange={(event) => setze('code', event.target.value.toUpperCase())}
+                  maxLength={48}
                 />
-              </label>
-              <Input
-                label={
-                  draft.discountType === 'percent'
-                    ? t('settings.shop.coupons.rabattWertProzent')
-                    : t('settings.shop.coupons.rabattWertEuro')
-                }
-                type="number"
-                min="1"
-                step={draft.discountType === 'percent' ? '1' : '0.01'}
-                inputMode="decimal"
-                value={draft.discountValue}
-                onChange={(event) => setze('discountValue', event.target.value)}
-              />
-              <label className="space-y-1.5">
-                <span className="block text-sm font-medium text-on-surface">
-                  {t('settings.shop.coupons.bereich')}
-                </span>
-                <Dropdown
-                  value={draft.scope}
-                  onChange={(wert) => setze('scope', wert as ShopCouponScope)}
-                  options={[
-                    { value: 'all', label: t('settings.shop.coupons.bereichAlle') },
-                    { value: 'plans', label: t('settings.shop.coupons.bereichTarife') },
-                    { value: 'addons', label: t('settings.shop.coupons.bereichAddons') },
-                  ]}
-                  aria-label={t('settings.shop.coupons.bereich')}
+                <Input
+                  label={t('settings.shop.coupons.name')}
+                  value={draft.name}
+                  onChange={(event) => setze('name', event.target.value)}
+                  maxLength={128}
                 />
-              </label>
-            </div>
-
-            {draft.scope === 'plans' && plans.length > 0 && (
-              <div className="flex flex-wrap gap-2">
-                {plans.map((plan) => {
-                  const aktiv = draft.targetPlanIds.includes(plan.id)
-                  return (
-                    <Button
-                      key={plan.id}
-                      type="button"
-                      size="sm"
-                      variant={aktiv ? 'primary' : 'secondary'}
-                      onClick={() => toggleZielTarif(plan.id)}
-                    >
-                      {plan.name}
-                    </Button>
-                  )
-                })}
               </div>
-            )}
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="space-y-1.5">
+                  <span className="block text-sm font-medium text-on-surface">
+                    {t('settings.shop.coupons.rabattTyp')}
+                  </span>
+                  <Dropdown
+                    value={draft.discountType}
+                    onChange={(wert) =>
+                      setze('discountType', wert as ShopCouponDiscountType)
+                    }
+                    options={[
+                      { value: 'percent', label: t('settings.shop.coupons.typProzent') },
+                      { value: 'fixed_cents', label: t('settings.shop.coupons.typFest') },
+                    ]}
+                    aria-label={t('settings.shop.coupons.rabattTyp')}
+                  />
+                </label>
+                <Input
+                  label={
+                    draft.discountType === 'percent'
+                      ? t('settings.shop.coupons.rabattWertProzent')
+                      : t('settings.shop.coupons.rabattWertEuro')
+                  }
+                  type="number"
+                  min="1"
+                  step={draft.discountType === 'percent' ? '1' : '0.01'}
+                  inputMode="decimal"
+                  value={draft.discountValue}
+                  onChange={(event) => setze('discountValue', event.target.value)}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="block space-y-1.5 sm:max-w-xs">
+                  <span className="block text-sm font-medium text-on-surface">
+                    {t('settings.shop.coupons.bereich')}
+                  </span>
+                  <Dropdown
+                    value={draft.scope}
+                    onChange={(wert) => setze('scope', wert as ShopCouponScope)}
+                    options={[
+                      { value: 'all', label: t('settings.shop.coupons.bereichAlle') },
+                      { value: 'plans', label: t('settings.shop.coupons.bereichTarife') },
+                      { value: 'addons', label: t('settings.shop.coupons.bereichAddons') },
+                    ]}
+                    aria-label={t('settings.shop.coupons.bereich')}
+                  />
+                </label>
+
+                {draft.scope === 'plans' && plans.length > 0 && (
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    {plans.map((plan) => {
+                      const aktiv = draft.targetPlanIds.includes(plan.id)
+                      return (
+                        <Button
+                          key={plan.id}
+                          type="button"
+                          size="sm"
+                          variant={aktiv ? 'primary' : 'secondary'}
+                          onClick={() => toggleZielTarif(plan.id)}
+                        >
+                          {plan.name}
+                        </Button>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
 
             <div className="space-y-3 rounded-xl border border-outline-variant/30 bg-surface-container/60 p-4">
-              <div className="grid gap-3 sm:grid-cols-3">
+              <p className="text-xs font-semibold uppercase tracking-wider text-on-surface-variant">
+                {t('settings.shop.coupons.abschnittBedingungen')}
+              </p>
+              <div className="grid gap-3 sm:grid-cols-2">
                 <Input
                   label={t('settings.shop.coupons.mindestbetrag')}
                   type="number"
@@ -513,14 +524,6 @@ export function ShopCouponsEditor() {
                   inputMode="numeric"
                   value={draft.maxRedemptions}
                   onChange={(event) => setze('maxRedemptions', event.target.value)}
-                />
-                <Input
-                  label={t('settings.shop.coupons.cooldown')}
-                  type="number"
-                  min="0"
-                  inputMode="numeric"
-                  value={draft.bannerCooldownHours}
-                  onChange={(event) => setze('bannerCooldownHours', event.target.value)}
                 />
               </div>
 
@@ -540,45 +543,64 @@ export function ShopCouponsEditor() {
               </div>
             </div>
 
-            <Input
-              label={t('settings.shop.coupons.promoText')}
-              value={draft.promoText}
-              onChange={(event) => setze('promoText', event.target.value)}
-              maxLength={240}
-            />
+            <div className="space-y-3 rounded-xl border border-outline-variant/30 bg-surface-container/60 p-4">
+              <p className="text-xs font-semibold uppercase tracking-wider text-on-surface-variant">
+                {t('settings.shop.coupons.abschnittDarstellung')}
+              </p>
+              <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_12rem]">
+                <Input
+                  label={t('settings.shop.coupons.promoText')}
+                  value={draft.promoText}
+                  onChange={(event) => setze('promoText', event.target.value)}
+                  maxLength={240}
+                />
+                <Input
+                  label={t('settings.shop.coupons.cooldown')}
+                  type="number"
+                  min="0"
+                  inputMode="numeric"
+                  value={draft.bannerCooldownHours}
+                  onChange={(event) => setze('bannerCooldownHours', event.target.value)}
+                />
+              </div>
 
-            <div className="grid gap-3 sm:grid-cols-3">
-              <label className="flex items-center justify-between gap-3 rounded-xl border border-outline-variant/30 bg-surface-container p-3">
-                <span className="text-sm font-medium text-on-surface">
-                  {t('settings.shop.coupons.badgeAnzeigen')}
-                </span>
-                <Switch
-                  checked={draft.showBadge}
-                  onCheckedChange={(wert) => setze('showBadge', wert)}
-                  aria-label={t('settings.shop.coupons.badgeAnzeigen')}
-                />
-              </label>
-              <label className="flex items-center justify-between gap-3 rounded-xl border border-outline-variant/30 bg-surface-container p-3">
-                <span className="text-sm font-medium text-on-surface">
-                  {t('settings.shop.coupons.bannerAnzeigen')}
-                </span>
-                <Switch
-                  checked={draft.showBanner}
-                  onCheckedChange={(wert) => setze('showBanner', wert)}
-                  aria-label={t('settings.shop.coupons.bannerAnzeigen')}
-                />
-              </label>
-              <label className="flex items-center justify-between gap-3 rounded-xl border border-outline-variant/30 bg-surface-container p-3">
-                <span className="text-sm font-medium text-on-surface">
-                  {t('settings.shop.coupons.aktiv')}
-                </span>
-                <Switch
-                  checked={draft.active}
-                  onCheckedChange={(wert) => setze('active', wert)}
-                  aria-label={t('settings.shop.coupons.aktiv')}
-                />
-              </label>
+              <div className="grid gap-3 sm:grid-cols-3">
+                <label className="flex items-center justify-between gap-3 rounded-xl border border-outline-variant/30 bg-surface-container p-3">
+                  <span className="text-sm font-medium text-on-surface">
+                    {t('settings.shop.coupons.badgeAnzeigen')}
+                  </span>
+                  <Switch
+                    checked={draft.showBadge}
+                    onCheckedChange={(wert) => setze('showBadge', wert)}
+                    aria-label={t('settings.shop.coupons.badgeAnzeigen')}
+                  />
+                </label>
+                <label className="flex items-center justify-between gap-3 rounded-xl border border-outline-variant/30 bg-surface-container p-3">
+                  <span className="text-sm font-medium text-on-surface">
+                    {t('settings.shop.coupons.bannerAnzeigen')}
+                  </span>
+                  <Switch
+                    checked={draft.showBanner}
+                    onCheckedChange={(wert) => setze('showBanner', wert)}
+                    aria-label={t('settings.shop.coupons.bannerAnzeigen')}
+                  />
+                </label>
+                <label className="flex items-center justify-between gap-3 rounded-xl border border-outline-variant/30 bg-surface-container p-3">
+                  <span className="text-sm font-medium text-on-surface">
+                    {t('settings.shop.coupons.aktiv')}
+                  </span>
+                  <Switch
+                    checked={draft.active}
+                    onCheckedChange={(wert) => setze('active', wert)}
+                    aria-label={t('settings.shop.coupons.aktiv')}
+                  />
+                </label>
+              </div>
             </div>
+
+            <p className="text-xs text-on-surface-variant">
+              {t('settings.shop.coupons.stripeAutoHinweis')}
+            </p>
           </div>
 
           <DialogFooter>

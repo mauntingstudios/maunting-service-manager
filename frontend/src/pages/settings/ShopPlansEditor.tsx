@@ -36,10 +36,11 @@ import {
   type ShopGalleryItem,
   type ShopPlan,
   type ShopPlanWrite,
+  type ShopPublicPolicyDto,
 } from '@/api/shop'
 import { useHasPermission } from '@/hooks/useHasPermission'
 import { still } from '@/lib/still'
-import { formatCpuLabel, formatEuro } from '@/shop/preis'
+import { formatCpuLabel, formatEuro, kurzzeitPreisCent } from '@/shop/preis'
 import { confirm } from '@/stores/confirmStore'
 import { toast } from '@/stores/toastStore'
 import type { GameInfo } from '@/types'
@@ -330,6 +331,7 @@ export function ShopPlansEditor({ onPlansLoaded }: ShopPlansEditorProps = {}) {
   const [uploadPlan, setUploadPlan] = useState<ShopPlan | null>(null)
   const [galerie, setGalerie] = useState<ShopGalleryItem[]>([])
   const [galerieBusy, setGalerieBusy] = useState(false)
+  const [publicPolicy, setPublicPolicy] = useState<ShopPublicPolicyDto | null>(null)
   const dateiRef = useRef<HTMLInputElement>(null)
   const onPlansLoadedRef = useRef(onPlansLoaded)
   onPlansLoadedRef.current = onPlansLoaded
@@ -370,6 +372,16 @@ export function ShopPlansEditor({ onPlansLoaded }: ShopPlansEditorProps = {}) {
     void api<GameInfo[]>('/system/games')
       .then((g) => setGames(Array.isArray(g) ? g : []))
       .catch(() => setGames([]))
+    if (typeof shopCatalogApi?.getPublicPolicy === 'function') {
+      void shopCatalogApi
+        .getPublicPolicy()
+        .then((policy) => {
+          if (policy) setPublicPolicy(policy)
+        })
+        .catch((error: unknown) => {
+          still(error, 'shop.plans.publicPolicy')
+        })
+    }
   }
 
   useEffect(() => {
@@ -377,6 +389,21 @@ export function ShopPlansEditor({ onPlansLoaded }: ShopPlansEditorProps = {}) {
   }, [])
 
   const gameName = (id: string) => games.find((game) => game.id === id)?.name ?? id
+
+  const topPlans = useMemo(
+    () =>
+      [...(plans ?? [])]
+        .filter((p) => (p.recent_order_count ?? 0) > 0)
+        .sort((a, b) => (b.recent_order_count ?? 0) - (a.recent_order_count ?? 0))
+        .slice(0, 5),
+    [plans],
+  )
+
+  const aktiveKurzzeitStufen = useMemo(
+    () => (publicPolicy?.shop_short_duration_tiers ?? []).filter((tier) => tier.enabled),
+    [publicPolicy],
+  )
+  const vorschauMonatsCent = euroInCent(draft.priceEuro)
 
   const gefiltertePlans = useMemo(() => {
     if (!plans) return []
@@ -655,6 +682,31 @@ export function ShopPlansEditor({ onPlansLoaded }: ShopPlansEditorProps = {}) {
         </div>
       )}
 
+      {topPlans.length > 0 && (
+        <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-low/75 px-4 py-3">
+          <p className="text-xs font-semibold uppercase tracking-wider text-on-surface-variant">
+            {t('settings.shop.plans.topSpieleTitel')}
+          </p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {topPlans.map((topPlan) => (
+              <span
+                key={topPlan.id}
+                className="inline-flex items-center gap-2 rounded-full border border-outline-variant/35 bg-surface-container px-3 py-1 text-xs text-on-surface"
+              >
+                <span className="font-medium">
+                  {gameName(topPlan.game_type)} · {topPlan.name}
+                </span>
+                <span className="font-semibold tabular-nums text-primary">
+                  {t('settings.shop.plans.bestellungen30Tage', {
+                    count: topPlan.recent_order_count ?? 0,
+                  })}
+                </span>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
       {plans === null ? (
         <div className="flex items-center gap-3 text-sm text-on-surface-variant">
           <Spinner size="sm" />
@@ -791,6 +843,13 @@ export function ShopPlansEditor({ onPlansLoaded }: ShopPlansEditorProps = {}) {
                       {plan.pinned_in_hero && (
                         <span className="inline-flex items-center rounded-md border border-primary/45 bg-primary/15 px-2 py-0.5 text-xs font-medium text-primary backdrop-blur-sm">
                           {t('settings.shop.plans.badgePinned')}
+                        </span>
+                      )}
+                      {(plan.recent_order_count ?? 0) > 0 && (
+                        <span className="inline-flex items-center rounded-md border border-status-running/40 bg-background/85 px-2 py-0.5 text-xs font-medium tabular-nums text-status-running backdrop-blur-sm">
+                          {t('settings.shop.plans.bestellungen30Tage', {
+                            count: plan.recent_order_count ?? 0,
+                          })}
                         </span>
                       )}
                       <span className="inline-flex items-center rounded-md border border-outline-variant/30 bg-background/75 px-2 py-0.5 text-xs text-on-surface-variant backdrop-blur-sm">
@@ -938,6 +997,13 @@ export function ShopPlansEditor({ onPlansLoaded }: ShopPlansEditorProps = {}) {
                       )}
                       {plan.pinned_in_hero && (
                         <Badge variant="info">{t('settings.shop.plans.badgePinned')}</Badge>
+                      )}
+                      {(plan.recent_order_count ?? 0) > 0 && (
+                        <Badge variant="success">
+                          {t('settings.shop.plans.bestellungen30Tage', {
+                            count: plan.recent_order_count ?? 0,
+                          })}
+                        </Badge>
                       )}
                     </div>
                     <p className="mt-1 text-xs text-on-surface-variant">
@@ -1097,6 +1163,43 @@ export function ShopPlansEditor({ onPlansLoaded }: ShopPlansEditorProps = {}) {
                     </p>
                   </div>
                 </div>
+
+                {draft.allowShortDurations &&
+                  publicPolicy &&
+                  !publicPolicy.shop_short_durations_enabled && (
+                    <div className="rounded-xl border border-outline-variant/30 bg-surface-container/60 p-3.5 text-xs text-on-surface-variant">
+                      <p className="font-semibold text-on-surface">
+                        {t('settings.shop.plans.kurzzeitVorschauTitel')}
+                      </p>
+                      <p className="mt-1">{t('settings.shop.plans.kurzzeitVorschauInaktiv')}</p>
+                    </div>
+                  )}
+
+                {draft.allowShortDurations &&
+                  publicPolicy?.shop_short_durations_enabled &&
+                  aktiveKurzzeitStufen.length > 0 && (
+                    <div className="space-y-2 rounded-xl border border-outline-variant/30 bg-surface-container/60 p-3.5">
+                      <p className="text-xs font-semibold text-on-surface">
+                        {t('settings.shop.plans.kurzzeitVorschauTitel')}
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        {aktiveKurzzeitStufen.map((tier) => (
+                          <span
+                            key={tier.days}
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-outline-variant/40 bg-surface-container-low px-2.5 py-1 text-xs tabular-nums text-on-surface"
+                          >
+                            <span>{t('shop.spiel.tage', { count: tier.days })}</span>
+                            <span className="font-bold text-primary">
+                              {formatEuro(kurzzeitPreisCent(vorschauMonatsCent, tier))}
+                            </span>
+                          </span>
+                        ))}
+                      </div>
+                      <p className="text-xs text-on-surface-variant">
+                        {t('settings.shop.plans.kurzzeitVorschauHinweis')}
+                      </p>
+                    </div>
+                  )}
 
                 <div className="grid gap-3 sm:grid-cols-2">
                   <label className="flex items-center justify-between gap-4 rounded-xl border border-outline-variant/30 bg-surface-container p-3">

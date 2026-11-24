@@ -320,7 +320,9 @@ def _artwork(db: Session, plan: ShopPlan) -> ShopArtworkResponse:
     )
 
 
-def plan_response(db: Session, plan: ShopPlan) -> ShopPlanResponse:
+def plan_response(
+    db: Session, plan: ShopPlan, *, recent_order_count: int = 0
+) -> ShopPlanResponse:
     return ShopPlanResponse(
         id=plan.id,
         game_type=plan.game_type,
@@ -355,6 +357,7 @@ def plan_response(db: Session, plan: ShopPlan) -> ShopPlanResponse:
         is_new=bool(getattr(plan, "is_new", False)),
         pinned_in_hero=bool(getattr(plan, "pinned_in_hero", False)),
         promo_highlight_text=(getattr(plan, "promo_highlight_text", None) or None),
+        recent_order_count=max(0, int(recent_order_count)),
         created_at=plan.created_at,
         updated_at=plan.updated_at,
         artwork=_artwork(db, plan),

@@ -76,12 +76,16 @@ def _lies_shop_catalog(
         out["blueprints"] = bp_rows
 
     if "plans" in sections:
+        order_counts = shop_catalog_service.recent_paid_order_counts(db)
         out["plans"] = [
             {
                 "id": p.id,
                 "game_type": p.game_type,
                 "name": redact_sensitive_text(p.name),
                 "price_cents": p.price_cents,
+                "lifetime_price_cents": getattr(p, "lifetime_price_cents", None),
+                "allow_game_switch": bool(getattr(p, "allow_game_switch", True)),
+                "allow_short_durations": bool(getattr(p, "allow_short_durations", True)),
                 "tax_rate_percent": p.tax_rate_percent,
                 "ram_included_mb": p.ram_included_mb,
                 "ram_max_mb": p.ram_max_mb,
@@ -92,6 +96,12 @@ def _lies_shop_catalog(
                 "artwork_mode": p.artwork_mode,
                 "active": bool(p.active),
                 "sort_order": p.sort_order,
+                "is_featured": bool(getattr(p, "is_featured", False)),
+                "is_bestseller": bool(getattr(p, "is_bestseller", False)),
+                "is_new": bool(getattr(p, "is_new", False)),
+                "pinned_in_hero": bool(getattr(p, "pinned_in_hero", False)),
+                "promo_highlight_text": getattr(p, "promo_highlight_text", None),
+                "recent_order_count": order_counts.get(p.id, 0),
             }
             for p in shop_catalog_service.list_plans(db)
         ]
@@ -162,6 +172,14 @@ _PLAN_ITEM_PROPERTIES: dict[str, Any] = {
     "artwork_mode": {"type": "string", "enum": ["steam", "custom", "none"]},
     "active": {"type": "boolean"},
     "sort_order": {"type": "integer"},
+    "lifetime_price_cents": {"type": ["integer", "null"], "minimum": 0},
+    "allow_game_switch": {"type": "boolean"},
+    "allow_short_durations": {"type": "boolean"},
+    "is_featured": {"type": "boolean"},
+    "is_bestseller": {"type": "boolean"},
+    "is_new": {"type": "boolean"},
+    "pinned_in_hero": {"type": "boolean"},
+    "promo_highlight_text": {"type": ["string", "null"], "maxLength": 80},
 }
 
 _READ_SHOP_CATALOG = _function(

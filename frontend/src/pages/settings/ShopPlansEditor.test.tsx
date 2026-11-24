@@ -6,9 +6,10 @@ vi.mock('@/hooks/useHasPermission', () => ({
   useHasPermission: () => true,
 }))
 
-const { listPlansMock, updatePlanMock } = vi.hoisted(() => ({
+const { listPlansMock, updatePlanMock, getPublicPolicyMock } = vi.hoisted(() => ({
   listPlansMock: vi.fn(),
   updatePlanMock: vi.fn(),
+  getPublicPolicyMock: vi.fn(),
 }))
 
 const SAMPLE_PLAN = {
@@ -50,6 +51,10 @@ vi.mock('@/api/shop', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/api/shop')>()
   return {
     ...actual,
+    shopCatalogApi: {
+      ...actual.shopCatalogApi,
+      getPublicPolicy: getPublicPolicyMock,
+    },
     shopAdminApi: {
       listPlans: listPlansMock,
       createPlan: vi.fn(),
@@ -76,6 +81,20 @@ describe('ShopPlansEditor', () => {
     vi.clearAllMocks()
     listPlansMock.mockResolvedValue([SAMPLE_PLAN])
     updatePlanMock.mockResolvedValue({ ...SAMPLE_PLAN, active: false })
+    getPublicPolicyMock.mockResolvedValue({
+      default_billing_mode: 'prepaid',
+      subscription_discount_percent: 0,
+      refund_guarantee_days: 0,
+      refund_policy_note: '',
+      cancel_grace_days: 7,
+      auto_subdomain_enabled: false,
+      auto_subdomain_zone: '',
+      shop_short_durations_enabled: true,
+      shop_short_duration_tiers: [
+        { days: 3, enabled: true, price_factor_percent: 25, min_price_cents: 199 },
+        { days: 7, enabled: true, price_factor_percent: 40, min_price_cents: 299 },
+      ],
+    })
   })
 
   it('listet Tarife im Regal mit Coverbild und oeffnet den 3-Tab-Editor', async () => {
@@ -131,5 +150,23 @@ describe('ShopPlansEditor', () => {
     expect(
       screen.getByRole('button', { name: i18n.t('settings.shop.plans.ansichtListe') }),
     ).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('zeigt 30-Tage-Bestellzahlen und Kurzzeit-Preisvorschau im Dialog', async () => {
+    listPlansMock.mockResolvedValue([
+      { ...SAMPLE_PLAN, price_cents: 1000, recent_order_count: 14 },
+    ])
+    render(<ShopPlansEditor />)
+    expect(await screen.findByText(i18n.t('settings.shop.plans.topSpieleTitel'))).toBeInTheDocument()
+    expect(
+      screen.getAllByText(i18n.t('settings.shop.plans.bestellungen30Tage', { count: 14 })).length,
+    ).toBeGreaterThanOrEqual(2)
+
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('settings.shop.plans.bearbeiten') }))
+    expect(await screen.findByRole('dialog')).toBeInTheDocument()
+    expect(
+      await screen.findByText(i18n.t('settings.shop.plans.kurzzeitVorschauTitel')),
+    ).toBeInTheDocument()
+    expect(screen.getByText(/2,50/)).toBeInTheDocument()
   })
 })
