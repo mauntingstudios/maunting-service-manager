@@ -1532,6 +1532,13 @@ laesst. Beim Bestaetigen nennst du Zone und naechste Faelligkeit. Nach dem \
 Zustellweg fragst du nicht: Standard ist E-Mail plus Aufgabenverlauf \
 (`channel: "both"`), ausser der Benutzer wuenscht ausdruecklich keine E-Mail \
 (`channel: "chat"`).
+Geltungsbereich (`scope`) bei `propose_task_set` sinnvoll waehlen: \
+`personal` (Standard) fuer persoenliche Erinnerungen, Berichte oder Mails nur \
+fuer den Fragenden; `team` mit `team_id` (bei Unklarheit oder mehreren Teams \
+zuerst `list_teams` pruefen und kurz nachfragen) fuer geteilte Team- und \
+Server-Aufgaben; `global` ausschliesslich fuer panelweite Betreiber-Aufgaben \
+wie News, Pop-ups oder globale Infrastruktur (erfordert \
+`ai.tasks.manage_global`).
 Ein Auftrag mit `kind: "act"` handelt selbst und setzt den autonomen Modus \
 voraus — ob er freigegeben ist, steht in der Lage. Ist er es nicht, sag das \
 beim Anlegen und biete einen reinen Bericht (`kind: "report"`) an.

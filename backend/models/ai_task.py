@@ -85,16 +85,31 @@ PLANARTEN = ("daily", "interval", "once")
 #: existierte, koennte still ins Leere laufen.
 KANAELE = ("chat", "email", "both")
 
+#: Drei-Stufen-Sichtbarkeit eines Auftrags:
+#: - ``personal``: nur fuer den Ersteller sichtbar und bearbeitbar.
+#: - ``team``: fuer alle Mitglieder des gebundenen echten Teams mit ``ai.tasks.manage``.
+#: - ``global``: panelweit (z. B. News, Pop-ups, globale Infrastruktur) fuer Betreiber
+#:   mit ``ai.tasks.manage_global`` bzw. Betreiberrechten.
+SCOPES = ("personal", "team", "global")
+
 
 class AiTask(Base):
     __tablename__ = "ai_tasks"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    # CASCADE: die Aufgabe gehoert diesem Menschen. Ist er weg, gibt es niemanden
-    # mehr, in dessen Namen sie laufen koennte — und sie liefe mit den Rechten
-    # eines Kontos, das es nicht mehr gibt.
+    # CASCADE: der Ersteller (bzw. Auftraggeber bei persoenlichen Aufgaben). Ist
+    # er weg, gibt es das ausfuehrende Benutzerkonto nicht mehr.
     user_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    scope: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="personal", server_default="personal"
+    )
+    team_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("teams.id", ondelete="CASCADE"), nullable=True
+    )
+    updated_by_user_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
     title: Mapped[str] = mapped_column(ai_text("ai_tasks.title"), nullable=False)
     # Der Auftragstext, so wie er beim Anlegen redigiert wurde. Er wird bei jeder
@@ -161,6 +176,11 @@ class AiTask(Base):
         # Genau die Abfrage des Takts. Ohne ihn liest er bei jedem Durchlauf die
         # ganze Tabelle, und das sechzigmal in der Stunde.
         Index("ix_ai_tasks_enabled_next", "enabled", "next_run_at"),
+        Index("ix_ai_tasks_scope_team", "scope", "team_id"),
+        CheckConstraint(
+            "scope IN (" + ", ".join(f"'{wert}'" for wert in SCOPES) + ")",
+            name="ck_ai_tasks_scope",
+        ),
         CheckConstraint(
             "kind IN (" + ", ".join(f"'{wert}'" for wert in ARTEN) + ")",
             name="ck_ai_tasks_kind",

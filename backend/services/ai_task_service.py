@@ -24,10 +24,11 @@ from uuid import uuid4
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from apscheduler.triggers.cron import CronTrigger
-from sqlalchemy.orm import Session
+from sqlalchemy import and_, or_
+from sqlalchemy.orm import Session, object_session
 
-from models import AiTask, User
-from models.ai_task import ARTEN, KANAELE, PLANARTEN
+from models import AiTask, Team, TeamMember, User
+from models.ai_task import ARTEN, KANAELE, PLANARTEN, SCOPES
 from services import permission_service
 from services.ai_action_errors import AiActionValidationError
 from services.ai_redaction import redact_sensitive_text
@@ -250,6 +251,45 @@ def darf_verwalten(db: Session, user: User) -> bool:
     return permission_service.has_global_permission(db, user, "ai.tasks.manage")
 
 
+def darf_global_verwalten(db: Session, user: User) -> bool:
+    """Ob dieser Mensch panelweite KI-Auftraege (News, Pop-ups, Infrastruktur) verwalten darf."""
+    return (
+        permission_service.has_global_permission(db, user, "ai.tasks.manage_global")
+        or permission_service.has_global_permission(db, user, "panel.settings.write")
+        or permission_service.has_global_permission(db, user, "ai.settings.manage")
+    )
+
+
+def _benutzer_teams(db: Session, user: User) -> dict[int, str]:
+    """Echte Teams (keine Ein-Mann-Teams), in denen ``user`` Mitglied oder Gruender ist."""
+    zeilen = (
+        db.query(Team.id, Team.name)
+        .outerjoin(
+            TeamMember,
+            (TeamMember.team_id == Team.id) & (TeamMember.user_id == user.id),
+        )
+        .filter(
+            Team.personal_for_user_id.is_(None),
+            or_(Team.owner_user_id == user.id, TeamMember.user_id == user.id),
+        )
+        .all()
+    )
+    return {int(team_id): str(name) for team_id, name in zeilen}
+
+
+def _sichtbarkeit_filter(db: Session, user: User):
+    bedingungen = [
+        and_(AiTask.scope == "personal", AiTask.user_id == user.id),
+    ]
+    if darf_verwalten(db, user):
+        team_ids = list(_benutzer_teams(db, user).keys())
+        if team_ids:
+            bedingungen.append(and_(AiTask.scope == "team", AiTask.team_id.in_(team_ids)))
+        if darf_global_verwalten(db, user):
+            bedingungen.append(AiTask.scope == "global")
+    return or_(*bedingungen)
+
+
 def darf_handeln(db: Session, user: User) -> bool:
     """Ob dieser Mensch eine Aufgabe der Art ``act`` haben darf.
 
@@ -297,7 +337,7 @@ def eigene_aufgabe(db: Session, *, user: User, task_id: object) -> AiTask:
         raise AiActionValidationError("Aufgabennummer fehlt")
     aufgabe = (
         db.query(AiTask)
-        .filter(AiTask.id == task_id.strip(), AiTask.user_id == user.id)
+        .filter(AiTask.id == task_id.strip(), _sichtbarkeit_filter(db, user))
         .first()
     )
     if aufgabe is None:
@@ -421,6 +461,56 @@ def _anwenden(db: Session, *, user: User, ziel: AiTask, felder: dict, neu: bool)
     ganzen Plan erneut aufschreibt — was es dabei falsch abschriebe, waere
     danach der Plan.
     """
+    if neu or "scope" in felder or "team_id" in felder:
+        bisher_scope = ziel.scope or "personal"
+        ziel_scope = felder.get("scope") if "scope" in felder else bisher_scope
+        if ziel_scope is None and neu:
+            ziel_scope = "personal"
+        if ziel_scope not in SCOPES:
+            raise AiActionValidationError(
+                f"Unbekannter Geltungsbereich. Moeglich sind: {', '.join(SCOPES)}"
+            )
+        if ziel_scope == "personal":
+            if "team_id" in felder and felder.get("team_id") is not None:
+                raise AiActionValidationError(
+                    "team_id ist nur fuer Team-Aufgaben (scope='team') zulaessig"
+                )
+            ziel.scope = "personal"
+            ziel.team_id = None
+            if not neu and bisher_scope != "personal":
+                ziel.user_id = user.id
+        elif ziel_scope == "team":
+            roh_team_id = felder.get("team_id") if "team_id" in felder else ziel.team_id
+            if isinstance(roh_team_id, bool):
+                roh_team_id = None
+            try:
+                team_id_int = int(roh_team_id) if roh_team_id is not None else None
+            except (TypeError, ValueError):
+                team_id_int = None
+            if team_id_int is None or team_id_int <= 0:
+                raise AiActionValidationError(
+                    "Team-Aufgaben benoetigen eine gueltige team_id"
+                )
+            teams = _benutzer_teams(db, user)
+            if team_id_int not in teams:
+                raise AiActionValidationError(
+                    "Dieses Team existiert nicht oder du bist kein Mitglied"
+                )
+            ziel.scope = "team"
+            ziel.team_id = team_id_int
+        elif ziel_scope == "global":
+            if "team_id" in felder and felder.get("team_id") is not None:
+                raise AiActionValidationError(
+                    "team_id ist nur fuer Team-Aufgaben (scope='team') zulaessig"
+                )
+            if not darf_global_verwalten(db, user):
+                raise AiActionValidationError(
+                    "Fuer panelweite Auftraege fehlt diesem Benutzer das Recht "
+                    "ai.tasks.manage_global"
+                )
+            ziel.scope = "global"
+            ziel.team_id = None
+
     if neu or "title" in felder:
         titel = redact_sensitive_text(str(felder.get("title") or "").strip())
         if not titel:
@@ -500,6 +590,9 @@ def _leere_aufgabe(user: User) -> AiTask:
     return AiTask(
         id=str(uuid4()),
         user_id=user.id,
+        scope="personal",
+        team_id=None,
+        updated_by_user_id=None,
         title="",
         instruction="",
         kind="report",
@@ -530,13 +623,15 @@ def vorschau(db: Session, *, user: User, felder: dict, task_id: str | None) -> d
             "Fuer stehende Aufgaben fehlt diesem Benutzer das Recht ai.tasks.manage"
         )
     if task_id is None:
-        _mengengrenze_pruefen(db, user)
+        _mengengrenze_pruefen(db, user, felder=felder)
         entwurf = _leere_aufgabe(user)
         neu = True
     else:
         vorhanden = eigene_aufgabe(db, user=user, task_id=task_id)
         entwurf = _leere_aufgabe(user)
+        entwurf.user_id = vorhanden.user_id
         for spalte in (
+            "scope", "team_id", "updated_by_user_id",
             "title", "instruction", "kind", "plan_kind", "time_of_day",
             "weekdays", "interval_hours", "once_at", "time_zone", "channel",
             "enabled",
@@ -546,9 +641,17 @@ def vorschau(db: Session, *, user: User, felder: dict, task_id: str | None) -> d
         neu = False
 
     _anwenden(db, user=user, ziel=entwurf, felder=felder, neu=neu)
+    team_name = (
+        _benutzer_teams(db, user).get(entwurf.team_id)
+        if entwurf.scope == "team" and entwurf.team_id is not None
+        else None
+    )
     return {
         "operation": "task_create" if neu else "task_update",
         "task_id": task_id,
+        "scope": entwurf.scope or "personal",
+        "team_id": entwurf.team_id,
+        "team_name": team_name,
         "title": entwurf.title,
         "instruction": entwurf.instruction,
         "kind": entwurf.kind,
@@ -563,8 +666,31 @@ def vorschau(db: Session, *, user: User, felder: dict, task_id: str | None) -> d
     }
 
 
-def _mengengrenze_pruefen(db: Session, user: User) -> None:
-    anzahl = db.query(AiTask.id).filter(AiTask.user_id == user.id).count()
+def _mengengrenze_pruefen(
+    db: Session, user: User, *, felder: dict | None = None
+) -> None:
+    roh_scope = (felder or {}).get("scope") or "personal"
+    if roh_scope == "team" and (felder or {}).get("team_id") is not None:
+        try:
+            team_id_int = int(felder["team_id"])
+        except (TypeError, ValueError):
+            team_id_int = None
+        if team_id_int is not None:
+            anzahl = (
+                db.query(AiTask.id)
+                .filter(AiTask.scope == "team", AiTask.team_id == team_id_int)
+                .count()
+            )
+        else:
+            anzahl = 0
+    elif roh_scope == "global":
+        anzahl = db.query(AiTask.id).filter(AiTask.scope == "global").count()
+    else:
+        anzahl = (
+            db.query(AiTask.id)
+            .filter(AiTask.scope == "personal", AiTask.user_id == user.id)
+            .count()
+        )
     if anzahl >= MAX_AUFGABEN_JE_BENUTZER:
         raise AiActionValidationError(
             f"Es gibt bereits {anzahl} Aufgaben; mehr als "
@@ -584,7 +710,7 @@ def anlegen(db: Session, *, user: User, felder: dict) -> AiTask:
         raise AiActionValidationError(
             "Fuer stehende Aufgaben fehlt diesem Benutzer das Recht ai.tasks.manage"
         )
-    _mengengrenze_pruefen(db, user)
+    _mengengrenze_pruefen(db, user, felder=felder)
     aufgabe = _anwenden(
         db, user=user, ziel=_leere_aufgabe(user), felder=felder, neu=True
     )
@@ -601,6 +727,7 @@ def aendern(db: Session, *, user: User, task_id: str, felder: dict) -> AiTask:
         )
     aufgabe = eigene_aufgabe(db, user=user, task_id=task_id)
     _anwenden(db, user=user, ziel=aufgabe, felder=felder, neu=False)
+    aufgabe.updated_by_user_id = user.id
     db.flush()
     return aufgabe
 
@@ -669,25 +796,62 @@ def ki_zeitplan_verwaltung_aufheben(db: Session, server, *, bereich: str) -> Non
         )
 
 
-def auflisten(db: Session, *, user: User) -> list[dict]:
-    """Alle Aufgaben dieses Benutzers, in **einem** Aufruf.
+def auflisten(
+    db: Session,
+    *,
+    user: User,
+    scope: str | None = None,
+    team_id: int | None = None,
+) -> list[dict]:
+    """Alle sichtbaren Aufträge (persönlich, eigene Teams, ggf. panelweit).
 
     Vollstaendig und nicht seitenweise: Ergebnisse von Lesewerkzeugen fliessen
     nur aus dem juengsten Lauf in den Folgekontext (`ai_context_service`), und
     ein Modell, das blaettern muesste, haette beim zweiten Aufruf den ersten
-    schon vergessen. Die Obergrenze von zwanzig Aufgaben je Benutzer macht das
-    unbedenklich.
+    schon vergessen.
     """
-    zeilen = (
-        db.query(AiTask)
-        .filter(AiTask.user_id == user.id)
-        .order_by(AiTask.created_at.asc())
-        .all()
-    )
-    return [eintrag(aufgabe) for aufgabe in zeilen]
+    query = db.query(AiTask).filter(_sichtbarkeit_filter(db, user))
+    if scope is not None:
+        sauber_scope = scope.strip()
+        if sauber_scope not in SCOPES:
+            raise AiActionValidationError(
+                f"Unbekannter Geltungsbereich. Moeglich sind: {', '.join(SCOPES)}"
+            )
+        query = query.filter(AiTask.scope == sauber_scope)
+    if team_id is not None:
+        query = query.filter(AiTask.scope == "team", AiTask.team_id == team_id)
+
+    zeilen = query.order_by(AiTask.created_at.asc()).all()
+    if not zeilen:
+        return []
+
+    team_ids = {t.team_id for t in zeilen if t.team_id is not None}
+    team_names: dict[int, str] = {}
+    if team_ids:
+        for tid, tname in db.query(Team.id, Team.name).filter(Team.id.in_(team_ids)).all():
+            team_names[int(tid)] = str(tname)
+
+    user_ids = {t.user_id for t in zeilen} | {
+        t.updated_by_user_id for t in zeilen if t.updated_by_user_id is not None
+    }
+    user_names: dict[int, str] = {}
+    if user_ids:
+        for uid, uname in db.query(User.id, User.username).filter(User.id.in_(user_ids)).all():
+            user_names[int(uid)] = str(uname)
+
+    return [
+        eintrag(aufgabe, db=db, team_names=team_names, user_names=user_names)
+        for aufgabe in zeilen
+    ]
 
 
-def eintrag(aufgabe: AiTask) -> dict:
+def eintrag(
+    aufgabe: AiTask,
+    *,
+    db: Session | None = None,
+    team_names: dict[int, str] | None = None,
+    user_names: dict[int, str] | None = None,
+) -> dict:
     """Eine Aufgabe als Wörterbuch — für `list_tasks` und die Aufgabenliste.
 
     Eine Form für beide Leser (Modell und Oberfläche): zwei Serialisierer
@@ -695,8 +859,35 @@ def eintrag(aufgabe: AiTask) -> dict:
     behaupten. `conversation_id` ist das Hintergrundfenster der Aufgabe —
     die Oberfläche verlinkt damit auf den Verlauf (?ansicht=worker&id=…).
     """
+    session = db or object_session(aufgabe)
+    team_name = None
+    if aufgabe.team_id is not None:
+        if team_names is not None:
+            team_name = team_names.get(aufgabe.team_id)
+        elif session is not None:
+            team_obj = session.get(Team, aufgabe.team_id)
+            if team_obj is not None:
+                team_name = str(team_obj.name)
+
+    def _benutzername(uid: int | None) -> str | None:
+        if uid is None:
+            return None
+        if user_names is not None:
+            return user_names.get(uid)
+        if session is not None:
+            u = session.get(User, uid)
+            if u is not None:
+                return str(u.username)
+        return None
+
     return {
         "task_id": aufgabe.id,
+        "scope": aufgabe.scope or "personal",
+        "team_id": aufgabe.team_id,
+        "team_name": team_name,
+        "created_by_user_id": aufgabe.user_id,
+        "created_by": _benutzername(aufgabe.user_id),
+        "updated_by": _benutzername(aufgabe.updated_by_user_id),
         "title": aufgabe.title,
         "instruction": aufgabe.instruction,
         "kind": aufgabe.kind,
@@ -744,8 +935,17 @@ def _auftragstext(aufgabe: AiTask) -> str:
     gelesen = (
         " und als E-Mail." if aufgabe.channel in ("email", "both") else "."
     )
+    scope = aufgabe.scope or "personal"
+    if scope == "global":
+        bereich = "Geltungsbereich: panelweit (Betreiber-Auftrag fuer News, Pop-ups oder globale Infrastruktur)."
+    elif scope == "team" and aufgabe.team_id is not None:
+        bereich = f"Geltungsbereich: Team-Auftrag (team_id={aufgabe.team_id})."
+    else:
+        bereich = "Geltungsbereich: persoenlich."
+
     zeilen = [
         f'Faelliger stehender Auftrag "{name}" ({plan_text(aufgabe)}).',
+        bereich,
         "",
         "Der Benutzer hat dich frueher im Chat darum gebeten:",
         auftrag,
@@ -834,6 +1034,14 @@ async def aufgabenlauf_starten(db: Session, *, aufgabe: AiTask):
     if not darf_verwalten(db, user):
         _stilllegen(db, aufgabe, grund="kein_aufgabenrecht")
         return None
+    if aufgabe.scope == "team":
+        if aufgabe.team_id is None or aufgabe.team_id not in _benutzer_teams(db, user):
+            _stilllegen(db, aufgabe, grund="kein_teammitglied")
+            return None
+    elif aufgabe.scope == "global":
+        if not darf_global_verwalten(db, user):
+            _stilllegen(db, aufgabe, grund="kein_globalrecht")
+            return None
     if not darf_handeln(db, user):
         # Alle Aufgaben laufen im Hintergrund. Gemäß Maunting Studios Grundsatz
         # ("Sicherheit braucht Vertrauen") und den Anforderungen des Autonomie-Modus
@@ -907,6 +1115,8 @@ async def aufgabenlauf_starten(db: Session, *, aufgabe: AiTask):
         "kind": aufgabe.kind,
         "channel": aufgabe.channel,
         "title": aufgabe.title,
+        "scope": aufgabe.scope or "personal",
+        "team_id": aufgabe.team_id,
     }
     # Zusaetzlich der Worker-Rahmen: ueber ihn reicht `_lauf_nachbereiten` das
     # Ergebnis bei der Meldestelle ein (Zustellung in den Dauerchat, sobald

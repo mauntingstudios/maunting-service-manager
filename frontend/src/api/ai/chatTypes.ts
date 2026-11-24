@@ -388,8 +388,16 @@ export interface AiWorkerInfo {
  * beide Sprachen bedienen zu können. `conversation_id` ist das
  * Hintergrundfenster der Aufgabe — der Link auf `?ansicht=worker&id=…`.
  */
+export type AiTaskScope = 'personal' | 'team' | 'global'
+
 export interface AiTaskEntry {
   task_id: string
+  scope: AiTaskScope
+  team_id: number | null
+  team_name: string | null
+  created_by_user_id?: number | null
+  created_by?: string | null
+  updated_by?: string | null
   title: string
   instruction: string
   /** `act` heisst: darf Schreibwerkzeuge nutzen — setzt den autonomen Modus voraus. */
@@ -419,6 +427,8 @@ export interface AiTaskEntry {
  * Aufgabe nur pausieren will, schickt allein `enabled`.
  */
 export interface AiTaskWrite {
+  scope?: AiTaskScope
+  team_id?: number | null
   title?: string
   instruction?: string
   kind?: 'report' | 'act'

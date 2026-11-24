@@ -2050,6 +2050,20 @@
       "email": "Also send the result by email",
       "act": "May act on its own",
       "actHint": "Requires autonomous mode; unchecked, the task only reports.",
+      "scopeLabel": "Scope",
+      "scopePersonal": "Personal",
+      "scopeTeam": "Team",
+      "scopeTeamNamed": "Team: {{team}}",
+      "scopeGlobal": "Panel-wide (operator)",
+      "scopeGlobalBadge": "Panel-wide",
+      "scopeHintPersonal": "Visible only to you and executed under your account.",
+      "scopeHintTeam": "Shared with all members of {{team}} who have task permission.",
+      "scopeHintGlobal": "Panel-wide task (e.g. news, pop-ups, infrastructure) for operators.",
+      "filterAll": "All",
+      "filterPersonal": "Personal",
+      "filterTeam": "Teams",
+      "filterGlobal": "Panel-wide",
+      "createdBy": "By {{name}}",
       "create": "Create task",
       "created": "Task created.",
       "saved": "Task saved.",
@@ -2080,7 +2094,9 @@
       "errors": {
         "load": "Tasks could not be loaded",
         "save": "The task could not be saved",
-        "delete": "The task could not be deleted"
+        "delete": "The task could not be deleted",
+        "noTeam": "Please select a team.",
+        "noGlobalPermission": "You do not have permission for panel-wide AI tasks."
       }
     },
     "webSearch": {
@@ -3594,6 +3610,10 @@
     "ai_tasks_manage": {
       "title": "Manage AI tasks",
       "desc": "Set up recurring and scheduled background AI tasks."
+    },
+    "ai_tasks_manage_global": {
+      "title": "Manage panel-wide AI tasks",
+      "desc": "Allows scheduling AI tasks for the entire panel (for example news curation, pop-ups, and global infrastructure)."
     },
     "ai_background_use": {
       "title": "Start background workers",

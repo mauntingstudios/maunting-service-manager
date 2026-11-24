@@ -10,6 +10,7 @@ import {
   type AiRunInfo,
   type AiStreamEvent,
   type AiTaskEntry,
+  type AiTaskScope,
   type AiTaskWrite,
   type AiWorkerInfo,
 } from './chatTypes'
@@ -164,7 +165,17 @@ export const chatApi = {
    * Chat-Werkzeuge gehen. Alles, was die KI kann, kann der Benutzer hier auch;
    * alle vier verlangen `ai.tasks.manage`.
    */
-  listTasks: () => api<AiTaskEntry[]>('/ai/tasks'),
+  listTasks: (params?: { scope?: AiTaskScope; team_id?: number }) => {
+    const query = new URLSearchParams()
+    if (params?.scope) {
+      query.set('scope', params.scope)
+    }
+    if (params?.team_id !== undefined) {
+      query.set('team_id', String(params.team_id))
+    }
+    const qs = query.toString()
+    return api<AiTaskEntry[]>(qs ? `/ai/tasks?${qs}` : '/ai/tasks')
+  },
   createTask: (payload: AiTaskWrite) =>
     api<AiTaskEntry>('/ai/tasks', { method: 'POST', body: JSON.stringify(payload) }),
   updateTask: (taskId: string, payload: AiTaskWrite) =>

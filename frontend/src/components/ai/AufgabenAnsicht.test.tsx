@@ -13,8 +13,10 @@ import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { aiApi, type AiTaskEntry } from '@/api/ai'
+import { teamsApi, type Team } from '@/api/teams'
 import i18n from '@/i18n'
 import { confirm } from '@/stores/confirmStore'
+import { usePermissionsStore } from '@/stores/permissionsStore'
 import { AufgabenAnsicht } from './AufgabenAnsicht'
 
 vi.mock('@/api/ai', async (importOriginal) => {
@@ -30,12 +32,41 @@ vi.mock('@/api/ai', async (importOriginal) => {
   }
 })
 
+vi.mock('@/api/teams', async (importOriginal) => {
+  const original = await importOriginal<typeof import('@/api/teams')>()
+  return {
+    ...original,
+    teamsApi: {
+      ...original.teamsApi,
+      list: vi.fn(),
+    },
+  }
+})
+
 vi.mock('@/stores/confirmStore', () => ({
   confirm: vi.fn(),
 }))
 
+const teamEintrag = (over: Partial<Team> = {}): Team => ({
+  id: 7,
+  name: 'Team Alpha',
+  is_personal: false,
+  owner_user_id: 1,
+  is_owner: true,
+  can_manage_skills: true,
+  can_manage_memory: true,
+  created_at: '2026-01-01T00:00:00Z',
+  updated_at: '2026-01-01T00:00:00Z',
+  ...over,
+})
+
 const aufgabe = (over: Partial<AiTaskEntry> = {}): AiTaskEntry => ({
   task_id: 'aufgabe-1',
+  scope: 'personal',
+  team_id: null,
+  team_name: null,
+  created_by: null,
+  updated_by: null,
   title: 'Morgens Logs prüfen',
   instruction: 'Prüf die Logs aller Server auf Fehler.',
   kind: 'report',
@@ -54,9 +85,9 @@ const aufgabe = (over: Partial<AiTaskEntry> = {}): AiTaskEntry => ({
   ...over,
 })
 
-function zeichnen() {
+function zeichnen(url = '/ai?ansicht=aufgaben') {
   return render(
-    <MemoryRouter initialEntries={['/ai?ansicht=aufgaben']}>
+    <MemoryRouter initialEntries={[url]}>
       <AufgabenAnsicht />
     </MemoryRouter>,
   )
@@ -65,10 +96,12 @@ function zeichnen() {
 describe('AufgabenAnsicht', () => {
   beforeEach(async () => {
     await i18n.changeLanguage('de')
+    usePermissionsStore.setState({ me: null })
     vi.mocked(aiApi.listTasks).mockReset().mockResolvedValue([])
     vi.mocked(aiApi.createTask).mockReset().mockResolvedValue(aufgabe())
     vi.mocked(aiApi.updateTask).mockReset().mockResolvedValue(aufgabe())
     vi.mocked(aiApi.deleteTask).mockReset().mockResolvedValue({ deleted: true, title: '' })
+    vi.mocked(teamsApi.list).mockReset().mockResolvedValue([])
     vi.mocked(confirm).mockReset().mockResolvedValue(true)
   })
 
@@ -110,6 +143,7 @@ describe('AufgabenAnsicht', () => {
 
     await waitFor(() => expect(aiApi.createTask).toHaveBeenCalledTimes(1))
     expect(vi.mocked(aiApi.createTask).mock.calls[0][0]).toEqual({
+      scope: 'personal',
       title: 'Backup am Morgen',
       instruction: 'Mach ein Backup von allen Servern.',
       kind: 'report',
@@ -143,6 +177,7 @@ describe('AufgabenAnsicht', () => {
 
     await waitFor(() => expect(aiApi.createTask).toHaveBeenCalledTimes(1))
     expect(vi.mocked(aiApi.createTask).mock.calls[0][0]).toEqual({
+      scope: 'personal',
       title: 'Stündliche Logs',
       instruction: 'Logs prüfen',
       kind: 'report',
@@ -214,5 +249,89 @@ describe('AufgabenAnsicht', () => {
 
     expect(await screen.findByText('Morgens Logs prüfen')).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: i18n.t('ai.tasks.openWindow') })).toBeNull()
+  })
+
+  it('ermöglicht Team-Auswahl aus mehreren echten Teams ohne Global-Recht', async () => {
+    vi.mocked(teamsApi.list).mockResolvedValue([
+      teamEintrag({ id: 1, name: 'Privat', is_personal: true }),
+      teamEintrag({ id: 7, name: 'Team Alpha', is_personal: false }),
+      teamEintrag({ id: 9, name: 'Team Beta', is_personal: false }),
+    ])
+
+    zeichnen()
+    await waitFor(() => expect(teamsApi.list).toHaveBeenCalled())
+
+    fireEvent.click(screen.getByRole('button', { name: /Neue Aufgabe/ }))
+    const bereichBtn = await screen.findByRole('button', { name: i18n.t('ai.tasks.scopeLabel') })
+    fireEvent.click(bereichBtn)
+
+    expect(await screen.findByRole('option', { name: 'Team: Team Alpha' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'Team: Team Beta' })).toBeInTheDocument()
+    expect(screen.queryByRole('option', { name: i18n.t('ai.tasks.scopeGlobal') })).toBeNull()
+    expect(screen.queryByRole('option', { name: 'Team: Privat' })).toBeNull()
+
+    fireEvent.click(screen.getByRole('option', { name: 'Team: Team Alpha' }))
+    fireEvent.change(screen.getByLabelText(i18n.t('ai.tasks.name')), {
+      target: { value: 'Team Backup' },
+    })
+    fireEvent.change(screen.getByLabelText(i18n.t('ai.tasks.prompt')), {
+      target: { value: 'Teamserver sichern.' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('ai.tasks.create') }))
+
+    await waitFor(() => expect(aiApi.createTask).toHaveBeenCalledTimes(1))
+    expect(vi.mocked(aiApi.createTask).mock.calls[0][0]).toMatchObject({
+      scope: 'team',
+      team_id: 7,
+      title: 'Team Backup',
+    })
+  })
+
+  it('aktiviert mit Global-Recht und ?scope=global den Panelweit-Filter und Standard', async () => {
+    usePermissionsStore.setState({
+      me: {
+        is_owner: false,
+        role_id: 2,
+        role_name: 'Redaktion',
+        global_keys: ['ai.tasks.manage', 'ai.tasks.manage_global'],
+        server_keys: {},
+      },
+    })
+    vi.mocked(aiApi.listTasks).mockResolvedValue([
+      aufgabe({ task_id: 'p1', scope: 'personal', title: 'Privat-Check' }),
+      aufgabe({
+        task_id: 'g1',
+        scope: 'global',
+        title: 'Weltnews prüfen',
+        created_by: 'admin',
+      }),
+    ])
+
+    zeichnen('/ai?bereich=tools&tool=tasks&scope=global')
+
+    expect(await screen.findByText('Weltnews prüfen')).toBeInTheDocument()
+    expect(screen.queryByText('Privat-Check')).toBeNull()
+    expect(screen.getByText(/Von admin/)).toBeInTheDocument()
+
+    // Zurück auf Alle zeigt beide Aufgaben inklusive Scope-Badges
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('ai.tasks.filterAll') }))
+    expect(screen.getByText('Privat-Check')).toBeInTheDocument()
+
+    // Zurück auf Panelweit und Neue Aufgabe -> global vorausgewählt
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('ai.tasks.filterGlobal') }))
+    fireEvent.click(screen.getByRole('button', { name: /Neue Aufgabe/ }))
+    fireEvent.change(screen.getByLabelText(i18n.t('ai.tasks.name')), {
+      target: { value: 'Pop-up-Check' },
+    })
+    fireEvent.change(screen.getByLabelText(i18n.t('ai.tasks.prompt')), {
+      target: { value: 'News prüfen.' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('ai.tasks.create') }))
+
+    await waitFor(() => expect(aiApi.createTask).toHaveBeenCalledTimes(1))
+    expect(vi.mocked(aiApi.createTask).mock.calls[0][0]).toMatchObject({
+      scope: 'global',
+      title: 'Pop-up-Check',
+    })
   })
 })

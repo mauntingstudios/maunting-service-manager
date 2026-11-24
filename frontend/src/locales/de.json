@@ -2050,6 +2050,20 @@
       "email": "Ergebnis zusätzlich per E-Mail",
       "act": "Darf dabei handeln",
       "actHint": "Nur mit freigegebenem autonomem Modus; ohne Häkchen berichtet die Aufgabe nur.",
+      "scopeLabel": "Geltungsbereich",
+      "scopePersonal": "Persönlich",
+      "scopeTeam": "Team",
+      "scopeTeamNamed": "Team: {{team}}",
+      "scopeGlobal": "Panelweit (Betreiber)",
+      "scopeGlobalBadge": "Panelweit",
+      "scopeHintPersonal": "Nur für dich sichtbar und in deinem Namen ausgeführt.",
+      "scopeHintTeam": "Für alle Mitglieder von {{team}} mit Aufgabenrecht sichtbar.",
+      "scopeHintGlobal": "Panelweiter Auftrag (z. B. News, Pop-ups, Infrastruktur) für Betreiber.",
+      "filterAll": "Alle",
+      "filterPersonal": "Persönlich",
+      "filterTeam": "Teams",
+      "filterGlobal": "Panelweit",
+      "createdBy": "Von {{name}}",
       "create": "Aufgabe anlegen",
       "created": "Aufgabe angelegt.",
       "saved": "Aufgabe gespeichert.",
@@ -2080,7 +2094,9 @@
       "errors": {
         "load": "Aufgaben konnten nicht geladen werden",
         "save": "Aufgabe konnte nicht gespeichert werden",
-        "delete": "Aufgabe konnte nicht gelöscht werden"
+        "delete": "Aufgabe konnte nicht gelöscht werden",
+        "noTeam": "Bitte ein Team auswählen.",
+        "noGlobalPermission": "Dir fehlt die Berechtigung für panelweite KI-Aufträge."
       }
     },
     "webSearch": {
@@ -3594,6 +3610,10 @@
     "ai_tasks_manage": {
       "title": "KI-Aufgaben verwalten",
       "desc": "Wiederkehrende und geplante Hintergrundaufgaben für die KI einrichten."
+    },
+    "ai_tasks_manage_global": {
+      "title": "Panelweite KI-Aufträge verwalten",
+      "desc": "Erlaubt geplante KI-Aufträge für das gesamte Panel (z. B. News-Kuration, Pop-ups und globale Infrastruktur)."
     },
     "ai_background_use": {
       "title": "Worker-Aufträge starten",

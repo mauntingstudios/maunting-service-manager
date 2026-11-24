@@ -52,6 +52,8 @@ class AiTaskWrite(BaseModel):
     timezone: str | None = Field(default=None, max_length=64)
     channel: str | None = None
     enabled: bool | None = None
+    scope: str | None = Field(default=None, max_length=16)
+    team_id: int | None = None
 
 
 def _felder(body: AiTaskWrite) -> dict:
@@ -60,11 +62,18 @@ def _felder(body: AiTaskWrite) -> dict:
 
 @router.get("", response_model=list[dict])
 def list_tasks(
+    scope: str | None = None,
+    team_id: int | None = None,
     db: Session = Depends(get_db),
     user: User = Depends(require_global("ai.tasks.manage")),
 ) -> list[dict]:
-    """Alle Aufgaben dieses Benutzers — dieselbe Form wie das Chat-Werkzeug."""
-    return ai_task_service.auflisten(db, user=user)
+    """Alle sichtbaren Aufgaben (persönlich, eigene Teams, ggf. panelweit)."""
+    try:
+        return ai_task_service.auflisten(
+            db, user=user, scope=scope, team_id=team_id
+        )
+    except AiActionValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 @router.post("", response_model=dict, status_code=201)

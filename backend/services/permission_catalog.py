@@ -107,6 +107,7 @@ GLOBAL_PERMISSIONS: tuple[PermissionDef, ...] = (
     # `ai.autonomous.use` zu eng: eine Aufgabe, die nur liest und berichtet,
     # verlangt keine Autonomie. Handelnde Aufgaben prüfen sie zusätzlich.
     PermissionDef("ai.tasks.manage",           "ai",      "Wiederkehrende KI-Aufgaben anlegen und verwalten"),
+    PermissionDef("ai.tasks.manage_global",    "ai",      "Panelweite KI-Aufträge (News, Pop-ups, Infrastruktur) anlegen und verwalten"),
     # Durchgesetzt im worker_start-Handler (services/ai_action_service.py) und
     # bei jedem Wecken eines Worker-Laufs (services/ai_run_service.py). Ein
     # eigenes Recht, weil ein Worker etwas Eigenes ist: er arbeitet weiter,

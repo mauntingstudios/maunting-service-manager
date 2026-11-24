@@ -434,7 +434,7 @@ export function NewsTab() {
                 <Button
                   variant="primary"
                   size="sm"
-                  onClick={() => navigate('/ai?bereich=tools&tool=tasks')}
+                  onClick={() => navigate('/ai?bereich=tools&tool=tasks&scope=global')}
                   className="gap-1.5"
                 >
                   <CalendarClock className="h-3.5 w-3.5" aria-hidden="true" />

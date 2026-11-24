@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from models.ai_task import ARTEN as _AUFGABENARTEN
+from models.ai_task import ARTEN as _AUFGABENARTEN, SCOPES as _AUFGABEN_SCOPES
 from models.ai_meldung import KANAELE as _MELDEKANAELE
 from services.ai_tools.base import (
     _function,
@@ -26,10 +26,9 @@ def _aufgaben_tool_definitions() -> list[dict]:
     return [
         _function(
             "list_tasks",
-            "Zeigt die stehenden Auftraege dieses Benutzers — Name, Zeitplan, "
-            "Zeitzone, Zustellweg, ob aktiv, und wann sie das naechste Mal "
-            "laufen. Ruf das auf, bevor du eine Aufgabe aenderst oder loeschst: "
-            "die Nummern sind nicht zu erraten.",
+            "Zeigt sichtbare stehende Auftraege (persoenlich, eigene Teams, "
+            "ggf. panelweit) samt Scope, Team, Plan, Zeitzone, Zustellweg, "
+            "Status und naechstem Lauf. Vor Aendern/Loeschen aufrufen.",
             {},
             [],
         ),
@@ -74,6 +73,15 @@ def _aufgaben_tool_definitions() -> list[dict]:
                     "description": "Was bei jeder Faelligkeit zu tun ist.",
                 },
                 "kind": {"type": "string", "enum": list(_AUFGABENARTEN)},
+                "scope": {
+                    "type": "string",
+                    "enum": list(_AUFGABEN_SCOPES),
+                    "description": "personal (Standard), team (mit team_id) oder global (panelweit, Betreiberrecht).",
+                },
+                "team_id": {
+                    "type": "integer",
+                    "description": "Pflicht bei scope='team'.",
+                },
                 "enabled": {
                     "type": "boolean",
                     "description": "false pausiert, true nimmt wieder auf.",
@@ -244,8 +252,8 @@ def _lies_aufgaben(db, *, user, arguments, lauf=None) -> dict:
     from services import ai_task_service
 
     _require_no_arguments("list_tasks", arguments)
-    # Kein zusaetzliches Recht: die Liste zeigt ausschliesslich, was diesem
-    # Benutzer gehoert. Wer keine Aufgaben anlegen darf, hat auch keine.
+    # Team- und panelweite Aufgaben filtert `auflisten` zusaetzlich ueber
+    # `ai.tasks.manage` (und `ai.tasks.manage_global`).
     return {"tasks": ai_task_service.auflisten(db, user=user)}
 
 

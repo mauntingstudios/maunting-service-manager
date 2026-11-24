@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 _AUFGABEN_FELDER = frozenset({
     "task_id", "title", "instruction", "kind", "enabled", "plan_kind",
     "time_of_day", "weekdays", "interval_hours", "once_at", "timezone",
-    "channel",
+    "channel", "scope", "team_id",
 })
 
 _POPUP_FELDER = frozenset({
@@ -403,6 +403,8 @@ def _task_set_payload(db: Session, user: User, arguments: dict) -> tuple[dict, d
         )
 
     preview = ai_task_service.vorschau(db, user=user, felder=felder, task_id=task_id)
+    if preview.get("scope") == "global":
+        preview["always_confirm"] = True
     return {"task_id": task_id, "felder": felder}, preview
 
 def _task_delete_payload(db: Session, user: User, arguments: dict) -> tuple[dict, dict]:
@@ -417,17 +419,19 @@ def _task_delete_payload(db: Session, user: User, arguments: dict) -> tuple[dict
     aufgabe = ai_task_service.eigene_aufgabe(
         db, user=user, task_id=arguments["task_id"]
     )
-    return (
-        {"task_id": aufgabe.id},
-        {
-            "operation": "task_delete",
-            "task_id": aufgabe.id,
-            "title": aufgabe.title,
-            "plan": ai_task_service.plan_text(aufgabe),
-            "kind": aufgabe.kind,
-            "enabled": bool(aufgabe.enabled),
-        },
-    )
+    preview = {
+        "operation": "task_delete",
+        "task_id": aufgabe.id,
+        "scope": aufgabe.scope or "personal",
+        "team_id": aufgabe.team_id,
+        "title": aufgabe.title,
+        "plan": ai_task_service.plan_text(aufgabe),
+        "kind": aufgabe.kind,
+        "enabled": bool(aufgabe.enabled),
+    }
+    if preview["scope"] == "global":
+        preview["always_confirm"] = True
+    return {"task_id": aufgabe.id}, preview
 
 def _ausfuehren_popup_set(db: Session, rahmen: _AusfuehrungsRahmen) -> _Ausgefuehrt:
     """Legt ein Pop-up an oder aendert das genannte.
@@ -575,6 +579,8 @@ def _ausfuehren_task_set(db: Session, rahmen: _AusfuehrungsRahmen) -> _Ausgefueh
     # Operation-Task eines Lifecycles, und eine KI-Aufgabe ist keine.
     return _Ausgefuehrt(result={
         "task_id": aufgabe.id,
+        "scope": aufgabe.scope or "personal",
+        "team_id": aufgabe.team_id,
         "title": aufgabe.title,
         "plan": ai_task_service.plan_text(aufgabe),
         "enabled": bool(aufgabe.enabled),

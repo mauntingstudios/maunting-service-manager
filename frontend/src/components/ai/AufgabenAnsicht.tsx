@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
-import { CalendarClock, Pencil, Plus, Sparkles, Trash2 } from 'lucide-react'
+import { Link, useSearchParams } from 'react-router-dom'
+import { CalendarClock, Globe, Lock, Pencil, Plus, Sparkles, Trash2, Users } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import { aiApi, type AiTaskEntry, type AiTaskWrite } from '@/api/ai'
+import { aiApi, type AiTaskEntry, type AiTaskScope, type AiTaskWrite } from '@/api/ai'
 import { SanitizedApiError } from '@/api/client'
+import { teamsApi, type Team } from '@/api/teams'
 import { Button, DateTimePicker, Dropdown, DropdownOption, Switch } from '@maunting/ui'
+import { useHasPermission } from '@/hooks/useHasPermission'
 import { useAuthStore } from '@/stores/authStore'
 import { confirm } from '@/stores/confirmStore'
 import { toast } from '@/stores/toastStore'
@@ -18,6 +20,8 @@ import { formatPanelTime, getAvailableTimezones } from '@/utils/timeFormat'
  * Texte. Hier gibt es keine zweite Fachprüfung, nur Bedienbarkeit.
  */
 interface FormularDaten {
+  scope: AiTaskScope
+  team_id: number | null
   title: string
   instruction: string
   plan_kind: 'daily' | 'interval' | 'once'
@@ -30,9 +34,15 @@ interface FormularDaten {
   act: boolean
 }
 
-function leeresFormular(defaultTz?: string | null): FormularDaten {
+function leeresFormular(
+  defaultTz?: string | null,
+  scope: AiTaskScope = 'personal',
+  teamId: number | null = null,
+): FormularDaten {
   const browserTz = typeof Intl !== 'undefined' ? Intl.DateTimeFormat().resolvedOptions().timeZone : ''
   return {
+    scope,
+    team_id: scope === 'team' ? teamId : null,
     title: '',
     instruction: '',
     plan_kind: 'daily',
@@ -48,6 +58,8 @@ function leeresFormular(defaultTz?: string | null): FormularDaten {
 
 function formularAus(aufgabe: AiTaskEntry): FormularDaten {
   return {
+    scope: aufgabe.scope ?? 'personal',
+    team_id: aufgabe.team_id ?? null,
     title: aufgabe.title,
     instruction: aufgabe.instruction,
     plan_kind: aufgabe.plan_kind,
@@ -76,12 +88,16 @@ function formularAus(aufgabe: AiTaskEntry): FormularDaten {
  */
 function alsPayload(daten: FormularDaten): AiTaskWrite {
   const payload: AiTaskWrite = {
+    scope: daten.scope,
     title: daten.title.trim(),
     instruction: daten.instruction.trim(),
     kind: daten.act ? 'act' : 'report',
     channel: daten.email ? 'both' : 'chat',
     timezone: daten.timezone.trim(),
     plan_kind: daten.plan_kind,
+  }
+  if (daten.scope === 'team' && daten.team_id !== null) {
+    payload.team_id = daten.team_id
   }
   if (daten.plan_kind === 'daily') {
     payload.time_of_day = daten.time_of_day
@@ -115,14 +131,34 @@ const INTERVAL_OPTIONS = [1, 2, 3, 4, 6, 8, 12, 24, 48, 72, 168]
  * selbst passieren im Hintergrund; ihr Verlauf hängt am Aufgabenfenster
  * (`conversation_id` → `?ansicht=worker&id=…`) und nie im Dauerchat.
  */
+type ScopeFilter = 'all' | AiTaskScope
+
 export function AufgabenAnsicht() {
   const { t, i18n } = useTranslation()
+  const [searchParams] = useSearchParams()
   const { user } = useAuthStore()
+  const hasGlobalTaskPerm = useHasPermission('ai.tasks.manage_global')
+  const hasPanelSettingsPerm = useHasPermission('panel.settings.write')
+  const hasAiSettingsPerm = useHasPermission('ai.settings.manage')
+  const canManageGlobal = hasGlobalTaskPerm || hasPanelSettingsPerm || hasAiSettingsPerm
+  const urlScopeParam = searchParams.get('scope')
+
   const [aufgaben, setAufgaben] = useState<AiTaskEntry[]>([])
+  const [teams, setTeams] = useState<Team[]>([])
   const [laedt, setLaedt] = useState(true)
   const [formular, setFormular] = useState<FormularDaten | null>(null)
   const [bearbeitet, setBearbeitet] = useState<string | null>(null)
   const [speichert, setSpeichert] = useState(false)
+  const [scopeFilter, setScopeFilter] = useState<ScopeFilter>(() =>
+    urlScopeParam === 'personal' || urlScopeParam === 'team' ? urlScopeParam : 'all',
+  )
+  const [filterTouched, setFilterTouched] = useState(false)
+
+  useEffect(() => {
+    if (!filterTouched && urlScopeParam === 'global' && canManageGlobal) {
+      setScopeFilter('global')
+    }
+  }, [urlScopeParam, canManageGlobal, filterTouched])
 
   const zeitOptionen = useMemo(() => {
     const timeVal = formular?.time_of_day || '08:00'
@@ -150,9 +186,41 @@ export function AufgabenAnsicht() {
     return all.map((tz) => ({ value: tz, label: tz }))
   }, [user?.time_zone, formular?.timezone])
 
+  const bereichOptionen: DropdownOption[] = useMemo(() => {
+    const optionen: DropdownOption[] = [
+      { value: 'personal', label: t('ai.tasks.scopePersonal') },
+    ]
+    const bekannteTeams = new Set<number>()
+    for (const tm of teams) {
+      bekannteTeams.add(tm.id)
+      optionen.push({
+        value: `team:${tm.id}`,
+        label: t('ai.tasks.scopeTeamNamed', { team: tm.name }),
+      })
+    }
+    if (formular?.scope === 'team' && formular.team_id !== null && !bekannteTeams.has(formular.team_id)) {
+      const existing = aufgaben.find((a) => a.team_id === formular.team_id)
+      optionen.push({
+        value: `team:${formular.team_id}`,
+        label: t('ai.tasks.scopeTeamNamed', { team: existing?.team_name || String(formular.team_id) }),
+      })
+    }
+    if (canManageGlobal || formular?.scope === 'global') {
+      optionen.push({ value: 'global', label: t('ai.tasks.scopeGlobal') })
+    }
+    return optionen
+  }, [teams, canManageGlobal, formular?.scope, formular?.team_id, aufgaben, t])
+
   const laden = useCallback(async () => {
-    const liste = await aiApi.listTasks()
+    const [liste, teamListe] = await Promise.all([
+      aiApi.listTasks(),
+      teamsApi
+        .list()
+        .then((res) => (Array.isArray(res) ? res.filter((tm) => !tm.is_personal) : []))
+        .catch(() => []),
+    ])
     setAufgaben(liste)
+    setTeams(teamListe)
   }, [])
 
   useEffect(() => {
@@ -197,6 +265,10 @@ export function AufgabenAnsicht() {
 
   const speichern = async () => {
     if (!formular) return
+    if (formular.scope === 'team' && !formular.team_id) {
+      toast.error(t('ai.tasks.errors.noTeam'))
+      return
+    }
     setSpeichert(true)
     try {
       if (bearbeitet) {
@@ -254,6 +326,42 @@ export function AufgabenAnsicht() {
 
   const leer = aufgaben.length === 0 && !laedt
 
+  const showFilterBar =
+    !formular &&
+    (teams.length > 0 ||
+      canManageGlobal ||
+      aufgaben.some((aufgabe) => (aufgabe.scope ?? 'personal') !== 'personal'))
+
+  const gefilterteAufgaben = useMemo(
+    () =>
+      scopeFilter === 'all'
+        ? aufgaben
+        : aufgaben.filter((aufgabe) => (aufgabe.scope ?? 'personal') === scopeFilter),
+    [aufgaben, scopeFilter],
+  )
+
+  const waehleBereich = (wert: string) => {
+    if (wert === 'global') {
+      setFormular((alt) => (alt ? { ...alt, scope: 'global', team_id: null } : alt))
+      return
+    }
+    if (wert.startsWith('team:')) {
+      const id = Number(wert.slice(5))
+      setFormular((alt) =>
+        alt ? { ...alt, scope: 'team', team_id: Number.isFinite(id) && id > 0 ? id : null } : alt,
+      )
+      return
+    }
+    setFormular((alt) => (alt ? { ...alt, scope: 'personal', team_id: null } : alt))
+  }
+
+  const aktuellesTeamName =
+    formular?.scope === 'team' && formular.team_id !== null
+      ? teams.find((tm) => tm.id === formular.team_id)?.name ??
+        aufgaben.find((a) => a.team_id === formular.team_id)?.team_name ??
+        String(formular.team_id)
+      : ''
+
   return (
     <section className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-outline-variant/30 bg-surface">
       <header className="relative flex shrink-0 items-center gap-2 border-b border-outline-variant/30 px-4 py-3 bg-surface-container-low/40">
@@ -275,8 +383,15 @@ export function AufgabenAnsicht() {
             <Button
               type="button" variant="primary" size="sm"
               onClick={() => {
+                const startScope: AiTaskScope =
+                  scopeFilter === 'global' && canManageGlobal
+                    ? 'global'
+                    : scopeFilter === 'team' && teams.length > 0
+                      ? 'team'
+                      : 'personal'
+                const startTeamId = startScope === 'team' ? (teams[0]?.id ?? null) : null
                 setBearbeitet(null)
-                setFormular(leeresFormular(user?.time_zone))
+                setFormular(leeresFormular(user?.time_zone, startScope, startTeamId))
               }}
             >
               <Plus className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
@@ -299,6 +414,35 @@ export function AufgabenAnsicht() {
               <h3 className="font-headline text-sm font-semibold text-on-surface">
                 {bearbeitet ? t('ai.tasks.editTitle') : t('ai.tasks.new')}
               </h3>
+              {bereichOptionen.length > 1 && (
+                <div>
+                  <label
+                    htmlFor="aufgabe-geltungsbereich"
+                    className="mb-1.5 block font-label-md text-label-md uppercase tracking-wider text-on-surface-variant"
+                  >
+                    {t('ai.tasks.scopeLabel')}
+                  </label>
+                  <Dropdown
+                    id="aufgabe-geltungsbereich"
+                    value={
+                      formular.scope === 'team' && formular.team_id !== null
+                        ? `team:${formular.team_id}`
+                        : formular.scope
+                    }
+                    onChange={waehleBereich}
+                    options={bereichOptionen}
+                    className="max-w-72"
+                    aria-label={t('ai.tasks.scopeLabel')}
+                  />
+                  <p className="mt-1 text-xs text-on-surface-variant">
+                    {formular.scope === 'global'
+                      ? t('ai.tasks.scopeHintGlobal')
+                      : formular.scope === 'team'
+                        ? t('ai.tasks.scopeHintTeam', { team: aktuellesTeamName })
+                        : t('ai.tasks.scopeHintPersonal')}
+                  </p>
+                </div>
+              )}
               <div>
                 <label
                   htmlFor="aufgabe-name"
@@ -513,6 +657,53 @@ export function AufgabenAnsicht() {
             </form>
           )}
 
+          {showFilterBar && (
+            <div className="flex flex-wrap items-center gap-1.5 pb-1">
+              {(
+                [
+                  { id: 'all' as const, label: t('ai.tasks.filterAll'), show: true },
+                  { id: 'personal' as const, label: t('ai.tasks.filterPersonal'), show: true, icon: Lock },
+                  {
+                    id: 'team' as const,
+                    label: t('ai.tasks.filterTeam'),
+                    show: teams.length > 0 || aufgaben.some((a) => a.scope === 'team'),
+                    icon: Users,
+                  },
+                  {
+                    id: 'global' as const,
+                    label: t('ai.tasks.filterGlobal'),
+                    show: canManageGlobal || aufgaben.some((a) => a.scope === 'global'),
+                    icon: Globe,
+                  },
+                ]
+              )
+                .filter((pill) => pill.show)
+                .map((pill) => {
+                  const aktiv = scopeFilter === pill.id
+                  const Icon = pill.icon
+                  return (
+                    <button
+                      key={pill.id}
+                      type="button"
+                      aria-pressed={aktiv}
+                      onClick={() => {
+                        setFilterTouched(true)
+                        setScopeFilter(pill.id)
+                      }}
+                      className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+                        aktiv
+                          ? 'border-primary/40 bg-primary/10 text-primary'
+                          : 'border-outline-variant/60 bg-surface-container-low/50 text-on-surface-variant hover:text-on-surface'
+                      }`}
+                    >
+                      {Icon && <Icon className="h-3 w-3" aria-hidden="true" />}
+                      <span>{pill.label}</span>
+                    </button>
+                  )
+                })}
+            </div>
+          )}
+
           {leer && !formular && (
             <div className="py-16 text-center">
               <Sparkles className="mx-auto h-10 w-10 text-primary/70" aria-hidden="true" />
@@ -525,79 +716,111 @@ export function AufgabenAnsicht() {
             </div>
           )}
 
-          {aufgaben.map((aufgabe) => (
-            <article
-              key={aufgabe.task_id}
-              className="rounded-xl border border-outline-variant/60 bg-surface-container-low/50 p-4"
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h3 className="truncate font-headline text-sm font-semibold text-on-surface">
-                      {aufgabe.title}
-                    </h3>
-                    {!aufgabe.enabled && (
-                      <span className="inline-flex items-center rounded-full border border-outline-variant/60 bg-surface-container-high px-2 py-0.5 text-xs text-on-surface-variant">
-                        {t('ai.tasks.paused')}
-                      </span>
-                    )}
-                    {aufgabe.kind === 'act' && (
-                      <span className="inline-flex items-center rounded-full border border-primary/40 bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
-                        {t('ai.tasks.actBadge')}
-                      </span>
-                    )}
-                    {aufgabe.channel !== 'chat' && (
-                      <span className="inline-flex items-center rounded-full border border-outline-variant/60 bg-surface-container-high px-2 py-0.5 text-xs text-on-surface-variant">
-                        {t('ai.tasks.emailBadge')}
-                      </span>
+          {!laedt && !leer && !formular && gefilterteAufgaben.length === 0 && (
+            <div className="py-10 text-center">
+              <p className="text-sm text-on-surface-variant">{t('ai.tasks.emptyTitle')}</p>
+            </div>
+          )}
+
+          {gefilterteAufgaben.map((aufgabe) => {
+            const scope = aufgabe.scope ?? 'personal'
+            return (
+              <article
+                key={aufgabe.task_id}
+                className="rounded-xl border border-outline-variant/60 bg-surface-container-low/50 p-4"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="truncate font-headline text-sm font-semibold text-on-surface">
+                        {aufgabe.title}
+                      </h3>
+                      {scope === 'global' && (
+                        <span className="inline-flex items-center gap-1 rounded-full border border-secondary/40 bg-secondary/10 px-2 py-0.5 text-xs font-medium text-secondary">
+                          <Globe className="h-3 w-3" aria-hidden="true" />
+                          {t('ai.tasks.scopeGlobalBadge')}
+                        </span>
+                      )}
+                      {scope === 'team' && (
+                        <span className="inline-flex items-center gap-1 rounded-full border border-primary/40 bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+                          <Users className="h-3 w-3" aria-hidden="true" />
+                          {aufgabe.team_name || t('ai.tasks.scopeTeam')}
+                        </span>
+                      )}
+                      {scope === 'personal' && showFilterBar && (
+                        <span className="inline-flex items-center gap-1 rounded-full border border-outline-variant/60 bg-surface-container-high px-2 py-0.5 text-xs text-on-surface-variant">
+                          <Lock className="h-3 w-3" aria-hidden="true" />
+                          {t('ai.tasks.scopePersonal')}
+                        </span>
+                      )}
+                      {!aufgabe.enabled && (
+                        <span className="inline-flex items-center rounded-full border border-outline-variant/60 bg-surface-container-high px-2 py-0.5 text-xs text-on-surface-variant">
+                          {t('ai.tasks.paused')}
+                        </span>
+                      )}
+                      {aufgabe.kind === 'act' && (
+                        <span className="inline-flex items-center rounded-full border border-primary/40 bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+                          {t('ai.tasks.actBadge')}
+                        </span>
+                      )}
+                      {aufgabe.channel !== 'chat' && (
+                        <span className="inline-flex items-center rounded-full border border-outline-variant/60 bg-surface-container-high px-2 py-0.5 text-xs text-on-surface-variant">
+                          {t('ai.tasks.emailBadge')}
+                        </span>
+                      )}
+                    </div>
+                    <p className="mt-1 text-sm text-on-surface-variant">
+                      {planAnzeige(aufgabe)}
+                      {scope !== 'personal' && aufgabe.created_by && (
+                        <span> · {t('ai.tasks.createdBy', { name: aufgabe.created_by })}</span>
+                      )}
+                    </p>
+                    {aufgabe.enabled && aufgabe.next_run && (
+                      <p className="mt-0.5 text-xs text-on-surface-variant">
+                        {t('ai.tasks.nextRun', {
+                          when: new Date(aufgabe.next_run).toLocaleString(i18n.language),
+                        })}
+                      </p>
                     )}
                   </div>
-                  <p className="mt-1 text-sm text-on-surface-variant">{planAnzeige(aufgabe)}</p>
-                  {aufgabe.enabled && aufgabe.next_run && (
-                    <p className="mt-0.5 text-xs text-on-surface-variant">
-                      {t('ai.tasks.nextRun', {
-                        when: new Date(aufgabe.next_run).toLocaleString(i18n.language),
-                      })}
-                    </p>
+                  <Switch
+                    checked={aufgabe.enabled}
+                    onCheckedChange={(wert) => void umschalten(aufgabe, wert)}
+                    aria-label={t('ai.tasks.enabledAria')}
+                  />
+                </div>
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <Button
+                    type="button" variant="ghost" size="sm"
+                    onClick={() => {
+                      setBearbeitet(aufgabe.task_id)
+                      setFormular(formularAus(aufgabe))
+                    }}
+                  >
+                    <Pencil className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
+                    {t('common.edit')}
+                  </Button>
+                  <Button
+                    type="button" variant="ghost" size="sm"
+                    onClick={() => void loeschen(aufgabe)}
+                  >
+                    <Trash2 className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
+                    {t('common.delete')}
+                  </Button>
+                  {aufgabe.conversation_id && (
+                    // Nur die UUID in der Adresse — nie Titel oder Auftragstext
+                    // (keine sensiblen Daten in URLs, wie bei der Worker-Ansicht).
+                    <Link
+                      to={`/ai?ansicht=worker&id=${encodeURIComponent(aufgabe.conversation_id)}`}
+                      className="ml-auto text-xs font-medium text-primary hover:underline"
+                    >
+                      {t('ai.tasks.openWindow')}
+                    </Link>
                   )}
                 </div>
-                <Switch
-                  checked={aufgabe.enabled}
-                  onCheckedChange={(wert) => void umschalten(aufgabe, wert)}
-                  aria-label={t('ai.tasks.enabledAria')}
-                />
-              </div>
-              <div className="mt-3 flex flex-wrap items-center gap-2">
-                <Button
-                  type="button" variant="ghost" size="sm"
-                  onClick={() => {
-                    setBearbeitet(aufgabe.task_id)
-                    setFormular(formularAus(aufgabe))
-                  }}
-                >
-                  <Pencil className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
-                  {t('common.edit')}
-                </Button>
-                <Button
-                  type="button" variant="ghost" size="sm"
-                  onClick={() => void loeschen(aufgabe)}
-                >
-                  <Trash2 className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
-                  {t('common.delete')}
-                </Button>
-                {aufgabe.conversation_id && (
-                  // Nur die UUID in der Adresse — nie Titel oder Auftragstext
-                  // (keine sensiblen Daten in URLs, wie bei der Worker-Ansicht).
-                  <Link
-                    to={`/ai?ansicht=worker&id=${encodeURIComponent(aufgabe.conversation_id)}`}
-                    className="ml-auto text-xs font-medium text-primary hover:underline"
-                  >
-                    {t('ai.tasks.openWindow')}
-                  </Link>
-                )}
-              </div>
-            </article>
-          ))}
+              </article>
+            )
+          })}
         </div>
       </div>
     </section>
