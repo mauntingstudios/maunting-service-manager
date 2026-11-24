@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import ipaddress
 import json
 import re
 import secrets
+import socket
+import urllib.parse
 from datetime import datetime, timezone
 from pathlib import Path
 
+import httpx
 from fastapi import HTTPException, status
 from sqlalchemy import desc, func, or_
 from sqlalchemy.orm import Session
@@ -470,3 +474,173 @@ def read_cover_bytes(post: NewsPost) -> bytes | None:
         return path.read_bytes()
     except (MediaValidationError, OSError):
         return None
+
+
+MAX_COVER_DOWNLOAD_BYTES = 10 * 1024 * 1024
+
+
+def _unwrap_ip(
+    ip: ipaddress.IPv4Address | ipaddress.IPv6Address,
+) -> ipaddress.IPv4Address | ipaddress.IPv6Address:
+    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None:
+        return ip.ipv4_mapped
+    return ip
+
+
+def _is_public_ip(raw_ip: str) -> bool:
+    try:
+        ip = _unwrap_ip(ipaddress.ip_address(raw_ip.split("%", 1)[0]))
+    except ValueError:
+        return False
+    return bool(
+        ip.is_global
+        and not ip.is_private
+        and not ip.is_loopback
+        and not ip.is_link_local
+        and not ip.is_multicast
+        and not ip.is_reserved
+        and not ip.is_unspecified
+    )
+
+
+def validate_cover_image_url(raw_url: str) -> str:
+    canonical = validate_https_source_url(raw_url)
+    parsed = urllib.parse.urlparse(canonical)
+    if (
+        parsed.username is not None
+        or parsed.password is not None
+        or "@" in (parsed.netloc or "")
+    ):
+        raise ValueError("Titelbild-URL darf keine Zugangsdaten enthalten")
+    hostname = (parsed.hostname or "").strip().lower()
+    if not hostname:
+        raise ValueError("Titelbild-URL enthält keinen gültigen Hostnamen")
+    if hostname in ("localhost", "127.0.0.1", "::1", "0.0.0.0") or hostname.endswith(
+        (".local", ".localhost", ".internal", ".lan", ".home")
+    ):
+        raise ValueError(
+            "Lokale oder interne Adressen sind für Titelbilder nicht zulässig"
+        )
+    try:
+        ipaddress.ip_address(hostname)
+    except ValueError:
+        pass
+    else:
+        if not _is_public_ip(hostname):
+            raise ValueError(
+                "Private oder lokale IP-Adressen sind für Titelbilder nicht zulässig"
+            )
+        return canonical
+
+    try:
+        addr_info = socket.getaddrinfo(
+            hostname, None, socket.AF_UNSPEC, socket.SOCK_STREAM
+        )
+    except socket.gaierror:
+        return canonical
+    for _fam, _st, _proto, _canon, sockaddr in addr_info:
+        if not _is_public_ip(str(sockaddr[0])):
+            raise ValueError(
+                "Titelbild-URL löst auf eine nicht-öffentliche IP-Adresse auf"
+            )
+    return canonical
+
+
+def save_cover_from_url(
+    db: Session,
+    post: NewsPost,
+    raw_url: str,
+    *,
+    actor: User | None = None,
+) -> NewsPost:
+    try:
+        current_url = validate_cover_image_url(raw_url)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+        ) from None
+
+    raw_bytes: bytes | None = None
+    try:
+        with httpx.Client(follow_redirects=False, timeout=10.0) as client:
+            for _hop in range(3):
+                try:
+                    current_url = validate_cover_image_url(current_url)
+                except ValueError as exc:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+                    ) from None
+                resp = client.get(
+                    current_url,
+                    headers={
+                        "User-Agent": "MauntingNewsBot/1.0 (+https://mauntingstudios.com)",
+                        "Accept": "image/avif,image/webp,image/png,image/jpeg,image/*;q=0.8",
+                    },
+                )
+                if resp.is_redirect:
+                    location = resp.headers.get("location")
+                    if not location:
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="Ungültige Weiterleitung beim Laden des Titelbilds",
+                        )
+                    current_url = urllib.parse.urljoin(current_url, location)
+                    continue
+                if resp.status_code != 200:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Titelbild konnte nicht geladen werden (HTTP {resp.status_code})",
+                    )
+                content_type = (resp.headers.get("content-type") or "").lower()
+                mime = content_type.split(";", 1)[0].strip()
+                if mime and not mime.startswith("image/"):
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Die URL liefert kein unterstütztes Bildformat",
+                    )
+                content_len = resp.headers.get("content-length")
+                if content_len:
+                    try:
+                        if int(content_len) > MAX_COVER_DOWNLOAD_BYTES:
+                            raise HTTPException(
+                                status_code=status.HTTP_400_BAD_REQUEST,
+                                detail="Titelbild überschreitet das Limit von 10 MB",
+                            )
+                    except ValueError:
+                        pass
+                if len(resp.content) > MAX_COVER_DOWNLOAD_BYTES:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Titelbild überschreitet das Limit von 10 MB",
+                    )
+                raw_bytes = resp.content
+                break
+    except httpx.HTTPError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Titelbild konnte nicht abgerufen werden: {exc}",
+        ) from None
+
+    if raw_bytes is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Zu viele Weiterleitungen beim Laden des Titelbilds",
+        )
+    return save_cover_image(db, post, raw_bytes, actor=actor)
+
+
+def save_cover_from_game(
+    db: Session,
+    post: NewsPost,
+    game_type: str,
+    *,
+    actor: User | None = None,
+) -> NewsPost | None:
+    bp = wallpaper_service._blueprint_for_game_type(game_type)
+    app_id = wallpaper_service.artwork_app_id_for_blueprint(bp)
+    if not app_id:
+        return None
+    pfad = wallpaper_service.ensure_steam_cached(app_id)
+    if pfad is None or not pfad.is_file():
+        return None
+    return save_cover_image(db, post, pfad.read_bytes(), actor=actor)

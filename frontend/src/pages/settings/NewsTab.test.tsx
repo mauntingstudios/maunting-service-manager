@@ -92,7 +92,9 @@ describe('NewsTab Editorial CMS', () => {
     )
 
     expect(await screen.findByText('Erster Entwurf im CMS')).toBeInTheDocument()
-    expect(screen.getByText('KI-Redaktion & Welt-News-Kuration')).toBeInTheDocument()
+    expect(screen.getByText(/Singra-Redaktion/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Singra öffnen' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /KI-Aufgabe planen/i })).toBeNull()
 
     fireEvent.click(screen.getByRole('button', { name: 'Neuer Beitrag' }))
 
@@ -138,5 +140,31 @@ describe('NewsTab Editorial CMS', () => {
         }),
       )
     })
+  })
+
+  it('zeigt im Leerzustand nur einen Neuer-Beitrag-Button und kopiert Prompt über Fallback', async () => {
+    listAdminMock.mockResolvedValue([])
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: undefined,
+    })
+    const execMock = vi.fn().mockReturnValue(true)
+    Object.defineProperty(document, 'execCommand', {
+      configurable: true,
+      value: execMock,
+    })
+
+    render(
+      <MemoryRouter>
+        <NewsTab />
+      </MemoryRouter>,
+    )
+
+    expect(await screen.findByText(i18n.t('news.cms.leerTitel'))).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: i18n.t('news.cms.neuerBeitrag') })).toHaveLength(1)
+    expect(screen.queryByPlaceholderText(i18n.t('news.suchePlaceholder'))).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('news.cms.promptKopieren') }))
+    await waitFor(() => expect(execMock).toHaveBeenCalledWith('copy'))
   })
 })

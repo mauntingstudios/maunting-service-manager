@@ -409,6 +409,15 @@ def _news_tool_definitions() -> list[dict]:
                 "is_published": {"type": "boolean"},
                 "is_pinned": {"type": "boolean"},
                 "author_display_name": {"type": ["string", "null"], "maxLength": 120},
+                "cover_image_url": {
+                    "type": ["string", "null"],
+                    "maxLength": 2048,
+                    "description": "Optionales https://-Titelbild.",
+                },
+                "remove_cover": {
+                    "type": "boolean",
+                    "description": "Entfernt ein vorhandenes Titelbild.",
+                },
                 **_RATIONALE_SCHEMA,
             },
             [*_RATIONALE_REQUIRED],

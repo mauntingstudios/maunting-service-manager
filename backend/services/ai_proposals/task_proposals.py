@@ -49,6 +49,8 @@ _NEWS_FELDER = frozenset({
     "is_published",
     "is_pinned",
     "author_display_name",
+    "cover_image_url",
+    "remove_cover",
 })
 _NEWS_CATEGORIES = frozenset(NEWS_CATEGORIES)
 
@@ -304,6 +306,23 @@ def _news_upsert_payload(db: Session, user: User, rest: dict) -> tuple[dict, dic
     has_author = "author_display_name" in rest
     if has_author and rest["author_display_name"] is not None:
         author_display_name = redact_sensitive_text(str(rest["author_display_name"]).strip())[:120] or None
+    if bestehend is None and author_display_name is None:
+        author_display_name = "Singra AI"
+        has_author = True
+
+    cover_image_url: str | None = None
+    has_cover_url = "cover_image_url" in rest
+    if has_cover_url and rest["cover_image_url"] is not None:
+        roh_cover = str(rest["cover_image_url"]).strip()
+        if roh_cover:
+            try:
+                cover_image_url = news_service.validate_cover_image_url(roh_cover)
+            except ValueError as exc:
+                raise AiActionValidationError(str(exc)) from None
+
+    remove_cover = bool(rest.get("remove_cover", False)) if "remove_cover" in rest else False
+    if remove_cover and cover_image_url is not None:
+        raise AiActionValidationError("cover_image_url und remove_cover schliessen sich aus")
 
     payload: dict = {"post_id": post_id}
     if title is not None:
@@ -328,6 +347,10 @@ def _news_upsert_payload(db: Session, user: User, rest: dict) -> tuple[dict, dic
         payload["is_pinned"] = bool(rest["is_pinned"])
     if has_author:
         payload["author_display_name"] = author_display_name
+    if cover_image_url is not None:
+        payload["cover_image_url"] = cover_image_url
+    if remove_cover:
+        payload["remove_cover"] = True
 
     will_touch_public = bool(payload.get("is_published")) or (
         bestehend is not None and bool(bestehend.is_published)
@@ -355,6 +378,11 @@ def _news_upsert_payload(db: Session, user: User, rest: dict) -> tuple[dict, dic
             "category",
             str(bestehend.category) if bestehend else "announcement",
         ),
+        "author_display_name": payload.get(
+            "author_display_name",
+            bestehend.author_display_name if bestehend is not None else "Singra AI",
+        ),
+        "has_cover_change": bool(payload.get("cover_image_url") or payload.get("remove_cover")),
         "is_published": payload.get(
             "is_published",
             bool(bestehend.is_published) if bestehend else False,
@@ -499,11 +527,14 @@ def _ausfuehren_popup_set(db: Session, rahmen: _AusfuehrungsRahmen) -> _Ausgefue
 def _ausfuehren_news_upsert(db: Session, rahmen: _AusfuehrungsRahmen) -> _Ausgefuehrt:
     p = dict(rahmen.payload)
     post_id = p.pop("post_id", None)
+    cover_image_url = p.pop("cover_image_url", None)
+    remove_cover = bool(p.pop("remove_cover", False))
     sources = [
         NewsSourceItem(title=item["title"], url=item["url"])
         for item in (p.pop("sources", None) or [])
     ] if "sources" in p else None
 
+    ist_neu = post_id is None
     if post_id is not None:
         post = news_service.get_admin_news_by_id(db, int(post_id))
         if post is None:
@@ -513,45 +544,69 @@ def _ausfuehren_news_upsert(db: Session, rahmen: _AusfuehrungsRahmen) -> _Ausgef
         update_fields = dict(p)
         if sources is not None:
             update_fields["sources"] = sources
-        updated = news_service.update_news_post(
+        target = news_service.update_news_post(
             db,
             post,
             NewsPostUpdate(**update_fields),
             actor=rahmen.active_user,
         )
-        return _Ausgefuehrt(
-            result={
-                "updated": True,
-                "post_id": updated.id,
-                "slug": updated.slug,
-                "title": updated.title,
-                "is_published": bool(updated.is_published),
-            }
+    else:
+        create_data = NewsPostCreate(
+            title=str(p["title"]),
+            summary=str(p.get("summary") or ""),
+            content_markdown=str(p["content_markdown"]),
+            category=p.get("category") or "announcement",
+            related_game_type=p.get("related_game_type"),
+            sources=sources or [],
+            is_published=bool(p.get("is_published", False)),
+            is_pinned=bool(p.get("is_pinned", False)),
+            author_display_name=p.get("author_display_name") or "Singra AI",
+        )
+        target = news_service.create_news_post(
+            db, create_data, author=rahmen.active_user
         )
 
-    create_data = NewsPostCreate(
-        title=str(p["title"]),
-        summary=str(p.get("summary") or ""),
-        content_markdown=str(p["content_markdown"]),
-        category=p.get("category") or "announcement",
-        related_game_type=p.get("related_game_type"),
-        sources=sources or [],
-        is_published=bool(p.get("is_published", False)),
-        is_pinned=bool(p.get("is_pinned", False)),
-        author_display_name=p.get("author_display_name"),
-    )
-    created = news_service.create_news_post(
-        db, create_data, author=rahmen.active_user
-    )
-    return _Ausgefuehrt(
-        result={
-            "created": True,
-            "post_id": created.id,
-            "slug": created.slug,
-            "title": created.title,
-            "is_published": bool(created.is_published),
-        }
-    )
+    cover_error: str | None = None
+    if remove_cover:
+        target = news_service.delete_cover_image(db, target, actor=rahmen.active_user)
+    elif cover_image_url:
+        try:
+            target = news_service.save_cover_from_url(
+                db, target, str(cover_image_url), actor=rahmen.active_user
+            )
+        except Exception as exc:
+            logger.warning(
+                "News-Titelbild von URL fehlgeschlagen (post_id=%s): %s",
+                target.id,
+                exc,
+            )
+            cover_error = str(getattr(exc, "detail", exc))[:200]
+    elif ist_neu and target.related_game_type and not target.cover_image_filename:
+        try:
+            mit_bild = news_service.save_cover_from_game(
+                db, target, target.related_game_type, actor=rahmen.active_user
+            )
+            if mit_bild is not None:
+                target = mit_bild
+        except Exception as exc:
+            logger.debug(
+                "Spiel-Artwork-Fallback fehlgeschlagen (post_id=%s): %s",
+                target.id,
+                exc,
+            )
+
+    ergebnis: dict = {
+        ("created" if ist_neu else "updated"): True,
+        "post_id": target.id,
+        "slug": target.slug,
+        "title": target.title,
+        "is_published": bool(target.is_published),
+        "author_display_name": target.author_display_name,
+        "cover_url": bool(target.cover_image_filename),
+    }
+    if cover_error:
+        ergebnis["cover_error"] = cover_error
+    return _Ausgefuehrt(result=ergebnis)
 
 def _ausfuehren_task_set(db: Session, rahmen: _AusfuehrungsRahmen) -> _Ausgefuehrt:
     # **Die Felder werden hier erneut geprueft**, nicht nur

@@ -699,17 +699,23 @@ News und redaktionelle Beitraege: Lies bestehende Artikel und Entwuerfe zuerst \
 mit `news_read` (`post_id`, `slug`, `category`, `sources`, `is_published`), damit \
 du bestehende Meldungen nicht doppelt anlegst. Neue Entwuerfe oder Updates \
 schlaegst du mit `propose_news_upsert` vor (`post_id` leer = neu, gesetzt = \
-aendern). Waehle `category` (`announcement`, `game_update`, `infrastructure`, \
-`maintenance`, `promo`, `world_news`) und optional `related_game_type` fuer \
-direkte Verlinkung zum Spiel im Shop.
-Welt- und Branchen-News (Kuration fuer kleine Teams): Nutze zuerst `web_search` \
-und `read_web_page`, pruefe das Veroeffentlichungsdatum und nenne ausschliesslich \
-echte, selbst abgerufene `https://`-Quellen in `sources` (`[{"title": ..., \
-"url": ...}]`) — erfinde niemals Quellen oder Fakten. Setze `is_published` bei \
-neuen KI-Entwuerfen auf `false`, damit das Team sie vor Freigabe im CMS \
-gegenlesen und optional mit Titelbild versehen kann; veroeffentliche oder \
-bearbeite Live-Artikel nur mit ausdruecklichem Wunsch. Verfasse Artikel in \
-natuersprachlicher, sachlicher Redaktion ohne KI-Floskeln oder Gedankenstrich-Schablonen."""
+aendern). Pruefe bei Spiel-News oder Wochenberichten vorher mit `list_servers` \
+bzw. `read_shop_catalog`, welche Spiele aktiv laufen oder unterstuetzt werden, \
+und setze passend `related_game_type`, `category` (`announcement`, `game_update`, \
+`infrastructure`, `maintenance`, `promo`, `world_news`) sowie bei wichtigen \
+Meldungen `is_pinned: true`.
+Quellen, Autor und Titelbild: Nutze zuerst `web_search` und `read_web_page`, \
+pruefe das Datum und nenne ausschliesslich echte, selbst abgerufene \
+`https://`-Quellen in `sources` (`[{"title": ..., "url": ...}]`) — erfinde \
+niemals Quellen oder Fakten. Setze bei neuen KI-Beitraegen \
+`author_display_name` standardmaessig auf `"Singra AI"` und vergib nach \
+Moeglichkeit ein passendes Titelbild ueber `cover_image_url` (`https://`-Bild, \
+kein privater Host) oder lasse bei gesetztem `related_game_type` automatisch das \
+Spiel-Artwork als Titelbild setzen (`remove_cover: true` loescht ein Cover). \
+Setze `is_published` bei neuen Entwuerfen auf `false`, damit sie im CMS geprueft \
+werden koennen; veroeffentliche oder bearbeite Live-Artikel nur mit \
+ausdruecklichem Wunsch. Verfasse Artikel in natuerlicher, sachlicher Redaktion \
+ohne KI-Floskeln oder Gedankenstrich-Schablonen."""
 
 
 NATIVER_SHOP = """\

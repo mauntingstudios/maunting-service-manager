@@ -3,7 +3,6 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import {
   Bot,
-  CalendarClock,
   Copy,
   Edit2,
   ExternalLink,
@@ -53,7 +52,6 @@ export function NewsTab() {
     useHasPermission('panel.settings.write') ||
     useHasPermission('shop.write')
   const canUseAi = useHasPermission('ai.chat.use')
-  const canManageTasks = useHasPermission('ai.tasks.manage')
 
   const [posts, setPosts] = useState<NewsPostAdmin[]>([])
   const [games, setGames] = useState<GameOption[]>([])
@@ -336,11 +334,36 @@ export function NewsTab() {
 
   const handleCopyPrompt = async () => {
     const promptText = t('news.cms.kiVorlagePrompt')
-    try {
-      await navigator.clipboard.writeText(promptText)
+    let kopiert = false
+    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+      try {
+        await navigator.clipboard.writeText(promptText)
+        kopiert = true
+      } catch (err) {
+        still(err, 'NewsTab.copyPrompt.clipboard')
+      }
+    }
+    if (!kopiert && typeof document !== 'undefined') {
+      try {
+        const area = document.createElement('textarea')
+        area.value = promptText
+        area.setAttribute('readonly', '')
+        area.style.position = 'fixed'
+        area.style.top = '-9999px'
+        area.style.opacity = '0'
+        document.body.appendChild(area)
+        area.focus()
+        area.select()
+        area.setSelectionRange(0, promptText.length)
+        kopiert = document.execCommand('copy')
+        document.body.removeChild(area)
+      } catch (err) {
+        still(err, 'NewsTab.copyPrompt.execCommand')
+      }
+    }
+    if (kopiert) {
       toast.success(t('news.cms.promptKopiert'))
-    } catch (err) {
-      still(err, 'NewsTab.copyPrompt')
+    } else {
       toast.error(t('news.cms.promptKopierenFehler'))
     }
   }
@@ -406,42 +429,25 @@ export function NewsTab() {
         </div>
       </div>
 
-      {canManageNews && (canUseAi || canManageTasks) && (
-        <section className="msm-card border-primary/30 bg-primary/5 p-5">
-          <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-center">
-            <div className="space-y-1">
-              <h3 className="flex items-center gap-2 font-headline text-sm font-bold text-on-surface">
-                <Bot className="h-4 w-4 text-primary" aria-hidden="true" />
-                <span>{t('news.cms.kiTitel')}</span>
-              </h3>
-              <p className="max-w-2xl text-xs leading-relaxed text-on-surface-variant">
-                {t('news.cms.kiBeschreibung')}
-              </p>
-            </div>
+      {canManageNews && canUseAi && !isCreating && !editingPost && (
+        <section className="flex flex-col justify-between gap-3 rounded-xl border border-outline-variant/30 bg-surface-container-low/60 px-4 py-3 sm:flex-row sm:items-center">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <Bot className="h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
+            <p className="text-xs leading-relaxed text-on-surface-variant">
+              <span className="font-semibold text-on-surface">{t('news.cms.kiTitel')}:</span>{' '}
+              {t('news.cms.kiBeschreibung')}
+            </p>
+          </div>
 
-            <div className="flex flex-wrap gap-2">
-              <Button variant="ghost" size="sm" onClick={() => void handleCopyPrompt()} className="gap-1.5">
-                <Copy className="h-3.5 w-3.5" aria-hidden="true" />
-                <span>{t('news.cms.promptKopieren')}</span>
-              </Button>
-              {canUseAi && (
-                <Button variant="secondary" size="sm" onClick={() => navigate('/ai')} className="gap-1.5">
-                  <Bot className="h-3.5 w-3.5" aria-hidden="true" />
-                  <span>{t('news.cms.singularityOeffnen')}</span>
-                </Button>
-              )}
-              {canManageTasks && canUseAi && (
-                <Button
-                  variant="primary"
-                  size="sm"
-                  onClick={() => navigate('/ai?bereich=tools&tool=tasks&scope=global')}
-                  className="gap-1.5"
-                >
-                  <CalendarClock className="h-3.5 w-3.5" aria-hidden="true" />
-                  <span>{t('news.cms.aufgabePlanen')}</span>
-                </Button>
-              )}
-            </div>
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
+            <Button variant="ghost" size="sm" onClick={() => void handleCopyPrompt()} className="gap-1.5">
+              <Copy className="h-3.5 w-3.5" aria-hidden="true" />
+              <span>{t('news.cms.promptKopieren')}</span>
+            </Button>
+            <Button variant="secondary" size="sm" onClick={() => navigate('/ai')} className="gap-1.5">
+              <Bot className="h-3.5 w-3.5" aria-hidden="true" />
+              <span>{t('news.cms.singularityOeffnen')}</span>
+            </Button>
           </div>
         </section>
       )}
@@ -801,48 +807,50 @@ export function NewsTab() {
         </form>
       )}
 
-      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-        <div className="relative flex-1 md:max-w-xs">
-          <Search
-            className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-on-surface-variant"
-            aria-hidden="true"
-          />
-          <input
-            type="search"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder={t('news.suchePlaceholder')}
-            aria-label={t('news.suchePlaceholder')}
-            className="h-10 w-full rounded-xl border border-outline-variant/50 bg-surface-container-low pl-9 pr-3 text-sm text-on-surface focus:border-primary focus:outline-none"
-          />
-        </div>
+      {posts.length > 0 && (
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div className="relative flex-1 md:max-w-xs">
+            <Search
+              className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-on-surface-variant"
+              aria-hidden="true"
+            />
+            <input
+              type="search"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder={t('news.suchePlaceholder')}
+              aria-label={t('news.suchePlaceholder')}
+              className="h-10 w-full rounded-xl border border-outline-variant/50 bg-surface-container-low pl-9 pr-3 text-sm text-on-surface focus:border-primary focus:outline-none"
+            />
+          </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="w-44">
-            <Dropdown
-              value={statusFilter}
-              onChange={(val) => setStatusFilter(val as StatusFilter)}
-              options={[
-                { value: 'all', label: t('news.cms.statusAlle') },
-                { value: 'published', label: t('news.cms.statusLive') },
-                { value: 'draft', label: t('news.cms.statusEntwurf') },
-              ]}
-              aria-label={t('news.cms.filterStatus')}
-            />
-          </div>
-          <div className="w-48">
-            <Dropdown
-              value={categoryFilter}
-              onChange={setCategoryFilter}
-              options={[
-                { value: 'all', label: t('news.kategorien.all') },
-                ...categoryOptions,
-              ]}
-              aria-label={t('news.filter.kategorie')}
-            />
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="w-44">
+              <Dropdown
+                value={statusFilter}
+                onChange={(val) => setStatusFilter(val as StatusFilter)}
+                options={[
+                  { value: 'all', label: t('news.cms.statusAlle') },
+                  { value: 'published', label: t('news.cms.statusLive') },
+                  { value: 'draft', label: t('news.cms.statusEntwurf') },
+                ]}
+                aria-label={t('news.cms.filterStatus')}
+              />
+            </div>
+            <div className="w-48">
+              <Dropdown
+                value={categoryFilter}
+                onChange={setCategoryFilter}
+                options={[
+                  { value: 'all', label: t('news.kategorien.all') },
+                  ...categoryOptions,
+                ]}
+                aria-label={t('news.filter.kategorie')}
+              />
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       {loading ? (
         <div
@@ -858,14 +866,7 @@ export function NewsTab() {
           icon={<Newspaper className="h-10 w-10" aria-hidden="true" />}
           titel={t('news.cms.leerTitel')}
           text={t('news.cms.leerBeschreibung')}
-        >
-          {canManageNews && posts.length === 0 && (
-            <Button variant="primary" size="sm" onClick={startCreate} className="mt-2 gap-1.5">
-              <Plus className="h-4 w-4" aria-hidden="true" />
-              <span>{t('news.cms.neuerBeitrag')}</span>
-            </Button>
-          )}
-        </Zustandsflaeche>
+        />
       ) : (
         <div className="space-y-3">
           {filteredPosts.map((post) => {
