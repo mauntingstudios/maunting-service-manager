@@ -39,6 +39,11 @@ from services.ai_proposal_service import (
     execute_autonomously,
 )
 from services.ai_provider_service import resolve_api_key
+from services.ai_guardrails import (
+    build_prompt_fingerprints,
+    scrub_prompt_leak,
+    wrap_untrusted_data,
+)
 from services.ai_redaction import redact_sensitive_text
 from services.ai_stream.context import (
     _denken_am_modell,
@@ -184,9 +189,15 @@ def _docs_provider_nachricht(zustand: dict, run_id: str) -> dict | None:
         f"Rev: {rev}",
     ]
     if quote:
-        teile.append("Auswahl des Nutzers:\n" + quote[:4_000])
+        teile.append(
+            "Auswahl des Nutzers:\n"
+            + wrap_untrusted_data(quote[:4_000], source="document_selection")
+        )
     if text:
-        teile.append("Dokumenttext (gekuerzt):\n" + text[:12_000])
+        teile.append(
+            "Dokumenttext (gekuerzt):\n"
+            + wrap_untrusted_data(text[:12_000], source="document_text")
+        )
         if len(text) > 12_000:
             teile.append("Hinweis: Der Text ist gekuerzt; nutze read_document fuer mehr.")
     teile.append(
@@ -251,6 +262,10 @@ async def _segment_katalog_und_modell_vorbereiten(
         and nachricht["content"].startswith("Werkzeugverzeichnis")
         for nachricht in provider_messages
     )
+    if provider_messages and provider_messages[0].get("role") == "system":
+        sys_text = provider_messages[0].get("content")
+        if isinstance(sys_text, str) and sys_text:
+            zustand["system_prompt_fingerprints"] = build_prompt_fingerprints(sys_text)
     if (
         index
         and not schon_da
@@ -315,6 +330,8 @@ async def _anbieter_runde_streamen(
     stream_extra_kw: dict[str, Any] = {}
     if last_response_id is not None:
         stream_extra_kw["previous_response_id"] = last_response_id
+    if zustand.get("max_ausgabe_tokens") is not None:
+        stream_extra_kw["max_tokens"] = zustand["max_ausgabe_tokens"]
 
     async for chunk in ai_stream.stream_chat_completion(
         client,
@@ -456,6 +473,11 @@ async def _segment_erfolgreich_abschliessen(
     """Finalisiert das Ergebnis im Thread, parkt oder schliesst ab und verdichtet bei Bedarf."""
     zustand["tool_signatures"] = signaturen
     complete_content = "".join(chunks)
+    complete_content, leaked = scrub_prompt_leak(
+        complete_content, zustand.get("system_prompt_fingerprints") or ()
+    )
+    if leaked:
+        logger.warning("Systemprompt-Leak in Assistenzantwort bereinigt run_id=%s", run_id)
     estimated_actual = max(
         1,
         (message_character_count(provider_messages) + len(complete_content) + 3) // 4,

@@ -441,7 +441,7 @@ async def test_the_request_carries_the_right_headers_address_and_fields() -> Non
     ]
     # Die aktuelle Denkform — nie ``budget_tokens``, das lehnen die aktuellen
     # Modelle laut Microsofts Modelltabelle ab.
-    assert client.gesendet["thinking"] == {"type": "adaptive"}
+    assert client.gesendet["thinking"] == {"type": "adaptive", "display": "summarized"}
     assert client.gesendet["output_config"] == {"effort": "high"}
     assert "budget_tokens" not in json.dumps(client.gesendet)
 
@@ -537,3 +537,104 @@ async def test_a_missing_key_never_reaches_the_network() -> None:
             pass
     assert fehler.value.code == "AI_PROVIDER_KEY_MISSING"
     assert client.gesendet is None
+
+
+@pytest.mark.asyncio
+async def test_anthropic_direct_cache_control_summarized_thinking_max_tokens_and_speed() -> None:
+    """Anthropic direkt sendet Top-Level cache_control, display=summarized, Katalog-max_tokens und speed."""
+    client = _FakeClient(_sse(
+        {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "ok"}},
+        {"type": "message_delta", "delta": {"stop_reason": "end_turn"}, "usage": {"output_tokens": 2}},
+        {"type": "message_stop"},
+    ))
+    usage = StreamUsage()
+    async for _ in stream_messages(
+        client,
+        provider=_provider("anthropic"),
+        api_key="sk-ant-test",
+        messages=[{"role": "system", "content": "System"}, {"role": "user", "content": "Hi"}],
+        usage=usage,
+        reasoning=True,
+        reasoning_effort="high",
+        cache_marke=True,
+        max_tokens=16_384,
+        speed="fast",
+    ):
+        pass
+
+    assert str(client.adresse) == "https://api.anthropic.com/v1/messages"
+    assert client.gesendet["cache_control"] == {"type": "ephemeral"}
+    assert client.gesendet["thinking"] == {"type": "adaptive", "display": "summarized"}
+    assert client.gesendet["output_config"] == {"effort": "high"}
+    assert client.gesendet["max_tokens"] == 16_384
+    assert client.gesendet["speed"] == "fast"
+    assert usage.stop_reason == "end_turn"
+
+
+@pytest.mark.asyncio
+async def test_anthropic_structured_outputs_merges_into_output_config() -> None:
+    """json_schema wird in output_config.format eingetragen, ohne effort zu ueberschreiben."""
+    schema = {"type": "object", "properties": {"ok": {"type": "boolean"}}, "required": ["ok"]}
+    client = _FakeClient(_sse(
+        {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": '{"ok":true}'}},
+        {"type": "message_stop"},
+    ))
+    async for _ in stream_messages(
+        client,
+        provider=_provider("anthropic"),
+        api_key="sk-ant-test",
+        messages=[{"role": "user", "content": "Pruefe"}],
+        usage=StreamUsage(),
+        reasoning=True,
+        reasoning_effort="medium",
+        json_schema=schema,
+    ):
+        pass
+
+    assert client.gesendet["output_config"] == {
+        "effort": "medium",
+        "format": {"type": "json_schema", "schema": schema},
+    }
+
+
+@pytest.mark.asyncio
+async def test_anthropic_stop_reason_refusal_and_context_window_exceeded() -> None:
+    """refusal (HTTP 200 mit leerem content) und model_context_window_exceeded werden sauber gemeldet."""
+    refusal_client = _FakeClient(_sse(
+        {"type": "message_start", "message": {"usage": {"input_tokens": 10}}},
+        {
+            "type": "message_delta",
+            "delta": {
+                "stop_reason": "refusal",
+                "stop_details": {"category": "cyber", "explanation": "Blocked by policy"},
+            },
+            "usage": {"output_tokens": 0},
+        },
+        {"type": "message_stop"},
+    ))
+    with pytest.raises(AiProviderRequestError) as refusal_err:
+        async for _ in stream_messages(
+            refusal_client,
+            provider=_provider("anthropic"),
+            api_key="sk-ant-test",
+            messages=[{"role": "user", "content": "Test"}],
+            usage=StreamUsage(),
+        ):
+            pass
+    assert refusal_err.value.code == "AI_PROVIDER_REFUSAL"
+    assert "Blocked by policy" in (refusal_err.value.detail or "")
+
+    ctx_client = _FakeClient(_sse(
+        {"type": "message_delta", "delta": {"stop_reason": "model_context_window_exceeded"}},
+        {"type": "message_stop"},
+    ))
+    with pytest.raises(AiProviderRequestError) as ctx_err:
+        async for _ in stream_messages(
+            ctx_client,
+            provider=_provider("anthropic"),
+            api_key="sk-ant-test",
+            messages=[{"role": "user", "content": "Test"}],
+            usage=StreamUsage(),
+        ):
+            pass
+    assert ctx_err.value.code == "AI_PROVIDER_CONTEXT_EXCEEDED"

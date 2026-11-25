@@ -556,3 +556,34 @@ def test_an_azure_access_cannot_be_activated_without_its_resource(db: Session) -
         operator_api_key=None, clear_operator_api_key=False,
     )
     assert provider.enabled is True
+
+
+def test_anthropic_direct_provider_and_catalog_parser() -> None:
+    """Anthropic direkt ist registriert und liest 2026er ModelInfo-Eintraege ohne retired-Modelle."""
+    spec = ai_provider_registry.anbieter("anthropic")
+    assert spec.protokoll_chat == "anthropic_messages"
+    assert spec.schluessel_kopf == "x-api-key"
+    assert spec.schluessel_praefix == ""
+    assert spec.key_prefix == "sk-ant-"
+    assert ("anthropic-version", "2023-06-01") in spec.katalog_extra_headers
+    assert "cache_control" in spec.anfrage_erweiterungen
+
+    leser = ai_provider_registry.katalog_leser("anthropic")
+    modell = leser({
+        "type": "model",
+        "id": "claude-sonnet-5-5",
+        "display_name": "Claude Sonnet 5.5",
+        "lifecycle": "active",
+        "max_input_tokens": 1_000_000,
+        "max_tokens": 64_000,
+        "retires_at": "2028-01-15T00:00:00Z",
+    })
+    assert modell is not None
+    assert modell.model_id == "claude-sonnet-5-5"
+    assert modell.name == "Claude Sonnet 5.5"
+    assert modell.kontext_tokens == 1_000_000
+    assert modell.max_ausgabe_tokens == 64_000
+    assert modell.cache_marke_noetig is True
+    assert modell.abschaltung == "2028-01-15"
+
+    assert leser({"id": "claude-2.1", "lifecycle": "retired"}) is None

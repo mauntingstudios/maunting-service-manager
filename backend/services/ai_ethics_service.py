@@ -193,6 +193,7 @@ async def evaluate_decision(
             tools=None,
             model=target_provider.ethics_model,
             reasoning_effort=target_provider.ethics_reasoning_effort,
+            json_schema=AiEthicsEvaluation.model_json_schema(),
         ):
             if chunk.kind == "content" and chunk.text:
                 raw_response_text += chunk.text

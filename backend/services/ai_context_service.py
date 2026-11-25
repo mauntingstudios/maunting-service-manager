@@ -700,9 +700,19 @@ def _stabilen_vorspann_bauen(
 ) -> tuple[list[dict[str, Any]], str | None, bool]:
     """Baut den cache-stabilen Vorspann (Systemprompt, Skills, MCP, Projekt, Memory-Kopf)."""
     coding_erlaubt = True
+    allowed_groups: frozenset[str] | None = None
     if user is not None:
         from services import permission_service
+        from services.ai_action_service import angebotene_werkzeuge
+        from services.ai_tool_registry import WERKZEUGE
+
         coding_erlaubt = permission_service.has_global_permission(db, user, "ai.coding.use")
+        erlaubt = angebotene_werkzeuge(db, user)
+        allowed_groups = frozenset(
+            w.gruppe
+            for name in erlaubt
+            if (w := WERKZEUGE.get(name)) is not None and w.gruppe
+        )
     result: list[dict[str, Any]] = [
         {"role": "system", "content": ai_prompt.build(
             gesprochen=gesprochen, rolle=rolle,
@@ -710,6 +720,7 @@ def _stabilen_vorspann_bauen(
             db=db,
             docs=docs,
             coding_erlaubt=coding_erlaubt,
+            allowed_groups=allowed_groups,
         )}
     ]
     # Gedaechtnis- und Skill-Trennung fuer Maunting Docs:

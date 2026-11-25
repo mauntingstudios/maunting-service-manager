@@ -1121,6 +1121,7 @@ async def _modellfaehigkeiten_und_kontextgrenze(
     # gleich antwortet. `None` (Katalog nicht erreichbar, Modell unbekannt)
     # heisst „unbekannt" und niemals „blind": siehe `_sieht_nicht`.
     zustand["sieht"] = modell.sieht if modell is not None else None
+    zustand["max_ausgabe_tokens"] = modell.max_ausgabe_tokens if modell is not None else None
     # Die eingefrorene Denkstufe gilt weiter — aber nur, solange sie zu dem
     # Modell passt, das **jetzt** am Zugang steht.
     denken, denkstufe = _denken_am_modell(vorbereitung, modell)

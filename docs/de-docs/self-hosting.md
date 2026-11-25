@@ -1484,6 +1484,17 @@ einer in ein Gameserver-Log geschriebenen Anweisung folgt, scheitert die
 Umsetzung an RBAC, der Tool-Allowlist, den Pfadgrenzen und der
 Bestätigungspflicht.
 
+### Anthropic (Claude) direkt
+
+Der Eintrag **Anthropic (Claude)** (`provider_kind="anthropic"`) spricht ohne Umweg über OpenRouter oder Azure direkt mit `https://api.anthropic.com` (`POST /v1/messages`, Kopf `x-api-key` und `anthropic-version: 2023-06-01`):
+
+| Feld | Wert |
+|---|---|
+| Anbieter | *Anthropic (Claude)* |
+| Schlüssel | API-Schlüssel aus <https://platform.claude.com/settings/keys> (`sk-ant-…`) |
+
+Die Modellliste wird live über `GET /v1/models?limit=1000` abgerufen (ohne abgeschaltete `retired`-Modelle) und liefert Kontextfenster (`max_input_tokens`), Ausgabegrenzen (`max_tokens`) und optionale Ruhestandstermine (`retires_at`); fehlende Denk- oder Vision-Metadaten ergänzt MSM über OpenRouter. Top-Level Prompt-Caching (`cache_control: {"type": "ephemeral"}`), Adaptive Thinking (`display: "summarized"` mit `output_config.effort`), Structured Outputs (`output_config.format`) sowie `stop_reason`-/`refusal`-Erkennung greifen nativ.
+
 ### Azure als Anbieter
 
 Zwei Einträge unter *Einstellungen → KI → Anbieter*: **Azure OpenAI** für die

@@ -123,6 +123,7 @@ class StreamUsage:
     reasoning_tokens: int = 0
     cost_micro_usd: int | None = None
     vom_anbieter: bool = False
+    stop_reason: str | None = None
     # Wieviele Anbieteranfragen stecken in dieser Zeile. Eine Chatnachricht ist
     # nicht eine Anfrage: jede Werkzeugrunde ruft den Anbieter erneut und
     # schickt den gewachsenen Verlauf komplett mit. Zwoelf Runden mit 30.000
@@ -736,6 +737,9 @@ async def stream_chat_completion(
     previous_response_id: str | None = None,
     use_websocket: bool = True,
     background: bool = False,
+    max_tokens: int | None = None,
+    json_schema: dict[str, Any] | None = None,
+    speed: str | None = None,
     **kwargs: Any,
 ) -> AsyncIterator[StreamChunk]:
     """Normalisiert Provider-SSE zu Antwort- und Denkschritt-Stuecken.
@@ -908,6 +912,9 @@ async def stream_chat_completion(
             reasoning=reasoning,
             reasoning_effort=reasoning_effort,
             cache_marke=cache_marke,
+            max_tokens=max_tokens,
+            json_schema=json_schema,
+            speed=speed,
             **kwargs,
         ):
             yield stueck
@@ -984,6 +991,11 @@ async def stream_chat_completion(
     # Anbieter nach seinem eigenen Default denkt und abrechnet.
     if cache_marke and "cache_control" in erweiterungen:
         request_body["cache_control"] = {"type": "ephemeral"}
+    if isinstance(json_schema, dict):
+        request_body["response_format"] = {
+            "type": "json_schema",
+            "json_schema": {"name": "structured_output", "strict": True, "schema": json_schema},
+        }
     target_url_str = provider_base_url(provider).rstrip("/") + "/chat/completions"
     target = httpx.URL(target_url_str)
     use_think_splitter = (

@@ -468,27 +468,24 @@ async def stream_messages(
     reasoning: bool = False,
     reasoning_effort: str | None = None,
     cache_marke: bool = False,
+    max_tokens: int | None = None,
+    json_schema: dict[str, Any] | None = None,
+    speed: str | None = None,
 ) -> AsyncIterator[StreamChunk]:
     """Ein Chatzug ueber ``POST /messages`` — Stuecke wie ueberall sonst.
 
     Dieselbe Signatur wie `openai_compatible_adapter.stream_chat_completion`,
     einschliesslich der Parameter, die dieser Weg nicht auswertet.
 
-    ``cache_marke`` ist einer davon, und das ist eine Entscheidung und kein
-    Versehen: Anthropic kennt Prompt-Caching sehr wohl, verlangt die Marke aber
-    **am Inhaltsblock** (``cache_control`` am letzten stabilen Block). Welcher
-    Block das ist, weiss diese Schicht nicht — das weiss `ai_context_service`.
-    Ein falsch gesetzter Haltepunkt kostet mehr als ein fehlender; dieselbe
-    Ueberlegung steht bei ``cache_marke`` im Schwestermodul.
+    ``cache_marke`` setzt das automatische Top-Level-``cache_control``
+    (``{"type": "ephemeral"}``), sofern der Anbieter ``"cache_control"`` in
+    ``anfrage_erweiterungen`` fuehrt.
 
-    ``reasoning`` und ``reasoning_effort`` werden zu ``thinking`` und
-    ``output_config.effort``. Ohne feststehende Stufe geht **gar nichts**
-    hinaus: bei Azure hat MSM keinen Katalog, aus dem sich die zulaessigen
-    Stufen dieses Deployments ergaeben (`ai_provider_registry.azure_anthropic`),
-    und eine geratene Stufe waere ein 400 statt einer Denktiefe.
+    ``reasoning`` und ``reasoning_effort`` werden zu ``thinking``
+    (``{"type": "adaptive", "display": "summarized"}``) und
+    ``output_config.effort``.
 
-    ``model`` ist der **Deployment-Name** des Betreibers, nicht die Modell-ID
-    von Anthropic. Beides kann gleich lauten, muss aber nicht.
+    ``model`` ist der Modell- oder Deployment-Name beim jeweiligen Anbieter.
     """
     if provider.requires_api_key and not api_key:
         raise AiProviderRequestError("AI_PROVIDER_KEY_MISSING")
@@ -497,27 +494,40 @@ async def stream_messages(
     headers = schluesselkopf(spec, api_key)
     headers["anthropic-version"] = ANTHROPIC_VERSION
 
+    effektive_max_tokens = (
+        max(1024, min(max_tokens, 64_000))
+        if isinstance(max_tokens, int) and not isinstance(max_tokens, bool) and max_tokens > 0
+        else STANDARD_MAX_TOKENS
+    )
+
     system, verlauf = nachrichten_uebersetzen(messages)
     request_body: dict[str, Any] = {
         "model": model or provider.default_model,
-        "max_tokens": STANDARD_MAX_TOKENS,
+        "max_tokens": effektive_max_tokens,
         "messages": verlauf,
         "stream": True,
     }
     if system:
         request_body["system"] = system
+    if cache_marke and "cache_control" in spec.anfrage_erweiterungen:
+        request_body["cache_control"] = {"type": "ephemeral"}
+    if speed in ("standard", "fast"):
+        request_body["speed"] = speed
     uebersetzte_werkzeuge = werkzeuge_uebersetzen(tools)
     if uebersetzte_werkzeuge:
         request_body["tools"] = uebersetzte_werkzeuge
         request_body["tool_choice"] = werkzeugwahl_uebersetzen(tool_choice)
+
+    output_config: dict[str, Any] = {}
     if reasoning and reasoning_effort:
-        # ``adaptive`` und nicht ``enabled``: die aeltere Form verlangt
-        # ``budget_tokens``, und die aktuellen Modelle lehnen sie ab. Die Tiefe
-        # steht daneben, im Wortschatz von `ai_reasoning.RANGFOLGE`.
-        request_body["thinking"] = {"type": "adaptive"}
-        request_body["output_config"] = {"effort": reasoning_effort}
+        request_body["thinking"] = {"type": "adaptive", "display": "summarized"}
+        output_config["effort"] = reasoning_effort
     elif reasoning and spec.adresse_eintragbar:
-        request_body["thinking"] = {"type": "adaptive"}
+        request_body["thinking"] = {"type": "adaptive", "display": "summarized"}
+    if isinstance(json_schema, dict):
+        output_config["format"] = {"type": "json_schema", "schema": json_schema}
+    if output_config:
+        request_body["output_config"] = output_config
 
     target_url = anthropic_messages_target(provider_base_url(provider))
     target = httpx.URL(target_url)
@@ -677,6 +687,29 @@ async def stream_messages(
 
                 elif typ == "message_delta":
                     _usage_aus_delta(usage, rahmen.get("usage"))
+                    delta = rahmen.get("delta")
+                    if isinstance(delta, dict):
+                        stop_reason = delta.get("stop_reason")
+                        if isinstance(stop_reason, str) and stop_reason:
+                            usage.stop_reason = stop_reason
+                            if stop_reason == "refusal":
+                                details = delta.get("stop_details")
+                                detail_text = ""
+                                if isinstance(details, dict):
+                                    kat = details.get("category") or ""
+                                    erk = details.get("explanation") or ""
+                                    detail_text = ": ".join(p for p in (kat, erk) if isinstance(p, str) and p)
+                                logger.warning(
+                                    "AI provider refused response provider_id=%s model=%s",
+                                    provider.id,
+                                    model or provider.default_model,
+                                )
+                                raise AiProviderRequestError(
+                                    "AI_PROVIDER_REFUSAL",
+                                    _kurzfassung(detail_text) if detail_text else None,
+                                )
+                            if stop_reason == "model_context_window_exceeded":
+                                raise AiProviderRequestError("AI_PROVIDER_CONTEXT_EXCEEDED")
 
                 elif typ == "message_stop":
                     abgeschlossen = True

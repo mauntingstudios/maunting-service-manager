@@ -197,7 +197,7 @@ MSM provides a dedicated API contract for external billing platforms (WHMCS, Ble
 
 MSM structures credentials across three strict isolation layers:
 
-1. **Panel-Wide Credentials:** System-level API keys (e.g. OpenAI, ElevenLabs, DWD, weather providers) managed exclusively by Root administrators.
+1. **Panel-Wide Credentials:** System-level API keys (e.g. Anthropic, OpenAI, OpenRouter, ElevenLabs, DWD, weather providers) managed exclusively by Root administrators.
 2. **User Credentials:** Personal API tokens, SSH keys, and encrypted vault secrets owned by individual accounts.
 3. **Server Credentials:** Instance-specific environment variables, database passwords, and webhook secrets bound to a single container instance.
 

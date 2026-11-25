@@ -103,7 +103,10 @@ class TestEthicsServiceEvaluation:
             "reason": "Hohe Auswirkung auf laufende Kundensitzungen.",
         }
 
+        captured_kwargs: dict = {}
+
         async def mock_stream(*args, **kwargs):
+            captured_kwargs.update(kwargs)
             yield StreamChunk(
                 kind="content",
                 text="```json\n" + json.dumps(mock_json_response) + "\n```",
@@ -121,3 +124,4 @@ class TestEthicsServiceEvaluation:
             assert eval_res.confidence == 0.95
             assert "Wartungsfenster ankündigen" in (eval_res.alternative or "")
             assert "laufende Kundensitzungen" in eval_res.reason
+            assert captured_kwargs.get("json_schema") == AiEthicsEvaluation.model_json_schema()

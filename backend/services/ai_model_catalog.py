@@ -480,11 +480,9 @@ async def _hole(
         if spec.katalog_schluessel_praefix is not None
         else spec.schluessel_praefix
     )
-    kopf = (
-        {kopf_name: f"{praefix}{schluessel}"}
-        if (spec.katalog_braucht_schluessel or spec.adresse_eintragbar) and schluessel
-        else None
-    )
+    kopf: dict[str, str] = dict(spec.katalog_extra_headers)
+    if (spec.katalog_braucht_schluessel or spec.adresse_eintragbar) and schluessel:
+        kopf[kopf_name] = f"{praefix}{schluessel}"
     eff_client, owned_client = (
         await pinned_http_client_async(client, spec.catalog_url or "")
         if spec.adresse_eintragbar
@@ -496,7 +494,7 @@ async def _hole(
     roh = bytearray()
     try:
         async with eff_client.stream(
-            "GET", spec.catalog_url, timeout=ABRUF_TIMEOUT, headers=kopf
+            "GET", spec.catalog_url, timeout=ABRUF_TIMEOUT, headers=kopf or None
         ) as antwort:
             antwort.raise_for_status()
             async for stueck in antwort.aiter_bytes():

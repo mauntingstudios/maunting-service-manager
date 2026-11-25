@@ -1493,3 +1493,41 @@ async def test_the_shutdown_date_is_the_makers_and_never_borrowed() -> None:
     # Was kein Datum ist, wird auch keines.
     assert direkt["whisper-1"].abschaltung is None
     assert direkt["tts-1"].abschaltung is None
+
+
+@pytest.mark.asyncio
+async def test_katalog_abruf_sendet_katalog_extra_headers() -> None:
+    """Ein Anbieter mit ``katalog_extra_headers`` sendet diese im GET mit, ohne den Key zu ueberschreiben."""
+    from dataclasses import replace as _ersetzen
+
+    gesendete_header: dict[str, str] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        gesendete_header.update({k.lower(): v for k, v in request.headers.items()})
+        return httpx.Response(200, json={"data": [{"id": "claude-sonnet-5-5"}]})
+
+    basis_spec = ai_model_catalog.anbieter("openai")
+    spec = _ersetzen(
+        basis_spec,
+        kind="anthropic_header_probe",
+        catalog_url="https://api.anthropic.com/v1/models",
+        schluessel_kopf="x-api-key",
+        schluessel_praefix="",
+        katalog_braucht_schluessel=True,
+        katalog_extra_headers=(("anthropic-version", "2023-06-01"),),
+    )
+
+    async with _client(handler) as client:
+        # Direkt ueber _hole testen, um die Header-Bildung isoliert zu pruefen.
+        original_leser = ai_model_catalog.katalog_leser
+        ai_model_catalog.katalog_leser = lambda _k: (  # type: ignore[assignment]
+            lambda row: ai_model_catalog.Modell(model_id=row["id"], name=row["id"], denkt=None)
+        )
+        try:
+            modelle = await ai_model_catalog._hole(client, spec, schluessel="sk-ant-test")
+        finally:
+            ai_model_catalog.katalog_leser = original_leser
+
+    assert [m.model_id for m in modelle] == ["claude-sonnet-5-5"]
+    assert gesendete_header.get("anthropic-version") == "2023-06-01"
+    assert gesendete_header.get("x-api-key") == "sk-ant-test"

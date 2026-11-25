@@ -22,6 +22,7 @@ from services.ai_action_service import angebotene_werkzeuge, execute_read_tool
 from services.ai_chat_service import get_owned_conversation
 from services.ai_context_service import anlagenwissen_nachtrag, message_character_count
 from services.ai_proposal_service import AufgabenKontext, GuardianKontext
+from services.ai_guardrails import detect_injection_signals, wrap_untrusted_data
 from services.ai_redaction import ist_geheimer_schluessel, redact_freetext, redact_sensitive_text
 from services.ai_stream.context import familie_aus_zustand
 from services.ai_stream.types import (
@@ -158,6 +159,60 @@ def _ergebnis_schwaerzen(
     return wert
 
 
+_FREITEXT_FELDER = frozenset({
+    "content", "text", "log", "logs", "body", "snippet",
+    "output", "markdown", "lines", "html", "description", "subject", "message",
+})
+
+
+def _freitext_kapseln(
+    wert: object,
+    tool_name: str,
+    *,
+    feldname: str | None = None,
+    _tiefe: int = 0,
+) -> object:
+    if _tiefe > 30:
+        return wert
+    if isinstance(wert, str):
+        if wert.startswith("<untrusted_data "):
+            return wert
+        if feldname is None or feldname in _FREITEXT_FELDER or len(wert) >= 40:
+            return wrap_untrusted_data(wert, source=tool_name)
+        return wert
+    if isinstance(wert, dict):
+        return {
+            k: _freitext_kapseln(
+                v,
+                tool_name,
+                feldname=k if isinstance(k, str) else None,
+                _tiefe=_tiefe + 1,
+            )
+            for k, v in wert.items()
+        }
+    if isinstance(wert, list):
+        return [
+            _freitext_kapseln(v, tool_name, feldname=feldname, _tiefe=_tiefe + 1)
+            for v in wert
+        ]
+    return wert
+
+
+def _signale_sammeln(wert: object, *, _tiefe: int = 0) -> list[str]:
+    if _tiefe > 30:
+        return []
+    if isinstance(wert, str):
+        return detect_injection_signals(wert)
+    hits: list[str] = []
+    if isinstance(wert, dict):
+        for v in wert.values():
+            hits.extend(_signale_sammeln(v, _tiefe=_tiefe + 1))
+    elif isinstance(wert, list):
+        for v in wert:
+            hits.extend(_signale_sammeln(v, _tiefe=_tiefe + 1))
+    return sorted(set(hits))
+
+
 def werkzeugergebnis_umschlag(tool_name: str, wert: object) -> dict:
     """Die Huelle, in der ein Werkzeugergebnis zum Modell zurueckgeht.
 
@@ -177,7 +232,21 @@ def werkzeugergebnis_umschlag(tool_name: str, wert: object) -> dict:
     dieselbe Entscheidung zu wiederholen ist genau die Bauart, bei der die
     vierte sie vergisst.
     """
-    return {"untrusted": True, "tool": tool_name, "data": wert}
+    signale = _signale_sammeln(wert)
+    verpackt = (
+        _freitext_kapseln(wert, tool_name)
+        if tool_name in _FREITEXT_WERKZEUGE
+        else wert
+    )
+    umschlag: dict[str, Any] = {"untrusted": True, "tool": tool_name, "data": verpackt}
+    if signale:
+        logger.warning(
+            "Indirect prompt injection signal detected tool=%s signals=%s",
+            tool_name,
+            ",".join(signale),
+        )
+        umschlag["injection_signals"] = signale
+    return umschlag
 
 
 def _werkzeug_nebenlaeufigkeit() -> int:

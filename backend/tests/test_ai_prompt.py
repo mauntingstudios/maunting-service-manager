@@ -952,3 +952,21 @@ def test_sprachmodus_ist_natuerlich_und_nicht_monoton() -> None:
     gesprochen = ai_prompt.build(gesprochen=True)
     assert "Sprich natürlich, präzise und lebendig" in gesprochen
     assert "Beginne nicht jede Antwort mit derselben Bestätigung" in gesprochen
+
+
+def test_prompt_entschlackung_capability_gating_und_2026_grounding() -> None:
+    """Der Systemprompt ist entschlackt, schaltet Domaenenbloecke ueber allowed_groups und verankert 2026-Grounding."""
+    voll = ai_prompt.build()
+    # Mindestens 25 % Einsparung gegenueber dem Ausgangsstand von 55.936 Zeichen bei vollem Katalog
+    assert len(voll) <= 41_500
+    assert "<untrusted_data>" in voll
+    assert "nicht in den vorliegenden Daten" in voll
+
+    schmal = ai_prompt.build(allowed_groups=frozenset({"files", "mods"}))
+    assert len(schmal) <= 26_000
+    assert ai_prompt.NATIVER_SHOP not in schmal
+    assert ai_prompt.CLOUDFLARE not in schmal
+    assert ai_prompt.MODS in schmal
+    assert ai_prompt.DATEIEN in schmal
+    assert ai_prompt.GEHEIMNISSE in schmal
+    assert ai_prompt.UNTRUSTED in schmal
