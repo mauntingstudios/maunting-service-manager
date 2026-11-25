@@ -4,20 +4,22 @@ export function storageKey(prefix: string, konto: number | null): string {
   return `${prefix}${konto ?? 'anon'}`
 }
 
+export function sanitizeFavoriteIdList(raw: unknown): number[] {
+  if (!Array.isArray(raw)) return []
+  return Array.from(
+    new Set(
+      raw.filter((id): id is number => typeof id === 'number' && Number.isInteger(id) && id > 0),
+    ),
+  )
+}
+
 export function readFavoriteIdList(prefix: string, konto: number | null, scope: string): number[] {
   if (typeof window === 'undefined') return []
   try {
     const raw = window.localStorage.getItem(storageKey(prefix, konto))
     if (!raw) return []
     const parsed: unknown = JSON.parse(raw)
-    if (!Array.isArray(parsed)) return []
-    return Array.from(
-      new Set(
-        parsed.filter(
-          (id): id is number => typeof id === 'number' && Number.isInteger(id) && id > 0,
-        ),
-      ),
-    )
+    return sanitizeFavoriteIdList(parsed)
   } catch (err) {
     still(err, `${scope}:readFavorites`)
     return []

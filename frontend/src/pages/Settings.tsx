@@ -1,17 +1,13 @@
-import { useCallback, useEffect, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import type { LucideIcon } from 'lucide-react'
 import {
-  Bot,
   Cloud,
   CloudCog,
-  FileText,
   Flame,
   Gamepad2,
-  Globe,
   HardDrive,
-  KeyRound,
   LifeBuoy,
   Mail,
   Megaphone,
@@ -19,9 +15,9 @@ import {
   Newspaper,
   Shield,
   ShieldAlert,
-  ShoppingBag,
 } from 'lucide-react'
 import { SettingsLayout, TabBar, type SettingsSectionEintrag, type TabDef } from '@maunting/ui'
+import { FavoriteButton } from '@/components/FavoriteButton'
 import { GeneralTab } from './settings/GeneralTab'
 import { EmailTab } from './settings/EmailTab'
 import { SteamTab } from './settings/SteamTab'
@@ -40,87 +36,20 @@ import { PopupTab } from './settings/PopupTab'
 import { NewsTab } from './settings/NewsTab'
 import { VaultStorageTab } from './settings/VaultStorageTab'
 import { useHasPermission } from '@/hooks/useHasPermission'
-
-type SectionId =
-  | 'general'
-  | 'imprint'
-  | 'announcements'
-  | 'security'
-  | 'oauth'
-  | 'gameIntegrations'
-  | 'shop'
-  | 'communication'
-  | 'ai'
-  | 'storage'
-
-type SecuritySubTab = 'security' | 'captcha' | 'cloudflare'
-type GameIntegrationSubTab = 'steam' | 'curseforge'
-type CommunicationSubTab = 'email' | 'messenger' | 'supportWidget'
-type AnnouncementsSubTab = 'popup' | 'news'
-type StorageSubTab = 'vaultStorage' | 'backup'
-
-interface ResolvedTarget {
-  section: SectionId
-  announcements?: AnnouncementsSubTab
-  security?: SecuritySubTab
-  gameIntegrations?: GameIntegrationSubTab
-  shop?: ShopSubTabId
-  communication?: CommunicationSubTab
-  ai?: AiSubTab
-  storage?: StorageSubTab
-}
-
-/**
- * Löst sowohl gebündelte Bereichs-IDs als auch historische `?tab=...`-Deep-Links
- * (z. B. `news`, `captcha`, `hoster`) auf den passenden Hauptbereich und Sub-Tab auf.
- */
-function resolveSettingsTarget(rawTab: string | null): ResolvedTarget {
-  switch (rawTab) {
-    case 'imprint':
-      return { section: 'imprint' }
-    case 'announcements':
-    case 'popup':
-      return { section: 'announcements', announcements: 'popup' }
-    case 'news':
-      return { section: 'announcements', announcements: 'news' }
-    case 'security':
-      return { section: 'security', security: 'security' }
-    case 'captcha':
-      return { section: 'security', security: 'captcha' }
-    case 'cloudflare':
-      return { section: 'security', security: 'cloudflare' }
-    case 'oauth':
-      return { section: 'oauth' }
-    case 'gameIntegrations':
-    case 'steam':
-      return { section: 'gameIntegrations', gameIntegrations: 'steam' }
-    case 'curseforge':
-      return { section: 'gameIntegrations', gameIntegrations: 'curseforge' }
-    case 'shop':
-      return { section: 'shop', shop: 'overview' }
-    case 'hoster':
-      return { section: 'shop', shop: 'hoster' }
-    case 'communication':
-    case 'email':
-      return { section: 'communication', communication: 'email' }
-    case 'messenger':
-      return { section: 'communication', communication: 'messenger' }
-    case 'supportWidget':
-      return { section: 'communication', communication: 'supportWidget' }
-    case 'ai':
-      return { section: 'ai', ai: 'providers' }
-    case 'searchEngine':
-      return { section: 'ai', ai: 'searchEngine' }
-    case 'storage':
-    case 'vaultStorage':
-      return { section: 'storage', storage: 'vaultStorage' }
-    case 'backup':
-      return { section: 'storage', storage: 'backup' }
-    case 'general':
-    default:
-      return { section: 'general' }
-  }
-}
+import {
+  DEFAULT_DASHBOARD_TABS,
+  MAX_DASHBOARD_TABS,
+  SETTINGS_SEKTIONEN,
+  resolveSettingsTarget,
+  type AnnouncementsSubTab,
+  type CommunicationSubTab,
+  type GameIntegrationSubTab,
+  type SecuritySubTab,
+  type SettingsSectionId,
+  type StorageSubTab,
+} from '@/desktop/dashboard/dashboardWege'
+import { useDashboardPreferencesStore } from '@/stores/dashboardPreferencesStore'
+import { toast } from '@/stores/toastStore'
 
 interface SubTabItem<T extends string> {
   id: T
@@ -185,7 +114,35 @@ export function Settings() {
   const canWriteHoster = useHasPermission('panel.hoster.write')
 
   const initial = resolveSettingsTarget(searchParams.get('tab'))
-  const [activeTab, setActiveTab] = useState<SectionId>(initial.section)
+  const [activeTab, setActiveTab] = useState<SettingsSectionId>(initial.section)
+  const pinnedTabs = useDashboardPreferencesStore((s) => s.pinnedTabs)
+  const togglePinnedTab = useDashboardPreferencesStore((s) => s.togglePinnedTab)
+  const pinnedSet = useMemo(() => new Set(pinnedTabs ?? DEFAULT_DASHBOARD_TABS), [pinnedTabs])
+
+  const handleTogglePin = useCallback(
+    (targetTo: string) => {
+      const result = togglePinnedTab(targetTo)
+      if (result === 'limit') {
+        toast.info(t('dashboard.customize.limitReached', { max: MAX_DASHBOARD_TABS }))
+      }
+    },
+    [togglePinnedTab, t],
+  )
+
+  const renderPinButton = useCallback(
+    (targetTo: string, label: string, isPinned: boolean, testId: string) => (
+      <FavoriteButton
+        isFavorite={isPinned}
+        onToggle={() => handleTogglePin(targetTo)}
+        tooltipText={t(isPinned ? 'settings.unpinFromBar' : 'settings.pinToBar')}
+        ariaLabel={t(isPinned ? 'settings.unpinSectionFromBar' : 'settings.pinSectionToBar', {
+          section: label,
+        })}
+        testId={testId}
+      />
+    ),
+    [handleTogglePin, t],
+  )
   const [announcementsTab, setAnnouncementsTab] = useState<AnnouncementsSubTab>(
     initial.announcements ?? 'popup',
   )
@@ -226,25 +183,27 @@ export function Settings() {
     return () => window.removeEventListener('msm:open-settings-tab', handler)
   }, [applyTarget])
 
-  const sections: SettingsSectionEintrag<SectionId>[] = [
-    { id: 'general', label: t('settings.tabs.general'), icon: Globe, group: t('settings.groups.basis') },
-    { id: 'imprint', label: t('settings.tabs.imprint'), icon: FileText, group: t('settings.groups.basis') },
-    { id: 'announcements', label: t('settings.tabs.announcements'), icon: Megaphone, group: t('settings.groups.basis') },
-    { id: 'security', label: t('settings.tabs.security'), icon: ShieldAlert, group: t('settings.groups.sicherheit') },
-    { id: 'oauth', label: t('settings.tabs.oauth'), icon: KeyRound, group: t('settings.groups.sicherheit') },
-    { id: 'gameIntegrations', label: t('settings.tabs.gameIntegrations'), icon: Gamepad2, group: t('settings.groups.verbindungen') },
-    {
-      id: 'shop',
-      label: canReadHoster ? t('settings.tabs.shopAndHoster') : t('settings.tabs.shop'),
-      icon: ShoppingBag,
-      group: t('settings.groups.verbindungen'),
-    },
-    { id: 'communication', label: t('settings.tabs.communication'), icon: Mail, group: t('settings.groups.verbindungen') },
-    { id: 'ai', label: t('settings.tabs.aiAndSearch'), icon: Bot, group: t('settings.groups.verbindungen') },
-    { id: 'storage', label: t('settings.tabs.storage'), icon: HardDrive, group: t('settings.groups.daten') },
-  ]
+  const sections: SettingsSectionEintrag<SettingsSectionId>[] = useMemo(
+    () =>
+      SETTINGS_SEKTIONEN.map((sektion) => {
+        const label = sektion.altLabelKey && canReadHoster ? t(sektion.altLabelKey) : t(sektion.labelKey)
+        const isPinned = pinnedSet.has(sektion.to)
+        return {
+          id: sektion.id,
+          label,
+          icon: sektion.icon,
+          group: t(sektion.groupKey),
+          highlighted: isPinned,
+          trailing: renderPinButton(sektion.to, label, isPinned, `pin-settings-${sektion.id}`),
+        }
+      }),
+    [canReadHoster, pinnedSet, renderPinButton, t],
+  )
 
   const aktiv = sections.some((section) => section.id === activeTab) ? activeTab : 'general'
+  const aktivSektion = sections.find((section) => section.id === aktiv) ?? sections[0]
+  const aktivTarget = `/settings?tab=${aktiv}`
+  const aktivPinned = pinnedSet.has(aktivTarget)
 
   const announcementsItems: SubTabItem<AnnouncementsSubTab>[] = [
     { id: 'popup', labelKey: 'settings.tabs.popup', icon: Megaphone, render: () => <PopupTab /> },
@@ -277,7 +236,7 @@ export function Settings() {
       : []),
   ]
 
-  const handleSectionChange = useCallback((section: SectionId) => {
+  const handleSectionChange = useCallback((section: SettingsSectionId) => {
     setActiveTab(section)
     if (section !== 'shop') setShopSubTab(undefined)
     if (section !== 'ai') setAiSubTab(undefined)
@@ -292,6 +251,12 @@ export function Settings() {
         title={t('common.settings')}
         description={t('settings.subtitle')}
       >
+        {aktivSektion && (
+          <div className="flex items-center justify-between gap-2 rounded-control border border-outline-variant/35 bg-surface-container-low/60 px-3 py-1.5 lg:hidden">
+            <span className="truncate text-label-md font-medium text-on-surface">{aktivSektion.label}</span>
+            {renderPinButton(aktivTarget, aktivSektion.label, aktivPinned, `pin-settings-mobile-${aktiv}`)}
+          </div>
+        )}
         {aktiv === 'general' && <GeneralTab />}
         {aktiv === 'imprint' && <ImprintTab />}
         {aktiv === 'announcements' && (

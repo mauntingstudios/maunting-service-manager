@@ -4,10 +4,16 @@ import { still } from '@/lib/still'
 import {
   readFavoriteIdList,
   removeStorageKey,
+  sanitizeFavoriteIdList,
   storageKey,
   toggleFavoriteIdInList,
   writeFavoriteIdList,
 } from '@/stores/favoriteIdsStorage'
+import {
+  clearUiPreferencesMigrationMarker,
+  registerUiPreferencesStore,
+  syncUiPreferencesPatch,
+} from '@/stores/uiPreferencesSync'
 import type { Server } from '@/types'
 
 const FAVORITES_KEY_PREFIX = 'msm:server-favorites:'
@@ -87,6 +93,7 @@ interface ServerPreferencesState {
   lastVisitedId: number | null
   recentVisitedIds: number[]
   toggleFavorite: (serverId: number) => void
+  hydrateFavorites: (ids: number[]) => void
   setLastVisited: (serverId: number) => void
   resetForTests: () => void
 }
@@ -104,6 +111,13 @@ export const useServerPreferencesStore = create<ServerPreferencesState>((set, ge
     if (!next) return
     writeFavoriteIdList(FAVORITES_KEY_PREFIX, angemeldetesKonto(), next, LOG_SCOPE)
     set({ favoriteIds: next })
+    syncUiPreferencesPatch({ server_favorites: next })
+  },
+
+  hydrateFavorites: (ids) => {
+    const clean = sanitizeFavoriteIdList(ids)
+    writeFavoriteIdList(FAVORITES_KEY_PREFIX, angemeldetesKonto(), clean, LOG_SCOPE)
+    set({ favoriteIds: clean })
   },
 
   setLastVisited: (serverId) => {
@@ -124,6 +138,7 @@ export const useServerPreferencesStore = create<ServerPreferencesState>((set, ge
     const konto = angemeldetesKonto()
     clearAccountPreferences(konto)
     clearAccountPreferences(null)
+    if (konto !== null) clearUiPreferencesMigrationMarker(konto)
     set({ favoriteIds: [], lastVisitedId: null, recentVisitedIds: [] })
   },
 }))
@@ -136,6 +151,26 @@ beiKontowechsel((konto) => {
     recentVisitedIds: readRecentVisitedIds(konto, nextLastVisitedId),
   })
 })
+
+registerUiPreferencesStore(
+  (prefs) => {
+    useServerPreferencesStore.getState().hydrateFavorites(prefs.server_favorites)
+  },
+  () => ({
+    server_favorites: useServerPreferencesStore.getState().favoriteIds,
+  }),
+)
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('storage', (event) => {
+    const konto = angemeldetesKonto()
+    if (event.key === storageKey(FAVORITES_KEY_PREFIX, konto)) {
+      useServerPreferencesStore.setState({
+        favoriteIds: readFavoriteIdList(FAVORITES_KEY_PREFIX, konto, LOG_SCOPE),
+      })
+    }
+  })
+}
 
 /**
  * Sortiert Server stabil für Dashboard, Serverliste und Server-Wechsler:

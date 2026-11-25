@@ -4044,7 +4044,24 @@
     "moreGames": "+{{count}} weitere",
     "viewAllServers": "Alle Server",
     "manageNodes": "Nodes verwalten",
-    "activeServersOverview": "Server im Blick"
+    "activeServersOverview": "Server im Blick",
+    "customize": {
+      "title": "Dashboard-Leiste anpassen",
+      "description": "Lege fest, welche Bereiche neben dem Dashboard als Reiter erscheinen. Du kannst bis zu {{max}} Einträge anpinnen.",
+      "pinnedHeading": "Angepinnte Reiter",
+      "countBadge": "{{count}} / {{max}} belegt",
+      "fixedBadge": "Fest",
+      "noExtraPinned": "Derzeit sind keine weiteren Reiter angepinnt. Wähle unten Einträge über den Stern aus.",
+      "panelAreasHeading": "Panel-Bereiche",
+      "settingsSectionsHeading": "Panel-Einstellungen",
+      "moveUp": "Nach oben verschieben",
+      "moveDown": "Nach unten verschieben",
+      "moveItemUp": "{{name}} nach oben verschieben",
+      "moveItemDown": "{{name}} nach unten verschieben",
+      "reset": "Auf Standard zurücksetzen",
+      "done": "Fertig",
+      "limitReached": "Es können maximal {{max}} Reiter gleichzeitig angepinnt werden."
+    }
   },
   "auth": {
     "login": "Anmelden",
@@ -5267,6 +5284,10 @@
     "emailConfigured": "E-Mail-Dienst konfiguriert",
     "emailNotConfigured": "E-Mail-Dienst nicht konfiguriert",
     "panelConfig": "Panel-Konfiguration",
+    "pinToBar": "An Dashboard-Leiste anpinnen",
+    "unpinFromBar": "Von Dashboard-Leiste lösen",
+    "pinSectionToBar": "{{section}} an Dashboard-Leiste anpinnen",
+    "unpinSectionFromBar": "{{section}} von Dashboard-Leiste lösen",
     "groups": {
       "basis": "Grundlagen",
       "sicherheit": "Sicherheit",
@@ -9470,6 +9491,7 @@
     "dashboard": {
       "bereiche": "Server-Verwaltung",
       "mehr": "Mehr",
+      "anpassen": "Leiste anpassen",
       "panelEinstellungen": "Panel-Einstellungen"
     },
     "card": {

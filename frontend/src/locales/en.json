@@ -4044,7 +4044,24 @@
     "moreGames": "+{{count}} more",
     "viewAllServers": "All servers",
     "manageNodes": "Manage nodes",
-    "activeServersOverview": "Servers at a glance"
+    "activeServersOverview": "Servers at a glance",
+    "customize": {
+      "title": "Customize dashboard bar",
+      "description": "Choose which areas appear as tabs next to Dashboard. You can pin up to {{max}} items.",
+      "pinnedHeading": "Pinned tabs",
+      "countBadge": "{{count}} / {{max}} used",
+      "fixedBadge": "Fixed",
+      "noExtraPinned": "No extra tabs are pinned yet. Star items below to add them to the bar.",
+      "panelAreasHeading": "Panel areas",
+      "settingsSectionsHeading": "Panel settings",
+      "moveUp": "Move up",
+      "moveDown": "Move down",
+      "moveItemUp": "Move {{name}} up",
+      "moveItemDown": "Move {{name}} down",
+      "reset": "Reset to default",
+      "done": "Done",
+      "limitReached": "You can pin at most {{max}} tabs at once."
+    }
   },
   "auth": {
     "login": "Sign in",
@@ -5267,6 +5284,10 @@
     "emailConfigured": "Email service configured",
     "emailNotConfigured": "Email service not configured",
     "panelConfig": "Panel configuration",
+    "pinToBar": "Pin to dashboard bar",
+    "unpinFromBar": "Unpin from dashboard bar",
+    "pinSectionToBar": "Pin {{section}} to dashboard bar",
+    "unpinSectionFromBar": "Unpin {{section}} from dashboard bar",
     "groups": {
       "basis": "Basics",
       "sicherheit": "Security",
@@ -9470,6 +9491,7 @@
     "dashboard": {
       "bereiche": "Server management",
       "mehr": "More",
+      "anpassen": "Customize bar",
       "panelEinstellungen": "Panel settings"
     },
     "card": {

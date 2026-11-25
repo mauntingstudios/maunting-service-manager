@@ -17,6 +17,10 @@ export interface SettingsSectionEintrag<T extends string = string> {
   group?: string
   tone?: 'default' | 'danger'
   indent?: boolean
+  /** Optionales Element am rechten Rand (z. B. Anpinnen-Stern), als Geschwister neben dem Navigationsknopf. */
+  trailing?: ReactNode
+  /** Goldene Hervorhebung, wenn der Bereich angepinnt ist. */
+  highlighted?: boolean
 }
 
 export interface SettingsLayoutProps<T extends string> {
@@ -54,12 +58,12 @@ export function SettingsLayout<T extends string>({
           )}
           <nav aria-label={title} className={showGroupHeaders ? 'space-y-4' : 'space-y-1'}>
             {gruppen.map((gruppe, gruppenIndex) => (
-              <div key={gruppe || 'allgemein'}>
+              <div key={gruppenIndex}>
                 {!showGroupHeaders && gruppenIndex > 0 && (
                   <div aria-hidden="true" className="mx-3 my-1.5 h-px bg-outline-variant/50" />
                 )}
                 {showGroupHeaders && gruppe && (
-                  <p className="px-3 pb-1 text-label-sm font-medium uppercase tracking-[0.14em] text-on-surface-variant/60">
+                  <p className="px-3 pb-1 text-label-sm font-medium text-on-surface-variant/75">
                     {gruppe}
                   </p>
                 )}
@@ -70,24 +74,47 @@ export function SettingsLayout<T extends string>({
                       const Symbol = section.icon
                       const istAktiv = section.id === active
                       return (
-                        <button
+                        <div
                           key={section.id}
-                          type="button"
-                          onClick={() => onChange(section.id)}
-                          aria-current={istAktiv ? 'page' : undefined}
-                          className={`flex w-full items-center gap-3 rounded-control px-3 py-2 text-left text-label-md transition-colors ${
+                          className={`group flex items-center gap-1 rounded-control transition-colors ${
                             section.indent ? 'ml-3' : ''
                           } ${
-                            istAktiv
-                              ? 'bg-primary/10 font-semibold text-primary'
-                              : section.tone === 'danger'
-                                ? 'text-status-destructive hover:bg-status-destructive/10'
-                                : 'text-on-surface-variant hover:bg-surface-container-high/50 hover:text-on-surface'
+                            section.highlighted
+                              ? 'bg-status-warning/10 ring-1 ring-inset ring-status-warning/35'
+                              : istAktiv
+                                ? 'bg-primary/10'
+                                : section.tone === 'danger'
+                                  ? 'hover:bg-status-destructive/10'
+                                  : 'hover:bg-surface-container-high/50'
                           }`}
                         >
-                          {Symbol && <Symbol className="h-4 w-4 shrink-0" aria-hidden="true" />}
-                          <span className="truncate">{section.label}</span>
-                        </button>
+                          <button
+                            type="button"
+                            onClick={() => onChange(section.id)}
+                            aria-current={istAktiv ? 'page' : undefined}
+                            className={`flex min-w-0 flex-1 items-center gap-3 rounded-control px-3 py-2 text-left text-label-md transition-colors active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70 disabled:pointer-events-none disabled:opacity-50 ${
+                              istAktiv
+                                ? 'font-semibold text-primary'
+                                : section.tone === 'danger'
+                                  ? 'text-status-destructive'
+                                  : 'text-on-surface-variant group-hover:text-on-surface'
+                            }`}
+                          >
+                            {Symbol && <Symbol className="h-4 w-4 shrink-0" aria-hidden="true" />}
+                            <span className="truncate">{section.label}</span>
+                          </button>
+                          {section.trailing && (
+                            <div
+                              className={`pr-1 transition-opacity ${
+                                section.highlighted
+                                  ? 'opacity-100'
+                                  : 'opacity-40 group-hover:opacity-100 focus-within:opacity-100'
+                              }`}
+                            >
+                              {section.trailing}
+                            </div>
+                          )}
+                        </div>
                       )
                     })}
                 </div>

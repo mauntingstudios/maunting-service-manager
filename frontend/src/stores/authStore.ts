@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { api, clearCsrfTokenMemory } from '@/api/client'
 import { isNetworkOrOfflineError, istZeitueberschreitung } from '@/lib/networkErrors'
 import { setzeAngemeldetesKonto } from '@/lib/angemeldetesKonto'
+import { still } from '@/lib/still'
 import { gehoertDemKonto, leereOfflineAblage } from '@/lib/offlineAblage'
 import { usePermissionsStore } from '@/stores/permissionsStore'
 import { useRolePreviewStore } from '@/stores/rolePreviewStore'
@@ -20,6 +21,10 @@ import { leereGruppenNamen } from '@/services/gruppenName'
 import { leereGespraeche } from '@/services/gespraechsListe'
 import { leereKlartextSpeicher } from '@/services/klartextSpeicher'
 import { kuendige } from '@/services/pushAbo'
+import {
+  hydrateUiPreferencesFromUser,
+  setUiPreferencesUserUpdater,
+} from '@/stores/uiPreferencesSync'
 import type { User } from '@/types'
 
 const CACHED_USER_KEY = 'msm_cached_user'
@@ -46,6 +51,7 @@ function saveCachedUser(user: User | null): void {
   // Liegt noch die Ablage eines anderen Kontos im Browser (Sitzung ohne
   // Abmelden beendet), fällt sie hier, bevor eine Seite daraus liest.
   if (user) gehoertDemKonto()
+  hydrateUiPreferencesFromUser(user)
   try {
     if (user) {
       localStorage.setItem(CACHED_USER_KEY, JSON.stringify(user))
@@ -127,6 +133,7 @@ const initialCachedUser = loadCachedUser()
 // hier. Ohne diese Zeile stünde der Messenger nach einem Neuladen ohne Konto da
 // und fände seinen Geräteschlüssel nicht.
 setzeAngemeldetesKonto(initialCachedUser?.id ?? null)
+hydrateUiPreferencesFromUser(initialCachedUser)
 
 export const useAuthStore = create<AuthState>((set, get) => ({
   user: initialCachedUser,
@@ -292,3 +299,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
   },
 }))
+
+setUiPreferencesUserUpdater((prefs) => {
+  const state = useAuthStore.getState()
+  if (!state.user) return
+  const updated = { ...state.user, ui_preferences: prefs }
+  try {
+    localStorage.setItem(CACHED_USER_KEY, JSON.stringify(updated))
+  } catch (err) {
+    still(err, 'authStore:cacheUiPreferences')
+  }
+  useAuthStore.setState({ user: updated })
+})

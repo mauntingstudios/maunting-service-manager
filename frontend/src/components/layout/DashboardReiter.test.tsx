@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import i18n from '@/i18n'
 import { useAuthStore } from '@/stores/authStore'
+import { useDashboardPreferencesStore } from '@/stores/dashboardPreferencesStore'
 import { usePermissionsStore } from '@/stores/permissionsStore'
 import type { User } from '@/types'
 import type { MePermissions } from '@/types/permissions'
@@ -49,6 +50,7 @@ function zeige(pfad: string) {
 describe('DashboardReiter', () => {
   beforeEach(() => {
     rechte.clear()
+    useDashboardPreferencesStore.getState().resetForTests()
     useAuthStore.setState({ user: MITGLIED, isAuthenticated: true, isLoading: false })
     rechteSetzen({})
   })
@@ -103,5 +105,43 @@ describe('DashboardReiter', () => {
 
     fireEvent.click(screen.getByRole('tab', { name: i18n.t('nav.nodes') }))
     expect(screen.getByRole('tab', { name: i18n.t('nav.nodes') })).toHaveAttribute('aria-selected', 'true')
+  })
+
+  it('lässt Panel-Einstellungen anpinnen, verschiebt abgepinnte Bereiche nach Mehr und setzt zurück', () => {
+    useAuthStore.setState({ user: BETREIBER, isAuthenticated: true, isLoading: false })
+    rechteSetzen({ is_owner: true })
+    zeige('/')
+
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('mss.dashboard.anpassen') }))
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByTestId('customize-pin-/admin/nodes'))
+    fireEvent.click(screen.getByTestId('customize-pin-/settings?tab=shop'))
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('dashboard.customize.done') }))
+
+    expect(screen.queryByRole('tab', { name: i18n.t('nav.nodes') })).toBeNull()
+    expect(screen.getByRole('tab', { name: i18n.t('settings.tabs.shopAndHoster') })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('mss.dashboard.mehr') }))
+    expect(screen.getByRole('menuitem', { name: i18n.t('nav.nodes') })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('mss.dashboard.anpassen') }))
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('dashboard.customize.reset') }))
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('dashboard.customize.done') }))
+
+    expect(screen.getByRole('tab', { name: i18n.t('nav.nodes') })).toBeInTheDocument()
+    expect(screen.queryByRole('tab', { name: i18n.t('settings.tabs.shopAndHoster') })).toBeNull()
+  })
+
+  it('markiert angepinnte Einstellungs-Reiter auch bei historischen Deep-Links wie ?tab=hoster aktiv', () => {
+    useAuthStore.setState({ user: BETREIBER, isAuthenticated: true, isLoading: false })
+    rechteSetzen({ is_owner: true })
+    useDashboardPreferencesStore.getState().togglePinnedTab('/settings?tab=shop')
+    zeige('/settings?tab=hoster')
+
+    expect(screen.getByRole('tab', { name: i18n.t('settings.tabs.shopAndHoster') })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    )
   })
 })

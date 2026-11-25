@@ -1,6 +1,12 @@
 /** Ein zweiter Faktor. Ein Konto kann beide gleichzeitig haben. */
 export type Zweitfaktor = 'passkey' | 'totp'
 
+export interface UiPreferences {
+  server_favorites: number[]
+  node_favorites: number[]
+  dashboard_tabs: string[] | null
+}
+
 export interface User {
   id: number
   username: string
@@ -38,6 +44,8 @@ export interface User {
   /** URL zum hochgeladenen Profilbild */
   avatar_url?: string | null
   social_privacy?: 'private' | 'friends' | 'public'
+  /** Geräteübergreifende UI-Vorlieben (Favoriten & angepinnte Reiter). */
+  ui_preferences?: UiPreferences | null
   /** Zeitstempel der letzten Tresorschlüssel-Rotation (für Smartcard-Gültigkeit). */
   vault_keys_rotated_at?: string | null
   created_at: string

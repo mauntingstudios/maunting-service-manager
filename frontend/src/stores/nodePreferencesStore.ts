@@ -3,9 +3,16 @@ import { angemeldetesKonto, beiKontowechsel } from '@/lib/angemeldetesKonto'
 import {
   readFavoriteIdList,
   removeStorageKey,
+  sanitizeFavoriteIdList,
+  storageKey,
   toggleFavoriteIdInList,
   writeFavoriteIdList,
 } from '@/stores/favoriteIdsStorage'
+import {
+  clearUiPreferencesMigrationMarker,
+  registerUiPreferencesStore,
+  syncUiPreferencesPatch,
+} from '@/stores/uiPreferencesSync'
 
 const NODE_FAVORITES_KEY_PREFIX = 'msm:node-favorites:'
 const LOG_SCOPE = 'nodePreferences'
@@ -20,6 +27,7 @@ function nodeStatusRank(status: string | undefined): number {
 interface NodePreferencesState {
   favoriteIds: number[]
   toggleFavorite: (nodeId: number) => void
+  hydrateFavorites: (ids: number[]) => void
   resetForTests: () => void
 }
 
@@ -33,12 +41,20 @@ export const useNodePreferencesStore = create<NodePreferencesState>((set, get) =
     if (!next) return
     writeFavoriteIdList(NODE_FAVORITES_KEY_PREFIX, angemeldetesKonto(), next, LOG_SCOPE)
     set({ favoriteIds: next })
+    syncUiPreferencesPatch({ node_favorites: next })
+  },
+
+  hydrateFavorites: (ids) => {
+    const clean = sanitizeFavoriteIdList(ids)
+    writeFavoriteIdList(NODE_FAVORITES_KEY_PREFIX, angemeldetesKonto(), clean, LOG_SCOPE)
+    set({ favoriteIds: clean })
   },
 
   resetForTests: () => {
     const konto = angemeldetesKonto()
     removeStorageKey(NODE_FAVORITES_KEY_PREFIX, konto, LOG_SCOPE)
     removeStorageKey(NODE_FAVORITES_KEY_PREFIX, null, LOG_SCOPE)
+    if (konto !== null) clearUiPreferencesMigrationMarker(konto)
     set({ favoriteIds: [] })
   },
 }))
@@ -48,6 +64,26 @@ beiKontowechsel((konto) => {
     favoriteIds: readFavoriteIdList(NODE_FAVORITES_KEY_PREFIX, konto, LOG_SCOPE),
   })
 })
+
+registerUiPreferencesStore(
+  (prefs) => {
+    useNodePreferencesStore.getState().hydrateFavorites(prefs.node_favorites)
+  },
+  () => ({
+    node_favorites: useNodePreferencesStore.getState().favoriteIds,
+  }),
+)
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('storage', (event) => {
+    const konto = angemeldetesKonto()
+    if (event.key === storageKey(NODE_FAVORITES_KEY_PREFIX, konto)) {
+      useNodePreferencesStore.setState({
+        favoriteIds: readFavoriteIdList(NODE_FAVORITES_KEY_PREFIX, konto, LOG_SCOPE),
+      })
+    }
+  })
+}
 
 /**
  * Sortiert Nodes stabil für Node-Übersicht und Dashboard:

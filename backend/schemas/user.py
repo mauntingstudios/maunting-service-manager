@@ -5,6 +5,8 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel, Field, EmailStr, field_validator
 
+from models.user import MAX_DASHBOARD_TABS, MAX_FAVORITE_IDS, VALID_DASHBOARD_TABS
+
 
 def _validate_time_zone(value: str | None) -> str | None:
     if value is None or value.strip() == "":
@@ -110,6 +112,56 @@ class AiProviderChoiceRequest(BaseModel):
     provider_id: int | None = None
 
 
+class UiPreferences(BaseModel):
+    """Kompakte geräteübergreifende UI-Vorlieben (nur IDs und kanonische Routen)."""
+
+    server_favorites: list[int] = Field(default_factory=list)
+    node_favorites: list[int] = Field(default_factory=list)
+    dashboard_tabs: list[str] | None = None
+
+
+class UiPreferencesUpdateRequest(BaseModel):
+    """Teilaktualisierung der UI-Vorlieben. Nicht gesetzte Felder bleiben unverändert."""
+
+    server_favorites: list[int] | None = None
+    node_favorites: list[int] | None = None
+    dashboard_tabs: list[str] | None = None
+
+    @field_validator("server_favorites", "node_favorites")
+    @classmethod
+    def check_favorite_ids(cls, v: list[int] | None) -> list[int] | None:
+        if v is None:
+            return None
+        seen: set[int] = set()
+        cleaned: list[int] = []
+        for item in v:
+            if type(item) is not int or item <= 0:
+                raise ValueError("Favoriten-IDs müssen positive Ganzzahlen sein.")
+            if item not in seen:
+                seen.add(item)
+                cleaned.append(item)
+        if len(cleaned) > MAX_FAVORITE_IDS:
+            raise ValueError(f"Maximal {MAX_FAVORITE_IDS} Favoriten erlaubt.")
+        return cleaned
+
+    @field_validator("dashboard_tabs")
+    @classmethod
+    def check_dashboard_tabs(cls, v: list[str] | None) -> list[str] | None:
+        if v is None:
+            return None
+        seen: set[str] = set()
+        cleaned: list[str] = []
+        for item in v:
+            if item not in VALID_DASHBOARD_TABS:
+                raise ValueError("Unzulässiger Dashboard-Reiter.")
+            if item not in seen:
+                seen.add(item)
+                cleaned.append(item)
+        if len(cleaned) > MAX_DASHBOARD_TABS:
+            raise ValueError(f"Maximal {MAX_DASHBOARD_TABS} Dashboard-Reiter erlaubt.")
+        return cleaned
+
+
 class UserResponse(BaseModel):
     id: int
     username: str
@@ -147,6 +199,7 @@ class UserResponse(BaseModel):
     role_ids: list[int] = Field(default_factory=list)
     avatar_url: str | None = None
     social_privacy: str = "friends"
+    ui_preferences: UiPreferences | None = None
     created_at: datetime
 
     class Config:

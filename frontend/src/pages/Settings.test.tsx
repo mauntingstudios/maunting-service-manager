@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { Settings } from './Settings'
 import * as client from '@/api/client'
 import i18n from '@/i18n'
+import { useDashboardPreferencesStore } from '@/stores/dashboardPreferencesStore'
 import { useToastStore } from '@/stores/toastStore'
 
 vi.mock('@/api/client', () => ({ api: vi.fn() }))
@@ -20,6 +21,7 @@ function renderSettings(initialEntry = '/settings') {
 describe('Settings', () => {
   beforeEach(async () => {
     await i18n.changeLanguage('en')
+    useDashboardPreferencesStore.getState().resetForTests()
     useToastStore.setState({ toasts: [] })
     vi.mocked(client.api).mockReset()
   })
@@ -118,4 +120,21 @@ describe('Settings', () => {
       expect(screen.queryByText(/startsWith/i)).not.toBeInTheDocument()
     },
   )
+
+  it('pinnt einen Einstellungsbereich über den Stern-Schalter an die Dashboard-Leiste und löst ihn wieder', async () => {
+    vi.mocked(client.api).mockResolvedValue({} as never)
+    renderSettings('/settings')
+
+    expect(await screen.findByText(/Panel[- ](?:Configuration|Konfiguration)/i)).toBeInTheDocument()
+    const pinButton = screen.getByTestId('pin-settings-shop')
+    expect(pinButton).toHaveAttribute('aria-pressed', 'false')
+
+    fireEvent.click(pinButton)
+    expect(useDashboardPreferencesStore.getState().pinnedTabs).toContain('/settings?tab=shop')
+    expect(pinButton).toHaveAttribute('aria-pressed', 'true')
+
+    fireEvent.click(pinButton)
+    expect(useDashboardPreferencesStore.getState().pinnedTabs).not.toContain('/settings?tab=shop')
+    expect(pinButton).toHaveAttribute('aria-pressed', 'false')
+  })
 })

@@ -1,5 +1,7 @@
 from datetime import datetime, timezone
 import hashlib
+import json
+from typing import Any
 
 from sqlalchemy import BigInteger, Boolean, CheckConstraint, String, DateTime, ForeignKey, Integer, text, true, false, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -34,6 +36,73 @@ SYSTEMBEREICH_STANDARD = "lesen"
 #: Praefix sagt in der Tabelle, was es ist. Bis 09/2026 stand dort
 #: ``msm-dis-v1:`` oder gar nichts (Migration 20260928_01).
 EMAIL_PRAEFIX = "msm-email-v1:"
+
+MAX_FAVORITE_IDS = 200
+MAX_DASHBOARD_TABS = 5
+VALID_DASHBOARD_TABS: frozenset[str] = frozenset({
+    "/servers",
+    "/admin/nodes",
+    "/admin/ai-providers",
+    "/users",
+    "/roles",
+    "/admin/audit",
+    "/settings",
+    "/blueprints",
+    "/panel-backups",
+    "/panel-database",
+    "/settings?tab=general",
+    "/settings?tab=imprint",
+    "/settings?tab=announcements",
+    "/settings?tab=security",
+    "/settings?tab=oauth",
+    "/settings?tab=gameIntegrations",
+    "/settings?tab=shop",
+    "/settings?tab=communication",
+    "/settings?tab=ai",
+    "/settings?tab=storage",
+})
+
+
+def _dedupe_limited(items: Any, predicate: Any, limit: int) -> list[Any]:
+    if not isinstance(items, list):
+        return []
+    seen: set[Any] = set()
+    result: list[Any] = []
+    for item in items:
+        if predicate(item) and item not in seen:
+            seen.add(item)
+            result.append(item)
+            if len(result) >= limit:
+                break
+    return result
+
+
+def _is_positive_int(item: Any) -> bool:
+    return type(item) is int and item > 0
+
+
+def _is_valid_dashboard_tab(item: Any) -> bool:
+    return isinstance(item, str) and item in VALID_DASHBOARD_TABS
+
+
+def normalize_ui_preferences(raw: Any) -> dict[str, Any]:
+    """Bereinigt gespeicherte oder eingehende UI-Vorlieben auf minimale IDs/Routen."""
+    data = raw if isinstance(raw, dict) else {}
+    raw_tabs = data.get("dashboard_tabs")
+    tabs = (
+        _dedupe_limited(raw_tabs, _is_valid_dashboard_tab, MAX_DASHBOARD_TABS)
+        if isinstance(raw_tabs, list)
+        else None
+    )
+    return {
+        "server_favorites": _dedupe_limited(
+            data.get("server_favorites"), _is_positive_int, MAX_FAVORITE_IDS
+        ),
+        "node_favorites": _dedupe_limited(
+            data.get("node_favorites"), _is_positive_int, MAX_FAVORITE_IDS
+        ),
+        "dashboard_tabs": tabs,
+    }
 
 
 def email_chiffrat_speichern(dis_chiffrat: str) -> str:
@@ -217,6 +286,10 @@ class User(Base):
 
     avatar_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
 
+    # Kompakte geraeteuebergreifende UI-Vorlieben (Server-/Node-Favoriten-IDs und
+    # angepinnte Dashboard-Reiter). Enthaelt ausschliesslich IDs/Routen-Schluessel.
+    ui_preferences_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
@@ -238,6 +311,15 @@ class User(Base):
     passkeys: Mapped[list["UserPasskey"]] = relationship(
         "UserPasskey", back_populates="user", cascade="all, delete-orphan", passive_deletes=True
     )
+
+    @property
+    def ui_preferences(self) -> dict[str, Any] | None:
+        if not self.ui_preferences_json:
+            return None
+        try:
+            return normalize_ui_preferences(json.loads(self.ui_preferences_json))
+        except (ValueError, TypeError):
+            return None
 
     @property
     def two_factor_totp_aktiv(self) -> bool:

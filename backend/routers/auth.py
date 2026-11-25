@@ -1,3 +1,4 @@
+import json
 import os
 import re
 from datetime import datetime, timedelta, timezone
@@ -32,13 +33,25 @@ from dependencies import (
     session_familie,
 )
 from models import User, EmailVerification, UserPasskey
+from models.user import normalize_ui_preferences
 from models.dis_text import vorab_entschluesselt
 from models.team import Team
 from services.achievement_service import AchievementService
 from services.dis_client import DisClient, DisSidecarError
 from schemas import LoginRequest, LoginVerifyRequest, TokenResponse, RegistrationResponse, PasswordResetRequest, PasswordResetConfirm, ChangePasswordRequest, ChangeEmailRequest, DeleteAccountRequest, DataExportRequest, NativeRefreshRequest, LogoutRequest
 from schemas import ResendVerificationRequest
-from schemas.user import UserCreate, UserResponse, OwnerSetupRequest, SetupVerifyRequest, TimezoneUpdateRequest, LocationSharingUpdateRequest, AiProviderChoiceRequest, UsernameUpdateRequest
+from schemas.user import (
+    UserCreate,
+    UserResponse,
+    OwnerSetupRequest,
+    SetupVerifyRequest,
+    TimezoneUpdateRequest,
+    LocationSharingUpdateRequest,
+    AiProviderChoiceRequest,
+    UsernameUpdateRequest,
+    UiPreferences,
+    UiPreferencesUpdateRequest,
+)
 from schemas.device_pairing import (
     PairedDevice,
     PairingCreated,
@@ -1185,6 +1198,33 @@ def update_ai_provider(
     user.ai_provider_id = req.provider_id
     db.commit()
     return {"ai_provider_id": user.ai_provider_id}
+
+
+@router.patch("/me/preferences", response_model=UiPreferences)
+def update_ui_preferences(
+    req: UiPreferencesUpdateRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    _: None = Depends(verify_csrf),
+) -> dict:
+    """Speichert kompakte UI-Vorlieben (Favoriten-IDs und Dashboard-Reiter) geräteübergreifend."""
+    current = user.ui_preferences or {
+        "server_favorites": [],
+        "node_favorites": [],
+        "dashboard_tabs": None,
+    }
+    merged = dict(current)
+    if "server_favorites" in req.model_fields_set and req.server_favorites is not None:
+        merged["server_favorites"] = req.server_favorites
+    if "node_favorites" in req.model_fields_set and req.node_favorites is not None:
+        merged["node_favorites"] = req.node_favorites
+    if "dashboard_tabs" in req.model_fields_set:
+        merged["dashboard_tabs"] = req.dashboard_tabs
+
+    normalized = normalize_ui_preferences(merged)
+    user.ui_preferences_json = json.dumps(normalized, separators=(",", ":"))
+    db.commit()
+    return normalized
 
 
 # ── Profilbild (Avatar) ──────────────────────────────────────────────────
