@@ -241,7 +241,7 @@ class ShopOrder(Base):
     payment_provider: Mapped[str] = mapped_column(
         String(24), default="demo", nullable=False
     )
-    payment_reference: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    payment_reference: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_now, nullable=False

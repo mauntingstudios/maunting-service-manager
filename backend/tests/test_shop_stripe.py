@@ -237,7 +237,10 @@ class TestStripeCheckout:
             )
             return httpx.Response(
                 200,
-                json={"id": "cs_test_transport", "url": "https://checkout.stripe.test/transport"},
+                json={
+                    "id": "cs_test_" + "a" * 58,
+                    "url": "https://checkout.stripe.test/transport",
+                },
             )
 
         transport = httpx.MockTransport(handler)
@@ -255,6 +258,10 @@ class TestStripeCheckout:
 
         assert res.status_code == 200, res.text
         assert res.json()["checkout_url"] == "https://checkout.stripe.test/transport"
+        gespeichert = client.get(
+            f"/api/shop/orders/{order['id']}", cookies=user_cookies
+        ).json()
+        assert gespeichert["payment_reference"] == "cs_test_" + "a" * 58
         assert len(captured) == 1
         path, content_type, form_pairs = captured[0]
         assert path.endswith("/checkout/sessions")
