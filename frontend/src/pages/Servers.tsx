@@ -431,13 +431,15 @@ export function Servers({ ohneHintergrund = false }: { ohneHintergrund?: boolean
         {/* Freischwebender Server-Header ohne doppelten Gruß oder Banner-Kasten */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
           <div>
-            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-primary">
-              <ServerIcon className="h-4 w-4" aria-hidden="true" />
-              <span>{t('nav.servers')}</span>
-            </div>
-            {!ohneEigenenHintergrund && (
-              <h1 className="mt-1 font-headline text-2xl sm:text-3xl font-extrabold tracking-tight text-on-surface">
-                {t('nav.servers')}
+            {ohneEigenenHintergrund ? (
+              <div className="flex items-center gap-2 text-xs font-semibold text-primary">
+                <ServerIcon className="h-4 w-4" aria-hidden="true" />
+                <span>{t('nav.servers')}</span>
+              </div>
+            ) : (
+              <h1 className="flex items-center gap-2.5 font-headline text-2xl sm:text-3xl font-extrabold tracking-tight text-on-surface">
+                <ServerIcon className="h-6 w-6 text-primary shrink-0" aria-hidden="true" />
+                <span>{t('nav.servers')}</span>
               </h1>
             )}
             <p className="mt-1 text-xs sm:text-sm text-on-surface-variant max-w-xl leading-relaxed">

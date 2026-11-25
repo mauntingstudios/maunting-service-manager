@@ -60,7 +60,7 @@ export function StatusUpdatesView({
       {/* Eigener Status */}
       <div
         onClick={eigeneOeffnen}
-        className="p-2.5 rounded-2xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 shadow-sm transition-all cursor-pointer active:scale-[0.99]"
+        className="p-2.5 rounded-2xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 shadow-sm transition-colors cursor-pointer active:scale-[0.99]"
       >
         <div className="flex items-center justify-between mb-2">
           <span className="text-xs font-headline font-semibold text-on-surface">{t('messenger.myStatus')}</span>
@@ -73,7 +73,7 @@ export function StatusUpdatesView({
           <div className="relative shrink-0">
             <div className={`w-12 h-12 rounded-full p-0.5 shrink-0 flex items-center justify-center ${
               eigeneStories.length > 0
-                ? 'bg-gradient-to-tr from-cyan-400 via-sky-500 to-indigo-500 ring-2 ring-primary/40 ring-offset-2 ring-offset-surface'
+                ? 'bg-primary/15 ring-2 ring-primary/70 ring-offset-2 ring-offset-surface'
                 : 'border-2 border-dashed border-outline-variant/40'
             }`}>
               <Avatar src={ich.avatarUrl} name={ich.username || 'Ich'} size="md" />
@@ -97,7 +97,7 @@ export function StatusUpdatesView({
 
       {/* Stories der Freunde */}
       <div className="space-y-2">
-        <div className="px-1 text-label-sm font-semibold text-on-surface-variant uppercase tracking-wider flex items-center justify-between">
+        <div className="px-1 text-label-sm font-semibold text-on-surface-variant flex items-center justify-between">
           <span>{t('messenger.recentUpdates')}</span>
           <span className="text-label-sm px-1.5 py-0.5 rounded-full bg-white/5 border border-white/10 font-mono text-on-surface-variant">
             {freunde.length}
@@ -114,13 +114,13 @@ export function StatusUpdatesView({
               <div
                 key={`story-grp-${grp.userId}`}
                 onClick={() => onOeffnen(grp.stories)}
-                className="flex items-center gap-3 p-2.5 rounded-2xl border border-white/10 bg-white/[0.04] hover:bg-white/[0.08] cursor-pointer transition-all active:scale-[0.99]"
+                className="flex items-center gap-3 p-2.5 rounded-2xl border border-white/10 bg-white/[0.04] hover:bg-white/[0.08] cursor-pointer transition-colors active:scale-[0.99]"
               >
                 <div className="relative shrink-0">
                   <div
-                    className={`w-11 h-11 rounded-full p-0.5 shrink-0 transition-all duration-300 flex items-center justify-center ${
+                    className={`w-11 h-11 rounded-full p-0.5 shrink-0 transition-colors duration-200 flex items-center justify-center ${
                       grp.hasUnseen
-                        ? 'bg-gradient-to-tr from-cyan-400 via-indigo-500 to-fuchsia-500 ring-2 ring-primary ring-offset-2 ring-offset-surface shadow-[0_0_14px_rgba(99,102,241,0.65)] animate-pulse'
+                        ? 'bg-primary/20 ring-2 ring-primary ring-offset-2 ring-offset-surface'
                         : 'bg-white/10 ring-1 ring-white/20 opacity-85'
                     }`}
                   >

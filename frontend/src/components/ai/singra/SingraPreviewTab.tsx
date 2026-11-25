@@ -1,5 +1,6 @@
 import type { Dispatch, RefObject, SetStateAction } from 'react'
 import {
+  Check,
   ChevronDown,
   ChevronUp,
   ExternalLink,
@@ -443,11 +444,12 @@ export function SingraPreviewTab({
                 <div className="flex flex-wrap items-center justify-between gap-2 border-b border-outline-variant/20 bg-surface-container-high/60 px-4 py-2 text-xs text-on-surface shrink-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <Badge variant="success" className="text-xs gap-1">
-                      ✓ Live (v{envState.production.release_count || 1})
+                      <Check className="h-3 w-3" aria-hidden="true" />
+                      <span>Live (v{envState.production.release_count || 1})</span>
                     </Badge>
                     <span className="text-on-surface-variant">Node:</span>
                     <span className="font-medium text-on-surface">{envState.production.node_id || 'Haupt-Node'}</span>
-                    <span className="text-on-surface-variant">• Modus:</span>
+                    <span className="text-on-surface-variant">Modus:</span>
                     <span className="font-medium text-on-surface">
                       {envState.production.mode === 'fullstack_split'
                         ? 'Fullstack getrennt'
@@ -457,7 +459,7 @@ export function SingraPreviewTab({
                     </span>
                     {envState.production.web_url && (
                       <>
-                        <span className="text-on-surface-variant">• Adresse:</span>
+                        <span className="text-on-surface-variant">Adresse:</span>
                         <a
                           href={envState.production.web_url}
                           target="_blank"

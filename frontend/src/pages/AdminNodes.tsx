@@ -432,14 +432,21 @@ export function AdminNodes({ ohneHintergrund = false }: { ohneHintergrund?: bool
         {/* Freischwebender Infrastruktur-Header im einheitlichen Stil */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
           <div className="min-w-0">
-            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-primary">
-              <Network className="h-4 w-4" aria-hidden="true" />
-              <span>{t('pageContext.infrastructure')}</span>
-            </div>
-            {!ohneEigenenHintergrund && (
-              <h1 className="mt-1 font-headline text-2xl sm:text-3xl font-extrabold tracking-tight text-on-surface">
-                {t('nav.nodes')}
-              </h1>
+            {ohneEigenenHintergrund ? (
+              <div className="flex items-center gap-2 text-xs font-semibold text-primary">
+                <Network className="h-4 w-4" aria-hidden="true" />
+                <span>{t('pageContext.infrastructure')}</span>
+              </div>
+            ) : (
+              <>
+                <div className="flex items-center gap-2 text-xs font-semibold text-primary">
+                  <Network className="h-4 w-4" aria-hidden="true" />
+                  <span>{t('pageContext.infrastructure')}</span>
+                </div>
+                <h1 className="mt-1 font-headline text-2xl sm:text-3xl font-extrabold tracking-tight text-on-surface">
+                  {t('nav.nodes')}
+                </h1>
+              </>
             )}
             <p className="mt-1 text-xs sm:text-sm text-on-surface-variant max-w-xl leading-relaxed">
               {t('nodes.subtitle')}
@@ -815,7 +822,7 @@ export function AdminNodes({ ohneHintergrund = false }: { ohneHintergrund?: bool
                   key={node.id}
                   data-testid={`node-card-${node.id}`}
                   data-favorite={isFavorite ? 'true' : 'false'}
-                  className={`msm-card rounded-2xl border bg-surface-container-low/80 backdrop-blur-xl px-4 py-3.5 sm:px-5 sm:py-4 space-y-3 transition-all duration-200 ${
+                  className={`msm-card rounded-2xl border bg-surface-container-low/80 backdrop-blur-xl px-4 py-3.5 sm:px-5 sm:py-4 space-y-3 transition-[border-color,background-color,box-shadow] duration-200 ${
                     isFavorite
                       ? FAVORITE_CARD_HIGHLIGHT_CLASS
                       : 'border-outline hover:border-primary/40'

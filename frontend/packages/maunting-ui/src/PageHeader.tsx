@@ -13,8 +13,8 @@ export function PageHeader({ eyebrow, title, description, status, actions }: Pag
     <header className="msm-page-header">
       <div className="relative flex min-w-0 flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
         <div className="min-w-0 max-w-3xl">
-          {eyebrow && (
-            <p className="mb-2 font-label-md text-label-sm font-semibold uppercase tracking-[0.12em] text-primary/75">
+          {eyebrow && eyebrow.trim().toLowerCase() !== title.trim().toLowerCase() && (
+            <p className="mb-1.5 text-xs font-semibold text-primary/80">
               {eyebrow}
             </p>
           )}

@@ -1,5 +1,5 @@
-import { useEffect, useId, useMemo, useState } from 'react'
-import { AlertCircle, CheckCircle2, KeyRound, PlugZap, Plus, RefreshCw, Save, Star, Trash2 } from 'lucide-react'
+import { useEffect, useId, useMemo, useState, type ReactNode } from 'react'
+import { AlertCircle, Brain, CheckCircle2, Ear, Eye, KeyRound, MessageSquare, Mic, PlugZap, Plus, RefreshCw, Save, Scale, Sparkles, Star, Trash2, Volume2, Wrench } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import {
@@ -1635,8 +1635,9 @@ function ProviderForm({
                   <div className="flex-1">
                     {models && models.length > 0 ? (
                       <div className="space-y-1.5">
-                        <label htmlFor={modelId} className="block text-xs font-semibold uppercase tracking-wider text-on-surface-variant">
-                          🧠 {t('ai.providers.model')}
+                        <label htmlFor={modelId} className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-on-surface-variant">
+                          <Brain className="h-3.5 w-3.5 text-primary" aria-hidden="true" />
+                          <span>{t('ai.providers.model')}</span>
                         </label>
                         <Dropdown
                           id={modelId}
@@ -1664,7 +1665,7 @@ function ProviderForm({
                       </div>
                     ) : (
                       <ProviderInput
-                        label={`🧠 ${t('ai.providers.model')}`}
+                        label={<span className="inline-flex items-center gap-1.5"><Brain className="h-3.5 w-3.5 text-primary" aria-hidden="true" /><span>{t('ai.providers.model')}</span></span>}
                         value={draft.default_model ?? ''}
                         onChange={(default_model) => change({ default_model })}
                       />
@@ -1790,7 +1791,13 @@ function ProviderForm({
                                   : 'bg-surface-container-low text-on-surface-variant hover:text-on-surface border border-outline-variant/20'
                               }`}
                             >
-                              {kat === 'chat' ? '💬 Chat' : kat === 'reasoning' ? '🧠 Denken' : kat === 'vision' ? '👁️ Sehen' : 'Alle'}
+                              {kat === 'chat' ? (
+                                <span className="inline-flex items-center gap-1"><MessageSquare className="h-3 w-3" aria-hidden="true" /><span>Chat</span></span>
+                              ) : kat === 'reasoning' ? (
+                                <span className="inline-flex items-center gap-1"><Brain className="h-3 w-3" aria-hidden="true" /><span>Denken</span></span>
+                              ) : kat === 'vision' ? (
+                                <span className="inline-flex items-center gap-1"><Eye className="h-3 w-3" aria-hidden="true" /><span>Sehen</span></span>
+                              ) : 'Alle'}
                             </button>
                           ))}
                         </div>
@@ -1825,8 +1832,8 @@ function ProviderForm({
                               >
                                 <span>{m.model_id}</span>
                                 {isDefault && <span className="text-label-sm opacity-75">(Standard)</span>}
-                                {m.reasoning && <span className="text-label-sm opacity-80">🧠</span>}
-                                {m.vision && <span className="text-label-sm opacity-80">👁️</span>}
+                                {m.reasoning && <Brain className="h-3 w-3 opacity-80" aria-hidden="true" />}
+                                {m.vision && <Eye className="h-3 w-3 opacity-80" aria-hidden="true" />}
                               </button>
                             )
                           })
@@ -1853,8 +1860,9 @@ function ProviderForm({
               {spec.kann_hoeren && (
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between gap-2">
-                  <label htmlFor={hoerenId} className="block text-xs font-semibold uppercase tracking-wider text-on-surface-variant">
-                    👂 {t('ai.providers.transcriptionModel')}
+                  <label htmlFor={hoerenId} className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-on-surface-variant">
+                    <Ear className="h-3.5 w-3.5 text-primary" aria-hidden="true" />
+                    <span>{t('ai.providers.transcriptionModel')}</span>
                   </label>
                   <Switch
                     checked={Boolean(draft.transcription_enabled)}
@@ -2132,8 +2140,9 @@ function ProviderForm({
           <div className="space-y-4 rounded-xl border border-outline-variant/40 bg-surface-container-low/35 p-4">
             <div className="flex items-center justify-between gap-4">
               <div>
-                <h4 className="text-xs font-semibold uppercase tracking-wider text-on-surface-variant">
-                  🛠️ {t('ai.providers.workerSection')}
+                <h4 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-on-surface-variant">
+                  <Wrench className="h-3.5 w-3.5 text-primary" aria-hidden="true" />
+                  <span>{t('ai.providers.workerSection')}</span>
                 </h4>
                 <p className="msm-field-help mt-1">{t('ai.providers.workerHint')}</p>
               </div>
@@ -2236,8 +2245,9 @@ function ProviderForm({
           <div className="space-y-4 rounded-xl border border-outline-variant/40 bg-surface-container-low/35 p-4">
             <div className="flex items-center justify-between gap-4">
               <div>
-                <h4 className="text-xs font-semibold uppercase tracking-wider text-on-surface-variant">
-                  ⚖️ {t('ai.providers.ethicsSection')}
+                <h4 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-on-surface-variant">
+                  <Scale className="h-3.5 w-3.5 text-primary" aria-hidden="true" />
+                  <span>{t('ai.providers.ethicsSection')}</span>
                 </h4>
                 <p className="msm-field-help mt-1">{t('ai.providers.ethicsHint')}</p>
               </div>
@@ -2358,8 +2368,9 @@ function ProviderForm({
           <div className="space-y-4 rounded-xl border border-outline-variant/40 bg-surface-container-low/35 p-4">
             <div className="flex items-center justify-between gap-4">
               <div>
-                <h4 className="text-xs font-semibold uppercase tracking-wider text-on-surface-variant">
-                  🧠 {t('ai.providers.memorySection')}
+                <h4 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-on-surface-variant">
+                  <Brain className="h-3.5 w-3.5 text-primary" aria-hidden="true" />
+                  <span>{t('ai.providers.memorySection')}</span>
                 </h4>
                 <p className="msm-field-help mt-1">{t('ai.providers.memoryHint')}</p>
               </div>
@@ -2435,8 +2446,9 @@ function ProviderForm({
           <div className="space-y-4 rounded-xl border border-outline-variant/40 bg-surface-container-low/35 p-4">
             <div className="flex items-center justify-between gap-4">
               <div>
-                <h4 className="text-xs font-semibold uppercase tracking-wider text-on-surface-variant">
-                  ✨ {t('ai.providers.searchSummarySection')}
+                <h4 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-on-surface-variant">
+                  <Sparkles className="h-3.5 w-3.5 text-primary" aria-hidden="true" />
+                  <span>{t('ai.providers.searchSummarySection')}</span>
                 </h4>
                 <p className="msm-field-help mt-1">{t('ai.providers.searchSummaryHint')}</p>
               </div>
@@ -2539,8 +2551,9 @@ function ProviderForm({
                 <div className="flex-1">
                   {models && models.length > 0 ? (
                     <div className="space-y-1.5">
-                      <label htmlFor={ttsModellId} className="block text-xs font-semibold uppercase tracking-wider text-on-surface-variant">
-                        🎙️ {t('ai.providers.ttsModel')}
+                      <label htmlFor={ttsModellId} className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-on-surface-variant">
+                        <Mic className="h-3.5 w-3.5 text-primary" aria-hidden="true" />
+                        <span>{t('ai.providers.ttsModel')}</span>
                       </label>
                       <Dropdown
                         id={ttsModellId}
@@ -2568,7 +2581,7 @@ function ProviderForm({
                     </div>
                   ) : (
                     <ProviderInput
-                      label={`🎙️ ${t('ai.providers.ttsModel')}`}
+                      label={<span className="inline-flex items-center gap-1.5"><Mic className="h-3.5 w-3.5 text-primary" aria-hidden="true" /><span>{t('ai.providers.ttsModel')}</span></span>}
                       value={draft.default_model ?? ''}
                       onChange={(default_model) => change({ default_model })}
                     />
@@ -2603,8 +2616,9 @@ function ProviderForm({
               )}
             </div>
             <div className="space-y-1.5">
-              <label htmlFor={stimmeId} className="block text-xs font-semibold uppercase tracking-wider text-on-surface-variant">
-                🗣️ {t('ai.providers.defaultVoice')}
+              <label htmlFor={stimmeId} className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-on-surface-variant">
+                <Volume2 className="h-3.5 w-3.5 text-primary" aria-hidden="true" />
+                <span>{t('ai.providers.defaultVoice')}</span>
               </label>
               <input
                 id={stimmeId}
@@ -2716,7 +2730,7 @@ function ModelCapabilities({ model }: { model: AiCatalogModel }) {
 }
 
 function ProviderInput({ label, value, onChange, className = '', ...props }: {
-  label: string
+  label: ReactNode
   value: string
   onChange: (value: string) => void
   className?: string

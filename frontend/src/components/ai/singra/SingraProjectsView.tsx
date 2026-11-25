@@ -1426,7 +1426,7 @@ export function SingraProjectsView({
                     type="button"
                     onClick={() => void handleDeleteProject(selectedProject)}
                     aria-label="Projekt löschen"
-                    className="grid h-10 w-10 sm:h-9 sm:w-9 shrink-0 place-items-center rounded-full border border-outline-variant/30 bg-surface-container-high/85 text-on-surface-variant hover:border-status-destructive/40 hover:bg-status-destructive/15 hover:text-status-destructive backdrop-blur-md shadow-sm transition-all active:scale-95"
+                    className="grid h-10 w-10 sm:h-9 sm:w-9 shrink-0 place-items-center rounded-full border border-outline-variant/30 bg-surface-container-high/85 text-on-surface-variant hover:border-status-destructive/40 hover:bg-status-destructive/15 hover:text-status-destructive backdrop-blur-md shadow-sm transition-colors active:scale-95"
                   >
                     <Trash2 className="h-4 w-4" aria-hidden="true" />
                   </button>
@@ -1885,7 +1885,7 @@ export function SingraProjectsView({
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Rocket className="h-5 w-5 text-primary" />
-              <span>Bereitstellungs-Status — „{selectedProject?.name}“</span>
+              <span>Bereitstellungs-Status: „{selectedProject?.name}“</span>
             </DialogTitle>
             <DialogDescription>
               Verfolgt die 14 Phasen von Quellcode-Erfassung und Tests bis zur produktiven Freigabe.

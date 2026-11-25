@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   Activity,
+  ArrowRight,
   Bot,
   CalendarClock,
   ChevronDown,
@@ -775,15 +776,16 @@ export function SingraToolsView({
                     E-Mail & Kalender sind bereits nativ integriert
                   </div>
                   <p className="text-xs text-on-surface-variant">
-                    Postfächer (IMAP/SMTP) und Kalender (CalDAV) bindest du direkt unter Profil → Verbindungen an – ganz ohne externen MCP-Server.
+                    Postfächer (IMAP/SMTP) und Kalender (CalDAV) bindest du direkt unter Profil → Verbindungen an, ganz ohne externen MCP-Server.
                   </p>
                 </div>
               </div>
               <Link
                 to="/profile?tab=connections"
-                className="shrink-0 text-xs font-semibold text-primary hover:underline self-end sm:self-center"
+                className="inline-flex items-center gap-1 shrink-0 text-xs font-semibold text-primary hover:underline self-end sm:self-center"
               >
-                Zu den Verbindungen →
+                <span>Zu den Verbindungen</span>
+                <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
               </Link>
             </div>
 

@@ -213,7 +213,7 @@ export function NewsDetail() {
       {post.related_game_type && shopEnabled && (
         <section className="flex flex-col justify-between gap-4 rounded-2xl border border-primary/35 bg-primary/10 p-5 sm:flex-row sm:items-center sm:p-6">
           <div className="space-y-1">
-            <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-primary">
+            <p className="flex items-center gap-1.5 text-xs font-semibold text-primary">
               <Gamepad2 className="h-3.5 w-3.5" aria-hidden="true" />
               <span>{t('news.passendesSpielLabel')}</span>
             </p>

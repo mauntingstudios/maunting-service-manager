@@ -803,7 +803,7 @@ export function Calendar() {
         {/* Freischwebender Kalender-Header mit Tageszeit-Begrüßung und Aktionen */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
           <div>
-            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-primary">
+            <div className="flex items-center gap-2 text-xs font-semibold text-primary">
               <CalendarIcon className="h-4 w-4" aria-hidden="true" />
               <span>{t('calendar.title')}</span>
             </div>

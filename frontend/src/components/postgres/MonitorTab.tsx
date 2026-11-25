@@ -251,7 +251,7 @@ function LocksSection() {
           <span className="font-mono text-on-surface">PID {pid}</span>
           {first && <span className="ml-2 text-on-surface-variant">{first.role} · {first.state}</span>}
           <span className="ml-2 font-mono text-label-sm text-on-surface-variant">
-            {entries.filter((e) => e.relation).map((e) => `${e.mode}${e.granted ? '' : ' ⏳'} ${e.relation}`).join(', ')}
+            {entries.filter((e) => e.relation).map((e) => `${e.mode}${e.granted ? '' : ' (wartend)'} ${e.relation}`).join(', ')}
           </span>
           {first?.query && <code className="mt-1 block truncate font-mono text-label-sm text-on-surface-variant">{first.query}</code>}
         </div>

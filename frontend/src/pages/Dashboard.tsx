@@ -172,7 +172,7 @@ function NodeCapacityCard() {
                 key={item.id}
                 data-testid={`dashboard-node-item-${item.id}`}
                 data-favorite={isFavorite ? 'true' : 'false'}
-                className={`min-w-0 rounded-xl border px-3 py-3 space-y-3 transition-all duration-200 ${
+                className={`min-w-0 rounded-xl border px-3 py-3 space-y-3 transition-[border-color,background-color,box-shadow] duration-200 ${
                   isFavorite
                     ? `${FAVORITE_CARD_HIGHLIGHT_CLASS} bg-surface-container/60`
                     : 'border-outline/40'
@@ -428,7 +428,7 @@ export function Dashboard({ ohneHintergrund = false }: { ohneHintergrund?: boole
         {/* Freischwebender Dashboard-Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
           <div className="min-w-0">
-            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-primary">
+            <div className="flex items-center gap-2 text-xs font-semibold text-primary">
               <ServerIcon className="h-4 w-4" aria-hidden="true" />
               <span>{t('dashboard.title')}</span>
             </div>

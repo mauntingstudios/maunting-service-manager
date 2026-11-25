@@ -267,7 +267,7 @@ export function OutgoingWebhooksPanel({ serverId }: { serverId: number }) {
         {showCreate && (
           <form
             onSubmit={handleCreate}
-            className="msm-card border border-outline/30 p-4 mt-3 space-y-3"
+            className="rounded-xl border border-outline/30 bg-surface-container-low/80 p-4 mt-3 space-y-3"
           >
             <div>
               <label className="block text-label-md text-on-surface-variant mb-1">
@@ -409,7 +409,7 @@ export function OutgoingWebhooksPanel({ serverId }: { serverId: number }) {
           </div>
 
           {revealedSecrets[sub.id] && (
-            <div className="msm-card border border-status-warning/40 p-3 bg-status-warning/5">
+            <div className="rounded-xl border border-status-warning/40 p-3 bg-status-warning/5">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-label-md text-status-warning font-medium">
                   {t('webhook.secretNew', { defaultValue: 'Neues Webhook-Secret' })}

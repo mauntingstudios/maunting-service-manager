@@ -62,7 +62,7 @@
   /* ── Knöpfe ────────────────────────────────────────────────────────── */
 
   .msm-btn-primary {
-    @apply rounded-control bg-primary font-label-md text-on-primary transition-all duration-200
+    @apply rounded-control bg-primary font-label-md text-on-primary transition-[background-color,color,transform,filter,box-shadow] duration-200
            hover:brightness-105 active:scale-[0.99]
            disabled:pointer-events-none disabled:opacity-50;
     box-shadow: 0 1px 0 hsl(0 0% 100% / 0.35) inset, 0 8px 22px hsl(var(--mui-focus) / 0.18);
@@ -70,21 +70,21 @@
 
   .msm-btn-secondary {
     @apply rounded-control border border-outline-variant bg-surface-container-high/55
-           font-label-md text-on-surface-variant transition-all duration-200
+           font-label-md text-on-surface-variant transition-[background-color,border-color,color,transform] duration-200
            hover:border-outline hover:bg-surface-container-high hover:text-on-surface
            active:scale-[0.99] disabled:pointer-events-none disabled:opacity-50;
   }
 
   .msm-btn-ghost {
     @apply rounded-control border border-transparent bg-transparent
-           font-label-md text-on-surface-variant transition-all duration-200
+           font-label-md text-on-surface-variant transition-[background-color,color,transform] duration-200
            hover:bg-primary/10 hover:text-primary
            active:scale-[0.99] disabled:pointer-events-none disabled:opacity-50;
   }
 
   .msm-btn-destructive {
     @apply rounded-control border border-status-destructive/60
-           font-label-md text-status-destructive transition-all duration-200
+           font-label-md text-status-destructive transition-[background-color,border-color,color,transform] duration-200
            hover:bg-status-destructive/10
            active:scale-[0.99] disabled:pointer-events-none disabled:opacity-50;
   }
@@ -94,7 +94,7 @@
   .msm-input {
     @apply w-full rounded-control border border-outline-variant/75 bg-surface-container-low/70
            font-body-md text-sm text-on-surface placeholder-on-surface-variant
-           transition-all duration-200
+           transition-[border-color,background-color,box-shadow] duration-200
            focus:border-primary/60 focus:bg-surface-container-low focus:ring-2 focus:ring-primary/15;
     padding: 0.625rem 0.875rem;
   }
