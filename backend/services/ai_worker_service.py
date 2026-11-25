@@ -47,9 +47,10 @@ from models.ai_run import BEENDET
 logger = logging.getLogger(__name__)
 
 
-#: Grenzen der Argumente. Der Auftragstext ist bewusst so lang wie eine
-#: Aufgaben-`instruction`: er ist die einzige Wissensquelle des Workers.
-MAX_AUFTRAG_CHARS = 2000
+#: Grenzen der Argumente. Der Auftragstext ist die einzige Wissensquelle des
+#: Workers und muss auch ausfuehrliche Briefings (z. B. Tabellen, Vorgaben)
+#: tragen koennen, ohne das Kontextfenster mit Endlostext zu fluten.
+MAX_AUFTRAG_CHARS = 16_000
 MAX_TITEL_CHARS = 120
 
 #: Wie lange `wait_until` einen Lauf hoechstens parkt. Eine Woche deckt

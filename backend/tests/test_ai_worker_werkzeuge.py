@@ -209,6 +209,30 @@ class TestWorkerStart:
         angeboten = schema["parameters"]["properties"]["kanal"]["enum"]
         assert angeboten == list(MELDESTELLE)
 
+    def test_auftrag_traegt_ausfuehrliche_briefings_ueber_2000_zeichen(self, db: Session) -> None:
+        """Auftrags-Briefings mit Vergleichstabellen duerfen ueber 2000 Zeichen lang sein."""
+        from models import AiMessage
+        from services import ai_action_service
+
+        schema = next(
+            eintrag["function"]
+            for eintrag in ai_action_service._worker_tool_definitions()
+            if eintrag["function"]["name"] == "worker_start"
+        )
+        assert schema["parameters"]["properties"]["auftrag"]["maxLength"] == 16_000
+
+        user = _benutzer(db, "langerauftrag")
+        _provider(db)
+        langer_text = "x" * 5_000
+        ergebnis = _start(db, user, auftrag=langer_text)
+        assert ergebnis["started"] is True
+        msg = (
+            db.query(AiMessage)
+            .filter(AiMessage.conversation_id == ergebnis["worker_id"], AiMessage.role == "user")
+            .one()
+        )
+        assert len(msg.content) == 5_000
+
     def test_ein_unbekannter_kanal_wird_abgelehnt(self, db: Session) -> None:
         """Kein stiller Rueckfall auf 'chat' im Handler.
 

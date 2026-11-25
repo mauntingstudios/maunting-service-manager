@@ -332,6 +332,8 @@ async def _anbieter_runde_streamen(
         stream_extra_kw["previous_response_id"] = last_response_id
     if zustand.get("max_ausgabe_tokens") is not None:
         stream_extra_kw["max_tokens"] = zustand["max_ausgabe_tokens"]
+    if zustand.get("defer_tool_names"):
+        stream_extra_kw["defer_tool_names"] = frozenset(zustand["defer_tool_names"])
 
     async for chunk in ai_stream.stream_chat_completion(
         client,
@@ -345,7 +347,6 @@ async def _anbieter_runde_streamen(
         reasoning=denken,
         reasoning_effort=denkstufe,
         cache_marke=cache_marke,
-        defer_tool_names=frozenset(zustand.get("defer_tool_names") or ()) or None,
         **stream_extra_kw,
     ):
         if first_provider_chunk:
