@@ -6825,6 +6825,26 @@
       },
       "realtimeLimit": "Echtzeit-Live-Voice (WebRTC/WebSocket) ist für Custom-Provider bewusst nicht aktiv: 2026 existiert kein herstellerübergreifender offener Standard für lokale Realtime-Streams. Chat und Whisper-Transkription stehen regulär bereit."
     },
+    "aiAnthropic": {
+      "title": "Anthropic (Claude) & KI-Schutzmaßnahmen",
+      "intro": "Der Anbietertyp Anthropic (Claude) spricht direkt mit api.anthropic.com (x-api-key, anthropic-version: 2023-06-01) und ruft den aktuellen Modellkatalog live über GET /v1/models ab. Die Schutzmaßnahmen und das stabile Tool-Routing gelten darüber hinaus für alle KI-Anbieter.",
+      "directProvider": {
+        "title": "Nativer Claude-Zugang (Messages API)",
+        "body": "Mit einem sk-ant-Schlüssel nutzt MSM Adaptive Thinking mit zusammengefasster Ausgabe (display: summarized), strukturierte Antworten über output_config.format, die Ausgabegrenzen aus dem Live-Katalog sowie eine klare Fehlerbehandlung bei refusal und model_context_window_exceeded."
+      },
+      "cachingRouting": {
+        "title": "Prompt Caching & stabiles Tool-Routing",
+        "body": "Für alle Anbieter hält MSM geroutete Werkzeuge über Rückfragen hinweg in fester Reihenfolge stabil (Sticky-Tools), sodass der Prompt-Cache intakt bleibt. Bei Anthropic direkt kommen Top-Level cache_control und serverseitiges Tool Search (defer_loading mit tool_search_tool_bm25_20251119) hinzu."
+      },
+      "guardrails": {
+        "title": "Schutz vor Prompt Injections & Prompt-Leaks",
+        "body": "Freitexte aus Logs, Server-Dateien, Konfigurationen und Dokumenten werden vor dem Modellaufruf mit <untrusted_data source=\"...\"> gekapselt und auf verdächtige Steuerbefehle geprüft. Antworten werden vor der Ausgabe automatisch auf versehentlich übernommene System-Prompt-Abschnitte kontrolliert."
+      },
+      "slimPrompt": {
+        "title": "Schlanker System-Prompt & Belegpflicht",
+        "body": "Der System-Prompt lädt Fachblöcke über allowed_groups nur passend zu den Rechten des jeweiligen Laufs und hält die Block-Reihenfolge cache-stabil. Fehlende Fakten dürfen nicht geraten werden; bei langen Texten prüft das Modell zuerst die relevanten Originalstellen."
+      }
+    },
     "vaultCloud": {
       "title": "Tresor-Cloud: Dateien im Tresor",
       "intro": "Die App verschlüsselt Fotos, Videos und Dokumente auf dem Gerät, bevor sie hochgehen, in Stücken von 4 MiB. Das Panel speichert nur diese Stücke, in /opt/msm/vault-blobs. Der Pfad ist fest; für einen anderen Datenträger hängst du ihn dort ein. Name, Typ, echte Größe und Schlüssel stehen im verschlüsselten Tresor-Eintrag.",

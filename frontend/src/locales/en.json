@@ -6825,6 +6825,26 @@
       },
       "realtimeLimit": "Native Realtime live voice (WebRTC/WebSocket) is intentionally disabled for custom providers because no vendor-neutral local streaming standard exists. Chat and Whisper transcription work normally."
     },
+    "aiAnthropic": {
+      "title": "Anthropic (Claude) & AI guardrails",
+      "intro": "The native Anthropic (Claude) provider connects directly to api.anthropic.com (x-api-key, anthropic-version: 2023-06-01) and reads available models live from GET /v1/models. Prompt-cache-stable tool routing and input/output guardrails apply across all AI providers.",
+      "directProvider": {
+        "title": "Native Claude integration (Messages API)",
+        "body": "With an sk-ant- key, MSM sends adaptive thinking (display: summarized), structured outputs via output_config.format, catalog-backed max_tokens limits, and explicit stop_reason handling for refusal and model_context_window_exceeded."
+      },
+      "cachingRouting": {
+        "title": "Prompt caching & stable tool routing",
+        "body": "Across all providers, MSM preserves canonical tool ordering and conversation sticky tools so the prompt prefix stays cacheable across follow-up turns. On direct Anthropic, it also enables top-level cache_control and server-side Tool Search (defer_loading with tool_search_tool_bm25_20251119)."
+      },
+      "guardrails": {
+        "title": "Prompt injection & prompt-leak guardrails",
+        "body": "Untrusted text from logs, server files, configs, and documents is wrapped in <untrusted_data source=\"...\"> boundaries and scanned for injection signals after secret redaction. Model replies are scrubbed against system-prompt fingerprints before delivery."
+      },
+      "slimPrompt": {
+        "title": "Slim system prompt & grounding contract",
+        "body": "The system prompt gates feature sections via allowed_groups according to the run's permissions while keeping block order stable for caching. Models must verify missing details instead of guessing and ground summaries in exact quotes."
+      }
+    },
     "vaultCloud": {
       "title": "Vault cloud: files in the vault",
       "intro": "The app encrypts photos, videos and documents on the device before they are uploaded, in pieces of 4 MiB. The panel only stores those pieces, in /opt/msm/vault-blobs. The path is fixed; to use another disk, mount it there. Name, type, real size and key are kept in the encrypted vault entry.",

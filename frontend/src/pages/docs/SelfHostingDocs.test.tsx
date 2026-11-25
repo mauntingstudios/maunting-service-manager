@@ -245,4 +245,18 @@ describe('SelfHostingDocs', () => {
     renderPage()
     expect(screen.getByRole('heading', { name: 'E-Rechnungs-Toolchain (PDF/A-3 und XRechnung)' })).toBeInTheDocument()
   })
+
+  it('dokumentiert nativen Anthropic-Provider, Cache-Routing und 2026-Guardrails', async () => {
+    renderPage()
+
+    expect(document.querySelector('a[href="#ai-anthropic-guardrails"]')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Anthropic (Claude) & AI guardrails' })).toBeInTheDocument()
+    expect(screen.getByText(/api\.anthropic\.com/)).toBeInTheDocument()
+    expect(screen.getByText(/defer_loading/)).toBeInTheDocument()
+    expect(screen.getByText(/untrusted_data/)).toBeInTheDocument()
+
+    await i18n.changeLanguage('de')
+    renderPage()
+    expect(screen.getByRole('heading', { name: 'Anthropic (Claude) & KI-Schutzmaßnahmen' })).toBeInTheDocument()
+  })
 })
