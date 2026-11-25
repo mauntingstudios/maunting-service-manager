@@ -114,7 +114,7 @@ describe('Sicherheit in den Browsereinstellungen', () => {
     const nav = screen.getByRole('navigation', { name: 'Einstellungen' })
     const knopf = within(nav).getByRole('button', { name: 'Sicherheit' })
     expect(knopf).toBeInTheDocument()
-    expect(knopf.className).toContain('ml-3')
+    expect(knopf.parentElement?.className).toContain('ml-3')
 
     const tablist = screen.getByRole('tablist', { name: 'Einstellungen' })
     const tab = within(tablist).getByRole('tab', { name: /Sicherheit/i })

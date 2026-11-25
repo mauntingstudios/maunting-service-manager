@@ -4406,7 +4406,7 @@
     "leerText": "This server type has no configurable startup or environment variables.",
     "uploadBannerTitel": "Upload your files or connect GitHub",
     "uploadBannerText": "Upload your bot or application files in the Files tab, or provide a public GitHub repository URL below.",
-    "dateiTabOeffnen": "Open Files tab",
+    "dateiTabOeffnen": "Open files tab",
     "neustartHinweisTitel": "Restart recommended",
     "neustartHinweisText": "Updated startup and environment variables take effect after restarting the running server.",
     "jetztNeustarten": "Restart now",
@@ -5218,7 +5218,7 @@
         "bezahlteOrders": "Paid orders",
         "aktiveAbos": "Active subscriptions",
         "aktiveGutscheine": "Active coupons",
-        "betreiberAnsichtBadge": "Operator accounting · All customer receipts",
+        "betreiberAnsichtBadge": "Operator accounting · all customer receipts",
         "filterAlle": "All",
         "filterRechnungen": "Shop invoices",
         "filterGutschriften": "Credit notes",
@@ -6936,7 +6936,7 @@
       },
       "guardrails": {
         "title": "Prompt injection & prompt-leak guardrails",
-        "body": "Untrusted text from logs, server files, configs, and documents is wrapped in <untrusted_data source=\"...\"> boundaries and scanned for injection signals after secret redaction. Model replies are scrubbed against system-prompt fingerprints before delivery."
+        "body": "Untrusted text from logs, server files, configs, and documents is wrapped in <untrusted_data source=\"source\"> boundaries and scanned for injection signals after secret redaction. Model replies are scrubbed against system-prompt fingerprints before delivery."
       },
       "slimPrompt": {
         "title": "Slim system prompt & grounding contract",
@@ -7654,7 +7654,7 @@
         "gutschrift": "Credit note",
         "grund": "Reason: {{grund}}",
         "xrechnungHinweis": "Invoices are issued as XRechnung XML (EN 16931); the PDF is the readable copy.",
-        "kontextBadge": "My customer account · Personal receipts",
+        "kontextBadge": "My customer account · personal receipts",
         "typRechnung": "Shop invoice",
         "filterAlle": "All",
         "filterRechnungen": "Invoices",
@@ -8769,7 +8769,7 @@
     "products": {
       "unifiedTitle": "Plans & add-ons come from the Shop catalog",
       "unifiedDescription": "All server plans, add-ons, artwork, and start variables are managed once under Settings → Shop and exposed through GET /api/hoster/v1/catalog.",
-      "openShopSettings": "Go to Settings → Shop",
+      "openShopSettings": "Go to settings → shop",
       "legacyTitle": "Existing legacy product mappings",
       "legacyHint": "Previously created product SKUs remain active for backward compatibility and can be removed when migrated.",
       "title": "Product mapping",

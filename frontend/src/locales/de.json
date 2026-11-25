@@ -6936,7 +6936,7 @@
       },
       "guardrails": {
         "title": "Schutz vor Prompt Injections & Prompt-Leaks",
-        "body": "Freitexte aus Logs, Server-Dateien, Konfigurationen und Dokumenten werden vor dem Modellaufruf mit <untrusted_data source=\"...\"> gekapselt und auf verdächtige Steuerbefehle geprüft. Antworten werden vor der Ausgabe automatisch auf versehentlich übernommene System-Prompt-Abschnitte kontrolliert."
+        "body": "Freitexte aus Logs, Server-Dateien, Konfigurationen und Dokumenten werden vor dem Modellaufruf mit <untrusted_data source=\"quelle\"> gekapselt und auf verdächtige Steuerbefehle geprüft. Antworten werden vor der Ausgabe automatisch auf versehentlich übernommene System-Prompt-Abschnitte kontrolliert."
       },
       "slimPrompt": {
         "title": "Schlanker System-Prompt & Belegpflicht",

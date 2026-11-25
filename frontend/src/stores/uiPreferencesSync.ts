@@ -5,7 +5,6 @@
  * Bewusst als zyklusfreies Blatt gestaltet: weder `authStore` noch die
  * Präferenz-Stores müssen sich gegenseitig importieren.
  */
-import { api } from '@/api/client'
 import { angemeldetesKonto } from '@/lib/angemeldetesKonto'
 import { still } from '@/lib/still'
 import type { UiPreferences, User } from '@/types'
@@ -88,6 +87,7 @@ async function flushPendingPatch(): Promise<void> {
   if (konto === null || Object.keys(patch).length === 0) return
 
   try {
+    const { api } = await import('@/api/client')
     const saved = await api<UiPreferences>('/auth/me/preferences', {
       method: 'PATCH',
       body: JSON.stringify(patch),

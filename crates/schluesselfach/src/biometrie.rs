@@ -432,13 +432,17 @@ async fn kcm_open_or_create(dienst: &str, fach: &str, allow_create: bool) -> Res
 /// `RequestSignAsync` aufrufen, löst dabei aber eine sichtbare OS-Hello-Abfrage aus;
 /// stilles Auslesen per `CredRead` ist ausgeschlossen.
 #[cfg(windows)]
-async fn kcm_derive_aes_key(cred: &KeyCredential, dienst: &str, fach: &str) -> Result<IBuffer, String> {
-    let challenge = kcm_challenge_bytes(dienst, fach);
-    let challenge_buf = CryptographicBuffer::CreateFromByteArray(&challenge)
-        .map_err(|e| format!("Challenge-Buffer Fehler: {e}"))?;
-    let sign_res = cred
-        .RequestSignAsync(&challenge_buf)
-        .map_err(|e| format!("Windows Hello Signatur fehlgeschlagen: {e}"))?
+async fn kcm_derive_aes_key(dienst: &str, fach: &str, allow_create: bool) -> Result<Vec<u8>, String> {
+    let cred = kcm_open_or_create(dienst, fach, allow_create).await?;
+    let sign_op = {
+        let challenge = kcm_challenge_bytes(dienst, fach);
+        let challenge_buf = CryptographicBuffer::CreateFromByteArray(&challenge)
+            .map_err(|e| format!("Challenge-Buffer Fehler: {e}"))?;
+        cred.RequestSignAsync(&challenge_buf)
+            .map_err(|e| format!("Windows Hello Signatur fehlgeschlagen: {e}"))?
+    };
+    drop(cred);
+    let sign_res = sign_op
         .await
         .map_err(|e| format!("Windows Hello Signatur abgebrochen: {e}"))?;
     let sign_status = sign_res.Status().map_err(|e| format!("KCM Sign-Status-Fehler: {e}"))?;
@@ -449,15 +453,17 @@ async fn kcm_derive_aes_key(cred: &KeyCredential, dienst: &str, fach: &str) -> R
     let sha256_name = HashAlgorithmNames::Sha256().map_err(|e| format!("SHA-256 Name Fehler: {e}"))?;
     let hasher = HashAlgorithmProvider::OpenAlgorithm(&sha256_name)
         .map_err(|e| format!("SHA-256 Provider Fehler: {e}"))?;
-    hasher
+    let hash_buf = hasher
         .HashData(&sig_buf)
-        .map_err(|e| format!("SHA-256 Hash Fehler: {e}"))
+        .map_err(|e| format!("SHA-256 Hash Fehler: {e}"))?;
+    ibuffer_to_vec(&hash_buf)
 }
 
 #[cfg(windows)]
 async fn speichere_hello_geheimnis(dienst: &str, fach: &str, geheimnis: &str) -> Result<(), String> {
-    let cred = kcm_open_or_create(dienst, fach, true).await?;
-    let key_material = kcm_derive_aes_key(&cred, dienst, fach).await?;
+    let key_bytes = kcm_derive_aes_key(dienst, fach, true).await?;
+    let key_material = CryptographicBuffer::CreateFromByteArray(&key_bytes)
+        .map_err(|e| format!("Key-Buffer Fehler: {e}"))?;
 
     let aes_gcm_name = SymmetricAlgorithmNames::AesGcm().map_err(|e| format!("AES-GCM Name Fehler: {e}"))?;
     let sym = SymmetricKeyAlgorithmProvider::OpenAlgorithm(&aes_gcm_name)
@@ -494,8 +500,9 @@ async fn speichere_hello_geheimnis(dienst: &str, fach: &str, geheimnis: &str) ->
 #[cfg(windows)]
 async fn entsperre_hello_geheimnis(dienst: &str, fach: &str, envelope: &str) -> Result<String, String> {
     let (nonce, ciphertext, tag) = parse_hello_envelope(envelope)?;
-    let cred = kcm_open_or_create(dienst, fach, false).await?;
-    let key_material = kcm_derive_aes_key(&cred, dienst, fach).await?;
+    let key_bytes = kcm_derive_aes_key(dienst, fach, false).await?;
+    let key_material = CryptographicBuffer::CreateFromByteArray(&key_bytes)
+        .map_err(|e| format!("Key-Buffer Fehler: {e}"))?;
 
     let aes_gcm_name = SymmetricAlgorithmNames::AesGcm().map_err(|e| format!("AES-GCM Name Fehler: {e}"))?;
     let sym = SymmetricKeyAlgorithmProvider::OpenAlgorithm(&aes_gcm_name)
