@@ -177,4 +177,38 @@ describe('Topbar', () => {
     fireEvent.click(within(blattZwei).getByRole('button', { name: i18n.t('shop.fuss.datenschutz') }))
     expect(screen.getByTestId('standort')).toHaveTextContent('/privacy')
   })
+
+  it('zeigt Beta-Badges neben dem Kopftitel für Singra, Messenger und Maunting Docs, aber nicht für Server', () => {
+    const faelle: Array<{ pfad: string; titelKey: string; badgeKey: string }> = [
+      { pfad: '/ai', titelKey: 'nav.ai', badgeKey: 'ai.betaBadge' },
+      { pfad: '/chat', titelKey: 'nav.chat', badgeKey: 'messenger.betaBadge' },
+      { pfad: '/dokumente', titelKey: 'nav.documents', badgeKey: 'docs.betaBadge' },
+    ]
+
+    for (const fall of faelle) {
+      const { unmount } = zeige(fall.pfad)
+      const kopf = screen.getByRole('heading', { name: i18n.t(fall.titelKey) })
+      expect(kopf.parentElement).toHaveTextContent(i18n.t(fall.badgeKey))
+      unmount()
+    }
+
+    zeige('/servers')
+    const serverKopf = screen.getByRole('heading', { name: i18n.t('nav.servers') })
+    expect(serverKopf.parentElement).not.toHaveTextContent(i18n.t('ai.betaBadge'))
+  })
+
+  it('zeigt Beta-Badges im mobilen Menü für Singra, Messenger und Maunting Docs', () => {
+    zeige('/servers')
+
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('mss.app.menueOeffnen') }))
+    const blatt = screen.getByRole('dialog', { name: i18n.t('shell.mainNavigation') })
+
+    const aiKnopf = within(blatt).getByRole('button', { name: new RegExp(i18n.t('nav.ai')) })
+    const chatKnopf = within(blatt).getByRole('button', { name: new RegExp(i18n.t('nav.chat')) })
+    const docsKnopf = within(blatt).getByRole('button', { name: new RegExp(i18n.t('nav.documents')) })
+
+    expect(within(aiKnopf).getByText(i18n.t('ai.betaBadge'))).toBeInTheDocument()
+    expect(within(chatKnopf).getByText(i18n.t('messenger.betaBadge'))).toBeInTheDocument()
+    expect(within(docsKnopf).getByText(i18n.t('docs.betaBadge'))).toBeInTheDocument()
+  })
 })

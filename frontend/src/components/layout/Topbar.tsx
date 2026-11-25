@@ -12,6 +12,9 @@ import { BenachrichtigungsGlocke } from '@/components/notifications/Benachrichti
 import { usePanelNavigation } from './usePanelNavigation'
 import { BrowserDownloadBadge } from './BrowserDownloadBadge'
 import { DesktopAppDownloadBadge } from './DesktopAppDownloadBadge'
+import { AI_IS_BETA } from '@/components/ai/AiBetaBanner'
+import { MESSENGER_IS_BETA } from '@/components/social/MessengerBetaBanner'
+import { DOCS_IS_BETA } from '@/docs/DocsBetaBanner'
 import { dashboardElternroute, dashboardTitelKey, istDashboardRoute } from '@/desktop/dashboard/dashboardWege'
 import { useHasPermission } from '@/hooks/useHasPermission'
 import { PANEL_HOME } from '@/lib/panelWege'
@@ -92,10 +95,10 @@ export function Topbar({ onOpenWallet, presenceStatus: propPresenceStatus, effec
   const customBrand = usePublicSettingsStore((s) => s.branding?.custom_name || '')
   const brandMarkText = customBrand || 'MSM'
   const [blattOffen, setBlattOffen] = useState(false)
-  const canManageNews =
-    useHasPermission('panel.news.manage') ||
-    useHasPermission('panel.settings.write') ||
-    useHasPermission('shop.write')
+  const canManageNewsPerm = useHasPermission('panel.news.manage')
+  const canWriteSettingsPerm = useHasPermission('panel.settings.write')
+  const canWriteShopPerm = useHasPermission('shop.write')
+  const canManageNews = canManageNewsPerm || canWriteSettingsPerm || canWriteShopPerm
   const [publishedNewsCount, setPublishedNewsCount] = useState(0)
 
   // Die Hülle meldet die Präsenz; ein zweiter Melder schriebe bei jedem
@@ -232,6 +235,14 @@ export function Topbar({ onOpenWallet, presenceStatus: propPresenceStatus, effec
     return undefined
   }
 
+  const betaLabelFuer = (to: string | undefined): string | null => {
+    if (to === '/ai' && AI_IS_BETA) return t('ai.betaBadge', 'Beta')
+    if (to === '/chat' && MESSENGER_IS_BETA) return t('messenger.betaBadge', 'Beta')
+    if (to === '/dokumente' && DOCS_IS_BETA) return t('docs.betaBadge', 'Beta')
+    return null
+  }
+  const kopfBetaLabel = betaLabelFuer(aktiverBereich?.to)
+
   return (
     <>
       <header className="msm-topbar sticky top-0 z-30 flex h-14 shrink-0 items-center justify-between gap-2 border-b-0 bg-surface-container px-3 sm:px-4 md:px-6">
@@ -252,6 +263,11 @@ export function Topbar({ onOpenWallet, presenceStatus: propPresenceStatus, effec
             <Logo size="sm" />
             <span className="hidden max-w-[10rem] truncate font-headline text-sm font-bold text-primary min-[400px]:inline">{brandMarkText}</span>
             <h1 className="hidden truncate font-headline text-base font-bold text-on-surface sm:block">{kopfTitel}</h1>
+            {kopfBetaLabel && (
+              <span className="hidden sm:inline-flex px-1.5 py-0.5 rounded bg-status-warning/15 text-status-warning border border-status-warning/30 text-label-sm font-bold uppercase tracking-wider shrink-0">
+                {kopfBetaLabel}
+              </span>
+            )}
           </div>
         </div>
 
@@ -349,6 +365,7 @@ export function Topbar({ onOpenWallet, presenceStatus: propPresenceStatus, effec
             {bereiche.map((eintrag) => {
               const aktiv = bereichAktiv(eintrag.to, location.pathname)
               const badge = badgeFuer(eintrag.to)
+              const betaLabel = betaLabelFuer(eintrag.to)
               const Icon = eintrag.icon
               return (
                 <button
@@ -366,11 +383,15 @@ export function Topbar({ onOpenWallet, presenceStatus: propPresenceStatus, effec
                     <span className={`grid h-9 w-9 place-items-center rounded-xl ${aktiv ? 'bg-primary/20 text-primary' : 'bg-surface-container-high text-on-surface-variant'}`}>
                       <Icon className="h-4 w-4" aria-hidden="true" />
                     </span>
-                    {badge !== undefined && (
+                    {badge !== undefined ? (
                       <span className="inline-flex items-center justify-center rounded-full bg-primary px-1.5 py-0.5 text-label-sm font-bold text-on-primary">
                         {badge > 99 ? '99+' : badge}
                       </span>
-                    )}
+                    ) : betaLabel ? (
+                      <span className="px-1.5 py-0.5 rounded bg-status-warning/15 text-status-warning border border-status-warning/30 text-label-sm font-bold uppercase tracking-wider shrink-0">
+                        {betaLabel}
+                      </span>
+                    ) : null}
                   </span>
                   <span className="w-full truncate text-xs font-semibold">{eintrag.label}</span>
                 </button>
