@@ -9,7 +9,7 @@
  */
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { BarChart3, Bot, KeyRound, Save, Sliders, Sparkles } from 'lucide-react'
+import { BarChart3, Bot, KeyRound, Save, Search, Sliders, Sparkles } from 'lucide-react'
 
 import { api, SanitizedApiError } from '@/api/client'
 import { type AiProviderAdmin, type RoleAiModelAccessItem } from '@/api/ai'
@@ -31,15 +31,22 @@ import { AiWebSearchSettings } from './AiWebSearchSettings'
 import { AiSatelliteSettings } from './AiSatelliteSettings'
 import { AiMapTilerSettings } from './AiMapTilerSettings'
 import { AiTomTomSettings } from './AiTomTomSettings'
+import { SearchEngineTab } from './SearchEngineTab'
 
 import { Spinner } from '@maunting/ui'
-export type AiSubTab = 'providers' | 'features' | 'limits' | 'usage'
+export type AiSubTab = 'providers' | 'features' | 'limits' | 'usage' | 'searchEngine'
+
+export interface AiTabProps {
+  includeSearchEngine?: boolean
+  initialTab?: AiSubTab
+}
 
 const AI_TABS: TabDef<AiSubTab>[] = [
   { id: 'providers', labelKey: 'aiSettings.subtabs.providers', icon: KeyRound },
   { id: 'features', labelKey: 'aiSettings.subtabs.features', icon: Sparkles },
   { id: 'limits', labelKey: 'aiSettings.subtabs.limits', icon: Sliders },
   { id: 'usage', labelKey: 'aiSettings.subtabs.usage', icon: BarChart3 },
+  { id: 'searchEngine', labelKey: 'settings.tabs.searchEngine', icon: Search },
 ]
 
 export interface AiRoleLimits {
@@ -227,7 +234,7 @@ function parseLimitValue(raw: string, max: number, min = 0): number | null {
   return Number.isSafeInteger(value) && value >= min && value <= max ? value : null
 }
 
-export function AiTab() {
+export function AiTab({ includeSearchEngine = false, initialTab }: AiTabProps = {}) {
   const { t } = useTranslation()
   const canRead = useHasPermission('panel.settings.read')
   const canWrite = useHasPermission('panel.settings.write')
@@ -235,7 +242,9 @@ export function AiTab() {
   // Eigenes Recht, nicht `panel.settings.read`: wer Verbraeuche sieht, sieht
   // das Nutzungsverhalten fremder Benutzer.
   const canReadUsage = useHasPermission('ai.usage.read.all')
-  const [activeTab, setActiveTab] = useState<AiSubTab>('providers')
+  const resolvedInitialTab: AiSubTab =
+    initialTab === 'searchEngine' && !includeSearchEngine ? 'providers' : (initialTab ?? 'providers')
+  const [activeTab, setActiveTab] = useState<AiSubTab>(resolvedInitialTab)
   const [rows, setRows] = useState<AiRoleLimits[]>([])
   const [providers, setProviders] = useState<AiProviderAdmin[]>([])
   const [selectedRoleId, setSelectedRoleId] = useState<number | null>(null)
@@ -247,9 +256,20 @@ export function AiTab() {
     setContextDraft(null)
   }, [selectedRoleId])
 
+  useEffect(() => {
+    if (!initialTab) return
+    if (initialTab === 'searchEngine' && !includeSearchEngine) return
+    if (initialTab === 'usage' && !canReadUsage) return
+    setActiveTab(initialTab)
+  }, [initialTab, includeSearchEngine, canReadUsage])
+
   const visibleTabs = useMemo(() => {
-    return AI_TABS.filter((tab) => tab.id !== 'usage' || canReadUsage)
-  }, [canReadUsage])
+    return AI_TABS.filter((tab) => {
+      if (tab.id === 'usage') return canReadUsage
+      if (tab.id === 'searchEngine') return includeSearchEngine
+      return true
+    })
+  }, [canReadUsage, includeSearchEngine])
 
   useEffect(() => {
     if (!visibleTabs.some((tab) => tab.id === activeTab)) {
@@ -752,6 +772,10 @@ export function AiTab() {
         <div className="space-y-6">
           <AiUsageSettings />
         </div>
+      )}
+
+      {activeTab === 'searchEngine' && includeSearchEngine && (
+        <SearchEngineTab />
       )}
     </div>
   )

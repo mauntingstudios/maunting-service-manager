@@ -5279,6 +5279,7 @@
       "email": "Email",
       "steam": "Steam",
       "curseforge": "CurseForge",
+      "gameIntegrations": "Game APIs",
       "github": "GitHub",
       "oauth": "OAuth / social login",
       "captcha": "CAPTCHA",
@@ -5287,13 +5288,18 @@
       "supportWidget": "Support widget",
       "popup": "Pop-up",
       "news": "News",
+      "announcements": "Announcements",
       "backup": "Backup",
       "security": "Security",
       "ai": "AI",
+      "aiAndSearch": "AI & search",
       "messenger": "Messenger",
+      "communication": "Communication",
       "hoster": "Hoster",
       "shop": "Shop",
+      "shopAndHoster": "Shop & hoster",
       "vaultStorage": "Vault storage",
+      "storage": "Storage & backup",
       "searchEngine": "Search engine"
     },
     "messenger": {
@@ -7184,6 +7190,7 @@
     "demo": {
       "badge": "Demo"
     },
+    "betaBadge": "Beta",
     "hero": {
       "kicker": "GAME · SERVER · HOSTING",
       "titel": "Rent a server without the setup night.",

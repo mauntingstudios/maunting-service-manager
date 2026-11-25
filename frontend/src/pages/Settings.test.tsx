@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { Settings } from './Settings'
@@ -9,8 +9,12 @@ import { useToastStore } from '@/stores/toastStore'
 vi.mock('@/api/client', () => ({ api: vi.fn() }))
 vi.mock('@/hooks/useHasPermission', () => ({ useHasPermission: () => true }))
 
-function renderSettings() {
-  return render(<MemoryRouter><Settings /></MemoryRouter>)
+function renderSettings(initialEntry = '/settings') {
+  return render(
+    <MemoryRouter initialEntries={[initialEntry]}>
+      <Settings />
+    </MemoryRouter>,
+  )
 }
 
 describe('Settings', () => {
@@ -20,22 +24,85 @@ describe('Settings', () => {
     vi.mocked(client.api).mockReset()
   })
 
-  it('ordnet die Abschnitte in Grundlagen, Sicherheit, Verbindungen, Kommunikation, Speicher und Erweitert', async () => {
+  it('ordnet die gebündelten Abschnitte in Grundlagen, Sicherheit, Verbindungen und Speicher & Daten', async () => {
     vi.mocked(client.api).mockResolvedValue({} as never)
     renderSettings()
 
-    // Über die Schlüssel statt festem Text: GeneralTab schaltet beim Laden
-    // auf die Panel-Sprache um, die Abschnitte sind dann deutsch.
     const reihenfolge = [
-      'general', 'imprint',
-      'security', 'captcha', 'cloudflare',
-      'oauth', 'steam', 'curseforge', 'hoster', 'shop',
-      'email', 'messenger', 'searchEngine', 'ai',
-      'vaultStorage', 'backup',
-      'supportWidget', 'popup',
+      'general',
+      'imprint',
+      'announcements',
+      'security',
+      'oauth',
+      'gameIntegrations',
+      'shopAndHoster',
+      'communication',
+      'aiAndSearch',
+      'storage',
     ]
     const tabs = await screen.findAllByRole('tab')
-    expect(tabs.map((tab) => tab.textContent)).toEqual(reihenfolge.map((id) => i18n.t(`settings.tabs.${id}`)))
+    expect(tabs.map((tab) => tab.textContent)).toEqual(
+      reihenfolge.map((id) => i18n.t(`settings.tabs.${id}`)),
+    )
+  })
+
+  it('wechselt zwischen gebündelten Sub-Tabs für Sicherheit, Spiele-APIs und Kommunikation', async () => {
+    vi.mocked(client.api).mockResolvedValue({} as never)
+    renderSettings()
+
+    fireEvent.click(await screen.findByRole('tab', { name: i18n.t('settings.tabs.security') }))
+    expect(screen.getByRole('tab', { name: i18n.t('settings.tabs.captcha') })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: i18n.t('settings.tabs.cloudflare') })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('tab', { name: i18n.t('settings.tabs.captcha') }))
+    expect(
+      screen.getByRole('tab', { name: i18n.t('settings.tabs.captcha') }),
+    ).toHaveAttribute('aria-selected', 'true')
+    fireEvent.click(screen.getByRole('tab', { name: i18n.t('settings.tabs.cloudflare') }))
+    expect(
+      screen.getByRole('tab', { name: i18n.t('settings.tabs.cloudflare') }),
+    ).toHaveAttribute('aria-selected', 'true')
+
+    fireEvent.click(
+      screen.getByRole('tab', { name: i18n.t('settings.tabs.gameIntegrations') }),
+    )
+    expect(screen.getByRole('tab', { name: i18n.t('settings.tabs.steam') })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: i18n.t('settings.tabs.curseforge') })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('tab', { name: i18n.t('settings.tabs.curseforge') }))
+    expect(
+      screen.getByRole('tab', { name: i18n.t('settings.tabs.curseforge') }),
+    ).toHaveAttribute('aria-selected', 'true')
+
+    fireEvent.click(screen.getByRole('tab', { name: i18n.t('settings.tabs.communication') }))
+    expect(screen.getByRole('tab', { name: i18n.t('settings.tabs.email') })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: i18n.t('settings.tabs.messenger') })).toBeInTheDocument()
+    expect(
+      screen.getByRole('tab', { name: i18n.t('settings.tabs.supportWidget') }),
+    ).toBeInTheDocument()
+  })
+
+  it('öffnet Deep-Links wie ?tab=news und ?tab=hoster direkt auf dem passenden Sub-Tab', async () => {
+    vi.mocked(client.api).mockImplementation(async (pfad: string) =>
+      pfad.includes('/hoster/') || pfad.includes('/shop/') ? ([] as never) : ({} as never),
+    )
+
+    const { unmount } = renderSettings('/settings?tab=news')
+    expect(
+      await screen.findByRole('tab', { name: i18n.t('settings.tabs.announcements') }),
+    ).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('tab', { name: i18n.t('settings.tabs.news') })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    )
+    unmount()
+
+    renderSettings('/settings?tab=hoster')
+    expect(
+      await screen.findByRole('tab', { name: i18n.t('settings.tabs.shopAndHoster') }),
+    ).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('tab', { name: i18n.t('settings.tabs.hoster') })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    )
   })
 
   it.each([null, {}, { default_language: null }])(

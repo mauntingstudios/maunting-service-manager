@@ -20,6 +20,14 @@ import { PANEL_HOME } from '@/lib/panelWege'
 import { useAuthStore } from '@/stores/authStore'
 import { usePublicSettingsStore } from '@/stores/publicSettingsStore'
 
+/**
+ * Schalter für den Beta-Status des MSM Shops.
+ *
+ * Wenn die Beta-Phase abgeschlossen ist, kann diese Konstante auf `false` gesetzt
+ * werden, um das Badge im Shop-Kopf auszublenden.
+ */
+export const SHOP_IS_BETA = true
+
 export function ShopKopf() {
   const { t } = useTranslation()
   const navigate = useNavigate()
@@ -115,6 +123,11 @@ export function ShopKopf() {
           <span className="font-headline text-sm font-bold tracking-tight text-on-surface">
             {customBrand || 'MSM'} <span className="text-primary">Shop</span>
           </span>
+          {SHOP_IS_BETA && (
+            <span className="inline-flex px-1.5 py-0.5 rounded bg-status-warning/15 text-status-warning border border-status-warning/30 text-label-sm font-bold uppercase tracking-wider shrink-0">
+              {t('shop.betaBadge', 'Beta')}
+            </span>
+          )}
         </Link>
 
         {shopEnabled ? (

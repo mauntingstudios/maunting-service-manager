@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import i18n from '@/i18n'
 import { ShopTab } from './ShopTab'
@@ -365,5 +366,21 @@ describe('ShopTab', () => {
         `${i18n.t('settings.shop.betrieb.freischaltungFehler.insufficient_node_ram')} (insufficient_node_ram)`,
       ),
     ).toBeInTheDocument()
+  })
+
+  it('zeigt den Hoster-Subtab im Shop, wenn die Berechtigung gesetzt ist', async () => {
+    render(
+      <MemoryRouter>
+        <ShopTab canReadHoster canWriteHoster={false} />
+      </MemoryRouter>,
+    )
+
+    const hosterTab = screen.getByRole('tab', { name: i18n.t('settings.tabs.hoster') })
+    expect(hosterTab).toBeInTheDocument()
+    fireEvent.click(hosterTab)
+    expect(hosterTab).toHaveAttribute('aria-selected', 'true')
+    await waitFor(() => {
+      expect(apiMock).toHaveBeenCalledWith('/hoster/integrations')
+    })
   })
 })

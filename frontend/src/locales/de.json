@@ -5279,6 +5279,7 @@
       "email": "E-Mail",
       "steam": "Steam",
       "curseforge": "CurseForge",
+      "gameIntegrations": "Spiele-APIs",
       "github": "GitHub",
       "oauth": "OAuth / Social Login",
       "captcha": "CAPTCHA",
@@ -5288,12 +5289,17 @@
       "backup": "Backup",
       "security": "Sicherheit",
       "ai": "KI",
+      "aiAndSearch": "KI & Suche",
       "messenger": "Messenger",
+      "communication": "Kommunikation",
       "popup": "Pop-up",
       "news": "Neuigkeiten",
+      "announcements": "Mitteilungen",
       "hoster": "Hoster",
       "shop": "Shop",
+      "shopAndHoster": "Shop & Hoster",
       "vaultStorage": "Tresorspeicher",
+      "storage": "Speicher & Backup",
       "searchEngine": "Suchmaschine"
     },
     "messenger": {
@@ -7184,6 +7190,7 @@
     "demo": {
       "badge": "Demo"
     },
+    "betaBadge": "Beta",
     "hero": {
       "kicker": "GAME · SERVER · HOSTING",
       "titel": "Server mieten, ohne Bastelabend.",

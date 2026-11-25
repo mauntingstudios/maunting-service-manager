@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   LayoutDashboard,
+  Plug,
   ReceiptText,
   ShoppingBag,
   SlidersHorizontal,
@@ -11,6 +12,7 @@ import { Badge, TabBar, type TabDef } from '@maunting/ui'
 import { shopAdminApi, shopSellerApi, shopStripeApi } from '@/api/shop'
 import { still } from '@/lib/still'
 import { usePublicSettingsStore } from '@/stores/publicSettingsStore'
+import { HosterTab } from './HosterTab'
 import { SellerDatenKarte } from './SellerDatenKarte'
 import { ShopAddonsEditor } from './ShopAddonsEditor'
 import {
@@ -27,6 +29,13 @@ import { ShopPlansEditor } from './ShopPlansEditor'
 import { StripeZahlungenKarte } from './StripeZahlungenKarte'
 
 type CatalogSubTabId = 'plans' | 'addons' | 'coupons'
+export type ShopSubTabId = ShopSectionId | 'hoster'
+
+export interface ShopTabProps {
+  canReadHoster?: boolean
+  canWriteHoster?: boolean
+  initialTab?: ShopSubTabId
+}
 
 const CATALOG_TABS: TabDef<CatalogSubTabId>[] = [
   { id: 'plans', labelKey: 'settings.shop.catalogTabs.plans' },
@@ -34,12 +43,25 @@ const CATALOG_TABS: TabDef<CatalogSubTabId>[] = [
   { id: 'coupons', labelKey: 'settings.shop.catalogTabs.coupons' },
 ]
 
-export function ShopTab() {
+export function ShopTab({ canReadHoster = false, canWriteHoster = false, initialTab }: ShopTabProps = {}) {
   const { t } = useTranslation()
   const aktiv = usePublicSettingsStore((s) => s.shop_enabled)
-  const [activeTab, setActiveTab] = useState<ShopSectionId>('overview')
+  const resolvedInitialTab: ShopSubTabId =
+    initialTab === 'hoster' && !canReadHoster ? 'overview' : (initialTab ?? 'overview')
+  const [activeTab, setActiveTab] = useState<ShopSubTabId>(resolvedInitialTab)
   const [catalogTab, setCatalogTab] = useState<CatalogSubTabId>('plans')
   const betrieb = useShopBetriebData()
+
+  useEffect(() => {
+    if (!initialTab) return
+    setActiveTab(initialTab === 'hoster' && !canReadHoster ? 'overview' : initialTab)
+  }, [initialTab, canReadHoster])
+
+  useEffect(() => {
+    if (activeTab === 'hoster' && !canReadHoster) {
+      setActiveTab('overview')
+    }
+  }, [activeTab, canReadHoster])
 
   const [stripeConfigured, setStripeConfigured] = useState<boolean | null>(null)
   const [sellerMissingCount, setSellerMissingCount] = useState<number | null>(null)
@@ -94,7 +116,7 @@ export function ShopTab() {
     ).length
   }, [betrieb.orders])
 
-  const hauptTabs = useMemo<TabDef<ShopSectionId>[]>(
+  const hauptTabs = useMemo<TabDef<ShopSubTabId>[]>(
     () => [
       { id: 'overview', labelKey: 'settings.shop.tabs.overview', icon: LayoutDashboard },
       { id: 'catalog', labelKey: 'settings.shop.tabs.catalog', icon: Store },
@@ -106,11 +128,15 @@ export function ShopTab() {
       },
       { id: 'accounting', labelKey: 'settings.shop.tabs.accounting', icon: ReceiptText },
       { id: 'setup', labelKey: 'settings.shop.tabs.setup', icon: SlidersHorizontal },
+      ...(canReadHoster
+        ? [{ id: 'hoster' as const, labelKey: 'settings.tabs.hoster', icon: Plug }]
+        : []),
     ],
-    [offeneBestellungen],
+    [offeneBestellungen, canReadHoster],
   )
 
-  const aktiverTabLabel = t(`settings.shop.tabs.${activeTab}`)
+  const aktiverTabLabel =
+    activeTab === 'hoster' ? t('settings.tabs.hoster') : t(`settings.shop.tabs.${activeTab}`)
 
   return (
     <div className="space-y-6">
@@ -214,6 +240,10 @@ export function ShopTab() {
               <ShopWebhooksSection data={betrieb} />
             </div>
           </div>
+        )}
+
+        {activeTab === 'hoster' && canReadHoster && (
+          <HosterTab canWrite={canWriteHoster} />
         )}
       </div>
     </div>
