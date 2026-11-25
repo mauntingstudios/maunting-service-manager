@@ -5228,6 +5228,20 @@
           "addon": "Zusatzpaket",
           "role": "Rolle"
         },
+        "freischaltungFehler": {
+          "insufficient_node_ram": "Nicht genügend freier RAM auf den Nodes",
+          "insufficient_node_cpu": "Nicht genügend freie CPU-Leistung auf den Nodes",
+          "insufficient_node_disk": "Nicht genügend freier Speicherplatz auf den Nodes",
+          "node_offline": "Kein aktiver Online-Node verfügbar",
+          "node_not_available_for_shop": "Kein Node für Shop-Bestellungen freigegeben",
+          "node_selection_required": "Node-Auswahl erforderlich",
+          "node_not_found": "Ziel-Node nicht gefunden",
+          "port_conflict": "Kein freier Port auf dem Node verfügbar",
+          "remote_port_conflict": "Port auf dem Remote-Node bereits belegt",
+          "shop_no_operator": "Kein aktiver Betreiber-Account für die Provisionierung gefunden",
+          "shop_order_item_missing": "Bestellposition nicht gefunden",
+          "shop_provisioning_failed": "Unerwarteter Fehler bei der Server-Erstellung"
+        },
         "webhooksAufklappen": "Technisches Zahlungsprotokoll (Stripe-Webhooks)",
         "rechnungsAbsenderTitel": "Rechnungsabsender & Steuerdaten",
         "rechnungsAbsenderText": "Diese Angaben erscheinen automatisch auf jeder ausgestellten Rechnung und Gutschrift."

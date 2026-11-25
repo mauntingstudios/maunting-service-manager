@@ -155,6 +155,7 @@ def find_candidate_nodes(
     preferred_node_id: int | None = None,
     cpu_overcommit_factor: float = 1.0,
     shop_only: bool = False,
+    allow_overbooking: bool = False,
 ) -> tuple[list[Node], str | None]:
     """Liefert passende Nodes in optimaler Platzierungsreihenfolge (Least-Loaded zuerst).
 
@@ -166,7 +167,7 @@ def find_candidate_nodes(
         node = db.query(Node).filter(Node.id == preferred_node_id).first()
         if node is None:
             return [], "node_not_found"
-        if shop_only and not bool(getattr(node, "shop_enabled", True)):
+        if shop_only and not allow_overbooking and not bool(getattr(node, "shop_enabled", True)):
             return [], "node_not_available_for_shop"
         check = evaluate_node_capacity(
             db,
@@ -176,22 +177,28 @@ def find_candidate_nodes(
             disk_gb=disk_gb,
             cpu_overcommit_factor=cpu_overcommit_factor,
         )
-        return ([node], None) if check.fits else ([], check.reason or "no_node_capacity")
+        if check.fits or (allow_overbooking and check.reason != "node_offline"):
+            return [node], None
+        return [], check.reason or "no_node_capacity"
 
     nodes = db.query(Node).order_by(Node.id.asc()).all()
     if not nodes:
         return [], None
 
     if shop_only:
-        nodes = [n for n in nodes if bool(getattr(n, "shop_enabled", True))]
-        if not nodes:
+        shop_nodes = [n for n in nodes if bool(getattr(n, "shop_enabled", True))]
+        if shop_nodes:
+            free_nodes = [
+                n for n in shop_nodes if max(0, int(getattr(n, "shop_surcharge_cents", 0) or 0)) == 0
+            ]
+            if free_nodes:
+                nodes = free_nodes
+            elif allow_overbooking:
+                nodes = shop_nodes
+            else:
+                return [], "node_selection_required"
+        elif not allow_overbooking:
             return [], "node_not_available_for_shop"
-        free_nodes = [
-            n for n in nodes if max(0, int(getattr(n, "shop_surcharge_cents", 0) or 0)) == 0
-        ]
-        if not free_nodes:
-            return [], "node_selection_required"
-        nodes = free_nodes
 
     checks = [
         evaluate_node_capacity(
@@ -205,6 +212,8 @@ def find_candidate_nodes(
         for n in nodes
     ]
     fitting = [c for c in checks if c.fits]
+    if not fitting and allow_overbooking:
+        fitting = [c for c in checks if c.reason != "node_offline"]
     if fitting:
         fitting.sort(
             key=lambda c: (

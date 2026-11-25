@@ -347,6 +347,35 @@ def _mark_server_failed(
         )
 
 
+def _handle_server_http_error(
+    db: Session,
+    *,
+    entitlement_id: int,
+    order_id: int,
+    actor_user_id: int | None,
+    exc: HTTPException,
+    origin: ActorOrigin,
+    correlation_id: str,
+) -> None:
+    db.rollback()
+    error_code = _error_code(exc)
+    logger.warning(
+        "Shop-Server-Provisionierung fehlgeschlagen (entitlement_id=%s, order_id=%s, status=%s, code=%s)",
+        entitlement_id,
+        order_id,
+        exc.status_code,
+        error_code,
+    )
+    _mark_server_failed(
+        db,
+        entitlement_id=entitlement_id,
+        actor_user_id=actor_user_id,
+        code=error_code,
+        origin=origin,
+        correlation_id=correlation_id,
+    )
+
+
 def _sync_server_entitlement(
     db: Session,
     ent: ShopEntitlement,
@@ -354,9 +383,14 @@ def _sync_server_entitlement(
     origin: ActorOrigin,
     correlation_id: str,
 ) -> None:
-    from services import server_action_service, server_provisioning_service
+    from services import (
+        server_action_service,
+        server_provisioning_service,
+        shop_lifecycle_settings_service,
+    )
 
     ent_id = ent.id
+    order_id = ent.order_id
     owner = _active_owner(db)
     actor_user_id = owner.id if owner is not None else None
 
@@ -415,6 +449,9 @@ def _sync_server_entitlement(
                 idempotency_key, retry_of_id = _provisioning_keys(
                     db, actor_user_id=actor.user.id, entitlement_id=ent.id
                 )
+                allow_overbooking = (
+                    shop_lifecycle_settings_service.is_shop_overbooking_allowed(db)
+                )
                 ent.provisioning_status = "provisioning"
                 ent.provisioning_error = None
                 db.flush()
@@ -427,9 +464,11 @@ def _sync_server_entitlement(
                 }
                 if "auto_place" in prov_params:
                     prov_kwargs["auto_place"] = req.node_id is None
-                    prov_kwargs["strict_capacity"] = True
+                    prov_kwargs["strict_capacity"] = not allow_overbooking
                 if "shop_only" in prov_params:
                     prov_kwargs["shop_only"] = True
+                if "allow_overbooking" in prov_params:
+                    prov_kwargs["allow_overbooking"] = allow_overbooking
                 result = prov_fn(db, req, actor, **prov_kwargs)
                 permission_service.set_user_server_permissions(
                     db,
@@ -491,12 +530,12 @@ def _sync_server_entitlement(
                             exc_info=True,
                         )
             except HTTPException as exc:
-                db.rollback()
-                _mark_server_failed(
+                _handle_server_http_error(
                     db,
                     entitlement_id=ent_id,
+                    order_id=order_id,
                     actor_user_id=actor_user_id,
-                    code=_error_code(exc),
+                    exc=exc,
                     origin=origin,
                     correlation_id=correlation_id,
                 )
@@ -549,12 +588,12 @@ def _sync_server_entitlement(
                     )
                     db.commit()
             except HTTPException as exc:
-                db.rollback()
-                _mark_server_failed(
+                _handle_server_http_error(
                     db,
                     entitlement_id=ent_id,
+                    order_id=order_id,
                     actor_user_id=actor_user_id,
-                    code=_error_code(exc),
+                    exc=exc,
                     origin=origin,
                     correlation_id=correlation_id,
                 )

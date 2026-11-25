@@ -5228,6 +5228,20 @@
           "addon": "Add-on",
           "role": "Role"
         },
+        "freischaltungFehler": {
+          "insufficient_node_ram": "Not enough free RAM on available nodes",
+          "insufficient_node_cpu": "Not enough free CPU capacity on available nodes",
+          "insufficient_node_disk": "Not enough free disk space on available nodes",
+          "node_offline": "No active online node available",
+          "node_not_available_for_shop": "No node enabled for shop orders",
+          "node_selection_required": "Node selection required",
+          "node_not_found": "Target node not found",
+          "port_conflict": "No free port available on node",
+          "remote_port_conflict": "Port already in use on remote node",
+          "shop_no_operator": "No active operator account available for provisioning",
+          "shop_order_item_missing": "Order item not found",
+          "shop_provisioning_failed": "Unexpected error during server creation"
+        },
         "webhooksAufklappen": "Technical payment log (Stripe webhooks)",
         "rechnungsAbsenderTitel": "Invoice sender & tax details",
         "rechnungsAbsenderText": "These details appear automatically on every issued invoice and credit note."

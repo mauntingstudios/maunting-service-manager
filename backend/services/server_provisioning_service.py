@@ -243,6 +243,7 @@ def _lock_and_allocate_node(
     is_database: bool,
     strict_capacity: bool,
     shop_only: bool = False,
+    allow_overbooking: bool = False,
 ) -> tuple[Node | None, list[tuple[str, int, str]], str]:
     from services.node_capacity import ensure_ram_limit_fits, ensure_strict_capacity_fits
     from services.node_placement_service import OFFLINE_NODE_STATUSES
@@ -255,7 +256,7 @@ def _lock_and_allocate_node(
             .with_for_update()
             .one()
         )
-        if shop_only and not bool(getattr(target_node, "shop_enabled", True)):
+        if shop_only and not allow_overbooking and not bool(getattr(target_node, "shop_enabled", True)):
             raise HTTPException(
                 status_code=409,
                 detail={
@@ -263,7 +264,7 @@ def _lock_and_allocate_node(
                     "message": "errors.node_not_available_for_shop",
                 },
             )
-        if strict_capacity and (target_node.status or "").strip().lower() in OFFLINE_NODE_STATUSES:
+        if (strict_capacity or allow_overbooking) and (target_node.status or "").strip().lower() in OFFLINE_NODE_STATUSES:
             raise HTTPException(
                 status_code=409,
                 detail={"code": "node_offline", "message": "errors.node_offline"},
@@ -275,15 +276,16 @@ def _lock_and_allocate_node(
         new_ram_limit_mb=req.ram_limit_mb,
         exclude_server_id=None,
     )
-    ensure_strict_capacity_fits(
-        db,
-        target_node,
-        new_ram_limit_mb=req.ram_limit_mb,
-        new_cpu_limit_percent=req.cpu_limit_percent,
-        new_disk_limit_gb=req.disk_limit_gb,
-        exclude_server_id=None,
-        force=strict_capacity,
-    )
+    if not allow_overbooking:
+        ensure_strict_capacity_fits(
+            db,
+            target_node,
+            new_ram_limit_mb=req.ram_limit_mb,
+            new_cpu_limit_percent=req.cpu_limit_percent,
+            new_disk_limit_gb=req.disk_limit_gb,
+            exclude_server_id=None,
+            force=strict_capacity,
+        )
     bind_ip = _bind_ip_for_node(req, target_node, is_database=is_database)
     try:
         allocated = allocate_ports(
@@ -331,6 +333,7 @@ def provision_server(
     auto_place: bool = False,
     strict_capacity: bool = False,
     shop_only: bool = False,
+    allow_overbooking: bool = False,
 ) -> ProvisioningResult:
     """Provisioniert über einen einzigen, backendseitig autorisierten Pfad.
 
@@ -424,6 +427,7 @@ def provision_server(
                 is_database=is_database,
                 strict_capacity=strict_capacity,
                 shop_only=shop_only,
+                allow_overbooking=allow_overbooking,
             )
         elif auto_place:
             candidates, reason = node_placement_service.find_candidate_nodes(
@@ -432,6 +436,7 @@ def provision_server(
                 cpu_percent=req.cpu_limit_percent,
                 disk_gb=req.disk_limit_gb,
                 shop_only=shop_only,
+                allow_overbooking=allow_overbooking,
             )
             if not candidates:
                 if reason is not None:
@@ -448,6 +453,7 @@ def provision_server(
                     is_database=is_database,
                     strict_capacity=strict_capacity,
                     shop_only=shop_only,
+                    allow_overbooking=allow_overbooking,
                 )
             else:
                 last_exc: HTTPException | None = None
@@ -461,8 +467,9 @@ def provision_server(
                             port_requirements=port_requirements,
                             requested_ports=requested_ports,
                             is_database=is_database,
-                            strict_capacity=True,
+                            strict_capacity=not allow_overbooking,
                             shop_only=shop_only,
+                            allow_overbooking=allow_overbooking,
                         )
                         break
                     except HTTPException as exc:
@@ -484,6 +491,7 @@ def provision_server(
                 is_database=is_database,
                 strict_capacity=strict_capacity,
                 shop_only=shop_only,
+                allow_overbooking=allow_overbooking,
             )
 
         server = Server(

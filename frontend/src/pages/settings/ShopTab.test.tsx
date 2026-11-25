@@ -314,4 +314,56 @@ describe('ShopTab', () => {
     fireEvent.click(screen.getByText(i18n.t('settings.shop.betrieb.webhooksAufklappen')))
     expect(await screen.findByText('evt_test_99')).toBeInTheDocument()
   })
+
+  it('zeigt den gespeicherten Freischaltungsfehler bei fehlgeschlagenen Server-Entitlements an', async () => {
+    const baseMock = apiMock.getMockImplementation()
+    apiMock.mockImplementation(async (pfad: string, init?: RequestInit) => {
+      if (pfad.includes('/shop/admin/orders')) {
+        return [
+          {
+            id: 99,
+            number: 'MSM-2026-000099',
+            status: 'paid',
+            gross_cents: 699,
+            currency: 'EUR',
+            payment_provider: 'stripe',
+            payment_reference: 'cs_99',
+            created_at: '2026-11-21T10:00:00+00:00',
+            paid_at: '2026-11-21T10:00:05+00:00',
+            items: [],
+            user_id: 2,
+            username: 'user1',
+            entitlements: [
+              {
+                id: 42,
+                kind: 'server',
+                label: 'Palworld',
+                status: 'active',
+                server_id: null,
+                provisioning_status: 'failed',
+                provisioning_error: 'insufficient_node_ram',
+                created_at: '2026-11-21T10:00:05+00:00',
+              },
+            ],
+          },
+        ]
+      }
+      return baseMock ? baseMock(pfad, init) : []
+    })
+
+    render(<ShopTab />)
+    fireEvent.click(screen.getByRole('tab', { name: i18n.t('settings.shop.tabs.orders') }))
+
+    expect(await screen.findByText('MSM-2026-000099')).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        `${i18n.t('settings.shop.betrieb.freischaltungArt.server')} · ${i18n.t('settings.shop.betrieb.freischaltung.failed')}`,
+      ),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        `${i18n.t('settings.shop.betrieb.freischaltungFehler.insufficient_node_ram')} (insufficient_node_ram)`,
+      ),
+    ).toBeInTheDocument()
+  })
 })

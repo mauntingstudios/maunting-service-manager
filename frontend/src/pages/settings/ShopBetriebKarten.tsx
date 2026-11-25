@@ -59,6 +59,14 @@ function entitlementKindLabel(
   return t(`settings.shop.betrieb.freischaltungArt.${kind}`, { defaultValue: kind })
 }
 
+function entitlementErrorLabel(
+  code: string,
+  t: (key: string, opts?: Record<string, unknown>) => string,
+): string {
+  const translated = t(`settings.shop.betrieb.freischaltungFehler.${code}`, { defaultValue: '' })
+  return translated && translated !== code ? `${translated} (${code})` : code
+}
+
 export function useShopBetriebData() {
   const { t } = useTranslation()
   const [orders, setOrders] = useState<ShopAdminOrderDto[]>([])
@@ -538,7 +546,7 @@ export function ShopOrdersSection({ data }: { data: ShopBetriebData }) {
                   {order.entitlements.map((ent) => {
                     const statKey = ent.provisioning_status ?? ent.status
                     return (
-                      <div key={ent.id} className="flex items-center gap-1.5 text-xs">
+                      <div key={ent.id} className="flex flex-wrap items-center gap-1.5 text-xs">
                         <Badge
                           variant={
                             ent.provisioning_status === 'failed'
@@ -551,6 +559,11 @@ export function ShopOrdersSection({ data }: { data: ShopBetriebData }) {
                           {entitlementKindLabel(ent.kind, t)} ·{' '}
                           {entitlementStatusLabel(statKey, t)}
                         </Badge>
+                        {ent.provisioning_status === 'failed' && ent.provisioning_error && (
+                          <span className="text-xs text-error">
+                            {entitlementErrorLabel(ent.provisioning_error, t)}
+                          </span>
+                        )}
                         {ent.provisioning_status === 'failed' && (
                           <Button
                             variant="ghost"
