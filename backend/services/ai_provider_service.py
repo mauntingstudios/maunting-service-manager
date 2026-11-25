@@ -121,9 +121,11 @@ def effective_spec(
     if protokoll == "anthropic_messages":
         schluessel_kopf = "x-api-key"
         schluessel_praefix = ""
+        katalog_extra_headers = (("anthropic-version", "2023-06-01"),)
     else:
         schluessel_kopf = spec.schluessel_kopf
         schluessel_praefix = spec.schluessel_praefix
+        katalog_extra_headers = spec.katalog_extra_headers
 
     if dialekt == "reasoning":
         erweiterungen = frozenset({"reasoning"})
@@ -148,6 +150,7 @@ def effective_spec(
         anfrage_erweiterungen=erweiterungen,
         schluessel_kopf=schluessel_kopf,
         schluessel_praefix=schluessel_praefix,
+        katalog_extra_headers=katalog_extra_headers,
     )
 
 

@@ -563,7 +563,10 @@ def _mit_custom_ueberschreibung(modell: Modell, provider: Any | None) -> Modell:
     standard_stufe = modell.standard_stufe
     if dialekt != "none":
         denkt = True
-        if dialekt in {"reasoning_effort", "anthropic_thinking"} and not stufen:
+        if dialekt == "anthropic_thinking" and not stufen:
+            stufen = ("low", "medium", "high", "xhigh", "max")
+            standard_stufe = standard_stufe or "medium"
+        elif dialekt == "reasoning_effort" and not stufen:
             stufen = ("low", "medium", "high")
             standard_stufe = standard_stufe or "medium"
 
@@ -639,6 +642,11 @@ async def modelle_vorschau_custom(
     spec = anbieter("custom")
     kopf = "x-api-key" if proto == "anthropic_messages" else spec.schluessel_kopf
     praefix = "" if proto == "anthropic_messages" else spec.schluessel_praefix
+    extra_headers = (
+        (("anthropic-version", "2023-06-01"),)
+        if proto == "anthropic_messages"
+        else spec.katalog_extra_headers
+    )
     temp_spec = replace(
         spec,
         base_url=canonical,
@@ -646,6 +654,7 @@ async def modelle_vorschau_custom(
         protokoll_chat=proto,
         schluessel_kopf=kopf,
         schluessel_praefix=praefix,
+        katalog_extra_headers=extra_headers,
     )
     return await _hole(client, temp_spec, schluessel=schluessel)
 

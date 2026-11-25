@@ -338,6 +338,7 @@ async def vorgabe(
     provider: AiProvider,
     aktiv: bool,
     wunsch: str | None,
+    model_id: str | None = None,
 ) -> tuple[bool, str | None]:
     """Was für diesen Benutzer, diesen Provider und diesen Wunsch tatsächlich gilt.
 
@@ -363,7 +364,7 @@ async def vorgabe(
     Protokoll, statt still zu passieren.
     """
     modell = await ai_model_catalog.fuer_provider(
-        client, db, provider, user_id=user.id
+        client, db, provider, user_id=user.id, model_id=model_id
     )
     deckel = ai_limit_service.resolve_effective_limits(db, user).max_reasoning_effort
     if modell is None:

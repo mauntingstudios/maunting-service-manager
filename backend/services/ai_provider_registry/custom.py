@@ -52,6 +52,8 @@ def _kontext_aus_rohdaten(rohdaten: dict) -> int | None:
         rohdaten.get("n_ctx_train"),            # llama.cpp
         meta_dict.get("n_ctx_train"),           # llama.cpp meta
         top_dict.get("context_length"),
+        rohdaten.get("max_input_tokens"),       # Anthropic
+        rohdaten.get("maxInputTokens"),
         rohdaten.get("input_token_limit"),
         rohdaten.get("inputTokenLimit"),
     ):
@@ -84,6 +86,10 @@ def _sieht_aus_rohdaten(rohdaten: dict) -> bool | None:
         lowered = {str(item).strip().lower() for item in capabilities if isinstance(item, str)}
         if "vision" in lowered or "image" in lowered:
             return True
+    elif isinstance(capabilities, dict):
+        image_cap = capabilities.get("image_input")
+        if isinstance(image_cap, dict) and isinstance(image_cap.get("supported"), bool):
+            return image_cap["supported"]
 
     arch = rohdaten.get("architecture")
     if isinstance(arch, dict) and isinstance(arch.get("input_modalities"), list):
@@ -111,6 +117,20 @@ def _denken_aus_rohdaten(rohdaten: dict) -> tuple[bool | None, tuple[str, ...], 
         lowered = {str(item).strip().lower() for item in capabilities if isinstance(item, str)}
         if "thinking" in lowered or "reasoning" in lowered:
             return True, (), None, False
+    elif isinstance(capabilities, dict):
+        thinking_cap = capabilities.get("thinking")
+        if isinstance(thinking_cap, dict):
+            if thinking_cap.get("supported") is False:
+                return False, (), None, False
+            if thinking_cap.get("supported") is True:
+                effort_cap = capabilities.get("effort")
+                stufen: list[str] = []
+                if isinstance(effort_cap, dict) and effort_cap.get("supported") is True:
+                    for stufe in ("max", "xhigh", "high", "medium", "low"):
+                        eintrag = effort_cap.get(stufe)
+                        if isinstance(eintrag, dict) and eintrag.get("supported") is True:
+                            stufen.append(stufe)
+                return True, tuple(stufen), None, False
 
     reasoning = rohdaten.get("reasoning")
     if isinstance(reasoning, bool):

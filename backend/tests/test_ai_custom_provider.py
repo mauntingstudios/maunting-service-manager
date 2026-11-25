@@ -723,7 +723,7 @@ async def test_responses_and_anthropic_adapters_route_custom_protocols_correctly
     assert anth_calls[0][0] == "https://anth-custom.example.com/v1/messages"
     assert anth_calls[0][1].get("x-api-key") == "anth-secret-key"
     assert "authorization" not in anth_calls[0][1]
-    assert anth_calls[0][2]["thinking"] == {"type": "adaptive"}
+    assert anth_calls[0][2]["thinking"] == {"type": "adaptive", "display": "summarized"}
     assert anth_out == [("reasoning", "Ueberlege"), ("content", "Hallo!")]
 
 
@@ -843,3 +843,75 @@ async def test_stt_endpunkt_works_for_custom_provider_without_key(
             wav=b"RIFF\x00\x00\x00\x00WAVE",
         )
     assert text == "Server Status"
+
+
+@pytest.mark.asyncio
+async def test_custom_anthropic_thinking_supports_xhigh_max_and_catalog_capabilities(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "ai_custom_allow_private_endpoints", True)
+    monkeypatch.setattr(settings, "ai_custom_require_https", False)
+
+    # 1. Custom provider mit anthropic_messages + anthropic_thinking sendet anthropic-version
+    # beim Katalogabruf und bietet im Fallback auch xhigh und max an.
+    p_fallback = _custom_provider_row(
+        pid=401,
+        url="https://fable-proxy.example.com/v1",
+        model="claude-sonnet-5-5",
+        protocol="anthropic_messages",
+        dialect="anthropic_thinking",
+    )
+    gesendete_header: dict[str, str] = {}
+
+    def catalog_handler(request: httpx.Request) -> httpx.Response:
+        gesendete_header.update({k.lower(): v for k, v in request.headers.items()})
+        if "anthropic-version" not in gesendete_header:
+            return httpx.Response(400, json={"error": {"message": "anthropic-version required"}})
+        return httpx.Response(
+            200,
+            json={"data": [{"id": "claude-sonnet-5-5", "display_name": "Claude Sonnet 5.5"}]},
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(catalog_handler)) as client:
+        modelle = await ai_model_catalog.modelle(client, "custom", provider=p_fallback, schluessel="sk-test")
+        vorschau = await ai_model_catalog.modelle_vorschau_custom(
+            client,
+            custom_base_url="https://fable-proxy.example.com/v1",
+            custom_chat_protocol="anthropic_messages",
+            schluessel="sk-test",
+        )
+
+    assert gesendete_header.get("anthropic-version") == "2023-06-01"
+    assert gesendete_header.get("x-api-key") == "sk-test"
+    assert len(modelle) == 1
+    assert modelle[0].denkt is True
+    assert modelle[0].stufen == ("low", "medium", "high", "xhigh", "max")
+    assert len(vorschau) == 1
+
+    # 2. Anthropic-Capabilities-Objekt (inkl. effort xhigh/max, image_input, max_input_tokens) wird geparst.
+    from services.ai_provider_registry import custom as custom_registry
+
+    parsed = custom_registry.katalog_lesen({
+        "id": "claude-opus-5-5",
+        "display_name": "Claude Opus 5.5",
+        "max_input_tokens": 1_000_000,
+        "max_tokens": 64_000,
+        "capabilities": {
+            "image_input": {"supported": True},
+            "thinking": {"supported": True},
+            "effort": {
+                "supported": True,
+                "low": {"supported": True},
+                "medium": {"supported": True},
+                "high": {"supported": True},
+                "xhigh": {"supported": True},
+                "max": {"supported": True},
+            },
+        },
+    })
+    assert parsed is not None
+    assert parsed.kontext_tokens == 1_000_000
+    assert parsed.max_ausgabe_tokens == 64_000
+    assert parsed.sieht is True
+    assert parsed.denkt is True
+    assert parsed.stufen == ("max", "xhigh", "high", "medium", "low")

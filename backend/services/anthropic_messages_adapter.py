@@ -677,6 +677,15 @@ async def stream_messages(
                         server_block_indizes.add(index)
                     elif (
                         isinstance(block, dict)
+                        and block.get("type") == "thinking"
+                    ):
+                        gedanke = block.get("thinking")
+                        if isinstance(gedanke, str) and gedanke:
+                            usage.reasoning_chars += len(gedanke)
+                            if usage.reasoning_chars <= MAX_REASONING_CHARS:
+                                yield StreamChunk("reasoning", gedanke)
+                    elif (
+                        isinstance(block, dict)
                         and block.get("type") == "tool_use"
                         and isinstance(index, int)
                     ):
@@ -706,6 +715,8 @@ async def stream_messages(
                         yield StreamChunk("content", stueck)
                     elif art == "thinking_delta":
                         gedanke = delta.get("thinking")
+                        if not isinstance(gedanke, str) or not gedanke:
+                            gedanke = delta.get("text")
                         if not isinstance(gedanke, str) or not gedanke:
                             continue
                         usage.reasoning_chars += len(gedanke)

@@ -931,6 +931,7 @@ async def stream_message(
         provider=provider,
         aktiv=payload.reasoning,
         wunsch=payload.reasoning_effort,
+        model_id=requested_model,
     )
     # Aus demselben Grund hier und nicht im Anlauf: das Kontextfenster steht
     # im Modellkatalog, und den zu befragen ist ein HTTP-Abruf. Es gehoert

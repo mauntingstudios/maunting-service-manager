@@ -770,3 +770,46 @@ async def test_anthropic_stream_ignores_server_tool_use_and_tool_search_result_b
     assert usage.tool_calls[0].id == "toolu_real"
     assert usage.tool_calls[0].name == "propose_backup"
     assert usage.tool_calls[0].arguments == {"server_id": 7}
+
+
+@pytest.mark.asyncio
+async def test_anthropic_stream_extracts_thinking_from_block_start_and_delta_text_fallback() -> None:
+    """Denktext in ``content_block_start`` oder ``thinking_delta.text`` wird als reasoning gestreamt."""
+    client = _FakeClient(_sse(
+        {"type": "message_start", "message": {"usage": {"input_tokens": 10}}},
+        {
+            "type": "content_block_start",
+            "index": 0,
+            "content_block": {"type": "thinking", "thinking": "Erster Gedanke "},
+        },
+        {
+            "type": "content_block_delta",
+            "index": 0,
+            "delta": {"type": "thinking_delta", "text": "und zweiter Gedanke"},
+        },
+        {"type": "content_block_stop", "index": 0},
+        {"type": "content_block_start", "index": 1, "content_block": {"type": "text", "text": ""}},
+        {"type": "content_block_delta", "index": 1, "delta": {"type": "text_delta", "text": "Fertig."}},
+        {"type": "content_block_stop", "index": 1},
+        {"type": "message_delta", "delta": {"stop_reason": "end_turn"}, "usage": {"output_tokens": 9}},
+        {"type": "message_stop"},
+    ))
+    usage = StreamUsage()
+    chunks = [
+        (c.kind, c.text)
+        async for c in stream_messages(
+            client,
+            provider=_provider("anthropic"),
+            api_key="sk-ant-test",
+            messages=[{"role": "user", "content": "Denk nach"}],
+            usage=usage,
+            reasoning=True,
+            reasoning_effort="max",
+        )
+    ]
+    assert chunks == [
+        ("reasoning", "Erster Gedanke "),
+        ("reasoning", "und zweiter Gedanke"),
+        ("content", "Fertig."),
+    ]
+    assert usage.reasoning_chars == len("Erster Gedanke und zweiter Gedanke")

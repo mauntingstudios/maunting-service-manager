@@ -645,3 +645,40 @@ def test_a_frozen_level_survives_a_provider_switch_mid_run() -> None:
     modell = _modell(stufen=("max", "xhigh", "high", "none"))
     assert _pruefe(modell, kind="openrouter") == (True, "xhigh")
     assert _pruefe(modell, kind="openai") == (True, "xhigh")
+
+
+@pytest.mark.asyncio
+async def test_vorgabe_forwards_explicit_model_id_to_catalog(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``vorgabe`` fragt bei expliziter ``model_id`` genau dieses Modell im Katalog nach."""
+    from types import SimpleNamespace
+
+    aufrufe: list[str | None] = []
+
+    async def fake_fuer_provider(_client, _db, _provider, *, user_id, model_id=None):
+        del user_id
+        aufrufe.append(model_id)
+        return _modell(
+            model_id=model_id or "default",
+            stufen=("low", "medium", "high", "xhigh", "max"),
+        )
+
+    monkeypatch.setattr(ai_reasoning.ai_model_catalog, "fuer_provider", fake_fuer_provider)
+    monkeypatch.setattr(
+        ai_reasoning.ai_limit_service,
+        "resolve_effective_limits",
+        lambda _db, _user: SimpleNamespace(max_reasoning_effort=None),
+    )
+
+    aktiv, stufe = await ai_reasoning.vorgabe(
+        None,  # type: ignore[arg-type]
+        None,  # type: ignore[arg-type]
+        user=SimpleNamespace(id=1),  # type: ignore[arg-type]
+        provider=_provider(kind="custom", model="claude-haiku-5-5"),
+        aktiv=True,
+        wunsch="max",
+        model_id="claude-sonnet-5-5",
+    )
+    assert aufrufe == ["claude-sonnet-5-5"]
+    assert (aktiv, stufe) == (True, "max")
