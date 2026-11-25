@@ -198,7 +198,12 @@ class ShopOrder(Base):
     )
     extend_subscription_id: Mapped[int | None] = mapped_column(
         Integer,
-        ForeignKey("shop_subscriptions.id", ondelete="SET NULL"),
+        ForeignKey(
+            "shop_subscriptions.id",
+            ondelete="SET NULL",
+            use_alter=True,
+            name="fk_shop_orders_extend_subscription_id",
+        ),
         nullable=True,
     )
     months: Mapped[int] = mapped_column(Integer, nullable=False)
