@@ -1385,8 +1385,27 @@ EOF
         done
     fi
     if [[ -d "$MSM_DIR/containers/coding-sandbox" ]] && id "$MSM_DOCKER_USER" &>/dev/null; then
-        su -s /bin/bash "$MSM_DOCKER_USER" -c "export DOCKER_HOST='${DOCKER_HOST_ACTIVE}'; docker build -q -t msm-coding-sandbox:latest '$MSM_DIR/containers/coding-sandbox'" >/dev/null 2>&1 || \
-            warn "Coding-Sandbox-Image konnte beim Update nicht gebaut werden."
+        _sandbox_uid_host=$(id -u "$MSM_DOCKER_USER" 2>/dev/null || echo "")
+        _sandbox_ctx=$(mktemp -d /tmp/msm-coding-sandbox.XXXXXX 2>/dev/null || true)
+        if [[ -n "$_sandbox_ctx" ]]; then
+            cp -a "$MSM_DIR/containers/coding-sandbox/." "$_sandbox_ctx/"
+            chown -R "$MSM_DOCKER_USER:$MSM_DOCKER_USER" "$_sandbox_ctx" 2>/dev/null || true
+            _sandbox_build_out=$(
+                su -s /bin/bash "$MSM_DOCKER_USER" -c "export HOME='${MSM_DOCKER_HOME}' XDG_RUNTIME_DIR='/run/user/${_sandbox_uid_host}' DOCKER_HOST='${DOCKER_HOST_ACTIVE}'; docker build -q -t msm-coding-sandbox:latest '$_sandbox_ctx'" 2>&1
+            )
+            _sandbox_rc=$?
+            rm -rf "$_sandbox_ctx"
+            if [[ $_sandbox_rc -eq 0 ]]; then
+                ok "Coding-Sandbox-Image (msm-coding-sandbox:latest) aktualisiert."
+            else
+                warn "Coding-Sandbox-Image konnte beim Update nicht gebaut werden (Exit $_sandbox_rc)."
+                if [[ -n "$_sandbox_build_out" ]]; then
+                    printf '%s\n' "$_sandbox_build_out" | tail -n 3 | sed 's/^/  [WARN]   /'
+                fi
+            fi
+        else
+            warn "Coding-Sandbox-Image konnte beim Update nicht gebaut werden (kein Temp-Verzeichnis)."
+        fi
     fi
     if [[ -d /opt/msm/servers ]]; then
         mkdir -p /opt/msm/servers/_ai_projects
