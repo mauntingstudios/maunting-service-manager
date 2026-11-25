@@ -315,6 +315,20 @@ def is_docker_available(node: Any | None = None) -> bool:
     return _check_docker()
 
 
+def resolve_ephemeral_executor(node: Any | None = None) -> tuple[bool, Any | None]:
+    """Liefert (verfuegbar, ziel_node) fuer ephemere Build-/Sandbox-Container.
+
+    Bei einer lokalen Node (`is_local=True`), deren msm-agent nicht erreichbar ist,
+    wird sauber auf das lokale Docker-Socket (`node=None`) zurueckgefallen — analog
+    zu `resolve_sandbox_executor`. Remote-Nodes fallen niemals auf den Panel-Host zurueck.
+    """
+    if node is not None and is_docker_available(node=node):
+        return True, node
+    if (node is None or getattr(node, "is_local", False)) and is_docker_available(node=None):
+        return True, None
+    return False, node
+
+
 def resolve_sandbox_executor(db: Any, *, node_id: int | None = None) -> tuple[bool, Any | None]:
     """Findet einen erreichbaren Container-Executor (bevorzugt lokalen/Ziel-msm-agent, sonst lokales Docker)."""
     from models import Node

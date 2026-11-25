@@ -144,6 +144,40 @@ def _resolve_sandbox_network(cmd: str) -> str:
     return "none"
 
 
+_DEFAULT_NODE_SANDBOX_IMAGE = "node:22-bookworm-slim"
+_DEFAULT_PYTHON_SANDBOX_IMAGE = "python:3.12-slim"
+_LEGACY_UNPUBLISHED_SANDBOX_IMAGES = frozenset({"msm-coding-sandbox:latest", "msm-coding-sandbox"})
+_PYTHON_SANDBOX_BINARIES = frozenset({"python", "python3", "pip", "pip3", "pytest"})
+
+
+def resolve_sandbox_image(cmd: str | None = None, *, prefer_python: bool = False) -> str:
+    """Waehlt ein oeffentlich pullbares Standard-Sandbox-Image (Node/Python) oder ein konfiguriertes Custom-Image."""
+    configured = str(getattr(settings, "coding_sandbox_image", "") or "").strip()
+    if (
+        configured
+        and configured not in _LEGACY_UNPUBLISHED_SANDBOX_IMAGES
+        and configured != _DEFAULT_NODE_SANDBOX_IMAGE
+    ):
+        return configured
+
+    use_python = prefer_python
+    if not use_python and cmd:
+        for seg in _split_unquoted_command_segments(cmd):
+            try:
+                parts = shlex.split(seg)
+            except ValueError:
+                parts = seg.split()
+            if parts and os.path.basename(parts[0]).lower() in _PYTHON_SANDBOX_BINARIES:
+                use_python = True
+                break
+    if use_python:
+        return str(
+            getattr(settings, "coding_sandbox_python_image", _DEFAULT_PYTHON_SANDBOX_IMAGE)
+            or _DEFAULT_PYTHON_SANDBOX_IMAGE
+        )
+    return _DEFAULT_NODE_SANDBOX_IMAGE
+
+
 def _sandbox_runtime() -> str | None:
     raw = (
         getattr(settings, "coding_sandbox_runtime", "")
@@ -193,7 +227,7 @@ def run_project_command(
         }
         volumes = [VolumeBind(host_path=str(ws.resolve()), container_path="/workspace", read_only=False)]
         res = docker_service.run_ephemeral(
-            image=str(getattr(settings, "coding_sandbox_image", "msm-coding-sandbox:latest")),
+            image=resolve_sandbox_image(cmd),
             command=["/bin/sh", "-c", cmd],
             volumes=volumes,
             env=sandbox_env,
@@ -360,7 +394,7 @@ def verify_project_sandbox(
             if full_path.is_file() and not is_es_module:
                 if has_container:
                     res = docker_service.run_ephemeral(
-                        image=str(getattr(settings, "coding_sandbox_image", "msm-coding-sandbox:latest")),
+                        image=resolve_sandbox_image(),
                         command=["node", "--check", path.lstrip("/")],
                         volumes=[VolumeBind(host_path=str(ws.resolve()), container_path="/workspace", read_only=True)],
                         workdir="/workspace",

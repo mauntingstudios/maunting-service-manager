@@ -167,7 +167,7 @@ def build_release(
         log("3. Installiere Node.js Backend-Abhängigkeiten...")
         has_lock = (be_node_dir / "package-lock.json").exists()
         npm_install_cmd = "npm ci" if has_lock else "npm install"
-        docker_avail = docker_service.is_docker_available(node=node)
+        docker_avail, exec_node = docker_service.resolve_ephemeral_executor(node)
         if docker_avail:
             cmd = ["sh", "-c", npm_install_cmd]
             volumes = [
@@ -187,7 +187,7 @@ def build_release(
                 tmpfs_paths=["/tmp"],
                 network=pkg_net,
                 timeout=600,
-                node=node,
+                node=exec_node,
                 log_callback=log_callback,
             )
         elif allow_host_fallback:
@@ -216,10 +216,12 @@ def build_release(
     if req_file.exists():
         log("4. Bereite Python Backend vor...")
         py_dir = req_file.parent
-        docker_avail = docker_service.is_docker_available(node=node)
+        docker_avail, exec_node = docker_service.resolve_ephemeral_executor(node)
         if docker_avail:
+            from services.ai_project_command import resolve_sandbox_image
+
             docker_service.run_ephemeral(
-                image=str(getattr(settings, "coding_sandbox_image", "msm-coding-sandbox:latest")),
+                image=resolve_sandbox_image(prefer_python=True),
                 command=[
                     "sh",
                     "-c",
@@ -238,7 +240,7 @@ def build_release(
                 tmpfs_paths=["/tmp"],
                 network=pkg_net,
                 timeout=600,
-                node=node,
+                node=exec_node,
                 log_callback=log_callback,
             )
         elif allow_host_fallback and (shutil.which("python3") or shutil.which("python")):

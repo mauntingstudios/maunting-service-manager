@@ -229,3 +229,60 @@ def test_git_runner_disables_hooks_file_protocol_and_submodules(monkeypatch, tmp
     assert "core.hooksPath=/dev/null" in cmd
     assert "protocol.file.allow=never" in cmd
     assert "submodule.recurse=false" in cmd
+
+
+def test_resolve_ephemeral_executor_local_fallback_and_remote_isolation(monkeypatch) -> None:
+    local_node = SimpleNamespace(id=1, is_local=True)
+    remote_node = SimpleNamespace(id=2, is_local=False)
+
+    monkeypatch.setattr(
+        docker_service,
+        "is_docker_available",
+        lambda node=None: node is None,
+    )
+
+    avail_local, exec_local = docker_service.resolve_ephemeral_executor(local_node)
+    assert avail_local is True
+    assert exec_local is None
+
+    avail_remote, exec_remote = docker_service.resolve_ephemeral_executor(remote_node)
+    assert avail_remote is False
+    assert exec_remote is remote_node
+
+
+def test_resolve_sandbox_image_selects_pullable_defaults_and_honors_custom(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "coding_sandbox_image", "msm-coding-sandbox:latest")
+    assert ai_project_command.resolve_sandbox_image("npm run build") == "node:22-bookworm-slim"
+    assert ai_project_command.resolve_sandbox_image("pytest -q") == "python:3.12-slim"
+    assert ai_project_command.resolve_sandbox_image("python3 -m unittest") == "python:3.12-slim"
+    assert ai_project_command.resolve_sandbox_image(prefer_python=True) == "python:3.12-slim"
+
+    monkeypatch.setattr(settings, "coding_sandbox_image", "ghcr.io/custom/sandbox:v2")
+    assert ai_project_command.resolve_sandbox_image("npm run build") == "ghcr.io/custom/sandbox:v2"
+
+
+def test_frontend_build_runner_uses_local_docker_fallback_for_local_node(tmp_path: Path, monkeypatch) -> None:
+    from services import frontend_build_runner
+
+    local_node = SimpleNamespace(id=1, is_local=True)
+    (tmp_path / "package.json").write_text('{"name":"app","scripts":{"build":"vite build"}}', encoding="utf-8")
+    (tmp_path / "dist").mkdir()
+    (tmp_path / "dist" / "index.html").write_text("<html></html>", encoding="utf-8")
+
+    monkeypatch.setattr(
+        docker_service,
+        "is_docker_available",
+        lambda node=None: node is None,
+    )
+    calls: list[dict] = []
+    monkeypatch.setattr(
+        docker_service,
+        "run_ephemeral",
+        lambda **kwargs: (calls.append(kwargs), {"ok": True, "stdout": "ok", "stderr": ""})[1],
+    )
+
+    res = frontend_build_runner.run_node_frontend_build(tmp_path, node=local_node)
+    assert res.ok is True
+    assert len(calls) == 1
+    assert calls[0]["node"] is None
+    assert calls[0]["image"] == "node:22-bookworm-slim"

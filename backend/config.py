@@ -264,7 +264,8 @@ class Settings(BaseSettings):
     allow_legacy_bare_metal_setup: bool = False
 
     # Isolated Docker coding sandbox for Singra AI projects (`project_workspace`).
-    coding_sandbox_image: str = "msm-coding-sandbox:latest"
+    coding_sandbox_image: str = "node:22-bookworm-slim"
+    coding_sandbox_python_image: str = "python:3.12-slim"
     coding_sandbox_runtime: str = ""
     coding_sandbox_allow_package_network: bool = True
     coding_sandbox_allow_host_fallback: bool = False

@@ -137,7 +137,7 @@ def run_node_frontend_build(
         build_argv = None
     image = f"node:{node_version}-bookworm-slim"
 
-    docker_avail = docker_service.is_docker_available(node=node)
+    docker_avail, exec_node = docker_service.resolve_ephemeral_executor(node)
     pkg_net = "msm-ephemeral-net" if getattr(settings, "coding_sandbox_allow_package_network", True) else "none"
     allow_host_fallback = bool(getattr(settings, "coding_sandbox_allow_host_fallback", False))
     sandbox_env = {
@@ -181,7 +181,7 @@ def run_node_frontend_build(
             timeout=timeout_seconds,
             nano_cpus=nano_cpus,
             mem_limit=mem_limit,
-            node=node,
+            node=exec_node,
             log_callback=log_callback,
         )
         build_succeeded = bool(res.get("ok"))
