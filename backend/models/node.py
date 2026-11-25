@@ -20,6 +20,10 @@ class Node(Base):
             "shop_surcharge_cents >= 0",
             name="ck_nodes_shop_surcharge_cents",
         ),
+        CheckConstraint(
+            "cpu_overcommit_factor >= 1.0 AND cpu_overcommit_factor <= 8.0",
+            name="ck_nodes_cpu_overcommit_factor",
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
@@ -31,6 +35,9 @@ class Node(Base):
     is_local: Mapped[bool] = mapped_column(Boolean, default=False)
     status: Mapped[str] = mapped_column(String(20), default="unknown")
     cpu_total: Mapped[float | None] = mapped_column(Float, nullable=True)
+    cpu_overcommit_factor: Mapped[float] = mapped_column(
+        Float, default=1.0, server_default="1.0", nullable=False
+    )
     # Human-readable CPU model from agent inventory (e.g. "AMD EPYC 7763…").
     cpu_model: Mapped[str | None] = mapped_column(String(256), nullable=True)
     location_label: Mapped[str | None] = mapped_column(String(120), nullable=True)

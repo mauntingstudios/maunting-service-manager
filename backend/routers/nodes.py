@@ -672,6 +672,8 @@ def update_node(
         node.hardware_tier_label = body.hardware_tier_label
     if "shop_surcharge_cents" in body.model_fields_set and body.shop_surcharge_cents is not None:
         node.shop_surcharge_cents = max(0, int(body.shop_surcharge_cents))
+    if "cpu_overcommit_factor" in body.model_fields_set and body.cpu_overcommit_factor is not None:
+        node.cpu_overcommit_factor = round(min(8.0, max(1.0, float(body.cpu_overcommit_factor))), 2)
 
     has_fp_field = "tls_fingerprint" in body.model_fields_set
     new_fp = body.tls_fingerprint if has_fp_field else node.tls_fingerprint

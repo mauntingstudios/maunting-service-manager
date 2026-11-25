@@ -184,6 +184,7 @@ export interface Node {
   shop_show_cpu?: boolean
   hardware_tier_label?: string | null
   shop_surcharge_cents?: number
+  cpu_overcommit_factor?: number
   ram_total: number | null
   disk_total: number | null
   disk_used?: number | null

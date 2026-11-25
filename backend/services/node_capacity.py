@@ -162,11 +162,32 @@ def allocated_cpu_by_node_ids(db: Session, node_ids: list[int]) -> dict[int, int
     return out
 
 
+CPU_OVERCOMMIT_MIN = 1.0
+CPU_OVERCOMMIT_MAX = 8.0
+
+
+def node_cpu_overcommit_factor(
+    node: Node | None,
+    override: float | None = None,
+) -> float:
+    """Resolve effective CPU overcommit factor (override > node.cpu_overcommit_factor > 1.0)."""
+    if override is not None:
+        return max(0.1, float(override))
+    raw = getattr(node, "cpu_overcommit_factor", None) if node is not None else None
+    if raw is None:
+        return 1.0
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return 1.0
+    return min(CPU_OVERCOMMIT_MAX, max(CPU_OVERCOMMIT_MIN, value))
+
+
 def allocatable_cpu_percent(
     node: Node,
     allocated_cpu_percent: int,
     *,
-    overcommit_factor: float = 1.0,
+    overcommit_factor: float | None = None,
 ) -> int | None:
     """Remaining bookable CPU percent (100 = 1 core), or None if cpu_total unknown."""
     if node.cpu_total is None:
@@ -177,7 +198,8 @@ def allocatable_cpu_percent(
         return None
     if cores <= 0:
         return None
-    budget = max(0, int(round(cores * 100.0 * max(0.1, float(overcommit_factor)))))
+    factor = node_cpu_overcommit_factor(node, overcommit_factor)
+    budget = max(0, int(round(cores * 100.0 * factor)))
     return max(0, budget - max(0, int(allocated_cpu_percent)))
 
 
@@ -333,7 +355,7 @@ def ensure_strict_capacity_fits(
     new_disk_limit_gb: int | None = None,
     exclude_server_id: int | None = None,
     force: bool = False,
-    cpu_overcommit_factor: float = 1.0,
+    cpu_overcommit_factor: float | None = None,
 ) -> None:
     """Enforce hard node RAM, CPU & disk ceilings when force=True or strict guard is enabled."""
     if node is None:

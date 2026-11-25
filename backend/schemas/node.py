@@ -49,6 +49,7 @@ class NodeUpdate(BaseModel):
     shop_show_cpu: bool | None = Field(default=None)
     hardware_tier_label: str | None = Field(default=None, max_length=64)
     shop_surcharge_cents: int | None = Field(default=None, ge=0, le=10_000_000)
+    cpu_overcommit_factor: float | None = Field(default=None, ge=1.0, le=8.0)
 
     @field_validator("name", mode="before")
     @classmethod
@@ -104,6 +105,7 @@ class NodeOut(BaseModel):
     status: str
     tls_fingerprint: str | None = None
     cpu_total: float | None = None
+    cpu_overcommit_factor: float = 1.0
     cpu_model: str | None = None
     location_label: str | None = None
     ram_type: str | None = None

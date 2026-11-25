@@ -11,6 +11,7 @@ from models import Node, ShopPlan
 from services.node_capacity import (
     allocatable_cpu_percent,
     allocatable_disk_gb,
+    node_cpu_overcommit_factor,
     normalize_cpu_limit_percent,
     normalize_ram_mb,
     ram_headroom_mb,
@@ -67,7 +68,7 @@ def evaluate_node_capacity(
     ram_mb: int | None = None,
     cpu_percent: int | None = None,
     disk_gb: int | None = None,
-    cpu_overcommit_factor: float = 1.0,
+    cpu_overcommit_factor: float | None = None,
 ) -> NodeCapacityCheck:
     status = (node.status or "").strip().lower()
     if status in OFFLINE_NODE_STATUSES:
@@ -96,12 +97,13 @@ def evaluate_node_capacity(
 
     remaining_cpu: int | None = None
     if node.cpu_total is not None and float(node.cpu_total) > 0:
+        effective_cpu_overcommit = node_cpu_overcommit_factor(node, cpu_overcommit_factor)
         used_cpu = sum_allocated_cpu_percent(db, node.id)
         remaining_cpu = allocatable_cpu_percent(
-            node, used_cpu, overcommit_factor=cpu_overcommit_factor
+            node, used_cpu, overcommit_factor=effective_cpu_overcommit
         )
         cpu_budget = max(
-            1, int(round(float(node.cpu_total) * 100.0 * max(0.1, cpu_overcommit_factor)))
+            1, int(round(float(node.cpu_total) * 100.0 * effective_cpu_overcommit))
         )
         if remaining_cpu is not None:
             ratios.append(remaining_cpu / cpu_budget)
@@ -153,7 +155,7 @@ def find_candidate_nodes(
     cpu_percent: int | None = None,
     disk_gb: int | None = None,
     preferred_node_id: int | None = None,
-    cpu_overcommit_factor: float = 1.0,
+    cpu_overcommit_factor: float | None = None,
     shop_only: bool = False,
     allow_overbooking: bool = False,
 ) -> tuple[list[Node], str | None]:

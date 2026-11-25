@@ -138,6 +138,7 @@ export function AdminNodes({ ohneHintergrund = false }: { ohneHintergrund?: bool
     shop_show_cpu: true,
     hardware_tier_label: '',
     shop_surcharge_euro: '0.00',
+    cpu_overcommit_factor: '1.0',
   })
 
   const [searchVal, setSearchVal] = useState('')
@@ -220,6 +221,7 @@ export function AdminNodes({ ohneHintergrund = false }: { ohneHintergrund?: bool
       shop_show_cpu: true,
       hardware_tier_label: '',
       shop_surcharge_euro: '0.00',
+      cpu_overcommit_factor: '1.0',
     })
     setShowEnrollment(false)
     setShowForm(true)
@@ -243,6 +245,7 @@ export function AdminNodes({ ohneHintergrund = false }: { ohneHintergrund?: bool
       shop_show_cpu: node.shop_show_cpu !== false,
       hardware_tier_label: node.hardware_tier_label || '',
       shop_surcharge_euro: ((node.shop_surcharge_cents ?? 0) / 100).toFixed(2),
+      cpu_overcommit_factor: String(node.cpu_overcommit_factor ?? 1.0),
     })
     setShowForm(true)
   }
@@ -258,7 +261,14 @@ export function AdminNodes({ ohneHintergrund = false }: { ohneHintergrund?: bool
           toast.error(t('nodes.shopSurchargeInvalid'))
           return
         }
+        const overcommitRaw = form.cpu_overcommit_factor.replace(',', '.').trim()
+        const overcommitParsed = overcommitRaw === '' ? 1 : Number(overcommitRaw)
+        if (!Number.isFinite(overcommitParsed) || overcommitParsed < 1.0 || overcommitParsed > 8.0) {
+          toast.error(t('nodes.cpuOvercommitInvalid'))
+          return
+        }
         const shopSurchargeCents = Math.round(surchargeParsed * 100)
+        const cpuOvercommitFactor = Math.round(overcommitParsed * 100) / 100
         const payload: {
           name?: string
           host?: string
@@ -275,6 +285,7 @@ export function AdminNodes({ ohneHintergrund = false }: { ohneHintergrund?: bool
           shop_show_cpu?: boolean
           hardware_tier_label?: string | null
           shop_surcharge_cents?: number
+          cpu_overcommit_factor?: number
         } = {
           name: form.name.trim(),
           host: form.host.trim(),
@@ -289,6 +300,7 @@ export function AdminNodes({ ohneHintergrund = false }: { ohneHintergrund?: bool
           shop_show_cpu: form.shop_show_cpu,
           hardware_tier_label: form.hardware_tier_label.trim() || null,
           shop_surcharge_cents: shopSurchargeCents,
+          cpu_overcommit_factor: cpuOvercommitFactor,
         }
         if (form.auth_token.trim()) {
           payload.auth_token = form.auth_token.trim()
@@ -332,6 +344,7 @@ export function AdminNodes({ ohneHintergrund = false }: { ohneHintergrund?: bool
         shop_show_cpu: true,
         hardware_tier_label: '',
         shop_surcharge_euro: '0.00',
+        cpu_overcommit_factor: '1.0',
       })
       setEditing(null)
     } catch (err: unknown) {
@@ -637,6 +650,25 @@ export function AdminNodes({ ohneHintergrund = false }: { ohneHintergrund?: bool
                             {t('nodes.publicPingUrlHint')}
                           </p>
                         </div>
+                        <div className="sm:col-span-2">
+                          <Input
+                            label={t('nodes.cpuOvercommitLabel')}
+                            type="number"
+                            inputMode="decimal"
+                            min="1"
+                            max="8"
+                            step="0.5"
+                            value={form.cpu_overcommit_factor}
+                            onChange={(e) =>
+                              setForm({ ...form, cpu_overcommit_factor: e.target.value })
+                            }
+                            placeholder="1.0"
+                            autoComplete="off"
+                          />
+                          <p className="mt-1 text-xs text-on-surface-variant">
+                            {t('nodes.cpuOvercommitHint')}
+                          </p>
+                        </div>
                       </div>
                     </section>
 
@@ -818,6 +850,16 @@ export function AdminNodes({ ohneHintergrund = false }: { ohneHintergrund?: bool
                               i18n.language.startsWith('de') ? 'de-DE' : 'en-US',
                               { style: 'currency', currency: 'EUR' },
                             )}
+                          </Badge>
+                        )}
+                        {(node.cpu_overcommit_factor ?? 1) > 1 && (
+                          <Badge variant="default">
+                            {t('nodes.cpuOvercommitBadge', {
+                              factor: (node.cpu_overcommit_factor ?? 1).toLocaleString(
+                                i18n.language.startsWith('de') ? 'de-DE' : 'en-US',
+                                { minimumFractionDigits: 1, maximumFractionDigits: 2 },
+                              ),
+                            })}
                           </Badge>
                         )}
                       </div>

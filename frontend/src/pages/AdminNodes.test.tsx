@@ -215,6 +215,9 @@ describe('AdminNodes', () => {
     fireEvent.change(screen.getByLabelText(i18n.t('nodes.shopSurchargeEuro')), {
       target: { value: '4,50' },
     })
+    fireEvent.change(screen.getByLabelText(i18n.t('nodes.cpuOvercommitLabel')), {
+      target: { value: '2.5' },
+    })
 
     fireEvent.click(screen.getByRole('button', { name: i18n.t('common.save') }))
 
@@ -229,7 +232,34 @@ describe('AdminNodes', () => {
         shop_show_cpu: false,
         hardware_tier_label: 'Performance',
         shop_surcharge_cents: 450,
+        cpu_overcommit_factor: 2.5,
       })
     })
+  })
+
+  it('zeigt CPU-Pool-Badge auf der Node-Karte, wenn cpu_overcommit_factor > 1 ist', async () => {
+    mockApi.mockImplementation((path: string) => {
+      if (path.startsWith('/system/update/status')) {
+        return Promise.resolve({ update_available: false })
+      }
+      if (path.startsWith('/nodes')) {
+        return Promise.resolve({
+          items: [{ ...sampleNode, cpu_overcommit_factor: 2.5 }],
+          total: 1,
+          page: 1,
+          limit: 25,
+        })
+      }
+      return Promise.resolve({})
+    })
+
+    render(
+      <MemoryRouter>
+        <AdminNodes />
+      </MemoryRouter>,
+    )
+
+    expect(await screen.findByTestId('node-card-1')).toBeInTheDocument()
+    expect(screen.getByText('CPU-Pool 2,5×')).toBeInTheDocument()
   })
 })

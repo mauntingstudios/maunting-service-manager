@@ -351,6 +351,9 @@ def node_out_dict(
         "status": node.status or "unknown",
         "tls_fingerprint": getattr(node, "tls_fingerprint", None) or None,
         "cpu_total": node.cpu_total,
+        "cpu_overcommit_factor": round(
+            min(8.0, max(1.0, float(getattr(node, "cpu_overcommit_factor", 1.0) or 1.0))), 2
+        ),
         "cpu_model": getattr(node, "cpu_model", None),
         "location_label": getattr(node, "location_label", None),
         "ram_type": getattr(node, "ram_type", None),

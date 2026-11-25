@@ -44,6 +44,11 @@ interface NodeState {
       ddos_provider?: string | null
       ddos_profile?: string | null
       ddos_game_aware?: boolean
+      shop_enabled?: boolean
+      shop_show_cpu?: boolean
+      hardware_tier_label?: string | null
+      shop_surcharge_cents?: number
+      cpu_overcommit_factor?: number
     },
   ) => Promise<Node>
   deleteNode: (id: number) => Promise<void>
