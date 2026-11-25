@@ -305,7 +305,7 @@ export function ShopPromoBanner() {
                     <div className="font-mono text-xl font-bold tabular-nums text-on-surface">
                       {kachel.wert}
                     </div>
-                    <div className="text-[11px] font-medium text-on-surface-variant">
+                    <div className="text-label-sm font-medium text-on-surface-variant">
                       {kachel.einheit}
                     </div>
                   </div>
