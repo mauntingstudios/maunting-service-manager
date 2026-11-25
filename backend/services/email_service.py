@@ -118,6 +118,7 @@ class EmailService:
                 from PIL import Image
 
                 with Image.open(BytesIO(raw_bytes)) as img:
+                    img.thumbnail((168, 168))
                     out = BytesIO()
                     img.convert("RGBA").save(out, format="PNG")
                     return out.getvalue()
@@ -355,6 +356,7 @@ class EmailService:
         Ohne sie greift es sich den ersten Text der Mail — und das war hier
         der Markenname im Kopf. Sie muss wie `title` bereits maskiert sein.
         """
+        brand_name = cls._brand_name()
         vorschau_html = ""
         if vorschau:
             # Der Fuellstoff dahinter haelt den Mailtext aus der Vorschauzeile.
@@ -407,7 +409,7 @@ class EmailService:
             <td align="center" style="padding:0 0 26px 0;">
               <table role="presentation" cellpadding="0" cellspacing="0" border="0">
                 <tr>
-                  <td style="vertical-align:middle;">{cls._logo_html(brand_name := cls._brand_name())}</td>
+                  <td style="vertical-align:middle;">{cls._logo_html(brand_name)}</td>
                   <td style="vertical-align:middle;padding-left:14px;font-family:{cls.FONT_TITEL};font-size:24px;font-weight:800;letter-spacing:0.5px;color:{cls.ACCENT_COLOR};line-height:1;">{cls.html_text(cls._brand_header_label(brand_name))}</td>
                 </tr>
               </table>
@@ -1746,9 +1748,7 @@ Du kannst alle Rechnungen auch jederzeit in deinem Kundenkonto einsehen:
         payment_url: str | None = None,
     ) -> bool:
         """Sendet eine gestaffelte Zahlungserinnerung vor automatischer Server-Loeschung."""
-        from services.branding_service import get_effective_brand_name
-
-        brand_name = get_effective_brand_name()
+        brand_name = EmailService._brand_name()
         days_clamped = max(1, int(days_remaining))
         if days_clamped == 1:
             subject = f"Wichtig: Morgen wird dein Server {server_name} gelöscht"
