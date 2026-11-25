@@ -291,7 +291,7 @@ def test_gamecloud_switch_blueprint_guards(db: Session) -> None:
     _ = ShopPlan(
         game_type="ark_ascended",
         name="ARK Heavy",
-        price_cents=2000,
+        price_cents=plan.price_cents,
         ram_included_mb=12288,
         active=True,
     )

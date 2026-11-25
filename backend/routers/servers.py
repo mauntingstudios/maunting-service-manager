@@ -1333,7 +1333,7 @@ def update_server_variables(
         raise HTTPException(status_code=404, detail="Server nicht gefunden")
     is_operator = (
         permission_service.has_global_permission(db, user, "panel.settings.write")
-        or permission_service.has_global_permission(db, user, "blueprints.write")
+        or permission_service.has_global_permission(db, user, "blueprints.manage")
     )
     try:
         result = server_variables_service.update_server_variables(

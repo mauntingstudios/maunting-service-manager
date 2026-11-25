@@ -94,6 +94,7 @@ const SUBGROUPS = [
       'ai.notes.use',
       'ai.coding.use',
       'ai.projects.manage',
+      'ai.projects.preview',
       'ai.mcp.manage',
       'ai.docs.use',
       'ai.popups.manage',

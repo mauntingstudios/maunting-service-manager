@@ -51,7 +51,9 @@ OHNE_KONTOBEZUG: dict[str, str] = {
     "backups": "Server-Daten",
     "frontend_deployments": "Server-Daten: Build- und Deploy-Verlauf eines Frontend-Servers",
     "frontend_settings": "Server-Daten: Git-, Domain- und Build-Einstellungen eines Frontend-Servers",
+    "game_store_metadata": "Panel-Bestand: zwischengespeicherte Store-Metadaten je Spiel",
     "game_wallpapers": "Panel-Bestand: Galerie der Server-Titelbilder je Spiel",
+    "role_ai_project_quotas": "Panel-Einstellung: KI-Projekt-Kontingente je Rolle",
     "role_frontend_build_quotas": "Panel-Einstellung: Build-Kontingente je Rolle",
     "change_events": "Server-Daten",
     "direct_chats": "blind, dem Server ist kein Konto bekannt",
@@ -66,6 +68,7 @@ OHNE_KONTOBEZUG: dict[str, str] = {
     "guardian_incident_deliveries": "Server-Daten",
     "hoster_integrations": "Panel-Integration, das Konto ist nur ihr Dienstkonto",
     "hoster_products": "Panel-Integration",
+    "lifecycle_deletion_notices": "Panel-Betrieb: Protokoll versandter Loeschwarnungen",
     "incidents": "Server-Daten",
     "mods": "Server-Daten",
     "node_enrollments": "Panel-Betrieb",
@@ -85,6 +88,11 @@ OHNE_KONTOBEZUG: dict[str, str] = {
     "server_ports": "Server-Daten",
     "server_runtime_env": "Server-Daten",
     "servers": "Server-Daten",
+    "shop_addons": "Panel-Bestand: Shop-Add-on-Katalog",
+    "shop_coupons": "Panel-Bestand: Shop-Gutscheincodes",
+    "shop_credit_note_sequences": "Panel-Betrieb: Nummernkreis fuer Gutschriften",
+    "shop_invoice_sequences": "Panel-Betrieb: Nummernkreis fuer Rechnungen",
+    "shop_plans": "Panel-Bestand: Shop-Tarifkatalog",
     "singra_webhook_events": "Panel-Betrieb",
     "vault_blind_buckets": "blind, der Tresor liegt nur verschluesselt vor",
     "vault_bucket_formats": "blind, der Tresor liegt nur verschluesselt vor",
@@ -153,6 +161,8 @@ AUSGESCHLOSSEN: dict[str, str] = {
     "doc_revisions.state_encrypted": "Versionszustand; eigener Dokumentexport",
     "doc_revisions.preview_text_encrypted": "Vorschau einer Version; eigener Dokumentexport",
     "doc_pending_edits.payload_encrypted": "Noch nicht bestaetigter KI-Vorschlag; kein Dokumentinhalt, eigener Dokumentexport",
+    "hoster_services.purge_cycle_token": "Interner Zyklus-Token der automatischen Loeschung",
+    "shop_entitlements.purge_cycle_token": "Interner Zyklus-Token der automatischen Loeschung",
 }
 
 #: Spalten, deren Name nach Geheimnis klingt, die aber keins sind.

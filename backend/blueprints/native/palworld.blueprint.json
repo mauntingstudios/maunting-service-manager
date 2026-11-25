@@ -6,7 +6,7 @@
     "category": "steam_game",
     "platforms": ["pc", "ps5", "xbox", "crossplay"],
     "author": "Maunting Studios",
-    "description": "Palworld Dedicated Server 1.0+ nativ unter Linux (Steam App-ID 2394010). Steam Workshop (App 1623730) Ã¼ber -workshopdir auf den SteamCMD-Cache; Server- und Mod-Updates via MSM checkBased. UE4SS/Lua-Workshop-Mods sind laut Hersteller nur auf der Windows-Server-Edition â€” dieser Blueprint nutzt bewusst den nativen Linux-Server (.pak/Workshop-Inhalte)."
+    "description": "Palworld Dedicated Server 1.0+ nativ unter Linux (Steam App-ID 2394010). Steam Workshop (App 1623730) über -workshopdir auf den SteamCMD-Cache; Server- und Mod-Updates via MSM checkBased. UE4SS/Lua-Workshop-Mods sind laut Hersteller nur auf der Windows-Server-Edition — dieser Blueprint nutzt bewusst den nativen Linux-Server (.pak/Workshop-Inhalte)."
   },
   "runtime": {
     "image": "ghcr.io/parkervcp/steamcmd:debian",

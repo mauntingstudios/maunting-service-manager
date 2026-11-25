@@ -30,7 +30,17 @@ from database import Base
 
 # Letzte Revision auf `main`. Alles danach ist neu in diesem Branch.
 BASE_REVISION = "20260731_01"
-HEAD_REVISION = "20261120_06"
+
+
+def _expected_head_revision() -> str:
+    cfg = Config()
+    cfg.set_main_option("script_location", str(Path(__file__).resolve().parent.parent / "migrations"))
+    head = ScriptDirectory.from_config(cfg).get_current_head()
+    assert head is not None
+    return head
+
+
+HEAD_REVISION = _expected_head_revision()
 
 BRANCH_TABLES = (
     "user_roles",

@@ -913,16 +913,22 @@ def test_team_schalter_backfill_hin_und_zurueck(pg_wegwerf):
         command.downgrade(config, "20261103_02")
 
         with Session(engine) as db:
-            gr = User(username="gr", password_hash="msm-pw-v1:x:y:v2")
-            a = User(username="a", password_hash="msm-pw-v1:x:y:v2")
-            b = User(username="b", password_hash="msm-pw-v1:x:y:v2")
-            db.add_all([gr, a, b])
-            db.flush()
+            user_sql = text(
+                "INSERT INTO users (username, username_gewaehlt, password_hash, has_password, "
+                "is_owner, is_active, email_verified, two_factor_enabled, email_notifications, "
+                "ai_notifications, device_notifications, location_sharing_enabled, social_privacy, "
+                "ai_desktop_systembereich, created_at) "
+                "VALUES (:u, true, 'msm-pw-v1:x:y:v2', true, false, true, false, false, "
+                "true, true, true, false, 'friends', 'lesen', now()) RETURNING id"
+            )
+            gr_id = db.execute(user_sql, {"u": "gr"}).scalar_one()
+            a_id = db.execute(user_sql, {"u": "a"}).scalar_one()
+            b_id = db.execute(user_sql, {"u": "b"}).scalar_one()
             db.execute(text(
                 "INSERT INTO teams (id, name, owner_user_id, vault_needs_rotation, "
                 "created_at, updated_at) "
                 "VALUES (1, 'T', :owner, false, now(), now())"
-            ), {"owner": gr.id})
+            ), {"owner": gr_id})
             db.flush()
             mit_id = db.execute(text(
                 "INSERT INTO team_roles (team_id, name, color, can_access_vault, can_manage_skills, can_manage_memory, is_default, is_admin, created_at) "
@@ -935,15 +941,14 @@ def test_team_schalter_backfill_hin_und_zurueck(pg_wegwerf):
             ma_id = db.execute(text(
                 "INSERT INTO team_members (team_id, user_id, role, can_access_vault, can_manage_skills, can_manage_memory, team_role_id, joined_at) "
                 "VALUES (1, :uid, 'member', false, false, true, :rid, now()) RETURNING id"
-            ), {"uid": a.id, "rid": ohne_id}).scalar_one()
+            ), {"uid": a_id, "rid": ohne_id}).scalar_one()
             db.execute(text(
                 "INSERT INTO team_member_roles (team_member_id, team_role_id, assigned_at) VALUES (:mid, :rid, now())"
             ), {"mid": ma_id, "rid": mit_id})
             db.execute(text(
                 "INSERT INTO team_members (team_id, user_id, role, can_access_vault, can_manage_skills, can_manage_memory, team_role_id, joined_at) "
                 "VALUES (1, :uid, 'member', false, true, true, NULL, now())"
-            ), {"uid": b.id})
-            a_id, b_id = a.id, b.id
+            ), {"uid": b_id})
             db.commit()
 
         command.upgrade(config, "20261103_01")
