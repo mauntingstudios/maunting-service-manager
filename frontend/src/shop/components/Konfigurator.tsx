@@ -119,6 +119,10 @@ export function Konfigurator({
     value: String(slots),
     label: `${slots} ${t('shop.spiel.spieler')}`,
   }))
+  const diskOptionen = (spiel.diskStufenGb ?? []).map((gb) => ({
+    value: String(gb),
+    label: `${gb} GB`,
+  }))
   const hatStandorte = nodeStatuses.length > 0
   const leistungSchritt = hatStandorte ? 2 : 1
   const abrechnungSchritt = hatStandorte ? 3 : 2
@@ -346,6 +350,24 @@ export function Konfigurator({
               aria-label={t('shop.spiel.slots')}
             />
           </label>
+
+          {diskOptionen.length > 0 && (
+            <label className="space-y-1.5">
+              <span className="block text-xs font-medium uppercase tracking-wider text-on-surface-variant">
+                {spiel.hardwareStorageType
+                  ? `${t('shop.spiel.disk')} · ${spiel.hardwareStorageType}`
+                  : t('shop.spiel.disk')}
+              </span>
+              <Dropdown
+                value={String(
+                  konfiguration.diskGb ?? spiel.standardDiskGb ?? spiel.diskStufenGb?.[0] ?? 0,
+                )}
+                onChange={(wert) => setze('diskGb', Number(wert))}
+                options={diskOptionen}
+                aria-label={t('shop.spiel.disk')}
+              />
+            </label>
+          )}
         </div>
 
         <p className="text-xs text-on-surface-variant">

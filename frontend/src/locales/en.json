@@ -3465,6 +3465,7 @@
     "autoUpdatePausedHint": "Skips automatic game and mod updates on start. Missing initial files are still installed.",
     "autoUpdatePausedSaved": "Update setting saved.",
     "diagnoseWithSingra": "Analyze with Singra",
+    "errorHandbook": "Error handbook",
     "singraCrashPrompt": "My server \"{{name}}\" ({{game}}) is in an error state ({{status}}). Please analyze likely causes from the recent console/crash logs and configuration, and suggest concrete steps to fix it.",
     "kind": {
       "application": "Application",
@@ -4980,6 +4981,10 @@
         "slotsIncluded": "Slots included",
         "slotsMax": "Slots maximum",
         "preisSlots": "Surcharge per slot (EUR)",
+        "diskIncluded": "Storage included (GB)",
+        "diskMax": "Storage maximum (GB)",
+        "diskStep": "Storage step size (GB)",
+        "preisDisk": "Surcharge per storage step (EUR)",
         "steuer": "Tax rate (%)",
         "artwork": "Artwork",
         "artworkSteam": "Automatic from Steam",
@@ -6333,7 +6338,52 @@
     "imprintLink": "Open imprint",
     "hosterApiTitle": "Hoster API",
     "hosterApiDesc": "Endpoints, webhooks and signature verification for connecting an external shop.",
-    "hosterApiLink": "Open reference"
+    "hosterApiLink": "Open reference",
+    "troubleshootingTitle": "Error handbook",
+    "troubleshootingDesc": "Common SteamCMD and server error codes explained, including fixes for storage, port and permission issues.",
+    "troubleshootingLink": "Open handbook"
+  },
+  "docsTroubleshooting": {
+    "title": "Error handbook & diagnostics",
+    "subtitle": "Interpret common SteamCMD and general server errors and resolve them faster.",
+    "tocTitle": "Contents",
+    "backToServers": "Back to servers",
+    "allDocs": "All documentation",
+    "toc": {
+      "workflow": "Diagnostic workflow",
+      "steam": "SteamCMD errors",
+      "general": "General & non-Steam errors"
+    },
+    "workflow": {
+      "intro": "When an installation or startup fails, MSM writes a summary prefixed with [MSM] Diagnose: to the server console.",
+      "step1": "Open the server console and check the final lines starting with [MSM] Diagnose: or [MSM-DIAG].",
+      "step2": "Verify disk quota, free space on the node, RAM limit and port bindings before retrying an installation.",
+      "step3": "If needed, click “Analyze with Singra” to inspect the console logs and configuration in a fresh AI chat."
+    },
+    "steam": {
+      "err0x202Title": "Insufficient disk space or disk quota",
+      "err0x202Body": "SteamCMD checks free space via statfs64 before downloading. If the server volume quota or host partition has less free space than staging requires (for example ~17 GB for 7 Days to Die), the job fails with 0x202 and UpdateResult 43. Increase the disk limit or free space on the node.",
+      "errMissingConfigTitle": "Missing app metadata, platform or login",
+      "errMissingConfigBody": "SteamCMD cannot find a depot configuration for the requested platform. MSM refreshes app metadata (+app_info_update 1) on its automatic retry. If the error persists, verify whether the game requires an authenticated Steam account with a license.",
+      "err0x226Title": "Interrupted download or corrupt app manifest",
+      "err0x226Body": "Stale files in steamapps/downloading/ or a broken appmanifest_*.acf after a timeout block subsequent updates. MSM cleans those leftovers automatically before the next run; if timeouts continue, check node connectivity.",
+      "errLoginTitle": "Steam account, license or Steam Guard blocked",
+      "errLoginBody": "Games without anonymous dedicated server depots require a Steam account that owns the app and has Steam Guard disabled (or token auth). Configure credentials on the server or in global settings."
+    },
+    "general": {
+      "errDiskTitle": "Volume full or disk quota exceeded",
+      "errDiskBody": "For HTTP, GitHub or game startups, ENOSPC and EDQUOT mean the server quota or host filesystem is full. Increase the server disk limit or remove old backups, logs and world files.",
+      "errOomTitle": "Out of memory (OOM kill)",
+      "errOomBody": "The kernel or Docker terminates the container with exit code 137 when memory usage exceeds the server limit. Increase the RAM limit or reduce memory-heavy mods and view distances.",
+      "errPermTitle": "Execution or file access denied",
+      "errPermBody": "Exit code 126 or EACCES occurs when binaries lack execute permissions or bind-mount ownership drifted after manual edits. Restart via the panel so MSM reapplies runtime ACLs and /tmp exec options.",
+      "errPortTitle": "Network port already in use",
+      "errPortBody": "Another server or host service is already bound to the same TCP/UDP port. Check the server's assigned ports and pick an unused port.",
+      "errNetworkTitle": "Source download, credentials or DNS failed",
+      "errNetworkBody": "HTTP 401/403 indicates a missing or expired token (such as a GitHub PAT), while HTTP 404 points to an invalid URL or missing branch. DNS and timeout errors indicate the node cannot reach the upstream host.",
+      "errConfigTitle": "Broken configuration or empty database file",
+      "errConfigBody": "Syntax errors in serverconfig.xml/INI files or 0-byte .db leftovers from an aborted init prevent startup. Check the most recently edited config file or restore a backup."
+    }
   },
   "docsSelfHosting": {
     "canonicalNotice": "The German longform documentation (docs/de-docs/self-hosting.md) is the canonical operations guide for all MSM components.",
@@ -7353,6 +7403,7 @@
       "ram": "Memory",
       "cpu": "CPU allocation",
       "slots": "Player slots",
+      "disk": "Storage",
       "laufzeit": "Term",
       "kern": "core",
       "kerne": "cores",
@@ -7426,6 +7477,7 @@
       "ram": "RAM",
       "cpu": "CPU",
       "slots": "Slots",
+      "disk": "Storage",
       "laufzeit": "Term",
       "summe": "Total",
       "email": "Email",
@@ -7505,6 +7557,7 @@
       "ram": "RAM",
       "cpu": "CPU",
       "slots": "Slots",
+      "disk": "Storage",
       "standortAufpreis": "Location surcharge",
       "ki": "AI access",
       "monat": "per month",

@@ -42,6 +42,11 @@ class ShopPlanWrite(BaseModel):
     slots_step: int = Field(1, ge=1, le=100_000)
     price_per_slot_step_cents: int = Field(0, ge=0, le=100_000_000)
 
+    disk_included_gb: int | None = Field(None, ge=0, le=100_000)
+    disk_max_gb: int | None = Field(None, ge=0, le=100_000)
+    disk_step_gb: int = Field(10, ge=1, le=10_000)
+    price_per_disk_step_cents: int = Field(0, ge=0, le=100_000_000)
+
     node_id: int | None = Field(None, ge=1)
     role_id: int | None = Field(None, ge=1)
 
@@ -81,6 +86,11 @@ class ShopPlanUpdate(BaseModel):
     slots_max: int | None = Field(None, ge=0, le=100_000)
     slots_step: int | None = Field(None, ge=1, le=100_000)
     price_per_slot_step_cents: int | None = Field(None, ge=0, le=100_000_000)
+
+    disk_included_gb: int | None = Field(None, ge=0, le=100_000)
+    disk_max_gb: int | None = Field(None, ge=0, le=100_000)
+    disk_step_gb: int | None = Field(None, ge=1, le=10_000)
+    price_per_disk_step_cents: int | None = Field(None, ge=0, le=100_000_000)
 
     node_id: int | None = Field(None, ge=1)
     role_id: int | None = Field(None, ge=1)
@@ -125,6 +135,10 @@ class ShopPlanResponse(BaseModel):
     slots_max: int | None
     slots_step: int
     price_per_slot_step_cents: int
+    disk_included_gb: int | None = None
+    disk_max_gb: int | None = None
+    disk_step_gb: int = 10
+    price_per_disk_step_cents: int = 0
     node_id: int | None
     role_id: int | None
     artwork_mode: ArtworkMode
@@ -273,6 +287,7 @@ class ShopOrderCreate(BaseModel):
     ram_mb: int | None = Field(None, ge=0, le=4_194_304)
     cpu: int | None = Field(None, ge=0, le=10_000)
     slots: int | None = Field(None, ge=0, le=100_000)
+    disk_gb: int | None = Field(None, ge=1, le=100_000)
     preferred_node_id: int | None = Field(None, ge=1)
     coupon_code: str | None = Field(None, max_length=48)
     captcha_token: str | None = Field(None, max_length=4096)
@@ -307,6 +322,7 @@ class ShopAdminManualOrderCreate(BaseModel):
     ram_mb: int | None = Field(None, ge=0, le=4_194_304)
     cpu: int | None = Field(None, ge=0, le=10_000)
     slots: int | None = Field(None, ge=0, le=100_000)
+    disk_gb: int | None = Field(None, ge=1, le=100_000)
     preferred_node_id: int | None = Field(None, ge=1)
     coupon_code: str | None = Field(None, max_length=48)
     mark_paid: bool = True
@@ -462,6 +478,7 @@ class ShopOrderItemResponse(BaseModel):
     ram_mb: int | None
     cpu: int | None
     slots: int | None
+    disk_gb: int | None = None
     preferred_node_id: int | None = None
     node_surcharge_cents: int = 0
     duration_days: int | None = None
@@ -742,6 +759,7 @@ class ShopEntitlementResponse(BaseModel):
     server_name: str | None = None
     provisioning_status: str | None = None
     provisioning_error: str | None = None
+    disk_gb: int | None = None
     purge_after: datetime | None = None
     purge_reason: str | None = None
     purged_at: datetime | None = None
@@ -907,6 +925,10 @@ class ShopCatalogPlan(BaseModel):
     slots_max: int | None
     slots_step: int
     price_per_slot_step_cents: int
+    disk_included_gb: int | None = None
+    disk_max_gb: int | None = None
+    disk_step_gb: int = 10
+    price_per_disk_step_cents: int = 0
     artwork: ShopArtworkResponse
     available: bool = True
     availability_reason: str | None = None
@@ -932,6 +954,7 @@ class ShopAvailabilityRequest(BaseModel):
     plan_id: int = Field(..., ge=1)
     ram_mb: int | None = Field(None, ge=0, le=4_194_304)
     cpu: int | None = Field(None, ge=0, le=10_000)
+    disk_gb: int | None = Field(None, ge=1, le=100_000)
     preferred_node_id: int | None = Field(None, ge=1)
 
 

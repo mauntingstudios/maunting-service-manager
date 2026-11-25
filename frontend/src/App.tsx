@@ -38,6 +38,7 @@ const BlueprintsDocs = lazy(() => import('./pages/docs/BlueprintsDocs').then(mod
 const OAuthDocs = lazy(() => import('./pages/docs/OAuthDocs').then(module => ({ default: module.OAuthDocs })))
 const SelfHostingDocs = lazy(() => import('./pages/docs/SelfHostingDocs').then(module => ({ default: module.SelfHostingDocs })))
 const HosterApiDocs = lazy(() => import('./pages/docs/HosterApiDocs').then(module => ({ default: module.HosterApiDocs })))
+const TroubleshootingDocs = lazy(() => import('./pages/docs/TroubleshootingDocs').then(module => ({ default: module.TroubleshootingDocs })))
 const Blueprints = lazy(() => import('./pages/Blueprints').then(module => ({ default: module.Blueprints })))
 const PanelBackups = lazy(() => import('./pages/PanelBackups').then(module => ({ default: module.PanelBackups })))
 const PanelDatabase = lazy(() => import('./pages/PanelDatabase').then(module => ({ default: module.PanelDatabase })))
@@ -338,6 +339,7 @@ function App() {
           <Route path="docs/oauth" element={<RequirePermission routeKey="docs"><OAuthDocs /></RequirePermission>} />
           <Route path="docs/self-hosting" element={<RequirePermission routeKey="docs"><SelfHostingDocs /></RequirePermission>} />
           <Route path="docs/hoster-api" element={<RequirePermission routeKey="docs"><HosterApiDocs /></RequirePermission>} />
+          <Route path="docs/troubleshooting" element={<RequirePermission routeKey="docs"><TroubleshootingDocs /></RequirePermission>} />
           <Route path="privacy" element={<Privacy />} />
           <Route
             path="blueprints"

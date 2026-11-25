@@ -16,6 +16,7 @@ const BlueprintsDocs = lazy(() => import('@/pages/docs/BlueprintsDocs').then((mo
 const OAuthDocs = lazy(() => import('@/pages/docs/OAuthDocs').then((modul) => ({ default: modul.OAuthDocs })))
 const SelfHostingDocs = lazy(() => import('@/pages/docs/SelfHostingDocs').then((modul) => ({ default: modul.SelfHostingDocs })))
 const HosterApiDocs = lazy(() => import('@/pages/docs/HosterApiDocs').then((modul) => ({ default: modul.HosterApiDocs })))
+const TroubleshootingDocs = lazy(() => import('@/pages/docs/TroubleshootingDocs').then((modul) => ({ default: modul.TroubleshootingDocs })))
 
 export function istHilfeRoute(pathname: string): boolean {
   return pathname === '/docs' || pathname.startsWith('/docs/')
@@ -40,6 +41,7 @@ export function HilfeBereich() {
             <Route path="/docs/oauth" element={<OAuthDocs />} />
             <Route path="/docs/self-hosting" element={<SelfHostingDocs />} />
             <Route path="/docs/hoster-api" element={<HosterApiDocs />} />
+            <Route path="/docs/troubleshooting" element={<TroubleshootingDocs />} />
             <Route path="*" element={<Navigate to="/docs" replace />} />
           </Routes>
         </Suspense>

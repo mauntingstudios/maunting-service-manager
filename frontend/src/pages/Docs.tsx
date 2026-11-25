@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
-import { BookOpen, KeyRound, ArrowRight, BookOpenCheck, FileText, ExternalLink, Network, Plug } from 'lucide-react'
+import { BookOpen, KeyRound, ArrowRight, BookOpenCheck, FileText, ExternalLink, Network, Plug, Wrench } from 'lucide-react'
 import { usePublicLegalSettings } from '@/hooks/usePublicLegalSettings'
 import { PageHeader } from '@maunting/ui'
 
@@ -47,6 +47,13 @@ export function Docs() {
           title={t('docsIndex.hosterApiTitle')}
           description={t('docsIndex.hosterApiDesc')}
           cta={t('docsIndex.hosterApiLink')}
+        />
+        <DocCard
+          to="/docs/troubleshooting"
+          icon={<Wrench className="w-6 h-6" />}
+          title={t('docsIndex.troubleshootingTitle')}
+          description={t('docsIndex.troubleshootingDesc')}
+          cta={t('docsIndex.troubleshootingLink')}
         />
         <LegalCard imprintUrl={imprintUrl} />
       </div>

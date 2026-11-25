@@ -522,6 +522,15 @@ class BlueprintPlugin(GamePlugin):
             if result.get("ok"):
                 _append_console_log(server_id, "[MSM] HTTP-Source erfolgreich entpackt\n")
             else:
+                from games.install_diagnostics import classify_generic_install_failure
+
+                classified = classify_generic_install_failure(
+                    f"{result.get('stdout') or ''}\n{result.get('stderr') or ''}",
+                    str(result.get("error") or ""),
+                )
+                if classified:
+                    result = {**result, **classified}
+                    _append_console_log(server_id, f"[MSM] Diagnose: {classified['error']}\n")
                 _append_console_log(
                     server_id,
                     f"[MSM] HTTP-Source fehlgeschlagen: {result.get('error')}\n",
@@ -583,6 +592,15 @@ class BlueprintPlugin(GamePlugin):
                     f"commit={str(result.get('commit', ''))[:12]})\n",
                 )
             else:
+                from games.install_diagnostics import classify_generic_install_failure
+
+                classified = classify_generic_install_failure(
+                    f"{result.get('stdout') or ''}\n{result.get('stderr') or ''}",
+                    str(result.get("error") or ""),
+                )
+                if classified:
+                    result = {**result, **classified}
+                    _append_console_log(server_id, f"[MSM] Diagnose: {classified['error']}\n")
                 _append_console_log(
                     server_id,
                     f"[MSM] GitHub-Source fehlgeschlagen: {result.get('error')}\n",

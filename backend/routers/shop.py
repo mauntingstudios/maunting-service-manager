@@ -237,6 +237,7 @@ def check_shop_availability(
         plan,
         ram_mb=payload.ram_mb,
         cpu_cores=payload.cpu,
+        disk_gb=payload.disk_gb,
         preferred_node_id=payload.preferred_node_id,
         shop_only=True,
     )
@@ -462,6 +463,7 @@ def start_my_order_checkout(
                 plan,
                 ram_mb=item0.ram_mb,
                 cpu_cores=item0.cpu,
+                disk_gb=getattr(item0, "disk_gb", None),
                 preferred_node_id=getattr(item0, "preferred_node_id", None),
                 shop_only=True,
             )

@@ -49,6 +49,10 @@ export interface ShopPlan {
   slots_max: number | null
   slots_step: number
   price_per_slot_step_cents: number
+  disk_included_gb?: number | null
+  disk_max_gb?: number | null
+  disk_step_gb?: number
+  price_per_disk_step_cents?: number
   lifetime_price_cents?: number | null
   allow_game_switch?: boolean
   allow_short_durations?: boolean
@@ -109,6 +113,10 @@ export interface ShopCatalogPlan {
   slots_max: number | null
   slots_step: number
   price_per_slot_step_cents: number
+  disk_included_gb?: number | null
+  disk_max_gb?: number | null
+  disk_step_gb?: number
+  price_per_disk_step_cents?: number
   lifetime_price_cents?: number | null
   allow_game_switch?: boolean
   allow_short_durations?: boolean
@@ -225,6 +233,10 @@ export interface ShopPlanWrite {
   slots_max?: number | null
   slots_step?: number
   price_per_slot_step_cents?: number
+  disk_included_gb?: number | null
+  disk_max_gb?: number | null
+  disk_step_gb?: number
+  price_per_disk_step_cents?: number
   lifetime_price_cents?: number | null
   allow_game_switch?: boolean
   allow_short_durations?: boolean
@@ -516,6 +528,7 @@ export const shopCatalogApi = {
     plan_id: number
     ram_mb?: number | null
     cpu?: number | null
+    disk_gb?: number | null
     preferred_node_id?: number | null
   }) =>
     api<ShopAvailabilityResponse>('/shop/availability', {
@@ -547,6 +560,7 @@ export interface ShopOrderItemDto {
   ram_mb: number | null
   cpu: number | null
   slots: number | null
+  disk_gb?: number | null
   preferred_node_id?: number | null
   node_surcharge_cents?: number
   duration_days?: number | null
@@ -584,6 +598,7 @@ export interface ShopOrderCreate {
   ram_mb?: number | null
   cpu?: number | null
   slots?: number | null
+  disk_gb?: number | null
   preferred_node_id?: number | null
   coupon_code?: string | null
   captcha_token?: string | null
@@ -625,6 +640,7 @@ export interface ShopEntitlementDto {
   server_name?: string | null
   provisioning_status: string | null
   provisioning_error: string | null
+  disk_gb?: number | null
   purge_after?: string | null
   purge_reason?: 'voluntary_cancel' | 'unpaid' | 'refund' | string | null
   purged_at?: string | null
@@ -746,6 +762,7 @@ export interface ShopServerSubscriptionDto {
   ram_mb: number | null
   cpu: number | null
   slots: number | null
+  disk_gb?: number | null
 }
 
 export interface ShopServerPlayersDto {

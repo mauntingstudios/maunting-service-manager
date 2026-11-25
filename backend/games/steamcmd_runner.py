@@ -547,6 +547,13 @@ def _build_steamcmd_bash_command(steam_args: list[str], chown_uid: int, chown_gi
         "_stdbuf=''; command -v stdbuf >/dev/null 2>&1 && _stdbuf='stdbuf -oL -eL'; "
         f"$_stdbuf {shlex.quote(STEAMCMD_BIN)} {quoted}; "
         "rc=$?; "
+        "if [ $rc -ne 0 ]; then "
+        f"df -Pm {q_data} 2>/dev/null | awk 'NR==2 {{printf \"[MSM-DIAG] disk_avail_mb=%s disk_total_mb=%s\\n\", $4, $2}}' || true; "
+        f"if [ -f {q_data}/Steam/logs/content_log.txt ]; then "
+        f"grep -iE 'failed to preallocate|not enough disk|update canceled|scheduler finished|updateresult' "
+        f"{q_data}/Steam/logs/content_log.txt 2>/dev/null | tail -n 6 | sed 's/^/[MSM-DIAG] /' || true; "
+        "fi; "
+        "fi; "
         f"chown -R {int(chown_uid)}:{int(chown_gid)} {q_data} 2>/dev/null || true; "
         f"chmod -R a+rwx {q_data} 2>/dev/null || true; "
         "exit $rc"
@@ -561,6 +568,16 @@ def _redact(text: str, secrets_to_redact: list[str]) -> str:
     return text
 
 
+_DISK_QUOTA_MARKERS = (
+    "not enough disk quota",
+    "not enough disk space",
+    "failed to preallocate",
+    "no space left on device",
+    "disk quota exceeded",
+    "updateresult 43",
+)
+
+
 def classify_steamcmd_failure(output: str, fallback_error: str = "") -> dict[str, str] | None:
     """Map known SteamCMD failure markers to safe structured errors.
 
@@ -568,7 +585,25 @@ def classify_steamcmd_failure(output: str, fallback_error: str = "") -> dict[str
     SteamCMD output alone does not prove whether disk, quota, permissions,
     platform metadata, or concurrent access was the root cause.
     """
-    text = f"{output}\n{fallback_error}".lower()
+    raw = f"{output}\n{fallback_error}"
+    text = raw.lower()
+    if any(marker in text for marker in _DISK_QUOTA_MARKERS):
+        need_match = re.search(r'Failed to preallocate[^"\n]*"([^"]+)"', raw, flags=re.IGNORECASE)
+        avail_match = re.search(r"disk_avail_mb=(\d+)", raw)
+        details: list[str] = []
+        if need_match:
+            details.append(f"benötigt ca. {need_match.group(1)}")
+        if avail_match:
+            avail_gb = int(avail_match.group(1)) / 1024.0
+            details.append(f"aktuell verfügbar: {avail_gb:.1f} GB")
+        detail_suffix = f" ({', '.join(details)})" if details else ""
+        return {
+            "error_code": "steamcmd_disk_quota_exceeded",
+            "error": (
+                f"Nicht genügend freier Speicherplatz oder Disk-Quota für den Download{detail_suffix}. "
+                "Bitte das Festplatten-Limit (Disk-Quota) des Servers erhöhen oder freien Speicher auf dem Node schaffen."
+            ),
+        }
     if "0x202" in text or "0x226" in text:
         state = "0x202" if "0x202" in text else "0x226"
         return {
@@ -596,7 +631,9 @@ def classify_steamcmd_failure(output: str, fallback_error: str = "") -> dict[str
                 "serverseitige Steam-Störung."
             ),
         }
-    return None
+    from games.install_diagnostics import classify_generic_install_failure
+
+    return classify_generic_install_failure(output, fallback_error)
 
 
 def _bounded_log_buffer_append(buffer: list[str], line: str, *, max_chars: int = 20000) -> None:
@@ -776,6 +813,11 @@ def _finalize_steamcmd_failure_log(
     return result
 
 
+def _manifest_has_real_build(manifest_text: str) -> bool:
+    """True nur, wenn ein bereits installiertes Build (`buildid != 0`) im Manifest steht."""
+    return bool(re.search(r'"buildid"\s+"(?!0")[^"]+"', manifest_text))
+
+
 def _force_clean_manifest_after_0x2xx(
     server_id: int,
     install_dir: str,
@@ -784,7 +826,7 @@ def _force_clean_manifest_after_0x2xx(
     live_output: list[str],
     node: Any | None,
 ) -> None:
-    """Schreibt nach 0x2xx-/Timeout-Abbruch ein sauberes StateFlags=4-Manifest für Best-Effort-Starts."""
+    """Schreibt nach 0x2xx-/Timeout-Abbruch ein sauberes StateFlags=4-Manifest nur bei vorhandenem Alt-Build."""
     from games import base as _base
 
     try:
@@ -815,6 +857,11 @@ def _force_clean_manifest_after_0x2xx(
             manifest_rel = f"steamapps/appmanifest_{app_id}.acf"
             try:
                 mt = client.files_read(server_key, manifest_rel)
+            except Exception:
+                return
+            if not _manifest_has_real_build(mt):
+                return
+            try:
                 bak_rel = f"{manifest_rel}.post-fail.{int(time.time())}"
                 client.files_write(server_key, bak_rel, mt)
             except Exception:
@@ -827,9 +874,14 @@ def _force_clean_manifest_after_0x2xx(
             return
 
         manp = os.path.join(install_dir, "steamapps", f"appmanifest_{app_id}.acf")
-        if os.path.exists(manp):
-            bak = manp + ".post-fail." + str(int(time.time()))
-            shutil.copy2(manp, bak)
+        if not os.path.exists(manp):
+            return
+        with open(manp) as mf:
+            mt = mf.read()
+        if not _manifest_has_real_build(mt):
+            return
+        bak = manp + ".post-fail." + str(int(time.time()))
+        shutil.copy2(manp, bak)
         with open(manp, "w") as mf:
             mf.write(clean)
         _base._append_console_log(

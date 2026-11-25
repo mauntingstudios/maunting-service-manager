@@ -138,4 +138,20 @@ describe('Shop-Preislogik', () => {
     )
     expect(deaktiviert).toEqual({ cent: 1000, tage: null })
   })
+
+  it('rechnet konfigurierbaren Festplattenspeicher in Schritten dazu', () => {
+    const tarif = {
+      ...palworld,
+      standardDiskGb: 25,
+      diskStufenGb: [25, 35, 45],
+      diskStepGb: 10,
+      preisProDiskSchrittCent: 150,
+    }
+    const preis = preisAufschluesselung(tarif, {
+      ...standardKonfiguration(tarif),
+      diskGb: 45,
+    })
+    expect(preis.diskCent).toBe(300)
+    expect(preis.monatCent).toBe(tarif.grundpreisCent + 300)
+  })
 })

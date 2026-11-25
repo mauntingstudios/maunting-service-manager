@@ -96,6 +96,7 @@ export function preisAufschluesselung(
   const ramStep = spiel.ramStepGb && spiel.ramStepGb > 0 ? spiel.ramStepGb : 1
   const cpuStep = spiel.cpuStep && spiel.cpuStep > 0 ? spiel.cpuStep : 1
   const slotStep = spiel.slotStep && spiel.slotStep > 0 ? spiel.slotStep : 1
+  const diskStep = spiel.diskStepGb && spiel.diskStepGb > 0 ? spiel.diskStepGb : 10
   const ramCent =
     Math.floor(Math.max(0, konfiguration.ramGb - spiel.standardRamGb) / ramStep) *
     spiel.preisProGbCent
@@ -105,10 +106,17 @@ export function preisAufschluesselung(
   const slotsCent =
     Math.floor(Math.max(0, konfiguration.slots - spiel.standardSlots) / slotStep) *
     spiel.preisProSlotCent
+  const diskCent =
+    spiel.standardDiskGb != null &&
+    konfiguration.diskGb != null &&
+    (spiel.preisProDiskSchrittCent ?? 0) > 0
+      ? Math.floor(Math.max(0, konfiguration.diskGb - spiel.standardDiskGb) / diskStep) *
+        (spiel.preisProDiskSchrittCent ?? 0)
+      : 0
   const kiCent = konfiguration.kiZugang ? spiel.kiZugangCent : 0
   const standortCent = Math.max(0, Math.round(konfiguration.standortAufpreisCent ?? 0))
   const monatCent =
-    spiel.grundpreisCent + ramCent + cpuCent + slotsCent + kiCent + standortCent
+    spiel.grundpreisCent + ramCent + cpuCent + slotsCent + diskCent + kiCent + standortCent
   const modus = konfiguration.abrechnungsModus ?? 'prepaid'
   const lifetimeBasis = spiel.lifetimePreisCent ?? null
   if (modus === 'lifetime' && lifetimeBasis !== null && lifetimeBasis > 0) {
@@ -119,6 +127,7 @@ export function preisAufschluesselung(
       ramCent,
       cpuCent,
       slotsCent,
+      diskCent,
       kiCent,
       standortCent,
       monatCent,
@@ -135,6 +144,7 @@ export function preisAufschluesselung(
         ramCent,
         cpuCent,
         slotsCent,
+        diskCent,
         kiCent,
         standortCent,
         monatCent,
@@ -155,6 +165,7 @@ export function preisAufschluesselung(
     ramCent,
     cpuCent,
     slotsCent,
+    diskCent,
     kiCent,
     standortCent,
     monatCent,

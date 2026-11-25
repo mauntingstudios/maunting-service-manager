@@ -264,6 +264,7 @@ export function ShopKasse() {
               ram_mb: konfiguration!.ramGb * 1024,
               cpu: konfiguration!.cpu,
               slots: konfiguration!.slots,
+              ...(konfiguration!.diskGb != null ? { disk_gb: konfiguration!.diskGb } : {}),
               ...(konfiguration!.preferredNodeId != null
                 ? { preferred_node_id: konfiguration!.preferredNodeId }
                 : {}),
@@ -614,6 +615,12 @@ export function ShopKasse() {
                     <dt className="text-on-surface-variant">{t('shop.kasse.slots')}</dt>
                     <dd className="text-on-surface">{konfiguration.slots}</dd>
                   </div>
+                  {konfiguration.diskGb != null && (
+                    <div className="flex justify-between gap-3">
+                      <dt className="text-on-surface-variant">{t('shop.kasse.disk')}</dt>
+                      <dd className="text-on-surface">{konfiguration.diskGb} GB</dd>
+                    </div>
+                  )}
                   <div className="flex justify-between gap-3">
                     <dt className="text-on-surface-variant">{t('shop.kasse.zahlungsartLabel')}</dt>
                     <dd className="text-on-surface">

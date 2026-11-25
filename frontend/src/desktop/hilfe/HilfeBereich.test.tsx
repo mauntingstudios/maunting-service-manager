@@ -7,6 +7,7 @@ vi.mock('@/pages/docs/BlueprintsDocs', () => ({ BlueprintsDocs: () => <div data-
 vi.mock('@/pages/docs/OAuthDocs', () => ({ OAuthDocs: () => <div data-testid="hilfe-oauth" /> }))
 vi.mock('@/pages/docs/SelfHostingDocs', () => ({ SelfHostingDocs: () => <div data-testid="hilfe-self-hosting" /> }))
 vi.mock('@/pages/docs/HosterApiDocs', () => ({ HosterApiDocs: () => <div data-testid="hilfe-hoster-api" /> }))
+vi.mock('@/pages/docs/TroubleshootingDocs', () => ({ TroubleshootingDocs: () => <div data-testid="hilfe-troubleshooting" /> }))
 
 import { HilfeBereich, istHilfeRoute } from './HilfeBereich'
 
@@ -27,6 +28,7 @@ describe('HilfeBereich', () => {
     ['/docs/oauth', 'hilfe-oauth'],
     ['/docs/self-hosting', 'hilfe-self-hosting'],
     ['/docs/hoster-api', 'hilfe-hoster-api'],
+    ['/docs/troubleshooting', 'hilfe-troubleshooting'],
   ])('zeigt unter %s die Dokumentationsseite %s', async (pfad, testid) => {
     zeige(pfad)
     expect(await screen.findByTestId(testid)).toBeInTheDocument()

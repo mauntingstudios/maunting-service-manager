@@ -188,6 +188,9 @@ export function ShopSpiel() {
       plan_id: ausgewaehlt.plan.id,
       ram_mb: aktuelleKonfiguration.ramGb * 1024,
       cpu: aktuelleKonfiguration.cpu,
+      ...(aktuelleKonfiguration.diskGb != null
+        ? { disk_gb: aktuelleKonfiguration.diskGb }
+        : {}),
       ...(aktuelleKonfiguration.preferredNodeId != null
         ? { preferred_node_id: aktuelleKonfiguration.preferredNodeId }
         : {}),
@@ -213,6 +216,7 @@ export function ShopSpiel() {
     ausgewaehlt?.plan.id,
     aktuelleKonfiguration?.ramGb,
     aktuelleKonfiguration?.cpu,
+    aktuelleKonfiguration?.diskGb,
     aktuelleKonfiguration?.preferredNodeId,
   ])
 

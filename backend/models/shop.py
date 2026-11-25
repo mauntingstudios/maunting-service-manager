@@ -107,6 +107,15 @@ class ShopPlan(Base):
         Integer, default=0, nullable=False
     )
 
+    disk_included_gb: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    disk_max_gb: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    disk_step_gb: Mapped[int] = mapped_column(
+        Integer, default=10, server_default="10", nullable=False
+    )
+    price_per_disk_step_cents: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0", nullable=False
+    )
+
     # Optionale Bindung an eine Node bzw. eine globale Rolle (z. B. KI-Kontingent).
     node_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("nodes.id", ondelete="SET NULL"), nullable=True
@@ -428,6 +437,7 @@ class ShopOrderItem(Base):
     ram_mb: Mapped[int | None] = mapped_column(Integer, nullable=True)
     cpu: Mapped[int | None] = mapped_column(Integer, nullable=True)
     slots: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    disk_gb: Mapped[int | None] = mapped_column(Integer, nullable=True)
     preferred_node_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("nodes.id", ondelete="SET NULL"), nullable=True
     )
@@ -612,6 +622,7 @@ class ShopEntitlement(Base):
     ram_mb: Mapped[int | None] = mapped_column(Integer, nullable=True)
     cpu: Mapped[int | None] = mapped_column(Integer, nullable=True)
     slots: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    disk_gb: Mapped[int | None] = mapped_column(Integer, nullable=True)
     preferred_node_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("nodes.id", ondelete="SET NULL"), nullable=True
     )

@@ -1,9 +1,10 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
   AlertTriangle,
   ArrowLeft,
+  BookOpen,
   Brain,
   Database,
   Download,
@@ -55,6 +56,7 @@ import {
   ActionMenu,
   Badge,
   Button,
+  buttonClasses,
   Dialog,
   DialogContent,
   DialogDescription,
@@ -996,8 +998,9 @@ export function ServerDetail() {
         game: gameName(server.game_type),
         status: effectiveStatus,
       }),
+      { neuerChat: true },
     );
-    navigate("/ai");
+    navigate("/ai", { state: { newChat: true } });
   };
 
   // KISS: Install vs Reinstall Button-Logik + Update-Badge (genau nach Spec)
@@ -1534,16 +1537,25 @@ export function ServerDetail() {
               {server.status_message || t(`servers.status.${effectiveStatus}`, { defaultValue: effectiveStatus })}
             </p>
           </div>
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            onClick={handleDiagnoseWithSingra}
-            className="inline-flex items-center gap-2"
-          >
-            <Brain className="w-4 h-4" aria-hidden="true" />
-            {t("servers.diagnoseWithSingra")}
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Link
+              to="/docs/troubleshooting"
+              className={`${buttonClasses("ghost", "sm")} inline-flex items-center gap-2`}
+            >
+              <BookOpen className="w-4 h-4" aria-hidden="true" />
+              {t("servers.errorHandbook")}
+            </Link>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={handleDiagnoseWithSingra}
+              className="inline-flex items-center gap-2"
+            >
+              <Brain className="w-4 h-4" aria-hidden="true" />
+              {t("servers.diagnoseWithSingra")}
+            </Button>
+          </div>
         </div>
       )}
 

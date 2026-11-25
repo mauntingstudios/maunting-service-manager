@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useLocation, useSearchParams } from 'react-router-dom'
 import { ChevronRight, Menu, MessageSquare } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Kurzinfo } from '@maunting/ui'
@@ -30,6 +30,7 @@ import { SingraToolsView, type ToolSubTab } from '@/components/ai/singra/SingraT
 import { SingraHistoryView } from '@/components/ai/singra/SingraHistoryView'
 import { useHasPermission } from '@/hooks/useHasPermission'
 import { aiChatPreferenceKeys, readAiProviderChoice } from '@/lib/aiChatPreferences'
+import { AI_ENTWURF_EVENT, entwurfWillNeuenChat } from '@/lib/aiEntwurf'
 import { browserWahlInsKontoUebernehmen } from '@/lib/aiProviderKonto'
 import { still } from '@/lib/still'
 import { useAuthStore } from '@/stores/authStore'
@@ -121,12 +122,17 @@ export function Ai({
   const [sprachkonfiguration, setSprachkonfiguration] = useState<AiVoiceConfig | null>(null)
   const [servers, setServers] = useState<ServerOption[]>([])
   const [suchParameter, setzeSuchParameter] = useSearchParams()
+  const location = useLocation()
+  const initialNewChat =
+    Boolean((location.state as { newChat?: boolean } | null)?.newChat) || entwurfWillNeuenChat()
 
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
   const [conversations, setConversations] = useState<AiConversationSummary[]>([])
   const [projects, setProjects] = useState<AiProject[]>([])
-  const [activeConversationId, setActiveConversationId] = useState<string | null | undefined>(undefined)
+  const [activeConversationId, setActiveConversationId] = useState<string | null | undefined>(() =>
+    initialNewChat ? null : undefined,
+  )
   const [activeProjectId, setActiveProjectId] = useState<string | undefined>(undefined)
   const [activeProjectName, setActiveProjectName] = useState<string | undefined>(undefined)
   const [pendingAttachmentToChat, setPendingAttachmentToChat] = useState<AiAttachment | null>(null)
@@ -348,13 +354,21 @@ export function Ai({
       }
       handleSelectConversation(convId)
     }
+    const entwurfHandler = (event: Event) => {
+      const custom = event as CustomEvent<{ neuerChat?: boolean }>
+      if (custom.detail?.neuerChat || entwurfWillNeuenChat()) {
+        handleNewChat()
+      }
+    }
     window.addEventListener('singra-open-project', handler)
     window.addEventListener('singra-open-conversation', openConvHandler)
+    window.addEventListener(AI_ENTWURF_EVENT, entwurfHandler)
     return () => {
       window.removeEventListener('singra-open-project', handler)
       window.removeEventListener('singra-open-conversation', openConvHandler)
+      window.removeEventListener(AI_ENTWURF_EVENT, entwurfHandler)
     }
-  }, [handleNewChat])
+  }, [handleNewChat, handleSelectConversation])
 
   useEffect(() => {
     if (!canSpeak) return

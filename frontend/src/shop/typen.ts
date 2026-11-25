@@ -28,6 +28,10 @@ export interface ShopSpiel {
   standardSlots: number
   slotStep?: number
   preisProSlotCent: number
+  diskStufenGb?: number[]
+  standardDiskGb?: number | null
+  diskStepGb?: number
+  preisProDiskSchrittCent?: number
   kiZugangCent: number
   verfuegbar?: boolean
   hardwareCpuModel?: string | null
@@ -57,6 +61,7 @@ export interface Konfiguration {
   ramGb: number
   cpu: number
   slots: number
+  diskGb?: number | null
   laufzeitMonate: LaufzeitMonate
   laufzeitTage?: LaufzeitTage | null
   abrechnungsModus?: AbrechnungsModus
@@ -78,6 +83,7 @@ export interface PreisAufschluesselung {
   ramCent: number
   cpuCent: number
   slotsCent: number
+  diskCent?: number
   kiCent: number
   standortCent: number
   monatCent: number
@@ -90,6 +96,7 @@ export function standardKonfiguration(spiel: ShopSpiel): Konfiguration {
     ramGb: spiel.standardRamGb,
     cpu: spiel.standardCpu,
     slots: spiel.standardSlots,
+    ...(spiel.standardDiskGb != null ? { diskGb: spiel.standardDiskGb } : {}),
     laufzeitMonate: 1,
     laufzeitTage: null,
     abrechnungsModus: 'prepaid',

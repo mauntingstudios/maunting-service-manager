@@ -112,7 +112,11 @@ def _check_resource(
 
 
 def _monthly_gross(
-    plan: ShopPlan, ram_mb: int | None, cpu: int | None, slots: int | None
+    plan: ShopPlan,
+    ram_mb: int | None,
+    cpu: int | None,
+    slots: int | None,
+    disk_gb: int | None = None,
 ) -> int:
     gesamt = plan.price_cents
     if plan.ram_included_mb is not None and ram_mb is not None:
@@ -127,6 +131,11 @@ def _monthly_gross(
         gesamt += (
             (slots - plan.slots_included) // (plan.slots_step or 1)
         ) * plan.price_per_slot_step_cents
+    disk_included = getattr(plan, "disk_included_gb", None)
+    if disk_included is not None and disk_gb is not None:
+        disk_step = max(1, int(getattr(plan, "disk_step_gb", 10) or 10))
+        disk_step_price = int(getattr(plan, "price_per_disk_step_cents", 0) or 0)
+        gesamt += ((disk_gb - disk_included) // disk_step) * disk_step_price
     return gesamt
 
 
@@ -176,7 +185,14 @@ def _resolve_plan_spec(
     slots = _check_resource(
         payload.slots, plan.slots_included, plan.slots_max, plan.slots_step, "Slots"
     )
-    monatlich = _monthly_gross(plan, ram_mb, cpu, slots) + node_surcharge_cents
+    disk_gb = _check_resource(
+        getattr(payload, "disk_gb", None),
+        getattr(plan, "disk_included_gb", None),
+        getattr(plan, "disk_max_gb", None),
+        getattr(plan, "disk_step_gb", 10),
+        "Speicher",
+    )
+    monatlich = _monthly_gross(plan, ram_mb, cpu, slots, disk_gb=disk_gb) + node_surcharge_cents
     billing_mode = getattr(payload, "billing_mode", "subscription")
     if billing_mode == "lifetime":
         lifetime_base = getattr(plan, "lifetime_price_cents", None)
@@ -195,6 +211,7 @@ def _resolve_plan_spec(
             plan,
             ram_mb=ram_mb,
             cpu_cores=cpu,
+            disk_gb=disk_gb,
             preferred_node_id=preferred_node_id,
             shop_only=True,
         )
@@ -215,6 +232,7 @@ def _resolve_plan_spec(
         "ram_mb": ram_mb,
         "cpu": cpu,
         "slots": slots,
+        "disk_gb": disk_gb,
         "preferred_node_id": preferred_node_id,
         "node_surcharge_cents": node_surcharge_cents,
         "allow_short_durations": bool(getattr(plan, "allow_short_durations", True)),
@@ -230,6 +248,7 @@ def _resolve_addon_spec(db: Session, payload: ShopOrderCreate) -> dict[str, obje
         payload.ram_mb is not None
         or payload.cpu is not None
         or payload.slots is not None
+        or getattr(payload, "disk_gb", None) is not None
     ):
         raise ShopOrderError(
             "Add-on-Bestellungen nehmen keine Server-Ressourcen entgegen"
@@ -254,6 +273,7 @@ def _resolve_addon_spec(db: Session, payload: ShopOrderCreate) -> dict[str, obje
         "ram_mb": None,
         "cpu": None,
         "slots": addon.extra_slots,
+        "disk_gb": None,
         "preferred_node_id": None,
         "node_surcharge_cents": 0,
     }
@@ -390,6 +410,7 @@ def create_order(
             ram_mb=spec["ram_mb"],  # type: ignore[arg-type]
             cpu=spec["cpu"],  # type: ignore[arg-type]
             slots=spec["slots"],  # type: ignore[arg-type]
+            disk_gb=spec.get("disk_gb"),  # type: ignore[arg-type]
             preferred_node_id=spec.get("preferred_node_id"),  # type: ignore[arg-type]
             node_surcharge_cents=int(spec.get("node_surcharge_cents") or 0),  # type: ignore[arg-type]
             duration_days=duration_days,
@@ -622,6 +643,7 @@ def _grant_entitlements(db: Session, order: ShopOrder, jetzt: datetime) -> None:
                     ram_mb=item.ram_mb,
                     cpu=item.cpu,
                     slots=item.slots,
+                    disk_gb=getattr(item, "disk_gb", None),
                     preferred_node_id=getattr(item, "preferred_node_id", None),
                     duration_days=order_days,
                 )
@@ -1453,6 +1475,7 @@ def order_response(db: Session, order: ShopOrder) -> ShopOrderResponse:
                 ram_mb=item.ram_mb,
                 cpu=item.cpu,
                 slots=item.slots,
+                disk_gb=getattr(item, "disk_gb", None),
                 preferred_node_id=getattr(item, "preferred_node_id", None),
                 node_surcharge_cents=max(
                     0, int(getattr(item, "node_surcharge_cents", 0) or 0)
@@ -1531,6 +1554,7 @@ def entitlement_response(
         server_name=server_name,
         provisioning_status=row.provisioning_status,
         provisioning_error=row.provisioning_error,
+        disk_gb=getattr(row, "disk_gb", None),
         purge_after=getattr(row, "purge_after", None),
         purge_reason=getattr(row, "purge_reason", None),
         purged_at=getattr(row, "purged_at", None),

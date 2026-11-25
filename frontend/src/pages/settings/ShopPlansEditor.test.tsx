@@ -125,6 +125,8 @@ describe('ShopPlansEditor', () => {
     // Dialog-Tabs wechseln (Ressourcen & Bilder)
     fireEvent.click(screen.getByRole('tab', { name: i18n.t('settings.shop.plans.tabRessourcen') }))
     expect(screen.getByLabelText(i18n.t('settings.shop.plans.ramIncluded'))).toBeVisible()
+    expect(screen.getByLabelText(i18n.t('settings.shop.plans.diskIncluded'))).toBeVisible()
+    expect(screen.getByLabelText(i18n.t('settings.shop.plans.diskStep'))).toBeVisible()
 
     fireEvent.click(screen.getByRole('tab', { name: i18n.t('settings.shop.plans.tabBilder') }))
     expect(screen.getByLabelText(i18n.t('settings.shop.plans.artwork'))).toBeVisible()

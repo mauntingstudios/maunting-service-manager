@@ -58,6 +58,10 @@ interface Draft {
   slotsIncluded: string
   slotsMax: string
   pricePerSlotEuro: string
+  diskIncludedGb: string
+  diskMaxGb: string
+  diskStepGb: string
+  pricePerDiskStepEuro: string
   taxRate: string
   lifetimeEuro: string
   allowGameSwitch: boolean
@@ -76,13 +80,17 @@ type AnsichtModus = 'regal' | 'liste'
 type StatusFilter = 'alle' | 'aktiv' | 'inaktiv'
 
 type Ressource = {
-  id: 'ram' | 'cpu' | 'slots'
+  id: 'ram' | 'cpu' | 'slots' | 'disk'
   includedKey: string
   maxKey: string
   preisKey: string
-  includedFeld: 'ramIncludedGb' | 'cpuIncluded' | 'slotsIncluded'
-  maxFeld: 'ramMaxGb' | 'cpuMax' | 'slotsMax'
-  preisFeld: 'pricePerRamGbEuro' | 'pricePerCpuEuro' | 'pricePerSlotEuro'
+  includedFeld: 'ramIncludedGb' | 'cpuIncluded' | 'slotsIncluded' | 'diskIncludedGb'
+  maxFeld: 'ramMaxGb' | 'cpuMax' | 'slotsMax' | 'diskMaxGb'
+  preisFeld:
+    | 'pricePerRamGbEuro'
+    | 'pricePerCpuEuro'
+    | 'pricePerSlotEuro'
+    | 'pricePerDiskStepEuro'
 }
 
 const RESSOURCEN: Ressource[] = [
@@ -113,6 +121,15 @@ const RESSOURCEN: Ressource[] = [
     maxFeld: 'slotsMax',
     preisFeld: 'pricePerSlotEuro',
   },
+  {
+    id: 'disk',
+    includedKey: 'settings.shop.plans.diskIncluded',
+    maxKey: 'settings.shop.plans.diskMax',
+    preisKey: 'settings.shop.plans.preisDisk',
+    includedFeld: 'diskIncludedGb',
+    maxFeld: 'diskMaxGb',
+    preisFeld: 'pricePerDiskStepEuro',
+  },
 ]
 
 const DIALOG_TABS: TabDef<DialogTabId>[] = [
@@ -134,6 +151,10 @@ const LEER: Draft = {
   slotsIncluded: '8',
   slotsMax: '32',
   pricePerSlotEuro: '0.30',
+  diskIncludedGb: '30',
+  diskMaxGb: '100',
+  diskStepGb: '10',
+  pricePerDiskStepEuro: '0.50',
   taxRate: '19',
   lifetimeEuro: '',
   allowGameSwitch: true,
@@ -186,6 +207,11 @@ function planZuDraft(plan: ShopPlan): Draft {
     slotsIncluded: plan.slots_included === null ? '' : String(plan.slots_included),
     slotsMax: plan.slots_max === null ? '' : String(plan.slots_max),
     pricePerSlotEuro: centInEuro(plan.price_per_slot_step_cents),
+    diskIncludedGb:
+      plan.disk_included_gb == null ? '' : String(plan.disk_included_gb),
+    diskMaxGb: plan.disk_max_gb == null ? '' : String(plan.disk_max_gb),
+    diskStepGb: String(plan.disk_step_gb ?? 10),
+    pricePerDiskStepEuro: centInEuro(plan.price_per_disk_step_cents ?? 0),
     taxRate: String(plan.tax_rate_percent),
     lifetimeEuro:
       plan.lifetime_price_cents != null && plan.lifetime_price_cents > 0
@@ -228,6 +254,9 @@ function draftZuPayload(draft: Draft, editing: ShopPlan | null): ShopPlanWrite {
   const cpuStep = berechneCpuSchritt(cpuIncluded, cpuMax, editing?.cpu_step)
   const slotsIncluded = zahl(draft.slotsIncluded)
   const slotsMax = zahl(draft.slotsMax)
+  const diskIncluded = zahl(draft.diskIncludedGb)
+  const diskMax = zahl(draft.diskMaxGb)
+  const diskStep = Math.max(1, Math.round(zahl(draft.diskStepGb) ?? 10))
 
   return {
     game_type: draft.gameType,
@@ -249,6 +278,10 @@ function draftZuPayload(draft: Draft, editing: ShopPlan | null): ShopPlanWrite {
     slots_max: slotsMax,
     slots_step: 1,
     price_per_slot_step_cents: euroInCent(draft.pricePerSlotEuro),
+    disk_included_gb: diskIncluded,
+    disk_max_gb: diskMax,
+    disk_step_gb: diskStep,
+    price_per_disk_step_cents: euroInCent(draft.pricePerDiskStepEuro),
     lifetime_price_cents: draft.lifetimeEuro.trim() ? euroInCent(draft.lifetimeEuro) : null,
     allow_game_switch: draft.allowGameSwitch,
     allow_short_durations: draft.allowShortDurations,
@@ -278,6 +311,7 @@ function prüfeDraft(draft: Draft): string | null {
     [draft.ramIncludedGb, draft.ramMaxGb],
     [draft.cpuIncluded, draft.cpuMax],
     [draft.slotsIncluded, draft.slotsMax],
+    [draft.diskIncludedGb, draft.diskMaxGb],
   ]
   for (const [inkl, max] of paare) {
     const a = zahl(inkl)
@@ -302,6 +336,13 @@ function ressourceChips(plan: ShopPlan, sprache: 'de' | 'en'): string[] {
       ? `–${plan.slots_max}`
       : ''
     teile.push(`${plan.slots_included}${maxSlots} Slots`)
+  }
+  if (plan.disk_included_gb != null) {
+    const maxDisk =
+      plan.disk_max_gb != null && plan.disk_max_gb > plan.disk_included_gb
+        ? `–${plan.disk_max_gb}`
+        : ''
+    teile.push(`${plan.disk_included_gb}${maxDisk} GB SSD`)
   }
   return teile
 }
@@ -1336,6 +1377,18 @@ export function ShopPlansEditor({ onPlansLoaded }: ShopPlansEditorProps = {}) {
                           ),
                         })}
                       </p>
+                    )}
+                    {ressource.id === 'disk' && (
+                      <div className="max-w-xs">
+                        <Input
+                          label={t('settings.shop.plans.diskStep')}
+                          type="number"
+                          min="1"
+                          inputMode="numeric"
+                          value={draft.diskStepGb}
+                          onChange={(event) => setze('diskStepGb', event.target.value)}
+                        />
+                      </div>
                     )}
                   </div>
                 ))}

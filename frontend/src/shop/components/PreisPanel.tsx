@@ -44,6 +44,7 @@ export function PreisPanel({
     { label: t('shop.preis.ram'), cent: preis.ramCent },
     { label: t('shop.preis.cpu'), cent: preis.cpuCent },
     { label: t('shop.preis.slots'), cent: preis.slotsCent },
+    { label: t('shop.preis.disk'), cent: preis.diskCent ?? 0 },
     { label: t('shop.preis.standortAufpreis'), cent: preis.standortCent },
     { label: t('shop.preis.ki'), cent: preis.kiCent },
   ].filter((zeile) => zeile.cent > 0)

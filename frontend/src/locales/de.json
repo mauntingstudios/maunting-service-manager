@@ -3465,6 +3465,7 @@
     "autoUpdatePausedHint": "Verhindert automatische Spiel- und Mod-Updates beim Start. Eine fehlende Erstinstallation wird trotzdem ausgeführt.",
     "autoUpdatePausedSaved": "Update-Einstellung gespeichert.",
     "diagnoseWithSingra": "Mit Singra analysieren",
+    "errorHandbook": "Fehler-Handbuch",
     "singraCrashPrompt": "Mein Server \"{{name}}\" ({{game}}) befindet sich im Fehlerstatus ({{status}}). Bitte analysiere mögliche Ursachen anhand der letzten Konsolen-/Crash-Logs sowie der Konfiguration und nenne konkrete Lösungsschritte.",
     "kind": {
       "application": "Anwendung",
@@ -4980,6 +4981,10 @@
         "slotsIncluded": "Slots enthalten",
         "slotsMax": "Slots maximal",
         "preisSlots": "Aufpreis je Slot (EUR)",
+        "diskIncluded": "Speicher enthalten (GB)",
+        "diskMax": "Speicher maximal (GB)",
+        "diskStep": "Speicher-Schrittweite (GB)",
+        "preisDisk": "Aufpreis je Speicherschritt (EUR)",
         "steuer": "Steuersatz (%)",
         "artwork": "Artwork",
         "artworkSteam": "Automatisch von Steam",
@@ -6333,7 +6338,52 @@
     "imprintLink": "Impressum öffnen",
     "hosterApiTitle": "Hoster-API",
     "hosterApiDesc": "Endpunkte, Webhooks und Signaturprüfung für die Anbindung eines externen Shops.",
-    "hosterApiLink": "Referenz öffnen"
+    "hosterApiLink": "Referenz öffnen",
+    "troubleshootingTitle": "Fehler-Handbuch",
+    "troubleshootingDesc": "Häufige SteamCMD- und Server-Fehlercodes verständlich erklärt, inklusive Lösungen für Speicher-, Port- und Berechtigungsprobleme.",
+    "troubleshootingLink": "Handbuch öffnen"
+  },
+  "docsTroubleshooting": {
+    "title": "Fehler-Handbuch & Diagnose",
+    "subtitle": "Typische SteamCMD- und Server-Fehlermeldungen richtig deuten und gezielt beheben.",
+    "tocTitle": "Inhalt",
+    "backToServers": "Zu den Servern",
+    "allDocs": "Alle Anleitungen",
+    "toc": {
+      "workflow": "Diagnose-Ablauf",
+      "steam": "SteamCMD-Fehler",
+      "general": "Allgemeine & Nicht-Steam-Fehler"
+    },
+    "workflow": {
+      "intro": "Wenn eine Installation oder ein Start fehlschlägt, schreibt MSM eine Zusammenfassung mit [MSM] Diagnose: in die Server-Konsole.",
+      "step1": "Öffne die Server-Konsole und lies die letzten Zeilen ab [MSM] Diagnose: oder [MSM-DIAG].",
+      "step2": "Prüfe zuerst Disk-Quota, freien Speicher auf dem Node, RAM-Limit und Port-Belegung, bevor du eine Neuinstallation startest.",
+      "step3": "Nutze bei Bedarf „Mit Singra analysieren“, um Logs und Konfiguration in einem frischen KI-Chat auswerten zu lassen."
+    },
+    "steam": {
+      "err0x202Title": "Nicht genügend Speicherplatz oder Disk-Quota",
+      "err0x202Body": "SteamCMD prüft vor dem Download per statfs64 den freien Platz. Wenn auf dem Server-Volume (Disk-Limit) oder der Node-Partition weniger frei ist als das Staging benötigt (z. B. 17 GB bei 7 Days to Die), bricht der Job mit 0x202 und UpdateResult 43 ab. Erhöhe das Disk-Limit oder schaffe Platz auf dem Host.",
+      "errMissingConfigTitle": "App-Metadaten, Plattform oder Login fehlen",
+      "errMissingConfigBody": "SteamCMD findet keine passende Depot-Konfiguration für die angefragte Plattform. MSM aktualisiert beim automatischen Retry die App-Metadaten (+app_info_update 1). Besteht der Fehler weiter, prüfe ob das Spiel einen Steam-Account mit Lizenz erfordert.",
+      "err0x226Title": "Abgebrochener Download oder defektes App-Manifest",
+      "err0x226Body": "Reste in steamapps/downloading/ oder ein beschädigtes appmanifest_*.acf nach einem Timeout blockieren Folge-Updates. MSM bereinigt diese Reste vor dem nächsten Lauf automatisch; bei dauerhaften Timeouts hilft ein erneuter Install-Versuch nach Netzwerkprüfung.",
+      "errLoginTitle": "Steam-Account, Lizenz oder Steam Guard blockiert",
+      "errLoginBody": "Spiele ohne anonymen Dedicated-Server-Zugriff benötigen ein eigenes Steam-Konto mit gekaufter Lizenz und deaktiviertem Steam Guard (oder Token-Login). Hinterlege die Zugangsdaten unter Server-Zugangsdaten oder in den globalen Einstellungen."
+    },
+    "general": {
+      "errDiskTitle": "Volume voll oder Disk-Quota überschritten",
+      "errDiskBody": "Bei HTTP-, GitHub- oder Spielstarts signalisieren ENOSPC und EDQUOT, dass das Server-Kontingent oder die Host-Festplatte voll ist. Erhöhe das Disk-Limit des Servers oder bereinige alte Backups, Logs und Weltdaten.",
+      "errOomTitle": "Arbeitsspeicher ausgeschöpft (OOM-Kill)",
+      "errOomBody": "Der Kernel oder Docker beendet den Container mit Exit-Code 137, wenn mehr RAM verbraucht wird als im Server-Limit erlaubt ist. Erhöhe das RAM-Limit oder reduziere speicherintensive Mods und View-Distance-Werte.",
+      "errPermTitle": "Ausführung oder Dateizugriff verweigert",
+      "errPermBody": "Exit-Code 126 oder EACCES tritt auf, wenn Startskripte nicht ausführbar sind oder Bind-Mount-Rechte nach manuellen Eingriffen nicht passen. Starte den Server über das Panel neu, damit MSM die Laufzeit-ACLs und /tmp-Exec-Optionen sauber setzt.",
+      "errPortTitle": "Netzwerk-Port bereits belegt",
+      "errPortBody": "Ein anderer Server oder Host-Dienst nutzt denselben TCP/UDP-Port. Prüfe in den Server-Ports die Belegung oder weise dem Server einen freien Port zu.",
+      "errNetworkTitle": "Download-Quelle, Zugangsdaten oder DNS fehlgeschlagen",
+      "errNetworkBody": "HTTP 401/403 weist auf ein fehlendes oder abgelaufenes Token (z. B. GitHub-PAT) hin, HTTP 404 auf eine falsche URL oder einen fehlenden Branch. DNS- und Timeout-Fehler deuten auf fehlende Erreichbarkeit der Quelle vom Node aus.",
+      "errConfigTitle": "Defekte Konfigurations- oder leere Datenbankdatei",
+      "errConfigBody": "Syntaxfehler in serverconfig.xml/INI-Dateien oder 0-Byte-.db-Reste nach einem vorzeitigen Abbruch verhindern den Spielstart. Prüfe die zuletzt geänderte Konfigurationsdatei oder stelle eine Sicherung wieder her."
+    }
   },
   "docsSelfHosting": {
     "canonicalNotice": "Die deutschsprachige Langfassung (docs/de-docs/self-hosting.md) ist die kanonische Betriebsdokumentation für alle MSM-Komponenten.",
@@ -7353,6 +7403,7 @@
       "ram": "Arbeitsspeicher",
       "cpu": "CPU-Leistung",
       "slots": "Spieler-Slots",
+      "disk": "Speicherplatz",
       "laufzeit": "Laufzeit",
       "kern": "Kern",
       "kerne": "Kerne",
@@ -7426,6 +7477,7 @@
       "ram": "RAM",
       "cpu": "CPU",
       "slots": "Slots",
+      "disk": "Speicherplatz",
       "laufzeit": "Laufzeit",
       "summe": "Summe",
       "email": "E-Mail",
@@ -7505,6 +7557,7 @@
       "ram": "RAM",
       "cpu": "CPU",
       "slots": "Slots",
+      "disk": "Speicherplatz",
       "standortAufpreis": "Standort-Aufpreis",
       "ki": "KI-Zugang",
       "monat": "pro Monat",

@@ -9,11 +9,19 @@
  */
 export const AI_ENTWURF_EVENT = 'msm:ai-entwurf'
 
-let wartend: string | null = null
+export interface AiEntwurfOptionen {
+  neuerChat?: boolean
+}
 
-export function entwurfUebergeben(text: string): void {
+let wartend: string | null = null
+let wartendNeuerChat = false
+
+export function entwurfUebergeben(text: string, optionen?: AiEntwurfOptionen): void {
   wartend = text
-  window.dispatchEvent(new CustomEvent(AI_ENTWURF_EVENT))
+  wartendNeuerChat = Boolean(optionen?.neuerChat)
+  window.dispatchEvent(
+    new CustomEvent(AI_ENTWURF_EVENT, { detail: { neuerChat: wartendNeuerChat } }),
+  )
 }
 
 /** Gibt den wartenden Entwurf einmal heraus. */
@@ -21,4 +29,11 @@ export function entwurfNehmen(): string | null {
   const text = wartend
   wartend = null
   return text
+}
+
+/** Meldet einmalig, ob der übergebene Entwurf ausdrücklich einen neuen Chat verlangt. */
+export function entwurfWillNeuenChat(): boolean {
+  const flag = wartendNeuerChat
+  wartendNeuerChat = false
+  return flag
 }

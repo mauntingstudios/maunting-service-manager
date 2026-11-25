@@ -183,6 +183,13 @@ def finish_install(server_id: int, result: dict) -> None:
             server.status_message = None
         else:
             err = result.get("error") or "Installation fehlgeschlagen"
+            if not result.get("error_code"):
+                from games.install_diagnostics import classify_generic_install_failure
+
+                classified = classify_generic_install_failure("", str(err))
+                if classified:
+                    err = classified["error"]
+                    _append_console_log(server_id, f"[MSM] Diagnose: {err}\n")
             server.status = "error"
             server.status_message = err[:500]
         db.commit()

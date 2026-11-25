@@ -48,6 +48,12 @@ describe('Docs index page', () => {
     expect(link.getAttribute('href')).toBe('/docs/self-hosting')
   })
 
+  it('links to the troubleshooting handbook', () => {
+    renderIndex()
+    const link = screen.getByRole('link', { name: /open handbook/i })
+    expect(link.getAttribute('href')).toBe('/docs/troubleshooting')
+  })
+
   it('always links to privacy and hides imprint when disabled', () => {
     renderIndex()
     expect(screen.getByRole('link', { name: /open privacy policy/i })).toHaveAttribute('href', '/privacy')

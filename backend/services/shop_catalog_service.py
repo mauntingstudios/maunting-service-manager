@@ -82,6 +82,7 @@ def _validate_plan_values(
         ("ram_included_mb", "ram_max_mb", "RAM"),
         ("cpu_included", "cpu_max", "CPU"),
         ("slots_included", "slots_max", "Slots"),
+        ("disk_included_gb", "disk_max_gb", "Speicher"),
     ):
         included = _eff(included_key)
         maximum = _eff(max_key)
@@ -176,6 +177,8 @@ _NULLABLE_FIELDS = {
     "cpu_max",
     "slots_included",
     "slots_max",
+    "disk_included_gb",
+    "disk_max_gb",
     "node_id",
     "role_id",
     "promo_highlight_text",
@@ -347,6 +350,10 @@ def plan_response(
         slots_max=plan.slots_max,
         slots_step=plan.slots_step,
         price_per_slot_step_cents=plan.price_per_slot_step_cents,
+        disk_included_gb=getattr(plan, "disk_included_gb", None),
+        disk_max_gb=getattr(plan, "disk_max_gb", None),
+        disk_step_gb=int(getattr(plan, "disk_step_gb", 10) or 10),
+        price_per_disk_step_cents=int(getattr(plan, "price_per_disk_step_cents", 0) or 0),
         node_id=plan.node_id,
         role_id=plan.role_id,
         artwork_mode=plan.artwork_mode,
@@ -727,6 +734,10 @@ def catalog_plan(
         slots_max=plan.slots_max,
         slots_step=plan.slots_step,
         price_per_slot_step_cents=plan.price_per_slot_step_cents,
+        disk_included_gb=getattr(plan, "disk_included_gb", None),
+        disk_max_gb=getattr(plan, "disk_max_gb", None),
+        disk_step_gb=int(getattr(plan, "disk_step_gb", 10) or 10),
+        price_per_disk_step_cents=int(getattr(plan, "price_per_disk_step_cents", 0) or 0),
         artwork=_artwork(db, plan),
         available=is_available,
         availability_reason=None if is_available else availability.reason,

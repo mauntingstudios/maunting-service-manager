@@ -430,11 +430,14 @@ def _sync_server_entitlement(
             ram_limit = ent.ram_mb if ent.ram_mb and ent.ram_mb >= 512 else None
             raw_cpu_pct = normalize_cpu_limit_percent(ent.cpu)
             cpu_limit = min(6400, max(10, raw_cpu_pct)) if raw_cpu_pct else None
+            raw_disk = getattr(ent, "disk_gb", None)
+            disk_limit = int(raw_disk) if raw_disk and int(raw_disk) >= 1 else None
             req = ServerCreate(
                 name=f"shop-{order.number}-{ent.id}"[:128],
                 game_type=item.game_type,
                 ram_limit_mb=ram_limit,
                 cpu_limit_percent=cpu_limit,
+                disk_limit_gb=disk_limit,
                 node_id=(
                     getattr(ent, "preferred_node_id", None)
                     or getattr(item, "preferred_node_id", None)

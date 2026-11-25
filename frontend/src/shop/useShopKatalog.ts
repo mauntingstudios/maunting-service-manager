@@ -77,6 +77,13 @@ function spielAusPlan(plan: ShopCatalogPlan): ShopSpiel {
   const ramStufen = stufen(ramIncludedGb, ramMaxGb, ramStepGb, [4, 8, 16])
   const cpuStufen = cpuStufenFuer(plan.cpu_included, plan.cpu_max, plan.cpu_step)
   const slotStufen = stufen(plan.slots_included, plan.slots_max, plan.slots_step, [4, 8, 16])
+  const diskIncludedGb = plan.disk_included_gb ?? null
+  const diskStepGb =
+    plan.disk_step_gb != null && plan.disk_step_gb > 0 ? plan.disk_step_gb : 10
+  const diskStufenGb =
+    diskIncludedGb !== null
+      ? stufen(diskIncludedGb, plan.disk_max_gb ?? diskIncludedGb, diskStepGb, [diskIncludedGb])
+      : undefined
   const text = plan.game_description || plan.description || plan.name
   const storyDe = plan.game_story_de || text
   const storyEn = plan.game_story_en || text
@@ -115,6 +122,10 @@ function spielAusPlan(plan: ShopCatalogPlan): ShopSpiel {
     standardSlots: plan.slots_included ?? slotStufen[0],
     slotStep: plan.slots_step > 0 ? plan.slots_step : 1,
     preisProSlotCent: plan.price_per_slot_step_cents,
+    ...(diskStufenGb ? { diskStufenGb } : {}),
+    standardDiskGb: diskIncludedGb,
+    diskStepGb,
+    preisProDiskSchrittCent: plan.price_per_disk_step_cents ?? 0,
     kiZugangCent: 0,
     verfuegbar: plan.available !== false,
     hardwareCpuModel: plan.hardware_cpu_model ?? null,
