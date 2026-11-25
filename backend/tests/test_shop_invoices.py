@@ -300,6 +300,7 @@ class TestCreditNote:
         }
         assert wurzel.tag.endswith("CreditNote")
         assert wurzel.findtext("cbc:CreditNoteTypeCode", namespaces=ns) == "381"
+        assert wurzel.findtext("cac:Delivery/cbc:ActualDeliveryDate", namespaces=ns) is not None
         bezug = wurzel.find(
             "cac:BillingReference/cac:InvoiceDocumentReference/cbc:ID", ns
         )
@@ -311,6 +312,7 @@ class TestCreditNote:
         assert pdf_res.status_code == 200
         text = PdfReader(io.BytesIO(pdf_res.content)).pages[0].extract_text()
         assert "Gutschrift" in text
+        assert "Leistungsdatum:" in text
         assert rechnung["number"] in text
 
     def test_second_credit_is_rejected(

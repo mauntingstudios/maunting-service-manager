@@ -37,7 +37,7 @@ _CAC_TAGS = {
     "Contact", "PaymentMeans", "PayeeFinancialAccount", "FinancialInstitutionBranch",
     "PaymentTerms", "TaxTotal", "TaxSubtotal", "TaxCategory", "LegalMonetaryTotal",
     "InvoiceLine", "Item", "Price", "OrderReference", "ClassifiedTaxCategory",
-    "BillingReference", "InvoiceDocumentReference", "CreditNoteLine",
+    "BillingReference", "InvoiceDocumentReference", "CreditNoteLine", "Delivery",
 }
 
 
@@ -145,6 +145,9 @@ def _build(
             _sub(ksteuer, "CompanyID", invoice.buyer_vat_id)
             kschema = ET.SubElement(ksteuer, _q("TaxScheme"))
             _sub(kschema, "ID", "VAT")
+
+        lieferung = ET.SubElement(root, _q("Delivery"))
+        _sub(lieferung, "ActualDeliveryDate", invoice.issued_at.date().isoformat())
 
         # Eine Gutschrift fordert keine Zahlung an; Zahlungsangaben entfallen.
         if not original_number:

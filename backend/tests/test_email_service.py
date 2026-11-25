@@ -363,3 +363,35 @@ class TestUmlauteInKiMails:
         assert "Prüfung" in gelesen["Subject"]
         assert "fällig" in gelesen.get_content()
 
+
+class TestEmailRebranding:
+    def test_custom_brand_name_replaces_msm_in_template_and_mail_texts(self, monkeypatch):
+        import asyncio
+        from services import branding_service
+        from services.email_service import EmailService
+
+        monkeypatch.setattr(branding_service, "get_effective_brand_name", lambda db=None: "Nordic Hosting")
+
+        template = EmailService._base_template("Test", "<p>Inhalt</p>")
+        assert ">Nordic Hosting<" in template
+        assert ">MSM<" not in template
+        assert "Maunting Service Manager" not in template
+
+        sent: list[tuple[str, str, str, str]] = []
+
+        async def fake_send_email(to, subject, body, html_body=None, **_kwargs):
+            sent.append((to, subject, body, html_body or ""))
+            return True
+
+        monkeypatch.setattr(EmailService, "send_email", fake_send_email)
+
+        asyncio.run(EmailService.send_password_reset_email("u@example.com", "alice", "tok123"))
+        asyncio.run(EmailService.send_shop_invoice_email("u@example.com", "Alice", "RE-2026-0001", "ORD-1", "9,99 EUR", b"%PDF"))
+
+        assert len(sent) == 2
+        assert sent[0][1].startswith("Nordic Hosting — ")
+        assert "Maunting Service Manager" not in sent[0][2]
+        assert "Nordic Hosting" in sent[0][2]
+        assert "Maunting Service Manager" not in sent[1][2]
+        assert "Nordic Hosting" in sent[1][2]
+

@@ -3,6 +3,7 @@ import html
 import logging
 import re
 from functools import lru_cache
+from io import BytesIO
 from pathlib import Path
 from typing import Any
 
@@ -69,8 +70,20 @@ class EmailService:
     #: `send_email` haengt das Bild an, sobald eine Mail diesen Verweis traegt.
     LOGO_CID = "msm-logo"
 
+    @staticmethod
+    def _brand_name() -> str:
+        from services.branding_service import get_effective_brand_name
+
+        return get_effective_brand_name()
+
+    @staticmethod
+    def _brand_header_label(brand_name: str) -> str:
+        from services.branding_service import DEFAULT_PANEL_BRAND_NAME
+
+        return "MSM" if brand_name == DEFAULT_PANEL_BRAND_NAME else brand_name
+
     @classmethod
-    def _logo_html(cls) -> str:
+    def _logo_html(cls, brand_name: str | None = None) -> str:
         """Das Logo als Verweis auf den Inline-Anhang.
 
         Frueher stand hier ein ``data:``-Bild. Gmail und Outlook zeigen solche
@@ -78,8 +91,9 @@ class EmailService:
         denen die meisten Mails gelesen werden. Ein Inline-Anhang mit
         Content-ID zeigen alle gaengigen Programme.
         """
+        alt_text = cls.html_text(brand_name or cls._brand_name())
         return (
-            f'<img src="cid:{cls.LOGO_CID}" alt="MSM" width="56" height="56" '
+            f'<img src="cid:{cls.LOGO_CID}" alt="{alt_text}" width="56" height="56" '
             f'style="display:block;width:56px;height:56px;border:0;outline:none;'
             f'text-decoration:none;border-radius:50%;" />'
         )
@@ -88,12 +102,27 @@ class EmailService:
     def _inline_logo(cls, html_body: str | None) -> bytes | None:
         """Die Logodaten, falls die Mail das Logo verwendet — sonst ``None``.
 
-        Aeltere Mails aus dem KI-Postausgang wurden noch mit ``data:``-Bild
-        gerendert und tragen keinen ``cid:``-Verweis; sie bekommen keinen
-        Anhang, der dann ungenutzt als Bueroklammer im Postfach stuende.
+        Nutzt ein konfiguriertes Custom-Branding-Logo (als PNG für breite
+        Mail-Client-Kompatibilität) und fällt sonst auf das Standard-Logo zurück.
         """
         if not html_body or f"cid:{cls.LOGO_CID}" not in html_body:
             return None
+        try:
+            from services.branding_service import branding_logo_bytes
+
+            custom = branding_logo_bytes("default")
+            if custom is not None:
+                raw_bytes, media_type = custom
+                if media_type == "image/png":
+                    return raw_bytes
+                from PIL import Image
+
+                with Image.open(BytesIO(raw_bytes)) as img:
+                    out = BytesIO()
+                    img.convert("RGBA").save(out, format="PNG")
+                    return out.getvalue()
+        except Exception as exc:
+            _log.debug("Custom-Mail-Logo konnte nicht geladen werden: %s", exc)
         return _logo_bytes()
 
     @staticmethod
@@ -378,8 +407,8 @@ class EmailService:
             <td align="center" style="padding:0 0 26px 0;">
               <table role="presentation" cellpadding="0" cellspacing="0" border="0">
                 <tr>
-                  <td style="vertical-align:middle;">{cls._logo_html()}</td>
-                  <td style="vertical-align:middle;padding-left:14px;font-family:{cls.FONT_TITEL};font-size:24px;font-weight:800;letter-spacing:0.5px;color:{cls.ACCENT_COLOR};line-height:1;">MSM</td>
+                  <td style="vertical-align:middle;">{cls._logo_html(brand_name := cls._brand_name())}</td>
+                  <td style="vertical-align:middle;padding-left:14px;font-family:{cls.FONT_TITEL};font-size:24px;font-weight:800;letter-spacing:0.5px;color:{cls.ACCENT_COLOR};line-height:1;">{cls.html_text(cls._brand_header_label(brand_name))}</td>
                 </tr>
               </table>
             </td>
@@ -402,7 +431,7 @@ class EmailService:
           <!-- Fusszeile -->
           <tr>
             <td align="center" style="padding:28px 24px 0 24px;font-family:{cls.FONT_TEXT};">
-              <p style="margin:0 0 4px 0;font-size:12px;font-weight:600;color:{cls.SECONDARY_TEXT};line-height:1.5;">Maunting Service Manager</p>
+              <p style="margin:0 0 4px 0;font-size:12px;font-weight:600;color:{cls.SECONDARY_TEXT};line-height:1.5;">{cls.html_text(brand_name)}</p>
               <p style="margin:0;font-size:12px;color:{cls.MUTED_COLOR};line-height:1.5;">Diese Nachricht wurde automatisch versendet.</p>
             </td>
           </tr>
@@ -556,7 +585,9 @@ class EmailService:
             ),
         ])
         return cls._base_template(
-            "Passwort zurücksetzen", content, "Lege ein neues Passwort für dein MSM-Konto fest."
+            "Passwort zurücksetzen",
+            content,
+            f"Lege ein neues Passwort für dein {cls.html_text(cls._brand_name())}-Konto fest.",
         )
 
     @classmethod
@@ -604,8 +635,9 @@ class EmailService:
 
     @staticmethod
     async def send_password_reset_email(to: str, username: str, token: str) -> bool:
+        brand = EmailService._brand_name()
         url = f"{settings.panel_url}/reset-password?token={token}"
-        subject = "Maunting Service Manager — Passwort zurücksetzen"
+        subject = f"{brand} — Passwort zurücksetzen"
         body = f"""Hallo {username},
 
 setze dein Passwort zurück:
@@ -613,7 +645,7 @@ setze dein Passwort zurück:
 
 Dieser Link ist 1 Stunde gültig.
 
-Maunting Service Manager
+{brand}
 """
         html = EmailService._password_reset_email_html(username, url)
         return await EmailService.send_email(to, subject, body, html)
@@ -623,8 +655,9 @@ Maunting Service Manager
         """Einmal-Link zur Localhost-Freigabe (Befund 46): Konten ohne Passwort
         und ohne 2FA schalten den Schalter nicht per Sitzung ein, sondern
         beweisen ihr Postfach — wie beim Festlegen des Passworts."""
+        brand = EmailService._brand_name()
         url = f"{settings.panel_url}/localhost-freigabe?token={token}"
-        subject = "Maunting Service Manager — Localhost-Freigabe bestätigen"
+        subject = f"{brand} — Localhost-Freigabe bestätigen"
         body = f"""Hallo {username},
 
 du hast angefordert, Localhost-Verbindungen auf diesem Panel freizuschalten.
@@ -637,14 +670,15 @@ Schalter aus, bis du ihn erneut anforderst.
 Falls du die Freigabe nicht beantragt hast, ignoriere diese E-Mail — es wurde
 nichts umgestellt.
 
-Maunting Service Manager
+{brand}
 """
         html = EmailService._localhost_freigabe_email_html(username, url)
         return await EmailService.send_email(to, subject, body, html)
 
     @staticmethod
     async def send_verification_code_email(to: str, username: str, code: str) -> bool:
-        subject = "Maunting Service Manager — Verifizierungscode"
+        brand = EmailService._brand_name()
+        subject = f"{brand} — Verifizierungscode"
         body = f"""Hallo,
 
 Dein Verifizierungscode lautet:
@@ -653,7 +687,7 @@ Dein Verifizierungscode lautet:
 
 Gültig für 10 Minuten.
 
-Maunting Service Manager
+{brand}
 """
         html = EmailService._verification_code_email_html(username, code)
         return await EmailService.send_email(to, subject, body, html)
@@ -880,7 +914,7 @@ Maunting Service Manager
             zeilen.extend([f"{label}: {url}", ""])
         if fusszeile and str(fusszeile).strip():
             zeilen.extend([str(fusszeile).strip(), ""])
-        zeilen.append("Maunting Service Manager")
+        zeilen.append(EmailService._brand_name())
         return "\n".join(zeilen) + "\n"
 
     @staticmethod
@@ -906,7 +940,8 @@ Maunting Service Manager
         ``message`` und ``detail`` duerfen `<strong>` tragen; die Textfassung
         bekommt sie ohne Auszeichnung.
         """
-        subject = f"Maunting Service Manager — {title}"
+        brand = EmailService._brand_name()
+        subject = f"{brand} — {title}"
         absaetze = [html.unescape(EmailService._vorschautext(message))]
         if detail:
             absaetze.append(html.unescape(EmailService._vorschautext(detail)))
@@ -914,7 +949,7 @@ Maunting Service Manager
         if fakten_text:
             absaetze.append(fakten_text)
         absaetze.append(EmailService.SICHERHEITSHINWEIS)
-        body = f"Hallo {username},\n\n" + "\n\n".join(absaetze) + "\n\nMaunting Service Manager\n"
+        body = f"Hallo {username},\n\n" + "\n\n".join(absaetze) + f"\n\n{brand}\n"
         html_body = EmailService._notification_email_html(
             username, title, message, detail,
             kategorie="Kontosicherheit", fakten=fakten, sicherheitshinweis=True,
@@ -950,12 +985,13 @@ Maunting Service Manager
 
     @staticmethod
     async def send_server_status_notification(to: str, username: str, server_name: str, status: str) -> bool:
-        subject = f"Maunting Service Manager — Server-Status: {server_name}"
+        brand = EmailService._brand_name()
+        subject = f"{brand} — Server-Status: {server_name}"
         body = f"""Hallo {username},
 
 Der Server "{server_name}" hat seinen Status geändert: {status}
 
-Maunting Service Manager
+{brand}
 """
         html = EmailService._notification_email_html(
             username, "Server-Status geändert",
@@ -970,7 +1006,8 @@ Maunting Service Manager
     async def send_guardian_incident_notification(
         to: str, username: str, server_name: str, incident_type: str, status: str, details: str = ""
     ) -> bool:
-        subject = f"Maunting Service Manager — Guardian Alert: {server_name}"
+        brand = EmailService._brand_name()
+        subject = f"{brand} — Guardian Alert: {server_name}"
         body = f"""Hallo {username},
 
 Die Guardian Engine hat ein Ereignis beim Server "{server_name}" registriert.
@@ -981,7 +1018,7 @@ Details: {details}
 
 Bitte überprüfe den Server im Dashboard.
 
-Maunting Service Manager — Guardian Engine
+{brand} — Guardian Engine
 """
         # Alle vier Werte sind Fremdtext: der Servername kommt aus einem
         # Formular oder aus einer Shop-Bestellung, Art und Stand aus dem Agenten,
@@ -1011,7 +1048,7 @@ Maunting Service Manager — Guardian Engine
         als Teil des Rahmens durch die Datenbank — es muss also einen Ort geben,
         an dem er gebildet wird, und genau einen.
         """
-        return f"Maunting Service Manager — {titel}"
+        return f"{EmailService._brand_name()} — {titel}"
 
     @staticmethod
     def _ai_betreffzeile_aus_praefix(praefix: str, zusatz: str) -> str:
@@ -1044,7 +1081,7 @@ Maunting Service Manager — Guardian Engine
             betreff_bereinigen,
         )
 
-        zeile = str(praefix or "Maunting Service Manager")
+        zeile = str(praefix or EmailService._brand_name())
         if zusatz:
             zeile += f": {zusatz}"
         return betreff_bereinigen(zeile, grenze=MAX_BETREFFZEILE_ZEICHEN)
@@ -1414,9 +1451,10 @@ Maunting Service Manager — Guardian Engine
         size_mb: int | None = None,
         cloud: bool = False,
     ) -> bool:
+        brand = EmailService._brand_name()
         if success:
             title = f"Backup abgeschlossen: {server_name}"
-            subject = f"Maunting Service Manager — Backup erstellt: {server_name}"
+            subject = f"{brand} — Backup erstellt: {server_name}"
             message = f'Das Backup für <strong>{EmailService.html_text(server_name)}</strong> wurde im Hintergrund abgeschlossen.'
             detail = "Die Sicherung steht ab sofort zur Wiederherstellung bereit."
             fakten: list[tuple[str, object]] = [("Server", server_name)]
@@ -1429,11 +1467,11 @@ Maunting Service Manager — Guardian Engine
                 f"Hallo {username},\n\n"
                 f"das Backup für \"{server_name}\" wurde im Hintergrund abgeschlossen.\n\n"
                 f"{EmailService._fakten_als_text(fakten)}\n\n"
-                f"Maunting Service Manager\n"
+                f"{brand}\n"
             )
         else:
             title = f"Backup fehlgeschlagen: {server_name}"
-            subject = f"Maunting Service Manager — Backup fehlgeschlagen: {server_name}"
+            subject = f"{brand} — Backup fehlgeschlagen: {server_name}"
             message = f'Das Hintergrund-Backup für <strong>{EmailService.html_text(server_name)}</strong> konnte nicht erstellt werden.'
             detail = "Bitte prüfe im Panel die Server-Logs und den verfügbaren Speicherplatz."
             fakten = [("Server", server_name)]
@@ -1443,7 +1481,7 @@ Maunting Service Manager — Guardian Engine
                 f"Hallo {username},\n\n"
                 f"das Hintergrund-Backup für \"{server_name}\" konnte nicht erstellt werden.\n"
                 f"Bitte prüfe im Panel die Server-Logs und den verfügbaren Speicherplatz.\n\n"
-                f"Maunting Service Manager\n"
+                f"{brand}\n"
             )
         html_body = EmailService._notification_email_html(
             username,
@@ -1457,12 +1495,13 @@ Maunting Service Manager — Guardian Engine
 
     @staticmethod
     async def send_server_installed_notification(to: str, username: str, server_name: str) -> bool:
-        subject = f"Maunting Service Manager — Server installiert: {server_name}"
+        brand = EmailService._brand_name()
+        subject = f"{brand} — Server installiert: {server_name}"
         body = f"""Hallo {username},
 
 Der Server "{server_name}" wurde erfolgreich installiert und ist bereit.
 
-Maunting Service Manager
+{brand}
 """
         html = EmailService._notification_email_html(
             username, "Server installiert",
@@ -1474,12 +1513,13 @@ Maunting Service Manager
 
     @staticmethod
     async def send_user_added_to_server_notification(to: str, username: str, server_name: str, added_by: str) -> bool:
-        subject = f"Maunting Service Manager — Zu Server hinzugefügt: {server_name}"
+        brand = EmailService._brand_name()
+        subject = f"{brand} — Zu Server hinzugefügt: {server_name}"
         body = f"""Hallo {username},
 
 Du wurdest von {added_by} zum Server "{server_name}" hinzugefügt.
 
-Maunting Service Manager
+{brand}
 """
         html = EmailService._notification_email_html(
             username, "Zu Server hinzugefügt",
@@ -1498,10 +1538,11 @@ Maunting Service Manager
     @staticmethod
     async def send_oauth_linked_notification(to: str, username: str, provider_name: str) -> bool:
         """OAuth Link: nutzt die zentrale send_security_notification (wie neuer Login etc.)."""
+        brand = EmailService._brand_name()
         return await EmailService.send_security_notification(
             to, username,
             f"{provider_name} verknüpft",
-            f"Dein <strong>{EmailService.html_text(provider_name)}</strong>-Account wurde erfolgreich mit deinem MSM-Konto verknüpft."
+            f"Dein <strong>{EmailService.html_text(provider_name)}</strong>-Account wurde erfolgreich mit deinem {EmailService.html_text(brand)}-Konto verknüpft."
         )
 
     @staticmethod
@@ -1552,7 +1593,8 @@ Maunting Service Manager
         passive Check einen Hinweis meldet. Für Steam blockiert dieser Hinweis
         keinen Start/Restart; SteamCMD-Validate läuft dort ohnehin.
         """
-        subject = f"Maunting Service Manager — Server-Update verfügbar: {server_name}"
+        brand = EmailService._brand_name()
+        subject = f"{brand} — Server-Update verfügbar: {server_name}"
         body = f"""Hallo {username},
 
 [DE] Ein Update für die Server-Dateien von "{server_name}" ist verfügbar.
@@ -1561,7 +1603,7 @@ Maunting Service Manager
 [EN] A server file update is available for "{server_name}".
      The update will be considered on the next restart.
 
-Maunting Service Manager
+{brand}
 """
         html = EmailService._notification_email_html(
             username,
@@ -1579,14 +1621,15 @@ Maunting Service Manager
         Typischer Aufruf aus Hintergrund-Check-Job (Scheduler), nachdem
         check_for_mod_updates() relevante Einträge geliefert hat.
         """
-        subject = f"Maunting Service Manager — Mod-Update verfügbar: {mod_name}"
+        brand = EmailService._brand_name()
+        subject = f"{brand} — Mod-Update verfügbar: {mod_name}"
         body = f"""Hallo {username},
 
 [DE] Ein Update für den Mod "{mod_name}" auf Server "{server_name}" ist verfügbar.
 
 [EN] An update for the mod "{mod_name}" on server "{server_name}" is available.
 
-Maunting Service Manager
+{brand}
 """
         html = EmailService._notification_email_html(
             username,
@@ -1607,6 +1650,7 @@ Maunting Service Manager
         time_hint: str = "in 2 Tagen",
     ) -> bool:
         """Sendet E-Mail-Erinnerung für anstehende Kalendertermine (z. B. 2 Tage oder 1 Tag vorab)."""
+        brand = EmailService._brand_name()
         subject = f"Terminerinnerung: {title} ({time_hint})"
         loc_line = f"\nOrt: {location_str}" if location_str else ""
         body = f"""Hallo {username},
@@ -1616,7 +1660,7 @@ Erinnerung an deinen bevorstehenden Termin {time_hint}:
 Termin: {title}
 Zeitpunkt: {start_str}{loc_line}
 
-Maunting Service Manager
+{brand}
 """
         email_html = EmailService._notification_email_html(
             username,
@@ -1641,6 +1685,7 @@ Maunting Service Manager
         rechnungen_url = f"{base}/konto/rechnungen" if base else "/konto/rechnungen"
         subject = f"Deine Rechnung {invoice_number} (Bestellung {order_number})"
         anrede_name = buyer_name.strip() or "Kundin / Kunde"
+        brand = EmailService._brand_name()
         body = f"""Hallo {anrede_name},
 
 vielen Dank für deine Bestellung {order_number}.
@@ -1649,7 +1694,7 @@ Im Anhang findest du deine Rechnung {invoice_number} über {gross_formatted} als
 Du kannst alle Rechnungen auch jederzeit in deinem Kundenkonto einsehen:
 {rechnungen_url}
 
-Maunting Service Manager
+{brand}
 """
         bausteine = [
             EmailService._kategorie("Shop & Rechnungen"),

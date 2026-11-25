@@ -126,7 +126,8 @@ def build_invoice_pdf(
     z.rechts(x_rechts, y_kopf, 18, titel, bold=True)
     z.rechts(x_rechts, y_kopf - 20, 10, f"Nr. {invoice.number}")
     z.rechts(x_rechts, y_kopf - 34, 9, f"Datum: {invoice.issued_at.date().isoformat()}")
-    y_kopf -= 46
+    z.rechts(x_rechts, y_kopf - 46, 9, f"Leistungsdatum: {invoice.issued_at.date().isoformat()}")
+    y_kopf -= 58
     if referenz:
         z.rechts(x_rechts, y_kopf, 9, f"Bezug: {referenz}")
     else:
