@@ -4915,6 +4915,8 @@
         "pauseFreezeDaysHint": "0 uses resource standby without extending billing time. Higher values (up to 90) credit paused days upon resume.",
         "checkoutCaptchaEnabled": "Enable DIS ALTCHA on shop checkout",
         "checkoutCaptchaEnabledHint": "Requires a privacy-friendly proof-of-work check before orders without external trackers.",
+        "allowOverbooking": "Allow overbooking / capacity test mode",
+        "allowOverbookingHint": "Skips free RAM and CPU capacity checks on shop nodes so server plans can be tested in checkout without free node capacity. Enable for testing and development only.",
         "trustSectionTitle": "Trust & community",
         "trustSectionHint": "Optional links to an existing Trustpilot profile and your Discord server. Without a configured URL, the shop hides those cards.",
         "trustpilotEnabled": "Show Trustpilot card in shop",
@@ -7467,7 +7469,15 @@
       "prozentRabatt": "{{prozent}}% off",
       "festRabatt": "{{betrag}} off",
       "endetIn": "Ends in",
-      "naechste": "Show next promo"
+      "naechste": "Show next promo",
+      "checkoutHinweis": "Redeem manually at checkout",
+      "scopeAll": "Applies to all products",
+      "scopePlans": "Applies to all server plans",
+      "scopeAddons": "Applies to all add-ons",
+      "tage": "Days",
+      "stunden": "Hrs",
+      "minuten": "Min",
+      "sekunden": "Sec"
     },
     "galerie": {
       "zurueck": "Previous image",

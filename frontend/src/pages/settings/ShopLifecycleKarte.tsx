@@ -31,6 +31,7 @@ const DEFAULT_SETTINGS: ShopLifecycleSettingsDto = {
   auto_subdomain_zone: '',
   pause_freeze_max_days_per_90d: 0,
   shop_checkout_captcha_enabled: false,
+  shop_allow_overbooking: false,
   shop_trustpilot_enabled: false,
   shop_trustpilot_url: '',
   shop_discord_invite_url: '',
@@ -376,6 +377,24 @@ export function ShopLifecycleKarte({ flat = false }: { flat?: boolean } = {}) {
             </span>
             <p className="text-xs text-on-surface-variant">
               {t('settings.shop.lifecycle.checkoutCaptchaEnabledHint')}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-start gap-3">
+          <Switch
+            checked={Boolean(daten.shop_allow_overbooking)}
+            onCheckedChange={(checked) =>
+              setDaten((alt) => ({ ...alt, shop_allow_overbooking: checked }))
+            }
+            aria-label={t('settings.shop.lifecycle.allowOverbooking')}
+          />
+          <div className="flex-1">
+            <span className="block text-sm font-medium text-on-surface">
+              {t('settings.shop.lifecycle.allowOverbooking')}
+            </span>
+            <p className="text-xs text-on-surface-variant">
+              {t('settings.shop.lifecycle.allowOverbookingHint')}
             </p>
           </div>
         </div>

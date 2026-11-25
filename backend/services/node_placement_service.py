@@ -234,6 +234,34 @@ def check_plan_availability(
     preferred_node_id: int | None = None,
     shop_only: bool = True,
 ) -> PlanAvailability:
+    if shop_only:
+        from services import shop_lifecycle_settings_service
+
+        if shop_lifecycle_settings_service.is_shop_overbooking_allowed(db):
+            shop_nodes = (
+                db.query(Node)
+                .filter(Node.shop_enabled.is_(True))
+                .order_by(Node.id.asc())
+                .all()
+            )
+            nodes_entries = tuple(
+                NodeAvailabilityEntry(
+                    node_id=node.id,
+                    available=True,
+                    reason=None,
+                    shop_surcharge_cents=int(getattr(node, "shop_surcharge_cents", 0) or 0),
+                )
+                for node in shop_nodes
+            )
+            return PlanAvailability(
+                available=True,
+                reason=None,
+                available_nodes=max(1, len(nodes_entries)),
+                max_ram_mb=plan.ram_max_mb,
+                max_cpu=plan.cpu_max,
+                nodes=nodes_entries,
+            )
+
     eff_ram = ram_mb if ram_mb is not None else plan.ram_included_mb
     eff_cpu_cores = cpu_cores if cpu_cores is not None else plan.cpu_included
     cpu_percent = normalize_cpu_limit_percent(

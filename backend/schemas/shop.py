@@ -548,6 +548,7 @@ class ShopLifecycleSettingsPayload(BaseModel):
     auto_subdomain_zone: str = Field("", max_length=128)
     pause_freeze_max_days_per_90d: int = Field(0, ge=0, le=90)
     shop_checkout_captcha_enabled: bool = False
+    shop_allow_overbooking: bool = False
     shop_trustpilot_enabled: bool = False
     shop_trustpilot_url: str = Field("", max_length=512)
     shop_discord_invite_url: str = Field("", max_length=512)

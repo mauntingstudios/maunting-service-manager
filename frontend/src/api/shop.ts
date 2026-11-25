@@ -168,6 +168,7 @@ export interface ShopPublicPolicyDto {
   auto_subdomain_zone: string
   pause_freeze_max_days_per_90d?: number
   shop_checkout_captcha_enabled?: boolean
+  shop_allow_overbooking?: boolean
   shop_trustpilot_enabled?: boolean
   shop_trustpilot_url?: string
   shop_discord_invite_url?: string
@@ -656,6 +657,7 @@ export interface ShopLifecycleSettingsDto {
   auto_subdomain_zone?: string
   pause_freeze_max_days_per_90d?: number
   shop_checkout_captcha_enabled?: boolean
+  shop_allow_overbooking?: boolean
   shop_trustpilot_enabled?: boolean
   shop_trustpilot_url?: string
   shop_discord_invite_url?: string

@@ -26,6 +26,7 @@ DEFAULT_AUTO_SUBDOMAIN_ENABLED = False
 DEFAULT_AUTO_SUBDOMAIN_ZONE = ""
 DEFAULT_PAUSE_FREEZE_MAX_DAYS_PER_90D = 0
 DEFAULT_SHOP_CHECKOUT_CAPTCHA_ENABLED = False
+DEFAULT_SHOP_ALLOW_OVERBOOKING = False
 DEFAULT_SHOP_TRUSTPILOT_ENABLED = False
 DEFAULT_SHOP_TRUSTPILOT_URL = ""
 DEFAULT_SHOP_DISCORD_INVITE_URL = ""
@@ -53,6 +54,7 @@ _K_AUTO_SUBDOMAIN_ENABLED = "shop_policy_auto_subdomain_enabled"
 _K_AUTO_SUBDOMAIN_ZONE = "shop_policy_auto_subdomain_zone"
 _K_PAUSE_FREEZE_DAYS = "shop_policy_pause_freeze_max_days_per_90d"
 _K_CHECKOUT_CAPTCHA = "shop_policy_checkout_captcha_enabled"
+_K_ALLOW_OVERBOOKING = "shop_policy_allow_overbooking"
 _K_TRUSTPILOT_ENABLED = "shop_policy_trustpilot_enabled"
 _K_TRUSTPILOT_URL = "shop_policy_trustpilot_url"
 _K_DISCORD_INVITE_URL = "shop_policy_discord_invite_url"
@@ -315,6 +317,14 @@ def read(db: Session | None = None) -> dict[str, object]:
             ),
             DEFAULT_SHOP_CHECKOUT_CAPTCHA_ENABLED,
         ),
+        "shop_allow_overbooking": _parse_bool(
+            PanelSettingsService.get(
+                _K_ALLOW_OVERBOOKING,
+                "true" if DEFAULT_SHOP_ALLOW_OVERBOOKING else "false",
+                db=db,
+            ),
+            DEFAULT_SHOP_ALLOW_OVERBOOKING,
+        ),
         "shop_trustpilot_enabled": _parse_bool(
             PanelSettingsService.get(
                 _K_TRUSTPILOT_ENABLED,
@@ -498,6 +508,11 @@ def update(values: dict[str, object], db: Session | None = None) -> dict[str, ob
         if "shop_checkout_captcha_enabled" in values and values["shop_checkout_captcha_enabled"] is not None
         else bool(current["shop_checkout_captcha_enabled"])
     )
+    next_allow_overbooking = (
+        bool(values["shop_allow_overbooking"])
+        if "shop_allow_overbooking" in values and values["shop_allow_overbooking"] is not None
+        else bool(current["shop_allow_overbooking"])
+    )
     next_trustpilot_enabled = (
         bool(values["shop_trustpilot_enabled"])
         if "shop_trustpilot_enabled" in values and values["shop_trustpilot_enabled"] is not None
@@ -582,6 +597,9 @@ def update(values: dict[str, object], db: Session | None = None) -> dict[str, ob
         _K_CHECKOUT_CAPTCHA, "true" if next_checkout_captcha else "false"
     )
     PanelSettingsService.set(
+        _K_ALLOW_OVERBOOKING, "true" if next_allow_overbooking else "false"
+    )
+    PanelSettingsService.set(
         _K_TRUSTPILOT_ENABLED, "true" if next_trustpilot_enabled else "false"
     )
     PanelSettingsService.set(_K_TRUSTPILOT_URL, next_trustpilot_url)
@@ -658,6 +676,10 @@ def pause_freeze_max_days_per_90d(db: Session | None = None) -> int:
 
 def checkout_captcha_enabled(db: Session | None = None) -> bool:
     return bool(read(db=db)["shop_checkout_captcha_enabled"])
+
+
+def is_shop_overbooking_allowed(db: Session | None = None) -> bool:
+    return bool(read(db=db)["shop_allow_overbooking"])
 
 
 def cancel_grace_days(db: Session | None = None) -> int:

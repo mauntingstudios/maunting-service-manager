@@ -1,29 +1,28 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useId, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Check, ChevronRight, Clock, Copy, TicketPercent, X } from 'lucide-react'
-import { Badge, Button } from '@maunting/ui'
+import { Check, Clock, Copy, TicketPercent, X } from 'lucide-react'
+import { Button } from '@maunting/ui'
 import { shopCatalogApi, type ShopPublicBannerPromo } from '@/api/shop'
 import { still } from '@/lib/still'
 import { formatEuro } from '../preis'
 import { usePublicSettingsStore } from '@/stores/publicSettingsStore'
 
 const DISMISS_PREFIX = 'msm_shop_promo_dismissed:'
-const ROTATE_MS = 12_000
 
 interface CountdownResult {
   abgelaufen: boolean
-  label: string
+  days: number
+  hours: number
+  minutes: number
+  seconds: number
   iso: string
 }
 
 interface TemporalDurationLike {
-  years?: number
-  months?: number
   days?: number
   hours?: number
   minutes?: number
   seconds?: number
-  toLocaleString: (locale: string, opts: { style: string }) => string
   toString: () => string
 }
 
@@ -40,14 +39,8 @@ interface TemporalGlobal {
   Instant: { from: (iso: string) => TemporalInstantLike }
 }
 
-type DurationFormatCtor = new (
-  locale: string,
-  opts: { style: 'narrow' | 'short' | 'long' | 'digital' },
-) => { format: (parts: Record<string, number>) => string }
-
 function formatRestzeit(
   validUntilIso: string | null | undefined,
-  locale: string,
   jetztMs: number,
 ): CountdownResult | null {
   if (!validUntilIso) return null
@@ -61,12 +54,15 @@ function formatRestzeit(
       const now = temporal.Now.instant()
       const end = temporal.Instant.from(validUntilIso)
       if (end.epochMilliseconds <= now.epochMilliseconds) {
-        return { abgelaufen: true, label: '', iso: 'PT0S' }
+        return { abgelaufen: true, days: 0, hours: 0, minutes: 0, seconds: 0, iso: 'PT0S' }
       }
       const diff = now.until(end, { largestUnit: 'day', smallestUnit: 'second' })
       return {
         abgelaufen: false,
-        label: diff.toLocaleString(locale, { style: 'narrow' }),
+        days: diff.days ?? 0,
+        hours: diff.hours ?? 0,
+        minutes: diff.minutes ?? 0,
+        seconds: diff.seconds ?? 0,
         iso: diff.toString(),
       }
     } catch (err) {
@@ -76,7 +72,7 @@ function formatRestzeit(
 
   const diffMs = targetMs - jetztMs
   if (diffMs <= 0) {
-    return { abgelaufen: true, label: '', iso: 'PT0S' }
+    return { abgelaufen: true, days: 0, hours: 0, minutes: 0, seconds: 0, iso: 'PT0S' }
   }
 
   const totalSec = Math.floor(diffMs / 1000)
@@ -86,29 +82,13 @@ function formatRestzeit(
   const seconds = totalSec % 60
 
   const datePart = days > 0 ? `${days}D` : ''
-  const iso = `P${datePart}T${hours}H${minutes}M${seconds}S`
-
-  const DurationFormat = (Intl as { DurationFormat?: DurationFormatCtor }).DurationFormat
-  if (typeof DurationFormat === 'function') {
-    const parts: Record<string, number> = {}
-    if (days > 0) parts.days = days
-    if (hours > 0 || days > 0) parts.hours = hours
-    parts.minutes = minutes
-    parts.seconds = seconds
-    return {
-      abgelaufen: false,
-      label: new DurationFormat(locale, { style: 'narrow' }).format(parts),
-      iso,
-    }
-  }
-
-  const hh = String(hours).padStart(2, '0')
-  const mm = String(minutes).padStart(2, '0')
-  const ss = String(seconds).padStart(2, '0')
   return {
     abgelaufen: false,
-    label: days > 0 ? `${days}d ${hh}:${mm}:${ss}` : `${hh}:${mm}:${ss}`,
-    iso,
+    days,
+    hours,
+    minutes,
+    seconds,
+    iso: `P${datePart}T${hours}H${minutes}M${seconds}S`,
   }
 }
 
@@ -127,17 +107,18 @@ function istImCooldown(code: string, cooldownHours: number): boolean {
 }
 
 export function ShopPromoBanner() {
-  const { t, i18n } = useTranslation()
+  const { t } = useTranslation()
+  const headingId = useId()
   const shopEnabled = usePublicSettingsStore((s) => s.shop_enabled)
-  const [alleBanner, setAlleBanner] = useState<ShopPublicBannerPromo[]>([])
-  const [ausgeblendetCodes, setAusgeblendetCodes] = useState<string[]>([])
-  const [aktiverIndex, setAktiverIndex] = useState(0)
+  const [ausgewaehlterBanner, setAusgewaehlterBanner] =
+    useState<ShopPublicBannerPromo | null>(null)
+  const [geschlossen, setGeschlossen] = useState(false)
   const [jetztMs, setJetztMs] = useState(() => Date.now())
   const [kopiert, setKopiert] = useState(false)
 
   useEffect(() => {
     if (!shopEnabled) {
-      setAlleBanner([])
+      setAusgewaehlterBanner(null)
       return
     }
     const fetchPromos = shopCatalogApi.getPromos
@@ -152,59 +133,85 @@ export function ShopPromoBanner() {
             : res?.banner
               ? [res.banner]
               : []
-        setAlleBanner(liste.filter((b) => !istImCooldown(b.code, b.cooldown_hours)))
-        setAktiverIndex(0)
+        const jetzt = Date.now()
+        const kandidaten = liste.filter((b) => {
+          if (istImCooldown(b.code, b.cooldown_hours)) return false
+          if (b.valid_until) {
+            const parsed = Date.parse(b.valid_until)
+            if (Number.isFinite(parsed) && parsed <= jetzt) return false
+          }
+          return true
+        })
+        if (kandidaten.length === 0) {
+          setAusgewaehlterBanner(null)
+          return
+        }
+        // Genau eine aktive Aktion zufaellig auswaehlen, damit Besucher bei
+        // mehreren laufenden Gutscheinen nicht durch mehrere Popups klicken muessen.
+        const zufall = kandidaten[Math.floor(Math.random() * kandidaten.length)]
+        setAusgewaehlterBanner(zufall)
+        setGeschlossen(false)
+        setKopiert(false)
       })
       .catch((err: unknown) => {
         still(err, 'shopPromoBanner.fetch')
-        if (aktiv) setAlleBanner([])
+        if (aktiv) setAusgewaehlterBanner(null)
       })
     return () => {
       aktiv = false
     }
   }, [shopEnabled])
 
-  const sichtbareBanner = useMemo(() => {
-    return alleBanner.filter((b) => {
-      if (ausgeblendetCodes.includes(b.code)) return false
-      if (b.valid_until) {
-        const parsed = Date.parse(b.valid_until)
-        if (Number.isFinite(parsed) && parsed <= jetztMs) return false
-      }
-      return true
-    })
-  }, [alleBanner, ausgeblendetCodes, jetztMs])
+  const abgelaufen = useMemo(() => {
+    if (!ausgewaehlterBanner?.valid_until) return false
+    const parsed = Date.parse(ausgewaehlterBanner.valid_until)
+    return Number.isFinite(parsed) && parsed <= jetztMs
+  }, [ausgewaehlterBanner, jetztMs])
 
-  const hatFlashSale = useMemo(
-    () => sichtbareBanner.some((b) => Boolean(b.valid_until)),
-    [sichtbareBanner],
-  )
+  const banner = shopEnabled && !geschlossen && !abgelaufen ? ausgewaehlterBanner : null
 
   useEffect(() => {
-    if (!shopEnabled || !hatFlashSale) return
+    if (!banner?.valid_until) return
     const tick = window.setInterval(() => {
       setJetztMs(Date.now())
     }, 1000)
     return () => window.clearInterval(tick)
-  }, [shopEnabled, hatFlashSale])
+  }, [banner?.valid_until])
+
+  const schliessen = useCallback((code: string) => {
+    try {
+      window.localStorage.setItem(`${DISMISS_PREFIX}${code}`, String(Date.now()))
+    } catch (err) {
+      still(err, 'shopPromoBanner.cooldownWrite')
+    }
+    setGeschlossen(true)
+    setKopiert(false)
+  }, [])
 
   useEffect(() => {
-    if (!shopEnabled || sichtbareBanner.length <= 1) return
-    const timer = window.setInterval(() => {
-      setAktiverIndex((vorher) => (vorher + 1) % sichtbareBanner.length)
-    }, ROTATE_MS)
-    return () => window.clearInterval(timer)
-  }, [shopEnabled, sichtbareBanner.length])
+    if (!banner) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        schliessen(banner.code)
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [banner, schliessen])
 
-  if (!shopEnabled || sichtbareBanner.length === 0) return null
+  if (!banner) return null
 
-  const banner = sichtbareBanner[aktiverIndex % sichtbareBanner.length]
-  const locale = i18n.language.startsWith('de') ? 'de-DE' : 'en-US'
-  const countdown = formatRestzeit(banner.valid_until, locale, jetztMs)
+  const countdown = formatRestzeit(banner.valid_until, jetztMs)
   const rabattText =
     banner.discount_type === 'percent'
       ? t('shop.promo.prozentRabatt', { prozent: banner.discount_value })
       : t('shop.promo.festRabatt', { betrag: formatEuro(banner.discount_value) })
+  const scopeText =
+    banner.scope === 'plans'
+      ? t('shop.promo.scopePlans')
+      : banner.scope === 'addons'
+        ? t('shop.promo.scopeAddons')
+        : t('shop.promo.scopeAll')
 
   const codeKopieren = () => {
     if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
@@ -214,78 +221,120 @@ export function ShopPromoBanner() {
     window.setTimeout(() => setKopiert(false), 2000)
   }
 
-  const schliessen = () => {
-    try {
-      window.localStorage.setItem(`${DISMISS_PREFIX}${banner.code}`, String(Date.now()))
-    } catch (err) {
-      still(err, 'shopPromoBanner.cooldownWrite')
-    }
-    setAusgeblendetCodes((prev) => [...prev, banner.code])
-    setAktiverIndex(0)
-  }
+  const zeitKacheln =
+    countdown && !countdown.abgelaufen
+      ? [
+          ...(countdown.days > 0
+            ? [{ wert: String(countdown.days).padStart(2, '0'), einheit: t('shop.promo.tage') }]
+            : []),
+          { wert: String(countdown.hours).padStart(2, '0'), einheit: t('shop.promo.stunden') },
+          { wert: String(countdown.minutes).padStart(2, '0'), einheit: t('shop.promo.minuten') },
+          { wert: String(countdown.seconds).padStart(2, '0'), einheit: t('shop.promo.sekunden') },
+        ]
+      : []
 
   return (
     <div
-      role="region"
-      aria-label={t('shop.promo.aktionBadge')}
-      className="border-b border-primary/30 bg-primary/10 text-on-surface"
+      data-testid="shop-promo-backdrop"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+      onClick={(event) => {
+        if (event.target === event.currentTarget) {
+          schliessen(banner.code)
+        }
+      }}
     >
-      <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-2.5 text-sm sm:px-6 lg:px-8">
-        <div className="flex flex-wrap items-center gap-2.5">
-          <Badge variant="success" className="gap-1">
-            <TicketPercent className="h-3.5 w-3.5" aria-hidden="true" />
-            {rabattText}
-          </Badge>
-          <span className="font-medium text-on-surface">
-            {banner.promo_text || banner.name}
-          </span>
-          {countdown && !countdown.abgelaufen && (
-            <span className="inline-flex items-center gap-1 rounded-md border border-primary/25 bg-background/70 px-2 py-0.5 text-xs text-primary">
-              <Clock className="h-3 w-3" aria-hidden="true" />
-              <span>{t('shop.promo.endetIn')}</span>
-              <time dateTime={countdown.iso} className="font-mono font-semibold tabular-nums">
-                {countdown.label}
-              </time>
-            </span>
-          )}
-          <span className="text-xs text-on-surface-variant">
-            {t('shop.promo.codeLabel')}:{' '}
-            <code className="rounded bg-surface-container-high px-1.5 py-0.5 font-mono font-bold text-primary">
-              {banner.code}
-            </code>
-          </span>
-        </div>
-
-        <div className="flex items-center gap-2">
-          {sichtbareBanner.length > 1 && (
-            <button
-              type="button"
-              onClick={() => setAktiverIndex((i) => (i + 1) % sichtbareBanner.length)}
-              aria-label={t('shop.promo.naechste')}
-              className="inline-flex h-8 items-center gap-1 rounded-lg border border-outline-variant/40 bg-surface-container/60 px-2 text-xs font-medium tabular-nums text-on-surface-variant hover:text-on-surface"
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={headingId}
+        className="msm-card relative w-full max-w-md overflow-hidden rounded-2xl border border-outline-variant/30 bg-surface-container-high/95 text-on-surface shadow-2xl backdrop-blur-2xl"
+      >
+        <div className="flex items-center justify-between gap-3 border-b border-outline-variant/25 px-5 py-3.5">
+          <div className="flex items-center gap-2.5">
+            <span
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-primary/15 text-primary"
+              aria-hidden="true"
             >
-              <span>
-                {(aktiverIndex % sichtbareBanner.length) + 1}/{sichtbareBanner.length}
-              </span>
-              <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
-            </button>
-          )}
-          <Button variant="secondary" size="sm" className="gap-1.5" onClick={codeKopieren}>
-            {kopiert ? (
-              <Check className="h-3.5 w-3.5" aria-hidden="true" />
-            ) : (
-              <Copy className="h-3.5 w-3.5" aria-hidden="true" />
-            )}
-            {kopiert ? t('shop.promo.kopiert') : t('shop.promo.kopieren')}
-          </Button>
+              <TicketPercent className="h-4 w-4" />
+            </span>
+            <div className="text-left">
+              <p className="text-xs font-semibold text-on-surface">
+                {t('shop.promo.aktionBadge')}
+              </p>
+              <p className="text-xs text-on-surface-variant">{scopeText}</p>
+            </div>
+          </div>
           <button
             type="button"
-            onClick={schliessen}
+            onClick={() => schliessen(banner.code)}
             aria-label={t('shop.promo.schliessen')}
-            className="grid h-8 w-8 place-items-center rounded-lg text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"
+            className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-on-surface-variant transition-colors hover:bg-surface-container-highest hover:text-on-surface"
           >
             <X className="h-4 w-4" aria-hidden="true" />
           </button>
+        </div>
+
+        <div className="space-y-5 px-5 py-5 text-center">
+          <div className="space-y-1.5">
+            <h2
+              id={headingId}
+              className="font-headline text-3xl font-bold tracking-tight text-on-surface"
+            >
+              {rabattText}
+            </h2>
+            <p className="text-sm leading-relaxed text-on-surface-variant">
+              {banner.promo_text || banner.name}
+            </p>
+          </div>
+
+          {countdown && !countdown.abgelaufen && (
+            <div className="space-y-2">
+              <p className="inline-flex items-center justify-center gap-1.5 text-xs font-medium text-on-surface-variant">
+                <Clock className="h-3.5 w-3.5 text-primary" aria-hidden="true" />
+                <span>{t('shop.promo.endetIn')}</span>
+              </p>
+              <time
+                dateTime={countdown.iso}
+                className="mx-auto flex max-w-xs items-center justify-center gap-2"
+              >
+                {zeitKacheln.map((kachel) => (
+                  <div
+                    key={kachel.einheit}
+                    className="min-w-[3.75rem] flex-1 rounded-xl border border-outline-variant/30 bg-surface-container/70 px-2 py-2"
+                  >
+                    <div className="font-mono text-xl font-bold tabular-nums text-on-surface">
+                      {kachel.wert}
+                    </div>
+                    <div className="text-[11px] font-medium text-on-surface-variant">
+                      {kachel.einheit}
+                    </div>
+                  </div>
+                ))}
+              </time>
+            </div>
+          )}
+
+          <div className="space-y-3 rounded-xl border border-outline-variant/30 bg-surface-container p-4">
+            <div>
+              <p className="text-xs font-medium uppercase tracking-wider text-on-surface-variant">
+                {t('shop.promo.codeLabel')}
+              </p>
+              <p className="mt-1 select-all font-mono text-xl font-bold tracking-widest text-primary">
+                {banner.code}
+              </p>
+            </div>
+            <Button variant="primary" size="md" className="w-full gap-2" onClick={codeKopieren}>
+              {kopiert ? (
+                <Check className="h-4 w-4" aria-hidden="true" />
+              ) : (
+                <Copy className="h-4 w-4" aria-hidden="true" />
+              )}
+              {kopiert ? t('shop.promo.kopiert') : t('shop.promo.kopieren')}
+            </Button>
+            <p className="text-xs text-on-surface-variant">
+              {t('shop.promo.checkoutHinweis')}
+            </p>
+          </div>
         </div>
       </div>
     </div>

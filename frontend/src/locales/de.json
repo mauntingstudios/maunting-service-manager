@@ -4915,6 +4915,8 @@
         "pauseFreezeDaysHint": "0 nutzt reinen Ressourcen-Standby ohne Laufzeitverlängerung. Höhere Werte (bis 90) schreiben Pausentage beim Fortsetzen gut.",
         "checkoutCaptchaEnabled": "DIS-ALTCHA im Shop-Checkout aktivieren",
         "checkoutCaptchaEnabledHint": "Verlangt vor kostenpflichtigen Bestellungen eine datenschutzfreundliche Proof-of-Work-Prüfung ohne externe Tracker.",
+        "allowOverbooking": "Überbuchung / Kapazitäts-Testmodus erlauben",
+        "allowOverbookingHint": "Überspringt die freie RAM- und CPU-Prüfung der Shop-Nodes, damit Gameserver-Tarife auch ohne freie Node-Ressourcen im Checkout getestet werden können. Nur für Test- und Entwicklungszwecke aktivieren.",
         "trustSectionTitle": "Vertrauen & Community",
         "trustSectionHint": "Optionale Links zu einem echten Trustpilot-Profil und deiner Discord-Community. Ohne hinterlegte URL zeigt der Shop keine Bewertungskarte.",
         "trustpilotEnabled": "Trustpilot-Hinweis im Shop anzeigen",
@@ -7467,7 +7469,15 @@
       "prozentRabatt": "{{prozent}} % Rabatt",
       "festRabatt": "{{betrag}} Rabatt",
       "endetIn": "Endet in",
-      "naechste": "Nächste Aktion anzeigen"
+      "naechste": "Nächste Aktion anzeigen",
+      "checkoutHinweis": "Im Checkout manuell einlösen",
+      "scopeAll": "Gilt für alle Produkte",
+      "scopePlans": "Gilt für alle Server-Tarife",
+      "scopeAddons": "Gilt für alle Add-ons",
+      "tage": "Tage",
+      "stunden": "Std.",
+      "minuten": "Min.",
+      "sekunden": "Sek."
     },
     "galerie": {
       "zurueck": "Vorheriges Bild",

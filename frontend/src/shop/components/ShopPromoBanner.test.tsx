@@ -61,24 +61,59 @@ describe('ShopPromoBanner', () => {
     })
   })
 
-  it('zeigt Flash-Sale Countdown und erlaubt das Durchschalten mehrerer Promos', async () => {
-    render(<ShopPromoBanner />)
+  it('waehlt genau einen zufaelligen Gutschein mit Design-DNA-Backdrop und schliesst komplett', async () => {
+    const spy = vi.spyOn(Math, 'random').mockReturnValue(0.8)
+    try {
+      render(<ShopPromoBanner />)
 
-    expect(await screen.findByText('Nur heute 25 % Rabatt')).toBeInTheDocument()
-    expect(screen.getByText('FLASH25')).toBeInTheDocument()
-    expect(screen.getByText(i18n.t('shop.promo.endetIn'))).toBeInTheDocument()
+      expect(await screen.findByText('10 % auf alle Add-ons')).toBeInTheDocument()
+      expect(screen.getByText('WEEK10')).toBeInTheDocument()
+      expect(screen.queryByText('FLASH25')).not.toBeInTheDocument()
+      expect(screen.getByTestId('shop-promo-backdrop')).toHaveClass('bg-black/60')
 
-    fireEvent.click(screen.getByRole('button', { name: i18n.t('shop.promo.naechste') }))
-    expect(screen.getByText('10 % auf alle Add-ons')).toBeInTheDocument()
-    expect(screen.getByText('WEEK10')).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: i18n.t('shop.promo.schliessen') }))
+      expect(window.localStorage.getItem('msm_shop_promo_dismissed:WEEK10')).not.toBeNull()
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    } finally {
+      spy.mockRestore()
+    }
   })
 
-  it('blendet Banner nach Klick auf Schliessen im Cooldown aus', async () => {
-    render(<ShopPromoBanner />)
-    expect(await screen.findByText('FLASH25')).toBeInTheDocument()
+  it('rendert Countdown, Code, manuellen Einloese-Hinweis und Kopierfunktion im Dialog', async () => {
+    const spy = vi.spyOn(Math, 'random').mockReturnValue(0)
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(window.navigator, 'clipboard', {
+      value: { writeText },
+      configurable: true,
+    })
+    try {
+      render(<ShopPromoBanner />)
 
-    fireEvent.click(screen.getByRole('button', { name: i18n.t('shop.promo.schliessen') }))
-    expect(window.localStorage.getItem('msm_shop_promo_dismissed:FLASH25')).not.toBeNull()
-    expect(screen.getByText('WEEK10')).toBeInTheDocument()
+      const dialog = await screen.findByRole('dialog')
+      expect(dialog).toHaveAttribute('aria-modal', 'true')
+      expect(screen.getByText('Nur heute 25 % Rabatt')).toBeInTheDocument()
+      expect(screen.getByText(i18n.t('shop.promo.endetIn'))).toBeInTheDocument()
+      expect(screen.getByText(i18n.t('shop.promo.checkoutHinweis'))).toBeInTheDocument()
+
+      fireEvent.click(screen.getByRole('button', { name: i18n.t('shop.promo.kopieren') }))
+      expect(writeText).toHaveBeenCalledWith('FLASH25')
+      expect(screen.getByRole('button', { name: i18n.t('shop.promo.kopiert') })).toBeInTheDocument()
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
+  it('schliesst die Promo ueber die Escape-Taste komplett und merkt den Cooldown', async () => {
+    const spy = vi.spyOn(Math, 'random').mockReturnValue(0)
+    try {
+      render(<ShopPromoBanner />)
+      expect(await screen.findByText('FLASH25')).toBeInTheDocument()
+
+      fireEvent.keyDown(window, { key: 'Escape' })
+      expect(window.localStorage.getItem('msm_shop_promo_dismissed:FLASH25')).not.toBeNull()
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    } finally {
+      spy.mockRestore()
+    }
   })
 })
