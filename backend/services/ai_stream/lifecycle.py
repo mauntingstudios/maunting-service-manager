@@ -70,10 +70,12 @@ from services.ai_stream.read_tools import (
     _runde_zaehlen,
     _rundenfehler_nachrichten,
 )
+from services.ai_provider_errors import AiProviderConfigurationError
 from services.ai_stream.types import (
     KEIN_BLICK_GRUND,
     MAX_GLEICHE_AUFRUFE,
     MAX_GLEICHE_POLLING_AUFRUFE,
+    MAX_STICKY_TOOLS,
     MAX_TOOL_ROUNDS,
     POLLING_WERKZEUGE,
     GuardianRahmenUnlesbar,
@@ -247,6 +249,43 @@ def _finalize_stream(
         db.commit()
 
 
+def _vorherige_werkzeuge_laden(
+    db,
+    *,
+    conversation_id: str | None,
+    exclude_run_id: str,
+) -> tuple[str, ...]:
+    """Liest gemerkte Nicht-HOTSET-Werkzeuge aus dem letzten Lauf derselben Konversation."""
+    if not conversation_id:
+        return ()
+    try:
+        vorgaenger = (
+            db.query(AiRun)
+            .filter(
+                AiRun.conversation_id == conversation_id,
+                AiRun.id != exclude_run_id,
+            )
+            .order_by(AiRun.created_at.desc())
+            .first()
+        )
+        if vorgaenger is None:
+            return ()
+        roh = ai_run_service.zustand_lesen(vorgaenger).get("routed_tools")
+        if not isinstance(roh, list):
+            return ()
+        gesehen: set[str] = set()
+        ergebnis: list[str] = []
+        for eintrag in roh:
+            if isinstance(eintrag, str) and eintrag and eintrag not in gesehen:
+                gesehen.add(eintrag)
+                ergebnis.append(eintrag)
+                if len(ergebnis) >= MAX_STICKY_TOOLS:
+                    break
+        return tuple(ergebnis)
+    except Exception:
+        return ()
+
+
 def _segment_beginnen(db, run: AiRun, zustand: dict) -> tuple[str, int, str] | None:
     """Legt Nachricht und Verbrauchszeile fuer ein neues Segment an.
 
@@ -408,6 +447,11 @@ def _segment_vorbereiten(run_id: str) -> tuple[_Vorbereitung | None, tuple[str, 
             zustand["request_id"] = request_id
 
         ai_run_service.zustand_schreiben(run, zustand)
+        vorherige_werkzeuge = _vorherige_werkzeuge_laden(
+            db,
+            conversation_id=run.conversation_id,
+            exclude_run_id=run_id,
+        )
         db.commit()
         db.refresh(provider)
         db.expunge(provider)
@@ -432,6 +476,7 @@ def _segment_vorbereiten(run_id: str) -> tuple[_Vorbereitung | None, tuple[str, 
             angebotene_werkzeuge=angebotene_werkzeuge(db, user),
             mcp_werkzeuge=tuple(mcp_werkzeuge),
             mcp_schreib_werkzeuge=mcp_schreib,
+            vorherige_werkzeuge=vorherige_werkzeuge,
         ), None
 
 
@@ -891,6 +936,30 @@ def _erlaubte_werkzeuge_schneiden(
     return tools, set(erlaubt), mcp_namen, docs_kontext
 
 
+def _werkzeuge_kanonisch_sortieren(
+    tools: list[dict],
+    *,
+    hot: set[str],
+    mcp_namen: set[str],
+) -> list[dict]:
+    """Sortiert Werkzeuge deterministisch fuer stabile Prompt-Cache-Praefixe.
+
+    Reihenfolge: HOTSET (0) -> ueberige Panel-Werkzeuge (1) -> MCP-Werkzeuge (2),
+    innerhalb jeder Gruppe alphabetisch nach Funktionsnamen.
+    """
+    def _schluessel(eintrag: dict) -> tuple[int, str]:
+        name = str((eintrag.get("function") or {}).get("name") or eintrag.get("name") or "")
+        if name in hot:
+            rang = 0
+        elif name in mcp_namen:
+            rang = 2
+        else:
+            rang = 1
+        return (rang, name)
+
+    return sorted(tools, key=_schluessel)
+
+
 async def _werkzeuge_semantisch_routen(
     *,
     tools: list,
@@ -899,6 +968,8 @@ async def _werkzeuge_semantisch_routen(
     docs_kontext,
     herkunft: str,
     zustand: dict,
+    vorherige_werkzeuge: tuple[str, ...] = (),
+    tool_search_aktiv: bool = False,
 ) -> list:
     """Wählt bei größeren Werkzeugmengen die für diese Anfrage relevanten Werkzeuge per Routing/Budget."""
     def _content_text(c) -> str:
@@ -981,11 +1052,13 @@ async def _werkzeuge_semantisch_routen(
             waehle_je_turn(mcp_eintraege, letzte, semantisch=semantisch)
         )
 
+    hot_all = set()
     try:
         from services.semantic_tool_router_adapter import SemanticToolRouterAdapter, gruppen_nachbarn
         from services.tool_selection_port import HOTSET, pflichtwerkzeuge
         import logging
         _log = logging.getLogger(__name__)
+        hot_all = set(HOTSET)
         # Was der Router nie wegschneidet: der Grundstock und, aus der App,
         # die Desktop-Werkzeuge (`pflichtwerkzeuge`).
         pflicht = pflichtwerkzeuge(
@@ -1001,33 +1074,64 @@ async def _werkzeuge_semantisch_routen(
         if isinstance(zustand, dict) and zustand.get("project_id"):
             pflicht = pflicht | (frozenset({"project_workspace"}) & panel_erlaubt)
         hot = [n for n in HOTSET if n in panel_erlaubt]
-        hot_and_topk = len(set(hot) | pflicht) + 5
-        if letzte and len(panel_erlaubt) > hot_and_topk:
-            router = SemanticToolRouterAdapter(
-                {
-                    str(e.get("function", {}).get("name")): e
-                    for e in tools
-                    if str(e.get("function", {}).get("name")) not in mcp_namen
-                }
-            )
-            import asyncio
-            try:
-                loop = asyncio.get_running_loop()
-                await loop.run_in_executor(None, router.warm, panel_erlaubt)
-                routed = await loop.run_in_executor(None, router.select, letzte, panel_erlaubt, 5)
-            except RuntimeError:
-                router.warm(panel_erlaubt)
-                routed = router.select(letzte, panel_erlaubt, top_k=5)
-            keep = (
-                set(hot) | pflicht | set(routed)
-                | set(gruppen_nachbarn(routed, panel_erlaubt))
-                | mcp_gewaehlt
-            )
-            tools = [e for e in tools if str(e.get("function", {}).get("name")) in keep]
-            _log.info(
-                "Tool-Routing: erlaubt=%d keep=%d routed=%s mcp=%d query=%.80s",
-                len(panel_erlaubt), len(keep), routed, len(mcp_gewaehlt), letzte,
-            )
+        hot_set = set(hot)
+        hot_and_topk = len(hot_set | pflicht) + 5
+
+        if tool_search_aktiv and len(panel_erlaubt) > hot_and_topk:
+            deferred = sorted(n for n in panel_erlaubt if n not in hot_set and n not in pflicht)
+            if isinstance(zustand, dict):
+                zustand["defer_tool_names"] = deferred
+                zustand["routed_tools"] = []
+        else:
+            if isinstance(zustand, dict):
+                zustand["defer_tool_names"] = []
+            sticky_erlaubt = [
+                n for n in vorherige_werkzeuge
+                if n in panel_erlaubt and n not in hot_set and n not in pflicht
+            ]
+            if letzte and len(panel_erlaubt) > hot_and_topk:
+                router = SemanticToolRouterAdapter(
+                    {
+                        str(e.get("function", {}).get("name")): e
+                        for e in tools
+                        if str(e.get("function", {}).get("name")) not in mcp_namen
+                    }
+                )
+                import asyncio
+                try:
+                    loop = asyncio.get_running_loop()
+                    await loop.run_in_executor(None, router.warm, panel_erlaubt)
+                    routed = await loop.run_in_executor(None, router.select, letzte, panel_erlaubt, 5)
+                except RuntimeError:
+                    router.warm(panel_erlaubt)
+                    routed = router.select(letzte, panel_erlaubt, top_k=5)
+                nachbarn = gruppen_nachbarn(routed, panel_erlaubt)
+                # Direkte Treffer stehen am Ende (hoechste Prioritaet beim Evicting),
+                # Nachbarn davor — aelteste zuerst, neueste zuletzt.
+                neu_extras = list(dict.fromkeys(
+                    n for n in (*nachbarn, *routed)
+                    if n not in hot_set and n not in pflicht
+                ))
+                neu_set = set(neu_extras)
+                sticky_unberuehrt = [n for n in sticky_erlaubt if n not in neu_set]
+                kombiniert = [*sticky_unberuehrt, *neu_extras]
+                if len(kombiniert) > MAX_STICKY_TOOLS:
+                    rest_platz = max(0, MAX_STICKY_TOOLS - len(neu_extras))
+                    kombiniert = (
+                        [*sticky_unberuehrt[-rest_platz:], *neu_extras]
+                        if rest_platz
+                        else neu_extras[-MAX_STICKY_TOOLS:]
+                    )
+                keep = hot_set | pflicht | set(kombiniert) | mcp_gewaehlt
+                tools = [e for e in tools if str(e.get("function", {}).get("name")) in keep]
+                if isinstance(zustand, dict):
+                    zustand["routed_tools"] = kombiniert
+                _log.info(
+                    "Tool-Routing: erlaubt=%d keep=%d routed=%s sticky=%d mcp=%d query=%.80s",
+                    len(panel_erlaubt), len(keep), routed, len(sticky_erlaubt), len(mcp_gewaehlt), letzte,
+                )
+            elif isinstance(zustand, dict) and sticky_erlaubt:
+                zustand["routed_tools"] = sticky_erlaubt[-MAX_STICKY_TOOLS:]
     except Exception as exc:
         import logging
         logging.getLogger(__name__).debug("Tool-Routing uebersprungen: %s", type(exc).__name__)
@@ -1038,6 +1142,10 @@ async def _werkzeuge_semantisch_routen(
             e for e in tools
             if str(e.get("function", {}).get("name")) not in DESKTOP_TOOLS
         ]
+        if isinstance(zustand, dict) and zustand.get("defer_tool_names"):
+            zustand["defer_tool_names"] = [
+                n for n in zustand["defer_tool_names"] if n not in DESKTOP_TOOLS
+            ]
     # Auch ohne Router (leere Frage, kleiner Katalog) gilt das MCP-Budget.
     if len(mcp_eintraege) > MAX_JE_TURN:
         tools = [
@@ -1045,7 +1153,7 @@ async def _werkzeuge_semantisch_routen(
             if str(e.get("function", {}).get("name")) not in mcp_namen
             or str(e.get("function", {}).get("name")) in mcp_gewaehlt
         ]
-    return tools
+    return _werkzeuge_kanonisch_sortieren(tools, hot=hot_all, mcp_namen=mcp_namen)
 
 
 async def _modellfaehigkeiten_und_kontextgrenze(
@@ -1067,7 +1175,17 @@ async def _modellfaehigkeiten_und_kontextgrenze(
     # Der Wert wird hier einmal genommen und nicht in der Schleife: nach dem
     # Zuschnitt ändert sich `tools` nicht mehr — auch die Schlussrunde
     # schickt den Katalog mit und verbietet nur noch seine Benutzung.
-    katalog_zeichen = len(json.dumps(tools, ensure_ascii=False))
+    defer_set = set(zustand.get("defer_tool_names") or ()) if isinstance(zustand, dict) else set()
+    if defer_set:
+        # Zurueckgestellte Werkzeuge werden erst bei Bedarf per Tool Search in den
+        # Kontext geladen; im Startbudget zaehlen nur ihre Suchindex-Eintraege.
+        katalog_zeichen = sum(
+            200 if str((e.get("function") or {}).get("name")) in defer_set
+            else len(json.dumps(e, ensure_ascii=False))
+            for e in tools
+        )
+    else:
+        katalog_zeichen = len(json.dumps(tools, ensure_ascii=False))
     # Wie voll die erste Anfrage dieses Segments ist, Katalog eingeschlossen.
     # Daran entscheidet das Laufende, ob gefaltet wird
     # (`ai_compaction_service.needs_compaction`) — der Verlauf allein sagt das
@@ -1178,6 +1296,14 @@ async def _werkzeuge_und_grenze(
         herkunft=herkunft,
         zustand=zustand,
     )
+    tool_search_aktiv = False
+    try:
+        tool_search_aktiv = "tool_search" in ai_provider_service.effective_spec(
+            vorbereitung.provider
+        ).anfrage_erweiterungen
+    except (KeyError, AiProviderConfigurationError):
+        tool_search_aktiv = False
+
     tools = await _werkzeuge_semantisch_routen(
         tools=tools,
         erlaubt=erlaubt,
@@ -1185,6 +1311,8 @@ async def _werkzeuge_und_grenze(
         docs_kontext=docs_kontext,
         herkunft=herkunft,
         zustand=zustand,
+        vorherige_werkzeuge=vorbereitung.vorherige_werkzeuge,
+        tool_search_aktiv=tool_search_aktiv,
     )
     cache_marke, kontextgrenze, denken, denkstufe = (
         await _modellfaehigkeiten_und_kontextgrenze(

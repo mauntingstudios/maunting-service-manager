@@ -112,6 +112,10 @@ MAX_GLEICHE_AUFRUFE = 4
 MAX_GLEICHE_POLLING_AUFRUFE = 8
 POLLING_WERKZEUGE = {"read_server_status", "read_server_logs", "check_server_reachability"}
 
+#: Hoechstzahl gemerkter Nicht-HOTSET-Werkzeuge ueber aufeinanderfolgende Laeufe derselben
+#: Konversation. Haelt die ``tools``-Liste ueber Rueckfragen hinweg fuer Prompt Caching stabil.
+MAX_STICKY_TOOLS = 20
+
 
 _FREITEXT_WERKZEUGE = frozenset({
     "read_server_logs",
@@ -200,6 +204,9 @@ class _Vorbereitung:
     mcp_werkzeuge: tuple[dict, ...] = ()
     # Namen der MCP-Werkzeuge, die einen Vorschlag erzeugen (kein ReadOnly).
     mcp_schreib_werkzeuge: frozenset[str] = frozenset()
+    # Aus dem letzten Lauf derselben Konversation uebernommene Werkzeuge fuer
+    # Prompt-Cache-Stabilitaet bei allen Anbietern.
+    vorherige_werkzeuge: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

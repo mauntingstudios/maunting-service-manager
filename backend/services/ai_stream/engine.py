@@ -345,6 +345,7 @@ async def _anbieter_runde_streamen(
         reasoning=denken,
         reasoning_effort=denkstufe,
         cache_marke=cache_marke,
+        defer_tool_names=frozenset(zustand.get("defer_tool_names") or ()) or None,
         **stream_extra_kw,
     ):
         if first_provider_chunk:

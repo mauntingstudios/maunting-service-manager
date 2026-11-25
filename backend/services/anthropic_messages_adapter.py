@@ -102,6 +102,18 @@ ANTHROPIC_VERSION = "2023-06-01"
 #: dafuer steht der Satz hier.
 STANDARD_MAX_TOKENS = 8_192
 
+#: Anthropics serverseitiges Tool-Search-Werkzeug (Nov 2025 / 2026 Advanced Tool Use).
+#: Haelt das `tools`-Array am Anfang des Requests ueber alle Runden stabil
+#: fuer Prompt Caching und laedt seltene Werkzeuge per `defer_loading: True` nach.
+TOOL_SEARCH_TOOL_TYPE = "tool_search_tool_bm25_20251119"
+TOOL_SEARCH_TOOL_NAME = "tool_search_tool_bm25"
+TOOL_SEARCH_BETA_HEADER = "advanced-tool-use-2025-11-20"
+_SERVER_BLOCK_TYPEN = frozenset({
+    "server_tool_use",
+    "tool_search_tool_result",
+    "web_search_tool_result",
+})
+
 #: Anthropics Fehlerarten, uebersetzt in MSMs Marken. Dieselbe Aufgabe wie
 #: `openai_compatible_adapter._error_code` fuer HTTP-Status, nur dass diese API
 #: **im Strom** ein Wort meldet statt einer Zahl: sind die Kopfzeilen erst
@@ -197,7 +209,11 @@ def _bildbloecke_aus_inhalt(content: Any) -> list[dict]:
     return bloecke
 
 
-def werkzeuge_uebersetzen(tools: list[dict] | None) -> list[dict] | None:
+def werkzeuge_uebersetzen(
+    tools: list[dict] | None,
+    *,
+    defer_names: frozenset[str] | None = None,
+) -> list[dict] | None:
     """Werkzeugkatalog aus der Chat-Completions-Form in Anthropics Form.
 
     Beide beschreiben dasselbe mit anderen Namen::
@@ -213,25 +229,41 @@ def werkzeuge_uebersetzen(tools: list[dict] | None) -> list[dict] | None:
     ``input_schema`` ist **Pflicht**; ein Werkzeug ohne Parameter bekommt das
     leere Objektschema statt ``None``, sonst weist die API den ganzen Katalog
     ab und mit ihm jede Anfrage der Sitzung.
+
+    Mit ``defer_names`` werden die benannten Werkzeuge per ``"defer_loading": True``
+    zurueckgestellt, und Anthropics BM25-Suchwerkzeug steht einmalig davor.
     """
     if not tools:
         return None
     uebersetzt: list[dict] = []
+    hat_deferred = False
     for eintrag in tools:
         if not isinstance(eintrag, dict):
             continue
         funktion = eintrag.get("function")
         if not isinstance(funktion, dict):
-            uebersetzt.append(eintrag)
+            item = dict(eintrag)
+            name = item.get("name")
+            if defer_names and isinstance(name, str) and name in defer_names:
+                item["defer_loading"] = True
+                hat_deferred = True
+            uebersetzt.append(item)
             continue
         schema = funktion.get("parameters")
-        uebersetzt.append({
-            "name": funktion.get("name"),
+        name = funktion.get("name")
+        item = {
+            "name": name,
             "description": funktion.get("description") or "",
             "input_schema": (
                 schema if isinstance(schema, dict) else {"type": "object", "properties": {}}
             ),
-        })
+        }
+        if defer_names and isinstance(name, str) and name in defer_names:
+            item["defer_loading"] = True
+            hat_deferred = True
+        uebersetzt.append(item)
+    if uebersetzt and hat_deferred:
+        uebersetzt.insert(0, {"type": TOOL_SEARCH_TOOL_TYPE, "name": TOOL_SEARCH_TOOL_NAME})
     return uebersetzt or None
 
 
@@ -471,6 +503,7 @@ async def stream_messages(
     max_tokens: int | None = None,
     json_schema: dict[str, Any] | None = None,
     speed: str | None = None,
+    defer_tool_names: frozenset[str] | None = None,
 ) -> AsyncIterator[StreamChunk]:
     """Ein Chatzug ueber ``POST /messages`` — Stuecke wie ueberall sonst.
 
@@ -513,10 +546,22 @@ async def stream_messages(
         request_body["cache_control"] = {"type": "ephemeral"}
     if speed in ("standard", "fast"):
         request_body["speed"] = speed
-    uebersetzte_werkzeuge = werkzeuge_uebersetzen(tools)
+    effektive_defer_names = (
+        defer_tool_names
+        if (
+            defer_tool_names
+            and "tool_search" in spec.anfrage_erweiterungen
+            and tool_choice != "none"
+            and not isinstance(tool_choice, dict)
+        )
+        else None
+    )
+    uebersetzte_werkzeuge = werkzeuge_uebersetzen(tools, defer_names=effektive_defer_names)
     if uebersetzte_werkzeuge:
         request_body["tools"] = uebersetzte_werkzeuge
         request_body["tool_choice"] = werkzeugwahl_uebersetzen(tool_choice)
+        if any(e.get("type") == TOOL_SEARCH_TOOL_TYPE for e in uebersetzte_werkzeuge):
+            headers["anthropic-beta"] = TOOL_SEARCH_BETA_HEADER
 
     output_config: dict[str, Any] = {}
     if reasoning and reasoning_effort:
@@ -539,6 +584,7 @@ async def stream_messages(
     aufrufe: dict[int, dict[str, str]] = {}
     reihenfolge: list[int] = []
     fertige_aufrufe: set[int] = set()
+    server_block_indizes: set[int] = set()
     abgeschlossen = False
 
     def fertiger_aufruf(index: int) -> ProviderToolCall:
@@ -625,6 +671,12 @@ async def stream_messages(
                     index = rahmen.get("index")
                     if (
                         isinstance(block, dict)
+                        and isinstance(index, int)
+                        and block.get("type") in _SERVER_BLOCK_TYPEN
+                    ):
+                        server_block_indizes.add(index)
+                    elif (
+                        isinstance(block, dict)
                         and block.get("type") == "tool_use"
                         and isinstance(index, int)
                     ):
@@ -661,6 +713,8 @@ async def stream_messages(
                             yield StreamChunk("reasoning", gedanke)
                     elif art == "input_json_delta":
                         index = rahmen.get("index")
+                        if isinstance(index, int) and index in server_block_indizes:
+                            continue
                         stueck = delta.get("partial_json")
                         if not isinstance(index, int) or not isinstance(stueck, str):
                             continue
@@ -679,6 +733,8 @@ async def stream_messages(
 
                 elif typ == "content_block_stop":
                     index = rahmen.get("index")
+                    if isinstance(index, int) and index in server_block_indizes:
+                        continue
                     if isinstance(index, int) and index in aufrufe and index not in fertige_aufrufe:
                         call = fertiger_aufruf(index)
                         fertige_aufrufe.add(index)

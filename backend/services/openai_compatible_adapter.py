@@ -740,6 +740,7 @@ async def stream_chat_completion(
     max_tokens: int | None = None,
     json_schema: dict[str, Any] | None = None,
     speed: str | None = None,
+    defer_tool_names: frozenset[str] | None = None,
     **kwargs: Any,
 ) -> AsyncIterator[StreamChunk]:
     """Normalisiert Provider-SSE zu Antwort- und Denkschritt-Stuecken.
@@ -915,6 +916,7 @@ async def stream_chat_completion(
             max_tokens=max_tokens,
             json_schema=json_schema,
             speed=speed,
+            defer_tool_names=defer_tool_names,
             **kwargs,
         ):
             yield stueck

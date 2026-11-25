@@ -20,6 +20,9 @@ from models import AiProvider
 from services.anthropic_messages_adapter import (
     ANTHROPIC_VERSION,
     STANDARD_MAX_TOKENS,
+    TOOL_SEARCH_BETA_HEADER,
+    TOOL_SEARCH_TOOL_NAME,
+    TOOL_SEARCH_TOOL_TYPE,
     _fehler_im_ereignis,
     nachrichten_uebersetzen,
     spricht_messages,
@@ -638,3 +641,132 @@ async def test_anthropic_stop_reason_refusal_and_context_window_exceeded() -> No
         ):
             pass
     assert ctx_err.value.code == "AI_PROVIDER_CONTEXT_EXCEEDED"
+
+
+def test_werkzeuge_uebersetzen_supports_defer_loading_and_bm25_search_tool() -> None:
+    """``defer_names`` markiert benannte Werkzeuge und stellt BM25-Tool-Search voran."""
+    tools = [
+        {"type": "function", "function": {"name": "list_my_servers", "description": "Kern"}},
+        {"type": "function", "function": {"name": "propose_backup", "description": "Backup"}},
+    ]
+    uebersetzt = werkzeuge_uebersetzen(tools, defer_names=frozenset({"propose_backup"}))
+    assert uebersetzt is not None
+    assert uebersetzt[0] == {"type": TOOL_SEARCH_TOOL_TYPE, "name": TOOL_SEARCH_TOOL_NAME}
+    assert uebersetzt[1]["name"] == "list_my_servers"
+    assert "defer_loading" not in uebersetzt[1]
+    assert uebersetzt[2]["name"] == "propose_backup"
+    assert uebersetzt[2]["defer_loading"] is True
+
+    ohne_treffer = werkzeuge_uebersetzen(tools, defer_names=frozenset({"unbekannt"}))
+    assert ohne_treffer is not None
+    assert all("type" not in item for item in ohne_treffer)
+
+
+@pytest.mark.asyncio
+async def test_anthropic_tool_search_beta_header_only_when_supported_and_active() -> None:
+    """Beta-Header und ``defer_loading`` greifen nur bei ``tool_search`` und nicht bei ``tool_choice='none'``."""
+    tools = [
+        {"type": "function", "function": {"name": "list_my_servers", "description": "Kern"}},
+        {"type": "function", "function": {"name": "propose_backup", "description": "Backup"}},
+    ]
+    client = _FakeClient(_sse(
+        {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "ok"}},
+        {"type": "message_stop"},
+    ))
+    async for _ in stream_messages(
+        client,
+        provider=_provider("anthropic"),
+        api_key="sk-ant-test",
+        messages=[{"role": "user", "content": "Backup"}],
+        usage=StreamUsage(),
+        tools=tools,
+        defer_tool_names=frozenset({"propose_backup"}),
+    ):
+        pass
+    assert client.koepfe["anthropic-beta"] == TOOL_SEARCH_BETA_HEADER
+    assert client.gesendet["tools"][0] == {
+        "type": TOOL_SEARCH_TOOL_TYPE,
+        "name": TOOL_SEARCH_TOOL_NAME,
+    }
+    assert client.gesendet["tools"][2]["defer_loading"] is True
+
+    # Bei tool_choice="none" wird Tool Search nicht aktiviert.
+    client_none = _FakeClient(_sse({"type": "message_stop"}))
+    async for _ in stream_messages(
+        client_none,
+        provider=_provider("anthropic"),
+        api_key="sk-ant-test",
+        messages=[{"role": "user", "content": "Schluss"}],
+        usage=StreamUsage(),
+        tools=tools,
+        tool_choice="none",
+        defer_tool_names=frozenset({"propose_backup"}),
+    ):
+        pass
+    assert "anthropic-beta" not in client_none.koepfe
+    assert all("defer_loading" not in t for t in client_none.gesendet["tools"])
+
+
+@pytest.mark.asyncio
+async def test_anthropic_stream_ignores_server_tool_use_and_tool_search_result_blocks() -> None:
+    """Serverseitige Tool-Search-Bloecke loesen keinen Client-Tool-Call oder Protokollfehler aus."""
+    client = _FakeClient(_sse(
+        {"type": "message_start", "message": {"usage": {"input_tokens": 20}}},
+        {
+            "type": "content_block_start",
+            "index": 0,
+            "content_block": {
+                "type": "server_tool_use",
+                "id": "srvtoolu_1",
+                "name": "tool_search_tool_bm25",
+                "input": {},
+            },
+        },
+        {
+            "type": "content_block_delta",
+            "index": 0,
+            "delta": {"type": "input_json_delta", "partial_json": '{"query": "backup"}'},
+        },
+        {"type": "content_block_stop", "index": 0},
+        {
+            "type": "content_block_start",
+            "index": 1,
+            "content_block": {
+                "type": "tool_search_tool_result",
+                "tool_use_id": "srvtoolu_1",
+                "content": {
+                    "type": "tool_search_tool_search_result",
+                    "tool_references": [{"type": "tool_reference", "tool_name": "propose_backup"}],
+                },
+            },
+        },
+        {"type": "content_block_stop", "index": 1},
+        {
+            "type": "content_block_start",
+            "index": 2,
+            "content_block": {"type": "tool_use", "id": "toolu_real", "name": "propose_backup"},
+        },
+        {
+            "type": "content_block_delta",
+            "index": 2,
+            "delta": {"type": "input_json_delta", "partial_json": '{"server_id": 7}'},
+        },
+        {"type": "content_block_stop", "index": 2},
+        {"type": "message_delta", "delta": {"stop_reason": "tool_use"}, "usage": {"output_tokens": 12}},
+        {"type": "message_stop"},
+    ))
+    usage = StreamUsage()
+    chunks = [
+        c async for c in stream_messages(
+            client,
+            provider=_provider("anthropic"),
+            api_key="sk-ant-test",
+            messages=[{"role": "user", "content": "Mach Backup"}],
+            usage=usage,
+        )
+    ]
+    assert [c.kind for c in chunks] == ["tool_start", "tool_ready"]
+    assert len(usage.tool_calls) == 1
+    assert usage.tool_calls[0].id == "toolu_real"
+    assert usage.tool_calls[0].name == "propose_backup"
+    assert usage.tool_calls[0].arguments == {"server_id": 7}
