@@ -150,12 +150,22 @@ describe('Privacy page', () => {
    * ist praktisch eine stille Aenderung — deshalb haengt die Zusage hier an den
    * konkreten Werten und nicht an "irgendeiner" Version.
    */
-  it('weist die Fassung 3.48 vom 2026-11-12 aus (Such-Denkstufe und Themen-Nachrichten)', () => {
+  it('weist die Fassung 3.49 vom 2026-11-25 aus (Rate-Limiting und IP-Verarbeitung hinter Reverse-Proxy)', () => {
     const { container } = renderPrivacy();
 
     expect(
-      screen.getByText(new RegExp(`${i18n.t('privacyPolicy.versionLabel')}\\s+v?3\\.48`)),
+      screen.getByText(new RegExp(`${i18n.t('privacyPolicy.versionLabel')}\\s+v?3\\.49`)),
     ).toBeInTheDocument();
+    // 3.49: Proxy-Client-IP-Auswertung fuer Rate-Limiting (fluechtig, max. 60s) und Betriebslogs.
+    const rateLimitDe = i18n.t('privacyPolicy.sections.accounts.items.rateLimit', { lng: 'de' });
+    expect(rateLimitDe).toMatch(/X-Forwarded-For/);
+    expect(rateLimitDe).toMatch(/60 Sekunden/);
+    expect(rateLimitDe).toMatch(/nicht in der Panel-Datenbank/);
+    expect(screen.getByText(rateLimitDe)).toBeInTheDocument();
+    const rateLimitEn = i18n.t('privacyPolicy.sections.accounts.items.rateLimit', { lng: 'en' });
+    expect(rateLimitEn).toMatch(/X-Forwarded-For/);
+    expect(rateLimitEn).toMatch(/60 seconds/);
+    expect(rateLimitEn).toMatch(/not stored in the panel database/);
     // 3.48: die Denkstufe der Suchzusammenfassung legt der Betreiber je Anbieter
     // fest, Denktexte bleiben flüchtig; die Suchseite holt Nachrichten zum Begriff.
     const suchDe = i18n.t('privacyPolicy.sections.browser.items.suchzusammenfassung', { lng: 'de' });

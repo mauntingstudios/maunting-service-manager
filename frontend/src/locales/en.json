@@ -7701,7 +7701,8 @@
           "identity": "Username (chosen by the person, changeable in the profile) and email address for account identification and sign-in. The email address is stored encrypted in the database, the password only as an Argon2id check value.",
           "security": "Password verification data, sessions, optional two-factor authentication data, and recovery state",
           "rbac": "Roles, global permissions, server-specific permissions, and ownership status",
-          "audit": "Security and audit events such as sign-ins, permission changes, and administrative actions"
+          "audit": "Security and audit events such as sign-ins, permission changes, and administrative actions",
+          "rateLimit": "Abuse and brute-force protection (rate limiting): The instance evaluates the IP address of incoming requests (behind its own reverse proxy via X-Forwarded-For) and keeps counters transiently in memory or Redis for up to 60 seconds. For this purpose, the IP address is not stored in the panel database and is not shared with third parties. The IP address may also appear in the technical access and error logs of the panel service."
         }
       },
       "infrastructure": {

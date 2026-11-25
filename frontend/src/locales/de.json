@@ -7701,7 +7701,8 @@
           "identity": "Benutzername (selbst gewählt, im Profil änderbar) und E-Mail-Adresse zur Account-Zuordnung und Anmeldung. Die E-Mail-Adresse liegt verschlüsselt in der Datenbank, das Passwort nur als Argon2id-Prüfwert.",
           "security": "Passwort-Prüfdaten, Sitzungen, optionale Zwei-Faktor-Daten und Wiederherstellungsstatus",
           "rbac": "Rollen, globale Berechtigungen, serverspezifische Berechtigungen und Eigentümerstatus",
-          "audit": "Sicherheits- und Audit-Ereignisse wie Anmeldungen, Berechtigungsänderungen und administrative Aktionen"
+          "audit": "Sicherheits- und Audit-Ereignisse wie Anmeldungen, Berechtigungsänderungen und administrative Aktionen",
+          "rateLimit": "Schutz vor Überlastung und Brute-Force (Rate-Limiting): Die Instanz wertet die IP-Adresse eingehender Anfragen (hinter dem eigenen Reverse-Proxy über X-Forwarded-For) aus und hält Zähler dafür flüchtig bis zu 60 Sekunden im Arbeitsspeicher oder in Redis vor. Für diesen Zweck wird die IP-Adresse nicht in der Panel-Datenbank gespeichert und nicht an Dritte weitergegeben. Zudem kann die IP-Adresse im technischen Zugriffs- und Fehlerprotokoll des Panel-Dienstes erscheinen."
         }
       },
       "infrastructure": {

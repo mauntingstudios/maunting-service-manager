@@ -35,6 +35,7 @@ export function Privacy({ zurueck, zurueckAktion }: { zurueck?: string; zurueckA
           t('privacyPolicy.sections.accounts.items.security'),
           t('privacyPolicy.sections.accounts.items.rbac'),
           t('privacyPolicy.sections.accounts.items.audit'),
+          t('privacyPolicy.sections.accounts.items.rateLimit'),
         ],
       },
       {
