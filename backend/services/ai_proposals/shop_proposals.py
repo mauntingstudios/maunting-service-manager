@@ -114,9 +114,12 @@ _ADDON_FELDER = frozenset(
 
 
 def _require_shop_manage(db: Session, user: User) -> None:
-    if not permission_service.has_global_permission(db, user, "ai.shop.manage"):
+    if not permission_service.has_global_permission(db, user, "ai.shop.manage") or not (
+        permission_service.has_global_permission(db, user, "shop.write")
+        or permission_service.has_global_permission(db, user, "panel.settings.write")
+    ):
         raise AiActionValidationError(
-            "Shop-Verwaltung ueber die KI erfordert die Berechtigung ai.shop.manage"
+            "Shop-Verwaltung ueber die KI erfordert ai.shop.manage sowie shop.write oder panel.settings.write"
         )
 
 
@@ -536,9 +539,13 @@ def _shop_coupon_upsert_payload(db: Session, user: User, rest: dict) -> tuple[di
         if raw_ids is not None:
             if not isinstance(raw_ids, list):
                 raise AiActionValidationError("target_plan_ids muss eine Liste sein")
-            fields["target_plan_ids"] = [
-                int(pid) for pid in raw_ids if _int_oder_none(pid, feld="target_plan_ids") is not None
-            ]
+            fields["target_plan_ids"] = list(
+                dict.fromkeys(
+                    int(pid)
+                    for pid in raw_ids
+                    if _int_oder_none(pid, feld="target_plan_ids") is not None
+                )
+            )
 
     for key in ("min_gross_cents", "max_redemptions", "banner_cooldown_hours"):
         if key in rest:

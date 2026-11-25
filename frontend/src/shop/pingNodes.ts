@@ -1,5 +1,6 @@
 import { shopCatalogApi, type ShopPublicNodeStatusDto } from '@/api/shop'
 import { still } from '@/lib/still'
+import { isSafeHttpUrl } from './safeUrl'
 import type { ShopPingMessung } from './shopStandortStore'
 
 export async function messeNodePings(
@@ -10,15 +11,23 @@ export async function messeNodePings(
   const gemessen: Record<number, ShopPingMessung> = {}
   await Promise.all(
     onlineNodes.map(async (node) => {
-      if (node.public_ping_url) {
+      if (isSafeHttpUrl(node.public_ping_url)) {
         const start = performance.now()
+        const controller = new AbortController()
+        const timer = setTimeout(() => controller.abort(), 5000)
         try {
-          await fetch(node.public_ping_url, { mode: 'no-cors', cache: 'no-store' })
+          await fetch(node.public_ping_url, {
+            mode: 'no-cors',
+            cache: 'no-store',
+            signal: controller.signal,
+          })
           const ms = Math.max(1, Math.round(performance.now() - start))
           gemessen[node.id] = { ms, direkt: true }
           return
         } catch (err) {
           still(err, `${tag}.pingPublicUrl`)
+        } finally {
+          clearTimeout(timer)
         }
       }
       if (shopCatalogApi.pingNode) {

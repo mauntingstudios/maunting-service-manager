@@ -9,15 +9,19 @@ eigene Konvertierung und eine gepruefte Bibliothek.
 
 from __future__ import annotations
 
+import re
+
 from models import ShopInvoice, ShopInvoiceLine
 
 _SEITENBREITE = 595
 _SEITENHOEHE = 842
 _RAND = 50
+_PDF_CTRL_RE = re.compile(r"[\x00-\x1f\x7f-\x9f]")
 
 
 def _esc(text: str) -> str:
-    return text.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+    cleaned = _PDF_CTRL_RE.sub(" ", text or "")
+    return cleaned.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
 
 
 def _money(cents: int) -> str:

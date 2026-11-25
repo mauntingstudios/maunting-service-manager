@@ -311,7 +311,9 @@ describe('KontoAbos', () => {
       },
     ])
     extendSubscriptionMock.mockResolvedValueOnce({ id: 99, number: 'MSM-2026-000099' })
-    checkoutMock.mockRejectedValueOnce(new SanitizedApiError('Kein Stripe', { status: 409 }))
+    checkoutMock.mockRejectedValueOnce(
+      new SanitizedApiError('Kein Stripe', { status: 409, code: 'stripe_not_configured' }),
+    )
     payDemoMock.mockResolvedValueOnce({ id: 99, number: 'MSM-2026-000099' })
     listEntitlementBackupsMock.mockResolvedValueOnce([
       {

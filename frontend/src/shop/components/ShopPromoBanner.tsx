@@ -18,27 +18,6 @@ interface CountdownResult {
   iso: string
 }
 
-interface TemporalDurationLike {
-  days?: number
-  hours?: number
-  minutes?: number
-  seconds?: number
-  toString: () => string
-}
-
-interface TemporalInstantLike {
-  epochMilliseconds: number
-  until: (
-    other: TemporalInstantLike,
-    opts: { largestUnit: string; smallestUnit: string },
-  ) => TemporalDurationLike
-}
-
-interface TemporalGlobal {
-  Now: { instant: () => TemporalInstantLike }
-  Instant: { from: (iso: string) => TemporalInstantLike }
-}
-
 function formatRestzeit(
   validUntilIso: string | null | undefined,
   jetztMs: number,
@@ -47,28 +26,6 @@ function formatRestzeit(
 
   const targetMs = Date.parse(validUntilIso)
   if (!Number.isFinite(targetMs)) return null
-
-  const temporal = (globalThis as { Temporal?: TemporalGlobal }).Temporal
-  if (temporal?.Instant && temporal?.Now) {
-    try {
-      const now = temporal.Now.instant()
-      const end = temporal.Instant.from(validUntilIso)
-      if (end.epochMilliseconds <= now.epochMilliseconds) {
-        return { abgelaufen: true, days: 0, hours: 0, minutes: 0, seconds: 0, iso: 'PT0S' }
-      }
-      const diff = now.until(end, { largestUnit: 'day', smallestUnit: 'second' })
-      return {
-        abgelaufen: false,
-        days: diff.days ?? 0,
-        hours: diff.hours ?? 0,
-        minutes: diff.minutes ?? 0,
-        seconds: diff.seconds ?? 0,
-        iso: diff.toString(),
-      }
-    } catch (err) {
-      still(err, 'shopPromoBanner.temporalCountdown')
-    }
-  }
 
   const diffMs = targetMs - jetztMs
   if (diffMs <= 0) {

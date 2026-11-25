@@ -13,14 +13,3 @@ export function standortAnzeigeName(
   return node.name
 }
 
-export function standortUntertitel(node: {
-  name: string
-  location_label?: string | null
-}): string | null {
-  const label = (node.location_label ?? '').trim()
-  const name = node.name.trim()
-  if (!label || !name || label === name || istGenerischerLokalName(name)) {
-    return null
-  }
-  return name
-}

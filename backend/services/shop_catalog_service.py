@@ -16,7 +16,7 @@ from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from models import Node, Role, ShopOrder, ShopOrderItem, ShopPlan
+from models import Node, ShopOrder, ShopOrderItem, ShopPlan
 from schemas.shop import (
     ShopArtworkResponse,
     ShopCatalogPlan,
@@ -31,6 +31,8 @@ from services import audit_service, steam_metadata_service, wallpaper_service
 
 
 _CURRENCY_RE = re.compile(r"^[A-Z]{3}$")
+_PING_CACHE_TTL_S = 15.0
+_PING_RTT_CACHE: dict[int, tuple[float, str, float | None]] = {}
 
 
 class ShopConfigurationError(ValueError):
@@ -424,7 +426,7 @@ def _game_meta(game_type: str) -> dict[str, Any]:
     }
 
 
-def _plan_hardware_summary(db: Session, plan: ShopPlan) -> tuple[str | None, str | None, str | None]:
+def _resolve_plan_shop_nodes(db: Session, plan: ShopPlan) -> list[Node]:
     from services.node_placement_service import OFFLINE_NODE_STATUSES
 
     if plan.node_id is not None:
@@ -433,20 +435,8 @@ def _plan_hardware_summary(db: Session, plan: ShopPlan) -> tuple[str | None, str
             .filter(Node.id == plan.node_id, Node.shop_enabled.is_(True))
             .first()
         )
-        if node is None:
-            return None, None, None
-        cpu = (
-            getattr(node, "cpu_model", None) or None
-            if bool(getattr(node, "shop_show_cpu", True))
-            else None
-        )
-        return (
-            cpu,
-            getattr(node, "ram_type", None) or None,
-            getattr(node, "storage_type", None) or None,
-        )
-
-    nodes = [
+        return [node] if node is not None else []
+    return [
         n
         for n in db.query(Node)
         .filter(Node.shop_enabled.is_(True))
@@ -454,65 +444,40 @@ def _plan_hardware_summary(db: Session, plan: ShopPlan) -> tuple[str | None, str
         .all()
         if (n.status or "").strip().lower() not in OFFLINE_NODE_STATUSES
     ]
+
+
+def _unanimous_node_attr(nodes: list[Node], attr: str) -> str | None:
+    vals = {str(getattr(n, attr, None) or "").strip() or None for n in nodes}
+    vals.discard(None)
+    if len(vals) == 1 and all(
+        (str(getattr(n, attr, None) or "").strip() or None) is not None for n in nodes
+    ):
+        return next(iter(vals))
+    return None
+
+
+def _plan_hardware_summary(db: Session, plan: ShopPlan) -> tuple[str | None, str | None, str | None]:
+    nodes = _resolve_plan_shop_nodes(db, plan)
     if not nodes:
         return None, None, None
-
-    def _unanimous(attr: str) -> str | None:
-        vals = {
-            str(getattr(n, attr, None) or "").strip() or None
-            for n in nodes
-        }
-        vals.discard(None)
-        if len(vals) == 1 and all((str(getattr(n, attr, None) or "").strip() or None) is not None for n in nodes):
-            return next(iter(vals))
-        return None
-
     show_cpu_all = all(bool(getattr(n, "shop_show_cpu", True)) for n in nodes)
     return (
-        _unanimous("cpu_model") if show_cpu_all else None,
-        _unanimous("ram_type"),
-        _unanimous("storage_type"),
+        _unanimous_node_attr(nodes, "cpu_model") if show_cpu_all else None,
+        _unanimous_node_attr(nodes, "ram_type"),
+        _unanimous_node_attr(nodes, "storage_type"),
     )
 
 
 def _plan_ddos_summary(db: Session, plan: ShopPlan) -> tuple[str | None, str | None, bool]:
-    from services.node_placement_service import OFFLINE_NODE_STATUSES
-
-    if plan.node_id is not None:
-        node = (
-            db.query(Node)
-            .filter(Node.id == plan.node_id, Node.shop_enabled.is_(True))
-            .first()
-        )
-        if node is None:
-            return None, None, False
-        return (
-            getattr(node, "ddos_provider", None) or None,
-            getattr(node, "ddos_profile", None) or None,
-            bool(getattr(node, "ddos_game_aware", False)),
-        )
-
-    nodes = [
-        n
-        for n in db.query(Node)
-        .filter(Node.shop_enabled.is_(True))
-        .order_by(Node.id.asc())
-        .all()
-        if (n.status or "").strip().lower() not in OFFLINE_NODE_STATUSES
-    ]
+    nodes = _resolve_plan_shop_nodes(db, plan)
     if not nodes:
         return None, None, False
-
     game_aware = all(bool(getattr(n, "ddos_game_aware", False)) for n in nodes)
-
-    def _unanimous(attr: str) -> str | None:
-        vals = {str(getattr(n, attr, None) or "").strip() or None for n in nodes}
-        vals.discard(None)
-        if len(vals) == 1 and all((str(getattr(n, attr, None) or "").strip() or None) is not None for n in nodes):
-            return next(iter(vals))
-        return None
-
-    return _unanimous("ddos_provider"), _unanimous("ddos_profile"), game_aware
+    return (
+        _unanimous_node_attr(nodes, "ddos_provider"),
+        _unanimous_node_attr(nodes, "ddos_profile"),
+        game_aware,
+    )
 
 
 def public_node_statuses(db: Session) -> list[ShopPublicNodeStatusResponse]:
@@ -610,6 +575,15 @@ def ping_public_node(db: Session, node_id: int) -> ShopNodePingResponse | None:
             timestamp_ms=now_ms,
         )
 
+    cached = _PING_RTT_CACHE.get(node.id)
+    if cached is not None and (time.monotonic() - cached[0]) < _PING_CACHE_TTL_S:
+        return ShopNodePingResponse(
+            node_id=node.id,
+            status=cached[1],
+            server_agent_rtt_ms=cached[2],
+            timestamp_ms=now_ms,
+        )
+
     client = node_service.client_for_node(node)
     if client is None:
         return ShopNodePingResponse(
@@ -622,6 +596,7 @@ def ping_public_node(db: Session, node_id: int) -> ShopNodePingResponse | None:
     try:
         client.health()
         rtt_ms = round((time.perf_counter() - started) * 1000.0, 1)
+        _PING_RTT_CACHE[node.id] = (time.monotonic(), "online", rtt_ms)
         return ShopNodePingResponse(
             node_id=node.id,
             status="online",
@@ -629,6 +604,7 @@ def ping_public_node(db: Session, node_id: int) -> ShopNodePingResponse | None:
             timestamp_ms=now_ms,
         )
     except Exception:
+        _PING_RTT_CACHE[node.id] = (time.monotonic(), "unreachable", None)
         return ShopNodePingResponse(
             node_id=node.id,
             status="unreachable",

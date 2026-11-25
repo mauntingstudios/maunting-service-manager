@@ -137,7 +137,7 @@ class TestInvoiceLedger:
         assert xml_res.status_code == 200
         assert xml_res.headers["content-type"].startswith("application/xml")
         xml_text = xml_res.text
-        assert "urn:xoev-de:kosit:standard:xrechnung_3.0" in xml_text
+        assert "urn:xeinkauf.de:kosit:xrechnung_3.0" in xml_text
         wurzel = ET.fromstring(xml_text)
         ns = {
             "cbc": "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2",

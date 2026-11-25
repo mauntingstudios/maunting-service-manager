@@ -301,6 +301,28 @@ def update_role(
             db, actor, role_service.role_permission_keys(db, role.id)
         )
     ensure_no_role_escalation(db, actor, keys)
+    if keys is not None:
+        from models import ShopAddon, ShopEntitlement, ShopPlan
+        from services.shop_fulfillment_service import SHOP_ALLOWED_ROLE_PERMISSIONS
+
+        is_shop_role = (
+            db.query(ShopPlan.id).filter(ShopPlan.role_id == role.id).first() is not None
+            or db.query(ShopAddon.id).filter(ShopAddon.role_id == role.id).first() is not None
+            or db.query(ShopEntitlement.id)
+            .filter(
+                ShopEntitlement.granted_role_id == role.id,
+                ShopEntitlement.status == "active",
+            )
+            .first()
+            is not None
+        )
+        if is_shop_role:
+            disallowed = sorted(set(keys) - SHOP_ALLOWED_ROLE_PERMISSIONS)
+            if disallowed:
+                raise RechteFehler(
+                    422,
+                    "Shop-Rollen duerfen keine privilegierten Panel-Rechte enthalten.",
+                )
     try:
         role = role_service.update_role(
             db, role, name, description, keys, color=color, icon=icon, commit=commit

@@ -15,6 +15,7 @@ import {
   Switch,
   Zustandsflaeche,
 } from '@maunting/ui'
+import { SanitizedApiError } from '@/api/client'
 import {
   shopAdminApi,
   type ShopCoupon,
@@ -166,7 +167,7 @@ export function ShopCouponsEditor() {
       .then(setCoupons)
       .catch((error: unknown) => {
         toast.error(
-          error instanceof Error ? error.message : t('settings.shop.coupons.fehler'),
+          error instanceof SanitizedApiError ? error.message : t('settings.shop.coupons.fehler'),
         )
         setCoupons([])
       })
@@ -243,7 +244,7 @@ export function ShopCouponsEditor() {
       laden()
     } catch (error: unknown) {
       toast.error(
-        error instanceof Error ? error.message : t('settings.shop.coupons.fehler'),
+        error instanceof SanitizedApiError ? error.message : t('settings.shop.coupons.fehler'),
       )
     } finally {
       setBusy(false)
@@ -266,7 +267,7 @@ export function ShopCouponsEditor() {
       laden()
     } catch (error: unknown) {
       toast.error(
-        error instanceof Error ? error.message : t('settings.shop.coupons.fehler'),
+        error instanceof SanitizedApiError ? error.message : t('settings.shop.coupons.fehler'),
       )
     }
   }
@@ -279,7 +280,7 @@ export function ShopCouponsEditor() {
       laden()
     } catch (error: unknown) {
       toast.error(
-        error instanceof Error ? error.message : t('settings.shop.coupons.stripeFehler'),
+        error instanceof SanitizedApiError ? error.message : t('settings.shop.coupons.stripeFehler'),
       )
     } finally {
       setSyncingId(null)

@@ -268,6 +268,7 @@ class TestShopSubscriptionCancel:
                     "object": {
                         "id": "cs_cancel_1",
                         "subscription": "sub_cancel_1",
+                        "payment_status": "paid",
                         "metadata": {"order_id": str(order["id"])},
                     }
                 },
@@ -520,6 +521,7 @@ class TestShopRefunds:
                     "object": {
                         "id": "cs_ref_1",
                         "subscription": "sub_ref_1",
+                        "payment_status": "paid",
                         "metadata": {"order_id": str(order["id"])},
                     }
                 },
@@ -541,6 +543,7 @@ class TestShopRefunds:
 
         get_calls: list[str] = []
         post_calls: list[tuple[str, dict, str | None]] = []
+        delete_calls: list[str] = []
 
         def fake_get(path, secret):
             get_calls.append(path)
@@ -550,8 +553,13 @@ class TestShopRefunds:
             post_calls.append((path, dict(data), kwargs.get("idempotency_key")))
             return {"id": "re_test_1"}
 
+        def fake_delete(path, secret):
+            delete_calls.append(path)
+            return {"id": "sub_ref_1", "status": "canceled"}
+
         monkeypatch.setattr(stripe_service, "_get_json", fake_get)
         monkeypatch.setattr(stripe_service, "_post_form", fake_post)
+        monkeypatch.setattr(stripe_service, "_delete_json", fake_delete)
 
         with patch(
             "services.server_action_service.request_lifecycle_operation",
@@ -566,16 +574,14 @@ class TestShopRefunds:
         assert res.status_code == 200, res.text
         assert res.json()["order"]["status"] == "refunded"
         assert get_calls == ["/checkout/sessions/cs_ref_1"]
-        assert post_calls[0] == (
-            "/refunds",
-            {"payment_intent": "pi_ref_1", "reason": "requested_by_customer"},
-            f"shop-refund-order-{order['id']}",
-        )
-        assert post_calls[1] == (
-            "/subscriptions/sub_ref_1",
-            {"cancel_at_period_end": "true"},
-            None,
-        )
+        assert post_calls == [
+            (
+                "/refunds",
+                {"payment_intent": "pi_ref_1", "reason": "requested_by_customer"},
+                f"shop-refund-order-{order['id']}",
+            )
+        ]
+        assert delete_calls == ["/subscriptions/sub_ref_1"]
 
     def test_stripe_charge_refunded_webhook_credits_and_ignores_partial(
         self,
@@ -601,6 +607,7 @@ class TestShopRefunds:
                 "data": {
                     "object": {
                         "id": "cs_ch_1",
+                        "payment_status": "paid",
                         "metadata": {"order_id": str(order["id"])},
                     }
                 },

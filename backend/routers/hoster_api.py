@@ -230,6 +230,7 @@ def redeem_handoff(
     except HTTPException:
         response = RedirectResponse(url=f"{base}/login?handoff=invalid", status_code=302)
         response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0, private"
+        response.headers["Referrer-Policy"] = "no-referrer"
         return response
 
     response = RedirectResponse(url=f"{base}{target_path}", status_code=302)

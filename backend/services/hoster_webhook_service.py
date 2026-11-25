@@ -21,15 +21,22 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 import hashlib
 import hmac
+import ipaddress
 import json
 import logging
+import socket
+from urllib.parse import urlsplit
 from uuid import uuid4
 
 import httpx
 from sqlalchemy.orm import Session
 
 from models import HosterIntegration, HosterService, HosterWebhookDelivery
-from services.hoster_integration_service import resolve_webhook_secret
+from services.hoster_integration_service import (
+    HosterConfigurationError,
+    resolve_webhook_secret,
+    validate_webhook_url,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -128,7 +135,7 @@ def enqueue_custom_event(
     correlation_id: str | None = None,
 ) -> HosterWebhookDelivery | None:
     """Stellt ein beliebiges Event (z. B. Simulation) zur Webhook-Zustellung ein."""
-    if not integration.webhook_url:
+    if not integration.webhook_url or not integration.webhook_secret_encrypted:
         return None
     body = json.dumps(
         {"event": event_type, **payload},
@@ -164,6 +171,48 @@ def _schedule_retry(delivery: HosterWebhookDelivery) -> None:
     delivery.next_attempt_at = _now() + timedelta(seconds=RETRY_BACKOFF_SECONDS[index])
 
 
+def _assert_public_webhook_target(url: str) -> None:
+    from services.ai_custom_ssrf import (
+        _PRIVATE_ALLOWABLE_NETS,
+        _UNCONDITIONAL_BLOCKED_NETS,
+        _unwrap_ip,
+    )
+
+    canonical = validate_webhook_url(url)
+    if not canonical:
+        raise HosterConfigurationError("Webhook-URL fehlt")
+    parsed = urlsplit(canonical)
+    host = parsed.hostname or ""
+    port = parsed.port or 443
+    try:
+        infos = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+    except OSError as exc:
+        raise HosterConfigurationError("Webhook-Ziel nicht aufloesbar") from exc
+    if not infos:
+        raise HosterConfigurationError("Webhook-Ziel nicht aufloesbar")
+    for _fam, _type, _proto, _canon, sockaddr in infos:
+        ip_str = sockaddr[0]
+        try:
+            ip_obj = ipaddress.ip_address(ip_str)
+        except ValueError as exc:
+            raise HosterConfigurationError("Ungueltige Webhook-Ziel-IP") from exc
+        if isinstance(ip_obj, ipaddress.IPv6Address) and (
+            ip_obj.sixtofour is not None or ip_obj.teredo is not None
+        ):
+            raise HosterConfigurationError("Uebergangsadressen nicht zulaessig")
+        unwrapped = _unwrap_ip(ip_obj)
+        if (
+            unwrapped.is_multicast
+            or unwrapped.is_link_local
+            or unwrapped.is_unspecified
+            or unwrapped.is_loopback
+            or any(unwrapped in net for net in _UNCONDITIONAL_BLOCKED_NETS)
+            or any(unwrapped in net for net in _PRIVATE_ALLOWABLE_NETS)
+            or not unwrapped.is_global
+        ):
+            raise HosterConfigurationError("Interne oder private Webhook-Ziele sind gesperrt")
+
+
 def deliver_pending(db: Session, *, limit: int = 25) -> int:
     """Stellt faellige Webhooks zu. Wird zyklisch vom Scheduler aufgerufen.
 
@@ -178,6 +227,7 @@ def deliver_pending(db: Session, *, limit: int = 25) -> int:
             HosterWebhookDelivery.next_attempt_at <= _now(),
         )
         .order_by(HosterWebhookDelivery.id)
+        .with_for_update(skip_locked=True)
         .limit(max(1, min(limit, 100)))
         .all()
     )
@@ -191,6 +241,14 @@ def deliver_pending(db: Session, *, limit: int = 25) -> int:
         if integration is None or not integration.enabled or not integration.webhook_url:
             delivery.status = "failed"
             delivery.error = "integration_unavailable"
+            delivery.next_attempt_at = None
+            db.commit()
+            continue
+        try:
+            _assert_public_webhook_target(integration.webhook_url)
+        except HosterConfigurationError:
+            delivery.status = "failed"
+            delivery.error = "webhook_target_blocked"
             delivery.next_attempt_at = None
             db.commit()
             continue
@@ -215,19 +273,21 @@ def deliver_pending(db: Session, *, limit: int = 25) -> int:
         delivery.sent_at = _now()
         timestamp = str(int(delivery.sent_at.timestamp()))
         try:
-            response = httpx.post(
-                integration.webhook_url,
-                content=delivery.payload.encode("utf-8"),
-                headers={
-                    "Content-Type": "application/json",
-                    TIMESTAMP_HEADER: timestamp,
-                    SIGNATURE_HEADER: sign_payload(secret, timestamp, delivery.payload),
-                    EVENT_HEADER: delivery.event_type,
-                    "User-Agent": "MSM-Hoster-Webhook/1.0",
-                },
-                timeout=REQUEST_TIMEOUT_SECONDS,
-                follow_redirects=False,
-            )
+            timeout = httpx.Timeout(connect=3.0, read=5.0, write=5.0, pool=3.0)
+            with httpx.Client(follow_redirects=False, timeout=timeout) as client:
+                with client.stream(
+                    "POST",
+                    integration.webhook_url,
+                    content=delivery.payload.encode("utf-8"),
+                    headers={
+                        "Content-Type": "application/json",
+                        TIMESTAMP_HEADER: timestamp,
+                        SIGNATURE_HEADER: sign_payload(secret, timestamp, delivery.payload),
+                        EVENT_HEADER: delivery.event_type,
+                        "User-Agent": "MSM-Hoster-Webhook/1.0",
+                    },
+                ) as response:
+                    status_code = response.status_code
         except httpx.HTTPError as exc:
             # Nur der Fehlertyp wird festgehalten: Fehlertexte von httpx
             # enthalten die vollstaendige Ziel-URL.
@@ -237,18 +297,18 @@ def deliver_pending(db: Session, *, limit: int = 25) -> int:
             db.commit()
             continue
 
-        delivery.response_code = response.status_code
-        if 200 <= response.status_code < 300:
+        delivery.response_code = status_code
+        if 200 <= status_code < 300:
             delivery.status = "ok"
             delivery.error = None
             delivery.next_attempt_at = None
-        elif 400 <= response.status_code < 500:
+        elif 400 <= status_code < 500:
             # Client-Fehler wiederholen sich nicht von allein.
             delivery.status = "failed"
-            delivery.error = f"HTTP {response.status_code}"
+            delivery.error = f"HTTP {status_code}"
             delivery.next_attempt_at = None
         else:
-            delivery.error = f"HTTP {response.status_code}"
+            delivery.error = f"HTTP {status_code}"
             _schedule_retry(delivery)
         db.commit()
     return attempted

@@ -55,7 +55,7 @@ export function KontoBestellungDetail() {
   }
 
   const bezahlt = Boolean(order.bezahltAm) || ['paid', 'fulfilled', 'refunded'].includes(order.status)
-  const bereitgestellt = order.status === 'fulfilled'
+  const bereitgestellt = ['paid', 'fulfilled'].includes(order.status)
   const abgebrochen = ['failed', 'cancelled', 'refunded'].includes(order.status)
   const timeline = [
     {

@@ -11,9 +11,10 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
+import re
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import text
+from sqlalchemy import event, text
 from sqlalchemy.orm import Session
 
 from models import (
@@ -90,46 +91,54 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def _naechste_nummer(db: Session, jahr: int, praefix: str) -> str:
+_SAFE_INVOICE_NAME_RE = re.compile(r"[^A-Za-z0-9._-]+")
+_SAFE_EXT_RE = re.compile(r"^[A-Za-z0-9]{1,8}$")
+
+
+def _next_sequence_number(
+    db: Session,
+    *,
+    table_name: str,
+    model: type,
+    jahr: int,
+    praefix: str,
+    err_msg: str,
+) -> str:
     db.execute(
         text(
-            "INSERT INTO shop_invoice_sequences (year, last_number) VALUES (:jahr, 0) "
+            f"INSERT INTO {table_name} (year, last_number) VALUES (:jahr, 0) "
             "ON CONFLICT (year) DO NOTHING"
         ),
         {"jahr": jahr},
     )
-    reihe = (
-        db.query(ShopInvoiceSequence)
-        .filter(ShopInvoiceSequence.year == jahr)
-        .with_for_update()
-        .first()
-    )
+    reihe = db.query(model).filter(model.year == jahr).with_for_update().first()
     if reihe is None:
-        raise InvoiceError("Nummernkreis konnte nicht gesperrt werden")
+        raise InvoiceError(err_msg)
     reihe.last_number += 1
     db.flush()
     return f"{praefix}-{jahr}-{reihe.last_number:04d}"
 
 
+def _naechste_nummer(db: Session, jahr: int, praefix: str) -> str:
+    return _next_sequence_number(
+        db,
+        table_name="shop_invoice_sequences",
+        model=ShopInvoiceSequence,
+        jahr=jahr,
+        praefix=praefix,
+        err_msg="Nummernkreis konnte nicht gesperrt werden",
+    )
+
+
 def _naechste_gutschrift_nummer(db: Session, jahr: int) -> str:
-    db.execute(
-        text(
-            "INSERT INTO shop_credit_note_sequences (year, last_number) VALUES (:jahr, 0) "
-            "ON CONFLICT (year) DO NOTHING"
-        ),
-        {"jahr": jahr},
+    return _next_sequence_number(
+        db,
+        table_name="shop_credit_note_sequences",
+        model=ShopCreditNoteSequence,
+        jahr=jahr,
+        praefix="GS",
+        err_msg="Gutschrift-Nummernkreis konnte nicht gesperrt werden",
     )
-    reihe = (
-        db.query(ShopCreditNoteSequence)
-        .filter(ShopCreditNoteSequence.year == jahr)
-        .with_for_update()
-        .first()
-    )
-    if reihe is None:
-        raise InvoiceError("Gutschrift-Nummernkreis konnte nicht gesperrt werden")
-    reihe.last_number += 1
-    db.flush()
-    return f"GS-{jahr}-{reihe.last_number:04d}"
 
 
 def _buyer_complete(order: ShopOrder) -> bool:
@@ -186,6 +195,14 @@ def _lines_from_order(db: Session, order: ShopOrder) -> list[ShopInvoiceLine]:
 
 def ensure_invoice_for_order(db: Session, order: ShopOrder) -> ShopInvoice | None:
     """Stellt die Rechnung einmalig aus; None, wenn Angaben fehlen."""
+    locked_order = (
+        db.query(ShopOrder)
+        .filter(ShopOrder.id == order.id)
+        .with_for_update()
+        .first()
+    )
+    if locked_order is not None:
+        order = locked_order
     vorhanden = (
         db.query(ShopInvoice).filter(ShopInvoice.order_id == order.id).first()
     )
@@ -254,8 +271,32 @@ def ensure_invoice_for_order(db: Session, order: ShopOrder) -> ShopInvoice | Non
         zeile.invoice_id = rechnung.id
         db.add(zeile)
     db.flush()
-    dispatch_invoice_email(rechnung, order.number)
+    _queue_invoice_email_after_commit(db, rechnung, order.number)
     return rechnung
+
+
+def _queue_invoice_email_after_commit(
+    db: Session, rechnung: ShopInvoice, order_number: str
+) -> None:
+    """Versendet die Rechnungs-Mail erst nach erfolgreichem Commit und verwirft bei Rollback."""
+    pending: list[tuple[ShopInvoice, str]] = db.info.setdefault(
+        "_pending_invoice_emails", []
+    )
+    pending.append((rechnung, order_number))
+    if db.info.get("_invoice_mail_hooks_installed"):
+        return
+    db.info["_invoice_mail_hooks_installed"] = True
+
+    def _on_after_commit(session: Session) -> None:
+        queued = list(session.info.pop("_pending_invoice_emails", []))
+        for inv, ord_num in queued:
+            dispatch_invoice_email(inv, ord_num)
+
+    def _on_after_rollback(session: Session) -> None:
+        session.info.pop("_pending_invoice_emails", None)
+
+    event.listen(db, "after_commit", _on_after_commit)
+    event.listen(db, "after_rollback", _on_after_rollback)
 
 
 def _hash(daten: bytes) -> str:
@@ -296,6 +337,14 @@ def credit_invoice(db: Session, invoice: ShopInvoice, reason: str) -> ShopInvoic
     """
     if invoice.type != "invoice":
         raise InvoiceError("Nur Rechnungen koennen gutgeschrieben werden")
+    locked_invoice = (
+        db.query(ShopInvoice)
+        .filter(ShopInvoice.id == invoice.id)
+        .with_for_update()
+        .first()
+    )
+    if locked_invoice is not None:
+        invoice = locked_invoice
     if invoice.status == "void":
         raise InvoiceError("Rechnung ist bereits storniert")
     vorhanden = (
@@ -467,4 +516,9 @@ def detail_response(db: Session, invoice: ShopInvoice) -> ShopInvoiceResponse:
 
 
 def download_name(invoice: ShopInvoice, endung: str) -> str:
-    return f"{invoice.number}.{endung}"
+    safe_base = _SAFE_INVOICE_NAME_RE.sub("_", (invoice.number or "").strip()).strip("._")
+    if not safe_base:
+        safe_base = f"beleg_{invoice.id}"
+    ext = endung.strip().lstrip(".")
+    safe_ext = ext if _SAFE_EXT_RE.fullmatch(ext) else "bin"
+    return f"{safe_base}.{safe_ext}"

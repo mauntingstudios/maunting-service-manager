@@ -8,6 +8,7 @@ import logging
 import re
 from typing import Any
 
+from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -197,9 +198,24 @@ def create_coupon(
     return coupon
 
 
+def _deactivate_stripe_promo_best_effort(coupon: ShopCoupon) -> None:
+    if not coupon.stripe_promotion_code_id or not stripe_settings_service.resolve_secret_key():
+        return
+    try:
+        stripe_service.deactivate_promotion_code(coupon.stripe_promotion_code_id)
+    except stripe_service.StripeError as exc:
+        logger.warning(
+            "Stripe-Promo-Code %s fuer Gutschein %s konnte nicht deaktiviert werden: %s",
+            coupon.stripe_promotion_code_id,
+            coupon.code,
+            exc,
+        )
+
+
 def update_coupon(
     db: Session, coupon: ShopCoupon, payload: ShopCouponUpdate, *, actor_id: int
 ) -> ShopCoupon:
+    was_active = bool(coupon.active)
     raw = payload.model_dump(exclude_unset=True)
     values = {
         field: value
@@ -218,6 +234,8 @@ def update_coupon(
     except IntegrityError as exc:
         db.rollback()
         raise ShopConfigurationError("Ein Gutschein mit diesem Code existiert bereits") from exc
+    if was_active and not bool(coupon.active):
+        _deactivate_stripe_promo_best_effort(coupon)
     audit_service.record_privileged_action(
         db,
         user_id=actor_id,
@@ -232,6 +250,7 @@ def update_coupon(
 
 
 def delete_coupon(db: Session, coupon: ShopCoupon, *, actor_id: int) -> None:
+    _deactivate_stripe_promo_best_effort(coupon)
     audit_service.record_privileged_action(
         db,
         user_id=actor_id,
@@ -327,7 +346,9 @@ def validate_coupon_for_order(
     return coupon, calculate_discount_cents(coupon, gross_before_coupon_cents)
 
 
-def consume_coupon_redemption(db: Session, coupon_code: str) -> None:
+def consume_coupon_redemption(
+    db: Session, coupon_code: str, *, allow_over_limit: bool = False
+) -> None:
     """Zaehlt eine Einloesung beim Zahlungseingang unter DB-Sperre hoch."""
     clean = coupon_code.strip().upper()
     if not clean:
@@ -344,7 +365,12 @@ def consume_coupon_redemption(db: Session, coupon_code: str) -> None:
         coupon.max_redemptions is not None
         and coupon.redemption_count >= coupon.max_redemptions
     ):
-        raise ShopConfigurationError("Gutscheincode ist bereits erschoepft")
+        if not allow_over_limit:
+            raise ShopConfigurationError("Gutscheincode ist bereits erschoepft")
+        logger.warning(
+            "Gutschein %s wurde ueber das Limit hinaus bei externem Zahlungseingang eingeloest",
+            coupon.code,
+        )
     coupon.redemption_count += 1
 
 
@@ -431,30 +457,59 @@ def get_public_promos(db: Session) -> ShopPublicPromosResponse:
 
 
 def get_shop_stats(db: Session) -> ShopStatsResponse:
-    orders = db.query(ShopOrder).all()
-    paid_orders = [o for o in orders if o.status == "paid"]
-    pending_orders = [o for o in orders if o.status == "pending_payment"]
-    refunded_orders = [o for o in orders if o.status == "refunded"]
-
-    active_subs = (
-        db.query(ShopSubscription)
-        .filter(ShopSubscription.status == "active")
-        .all()
+    total_orders = db.query(func.count(ShopOrder.id)).scalar() or 0
+    paid_orders, paid_gross_cents, paid_net_cents = (
+        db.query(
+            func.count(ShopOrder.id),
+            func.coalesce(func.sum(ShopOrder.gross_cents), 0),
+            func.coalesce(func.sum(ShopOrder.net_cents), 0),
+        )
+        .filter(ShopOrder.status == "paid")
+        .one()
     )
-    active_addon_subs = sum(1 for s in active_subs if s.addon_id is not None)
+    pending_orders = (
+        db.query(func.count(ShopOrder.id))
+        .filter(ShopOrder.status == "pending_payment")
+        .scalar()
+        or 0
+    )
+    refunded_orders, refunded_gross_cents = (
+        db.query(
+            func.count(ShopOrder.id),
+            func.coalesce(func.sum(ShopOrder.gross_cents), 0),
+        )
+        .filter(ShopOrder.status == "refunded")
+        .one()
+    )
+
+    active_subscriptions = (
+        db.query(func.count(ShopSubscription.id))
+        .filter(ShopSubscription.status == "active")
+        .scalar()
+        or 0
+    )
+    active_addon_subscriptions = (
+        db.query(func.count(ShopSubscription.id))
+        .filter(
+            ShopSubscription.status == "active",
+            ShopSubscription.addon_id.is_not(None),
+        )
+        .scalar()
+        or 0
+    )
     coupons = db.query(ShopCoupon).all()
     now = _now()
 
     return ShopStatsResponse(
-        total_orders=len(orders),
-        paid_orders=len(paid_orders),
-        pending_orders=len(pending_orders),
-        refunded_orders=len(refunded_orders),
-        paid_gross_cents=sum(o.gross_cents for o in paid_orders),
-        paid_net_cents=sum(o.net_cents for o in paid_orders),
-        refunded_gross_cents=sum(o.gross_cents for o in refunded_orders),
-        active_subscriptions=len(active_subs),
-        active_addon_subscriptions=active_addon_subs,
+        total_orders=int(total_orders),
+        paid_orders=int(paid_orders),
+        pending_orders=int(pending_orders),
+        refunded_orders=int(refunded_orders),
+        paid_gross_cents=int(paid_gross_cents),
+        paid_net_cents=int(paid_net_cents),
+        refunded_gross_cents=int(refunded_gross_cents),
+        active_subscriptions=int(active_subscriptions),
+        active_addon_subscriptions=int(active_addon_subscriptions),
         active_coupons=sum(1 for c in coupons if _is_coupon_currently_valid(c, now)),
         coupon_redemptions=sum(c.redemption_count for c in coupons),
     )

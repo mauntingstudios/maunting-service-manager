@@ -29,7 +29,6 @@ from schemas.hoster import (
 )
 from services import (
     hoster_handoff_service,
-    hoster_integration_service,
     hoster_service_lifecycle,
     hoster_webhook_service,
 )
@@ -226,6 +225,7 @@ def simulate_event(
             external_subject=external_subject,
             product_key=product_key,
             plan_id=plan_id,
+            verify_subject=False,
         )
         return HosterSimulationResponse(
             ok=True,
@@ -243,6 +243,7 @@ def simulate_event(
             external_subject=external_subject,
             product_key=product_key,
             plan_id=plan_id,
+            verify_subject=False,
         )
         return HosterSimulationResponse(
             ok=True,
@@ -260,6 +261,7 @@ def simulate_event(
             external_subject=external_subject,
             product_key=product_key,
             plan_id=plan_id,
+            verify_subject=False,
         )
         return HosterSimulationResponse(
             ok=True,
@@ -330,7 +332,13 @@ def clean_sandbox_data(db: Session, *, integration: HosterIntegration) -> int:
     for ident in identities:
         user = db.query(User).filter(User.id == ident.user_id).first()
         db.delete(ident)
-        if user is not None and not user.is_owner and (user.email or "").startswith("sim-"):
+        email_val = (user.email or "").lower() if user is not None else ""
+        if (
+            user is not None
+            and not user.is_owner
+            and email_val.startswith("sim-")
+            and email_val.endswith(("@example.com", "@sandbox.invalid"))
+        ):
             try:
                 AuthService.delete_account_atomically(db, user)
             except HTTPException as exc:

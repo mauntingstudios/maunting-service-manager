@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 import re
 from urllib.parse import urlencode
 
@@ -24,7 +25,7 @@ from config import settings
 
 from database import get_db
 from dependencies import get_current_user, verify_csrf
-from middleware.rate_limit import shop_coupon_rate_limit, shop_public_rate_limit
+from middleware.rate_limit import get_client_ip, shop_coupon_rate_limit, shop_public_rate_limit
 from models import (
     Server,
     ShopAddon,
@@ -164,6 +165,46 @@ def _coupon_or_404(db: Session, coupon_id: int) -> ShopCoupon:
 
 def _shop_error(exc: shop_catalog_service.ShopConfigurationError) -> HTTPException:
     return HTTPException(status_code=422, detail=str(exc))
+
+
+def _require_owned_server_entitlement(
+    db: Session, user_id: int, entitlement_id: int
+) -> ShopEntitlement:
+    ent = (
+        db.query(ShopEntitlement)
+        .filter(
+            ShopEntitlement.id == entitlement_id,
+            ShopEntitlement.user_id == user_id,
+            ShopEntitlement.kind == "server",
+        )
+        .first()
+    )
+    if ent is None:
+        raise HTTPException(status_code=404, detail="Freischaltung nicht gefunden")
+    if ent.provisioning_status == "purged" or ent.server_id is None:
+        raise HTTPException(
+            status_code=409,
+            detail="Server wurde bereits endgueltig geloescht",
+        )
+    return ent
+
+
+def _is_safe_local_backup_path(raw_path: str | None) -> bool:
+    if not raw_path or ".." in raw_path:
+        return False
+    candidate = Path(raw_path)
+    if candidate.is_symlink() or not candidate.is_file():
+        return False
+    backups_root_raw = getattr(settings, "backups_dir", None)
+    if backups_root_raw:
+        try:
+            root = Path(backups_root_raw).resolve()
+            resolved = candidate.resolve()
+            if not resolved.is_relative_to(root):
+                return False
+        except OSError:
+            return False
+    return True
 
 
 # ── Oeffentlich: Katalog und Artwork ─────────────────────────────────────
@@ -392,7 +433,7 @@ async def create_my_order(
     if shop_lifecycle_settings_service.checkout_captcha_enabled(db=db):
         await CaptchaService.verify_token(
             payload.captcha_token,
-            client_ip=request.client.host if request.client else None,
+            client_ip=get_client_ip(request),
             force=True,
         )
     try:
@@ -426,7 +467,23 @@ def pay_my_order_demo(
     user: User = Depends(get_current_user),
     _: None = Depends(verify_csrf),
 ) -> ShopOrderResponse:
-    """Lokaler Zahlungserfolg, bis Stripe angebunden ist."""
+    """Lokaler Zahlungserfolg (nur Debug-Modus und solange Stripe nicht voll konfiguriert ist)."""
+    if not settings.debug:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": "shop_demo_pay_disabled",
+                "message": "Demo-Zahlung ist im Produktivbetrieb deaktiviert",
+            },
+        )
+    if stripe_settings_service.configured():
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "stripe_configured",
+                "message": "Stripe ist konfiguriert; Demo-Zahlung ist deaktiviert",
+            },
+        )
     order = shop_order_service.get_order(db, user.id, order_id)
     if order is None:
         raise HTTPException(status_code=404, detail="Bestellung nicht gefunden")
@@ -492,7 +549,19 @@ def start_my_order_checkout(
             .filter(ShopCoupon.code == order.coupon_code)
             .first()
         )
-        if coupon is not None and coupon.stripe_promotion_code_id:
+        if coupon is None:
+            raise HTTPException(status_code=409, detail="Gutscheincode existiert nicht mehr")
+        try:
+            shop_coupon_service.validate_coupon_for_order(
+                db,
+                coupon.code,
+                kind=item0.kind,
+                plan_id=item0.plan_id,
+                gross_before_coupon_cents=order.gross_cents + order.coupon_discount_cents,
+            )
+        except shop_catalog_service.ShopConfigurationError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        if coupon.stripe_promotion_code_id:
             stripe_promo_id = coupon.stripe_promotion_code_id
 
     try:
@@ -504,7 +573,10 @@ def start_my_order_checkout(
             stripe_promotion_code_id=stripe_promo_id,
         )
     except stripe_service.StripeNotConfigured as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "stripe_not_configured", "message": str(exc)},
+        ) from exc
     except stripe_service.StripeError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     order.payment_provider = "stripe"
@@ -722,7 +794,7 @@ def get_seller_settings(
 def set_seller_settings(
     payload: ShopSellerSettingsUpdate,
     db: Session = Depends(get_db),
-    actor: User = Depends(_require_shop_perm("shop.write", "panel.settings.write")),
+    actor: User = Depends(_require_shop_perm("panel.settings.write")),
     _: None = Depends(verify_csrf),
 ) -> dict:
     try:
@@ -754,7 +826,7 @@ def get_stripe_status(
 def set_stripe_keys(
     payload: ShopStripeKeysUpdate,
     db: Session = Depends(get_db),
-    actor: User = Depends(_require_shop_perm("shop.write", "panel.settings.write")),
+    actor: User = Depends(_require_shop_perm("panel.settings.write")),
     _: None = Depends(verify_csrf),
 ) -> dict:
     """Setzt Stripe-Schluessel; Werte gehen nie zurueck, nur der Status."""
@@ -1051,22 +1123,7 @@ def list_my_entitlement_backups(
     """Listet Backups eines eigenen Shop-Servers (auch waehrend der Schonfrist)."""
     from models import Backup
 
-    ent = (
-        db.query(ShopEntitlement)
-        .filter(
-            ShopEntitlement.id == entitlement_id,
-            ShopEntitlement.user_id == user.id,
-            ShopEntitlement.kind == "server",
-        )
-        .first()
-    )
-    if ent is None:
-        raise HTTPException(status_code=404, detail="Freischaltung nicht gefunden")
-    if ent.provisioning_status == "purged" or ent.server_id is None:
-        raise HTTPException(
-            status_code=409,
-            detail="Server wurde bereits endgueltig geloescht",
-        )
+    ent = _require_owned_server_entitlement(db, user.id, entitlement_id)
 
     rows = (
         db.query(Backup)
@@ -1082,7 +1139,7 @@ def list_my_entitlement_backups(
             created_at=row.created_at,
             encrypted=bool(getattr(row, "encrypted", False)),
             downloadable=bool(
-                (row.filename and ".." not in row.filename and os.path.isfile(row.filename))
+                _is_safe_local_backup_path(row.filename)
                 or getattr(row, "s3_key", None)
             ),
         )
@@ -1100,22 +1157,7 @@ def download_my_entitlement_backup(
     """Welt-Export-Download fuer den Besitzer (inkl. waehrend der Schonfrist vor Loeschung)."""
     from models import Backup
 
-    ent = (
-        db.query(ShopEntitlement)
-        .filter(
-            ShopEntitlement.id == entitlement_id,
-            ShopEntitlement.user_id == user.id,
-            ShopEntitlement.kind == "server",
-        )
-        .first()
-    )
-    if ent is None:
-        raise HTTPException(status_code=404, detail="Freischaltung nicht gefunden")
-    if ent.provisioning_status == "purged" or ent.server_id is None:
-        raise HTTPException(
-            status_code=409,
-            detail="Server wurde bereits endgueltig geloescht",
-        )
+    ent = _require_owned_server_entitlement(db, user.id, entitlement_id)
 
     backup = (
         db.query(Backup)
@@ -1128,7 +1170,7 @@ def download_my_entitlement_backup(
     ext = ".enc" if getattr(backup, "encrypted", False) else ".tar.gz"
     safe_name = f"server-{ent.server_id}-backup-{backup.id}{ext}"
 
-    if backup.filename and ".." not in backup.filename and os.path.isfile(backup.filename):
+    if _is_safe_local_backup_path(backup.filename):
         return FileResponse(
             backup.filename,
             media_type="application/octet-stream",
@@ -1164,7 +1206,7 @@ def sync_entitlement_admin(
     )
     if entitlement is None:
         raise HTTPException(status_code=404, detail="Entitlement nicht gefunden")
-    return shop_order_service.entitlement_response(entitlement)
+    return shop_order_service.entitlement_response(entitlement, db=db)
 
 
 # ── Panel: Tarife verwalten ──────────────────────────────────────────────
@@ -1460,19 +1502,30 @@ def get_server_subscription(
     )
     if entitlement is None:
         return ShopServerSubscriptionResponse(has_subscription=False)
+    can_view_billing = (
+        entitlement.user_id == user.id
+        or permission_service.has_global_permission(db, user, "shop.read")
+        or permission_service.has_global_permission(db, user, "panel.settings.read")
+    )
     abo = (
         db.query(ShopSubscription)
         .filter(ShopSubscription.order_item_id == entitlement.order_item_id)
         .first()
+        if can_view_billing
+        else None
     )
     return ShopServerSubscriptionResponse(
         has_subscription=True,
         subscription=(
-            shop_order_service.subscription_response(abo)
+            shop_order_service.subscription_response(abo, db=db)
             if abo is not None
             else None
         ),
-        entitlement=shop_order_service.entitlement_response(entitlement),
+        entitlement=(
+            shop_order_service.entitlement_response(entitlement, db=db)
+            if can_view_billing
+            else None
+        ),
         ram_mb=entitlement.ram_mb,
         cpu=entitlement.cpu,
         slots=entitlement.slots,
@@ -1533,6 +1586,19 @@ def update_server_slots(
         result = shop_slot_service.apply_server_slots(db, server, payload.slots)
     except shop_slot_service.SlotConfigurationError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    active_ent = (
+        db.query(ShopEntitlement)
+        .filter(
+            ShopEntitlement.server_id == server.id,
+            ShopEntitlement.kind == "server",
+            ShopEntitlement.provisioning_status != "purged",
+        )
+        .order_by(ShopEntitlement.id.desc())
+        .first()
+    )
+    if active_ent is not None:
+        active_ent.slots = payload.slots
 
     live = player_query_service.query_server_players(db, server)
     downgrade_warning = bool(result["downgrade_warning"]) or bool(

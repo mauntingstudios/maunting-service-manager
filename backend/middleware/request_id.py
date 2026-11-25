@@ -110,11 +110,15 @@ class RequestIDMiddleware:
         method = scope.get("method", "")
         # Pfad ohne Query-Parameter (Datenschutz: keine Tokens im Query-String)
         raw_path = scope.get("path", "")
+        if raw_path.startswith("/api/hoster/handoff/"):
+            safe_path = "/api/hoster/handoff/[REDACTED]"
+        else:
+            safe_path = raw_path
 
         ctx_dict: Dict[str, Any] = {
             "request_id": request_id,
             "method": method,
-            "path": raw_path,
+            "path": safe_path,
             "status": "",
             "duration_ms": 0.0,
             "user_id": "",
@@ -146,14 +150,14 @@ class RequestIDMiddleware:
 
             try:
                 from routers.metrics import record_request_metrics
-                record_request_metrics(method, raw_path, status_code, duration_s)
+                record_request_metrics(method, safe_path, status_code, duration_s)
             except Exception:
                 pass
 
             access_logger.info(
                 "%s %s -> %s in %sms [%s]",
                 method,
-                raw_path,
+                safe_path,
                 status_code,
                 duration,
                 request_id,

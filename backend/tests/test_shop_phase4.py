@@ -252,7 +252,7 @@ def test_checkout_stripe_promotion_code_and_redirect_validation(
         )
         assert ok_plain.status_code == 200, ok_plain.text
         plain_map = dict(captured_with_coupon)
-        assert plain_map["allow_promotion_codes"] == "true"
+        assert "allow_promotion_codes" not in plain_map
         assert "discounts[0][promotion_code]" not in plain_map
 
 

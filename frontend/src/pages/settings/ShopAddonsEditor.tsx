@@ -15,7 +15,7 @@ import {
   Switch,
   Zustandsflaeche,
 } from '@maunting/ui'
-import { api } from '@/api/client'
+import { SanitizedApiError, api } from '@/api/client'
 import { rbacApi } from '@/api/rbac'
 import {
   shopAdminApi,
@@ -213,7 +213,7 @@ export function ShopAddonsEditor() {
       .then(setAddons)
       .catch((error: unknown) => {
         toast.error(
-          error instanceof Error ? error.message : t('settings.shop.addons.fehler'),
+          error instanceof SanitizedApiError ? error.message : t('settings.shop.addons.fehler'),
         )
         setAddons([])
       })
@@ -380,7 +380,7 @@ export function ShopAddonsEditor() {
       laden()
     } catch (error: unknown) {
       toast.error(
-        error instanceof Error ? error.message : t('settings.shop.addons.fehler'),
+        error instanceof SanitizedApiError ? error.message : t('settings.shop.addons.fehler'),
       )
     } finally {
       setBusy(false)
@@ -403,7 +403,7 @@ export function ShopAddonsEditor() {
       laden()
     } catch (error: unknown) {
       toast.error(
-        error instanceof Error ? error.message : t('settings.shop.addons.fehler'),
+        error instanceof SanitizedApiError ? error.message : t('settings.shop.addons.fehler'),
       )
     }
   }

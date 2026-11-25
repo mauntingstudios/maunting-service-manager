@@ -37,6 +37,8 @@ def _grant_shop_manage(db: Session, user: User) -> User:
     db.add(role)
     db.flush()
     db.add(RolePermission(role_id=role.id, permission_key="ai.shop.manage"))
+    db.add(RolePermission(role_id=role.id, permission_key="shop.read"))
+    db.add(RolePermission(role_id=role.id, permission_key="shop.write"))
     db.commit()
     set_user_roles(db, user, [role.id])
     db.commit()
@@ -53,6 +55,21 @@ def test_shop_tools_require_ai_shop_manage_permission(
         ai_action_service.execute_read_tool(
             db, user=regular_user, tool_name="read_shop_catalog", arguments={}
         )
+
+    # ai.shop.manage allein (ohne shop.read/shop.write) darf ebenfalls nicht genuegen
+    ai_only_role = Role(name=f"ai-only-{uuid4().hex[:6]}", is_system=False)
+    db.add(ai_only_role)
+    db.flush()
+    db.add(RolePermission(role_id=ai_only_role.id, permission_key="ai.shop.manage"))
+    db.commit()
+    set_user_roles(db, regular_user, [ai_only_role.id])
+    db.commit()
+    with pytest.raises(AiActionValidationError, match="shop.read"):
+        ai_action_service.execute_read_tool(
+            db, user=regular_user, tool_name="read_shop_catalog", arguments={}
+        )
+    set_user_roles(db, regular_user, [])
+    db.commit()
 
     for tool_name, args in (
         (

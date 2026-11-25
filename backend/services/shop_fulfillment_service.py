@@ -36,10 +36,7 @@ from services.hoster_service_lifecycle import (
     CUSTOMER_SERVER_PERMISSIONS,
     _borne_role,
 )
-from services.operation_task_service import (
-    TASK_SERVER_PROVISION,
-    _hash_idempotency_key,
-)
+from services.operation_task_service import resolve_provisioning_retry_key
 
 
 logger = logging.getLogger(__name__)
@@ -135,50 +132,6 @@ def _error_code(exc: Exception) -> str:
     if isinstance(exc, HTTPException):
         return f"http_{exc.status_code}"
     return "shop_provisioning_failed"
-
-
-def _provisioning_keys(
-    db: Session, *, actor_user_id: int, entitlement_id: int
-) -> tuple[str, str | None]:
-    """Ermittelt Idempotenzschluessel und optionalen Retry-Vorgaenger."""
-    base_key = f"shop-entitlement-{entitlement_id}"
-    latest = (
-        db.query(OperationTask)
-        .filter(
-            OperationTask.actor_user_id == actor_user_id,
-            OperationTask.task_type == TASK_SERVER_PROVISION,
-            OperationTask.idempotency_key_hash.isnot(None),
-        )
-        .order_by(OperationTask.created_at.desc())
-    )
-    # Erst pruefen, ob bereits eine Aufgabe fuer den Basisschluessel existiert.
-    base_hash = _hash_idempotency_key(base_key)
-    base_task = latest.filter(
-        OperationTask.idempotency_key_hash == base_hash
-    ).first()
-    if base_task is None or base_task.status != "failed":
-        return base_key, None
-
-    # Fuer Wiederholungsversuche den letzten fehlgeschlagenen Versuch verketten,
-    # falls bereits ein frueherer Retry gescheitert ist.
-    vorher = base_task
-    while True:
-        naechster_key = f"{base_key}-retry-{vorher.attempt + 1}"
-        naechster_hash = _hash_idempotency_key(naechster_key)
-        gefunden = (
-            db.query(OperationTask)
-            .filter(
-                OperationTask.actor_user_id == actor_user_id,
-                OperationTask.task_type == TASK_SERVER_PROVISION,
-                OperationTask.idempotency_key_hash == naechster_hash,
-            )
-            .first()
-        )
-        if gefunden is None:
-            return naechster_key, vorher.id
-        if gefunden.status != "failed":
-            return naechster_key, None
-        vorher = gefunden
 
 
 def _sync_customer_roles(
@@ -359,6 +312,13 @@ def _handle_server_http_error(
 ) -> None:
     db.rollback()
     error_code = _error_code(exc)
+    if exc.status_code == 409 and error_code == "task_in_progress":
+        logger.info(
+            "Shop-Server-Aktion laeuft bereits (entitlement_id=%s, order_id=%s)",
+            entitlement_id,
+            order_id,
+        )
+        return
     logger.warning(
         "Shop-Server-Provisionierung fehlgeschlagen (entitlement_id=%s, order_id=%s, status=%s, code=%s)",
         entitlement_id,
@@ -391,6 +351,15 @@ def _sync_server_entitlement(
 
     ent_id = ent.id
     order_id = ent.order_id
+    locked_ent = (
+        db.query(ShopEntitlement)
+        .filter(ShopEntitlement.id == ent_id)
+        .with_for_update(of=ShopEntitlement, skip_locked=True)
+        .first()
+    )
+    if locked_ent is None:
+        return
+    ent = locked_ent
     owner = _active_owner(db)
     actor_user_id = owner.id if owner is not None else None
 
@@ -449,8 +418,10 @@ def _sync_server_entitlement(
                 actor = _shop_actor(
                     db, origin=origin, correlation_id=correlation_id
                 )
-                idempotency_key, retry_of_id = _provisioning_keys(
-                    db, actor_user_id=actor.user.id, entitlement_id=ent.id
+                idempotency_key, retry_of_id = resolve_provisioning_retry_key(
+                    db,
+                    base_key=f"shop-entitlement-{ent.id}",
+                    actor_user_id=actor.user.id,
                 )
                 allow_overbooking = (
                     shop_lifecycle_settings_service.is_shop_overbooking_allowed(db)
@@ -608,6 +579,7 @@ def _sync_server_entitlement(
         server_id = ent.server_id
         user_id = ent.user_id
         ziel_status = ent.status
+        stop_failed = False
         if server_id is not None:
             try:
                 actor = _shop_actor(
@@ -618,9 +590,10 @@ def _sync_server_entitlement(
                     server_id=server_id,
                     operation="stop",
                     actor=actor,
-                    idempotency_key=f"shop-entitlement-{ent_id}-{ziel_status}-{uuid4()}",
+                    idempotency_key=f"shop-entitlement-{ent_id}-{ziel_status}-stop",
                 )
             except HTTPException:
+                stop_failed = True
                 logger.warning(
                     "Shop-Server konnte beim Statuswechsel auf %s nicht gestoppt werden (entitlement_id=%s, server_id=%s)",
                     ziel_status,
@@ -629,6 +602,7 @@ def _sync_server_entitlement(
                 )
             except Exception:
                 db.rollback()
+                stop_failed = True
                 logger.exception(
                     "Unerwarteter Fehler beim Stoppen des Shop-Servers (entitlement_id=%s, server_id=%s)",
                     ent_id,
@@ -645,8 +619,12 @@ def _sync_server_entitlement(
             .first()
         )
         if ent is not None:
-            ent.provisioning_status = ziel_status
-            ent.provisioning_error = None
+            if stop_failed:
+                ent.provisioning_status = "failed"
+                ent.provisioning_error = "shop_stop_failed"
+            else:
+                ent.provisioning_status = ziel_status
+                ent.provisioning_error = None
             audit_service.record_privileged_action(
                 db,
                 user_id=actor_user_id if actor_user_id is not None else ent.user_id,

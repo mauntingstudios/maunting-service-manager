@@ -28,6 +28,7 @@ import type {
   SubscriptionDeletionMode,
 } from '../../api/types'
 import { formatEuro, kurzzeitPreisCent, RABATT_PROZENT } from '../../preis'
+import { isSafeHttpUrl } from '../../safeUrl'
 
 export function KontoAbos() {
   const { t } = useTranslation()
@@ -103,6 +104,9 @@ export function KontoAbos() {
           ? await shopApi.extendSubscription(abo.id, 1, durationDays)
           : await shopApi.extendSubscription(abo.id, months)
       if (ergebnis.checkoutUrl) {
+        if (!isSafeHttpUrl(ergebnis.checkoutUrl)) {
+          throw new SanitizedApiError(t('shop.konto.abos.verlaengernFehler'), { status: 502 })
+        }
         window.location.assign(ergebnis.checkoutUrl)
         return
       }

@@ -5011,6 +5011,7 @@
         "laedt": "Tarife werden geladen …",
         "pflichtfelder": "Spiel und Tarifname sind Pflicht.",
         "maxFehler": "Das Maximum darf nicht unter dem enthaltenen Wert liegen.",
+        "preisFehler": "Bitte einen gültigen Preis eintragen. Ein Lifetime-Preis muss größer als 0 sein.",
         "steuerFehler": "Der Steuersatz muss zwischen 0 und 100 liegen.",
         "galerieTitel": "Galerie & Vorschau",
         "bilderHinzufuegen": "Bilder hinzufügen",
@@ -8693,7 +8694,7 @@
     "webhookSecret": "Webhook-Secret",
     "webhookSecretHint": "Schlüssel der HMAC-Signatur ausgehender Webhooks. Der Shop prüft damit, dass ein Aufruf wirklich von MSM stammt.",
     "apiKey": "API-Key",
-    "apiKeyHint": "Damit authentifiziert sich der Shop gegen /api/hoster/v1. MSM speichert nur einen Hash — nach dem Anlegen ist der Schlüssel nicht mehr abrufbar, nur rotierbar.",
+    "apiKeyHint": "Damit authentifiziert sich der Shop gegen /api/hoster/v1. MSM speichert nur einen Hash. Nach dem Anlegen ist der Schlüssel nicht mehr abrufbar, nur rotierbar.",
     "graceDays": "Aufbewahrung nach Kündigung (Tage)",
     "graceDaysHint": "Nach einer Kündigung bleiben Server und Daten so viele Tage erhalten, bevor der Aufräumlauf sie endgültig löscht. 0 gibt sie sofort zum Löschen frei, mehr als 365 Tage sind nicht möglich.",
     "unpaidDeleteDays": "Löschfrist bei Zahlungsverzug (Tage)",
@@ -9101,7 +9102,7 @@
       "targetBody": "Sprungziel im Panel. Erlaubt sind ausschließlich /servers, /servers/{id} und /dashboard. Default ist /servers, alles andere ergibt 422.",
       "commandLabel": "Handoff erzeugen",
       "createOnClick": "Der Link sollte deshalb beim Klick erzeugt werden, nicht beim Rendern der Shop-Seite.",
-      "splitHosting": "Split-Hosting beachten: die zurückgegebene URL wird aus MSM_PANEL_URL gebaut, während /api/hoster/handoff/{token} eine Backend-Route ist. Wer Frontend und API auf getrennten Hosts betreibt, muss sicherstellen, dass MSM_PANEL_URL auf einen Host zeigt, der /api/* an das Backend weiterreicht — sonst führt der Link ins Leere.",
+      "splitHosting": "Split-Hosting beachten: die zurückgegebene URL wird aus MSM_PANEL_URL gebaut, während /api/hoster/handoff/{token} eine Backend-Route ist. Wer Frontend und API auf getrennten Hosts betreibt, muss sicherstellen, dass MSM_PANEL_URL auf einen Host zeigt, der /api/* an das Backend weiterreicht. Sonst führt der Link ins Leere.",
       "oidc": "Zusätzlich kann der bestehende Custom-OIDC-Login verwendet werden. Beides ist gleichzeitig möglich: Handoff für den direkten Klick aus dem Shop, OIDC für einen normalen erneuten Login im Panel."
     },
     "handoffFact": {

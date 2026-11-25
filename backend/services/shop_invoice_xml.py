@@ -8,10 +8,16 @@ UBL-CreditNote (381) mit Bezug auf die Ursprungsrechnung.
 
 from __future__ import annotations
 
+import re
 import threading
 from xml.etree import ElementTree as ET
 
 from models import ShopInvoice, ShopInvoiceLine
+
+_XML_CTRL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]")
+_XRECHNUNG_30_CUSTOMIZATION_ID = (
+    "urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0"
+)
 
 _INVOICE_NS = "urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
 _CREDIT_NS = "urn:oasis:names:specification:ubl:schema:xsd:CreditNote-2"
@@ -44,26 +50,17 @@ def _amount(cents: int) -> str:
     return f"{cents / 100:.2f}"
 
 
+def _xml_safe(text: str) -> str:
+    return _XML_CTRL_RE.sub("", text)
+
+
 def _sub(parent: ET.Element, tag: str, text: str | None = None, **attrs: str) -> ET.Element:
     element = ET.SubElement(parent, _q(tag))
     for name, wert in attrs.items():
-        element.set(name, wert)
+        element.set(name, _xml_safe(wert))
     if text is not None:
-        element.text = text
+        element.text = _xml_safe(text)
     return element
-
-
-def _tax_groups(lines: list[ShopInvoiceLine], tax_total: int) -> dict[tuple[int, str], int]:
-    gruppen: dict[tuple[int, str], int] = {}
-    for line in lines:
-        key = (line.tax_rate_percent, line.tax_category)
-        gruppen[key] = gruppen.get(key, 0) + line.line_net_cents
-    steuer = {key: round(netto * key[0] / 100) for key, netto in gruppen.items()}
-    differenz = tax_total - sum(steuer.values())
-    if differenz and steuer:
-        groesste = max(steuer, key=lambda key: gruppen[key])
-        steuer[groesste] += differenz
-    return {key: steuer[key] for key in gruppen}
 
 
 def _build(
@@ -85,7 +82,7 @@ def _build(
         _sub(
             root,
             "CustomizationID",
-            "urn:cen.eu:en16931:2017#compliant#urn:xoev-de:kosit:standard:xrechnung_3.0",
+            _XRECHNUNG_30_CUSTOMIZATION_ID,
         )
         _sub(root, "ProfileID", "urn:fdc:peppol.eu:2017:poacc:billing:01:1.0")
         _sub(root, "ID", invoice.number)
@@ -163,16 +160,15 @@ def _build(
             tage = max(0, (invoice.due_date - invoice.issued_at.date()).days)
             _sub(bedingungen, "Note", f"Zahlbar innerhalb von {tage} Tagen")
 
-        gruppen = _tax_groups(lines, invoice.tax_cents)
         steuersumme = ET.SubElement(root, _q("TaxTotal"))
         _sub(steuersumme, "TaxAmount", _amount(invoice.tax_cents), currencyID=invoice.currency)
-        for (satz, kategorie), netto in gruppen.items():
+        for satz, kategorie, netto, steuer in _tax_breakdown(lines, invoice.tax_cents):
             zwischen = ET.SubElement(steuersumme, _q("TaxSubtotal"))
             _sub(zwischen, "TaxableAmount", _amount(netto), currencyID=invoice.currency)
             _sub(
                 zwischen,
                 "TaxAmount",
-                _amount(round(netto * satz / 100)),
+                _amount(steuer),
                 currencyID=invoice.currency,
             )
             kategorie_element = ET.SubElement(zwischen, _q("TaxCategory"))
@@ -270,9 +266,9 @@ def _cii_el(
 ) -> ET.Element:
     element = ET.SubElement(parent, f"{{{ns}}}{tag}")
     for name, wert in attrs.items():
-        element.set(name, wert)
+        element.set(name, _xml_safe(wert))
     if text is not None:
-        element.text = text
+        element.text = _xml_safe(text)
     return element
 
 
@@ -299,7 +295,7 @@ def build_facturx_cii_xml(
             gl,
             _CII_RAM,
             "ID",
-            "urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0",
+            _XRECHNUNG_30_CUSTOMIZATION_ID,
         )
 
         doc = _cii_el(root, _CII_RSM, "ExchangedDocument")

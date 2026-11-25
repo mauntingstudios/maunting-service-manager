@@ -6,6 +6,7 @@ import hashlib
 import hmac
 import time
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 
@@ -49,7 +50,10 @@ class MsmHosterClient:
     """Server-to-server HTTP client for `/api/hoster/v1/*`."""
 
     def __init__(self, panel_url: str, api_key: str, timeout: float = 30.0) -> None:
-        self.base_url = panel_url.rstrip("/")
+        normalized_url = panel_url.strip().rstrip("/")
+        if not normalized_url.startswith(("https://", "http://")):
+            raise ValueError("panel_url must start with https:// or http://")
+        self.base_url = normalized_url
         self.api_key = api_key
         self.timeout = timeout
 
@@ -148,18 +152,20 @@ class MsmHosterClient:
         if purge_immediately:
             payload["purge_immediately"] = True
 
+        svc_path = quote(external_service_id, safe="")
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             resp = await client.put(
-                f"{self.base_url}/api/hoster/v1/services/{external_service_id}",
+                f"{self.base_url}/api/hoster/v1/services/{svc_path}",
                 headers=self._headers(),
                 json=payload,
             )
             return self._parse_response(resp)
 
     async def get_service(self, external_service_id: str) -> dict[str, Any]:
+        svc_path = quote(external_service_id, safe="")
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             resp = await client.get(
-                f"{self.base_url}/api/hoster/v1/services/{external_service_id}",
+                f"{self.base_url}/api/hoster/v1/services/{svc_path}",
                 headers={"X-MSM-Hoster-Key": self.api_key},
             )
             return self._parse_response(resp)

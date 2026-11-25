@@ -740,11 +740,9 @@ export function ShopInvoicesSection({ data }: { data: ShopBetriebData }) {
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <Badge variant={inv.status === 'issued' ? 'success' : 'default'}>
-                    {inv.type === 'credit_note'
-                      ? t('settings.shop.betrieb.typGutschrift')
-                      : t(`settings.shop.betrieb.belegStatus.${inv.status}`, {
-                          defaultValue: inv.status,
-                        })}
+                    {t(`settings.shop.betrieb.belegStatus.${inv.status}`, {
+                      defaultValue: inv.status,
+                    })}
                   </Badge>
                   <span className="text-sm font-bold tabular-nums text-primary">
                     {formatEuro(inv.gross_cents)}
@@ -879,15 +877,3 @@ export function ShopWebhooksSection({ data }: { data: ShopBetriebData }) {
   )
 }
 
-export function ShopBetriebKarten() {
-  const data = useShopBetriebData()
-  return (
-    <div className="space-y-8">
-      <ShopOrdersSection data={data} />
-      <div className="border-t border-outline-variant/25 pt-6">
-        <ShopInvoicesSection data={data} />
-      </div>
-      <ShopWebhooksSection data={data} />
-    </div>
-  )
-}

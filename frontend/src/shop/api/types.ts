@@ -98,19 +98,3 @@ export interface Entitlement {
   pausedAt?: string | null
   pauseDaysUsed?: number
 }
-
-export interface PaymentMethod {
-  id: string
-  art: 'card' | 'sepa'
-  bezeichnung: string
-  standard: boolean
-}
-
-export interface ShopSettings {
-  shopEnabled: boolean
-  waehrung: 'EUR'
-  stripeModus: 'test' | 'live'
-  stripeKonfiguriert: boolean
-  rechnungsPraefix: string
-  steuersatzProzent: number
-}

@@ -22,13 +22,17 @@ from services import audit_service
 
 _SAFE_FILENAME_RE = re.compile(r"[^A-Za-z0-9._-]+")
 _CSV_FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
+_CSV_CTRL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
 
 
 def _csv_safe(value: str | None) -> str:
     if value is None:
         return ""
-    text = str(value)
-    if text and text[0] in _CSV_FORMULA_PREFIXES:
+    text = _CSV_CTRL_RE.sub("", str(value))
+    stripped = text.lstrip(" \t\r\n")
+    if (text and text[0] in _CSV_FORMULA_PREFIXES) or (
+        stripped and stripped[0] in ("=", "+", "-", "@")
+    ):
         return "'" + text
     return text
 
@@ -98,6 +102,10 @@ def build_audit_export_zip(
             dateiname = basis_name
             if dateiname in vergebene_namen:
                 dateiname = f"{basis_name}_{beleg.id}"
+            suffix = 2
+            while dateiname in vergebene_namen:
+                dateiname = f"{basis_name}_{beleg.id}_{suffix}"
+                suffix += 1
             vergebene_namen.add(dateiname)
 
             pdf_pfad = f"pdf/{dateiname}.pdf"

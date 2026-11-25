@@ -5011,6 +5011,7 @@
         "laedt": "Loading plans …",
         "pflichtfelder": "Game and plan name are required.",
         "maxFehler": "The maximum must not be below the included value.",
+        "preisFehler": "Enter a valid price. A lifetime price must be greater than 0.",
         "steuerFehler": "The tax rate must be between 0 and 100.",
         "galerieTitel": "Gallery & preview",
         "bilderHinzufuegen": "Add images",
@@ -8693,7 +8694,7 @@
     "webhookSecret": "Webhook secret",
     "webhookSecretHint": "Key of the HMAC signature on outgoing webhooks. The shop uses it to verify that a call really comes from MSM.",
     "apiKey": "API key",
-    "apiKeyHint": "The shop authenticates against /api/hoster/v1 with it. MSM stores only a hash — after creation the key cannot be retrieved again, only rotated.",
+    "apiKeyHint": "The shop authenticates against /api/hoster/v1 with it. MSM stores only a hash. After creation the key cannot be retrieved again, only rotated.",
     "graceDays": "Retention after termination (days)",
     "graceDaysHint": "After a termination, servers and data are kept for this many days before the cleanup run deletes them for good. 0 releases them for deletion immediately, more than 365 days is not possible.",
     "unpaidDeleteDays": "Unpaid deletion deadline (days)",
@@ -9101,7 +9102,7 @@
       "targetBody": "Target path in the panel. Only /servers, /servers/{id} and /dashboard are allowed. Default is /servers; anything else returns 422.",
       "commandLabel": "Create handoff",
       "createOnClick": "The link should therefore be created on click, not when the shop page is rendered.",
-      "splitHosting": "Mind split hosting: the returned URL is built from MSM_PANEL_URL, while /api/hoster/handoff/{token} is a backend route. If frontend and API run on separate hosts, MSM_PANEL_URL must point at a host that forwards /api/* to the backend — otherwise the link goes nowhere.",
+      "splitHosting": "Mind split hosting: the returned URL is built from MSM_PANEL_URL, while /api/hoster/handoff/{token} is a backend route. If frontend and API run on separate hosts, MSM_PANEL_URL must point at a host that forwards /api/* to the backend. Otherwise the link goes nowhere.",
       "oidc": "The existing custom OIDC login can be used in addition. Both work at the same time: handoff for the direct click out of the shop, OIDC for a normal repeat login in the panel."
     },
     "handoffFact": {

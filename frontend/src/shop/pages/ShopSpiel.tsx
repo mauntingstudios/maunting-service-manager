@@ -317,7 +317,7 @@ export function ShopSpiel() {
     const coupon = searchParams.get('coupon')
     const appReturn = searchParams.get('app_return')
     if (coupon) qs.set('coupon', coupon)
-    if (appReturn) qs.set('app_return', appReturn)
+    if (appReturn && /^maunting:\/\//i.test(appReturn)) qs.set('app_return', appReturn)
     const suffix = qs.toString() ? `?${qs.toString()}` : ''
     navigate(`/shop/${aktuellesSpiel.id}/kasse${suffix}`, { state: entwurf })
   }

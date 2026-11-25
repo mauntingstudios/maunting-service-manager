@@ -131,7 +131,7 @@ def test_msm_webhook_endpoint_enforces_raw_hmac_and_updates_store(tmp_path: path
 
 
 def test_real_stripe_sandbox_checkout_and_payment_intent() -> None:
-    """Connects to real Stripe Sandbox (acct_1SIJuhAIxLe6geMq) and verifies Checkout + PaymentIntent."""
+    """Connects to real Stripe Sandbox and verifies Checkout + PaymentIntent."""
     stripe_key = _load_stripe_test_key()
     if not stripe_key:
         pytest.skip("Kein Stripe Sandbox Key (sk_test_ / rk_test_) verfuegbar.")

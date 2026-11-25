@@ -110,6 +110,7 @@ def reconcile_shop(
         db.query(ShopOrder)
         .filter(
             ShopOrder.status == "paid",
+            ShopOrder.extend_subscription_id.is_(None),
             ~db.query(ShopEntitlement.id)
             .filter(ShopEntitlement.order_id == ShopOrder.id)
             .exists(),
@@ -134,6 +135,7 @@ def reconcile_shop(
     zu_syncen = (
         db.query(ShopEntitlement.order_id)
         .filter(
+            or_(ShopEntitlement.provisioning_status.is_(None), ShopEntitlement.provisioning_status != "purged"),
             or_(
                 (ShopEntitlement.status == "active") & or_(*aktiver_filter),
                 ShopEntitlement.status.in_(("suspended", "revoked"))

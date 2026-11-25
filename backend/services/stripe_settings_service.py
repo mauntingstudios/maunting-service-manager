@@ -50,7 +50,7 @@ def mode() -> StripeMode:
         return "live"
     if secret.startswith("sk_test_") or secret.startswith("rk_test_"):
         return "test"
-    return "unknown" if secret else "unknown"
+    return "unknown"
 
 
 def configured() -> bool:

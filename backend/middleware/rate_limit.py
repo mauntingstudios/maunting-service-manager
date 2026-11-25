@@ -247,8 +247,12 @@ def shop_public_rate_limit(request: Request) -> None:
     Skaliert mit rate_limit_global (mindestens 120/minute), damit Erhoehungen in
     den Panel-Settings auch Storefront- und News-Ladevorgaenge abdecken.
     """
-    key = f"shop_public:{request.url.path}:{get_client_ip(request)}"
+    route = request.scope.get("route")
+    route_path = getattr(route, "path", None) or request.url.path
+    key = f"shop_public:{route_path}:{get_client_ip(request)}"
     per_minute = max(120, current_global_limit_from_settings())
+    if route_path.endswith("/ping"):
+        per_minute = min(30, per_minute)
     limit_item = parse(f"{per_minute}/minute")
     if not limiter.limiter.hit(limit_item, key):
         raise HTTPException(

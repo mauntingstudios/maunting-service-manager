@@ -68,34 +68,43 @@ def _post_form(
     headers = {"Authorization": f"Bearer {secret}"}
     if idempotency_key:
         headers["Idempotency-Key"] = idempotency_key
-    response = httpx.post(
-        f"{STRIPE_API_BASE}{path}",
-        data=data,
-        headers=headers,
-        timeout=STRIPE_TIMEOUT_SECONDS,
-    )
+    try:
+        response = httpx.post(
+            f"{STRIPE_API_BASE}{path}",
+            data=data,
+            headers=headers,
+            timeout=STRIPE_TIMEOUT_SECONDS,
+        )
+    except httpx.HTTPError as exc:
+        raise StripeError("Stripe ist derzeit nicht erreichbar") from exc
     if response.status_code >= 400:
         raise StripeError("Stripe hat die Zahlung nicht angenommen")
     return response.json()
 
 
 def _get_json(path: str, secret: str) -> dict[str, Any]:
-    response = httpx.get(
-        f"{STRIPE_API_BASE}{path}",
-        headers={"Authorization": f"Bearer {secret}"},
-        timeout=STRIPE_TIMEOUT_SECONDS,
-    )
+    try:
+        response = httpx.get(
+            f"{STRIPE_API_BASE}{path}",
+            headers={"Authorization": f"Bearer {secret}"},
+            timeout=STRIPE_TIMEOUT_SECONDS,
+        )
+    except httpx.HTTPError as exc:
+        raise StripeError("Stripe ist derzeit nicht erreichbar") from exc
     if response.status_code >= 400:
         raise StripeError("Stripe-Abfrage fehlgeschlagen")
     return response.json()
 
 
 def _delete_json(path: str, secret: str) -> dict[str, Any]:
-    response = httpx.delete(
-        f"{STRIPE_API_BASE}{path}",
-        headers={"Authorization": f"Bearer {secret}"},
-        timeout=STRIPE_TIMEOUT_SECONDS,
-    )
+    try:
+        response = httpx.delete(
+            f"{STRIPE_API_BASE}{path}",
+            headers={"Authorization": f"Bearer {secret}"},
+            timeout=STRIPE_TIMEOUT_SECONDS,
+        )
+    except httpx.HTTPError as exc:
+        raise StripeError("Stripe ist derzeit nicht erreichbar") from exc
     if response.status_code >= 400:
         raise StripeError("Stripe-Kuendigung fehlgeschlagen")
     return response.json()
@@ -178,10 +187,12 @@ def create_checkout_session(
     abo = order.months == 1 and billing_mode == "subscription"
     if stripe_promotion_code_id:
         unit_amount = order.gross_cents + order.coupon_discount_cents
-    elif order.coupon_discount_cents > 0 or not abo:
-        unit_amount = order.gross_cents
+    elif order.coupon_discount_cents > 0 and abo:
+        raise StripeError(
+            "Gutschein ist fuer wiederkehrende Abos noch nicht mit Stripe synchronisiert"
+        )
     else:
-        unit_amount = item.unit_price_cents
+        unit_amount = order.gross_cents
 
     data: list[tuple[str, str]] = [
         ("mode", "subscription" if abo else "payment"),
@@ -198,8 +209,6 @@ def create_checkout_session(
     if stripe_promotion_code_id:
         promo_id = _validate_stripe_id(stripe_promotion_code_id, "Promotion-Code-ID")
         data.append(("discounts[0][promotion_code]", promo_id))
-    elif order.coupon_discount_cents == 0:
-        data.append(("allow_promotion_codes", "true"))
     if abo:
         data.extend(
             [
@@ -222,6 +231,13 @@ def get_checkout_session(session_id: str) -> dict[str, Any]:
     secret = _require_secret()
     clean_id = _validate_stripe_id(session_id, "Checkout-Session-ID")
     return _get_json(f"/checkout/sessions/{clean_id}", secret)
+
+
+def get_invoice(invoice_id: str) -> dict[str, Any]:
+    """Liest eine Stripe-Rechnung (z. B. fuer PaymentIntent-Aufloesung bei Abo-Refunds)."""
+    secret = _require_secret()
+    clean_id = _validate_stripe_id(invoice_id, "Stripe-Invoice-ID")
+    return _get_json(f"/invoices/{clean_id}", secret)
 
 
 def cancel_subscription_at_period_end(subscription_id: str) -> dict[str, Any]:

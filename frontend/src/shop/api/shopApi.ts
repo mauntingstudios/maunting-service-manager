@@ -1,4 +1,5 @@
 import { SanitizedApiError } from '@/api/client'
+import { isSafeHttpUrl, istStripeNichtKonfiguriert } from '../safeUrl'
 import {
   shopOrderApi,
   type ShortDurationDays,
@@ -9,8 +10,6 @@ import type {
   Entitlement,
   GraceBackup,
   Order,
-  PaymentMethod,
-  ShopSettings,
   Subscription,
   SubscriptionDeletionMode,
 } from './types'
@@ -36,8 +35,6 @@ export interface ShopApi {
   purgeEntitlementNow(id: string, confirmServerName: string): Promise<Entitlement>
   pauseEntitlement?(id: string): Promise<Entitlement>
   resumeEntitlement?(id: string): Promise<Entitlement>
-  listPaymentMethods(): Promise<PaymentMethod[]>
-  getSettings(): Promise<ShopSettings>
 }
 
 function subscriptionAusApi(dto: ShopSubscriptionDto): Subscription {
@@ -102,15 +99,6 @@ function orderAusApi(dto: Awaited<ReturnType<typeof shopOrderApi.getOrder>>): Or
   }
 }
 
-const MOCK_SETTINGS: ShopSettings = {
-  shopEnabled: true,
-  waehrung: 'EUR',
-  stripeModus: 'test',
-  stripeKonfiguriert: false,
-  rechnungsPraefix: 'RE',
-  steuersatzProzent: 19,
-}
-
 export const shopApi: ShopApi = {
   listOrders: async () => (await shopOrderApi.listOrders()).map(orderAusApi),
   getOrder: async (id) => {
@@ -145,9 +133,12 @@ export const shopApi: ShopApi = {
         : await shopOrderApi.extendSubscription(id, months)
     try {
       const stripe = await shopOrderApi.checkout(order.id)
+      if (!isSafeHttpUrl(stripe.checkout_url)) {
+        throw new SanitizedApiError('Ungueltige Checkout-Adresse', { status: 502 })
+      }
       return { orderNumber: order.number, checkoutUrl: stripe.checkout_url }
     } catch (error) {
-      if (!(error instanceof SanitizedApiError) || error.status !== 409) {
+      if (!istStripeNichtKonfiguriert(error)) {
         throw error
       }
     }
@@ -171,6 +162,4 @@ export const shopApi: ShopApi = {
     entitlementAusApi(await shopOrderApi.pauseEntitlement(id)),
   resumeEntitlement: async (id) =>
     entitlementAusApi(await shopOrderApi.resumeEntitlement(id)),
-  listPaymentMethods: async () => [],
-  getSettings: async () => MOCK_SETTINGS,
 }

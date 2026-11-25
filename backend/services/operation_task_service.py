@@ -48,6 +48,44 @@ def _hash_idempotency_key(value: str | None) -> str | None:
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 
+def resolve_provisioning_retry_key(
+    db: Session, *, base_key: str, actor_user_id: int
+) -> tuple[str, str | None]:
+    """Ermittelt Idempotenzschluessel und optionalen Retry-Vorgaenger fuer Server-Provisioning."""
+    latest = (
+        db.query(OperationTask)
+        .filter(
+            OperationTask.actor_user_id == actor_user_id,
+            OperationTask.task_type == TASK_SERVER_PROVISION,
+            OperationTask.idempotency_key_hash.isnot(None),
+        )
+        .order_by(OperationTask.created_at.desc())
+    )
+    base_hash = _hash_idempotency_key(base_key)
+    base_task = latest.filter(OperationTask.idempotency_key_hash == base_hash).first()
+    if base_task is None or base_task.status != "failed":
+        return base_key, None
+
+    vorher = base_task
+    while True:
+        naechster_key = f"{base_key}-retry-{vorher.attempt + 1}"
+        naechster_hash = _hash_idempotency_key(naechster_key)
+        gefunden = (
+            db.query(OperationTask)
+            .filter(
+                OperationTask.actor_user_id == actor_user_id,
+                OperationTask.task_type == TASK_SERVER_PROVISION,
+                OperationTask.idempotency_key_hash == naechster_hash,
+            )
+            .first()
+        )
+        if gefunden is None:
+            return naechster_key, vorher.id
+        if gefunden.status != "failed":
+            return naechster_key, None
+        vorher = gefunden
+
+
 def _canonical_task_id(value: str) -> str:
     try:
         return str(UUID(str(value)))

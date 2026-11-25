@@ -215,6 +215,7 @@ def _protokoll_einrichten() -> None:
                                 "x-csrf-token",
                                 "x-mailbox-token",
                                 "x-provider-api-key",
+                                "x-msm-hoster-key",
                             ):
                                 req["headers"][h_key] = "[FILTERED]"
                     if "query_string" in req:

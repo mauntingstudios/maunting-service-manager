@@ -48,6 +48,7 @@ import { SecretOnce } from '@/components/app/SecretOnce'
 import { confirm } from '@/stores/confirmStore'
 import { toast } from '@/stores/toastStore'
 import type { User } from '@/types'
+import { isSafeRelativePath } from '@/shop/safeUrl'
 
 import { Spinner } from '@maunting/ui'
 /**
@@ -59,9 +60,11 @@ import { Spinner } from '@maunting/ui'
  */
 function handoffPath(url: string): string {
   try {
-    return new URL(url).pathname
+    const parsed = new URL(url)
+    const path = `${parsed.pathname}${parsed.search}`
+    return isSafeRelativePath(path) ? path : '/'
   } catch {
-    return url
+    return isSafeRelativePath(url) ? url : '/'
   }
 }
 
@@ -81,7 +84,9 @@ export function HosterTab({ canWrite }: { canWrite: boolean }) {
     try {
       const rows = await hosterApi.listIntegrations()
       setIntegrations(rows)
-      setSelectedId((current) => current ?? rows[0]?.id ?? null)
+      setSelectedId((current) =>
+        current != null && rows.some((row) => row.id === current) ? current : rows[0]?.id ?? null,
+      )
     } catch (error: unknown) {
       toast.error(error instanceof SanitizedApiError ? error.message : t('hoster.errors.load'))
     } finally {
@@ -90,9 +95,7 @@ export function HosterTab({ canWrite }: { canWrite: boolean }) {
   }, [t])
 
   useEffect(() => {
-    let active = true
-    void load().then(() => { if (!active) setIntegrations([]) })
-    return () => { active = false }
+    void load()
   }, [load])
 
   const selected = integrations.find((row) => row.id === selectedId) ?? null
@@ -631,6 +634,7 @@ function ProductSection({ integrationId, canWrite }: { integrationId: number; ca
                   <Button
                     type="button"
                     variant="ghost"
+                    size="icon"
                     disabled={busy}
                     aria-label={t('common.delete')}
                     onClick={() => {
@@ -791,20 +795,19 @@ function SimulatorSection({
       setPlans(activePlans)
       setProducts(pList)
       setServices(sList)
-      if (!selectedTarget) {
-        if (activePlans.length > 0) {
-          setSelectedTarget(`plan:${activePlans[0].id}`)
-        } else if (pList.length > 0) {
-          setSelectedTarget(`legacy:${pList[0].external_product_key}`)
-        }
-      }
-      if (sList.length > 0 && !selectedServiceId) {
-        setSelectedServiceId(sList[0].external_service_id)
-      }
+      setSelectedTarget((current) => {
+        if (current) return current
+        if (activePlans.length > 0) return `plan:${activePlans[0].id}`
+        if (pList.length > 0) return `legacy:${pList[0].external_product_key}`
+        return current
+      })
+      setSelectedServiceId((current) =>
+        current || (sList.length > 0 ? sList[0].external_service_id : current),
+      )
     } catch (err: unknown) {
       still(err, 'hoster.simulator.reload')
     }
-  }, [integration.id, selectedTarget, selectedServiceId])
+  }, [integration.id])
 
   useEffect(() => {
     void reloadData()

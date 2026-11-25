@@ -99,7 +99,9 @@ def _check_resource(
     label: str,
 ) -> int | None:
     if included is None:
-        return value
+        if value is not None:
+            raise ShopOrderError(f"{label} ist fuer diesen Tarif nicht konfigurierbar")
+        return None
     wert = included if value is None else value
     if wert < included:
         raise ShopOrderError(f"{label} darf nicht unter {included} liegen")
@@ -175,6 +177,10 @@ def _resolve_plan_spec(
         pinned = db.query(Node).filter(Node.id == plan.node_id).first()
         if pinned is not None and not bool(getattr(pinned, "shop_enabled", True)):
             raise ShopOrderError("Tarif-Standort ist im Shop nicht freigegeben")
+        if pinned is not None:
+            node_surcharge_cents = max(
+                0, int(getattr(pinned, "shop_surcharge_cents", 0) or 0)
+            )
 
     ram_mb = _check_resource(
         payload.ram_mb, plan.ram_included_mb, plan.ram_max_mb, plan.ram_step_mb, "RAM"
@@ -434,6 +440,15 @@ def apply_payment(
     Committet nicht selbst — der Aufrufer entscheidet ueber die Transaktion
     (Demo-Route oder Webhook). Eine bereits bezahlte Order bleibt unveraendert.
     """
+    locked = (
+        db.query(ShopOrder)
+        .filter(ShopOrder.id == order.id)
+        .with_for_update()
+        .first()
+    )
+    if locked is None:
+        raise ShopOrderError("Bestellung nicht gefunden")
+    order = locked
     if order.status == "paid":
         return order
     if order.status != "pending_payment":
@@ -444,7 +459,9 @@ def apply_payment(
         from services.shop_catalog_service import ShopConfigurationError
 
         try:
-            shop_coupon_service.consume_coupon_redemption(db, order.coupon_code)
+            shop_coupon_service.consume_coupon_redemption(
+                db, order.coupon_code, allow_over_limit=(origin == "external")
+            )
         except ShopConfigurationError as exc:
             raise ShopOrderError(str(exc)) from exc
 
@@ -573,9 +590,21 @@ def _grant_entitlements(db: Session, order: ShopOrder, jetzt: datetime) -> None:
                             item.unit_price_cents
                             if order_days is not None
                             else (
-                                max(1, round(item.gross_cents / order.months))
-                                if item.gross_cents > 0
-                                else 0
+                                max(
+                                    1,
+                                    round(
+                                        item.unit_price_cents
+                                        * (1 - order.discount_percent / 100)
+                                    ),
+                                )
+                                if billing_mode == "subscription"
+                                and order.months == 1
+                                and item.unit_price_cents > 0
+                                else (
+                                    max(1, round(item.gross_cents / order.months))
+                                    if item.gross_cents > 0
+                                    else 0
+                                )
                             )
                         )
                     ),
@@ -800,16 +829,69 @@ def _handle_checkout_completed(db: Session, event_id: str, session: dict) -> int
     order_id = _order_id_from_metadata(session.get("metadata"))
     if order_id is None:
         return None
-    order = db.query(ShopOrder).filter(ShopOrder.id == order_id).first()
+    order = (
+        db.query(ShopOrder)
+        .filter(ShopOrder.id == order_id)
+        .with_for_update()
+        .first()
+    )
     if order is None:
         return None
+
+    payment_status = session.get("payment_status")
+    if payment_status not in ("paid", "no_payment_required"):
+        return order.id
+
+    session_currency = session.get("currency")
+    if isinstance(session_currency, str) and session_currency.strip():
+        if session_currency.strip().lower() != order.currency.lower():
+            raise ShopOrderError("Waehrungsabweichung in Stripe-Session")
+
+    amount_total = session.get("amount_total")
+    if isinstance(amount_total, int) and amount_total < order.gross_cents:
+        raise ShopOrderError("Zahlungsbetrag weicht von Bestellung ab")
+
+    session_ref = str(session.get("id") or event_id)
+    if order.status == "paid":
+        if order.payment_reference and order.payment_reference != session_ref:
+            audit_service.record_privileged_action(
+                db,
+                user_id=order.user_id,
+                action="shop.order.duplicate_payment_detected",
+                target_type="shop_order",
+                target_id=order.id,
+                details={
+                    "existing_reference": order.payment_reference,
+                    "duplicate_session_id": session_ref,
+                },
+                origin="external",
+            )
+        return order.id
+
     apply_payment(
         db,
         order,
         provider="stripe",
-        reference=str(session.get("id") or event_id),
+        reference=session_ref,
         origin="external",
     )
+    pi = session.get("payment_intent")
+    if isinstance(pi, str) and pi.strip():
+        pi_key = f"pi:{pi.strip()}"[:128]
+        if (
+            db.query(ShopPaymentEvent.id)
+            .filter(ShopPaymentEvent.event_id == pi_key)
+            .first()
+            is None
+        ):
+            db.add(
+                ShopPaymentEvent(
+                    event_id=pi_key,
+                    event_type="payment_intent_map",
+                    order_id=order.id,
+                    status="processed",
+                )
+            )
     referenz = session.get("subscription")
     if isinstance(referenz, str) and referenz:
         abo = (
@@ -823,10 +905,17 @@ def _handle_checkout_completed(db: Session, event_id: str, session: dict) -> int
     return order.id
 
 
+def _is_order_refunded(db: Session, order_id: int) -> bool:
+    order = db.query(ShopOrder.status).filter(ShopOrder.id == order_id).first()
+    return order is not None and order[0] == "refunded"
+
+
 def _handle_invoice_paid(db: Session, invoice: dict) -> int | None:
     abo = _subscription_for_invoice(db, invoice)
     if abo is None:
         return None
+    if _is_order_refunded(db, abo.order_id):
+        return abo.order_id
     abo.status = "active"
     ende = _invoice_period_end(invoice)
     if ende is not None and ende > abo.current_period_end:
@@ -851,6 +940,8 @@ def _handle_subscription_changed(db: Session, obj: dict, deleted: bool) -> int |
     abo = _subscription_by_provider(db, referenz)
     if abo is None:
         return None
+    if _is_order_refunded(db, abo.order_id):
+        return abo.order_id
 
     if deleted:
         abo.status = "cancelled"
@@ -874,7 +965,39 @@ def _handle_subscription_changed(db: Session, obj: dict, deleted: bool) -> int |
     return abo.order_id
 
 
+def _order_from_charge(db: Session, charge: dict) -> ShopOrder | None:
+    order_id = _order_id_from_metadata(charge.get("metadata"))
+    if order_id is not None:
+        order = db.query(ShopOrder).filter(ShopOrder.id == order_id).first()
+        if order is not None:
+            return order
+    pi = charge.get("payment_intent")
+    if isinstance(pi, str) and pi:
+        order = db.query(ShopOrder).filter(ShopOrder.payment_reference == pi).first()
+        if order is not None:
+            return order
+        mapped = (
+            db.query(ShopPaymentEvent.order_id)
+            .filter(
+                ShopPaymentEvent.event_id == f"pi:{pi}"[:128],
+                ShopPaymentEvent.order_id.isnot(None),
+            )
+            .first()
+        )
+        if mapped is not None:
+            order = db.query(ShopOrder).filter(ShopOrder.id == mapped[0]).first()
+            if order is not None:
+                return order
+    inv_id = charge.get("invoice")
+    if isinstance(inv_id, str) and inv_id:
+        abo = _subscription_for_invoice(db, {"subscription": charge.get("subscription")})
+        if abo is not None:
+            return db.query(ShopOrder).filter(ShopOrder.id == abo.order_id).first()
+    return None
+
+
 def _handle_charge_refunded(db: Session, charge: dict) -> int | None:
+    order = _order_from_charge(db, charge)
     amount = charge.get("amount")
     amount_refunded = charge.get("amount_refunded")
     voll_erstattet = bool(charge.get("refunded")) or (
@@ -884,20 +1007,22 @@ def _handle_charge_refunded(db: Session, charge: dict) -> int | None:
         and amount_refunded >= amount
     )
     if not voll_erstattet:
+        if order is not None:
+            audit_service.record_privileged_action(
+                db,
+                user_id=order.user_id,
+                action="shop.order.partial_refund_received",
+                target_type="shop_order",
+                target_id=order.id,
+                details={
+                    "amount": amount,
+                    "amount_refunded": amount_refunded,
+                },
+                origin="external",
+            )
+            return order.id
         return None
 
-    order: ShopOrder | None = None
-    order_id = _order_id_from_metadata(charge.get("metadata"))
-    if order_id is not None:
-        order = db.query(ShopOrder).filter(ShopOrder.id == order_id).first()
-    if order is None:
-        pi = charge.get("payment_intent")
-        if isinstance(pi, str) and pi:
-            order = (
-                db.query(ShopOrder)
-                .filter(ShopOrder.payment_reference == pi)
-                .first()
-            )
     if order is None:
         return None
     if order.status == "paid":
@@ -909,6 +1034,59 @@ def _handle_charge_refunded(db: Session, charge: dict) -> int | None:
             call_stripe=False,
             origin="external",
         )
+    return order.id
+
+
+def _handle_async_payment_failed(db: Session, session: dict) -> int | None:
+    order_id = _order_id_from_metadata(session.get("metadata"))
+    if order_id is None:
+        return None
+    order = (
+        db.query(ShopOrder)
+        .filter(ShopOrder.id == order_id)
+        .with_for_update()
+        .first()
+    )
+    if order is None:
+        return None
+    if order.status == "pending_payment":
+        order.status = "failed"
+    return order.id
+
+
+def _handle_dispute_event(db: Session, dispute: dict, *, closed: bool) -> int | None:
+    order = _order_from_charge(db, dispute)
+    if order is None:
+        return None
+    abos = (
+        db.query(ShopSubscription)
+        .filter(ShopSubscription.order_id == order.id)
+        .all()
+    )
+    if not closed:
+        for abo in abos:
+            abo.status = "past_due"
+            _set_entitlements_status(db, abo, "suspended", reason="dispute")
+        audit_service.record_privileged_action(
+            db,
+            user_id=order.user_id,
+            action="shop.order.dispute_created",
+            target_type="shop_order",
+            target_id=order.id,
+            details={"dispute_id": str(dispute.get("id") or "")[:64]},
+            origin="external",
+        )
+        return order.id
+
+    status_val = str(dispute.get("status") or "")
+    if status_val == "lost":
+        for abo in abos:
+            abo.status = "cancelled"
+            _set_entitlements_status(db, abo, "revoked", reason="dispute_lost")
+    elif status_val == "won" and order.status == "paid":
+        for abo in abos:
+            abo.status = "active"
+            _set_entitlements_status(db, abo, "active")
     return order.id
 
 
@@ -933,8 +1111,10 @@ def handle_payment_event(db: Session, event: dict) -> tuple[str, int | None]:
     typ = str(event.get("type") or "")
     obj = (event.get("data") or {}).get("object") or {}
     order_id: int | None = None
-    if typ == "checkout.session.completed":
+    if typ in ("checkout.session.completed", "checkout.session.async_payment_succeeded"):
         order_id = _handle_checkout_completed(db, event_id, obj)
+    elif typ == "checkout.session.async_payment_failed":
+        order_id = _handle_async_payment_failed(db, obj)
     elif typ == "invoice.paid":
         order_id = _handle_invoice_paid(db, obj)
     elif typ == "invoice.payment_failed":
@@ -945,6 +1125,10 @@ def handle_payment_event(db: Session, event: dict) -> tuple[str, int | None]:
         order_id = _handle_subscription_changed(db, obj, deleted=True)
     elif typ == "charge.refunded":
         order_id = _handle_charge_refunded(db, obj)
+    elif typ == "charge.dispute.created":
+        order_id = _handle_dispute_event(db, obj, closed=False)
+    elif typ == "charge.dispute.closed":
+        order_id = _handle_dispute_event(db, obj, closed=True)
 
     db.add(
         ShopPaymentEvent(
@@ -1160,11 +1344,23 @@ def extend_subscription(
         db.query(ShopOrder).filter(ShopOrder.id == subscription.order_id).first()
     )
 
-    monatlich = (
-        int(orig_item.unit_price_cents)
-        if orig_item is not None
-        else int(subscription.monthly_gross_cents)
-    )
+    if subscription.addon_id is not None:
+        addon_row = (
+            db.query(ShopAddon)
+            .filter(ShopAddon.id == subscription.addon_id)
+            .first()
+        )
+        monatlich = (
+            int(addon_row.price_cents)
+            if addon_row is not None
+            else int(subscription.monthly_gross_cents)
+        )
+    else:
+        monatlich = (
+            int(orig_item.unit_price_cents)
+            if orig_item is not None
+            else int(subscription.monthly_gross_cents)
+        )
     tax_rate = (
         int(orig_item.tax_rate_percent)
         if orig_item is not None
@@ -1279,6 +1475,13 @@ def refund_order(
             raw_pi = session_obj.get("payment_intent")
             if isinstance(raw_pi, str) and raw_pi:
                 payment_intent = raw_pi
+            else:
+                raw_inv = session_obj.get("invoice")
+                if isinstance(raw_inv, str) and raw_inv:
+                    inv_obj = stripe_service.get_invoice(raw_inv)
+                    inv_pi = inv_obj.get("payment_intent")
+                    if isinstance(inv_pi, str) and inv_pi:
+                        payment_intent = inv_pi
 
         if payment_intent:
             stripe_service.create_refund(
@@ -1288,7 +1491,7 @@ def refund_order(
         for abo in abos:
             if abo.provider_reference and abo.status != "cancelled":
                 try:
-                    stripe_service.cancel_subscription_at_period_end(
+                    stripe_service.cancel_subscription_immediately(
                         abo.provider_reference
                     )
                 except stripe_service.StripeError:
@@ -1393,6 +1596,7 @@ def create_manual_order(
             ram_mb=payload.ram_mb,
             cpu=payload.cpu,
             slots=payload.slots,
+            disk_gb=getattr(payload, "disk_gb", None),
             preferred_node_id=getattr(payload, "preferred_node_id", None),
             coupon_code=payload.coupon_code,
             buyer_name=payload.buyer_name,
@@ -1601,12 +1805,16 @@ def pause_entitlement(
     db: Session, *, user: User, entitlement_id: int
 ) -> ShopEntitlement:
     """Stoppt den eigenen Server in Ressourcen-Standby ohne Datenverlust."""
+    from services import permission_service
+    from services.hoster_service_lifecycle import CUSTOMER_SERVER_PERMISSIONS
+
     ent = (
         db.query(ShopEntitlement)
         .filter(
             ShopEntitlement.id == entitlement_id,
             ShopEntitlement.user_id == user.id,
         )
+        .with_for_update()
         .first()
     )
     if ent is None:
@@ -1627,6 +1835,14 @@ def pause_entitlement(
         raise ShopOrderError("Zugehoeriger Server existiert nicht mehr")
 
     _stop_server_for_pause(db, server=srv, user=user)
+    paused_perms = [
+        p
+        for p in CUSTOMER_SERVER_PERMISSIONS
+        if p not in ("server.start", "server.restart")
+    ]
+    permission_service.set_user_server_permissions(
+        db, user.id, srv.id, paused_perms, granted_by=None
+    )
     ent.paused_at = _now()
     audit_service.record_privileged_action(
         db,
@@ -1645,12 +1861,16 @@ def resume_entitlement(
     db: Session, *, user: User, entitlement_id: int
 ) -> ShopEntitlement:
     """Setzt einen pausierten Server fort und schreibt ggf. Pause-Kontingent gut."""
+    from services import permission_service
+    from services.hoster_service_lifecycle import CUSTOMER_SERVER_PERMISSIONS
+
     ent = (
         db.query(ShopEntitlement)
         .filter(
             ShopEntitlement.id == entitlement_id,
             ShopEntitlement.user_id == user.id,
         )
+        .with_for_update()
         .first()
     )
     if ent is None:
@@ -1673,6 +1893,9 @@ def resume_entitlement(
     if srv is None:
         raise ShopOrderError("Zugehoeriger Server existiert nicht mehr")
 
+    permission_service.set_user_server_permissions(
+        db, user.id, srv.id, list(CUSTOMER_SERVER_PERMISSIONS), granted_by=None
+    )
     _start_server_for_resume(db, server=srv, user=user)
 
     if paused_at.tzinfo is None:
@@ -1688,6 +1911,7 @@ def resume_entitlement(
             db.query(ShopSubscription)
             .filter(ShopSubscription.order_item_id == ent.order_item_id)
             .order_by(ShopSubscription.id.desc())
+            .with_for_update()
             .first()
         )
         if (

@@ -3,6 +3,7 @@ import { ExternalLink, MessageSquare, Receipt, Server, ShieldCheck } from 'lucid
 import type { ShopPublicPolicyDto } from '@/api/shop'
 import { still } from '@/lib/still'
 import type { ShopDdosSummary } from '../ddosSummary'
+import { isSafeHttpUrl } from '../safeUrl'
 
 interface TrustSectionProps {
   onlineNodesCount: number
@@ -141,9 +142,9 @@ export function TrustSection({
           )}
         </div>
 
-        {(trustpilotUrl || discordUrl) && (
+        {(isSafeHttpUrl(trustpilotUrl) || isSafeHttpUrl(discordUrl)) && (
           <div className="grid gap-3 md:grid-cols-2">
-            {trustpilotUrl && (
+            {isSafeHttpUrl(trustpilotUrl) && (
               <a
                 href={trustpilotUrl}
                 target="_blank"
@@ -165,7 +166,7 @@ export function TrustSection({
               </a>
             )}
 
-            {discordUrl && (
+            {isSafeHttpUrl(discordUrl) && (
               <a
                 href={discordUrl}
                 target="_blank"

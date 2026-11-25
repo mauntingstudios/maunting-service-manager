@@ -19,6 +19,7 @@ weitergefuehrt statt ein zweiter Server erzeugt.
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+import hmac
 import inspect
 import logging
 from uuid import uuid4
@@ -54,9 +55,11 @@ from services.hoster_integration_service import (
     HosterRoleEscalation,
     ensure_role_is_delegatable,
     get_product,
+    hash_token,
     normalize_external_id,
     resolve_identity,
 )
+from services.operation_task_service import resolve_provisioning_retry_key
 
 
 logger = logging.getLogger(__name__)
@@ -186,17 +189,20 @@ def service_response(row: HosterService) -> HosterServiceResponse:
 
 
 def get_service(
-    db: Session, integration: HosterIntegration, external_service_id: str
+    db: Session,
+    integration: HosterIntegration,
+    external_service_id: str,
+    *,
+    for_update: bool = False,
 ) -> HosterService | None:
     key = normalize_external_id(external_service_id, label="Service-Kennung")
-    return (
-        db.query(HosterService)
-        .filter(
-            HosterService.integration_id == integration.id,
-            HosterService.external_service_id == key,
-        )
-        .first()
+    query = db.query(HosterService).filter(
+        HosterService.integration_id == integration.id,
+        HosterService.external_service_id == key,
     )
+    if for_update:
+        query = query.with_for_update(of=HosterService)
+    return query.first()
 
 
 def _record(
@@ -418,7 +424,7 @@ def _provision(
             if cpu_percent is not None
             else normalize_cpu_limit_percent(plan.cpu_included)
         )
-        eff_disk = None
+        eff_disk = getattr(plan, "disk_included_gb", None)
         eff_node_id = plan.node_id
         backup_hours = None
     elif product is not None:
@@ -448,9 +454,15 @@ def _provision(
     # Der Idempotency-Key bindet die Provisionierung an genau diesen Vertrag.
     # Ein wiederholter Shop-Aufruf trifft damit dieselbe Task und erzeugt keinen
     # zweiten Server — selbst wenn die Zeile hier gleichzeitig gelesen wird.
+    actor = _actor(db, integration, service.correlation_id)
+    retry_key, _retry_of = resolve_provisioning_retry_key(
+        db,
+        base_key=f"hoster-{integration.id}-{service.id}",
+        actor_user_id=actor.user.id,
+    )
     prov_params = inspect.signature(provision_server).parameters
     prov_kwargs: dict[str, object] = {
-        "idempotency_key": f"hoster-{integration.id}-{service.id}",
+        "idempotency_key": retry_key,
     }
     if "auto_place" in prov_params:
         prov_kwargs["auto_place"] = request.node_id is None
@@ -460,13 +472,14 @@ def _provision(
     result = provision_server(
         db,
         request,
-        _actor(db, integration, service.correlation_id),
+        actor,
         **prov_kwargs,
     )
     service.server_id = result.server.id
     service.task_id = result.task.id
     _set_status(service, "ready")
     service.status_code = None
+    db.commit()
     _grant_customer_permissions(db, service)
     if backup_hours:
         server = db.query(Server).filter(Server.id == result.server.id).first()
@@ -691,6 +704,20 @@ def _apply_variables_on_server(
         raise HosterConfigurationError(str(exc)) from exc
 
 
+def _verify_service_subject(
+    integration: HosterIntegration, service: HosterService, external_subject: str
+) -> None:
+    expected_hash = (
+        service.identity.external_subject_hash if service.identity is not None else None
+    )
+    subject = normalize_external_id(external_subject, label="Kundenkennung")
+    actual_hash = hash_token(f"{integration.id}:{subject}")
+    if expected_hash and not hmac.compare_digest(expected_hash, actual_hash):
+        raise HosterConfigurationError(
+            "Kundenkennung stimmt nicht mit dem bestehenden Service ueberein"
+        )
+
+
 def apply_desired_state(
     db: Session,
     *,
@@ -707,6 +734,7 @@ def apply_desired_state(
     email: str | None = None,
     correlation_id: str | None = None,
     purge_immediately: bool = False,
+    verify_subject: bool = True,
 ) -> HosterService:
     """Bringt einen Server-Vertrag in den vom Shop gewuenschten Zustand.
 
@@ -719,11 +747,13 @@ def apply_desired_state(
         raise HosterConfigurationError("Unbekannter Zielzustand")
     key = normalize_external_id(external_service_id, label="Service-Kennung")
 
-    service = get_service(db, integration, key)
+    service = get_service(db, integration, key, for_update=True)
     if service is not None and service.item_kind != "server":
         raise HosterConfigurationError(
             "Service-Kennung gehoert zu einem Add-on-Vertrag und kann nicht als Server genutzt werden"
         )
+    if service is not None and verify_subject:
+        _verify_service_subject(integration, service, external_subject)
 
     eff_slots: int | None = slots
     if service is None:
@@ -741,15 +771,14 @@ def apply_desired_state(
         plan, product = _resolve_plan_and_product(
             db, integration, plan_id=plan_id, product_key=product_key
         )
-        if desired_state != "terminated":
-            eff_slots = _validate_server_item_params(
-                plan=plan,
-                product=product,
-                ram_mb=ram_mb,
-                cpu_percent=cpu_percent,
-                slots=slots,
-                variables=variables,
-            )
+        eff_slots = _validate_server_item_params(
+            plan=plan,
+            product=product,
+            ram_mb=ram_mb,
+            cpu_percent=cpu_percent,
+            slots=slots,
+            variables=variables,
+        )
         service = HosterService(
             integration_id=integration.id,
             external_service_id=key,
@@ -822,16 +851,18 @@ def apply_desired_state(
             # Ganz zu Beginn und vor jeder Aenderung: eine Produktrolle, die die
             # Integration gar nicht vergeben darf, ist eine Fehlkonfiguration —
             # und die darf keinen halb fertigen Server hinterlassen.
-            role_to_check = (
-                service.shop_plan.role_id
-                if service.shop_plan
-                else (service.product.role_id if service.product else None)
-            )
-            ensure_role_is_delegatable(
-                db,
-                integration=integration,
-                role_id=role_to_check,
-            )
+            if service.shop_plan is not None:
+                _ensure_service_role_allowed(
+                    db,
+                    integration=integration,
+                    role_id=service.shop_plan.role_id,
+                )
+            elif service.product is not None:
+                ensure_role_is_delegatable(
+                    db,
+                    integration=integration,
+                    role_id=service.product.role_id,
+                )
             if service.server_id is None:
                 _provision(
                     db,
@@ -898,7 +929,8 @@ def apply_desired_state(
             )
     except HTTPException as exc:
         db.rollback()
-        _fail(db, integration=integration, service_id=service.id, code=_error_code(exc))
+        if not (exc.status_code == 409 and _error_code(exc) == "task_in_progress"):
+            _fail(db, integration=integration, service_id=service.id, code=_error_code(exc))
         raise
     except HosterRoleEscalation:
         # Bewusst laut und mit eigenem Code: eine still ausgelassene Rolle waere
@@ -935,7 +967,7 @@ def apply_desired_state(
     return service
 
 
-def _ensure_addon_role_allowed(
+def _ensure_service_role_allowed(
     db: Session, *, integration: HosterIntegration, role_id: int | None
 ) -> None:
     if role_id is None:
@@ -959,17 +991,20 @@ def apply_addon_desired_state(
     addon_slug: str | None,
     email: str | None = None,
     correlation_id: str | None = None,
+    verify_subject: bool = True,
 ) -> HosterService:
     """Bringt einen eigenstaendigen Add-on-Vertrag ohne Server in den Zielzustand."""
     if desired_state not in DESIRED_STATES:
         raise HosterConfigurationError("Unbekannter Zielzustand")
     key = normalize_external_id(external_service_id, label="Service-Kennung")
 
-    service = get_service(db, integration, key)
+    service = get_service(db, integration, key, for_update=True)
     if service is not None and service.item_kind != "addon":
         raise HosterConfigurationError(
             "Service-Kennung gehoert zu einem Server-Vertrag und kann nicht als Add-on genutzt werden"
         )
+    if service is not None and verify_subject:
+        _verify_service_subject(integration, service, external_subject)
 
     if service is None:
         if desired_state == "terminated":
@@ -1016,7 +1051,7 @@ def apply_addon_desired_state(
 
     try:
         if desired_state == "active":
-            _ensure_addon_role_allowed(
+            _ensure_service_role_allowed(
                 db,
                 integration=integration,
                 role_id=service.addon.role_id if service.addon is not None else None,
@@ -1083,10 +1118,15 @@ def apply_batch(
 ) -> tuple[str, list[HosterService]]:
     """Pre-validiert und setzt einen Sammelauftrag aus Servern und Add-ons um."""
     batch_correlation_id = str(uuid4())
+    normalize_external_id(payload.external_subject, label="Kundenkennung")
     _actor(db, integration, batch_correlation_id)
 
+    seen_keys: set[str] = set()
     for item in payload.items:
         key = normalize_external_id(item.external_service_id, label="Service-Kennung")
+        if key in seen_keys:
+            raise HosterConfigurationError(f"Doppelte external_service_id im Batch: {key}")
+        seen_keys.add(key)
         effective_state = item.desired_state or payload.desired_state
         if effective_state not in DESIRED_STATES:
             raise HosterConfigurationError("Unbekannter Zielzustand")

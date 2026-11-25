@@ -27,7 +27,7 @@ import {
   Zustandsflaeche,
   type TabDef,
 } from '@maunting/ui'
-import { api } from '@/api/client'
+import { SanitizedApiError, api } from '@/api/client'
 import {
   apiUrl,
   shopAdminApi,
@@ -248,7 +248,8 @@ function berechneCpuSchritt(
 function draftZuPayload(draft: Draft, editing: ShopPlan | null): ShopPlanWrite {
   const ramIncluded = gbInMb(draft.ramIncludedGb)
   const ramMax = gbInMb(draft.ramMaxGb)
-  const ramStep = ramIncluded === null && ramMax === null ? null : 1024
+  const ramStep =
+    ramIncluded === null && ramMax === null ? null : (editing?.ram_step_mb ?? 1024)
   const cpuIncluded = zahl(draft.cpuIncluded)
   const cpuMax = zahl(draft.cpuMax)
   const cpuStep = berechneCpuSchritt(cpuIncluded, cpuMax, editing?.cpu_step)
@@ -261,7 +262,7 @@ function draftZuPayload(draft: Draft, editing: ShopPlan | null): ShopPlanWrite {
   return {
     game_type: draft.gameType,
     name: draft.name.trim(),
-    description: null,
+    description: editing?.description ?? null,
     price_cents: euroInCent(draft.priceEuro),
     currency: 'EUR',
     billing_interval: 'month',
@@ -276,7 +277,7 @@ function draftZuPayload(draft: Draft, editing: ShopPlan | null): ShopPlanWrite {
     price_per_cpu_step_cents: euroInCent(draft.pricePerCpuEuro),
     slots_included: slotsIncluded,
     slots_max: slotsMax,
-    slots_step: 1,
+    slots_step: editing?.slots_step ?? 1,
     price_per_slot_step_cents: euroInCent(draft.pricePerSlotEuro),
     disk_included_gb: diskIncluded,
     disk_max_gb: diskMax,
@@ -285,11 +286,11 @@ function draftZuPayload(draft: Draft, editing: ShopPlan | null): ShopPlanWrite {
     lifetime_price_cents: draft.lifetimeEuro.trim() ? euroInCent(draft.lifetimeEuro) : null,
     allow_game_switch: draft.allowGameSwitch,
     allow_short_durations: draft.allowShortDurations,
-    node_id: null,
-    role_id: null,
+    node_id: editing?.node_id ?? null,
+    role_id: editing?.role_id ?? null,
     artwork_mode: draft.artworkMode,
     active: draft.active,
-    sort_order: 0,
+    sort_order: editing?.sort_order ?? 0,
     is_featured: draft.isFeatured,
     is_bestseller: draft.isBestseller,
     is_new: draft.isNew,
@@ -407,7 +408,7 @@ export function ShopPlansEditor({ onPlansLoaded }: ShopPlansEditorProps = {}) {
         onPlansLoadedRef.current?.(sicher)
       })
       .catch((error: unknown) => {
-        toast.error(error instanceof Error ? error.message : t('settings.shop.plans.fehler'))
+        toast.error(error instanceof SanitizedApiError ? error.message : t('settings.shop.plans.fehler'))
         setPlans([])
       })
     void api<GameInfo[]>('/system/games')
@@ -504,7 +505,7 @@ export function ShopPlansEditor({ onPlansLoaded }: ShopPlansEditorProps = {}) {
       })
       toast.success(t('settings.shop.plans.statusAktualisiert'))
     } catch (error: unknown) {
-      toast.error(error instanceof Error ? error.message : t('settings.shop.plans.fehler'))
+      toast.error(error instanceof SanitizedApiError ? error.message : t('settings.shop.plans.fehler'))
     } finally {
       setTogglingId(null)
     }
@@ -520,6 +521,11 @@ export function ShopPlansEditor({ onPlansLoaded }: ShopPlansEditorProps = {}) {
     if (problem === 'max') {
       toast.error(t('settings.shop.plans.maxFehler'))
       setDialogTab('ressourcen')
+      return
+    }
+    if (problem === 'price') {
+      toast.error(t('settings.shop.plans.preisFehler'))
+      setDialogTab('basis')
       return
     }
     if (problem === 'tax') {
@@ -539,7 +545,7 @@ export function ShopPlansEditor({ onPlansLoaded }: ShopPlansEditorProps = {}) {
       setDialogOffen(false)
       laden()
     } catch (error: unknown) {
-      toast.error(error instanceof Error ? error.message : t('settings.shop.plans.fehler'))
+      toast.error(error instanceof SanitizedApiError ? error.message : t('settings.shop.plans.fehler'))
     } finally {
       setBusy(false)
     }
@@ -560,7 +566,7 @@ export function ShopPlansEditor({ onPlansLoaded }: ShopPlansEditorProps = {}) {
       toast.success(t('settings.shop.plans.geloescht'))
       laden()
     } catch (error: unknown) {
-      toast.error(error instanceof Error ? error.message : t('settings.shop.plans.fehler'))
+      toast.error(error instanceof SanitizedApiError ? error.message : t('settings.shop.plans.fehler'))
     }
   }
 
@@ -584,7 +590,7 @@ export function ShopPlansEditor({ onPlansLoaded }: ShopPlansEditorProps = {}) {
         galerieLaden(zielPlan.game_type)
       }
     } catch (error: unknown) {
-      toast.error(error instanceof Error ? error.message : t('settings.shop.plans.fehler'))
+      toast.error(error instanceof SanitizedApiError ? error.message : t('settings.shop.plans.fehler'))
     } finally {
       setUploadPlan(null)
     }
@@ -598,7 +604,7 @@ export function ShopPlansEditor({ onPlansLoaded }: ShopPlansEditorProps = {}) {
       laden()
       galerieLaden(plan.game_type)
     } catch (error: unknown) {
-      toast.error(error instanceof Error ? error.message : t('settings.shop.plans.fehler'))
+      toast.error(error instanceof SanitizedApiError ? error.message : t('settings.shop.plans.fehler'))
     } finally {
       setGalerieBusy(false)
     }
@@ -612,7 +618,7 @@ export function ShopPlansEditor({ onPlansLoaded }: ShopPlansEditorProps = {}) {
       laden()
       galerieLaden(plan.game_type)
     } catch (error: unknown) {
-      toast.error(error instanceof Error ? error.message : t('settings.shop.plans.fehler'))
+      toast.error(error instanceof SanitizedApiError ? error.message : t('settings.shop.plans.fehler'))
     } finally {
       setGalerieBusy(false)
     }
@@ -624,7 +630,7 @@ export function ShopPlansEditor({ onPlansLoaded }: ShopPlansEditorProps = {}) {
       toast.success(t('settings.shop.plans.bildZurueckgesetzt'))
       laden()
     } catch (error: unknown) {
-      toast.error(error instanceof Error ? error.message : t('settings.shop.plans.fehler'))
+      toast.error(error instanceof SanitizedApiError ? error.message : t('settings.shop.plans.fehler'))
     }
   }
 

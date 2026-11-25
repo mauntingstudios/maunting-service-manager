@@ -310,13 +310,14 @@ def switch_addon_subscription(
     subscription_id: int,
     target_addon_id: int,
 ) -> ShopAddonSwitchResponse:
-    """Wechselt ein aktives Add-on-Abo auf ein anderes Add-on ohne Server-Aenderung."""
+    """Wechselt ein aktives Add-on-Abo auf ein gleichwertiges oder guenstigeres Add-on."""
     sub = (
         db.query(ShopSubscription)
         .filter(
             ShopSubscription.id == subscription_id,
             ShopSubscription.user_id == user.id,
         )
+        .with_for_update()
         .first()
     )
     if sub is None:
@@ -327,6 +328,10 @@ def switch_addon_subscription(
     if sub.cancel_at_period_end:
         raise ShopAddonSwitchError(
             "Zum Laufzeitende gekuendigtes Abo kann nicht mehr gewechselt werden"
+        )
+    if sub.provider_reference:
+        raise ShopAddonSwitchError(
+            "Aktive Stripe-Add-on-Abos koennen nicht direkt umgestellt werden; bitte kuendigen und neu buchen"
         )
 
     item = (
@@ -340,6 +345,12 @@ def switch_addon_subscription(
         )
 
     current_addon_id = sub.addon_id if sub.addon_id is not None else item.addon_id
+    current_addon = get_addon(db, current_addon_id) if current_addon_id is not None else None
+    current_price = (
+        current_addon.price_cents
+        if current_addon is not None
+        else sub.monthly_gross_cents
+    )
     target = get_addon(db, target_addon_id)
     if target is None:
         raise ShopAddonNotFoundError("Ziel-Add-on nicht gefunden")
@@ -347,6 +358,10 @@ def switch_addon_subscription(
         raise ShopAddonSwitchError("Ziel-Add-on ist nicht aktiv")
     if current_addon_id == target.id:
         raise ShopAddonSwitchError("Abo verwendet dieses Add-on bereits")
+    if target.price_cents > current_price:
+        raise ShopAddonSwitchError(
+            "Upgrade auf ein teureres Add-on erfordert eine neue Buchung"
+        )
 
     if target.role_id is not None:
         try:

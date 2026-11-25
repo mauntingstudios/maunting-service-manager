@@ -489,6 +489,7 @@ class TestShopStripeLifecycleAndRetry:
                     "object": {
                         "id": "cs_life_1",
                         "subscription": "sub_life_1",
+                        "payment_status": "paid",
                         "metadata": {"order_id": str(order["id"])},
                     }
                 },

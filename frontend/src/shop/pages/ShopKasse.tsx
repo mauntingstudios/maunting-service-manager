@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Link, useLocation, useParams, useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { ArrowLeft, ExternalLink, LogIn, ShieldCheck, UserPlus } from 'lucide-react'
@@ -16,6 +16,7 @@ import { useAuthStore } from '@/stores/authStore'
 import { formatCpuLabel, formatEuro, preisAufschluesselung, RABATT_PROZENT } from '../preis'
 import { standardKonfiguration, type KassenEntwurf, type LaufzeitMonate } from '../typen'
 import { useShopKatalog } from '../useShopKatalog'
+import { isSafeHttpUrl, istStripeNichtKonfiguriert } from '../safeUrl'
 
 const EMAIL_MUSTER = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const APP_DEEPLINK_MUSTER = /^(maunting|msm):\/\/\S+$/i
@@ -62,6 +63,7 @@ export function ShopKasse() {
   const [gutscheinBusy, setGutscheinBusy] = useState(false)
   const [fehler, setFehler] = useState('')
   const [busy, setBusy] = useState(false)
+  const submittingRef = useRef(false)
   const [erfolg, setErfolg] = useState<string | null>(null)
   const [publicPolicy, setPublicPolicy] = useState<ShopPublicPolicyDto | null>(null)
   const [captchaToken, setCaptchaToken] = useState('')
@@ -206,7 +208,7 @@ export function ShopKasse() {
 
   const absenden = async (event: FormEvent) => {
     event.preventDefault()
-    if (busy || !istAngemeldet) return
+    if (submittingRef.current || busy || !istAngemeldet) return
 
     if (!email.trim()) {
       setFehler(t('shop.kasse.emailFehlt'))
@@ -225,6 +227,7 @@ export function ShopKasse() {
       return
     }
 
+    submittingRef.current = true
     setFehler('')
     setBusy(true)
 
@@ -274,12 +277,15 @@ export function ShopKasse() {
       try {
         const stripe = await shopOrderApi.checkout(
           order.id,
-          appReturn ? { return_url: appReturn } : undefined,
+          APP_DEEPLINK_MUSTER.test(appReturn) ? { return_url: appReturn } : undefined,
         )
+        if (!isSafeHttpUrl(stripe.checkout_url)) {
+          throw new SanitizedApiError(t('shop.kasse.fehler'), { status: 502 })
+        }
         window.location.assign(stripe.checkout_url)
         return
       } catch (error) {
-        if (!(error instanceof SanitizedApiError) || error.status !== 409) {
+        if (!istStripeNichtKonfiguriert(error)) {
           throw error
         }
       }
@@ -293,6 +299,7 @@ export function ShopKasse() {
       }
       setFehler(err instanceof SanitizedApiError ? err.message : t('shop.kasse.fehler'))
     } finally {
+      submittingRef.current = false
       setBusy(false)
     }
   }

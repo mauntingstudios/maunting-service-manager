@@ -42,10 +42,6 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def _utc(value: datetime) -> datetime:
-    return value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
-
-
 def normalize_target_path(value: str | None) -> str:
     """Prueft das Sprungziel gegen eine feste Allowlist interner Pfade."""
     path = (value or "").strip() or _DEFAULT_TARGET

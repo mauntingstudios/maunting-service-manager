@@ -23,9 +23,12 @@ from services.ai_tools.base import _RATIONALE_REQUIRED, _RATIONALE_SCHEMA, _func
 def _lies_shop_catalog(
     db: Session, *, user: User, arguments: dict, lauf: dict | None = None
 ) -> dict[str, Any]:
-    if not permission_service.has_global_permission(db, user, "ai.shop.manage"):
+    if not permission_service.has_global_permission(db, user, "ai.shop.manage") or not (
+        permission_service.has_global_permission(db, user, "shop.read")
+        or permission_service.has_global_permission(db, user, "panel.settings.read")
+    ):
         raise AiActionValidationError(
-            "Shop-Verwaltung ueber die KI erfordert die Berechtigung ai.shop.manage"
+            "Shop-Verwaltung ueber die KI erfordert ai.shop.manage sowie shop.read oder panel.settings.read"
         )
 
     raw_include = arguments.get("include")
@@ -100,7 +103,11 @@ def _lies_shop_catalog(
                 "is_bestseller": bool(getattr(p, "is_bestseller", False)),
                 "is_new": bool(getattr(p, "is_new", False)),
                 "pinned_in_hero": bool(getattr(p, "pinned_in_hero", False)),
-                "promo_highlight_text": getattr(p, "promo_highlight_text", None),
+                "promo_highlight_text": (
+                    redact_sensitive_text(getattr(p, "promo_highlight_text", None))
+                    if getattr(p, "promo_highlight_text", None)
+                    else None
+                ),
                 "recent_order_count": order_counts.get(p.id, 0),
             }
             for p in shop_catalog_service.list_plans(db)
@@ -288,6 +295,7 @@ werkzeug(
     gruppe="shop",
     recht="ai.shop.manage",
     recht_global=True,
+    immer_bestaetigen=True,
     hinweis="Legt Shop-Tarife an oder aktualisiert bestehende.",
     vorschlag=spaet_vorschlag(
         "services.ai_proposals.shop_proposals._shop_plan_upsert_payload"
@@ -302,6 +310,7 @@ werkzeug(
     gruppe="shop",
     recht="ai.shop.manage",
     recht_global=True,
+    immer_bestaetigen=True,
     hinweis="Legt einen Gutschein oder Flash-Sale an oder aendert ihn.",
     vorschlag=spaet_vorschlag(
         "services.ai_proposals.shop_proposals._shop_coupon_upsert_payload"
@@ -316,6 +325,7 @@ werkzeug(
     gruppe="shop",
     recht="ai.shop.manage",
     recht_global=True,
+    immer_bestaetigen=True,
     hinweis="Legt ein Shop-Add-on an oder aendert es.",
     vorschlag=spaet_vorschlag(
         "services.ai_proposals.shop_proposals._shop_addon_upsert_payload"

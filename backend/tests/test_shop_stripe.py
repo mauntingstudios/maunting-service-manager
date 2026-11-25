@@ -89,6 +89,8 @@ def _event(
         "id": "cs_test_123",
         "metadata": {"order_id": str(order_id)},
     }
+    if typ == "checkout.session.completed":
+        session["payment_status"] = "paid"
     if subscription:
         session["subscription"] = subscription
     return {"id": event_id, "type": typ, "data": {"object": session}}

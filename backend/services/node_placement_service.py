@@ -249,12 +249,68 @@ def check_plan_availability(
         from services import shop_lifecycle_settings_service
 
         if shop_lifecycle_settings_service.is_shop_overbooking_allowed(db):
-            shop_nodes = (
-                db.query(Node)
-                .filter(Node.shop_enabled.is_(True))
-                .order_by(Node.id.asc())
-                .all()
-            )
+            if plan.node_id is not None:
+                pinned = db.query(Node).filter(Node.id == plan.node_id).first()
+                if pinned is None:
+                    return PlanAvailability(
+                        available=False,
+                        reason="node_not_found",
+                        available_nodes=0,
+                        max_ram_mb=0,
+                        max_cpu=0,
+                        nodes=(),
+                    )
+                if (getattr(pinned, "status", None) or "").strip().lower() in OFFLINE_NODE_STATUSES:
+                    return PlanAvailability(
+                        available=False,
+                        reason="node_offline",
+                        available_nodes=0,
+                        max_ram_mb=0,
+                        max_cpu=0,
+                        nodes=(),
+                    )
+                if shop_only and not bool(getattr(pinned, "shop_enabled", True)):
+                    return PlanAvailability(
+                        available=False,
+                        reason="node_not_available_for_shop",
+                        available_nodes=0,
+                        max_ram_mb=0,
+                        max_cpu=0,
+                        nodes=(),
+                    )
+                overbook_nodes = [pinned]
+            else:
+                all_overbook_nodes = db.query(Node).order_by(Node.id.asc()).all()
+                online_nodes = [
+                    n
+                    for n in all_overbook_nodes
+                    if (getattr(n, "status", None) or "").strip().lower() not in OFFLINE_NODE_STATUSES
+                ]
+                if all_overbook_nodes and not online_nodes:
+                    return PlanAvailability(
+                        available=False,
+                        reason="node_offline",
+                        available_nodes=0,
+                        max_ram_mb=0,
+                        max_cpu=0,
+                        nodes=(),
+                    )
+                if shop_only:
+                    shop_online = [
+                        n for n in online_nodes if bool(getattr(n, "shop_enabled", True))
+                    ]
+                    overbook_nodes = shop_online if shop_online else online_nodes
+                else:
+                    overbook_nodes = online_nodes
+                if not overbook_nodes:
+                    return PlanAvailability(
+                        available=False,
+                        reason="node_not_available_for_shop" if shop_only else "no_nodes_configured",
+                        available_nodes=0,
+                        max_ram_mb=0,
+                        max_cpu=0,
+                        nodes=(),
+                    )
             nodes_entries = tuple(
                 NodeAvailabilityEntry(
                     node_id=node.id,
@@ -262,12 +318,12 @@ def check_plan_availability(
                     reason=None,
                     shop_surcharge_cents=int(getattr(node, "shop_surcharge_cents", 0) or 0),
                 )
-                for node in shop_nodes
+                for node in overbook_nodes
             )
             return PlanAvailability(
                 available=True,
                 reason=None,
-                available_nodes=max(1, len(nodes_entries)),
+                available_nodes=len(nodes_entries),
                 max_ram_mb=plan.ram_max_mb,
                 max_cpu=plan.cpu_max,
                 nodes=nodes_entries,
@@ -275,6 +331,7 @@ def check_plan_availability(
 
     eff_ram = ram_mb if ram_mb is not None else plan.ram_included_mb
     eff_cpu_cores = cpu_cores if cpu_cores is not None else plan.cpu_included
+    eff_disk = disk_gb if disk_gb is not None else getattr(plan, "disk_included_gb", None)
     cpu_percent = normalize_cpu_limit_percent(
         int(eff_cpu_cores) if eff_cpu_cores is not None else None
     )
@@ -341,7 +398,7 @@ def check_plan_availability(
             node,
             ram_mb=eff_ram,
             cpu_percent=cpu_percent,
-            disk_gb=disk_gb,
+            disk_gb=eff_disk,
         )
         for node in nodes
     ]

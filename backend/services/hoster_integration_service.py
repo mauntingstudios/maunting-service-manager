@@ -130,6 +130,30 @@ def require_service_user(db: Session, service_user_id: int) -> User:
     return user
 
 
+def ensure_actor_may_use_service_user(
+    db: Session, *, actor: User, service_user: User
+) -> None:
+    """Verhindert Rechte-Eskalation durch Auswahl eines hoeher privilegierten Dienstbenutzers."""
+    if actor.is_owner:
+        return
+    from services import permission_service
+    from services.role_service import effective_user_role_ids
+
+    svc_keys: set[str] = set()
+    for role_id in effective_user_role_ids(db, service_user):
+        svc_keys.update(role_permission_keys(db, role_id))
+    missing = sorted(
+        key
+        for key in svc_keys
+        if not permission_service.has_global_permission(db, actor, key)
+    )
+    if missing:
+        raise HosterRoleEscalation(
+            "Du kannst keinen Dienstbenutzer zuweisen, der mehr Rechte besitzt als du selbst. "
+            f"Fehlend: {missing}"
+        )
+
+
 def create_integration(
     db: Session,
     *,
@@ -174,19 +198,56 @@ def create_integration(
 
 
 def validate_webhook_url(value: str | None) -> str | None:
-    """Erlaubt nur absolute HTTPS-Ziele ohne eingebettete Zugangsdaten."""
+    """Erlaubt nur oeffentliche absolute HTTPS-Ziele ohne eingebettete Zugangsdaten."""
     url = (value or "").strip()
     if not url:
         return None
-    if len(url) > 2048:
-        raise HosterConfigurationError("Webhook-URL ist zu lang")
-    from urllib.parse import urlparse
+    if len(url) > 2048 or any(ord(ch) < 32 or ord(ch) == 127 or ch.isspace() for ch in url):
+        raise HosterConfigurationError("Webhook-URL ist zu lang oder enthaelt ungueltige Zeichen")
+    from urllib.parse import urlsplit
+    import ipaddress
+    from services.ai_custom_ssrf import (
+        _PRIVATE_ALLOWABLE_NETS,
+        _UNCONDITIONAL_BLOCKED_NETS,
+        _is_local_hostname,
+        _parse_ip_literal,
+        _unwrap_ip,
+    )
 
-    parsed = urlparse(url)
+    parsed = urlsplit(url)
     if parsed.scheme != "https" or not parsed.hostname:
         raise HosterConfigurationError("Webhook-URL muss eine absolute HTTPS-URL sein")
-    if parsed.username or parsed.password:
+    if parsed.username is not None or parsed.password is not None or "@" in (parsed.netloc or ""):
         raise HosterConfigurationError("Webhook-URL darf keine Zugangsdaten enthalten")
+    host = parsed.hostname
+    if "%" in host or "%" in (parsed.netloc or ""):
+        raise HosterConfigurationError("Webhook-URL enthaelt unzulaessige Zone-IDs")
+    try:
+        port = parsed.port
+    except ValueError as exc:
+        raise HosterConfigurationError("Ungueltiger Port in Webhook-URL") from exc
+    if port is not None and not (1 <= port <= 65535):
+        raise HosterConfigurationError("Ungueltiger Port in Webhook-URL")
+
+    ip_literal = _parse_ip_literal(host)
+    if ip_literal is not None:
+        if isinstance(ip_literal, ipaddress.IPv6Address) and (
+            ip_literal.sixtofour is not None or ip_literal.teredo is not None
+        ):
+            raise HosterConfigurationError("Webhook-URL darf keine Uebergangsadressen nutzen")
+        unwrapped = _unwrap_ip(ip_literal)
+        if (
+            unwrapped.is_multicast
+            or unwrapped.is_link_local
+            or unwrapped.is_unspecified
+            or unwrapped.is_loopback
+            or any(unwrapped in net for net in _UNCONDITIONAL_BLOCKED_NETS)
+            or any(unwrapped in net for net in _PRIVATE_ALLOWABLE_NETS)
+            or not unwrapped.is_global
+        ):
+            raise HosterConfigurationError("Webhook-URL darf nicht auf interne oder private Netze zeigen")
+    elif _is_local_hostname(host):
+        raise HosterConfigurationError("Webhook-URL darf nicht auf lokale Hostnamen zeigen")
     return url
 
 

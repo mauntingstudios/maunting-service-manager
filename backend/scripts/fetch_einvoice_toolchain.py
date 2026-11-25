@@ -84,12 +84,31 @@ def verify_sha256(path: Path, expected_hex: str) -> None:
         )
 
 
+_MAX_DOWNLOAD_BYTES = 150 * 1024 * 1024
+_MAX_ZIP_FILES = 1000
+_MAX_ZIP_UNCOMPRESSED_BYTES = 512 * 1024 * 1024
+
+
+class _HttpsOnlyRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # type: ignore[override]
+        if not str(newurl).lower().startswith("https://"):
+            raise ValueError(f"Unsicherer Redirect auf Nicht-HTTPS-URL abgelehnt: {newurl}")
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
 def safe_extract_zip(zip_path: Path, dest_dir: Path) -> None:
     """Entpackt ein ZIP-Archiv mit striktem Zip-Slip- und Symlink-Schutz."""
     dest_resolved = dest_dir.resolve()
     dest_dir.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(zip_path, "r") as zf:
-        for info in zf.infolist():
+        infos = zf.infolist()
+        if len(infos) > _MAX_ZIP_FILES:
+            raise ValueError("ZIP-Archiv enthaelt zu viele Eintraege")
+        total_uncompressed = 0
+        for info in infos:
+            total_uncompressed += max(0, info.file_size)
+            if total_uncompressed > _MAX_ZIP_UNCOMPRESSED_BYTES:
+                raise ValueError("ZIP-Archiv ueberschreitet die zulaessige Entpackgroesse")
             member_name = info.filename.replace("\\", "/")
             if not member_name or member_name.startswith("/"):
                 raise ValueError(f"Unsicherer ZIP-Pfad abgelehnt: {info.filename}")
@@ -137,12 +156,23 @@ def is_complete(base_dir: Path) -> bool:
 
 def _download_file(url: str, dest: Path, expected_sha256: str) -> None:
     """Laedt eine Datei mit User-Agent herunter und prueft sofort SHA-256."""
+    if not url.lower().startswith("https://"):
+        raise ValueError(f"Nur HTTPS-URLs erlaubt: {url}")
     dest.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = dest.with_suffix(dest.suffix + ".part")
+    opener = urllib.request.build_opener(_HttpsOnlyRedirectHandler)
     req = urllib.request.Request(url, headers={"User-Agent": "msm-einvoice-toolchain/1.0"})
     try:
-        with urllib.request.urlopen(req, timeout=120) as resp, tmp_path.open("wb") as out:
-            shutil.copyfileobj(resp, out)
+        total = 0
+        with opener.open(req, timeout=120) as resp, tmp_path.open("wb") as out:
+            while True:
+                chunk = resp.read(65536)
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > _MAX_DOWNLOAD_BYTES:
+                    raise ValueError("Toolchain-Download ueberschreitet 150 MiB Limit")
+                out.write(chunk)
         verify_sha256(tmp_path, expected_sha256)
         tmp_path.replace(dest)
     except Exception:

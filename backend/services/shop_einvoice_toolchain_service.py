@@ -7,22 +7,31 @@ Toolchain wird ausdruecklich keine PDF/A-3-Konformitaet behauptet.
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 import shutil
 import subprocess
 import tempfile
+import threading
 from datetime import datetime, timezone
 from glob import glob
 from pathlib import Path
-from xml.etree import ElementTree as ET
+from xml.etree.ElementTree import ParseError
 from xml.sax.saxutils import escape as xml_escape
+
+from defusedxml import ElementTree as SafeET
+from defusedxml.common import DefusedXmlException
 
 from scripts.fetch_einvoice_toolchain import KOSIT_VALIDATOR_FILENAME
 
+_logger = logging.getLogger(__name__)
 _SUBPROCESS_TIMEOUT_S = 45
 _MAX_ERRORS = 20
 _MAX_ERR_LEN = 300
+_MAX_XML_CHARS = 5 * 1024 * 1024
+_MAX_PDF_BYTES = 50 * 1024 * 1024
+_TOOLCHAIN_SEMAPHORE = threading.BoundedSemaphore(2)
 
 _ICC_CANDIDATES = (
     "/usr/share/color/icc/ghostscript/srgb.icc",
@@ -136,8 +145,8 @@ def _parse_kosit_reports(report_paths: list[Path]) -> tuple[bool, list[str]]:
 
     for report_path in report_paths:
         try:
-            root = ET.fromstring(report_path.read_text(encoding="utf-8", errors="replace"))
-        except ET.ParseError:
+            root = SafeET.fromstring(report_path.read_text(encoding="utf-8", errors="replace"))
+        except (ParseError, DefusedXmlException):
             errors.append("KoSIT-Pruefbericht nicht lesbar")
             continue
 
@@ -178,6 +187,12 @@ def validate_xrechnung_xml(xml_text: str) -> dict[str, object]:
             "valid": False,
             "errors": ["Leeres XML-Dokument"],
         }
+    if len(xml_text) > _MAX_XML_CHARS or "<!doctype" in xml_text.lower() or "<!entity" in xml_text.lower():
+        return {
+            "available": True,
+            "valid": False,
+            "errors": ["XML-Dokument ueberschreitet Groessenlimit oder enthaelt unzulaessige DTD-Deklarationen"],
+        }
 
     with tempfile.TemporaryDirectory(prefix="msm-kosit-") as tmp_name:
         tmp_dir = Path(tmp_name)
@@ -188,6 +203,7 @@ def validate_xrechnung_xml(xml_text: str) -> dict[str, object]:
 
         cmd = [
             java_bin,
+            "-Xmx256m",
             "-jar",
             str(kosit_jar),
             "-s",
@@ -199,13 +215,14 @@ def validate_xrechnung_xml(xml_text: str) -> dict[str, object]:
             str(xml_path),
         ]
         try:
-            proc = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=_SUBPROCESS_TIMEOUT_S,
-                check=False,
-            )
+            with _TOOLCHAIN_SEMAPHORE:
+                proc = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=_SUBPROCESS_TIMEOUT_S,
+                    check=False,
+                )
         except subprocess.TimeoutExpired:
             return {
                 "available": True,
@@ -221,11 +238,11 @@ def validate_xrechnung_xml(xml_text: str) -> dict[str, object]:
 
         reports = sorted(out_dir.glob("*.xml"))
         if not reports:
-            fallback = _truncate(proc.stderr or proc.stdout or f"Exit-Code {proc.returncode}")
+            _logger.warning("KoSIT-Validator ohne Pruefbericht beendet (rc=%s)", proc.returncode)
             return {
                 "available": True,
                 "valid": False,
-                "errors": [fallback or "Kein KoSIT-Pruefbericht erzeugt"],
+                "errors": [f"Kein KoSIT-Pruefbericht erzeugt (Exit-Code {proc.returncode})"],
             }
 
         accepted, errors = _parse_kosit_reports(reports)
@@ -243,8 +260,8 @@ def _parse_verapdf_mrr(xml_text: str) -> tuple[bool, list[str]]:
     if not xml_text.strip():
         return False, ["Leerer veraPDF-Pruefbericht"]
     try:
-        root = ET.fromstring(xml_text)
-    except ET.ParseError:
+        root = SafeET.fromstring(xml_text)
+    except (ParseError, DefusedXmlException):
         return False, ["veraPDF-Pruefbericht nicht lesbar"]
 
     report_elem = None
@@ -289,12 +306,12 @@ def validate_pdfa3(pdf_bytes: bytes) -> dict[str, object]:
             "errors": ["veraPDF nicht installiert"],
         }
 
-    if not pdf_bytes or not pdf_bytes.startswith(b"%PDF-"):
+    if not pdf_bytes or not pdf_bytes.startswith(b"%PDF-") or len(pdf_bytes) > _MAX_PDF_BYTES:
         return {
             "available": True,
             "valid": False,
             "flavour": "3b",
-            "errors": ["Ungueltige PDF-Daten"],
+            "errors": ["Ungueltige oder zu grosse PDF-Daten"],
         }
 
     with tempfile.TemporaryDirectory(prefix="msm-verapdf-") as tmp_name:
@@ -302,13 +319,15 @@ def validate_pdfa3(pdf_bytes: bytes) -> dict[str, object]:
         pdf_path.write_bytes(pdf_bytes)
         cmd = [str(verapdf_bin), "--flavour", "3b", "--format", "mrr", str(pdf_path)]
         try:
-            proc = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=_SUBPROCESS_TIMEOUT_S,
-                check=False,
-            )
+            with _TOOLCHAIN_SEMAPHORE:
+                proc = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=_SUBPROCESS_TIMEOUT_S,
+                    check=False,
+                    env={**os.environ, "JAVA_OPTS": "-Xmx256m"},
+                )
         except subprocess.TimeoutExpired:
             return {
                 "available": True,
@@ -327,8 +346,8 @@ def validate_pdfa3(pdf_bytes: bytes) -> dict[str, object]:
         compliant, errors = _parse_verapdf_mrr(proc.stdout or "")
         valid = (proc.returncode == 0) and compliant
         if not valid and not errors:
-            detail = _truncate(proc.stderr or f"Exit-Code {proc.returncode}")
-            errors = [detail or "veraPDF-Validierung fehlgeschlagen"]
+            _logger.warning("veraPDF-Validierung fehlgeschlagen (rc=%s)", proc.returncode)
+            errors = [f"veraPDF-Validierung fehlgeschlagen (Exit-Code {proc.returncode})"]
         return {
             "available": True,
             "valid": valid,
@@ -476,7 +495,12 @@ def build_facturx_pdfa3(
     if not (gs_bin and icc_path and verapdf_bin.is_file() and java_bin):
         return plain_pdf_bytes, False
 
-    if not plain_pdf_bytes or not facturx_xml.strip():
+    if (
+        not plain_pdf_bytes
+        or not facturx_xml.strip()
+        or len(plain_pdf_bytes) > _MAX_PDF_BYTES
+        or len(facturx_xml) > _MAX_XML_CHARS
+    ):
         return plain_pdf_bytes, False
 
     with tempfile.TemporaryDirectory(prefix="msm-pdfa3-") as tmp_name:
@@ -502,6 +526,7 @@ def build_facturx_pdfa3(
 
         cmd = [
             gs_bin,
+            "-dSAFER",
             f"--permit-file-read={tmp_dir}/",
             f"--permit-file-read={icc_path}",
             "-dPDFA=3",
@@ -518,12 +543,13 @@ def build_facturx_pdfa3(
             str(in_pdf),
         ]
         try:
-            proc = subprocess.run(
-                cmd,
-                capture_output=True,
-                timeout=_SUBPROCESS_TIMEOUT_S,
-                check=False,
-            )
+            with _TOOLCHAIN_SEMAPHORE:
+                proc = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    timeout=_SUBPROCESS_TIMEOUT_S,
+                    check=False,
+                )
         except (subprocess.TimeoutExpired, OSError):
             return plain_pdf_bytes, False
 

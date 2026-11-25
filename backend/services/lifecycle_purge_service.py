@@ -15,6 +15,7 @@ import math
 import threading
 from uuid import uuid4
 
+from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
 from models import (
@@ -82,7 +83,7 @@ def mark_entitlement_suspended(
     db: Session | None = None,
 ) -> None:
     """Startet bei Zahlungsverzug den Betreiber-Countdown ohne Frist-Reset bei Retries."""
-    current = now or _now()
+    current = _as_utc(now) or _now()
     if ent.suspended_at is None:
         ent.suspended_at = current
     ent.purge_reason = "unpaid"
@@ -105,7 +106,7 @@ def mark_entitlement_revoked(
     db: Session | None = None,
 ) -> None:
     """Setzt die Loeschfrist fuer ein beendetes Entitlement (ohne laufende Fristen zu verlaengern)."""
-    current = now or _now()
+    current = _as_utc(now) or _now()
     ent.purge_reason = reason
     if not ent.purge_cycle_token:
         ent.purge_cycle_token = str(uuid4())
@@ -117,7 +118,7 @@ def mark_entitlement_revoked(
     grace_days = shop_lifecycle_settings_service.cancel_grace_days(db=db)
     candidate = current + timedelta(days=grace_days)
     existing = _as_utc(ent.purge_after)
-    if existing is not None and reason == "unpaid" and existing < candidate:
+    if existing is not None and existing < candidate:
         ent.purge_after = existing
     else:
         ent.purge_after = candidate
@@ -526,7 +527,8 @@ def process_unpaid_deletion_reminders(
         if not ent.purge_cycle_token:
             ent.purge_cycle_token = str(uuid4())
             db.commit()
-        assert ent.server_id is not None and ent.purge_after is not None
+        if ent.server_id is None or ent.purge_after is None:
+            continue
         if _process_notice_candidate(
             db,
             target_kind="shop_entitlement",
@@ -558,7 +560,8 @@ def process_unpaid_deletion_reminders(
         if not hs.purge_cycle_token:
             hs.purge_cycle_token = str(uuid4())
             db.commit()
-        assert hs.server_id is not None and hs.terminate_after is not None
+        if hs.server_id is None or hs.terminate_after is None or hs.identity is None:
+            continue
         if _process_notice_candidate(
             db,
             target_kind="hoster_service",
@@ -576,15 +579,98 @@ def process_unpaid_deletion_reminders(
     return sent_count
 
 
+def expire_due_prepaid_subscriptions(
+    db: Session, *, now: datetime | None = None
+) -> int:
+    """Sperrt oder widerruft abgelaufene Prepaid- und gekuendigte lokale Abos."""
+    from services import shop_fulfillment_service
+
+    current = _as_utc(now) or _now()
+    due_ids = [
+        row[0]
+        for row in db.query(ShopSubscription.id)
+        .filter(
+            ShopSubscription.status == "active",
+            ShopSubscription.current_period_end <= current,
+            or_(
+                ShopSubscription.billing_mode == "prepaid",
+                and_(
+                    ShopSubscription.billing_mode == "subscription",
+                    ShopSubscription.cancel_at_period_end.is_(True),
+                    ShopSubscription.provider_reference.is_(None),
+                ),
+            ),
+        )
+        .order_by(ShopSubscription.current_period_end.asc())
+        .all()
+    ]
+
+    expired = 0
+    for sub_id in due_ids:
+        try:
+            sub = (
+                db.query(ShopSubscription)
+                .filter(ShopSubscription.id == sub_id)
+                .with_for_update(of=ShopSubscription, skip_locked=True)
+                .first()
+            )
+            if sub is None or sub.status != "active" or sub.billing_mode == "lifetime":
+                continue
+            period_end = _as_utc(sub.current_period_end)
+            if period_end is None or period_end > current:
+                continue
+
+            sub.status = "cancelled"
+            sub.cancel_at_period_end = True
+
+            ents = (
+                db.query(ShopEntitlement)
+                .filter(ShopEntitlement.order_item_id == sub.order_item_id)
+                .with_for_update(of=ShopEntitlement)
+                .all()
+            )
+            for ent in ents:
+                if ent.status == "revoked":
+                    continue
+                if sub.delete_server_on_end or sub.billing_mode != "prepaid":
+                    ent.status = "revoked"
+                    ent.revoked_at = ent.revoked_at or current
+                    mark_entitlement_revoked(
+                        ent,
+                        reason="voluntary_cancel",
+                        now=current,
+                        db=db,
+                    )
+                else:
+                    ent.status = "suspended"
+                    mark_entitlement_suspended(ent, now=current, db=db)
+
+            db.flush()
+            shop_fulfillment_service.sync_order_entitlements(
+                db, sub.order_id, origin="system"
+            )
+            db.commit()
+            expired += 1
+        except Exception as exc:
+            db.rollback()
+            logger.warning(
+                "Prepaid-Abo konnte nicht beendet werden (subscription_id=%s, err=%s)",
+                sub_id,
+                type(exc).__name__,
+            )
+    return expired
+
+
 def purge_expired_shop_entitlements(
     db: Session, *, now: datetime | None = None
 ) -> int:
     """Loescht abgelaufene Shop-Server endgueltig von der Platte (`FOR UPDATE SKIP LOCKED`)."""
     from services import server_deletion_service, shop_fulfillment_service
 
-    current = now or _now()
-    due_rows = (
-        db.query(ShopEntitlement)
+    current = _as_utc(now) or _now()
+    due_ids = [
+        row[0]
+        for row in db.query(ShopEntitlement.id)
         .filter(
             ShopEntitlement.kind == "server",
             ShopEntitlement.status.in_(("suspended", "revoked")),
@@ -592,14 +678,21 @@ def purge_expired_shop_entitlements(
             ShopEntitlement.purge_after.isnot(None),
             ShopEntitlement.purge_after <= current,
         )
-        .with_for_update(of=ShopEntitlement, skip_locked=True)
+        .order_by(ShopEntitlement.purge_after.asc())
         .all()
-    )
+    ]
 
     purged = 0
-    for ent in due_rows:
-        ent_id = ent.id
+    for ent_id in due_ids:
         try:
+            ent = (
+                db.query(ShopEntitlement)
+                .filter(ShopEntitlement.id == ent_id)
+                .with_for_update(of=ShopEntitlement, skip_locked=True)
+                .first()
+            )
+            if ent is None:
+                continue
             # Re-Verifikation nach Lock: aktiver Vertrag rettet immer.
             if ent.status == "active" or ent.server_id is None:
                 continue

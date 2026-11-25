@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from database import get_db
 from dependencies import require_global, verify_csrf
 from models import (
+    HosterIdentity,
     HosterIntegration,
     HosterProduct,
     HosterService,
@@ -140,6 +141,10 @@ def create_integration(
 ) -> HosterSecretResponse:
     """Legt eine Integration an und gibt den API-Key genau einmal zurueck."""
     try:
+        svc_user = hoster_integration_service.require_service_user(db, payload.service_user_id)
+        hoster_integration_service.ensure_actor_may_use_service_user(
+            db, actor=actor, service_user=svc_user
+        )
         integration, api_key = hoster_integration_service.create_integration(
             db,
             name=payload.name,
@@ -164,6 +169,9 @@ def create_integration(
             },
         )
         db.commit()
+    except HosterRoleEscalation as exc:
+        db.rollback()
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except HosterConfigurationError as exc:
         db.rollback()
         raise _config_error(exc) from exc
@@ -181,9 +189,44 @@ def update_integration(
     integration = _get_integration(db, integration_id)
     values = payload.model_dump(exclude_unset=True)
     try:
+        if "is_sandbox" in values and values["is_sandbox"] is not None:
+            new_sandbox = bool(values["is_sandbox"])
+            if new_sandbox != bool(integration.is_sandbox):
+                has_records = (
+                    db.query(HosterService.id)
+                    .filter(HosterService.integration_id == integration.id)
+                    .first()
+                    is not None
+                    or db.query(HosterIdentity.id)
+                    .filter(HosterIdentity.integration_id == integration.id)
+                    .first()
+                    is not None
+                )
+                if has_records:
+                    raise HTTPException(
+                        status_code=409,
+                        detail="Sandbox-Modus kann bei vorhandenen Vertraegen oder Identitaeten nicht geaendert werden",
+                    )
         if "service_user_id" in values and values["service_user_id"] is not None:
-            hoster_integration_service.require_service_user(db, values["service_user_id"])
+            svc_user = hoster_integration_service.require_service_user(
+                db, values["service_user_id"]
+            )
+            hoster_integration_service.ensure_actor_may_use_service_user(
+                db, actor=actor, service_user=svc_user
+            )
             integration.service_user_id = values["service_user_id"]
+            products = (
+                db.query(HosterProduct)
+                .filter(
+                    HosterProduct.integration_id == integration.id,
+                    HosterProduct.role_id.is_not(None),
+                )
+                .all()
+            )
+            for prod in products:
+                hoster_integration_service.ensure_role_is_delegatable(
+                    db, integration=integration, role_id=prod.role_id
+                )
         if "webhook_url" in values:
             integration.webhook_url = hoster_integration_service.validate_webhook_url(
                 values["webhook_url"]
@@ -203,6 +246,9 @@ def update_integration(
         )
         db.commit()
         db.refresh(integration)
+    except HosterRoleEscalation as exc:
+        db.rollback()
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except HosterConfigurationError as exc:
         db.rollback()
         raise _config_error(exc) from exc
@@ -464,6 +510,14 @@ def retry_delivery(
     )
     if delivery is None:
         raise HTTPException(status_code=404, detail="Zustellung nicht gefunden")
+    audit_service.record_privileged_action(
+        db,
+        user_id=_actor.id,
+        action="hoster.webhook.retried",
+        target_type="hoster_webhook_delivery",
+        target_id=delivery.id,
+        details={"integration": integration.slug, "delivery_id": delivery.id},
+    )
     retry(db, delivery)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -530,5 +584,6 @@ def clean_sandbox_data(
         target_id=integration.id,
         details={"deleted_services_count": count, "slug": integration.slug},
     )
+    db.commit()
     return {"ok": True, "deleted_services_count": count}
 

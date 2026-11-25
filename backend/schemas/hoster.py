@@ -238,8 +238,8 @@ class HosterDesiredStateRequest(BaseModel):
     external_subject: str = Field(..., min_length=1, max_length=128)
     product_key: str | None = Field(None, min_length=1, max_length=128)
     plan_id: int | None = Field(None, ge=1)
-    ram_mb: int | None = Field(None, ge=128, le=4_194_304)
-    cpu_percent: int | None = Field(None, ge=10, le=6400)
+    ram_mb: int | None = Field(None, ge=512, le=4_194_304)
+    cpu_percent: int | None = Field(None, ge=10, le=3_200)
     slots: int | None = Field(None, ge=1, le=1000)
     variables: dict[str, str] | None = None
     email: str | None = Field(None, max_length=255)
@@ -265,8 +265,8 @@ class HosterApplyItem(BaseModel):
     kind: Literal["server", "addon"] = "server"
     product_key: str | None = Field(None, min_length=1, max_length=128)
     plan_id: int | None = Field(None, ge=1)
-    ram_mb: int | None = Field(None, ge=128, le=4_194_304)
-    cpu_percent: int | None = Field(None, ge=10, le=6400)
+    ram_mb: int | None = Field(None, ge=512, le=4_194_304)
+    cpu_percent: int | None = Field(None, ge=10, le=3_200)
     addon_slug: str | None = Field(None, min_length=1, max_length=64)
     slots: int | None = Field(None, ge=1, le=1000)
     variables: dict[str, str] | None = None

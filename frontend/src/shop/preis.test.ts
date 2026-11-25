@@ -9,10 +9,34 @@ import {
   RABATT_PROZENT,
 } from './preis'
 import type { ShopShortDurationTierDto } from '@/api/shop'
-import { SHOP_SPIELE } from './mockKatalog'
-import { standardKonfiguration } from './typen'
+import { standardKonfiguration, type ShopSpiel } from './typen'
 
-const palworld = SHOP_SPIELE[0]
+const palworld: ShopSpiel = {
+  id: 'palworld',
+  name: 'Palworld',
+  game: 'palworld',
+  category: 'Survival',
+  beschreibung: {
+    de: 'Offene Welt mit Sammeln, Bauen und Kaempfen.',
+    en: 'Open world with collecting, building and fighting.',
+  },
+  tags: ['Survival', 'Open World', 'Koop'],
+  unterstuetztMods: true,
+  unterstuetztWorkshop: true,
+  motiv: 'dschungel',
+  bildUrl: 'https://cdn.cloudflare.steamstatic.com/steam/apps/1623730/header.jpg',
+  grundpreisCent: 699,
+  ramStufenGb: [4, 8, 12, 16, 24],
+  standardRamGb: 8,
+  preisProGbCent: 90,
+  cpuStufen: [1, 2, 4, 6],
+  standardCpu: 2,
+  preisProKernCent: 150,
+  slotStufen: [4, 8, 16, 32],
+  standardSlots: 8,
+  preisProSlotCent: 30,
+  kiZugangCent: 499,
+}
 
 describe('Shop-Preislogik', () => {
   it('berechnet den Standardpreis ohne Aufschlaege', () => {

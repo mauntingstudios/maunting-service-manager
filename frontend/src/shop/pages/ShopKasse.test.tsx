@@ -193,7 +193,10 @@ describe('ShopKasse', () => {
     })
     hoisted.createOrder.mockResolvedValue({ id: 42, number: 'MSM-2026-000042' })
     hoisted.checkout.mockRejectedValue(
-      new SanitizedApiError('Stripe ist nicht konfiguriert', { status: 409 }),
+      new SanitizedApiError('Stripe ist nicht konfiguriert', {
+        status: 409,
+        code: 'stripe_not_configured',
+      }),
     )
     hoisted.payDemo.mockResolvedValue({ id: 42, number: 'MSM-2026-000042' })
     useAuthStore.setState({
@@ -236,7 +239,10 @@ describe('ShopKasse', () => {
   it('unterstuetzt den direkten Checkout eines eigenstaendigen Add-ons', async () => {
     hoisted.createOrder.mockResolvedValue({ id: 88, number: 'MSM-2026-000088' })
     hoisted.checkout.mockRejectedValue(
-      new SanitizedApiError('Stripe ist nicht konfiguriert', { status: 409 }),
+      new SanitizedApiError('Stripe ist nicht konfiguriert', {
+        status: 409,
+        code: 'stripe_not_configured',
+      }),
     )
     hoisted.payDemo.mockResolvedValue({ id: 88, number: 'MSM-2026-000088' })
     useAuthStore.setState({
@@ -272,7 +278,10 @@ describe('ShopKasse', () => {
     })
     hoisted.createOrder.mockResolvedValue({ id: 91, number: 'MSM-2026-000091' })
     hoisted.checkout.mockRejectedValue(
-      new SanitizedApiError('Stripe ist nicht konfiguriert', { status: 409 }),
+      new SanitizedApiError('Stripe ist nicht konfiguriert', {
+        status: 409,
+        code: 'stripe_not_configured',
+      }),
     )
     hoisted.payDemo.mockResolvedValue({ id: 91, number: 'MSM-2026-000091' })
     useAuthStore.setState({
@@ -298,7 +307,10 @@ describe('ShopKasse', () => {
   it('uebertraegt gewaehlte preferred_node_id und rechnet Standort-Aufpreis in Summe und Zusammenfassung ein', async () => {
     hoisted.createOrder.mockResolvedValue({ id: 99, number: 'MSM-2026-000099' })
     hoisted.checkout.mockRejectedValue(
-      new SanitizedApiError('Stripe ist nicht konfiguriert', { status: 409 }),
+      new SanitizedApiError('Stripe ist nicht konfiguriert', {
+        status: 409,
+        code: 'stripe_not_configured',
+      }),
     )
     hoisted.payDemo.mockResolvedValue({ id: 99, number: 'MSM-2026-000099' })
     useAuthStore.setState({
@@ -349,5 +361,27 @@ describe('ShopKasse', () => {
         preferred_node_id: 5,
       }),
     )
+  })
+
+  it('faellt bei fremdem 409-Fehler nicht auf payDemo zurueck', async () => {
+    hoisted.createOrder.mockResolvedValue({ id: 105, number: 'MSM-2026-000105' })
+    hoisted.checkout.mockRejectedValue(
+      new SanitizedApiError('Gutschein zwischenzeitlich abgelaufen', {
+        status: 409,
+        code: 'coupon_invalid',
+      }),
+    )
+    useAuthStore.setState({
+      isAuthenticated: true,
+      user: { id: 1, username: 'kunde', is_owner: false } as never,
+      isLoading: false,
+    })
+
+    zeige('/shop/palworld/kasse')
+    expect(await screen.findByText('Palworld API')).toBeInTheDocument()
+    fuelleFormular()
+
+    expect(await screen.findByText('Gutschein zwischenzeitlich abgelaufen')).toBeInTheDocument()
+    expect(hoisted.payDemo).not.toHaveBeenCalled()
   })
 })

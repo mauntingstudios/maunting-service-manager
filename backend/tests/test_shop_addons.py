@@ -435,8 +435,19 @@ class TestStandaloneAddonLifecycleAndRoles:
             slug="ai-pro",
             name="KI Pro",
             category="ai_quota",
+            price_cents=499,
+            extra_ai_tokens=250_000,
+            role_id=addon_role_b.id,
+        )
+        addon_expensive = _create_addon(
+            client,
+            owner_cookies,
+            csrf_token,
+            slug="ai-ultra",
+            name="KI Ultra",
+            category="ai_quota",
             price_cents=1299,
-            extra_ai_tokens=500_000,
+            extra_ai_tokens=900_000,
             role_id=addon_role_b.id,
         )
         addon_storage = _create_addon(
@@ -446,7 +457,7 @@ class TestStandaloneAddonLifecycleAndRoles:
             slug="storage-20g",
             name="Speicher 20 GB",
             category="storage",
-            price_cents=399,
+            price_cents=499,
             extra_ai_tokens=None,
             extra_storage_mb=20480,
             role_id=None,
@@ -517,7 +528,18 @@ class TestStandaloneAddonLifecycleAndRoles:
         plan_sub = next(s for s in subs if s["plan_id"] == plan["id"])
         addon_sub = next(s for s in subs if s["addon_id"] == addon_a["id"])
 
-        # 3. Add-on Upgrade auf KI Pro -> addon_role_a weg, addon_role_b + plan_role aktiv
+        # Kostenloses Self-Service-Upgrade auf teureres Add-on muss blockiert werden
+        assert (
+            client.post(
+                f"/api/shop/subscriptions/{addon_sub['id']}/addon-switch",
+                cookies=user_cookies,
+                headers={"X-CSRF-Token": user_csrf_token},
+                json={"target_addon_id": addon_expensive["id"]},
+            ).status_code
+            == 422
+        )
+
+        # 3. Preisgleicher Add-on-Wechsel auf KI Pro -> addon_role_a weg, addon_role_b + plan_role aktiv
         switch_res = client.post(
             f"/api/shop/subscriptions/{addon_sub['id']}/addon-switch",
             cookies=user_cookies,
@@ -529,7 +551,7 @@ class TestStandaloneAddonLifecycleAndRoles:
         assert switched["previous_addon_id"] == addon_a["id"]
         assert switched["new_addon_id"] == addon_b["id"]
         assert switched["role_changed"] is True
-        assert switched["subscription"]["monthly_gross_cents"] == 1299
+        assert switched["subscription"]["monthly_gross_cents"] == 499
 
         db.expire_all()
         user_refreshed = db.query(User).filter(User.id == regular_user.id).first()

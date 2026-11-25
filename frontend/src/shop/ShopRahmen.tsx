@@ -13,15 +13,7 @@ import {
 import { usePublicSettingsStore } from '@/stores/publicSettingsStore'
 import { ShopPromoBanner } from './components/ShopPromoBanner'
 import { ShopKopf } from './ShopKopf'
-
-function isSafeHttpUrl(url: string): boolean {
-  try {
-    const parsed = new URL(url)
-    return parsed.protocol === 'https:' || parsed.protocol === 'http:'
-  } catch {
-    return false
-  }
-}
+import { isSafeHttpUrl, isSafeRelativePath } from './safeUrl'
 
 export function ShopRahmen() {
   const { t } = useTranslation()
@@ -32,11 +24,7 @@ export function ShopRahmen() {
   const legal = usePublicLegalSettings()
   const rawImprint = legal.imprint_enabled ? legal.imprint_url.trim() : ''
   const imprintUrl =
-    rawImprint.startsWith('/') && !rawImprint.startsWith('//')
-      ? rawImprint
-      : isSafeHttpUrl(rawImprint)
-        ? rawImprint
-        : ''
+    isSafeRelativePath(rawImprint) || isSafeHttpUrl(rawImprint) ? rawImprint : ''
   const supportActive = useSyncExternalStore(
     subscribeSupportWidgetState,
     isSupportWidgetActive,
@@ -140,9 +128,9 @@ export function ShopRahmen() {
                       {t('shop.fuss.datenschutz')}
                     </Link>
                   </li>
-                  {imprintUrl && (
+                  {(isSafeRelativePath(imprintUrl) || isSafeHttpUrl(imprintUrl)) && (
                     <li>
-                      {imprintUrl.startsWith('/') ? (
+                      {isSafeRelativePath(imprintUrl) ? (
                         <Link to={imprintUrl} className="hover:text-on-surface">
                           {t('shop.fuss.impressum')}
                         </Link>
