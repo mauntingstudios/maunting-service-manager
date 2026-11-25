@@ -120,4 +120,24 @@ describe('KontoRahmen', () => {
     ).toBeInTheDocument()
     expect(screen.getByRole('link', { name: i18n.t('shop.konto.nav.abos') })).toBeInTheDocument()
   })
+
+  it('verankert die Zurueck-Leiste am unteren Rand auch bei kurzen Leerzustaenden', () => {
+    usePublicSettingsStore.setState({ shop_enabled: true })
+
+    const { container } = render(
+      <MemoryRouter initialEntries={['/konto/rechnungen']}>
+        <Routes>
+          <Route path="/konto" element={<KontoRahmen />}>
+            <Route path="rechnungen" element={<div>Leer</div>} />
+          </Route>
+        </Routes>
+      </MemoryRouter>,
+    )
+
+    const section = container.querySelector('section')
+    expect(section).toHaveClass('flex', 'flex-1', 'flex-col')
+
+    const backLink = screen.getByRole('link', { name: i18n.t('shop.konto.zurueck') })
+    expect(backLink.parentElement).toHaveClass('mt-auto')
+  })
 })

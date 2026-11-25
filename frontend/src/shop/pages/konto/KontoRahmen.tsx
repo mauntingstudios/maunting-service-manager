@@ -67,7 +67,7 @@ export function KontoRahmen() {
   const eintraege = zeigeShopTabs ? [...SHOP_EINTRAEGE, PROFIL_EINTRAG] : [PROFIL_EINTRAG]
 
   return (
-    <section className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+    <section className="mx-auto flex w-full max-w-7xl flex-1 flex-col px-4 py-8 sm:px-6 lg:px-8">
       <div className="msm-card flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-outline-variant/30 bg-surface-container-low/75 p-5">
         <div className="flex min-w-0 items-center gap-4">
           {user && (
@@ -128,7 +128,7 @@ export function KontoRahmen() {
         <Outlet />
       </div>
 
-      <div className="mt-8 flex flex-wrap gap-4 text-sm">
+      <div className="mt-auto flex flex-wrap gap-4 pt-8 text-sm">
         {shopEnabled && (
           <Link to="/" className="inline-flex items-center gap-1 text-primary hover:underline">
             <ArrowLeft className="h-4 w-4" aria-hidden="true" />

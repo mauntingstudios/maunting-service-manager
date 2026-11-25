@@ -50,7 +50,7 @@ export function ShopRahmen() {
       {shopEnabled && <ShopPromoBanner />}
       <ShopKopf />
 
-      <main id="shop-inhalt" ref={mainRef} tabIndex={-1} className="flex-1 outline-none">
+      <main id="shop-inhalt" ref={mainRef} tabIndex={-1} className="flex flex-1 flex-col outline-none [&>*]:w-full">
         <Outlet />
       </main>
 

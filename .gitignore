@@ -185,3 +185,7 @@ sign_and_tag.ps1
 /example-with-test/data/
 /example-with-test/**/__pycache__/
 /example-with-test/.pytest_cache/
+.hallmark/salt
+
+# Lokale Zukunfts-Roadmap (nicht ins Repository committen)
+/docs/future-roadmap.md
