@@ -183,3 +183,91 @@ def test_dev_idle_worker_pauses_inactive_projects(tmp_path, monkeypatch):
 
     m2_updated = json.loads(meta2_path.read_text(encoding="utf-8"))
     assert m2_updated["dev_status"] == "running"
+
+
+def test_sync_workspace_files_excludes_and_cleans_internal_release_dirs(db, owner_user, tmp_path):
+    from uuid import uuid4
+    from models.ai_project import AiProjectFile
+
+    project = AiProject(
+        id=str(uuid4()),
+        name="Release Hygiene App",
+        user_id=owner_user.id,
+        workspace_mode="sandbox",
+    )
+    db.add(project)
+    db.flush()
+
+    # Vorhandene Altlast aus frueherem Bug in DB:
+    db.add(
+        AiProjectFile(
+            id=str(uuid4()),
+            project_id=project.id,
+            path="_release_build/_release_build/.env",
+            content="PORT=27026\n",
+            size_bytes=11,
+        )
+    )
+    db.add(
+        AiProjectFile(
+            id=str(uuid4()),
+            project_id=project.id,
+            path="_dev_release/release.json",
+            content="{}",
+            size_bytes=2,
+        )
+    )
+    db.commit()
+
+    ws = tmp_path / f"proj_{project.id}"
+    ws.mkdir(parents=True)
+    (ws / "src").mkdir()
+    (ws / "src" / "App.tsx").write_text("export default function App() { return null }", encoding="utf-8")
+    for dirty in ("_release_build/_release_build", "_dev_release", "_prod_release", "_dev_release_old_999"):
+        d = ws / dirty
+        d.mkdir(parents=True, exist_ok=True)
+        (d / ".env").write_text("PORT=27026\n", encoding="utf-8")
+
+    ai_project_service._sync_workspace_files_to_db(db, project, ws)
+
+    paths = [
+        row.path
+        for row in db.query(AiProjectFile).filter(AiProjectFile.project_id == project.id).all()
+    ]
+    assert paths == ["src/App.tsx"]
+
+
+def test_sync_workspace_files_handles_concurrent_integrity_error(db, owner_user, tmp_path, monkeypatch):
+    from uuid import uuid4
+    from sqlalchemy.exc import IntegrityError
+    from models.ai_project import AiProjectFile
+
+    project = AiProject(
+        id=str(uuid4()),
+        name="Concurrent Sync App",
+        user_id=owner_user.id,
+        workspace_mode="sandbox",
+    )
+    db.add(project)
+    db.commit()
+
+    ws = tmp_path / f"proj_{project.id}"
+    ws.mkdir(parents=True)
+    (ws / "index.html").write_text("<h1>Hello</h1>", encoding="utf-8")
+
+    # Simuliere einen parallelen Worker, der index.html kurz vor unserem Commit einfuegt.
+    real_commit = db.commit
+    state = {"tripped": False}
+
+    def racing_commit():
+        if not state["tripped"]:
+            state["tripped"] = True
+            raise IntegrityError("INSERT", {}, Exception("duplicate key value violates unique constraint"))
+        return real_commit()
+
+    monkeypatch.setattr(db, "commit", racing_commit)
+
+    ai_project_service._sync_workspace_files_to_db(db, project, ws)
+
+    rows = db.query(AiProjectFile).filter(AiProjectFile.project_id == project.id).all()
+    assert [r.path for r in rows] == ["index.html"]

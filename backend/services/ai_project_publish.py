@@ -105,12 +105,14 @@ def _safe_target_write_files(
             f"Projektdateien ueberschreiten das Speicherlimit von Server '{srv.name}'.",
         )
 
+    from services.ai_project_service import is_internal_release_path
+
     cleaned_files: list[tuple[str, str]] = []
     for raw_path, content in deploy_files:
         rel = posixpath.normpath(raw_path.replace("\\", "/")).lstrip("/")
         if not rel or rel == "." or rel.startswith("../") or "/../" in rel or "\x00" in rel:
             continue
-        if rel.startswith((".git/", ".singra/", "_prod_release/")):
+        if rel.startswith((".git/", ".singra/")) or is_internal_release_path(rel):
             continue
         cleaned_files.append((rel, content))
 

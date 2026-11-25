@@ -756,6 +756,7 @@ def start_project_dev_environment(
             },
         )
     from services.singra import dev_env
+    from services.singra.release import SingraBuildError
     try:
         opts = payload.model_dump() if payload else {}
         return dev_env.start_dev_environment(db, user, project_id, options=opts)
@@ -763,7 +764,7 @@ def start_project_dev_environment(
         raise HTTPException(
             status_code=403, detail={"code": exc.code, "message": str(exc)}
         ) from exc
-    except AiProjectError as exc:
+    except (AiProjectError, SingraBuildError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 

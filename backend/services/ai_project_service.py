@@ -450,6 +450,32 @@ def list_project_files(db: Session, user: User, project_id: str) -> list[AiProje
         return q.all()
 
 
+_INTERNAL_RELEASE_DIRS = frozenset({"_release_build", "_dev_release", "_prod_release"})
+_INTERNAL_RELEASE_PREFIXES = ("_dev_release_old_", "_prod_release_old_")
+
+
+def is_internal_release_dir(name: str) -> bool:
+    """True fuer interne Singra-Build- und Release-Verzeichnisse im Workspace."""
+    clean = (name or "").strip()
+    return clean in _INTERNAL_RELEASE_DIRS or clean.startswith(_INTERNAL_RELEASE_PREFIXES)
+
+
+def is_internal_release_path(rel_path: str) -> bool:
+    """True, wenn der relative Projektpfad in einem internen Release-Ordner liegt."""
+    normalized = (rel_path or "").strip().lstrip("/").replace("\\", "/")
+    if not normalized:
+        return False
+    first = normalized.split("/", 1)[0]
+    return is_internal_release_dir(first)
+
+
+def _should_purge_synced_path(rel_path: str) -> bool:
+    return (
+        ("/" in rel_path and posixpath.basename(rel_path).lower() in ("agents.md", "gemini.md"))
+        or is_internal_release_path(rel_path)
+    )
+
+
 def _sync_workspace_files_to_db(
     db: Session,
     project: AiProject,
@@ -458,6 +484,8 @@ def _sync_workspace_files_to_db(
     enforce_quota: bool = False,
 ) -> None:
     """Synchronisiert Dateien aus dem Sandbox-Verzeichnis in die verschluesselte DB."""
+    from sqlalchemy.exc import IntegrityError
+
     if not ws.exists() or not ws.is_dir():
         return
     existing = {
@@ -466,9 +494,10 @@ def _sync_workspace_files_to_db(
     }
     changed = False
 
-    # Veraltete/fehlerhafte Unterordner-AGENTS.md in DB und Cache bereinigen
+    # Veraltete Unterordner-Regelwerke sowie versehentlich in die DB gesyncte
+    # interne Build-/Release-Verzeichnisse automatisch bereinigen.
     for p, row in list(existing.items()):
-        if "/" in p and posixpath.basename(p).lower() in ("agents.md", "gemini.md"):
+        if _should_purge_synced_path(p):
             db.delete(row)
             existing.pop(p, None)
             changed = True
@@ -476,11 +505,22 @@ def _sync_workspace_files_to_db(
     pending_new: list[tuple[str, str, int]] = []
     added_bytes = 0
     count = 0
+    ignored_dirs = {
+        ".git",
+        ".singra",
+        "node_modules",
+        "__pycache__",
+        ".venv",
+        "venv",
+        "dist",
+        "build",
+        "target",
+    }
     for root, dirs, files in os.walk(ws):
         dirs[:] = [
             d
             for d in dirs
-            if d not in {".git", ".singra", "_prod_release", "node_modules", "__pycache__", ".venv", "venv", "dist", "build", "target"}
+            if d not in ignored_dirs and not is_internal_release_dir(d)
         ]
         for fname in files:
             if fname == ".singra-env.json":
@@ -497,7 +537,7 @@ def _sync_workspace_files_to_db(
                 continue
             try:
                 rel = fpath.relative_to(ws).as_posix()
-                if not _SAFE_REL_PATH_RE.match(rel):
+                if is_internal_release_path(rel) or not _SAFE_REL_PATH_RE.match(rel):
                     continue
                 stat = fpath.stat()
                 if stat.st_size > _MAX_FILE_BYTES:
@@ -529,7 +569,43 @@ def _sync_workspace_files_to_db(
             )
         )
         changed = True
-    if changed:
+    if not changed:
+        return
+
+    try:
+        db.commit()
+    except IntegrityError:
+        # Parallele Requests koennen dieselbe neue Workspace-Datei gleichzeitig syncen.
+        db.rollback()
+        current_rows = (
+            db.query(AiProjectFile)
+            .filter(AiProjectFile.project_id == project.id)
+            .all()
+        )
+        current_paths: set[str] = set()
+        for row in current_rows:
+            if _should_purge_synced_path(row.path):
+                db.delete(row)
+            else:
+                current_paths.add(row.path)
+        for rel, text, size_b in pending_new:
+            if rel in current_paths:
+                continue
+            try:
+                with db.begin_nested():
+                    db.add(
+                        AiProjectFile(
+                            id=str(uuid4()),
+                            project_id=project.id,
+                            path=rel,
+                            content=text,
+                            size_bytes=size_b,
+                        )
+                    )
+                    db.flush()
+                current_paths.add(rel)
+            except IntegrityError:
+                continue
         db.commit()
 
 

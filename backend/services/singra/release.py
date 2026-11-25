@@ -57,9 +57,15 @@ def materialize_files(
             if p:
                 file_items.append((p, c or ""))
 
+    from services.ai_project_service import is_internal_release_path
+
     for rel_path, content in file_items:
         clean_rel = rel_path.strip().lstrip("/").replace("\\", "/")
-        out_file = target_dir / clean_rel
+        if not clean_rel or is_internal_release_path(clean_rel):
+            continue
+        out_file = (target_dir / clean_rel).resolve()
+        if not out_file.is_relative_to(target_dir.resolve()):
+            continue
         out_file.parent.mkdir(parents=True, exist_ok=True)
         out_file.write_text(content, encoding="utf-8")
         manifest[clean_rel] = hashlib.sha256(content.encode("utf-8")).hexdigest()

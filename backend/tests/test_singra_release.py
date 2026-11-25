@@ -126,3 +126,28 @@ def test_build_release_frontend_missing_dist_raises(tmp_path, monkeypatch):
 
     assert exc_info.value.phase == "build_frontend"
     assert "dist/index.html" in str(exc_info.value)
+
+
+def test_materialize_files_skips_internal_release_directories(tmp_path):
+    from services.singra.release import materialize_files
+
+    manifest = materialize_files(
+        {
+            "src/App.tsx": "export const App = () => null;",
+            "_release_build/.env": "SECRET=old",
+            "_release_build/_release_build/index.html": "stale",
+            "_dev_release/release.json": "{}",
+            "_prod_release/start.sh": "echo no",
+            "_dev_release_old_123/index.html": "old",
+            "../outside.txt": "bad",
+        },
+        tmp_path,
+    )
+
+    assert list(manifest.keys()) == ["src/App.tsx"]
+    assert (tmp_path / "src/App.tsx").exists()
+    assert not (tmp_path / "_release_build").exists()
+    assert not (tmp_path / "_dev_release").exists()
+    assert not (tmp_path / "_prod_release").exists()
+    assert not (tmp_path / "_dev_release_old_123").exists()
+    assert not (tmp_path.parent / "outside.txt").exists()
