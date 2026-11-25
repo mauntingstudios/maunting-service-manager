@@ -1,8 +1,8 @@
-fastapi==0.163.1
+fastapi==0.165.0
 uvicorn[standard]==0.54.0
-sqlalchemy==2.1.8
+sqlalchemy==2.1.9
 alembic==1.20.1
-pydantic==2.14.3
+pydantic==2.14.4
 pydantic-settings==2.16.3
 # jsonschema: prueft Werkzeugargumente gegen genau das Schema, das dem Modell
 # angeboten wurde. Die Schemas sind bereits JSON Schema; eine eigene Auslegung
@@ -16,7 +16,7 @@ PyJWT[crypto]==2.15.1
 # Temporaer fuer Passwort-Migration (passlib -> DIS Argon2id).
 # Wird entfernt sobald alle User-Hashes im msm-pw-v1: Format vorliegen.
 passlib[argon2]==1.7.4
-python-multipart==0.0.33
+python-multipart==0.0.34
 aiosmtplib==5.1.3
 email-validator==2.4.0
 httpx==0.28.1
@@ -60,11 +60,11 @@ docker==7.2.0
 # als Fassade gekapselt (Single Source of Truth fuer alle S3-Operationen).
 # Beruehrt Storage und S3-Credentials (verschluesselt via DIS in panel_settings,
 # AAD="msm:backup:s3"). Offiziell AWS-Library, auditiert, weit verbreitet.
-# botocore wird transitiv durch boto3==1.44.3 gepinnt (gleiche Version).
+# botocore wird transitiv durch boto3==1.44.9 gepinnt (gleiche Version).
 # Dependency-Entscheidung dokumentiert in docs/agent-rules/dependencies.md
 # (Sektion: S3-Backup-Dependencies). Exit-Plan: S3Service-Fassade ermoeglicht
 # Austausch gegen alternative S3-Client-Library ohne Aenderung an Fachlogik.
-boto3==1.44.3
+boto3==1.44.9
 
 # --- Lokale Embeddings fuer das KI-Gedaechtnis ---
 # onnxruntime + tokenizers: das Satzmodell paraphrase-multilingual-MiniLM-L12-v2
@@ -127,14 +127,14 @@ pipecat-ai==1.16.0
 # Transitiv durch onnxruntime und pipecat-ai, hier gepinnt, weil
 # ai_embedding_service direkt damit rechnet (Mittelung, Normalisierung,
 # Skalarprodukt).
-numpy==2.5.4
+numpy==2.5.5
 # Ebenfalls transitiv (huggingface_hub verlangt pyyaml>=5.1), hier gepinnt,
 # weil ai_skill_service direkt damit den Frontmatter der mitgelieferten
 # Skill-Dateien liest. Ein eigener Miniparser waere weniger Abhaengigkeit,
 # aber er wuerde bei Doppelpunkten, Anfuehrungszeichen und mehrzeiligen Werten
 # still das Falsche tun — und genau solche Zeichen stehen in
 # Skill-Beschreibungen. Gelesen wird ausschliesslich mit `safe_load`.
-pyyaml==6.0.3
+pyyaml==6.0.4
 # QR-Code fuer die 2FA-Einrichtung, erzeugt im Panel.
 # Zweck: Bis hierher liess die Oberflaeche das Bild von api.qrserver.com holen
 # und schickte die vollstaendige otpauth://-URI als Query-Parameter mit — also
