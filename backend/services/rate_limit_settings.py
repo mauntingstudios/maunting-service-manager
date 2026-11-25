@@ -20,13 +20,13 @@ KEY_GLOBAL = "rate_limit_global"
 
 # Dokumentierte Defaults — bei fehlendem/ungültigem Wert immer diese nutzen
 DEFAULT_AUTH = 10
-DEFAULT_GLOBAL = 100
+DEFAULT_GLOBAL = 300
 
 # Server-seitig erzwungene erlaubte Bereiche
 AUTH_MIN = 3
-AUTH_MAX = 50
+AUTH_MAX = 120
 GLOBAL_MIN = 50
-GLOBAL_MAX = 1000
+GLOBAL_MAX = 5000
 
 
 def _to_int(value: Any, field_name: str) -> int:
@@ -68,7 +68,7 @@ def _to_int(value: Any, field_name: str) -> int:
 def validate_auth_limit(value: Any) -> int:
     """Prüft Login/Auth-Limit für Writes; liefert den gültigen Integer.
 
-    Erlaubter Bereich: 3–50 Anfragen pro Minute pro IP.
+    Erlaubter Bereich: 3–120 Anfragen pro Minute pro IP.
     Wirft ValueError mit verständlicher deutscher Meldung bei Fehlern.
     """
     n = _to_int(value, KEY_AUTH)
@@ -82,7 +82,7 @@ def validate_auth_limit(value: Any) -> int:
 def validate_global_limit(value: Any) -> int:
     """Prüft globales API-Limit für Writes; liefert den gültigen Integer.
 
-    Erlaubter Bereich: 50–1000 Anfragen pro Minute pro IP.
+    Erlaubter Bereich: 50–5000 Anfragen pro Minute pro IP.
     Wirft ValueError mit verständlicher deutscher Meldung bei Fehlern.
     """
     n = _to_int(value, KEY_GLOBAL)
@@ -110,7 +110,7 @@ def resolve_auth_limit(raw: Any) -> int:
 def resolve_global_limit(raw: Any) -> int:
     """Liefert ein sicheres globales API-Limit für die Laufzeit-Durchsetzung.
 
-    Leere, fehlende oder ungültige Werte fallen auf DEFAULT_GLOBAL (100)
+    Leere, fehlende oder ungültige Werte fallen auf DEFAULT_GLOBAL (300)
     zurück — nie unlimitiert, nie außerhalb des erlaubten Bereichs.
     """
     if raw is None or (isinstance(raw, str) and raw.strip() == ""):

@@ -93,8 +93,8 @@ class Settings(BaseSettings):
     # "api": Nur HTTP/WebSocket/SSE (ohne APScheduler / Hintergrund-Pumpen)
     # "worker": Dedizierter Hintergrund-Worker (APScheduler + Task-/AI-Pump + Heartbeats)
     worker_mode: str = "all"
-    db_pool_size: int = 5
-    db_max_overflow: int = 10
+    db_pool_size: int = 10
+    db_max_overflow: int = 20
     db_pool_timeout: int = 30
     db_pool_recycle: int = 1800
     db_statement_timeout_ms: int = 15000

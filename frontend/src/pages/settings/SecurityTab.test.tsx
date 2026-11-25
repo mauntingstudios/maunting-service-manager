@@ -176,7 +176,7 @@ describe('SecurityTab rate limits', () => {
     await waitFor(() => expect(document.getElementById('rate-limit-auth')).toBeTruthy())
 
     vi.mocked(client.api).mockClear()
-    vi.mocked(client.api).mockRejectedValue(new Error('rate_limit_auth muss zwischen 3 und 50 liegen'))
+    vi.mocked(client.api).mockRejectedValue(new Error(`rate_limit_auth muss zwischen ${RATE_LIMIT_AUTH_MIN} und ${RATE_LIMIT_AUTH_MAX} liegen`))
 
     fireEvent.change(document.getElementById('rate-limit-auth') as HTMLInputElement, {
       target: { value: '10' },
@@ -188,7 +188,7 @@ describe('SecurityTab rate limits', () => {
 
     await waitFor(() => {
       const toasts = useToastStore.getState().toasts
-      expect(toasts.some((t) => /rate_limit_auth|zwischen|3 und 50/i.test(t.message))).toBe(true)
+      expect(toasts.some((t) => /rate_limit_auth|zwischen/i.test(t.message))).toBe(true)
     })
   })
 

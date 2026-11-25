@@ -35,30 +35,30 @@ class TestResolveAndValidate:
 
     def test_resolve_accepts_in_range(self):
         assert resolve_auth_limit("3") == 3
-        assert resolve_auth_limit(50) == 50
+        assert resolve_auth_limit(120) == 120
         assert resolve_auth_limit(10) == 10
         assert resolve_global_limit("50") == 50
-        assert resolve_global_limit(1000) == 1000
-        assert resolve_global_limit(100) == 100
+        assert resolve_global_limit(5000) == 5000
+        assert resolve_global_limit(300) == 300
 
     def test_resolve_falls_back_on_out_of_range_and_garbage(self):
         assert resolve_auth_limit("2") == DEFAULT_AUTH
-        assert resolve_auth_limit("51") == DEFAULT_AUTH
+        assert resolve_auth_limit("121") == DEFAULT_AUTH
         assert resolve_auth_limit("abc") == DEFAULT_AUTH
         assert resolve_auth_limit(True) == DEFAULT_AUTH
         assert resolve_global_limit("49") == DEFAULT_GLOBAL
-        assert resolve_global_limit("1001") == DEFAULT_GLOBAL
+        assert resolve_global_limit("5001") == DEFAULT_GLOBAL
         assert resolve_global_limit("nope") == DEFAULT_GLOBAL
 
     def test_validate_rejects_out_of_range(self):
         with pytest.raises(ValueError, match="rate_limit_auth"):
             validate_auth_limit(2)
         with pytest.raises(ValueError, match="rate_limit_auth"):
-            validate_auth_limit(51)
+            validate_auth_limit(121)
         with pytest.raises(ValueError, match="rate_limit_global"):
             validate_global_limit(49)
         with pytest.raises(ValueError, match="rate_limit_global"):
-            validate_global_limit(1001)
+            validate_global_limit(5001)
 
     def test_validate_rejects_non_integer(self):
         with pytest.raises(ValueError, match="ganze Zahl"):
@@ -74,9 +74,9 @@ class TestResolveAndValidate:
 
     def test_validate_accepts_boundary(self):
         assert validate_auth_limit(3) == 3
-        assert validate_auth_limit(50) == 50
+        assert validate_auth_limit(120) == 120
         assert validate_global_limit(50) == 50
-        assert validate_global_limit(1000) == 1000
+        assert validate_global_limit(5000) == 5000
 
 
 class TestSettingsApiRateLimits:
@@ -122,7 +122,7 @@ class TestSettingsApiRateLimits:
         before_auth = PanelSettingsService.get(KEY_AUTH)
         before_global = PanelSettingsService.get(KEY_GLOBAL)
 
-        for bad in (2, 51, 0, -1, 999):
+        for bad in (2, 121, 0, -1, 999):
             res = client.post(
                 "/api/settings",
                 cookies=owner_cookies,
@@ -145,7 +145,7 @@ class TestSettingsApiRateLimits:
         before_auth = PanelSettingsService.get(KEY_AUTH)
         before_global = PanelSettingsService.get(KEY_GLOBAL)
 
-        for bad in (49, 1001, 0, -5):
+        for bad in (49, 5001, 0, -5):
             res = client.post(
                 "/api/settings",
                 cookies=owner_cookies,
@@ -196,6 +196,16 @@ class TestSettingsApiRateLimits:
 class TestDynamicRateLimitEnforcement:
     """429 nach konfiguriertem Budget über shipped Limiters + Settings-Store."""
 
+    @pytest.fixture(autouse=True)
+    def _reset_rate_limit_settings(self):
+        yield
+        PanelSettingsService.delete(KEY_AUTH)
+        PanelSettingsService.delete(KEY_GLOBAL)
+        PanelSettingsService.invalidate_cache()
+        from middleware.rate_limit import limiter
+
+        limiter.reset()
+
     def test_auth_limit_respects_lower_configured_value(self, client: TestClient):
         """Auth-Limit 3 → spätestens der 4. Login-Versuch pro IP liefert 429."""
         PanelSettingsService.set(KEY_AUTH, "3")
@@ -224,6 +234,7 @@ class TestDynamicRateLimitEnforcement:
 
     def test_auth_default_still_triggers_around_10(self, client: TestClient):
         """Ohne Setting: Default 10 — nach >10 Requests 429 (Regression)."""
+        PanelSettingsService.delete(KEY_AUTH)
         PanelSettingsService.invalidate_cache()
         from middleware.rate_limit import limiter
 
@@ -285,17 +296,66 @@ class TestDynamicRateLimitEnforcement:
                 break
         assert saw_429, "Jede Server-ID bekam einen eigenen Zähler — das Limit greift nicht"
 
-    def test_global_default_still_triggers_around_100(self, client: TestClient):
-        """Ohne Setting: Default 100 — nach >100 Requests 429 (Regression)."""
+    def test_global_default_still_triggers_around_300(self, client: TestClient):
+        """Ohne Setting: Default 300 — nach >300 Requests 429 (Regression)."""
+        PanelSettingsService.delete(KEY_GLOBAL)
         PanelSettingsService.invalidate_cache()
         from middleware.rate_limit import limiter
 
         limiter.reset()
 
         saw_429 = False
-        for _ in range(105):
+        for _ in range(305):
             response = client.get("/api/health")
             if response.status_code == 429:
                 saw_429 = True
+                retry_after = int(response.headers.get("Retry-After", "0"))
+                assert 1 <= retry_after <= 60
                 break
-        assert saw_429, "Default global rate limit (100) hat nicht gegriffen"
+        assert saw_429, "Default global rate limit (300) hat nicht gegriffen"
+
+    def test_shop_public_limit_scales_with_global_setting_while_coupon_stays_capped(
+        self, client: TestClient
+    ):
+        """shop_public_rate_limit skaliert mit rate_limit_global, Coupon bleibt auf 60/min."""
+        PanelSettingsService.set(KEY_GLOBAL, "300")
+        PanelSettingsService.invalidate_cache()
+        from middleware.rate_limit import limiter
+
+        limiter.reset()
+
+        for i in range(80):
+            resp = client.get("/api/popups/active")
+            assert resp.status_code != 429, f"Unexpected 429 on /api/popups/active at #{i + 1}"
+
+        saw_coupon_429 = False
+        for _ in range(65):
+            resp = client.post(
+                "/api/shop/coupons/preview",
+                json={"code": "INVALID", "kind": "plan", "gross_cents": 1000},
+            )
+            if resp.status_code == 429:
+                saw_coupon_429 = True
+                retry_after = int(resp.headers.get("Retry-After", "0"))
+                assert 1 <= retry_after <= 60
+                break
+        assert saw_coupon_429, "Coupon-Endpunkt muss weiterhin bei 60/min gedeckelt bleiben"
+
+    def test_settings_cache_throttles_remote_version_checks(self, monkeypatch):
+        """PanelSettingsService._load_cache fragt Redis im 5s-Fenster nicht bei jedem Request ab."""
+        PanelSettingsService.invalidate_cache()
+        calls = 0
+
+        def fake_remote_version():
+            nonlocal calls
+            calls += 1
+            return "1"
+
+        monkeypatch.setattr(PanelSettingsService, "_remote_version", staticmethod(fake_remote_version))
+        for _ in range(20):
+            PanelSettingsService.get(KEY_GLOBAL, "")
+        assert calls == 1
+
+        PanelSettingsService.invalidate_cache()
+        PanelSettingsService.get(KEY_GLOBAL, "")
+        assert calls == 2

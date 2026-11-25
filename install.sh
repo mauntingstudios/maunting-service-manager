@@ -1625,8 +1625,8 @@ MSM_VAULT_BLOB_DIR="$MSM_DIR/vault-blobs"
 MSM_BLUEPRINTS_DIR="$MSM_DIR/blueprints/community"
 MSM_DOCKER_HOST="$MSM_DOCKER_HOST"
 MSM_WORKER_MODE="$PANEL_WORKER_MODE"
-MSM_DB_POOL_SIZE=5
-MSM_DB_MAX_OVERFLOW=10
+MSM_DB_POOL_SIZE=10
+MSM_DB_MAX_OVERFLOW=20
 MSM_DB_POOL_TIMEOUT=30
 MSM_DB_POOL_RECYCLE=1800
 MSM_DB_STATEMENT_TIMEOUT_MS=15000
@@ -2515,7 +2515,7 @@ WorkingDirectory=/opt/msm/backend
 # Systemd-Units erben kein PATH vom Login-Shell. venv zuerst, danach System-Pfade.
 Environment="PATH=/opt/msm/backend/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 Environment="MSM_WORKER_MODE=${PANEL_WORKER_MODE}"
-ExecStart=/opt/msm/backend/venv/bin/uvicorn main:app --host 127.0.0.1 --port 8000 --workers ${MSM_UVICORN_WORKERS} --timeout-graceful-shutdown 5
+ExecStart=/opt/msm/backend/venv/bin/uvicorn main:app --host 127.0.0.1 --port 8000 --workers ${MSM_UVICORN_WORKERS} --proxy-headers --forwarded-allow-ips=127.0.0.1 --timeout-graceful-shutdown 5
 Restart=on-failure
 RestartSec=5
 TimeoutStopSec=10

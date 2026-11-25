@@ -432,6 +432,33 @@ describe('api client', () => {
       expect(thrownError?.code).toBe('BROWSER_SUCHE_ZU_VIELE')
       expect(thrownError?.message).toBe(i18n.t('errors.RATE_LIMITED'))
     })
+
+    it('retries GET once on short Retry-After (1-3s) without showing error toast', async () => {
+      useToastStore.getState().clearAll()
+      vi.useFakeTimers()
+      try {
+        fetchSpy
+          .mockReturnValueOnce(mockResponse(429, { detail: 'Too many requests' }, { 'Retry-After': '1' }))
+          .mockReturnValueOnce(mockResponse(200, { ok: true }))
+
+        const promise = api<{ ok: boolean }>('/test')
+        await vi.advanceTimersByTimeAsync(1000)
+        const result = await promise
+
+        expect(result).toEqual({ ok: true })
+        expect(fetchSpy).toHaveBeenCalledTimes(2)
+        expect(useToastStore.getState().toasts).toHaveLength(0)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('does not auto-retry GET when Retry-After is 60 or missing', async () => {
+      fetchSpy.mockReturnValueOnce(mockResponse(429, { detail: 'Too many requests' }, { 'Retry-After': '60' }))
+
+      await expect(api('/test')).rejects.toThrow(i18n.t('errors.RATE_LIMITED'))
+      expect(fetchSpy).toHaveBeenCalledTimes(1)
+    })
   })
 
   describe('error handling', () => {

@@ -24,7 +24,7 @@ from config import settings
 
 from database import get_db
 from dependencies import get_current_user, verify_csrf
-from middleware.rate_limit import shop_public_rate_limit
+from middleware.rate_limit import shop_coupon_rate_limit, shop_public_rate_limit
 from models import (
     Server,
     ShopAddon,
@@ -281,7 +281,7 @@ def get_public_promos(db: Session = Depends(get_db)) -> ShopPublicPromosResponse
 @router.post(
     "/coupons/preview",
     response_model=ShopCouponPreviewResponse,
-    dependencies=[Depends(shop_public_rate_limit)],
+    dependencies=[Depends(shop_coupon_rate_limit)],
 )
 def preview_coupon_public(
     payload: ShopCouponPreviewRequest,

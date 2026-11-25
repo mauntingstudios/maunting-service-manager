@@ -1951,7 +1951,7 @@ OOMScoreAdjust=-800
 WorkingDirectory=/opt/msm/backend
 Environment="PATH=/opt/msm/backend/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 Environment="MSM_WORKER_MODE=${PANEL_WORKER_MODE}"
-ExecStart=/opt/msm/backend/venv/bin/uvicorn main:app --host 127.0.0.1 --port 8000 --workers ${MSM_UVICORN_WORKERS} --timeout-graceful-shutdown 5
+ExecStart=/opt/msm/backend/venv/bin/uvicorn main:app --host 127.0.0.1 --port 8000 --workers ${MSM_UVICORN_WORKERS} --proxy-headers --forwarded-allow-ips=127.0.0.1 --timeout-graceful-shutdown 5
 Restart=on-failure
 RestartSec=5
 TimeoutStopSec=10

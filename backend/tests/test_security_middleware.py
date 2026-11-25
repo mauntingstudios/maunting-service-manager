@@ -16,24 +16,76 @@ class TestRateLimiting:
         assert False, "Auth rate limiting did not trigger"
 
     def test_general_endpoint_rate_limit(self, client: TestClient):
-        """General endpoints allow 100 req/min via slowapi default limit."""
-        for i in range(105):
+        """General endpoints allow 300 req/min via slowapi default limit."""
+        for i in range(305):
             response = client.get("/api/health")
             if response.status_code == 429:
                 return
         assert False, "General rate limiting did not trigger"
 
-    def test_rate_limit_uses_x_forwarded_for(self, client: TestClient):
-        """Rate limiting should respect X-Forwarded-For header for reverse proxies."""
-        for i in range(12):
+    def test_rate_limit_uses_x_forwarded_for_with_ip_isolation(self, client: TestClient):
+        """Each client IP via X-Forwarded-For must have an isolated rate-limit bucket."""
+        from middleware.rate_limit import limiter
+
+        limiter.reset()
+        saw_429 = False
+        for _ in range(12):
             response = client.post(
                 "/api/auth/login",
                 json={"username": "nonexistent", "password": "wrong", "otp_code": None},
                 headers={"X-Forwarded-For": "1.2.3.4"},
             )
             if response.status_code == 429:
-                return
-        assert False, "Rate limiting did not trigger with X-Forwarded-For"
+                saw_429 = True
+                break
+        assert saw_429, "Rate limiting did not trigger for 1.2.3.4"
+
+        other_ip_resp = client.post(
+            "/api/auth/login",
+            json={"username": "nonexistent", "password": "wrong", "otp_code": None},
+            headers={"X-Forwarded-For": "5.6.7.8"},
+        )
+        assert other_ip_resp.status_code != 429, "Different X-Forwarded-For IP shared the exhausted bucket"
+
+    def test_rate_limit_ignores_spoofed_leftmost_x_forwarded_for(self, client: TestClient):
+        """Spoofing a leftmost X-Forwarded-For IP cannot bypass the real rightmost client IP."""
+        from middleware.rate_limit import limiter
+
+        limiter.reset()
+        saw_429 = False
+        for i in range(12):
+            response = client.post(
+                "/api/auth/login",
+                json={"username": "nonexistent", "password": "wrong", "otp_code": None},
+                headers={"X-Forwarded-For": f"9.9.9.{i + 1}, 198.51.100.42"},
+            )
+            if response.status_code == 429:
+                saw_429 = True
+                break
+        assert saw_429, "Rightmost client IP was not enforced against leftmost XFF spoofing"
+
+    def test_options_preflight_does_not_consume_rate_limit_budget(self, client: TestClient):
+        """CORS OPTIONS preflight requests must never count against API rate limits."""
+        from middleware.rate_limit import limiter
+
+        limiter.reset()
+        for _ in range(15):
+            preflight = client.options(
+                "/api/auth/login",
+                headers={
+                    "Origin": "http://localhost:3000",
+                    "Access-Control-Request-Method": "POST",
+                    "X-Forwarded-For": "203.0.113.10",
+                },
+            )
+            assert preflight.status_code == 200
+
+        login_resp = client.post(
+            "/api/auth/login",
+            json={"username": "nonexistent", "password": "wrong", "otp_code": None},
+            headers={"X-Forwarded-For": "203.0.113.10"},
+        )
+        assert login_resp.status_code != 429
 
 
 class TestSecurityHeaders:

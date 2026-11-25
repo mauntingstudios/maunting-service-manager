@@ -1,4 +1,5 @@
 import secrets
+import time
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
@@ -22,6 +23,8 @@ class PanelSettingsService:
     _cache: dict[str, str] = {}
     _cache_loaded: bool = False
     _cache_version: str | None = None
+    _last_remote_check: float = 0.0
+    _REMOTE_VERSION_CHECK_INTERVAL_S: float = 5.0
 
     @classmethod
     def _remote_version(cls) -> str | None:
@@ -55,7 +58,11 @@ class PanelSettingsService:
 
     @classmethod
     def _load_cache(cls, db: Session | None = None) -> None:
+        now = time.monotonic()
+        if cls._cache_loaded and (now - cls._last_remote_check) < cls._REMOTE_VERSION_CHECK_INTERVAL_S:
+            return
         remote_ver = cls._remote_version()
+        cls._last_remote_check = now
         if cls._cache_loaded:
             if remote_ver is None or remote_ver == cls._cache_version:
                 return
@@ -66,6 +73,7 @@ class PanelSettingsService:
                 cls._cache[row.key] = row.value
             cls._cache_loaded = True
             cls._cache_version = remote_ver
+            cls._last_remote_check = time.monotonic()
             return
         db_session = SessionLocal()
         try:
@@ -73,6 +81,7 @@ class PanelSettingsService:
                 cls._cache[row.key] = row.value
             cls._cache_loaded = True
             cls._cache_version = remote_ver
+            cls._last_remote_check = time.monotonic()
         finally:
             db_session.close()
 
@@ -132,6 +141,7 @@ class PanelSettingsService:
     def invalidate_cache(cls) -> None:
         cls._cache_loaded = False
         cls._cache_version = None
+        cls._last_remote_check = 0.0
         cls._cache.clear()
 
     # ── Localhost-Freigabe per Einmal-Link (Befund 46) ─────────────────────

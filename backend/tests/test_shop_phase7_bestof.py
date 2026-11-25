@@ -525,7 +525,8 @@ def test_public_shop_rate_limit_returns_429(client: TestClient) -> None:
     with patch("middleware.rate_limit.limiter.limiter.hit", return_value=False):
         resp = client.get("/api/shop/nodes/status")
     assert resp.status_code == 429
-    assert resp.headers.get("Retry-After") == "60"
+    retry_after = int(resp.headers.get("Retry-After", "0"))
+    assert 1 <= retry_after <= 60
 
 
 def test_checkout_captcha_enforcement_when_enabled(

@@ -13,10 +13,7 @@ from starlette.responses import Response
 from starlette.types import Scope
 
 from limits import parse
-from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
-from slowapi.middleware import SlowAPIMiddleware
-from slowapi.util import get_remote_address
 
 from config import TAURI_ORIGINS, get_cors_origins, is_localhost_origin_allowed, settings
 from database import engine, Base
@@ -88,7 +85,7 @@ from routers import (
     browser_wetter_router,
     notification_channels_router,
 )
-from middleware.rate_limit import limiter, auth_rate_limit
+from middleware.rate_limit import MsmRateLimitMiddleware, _retry_after_seconds, limiter, auth_rate_limit
 from services.steam_service import close_steam_service
 from services.scheduler_service import start_scheduler, stop_scheduler, init_server_schedules
 from services.server_lifecycle_service import reconcile_orphaned_lifecycle_statuses
@@ -268,7 +265,7 @@ from middleware.body_limit import BodyLimitMiddleware
 from middleware.request_id import RequestIDMiddleware, get_request_id
 
 app.state.limiter = limiter
-app.add_middleware(SlowAPIMiddleware)
+app.add_middleware(MsmRateLimitMiddleware)
 # Body-Limit-Middleware vor Request-Parsing, unter RequestID & CORS
 app.add_middleware(BodyLimitMiddleware)
 # RequestIDMiddleware als Schicht unter CORS
@@ -379,15 +376,24 @@ def rate_limit_handler(request: Request, exc: RateLimitExceeded):
         },
         headers={"X-Request-ID": req_id} if req_id else None,
     )
+    view_rate_limit = getattr(request.state, "view_rate_limit", None)
     limiter = getattr(request.app.state, "limiter", None)
     if limiter:
         try:
-            view_rate_limit = getattr(request.state, "view_rate_limit", None)
             response = limiter._inject_headers(response, view_rate_limit)
         except Exception:
             pass
     if "Retry-After" not in response.headers and "retry-after" not in response.headers:
-        response.headers["Retry-After"] = "60"
+        if (
+            isinstance(view_rate_limit, tuple)
+            and len(view_rate_limit) == 2
+            and isinstance(view_rate_limit[1], (list, tuple))
+        ):
+            response.headers["Retry-After"] = _retry_after_seconds(
+                view_rate_limit[0], *view_rate_limit[1]
+            )
+        else:
+            response.headers["Retry-After"] = "5"
     if req_id and "X-Request-ID" not in response.headers:
         response.headers["X-Request-ID"] = req_id
     return response

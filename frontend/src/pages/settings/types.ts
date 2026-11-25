@@ -76,9 +76,9 @@ export interface PanelSettings {
   cloudflare_api_source: 'env' | 'panel' | 'none'
   cloudflare_default_zone: string
   proactive_enabled: boolean
-  /** Login/Auth-Anfragen pro Minute pro IP (Default 10, Range 3–50) */
+  /** Login/Auth-Anfragen pro Minute pro IP (Default 10, Range 3–120) */
   rate_limit_auth: number
-  /** Globale API-Anfragen pro Minute pro IP (Default 100, Range 50–1000) */
+  /** Globale API-Anfragen pro Minute pro IP (Default 300, Range 50–5000) */
   rate_limit_global: number
   /** Ob eingehende Verbindungen von localhost auf allen Ports via CORS erlaubt sind */
   allow_localhost_connections: boolean
@@ -93,11 +93,11 @@ export interface PanelSettings {
 
 /** Erlaubte Bereiche — spiegeln backend/services/rate_limit_settings.py */
 export const RATE_LIMIT_AUTH_MIN = 3
-export const RATE_LIMIT_AUTH_MAX = 50
+export const RATE_LIMIT_AUTH_MAX = 120
 export const RATE_LIMIT_AUTH_DEFAULT = 10
 export const RATE_LIMIT_GLOBAL_MIN = 50
-export const RATE_LIMIT_GLOBAL_MAX = 1000
-export const RATE_LIMIT_GLOBAL_DEFAULT = 100
+export const RATE_LIMIT_GLOBAL_MAX = 5000
+export const RATE_LIMIT_GLOBAL_DEFAULT = 300
 
 export const EMPTY_PANEL_SETTINGS: PanelSettings = {
   panel_url: '',

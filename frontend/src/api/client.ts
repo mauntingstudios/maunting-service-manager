@@ -305,7 +305,7 @@ let refreshPromise: Promise<void> | null = null
  * `refreshPromise` beliebig lange, und jeder weitere 401 wartete auf dasselbe
  * Versprechen — ein hängender Server fror damit die ganze Oberfläche ein.
  */
-export const REFRESH_TIMEOUT_MS = 10_000
+export const REFRESH_TIMEOUT_MS = 15_000
 
 async function doRefresh(): Promise<void> {
   // Nativ (Desktop-App): die Rotation läuft über den OS-Tresor, nicht über
@@ -428,6 +428,62 @@ function parseRetryAfterMs(res: Response): number {
   return 5_000
 }
 
+/**
+ * Liefert nur bei explizitem kurzem numerischem Retry-After (1–3 s) eine
+ * Wartezeit fuer einmaliges transparentes Wiederholen von GET-Anfragen.
+ */
+function parseShortRetryAfterMs(res: Response): number | null {
+  const raw = res.headers?.get?.('retry-after')?.trim()
+  if (!raw || !/^\d+$/.test(raw)) return null
+  const sec = Number.parseInt(raw, 10)
+  if (!Number.isFinite(sec) || sec < 1 || sec > 3) return null
+  return sec * 1000
+}
+
+function waitWithSignal(ms: number, signal?: AbortSignal | null): Promise<void> {
+  if (signal?.aborted) {
+    return Promise.reject(new DOMException('Aborted', 'AbortError'))
+  }
+  return new Promise((resolve, reject) => {
+    const onAbort = () => {
+      clearTimeout(tid)
+      reject(new DOMException('Aborted', 'AbortError'))
+    }
+    const tid = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort)
+      resolve()
+    }, ms)
+    signal?.addEventListener('abort', onAbort, { once: true })
+  })
+}
+
+function throwMappedFetchError(fetchErr: unknown): never {
+  const isTimeout =
+    (fetchErr && typeof fetchErr === 'object' && (fetchErr as any).name === 'TimeoutError') ||
+    (fetchErr instanceof Error && fetchErr.message.toLowerCase().includes('timeout'))
+
+  if (isTimeout) {
+    throw new SanitizedApiError(
+      i18n.t('errors.REQUEST_TIMEOUT', {
+        defaultValue: 'Zeitüberschreitung der Anfrage (Server antwortet nicht rechtzeitig).',
+      }),
+      { status: 408, code: 'timeout' }
+    )
+  }
+
+  // Ein Abbruch beim Aufräumen einer Ansicht ist kein Offline-Beweis.
+  if (
+    !isCurrentlyOffline &&
+    typeof window !== 'undefined' &&
+    isNetworkOrOfflineError(fetchErr) &&
+    !istAbbruch(fetchErr)
+  ) {
+    isCurrentlyOffline = true
+    window.dispatchEvent(new CustomEvent('msm:network-offline'))
+  }
+  throw fetchErr
+}
+
 export async function api<T>(path: string, options?: ApiOptions): Promise<T> {
   const method = (options?.method || 'GET').toUpperCase()
   const isStateChanging = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)
@@ -518,9 +574,10 @@ export async function api<T>(path: string, options?: ApiOptions): Promise<T> {
     headers,
   })
 
+  let activeHeaders = headers
   let res: Response
   try {
-    res = await doFetchWithTimeout(headers)
+    res = await doFetchWithTimeout(activeHeaders)
     protokollEnde({
       status: res.status,
       statusText: res.statusText,
@@ -538,30 +595,7 @@ export async function api<T>(path: string, options?: ApiOptions): Promise<T> {
       statusText: 'Fehler',
       fehler: fetchErr instanceof Error ? fetchErr.message : String(fetchErr),
     })
-    const isTimeout =
-      (fetchErr && typeof fetchErr === 'object' && (fetchErr as any).name === 'TimeoutError') ||
-      (fetchErr instanceof Error && fetchErr.message.toLowerCase().includes('timeout'))
-
-    if (isTimeout) {
-      throw new SanitizedApiError(
-        i18n.t('errors.REQUEST_TIMEOUT', {
-          defaultValue: 'Zeitüberschreitung der Anfrage (Server antwortet nicht rechtzeitig).',
-        }),
-        { status: 408, code: 'timeout' }
-      )
-    }
-
-    // Ein Abbruch beim Aufräumen einer Ansicht ist kein Offline-Beweis.
-    if (
-      !isCurrentlyOffline &&
-      typeof window !== 'undefined' &&
-      isNetworkOrOfflineError(fetchErr) &&
-      !istAbbruch(fetchErr)
-    ) {
-      isCurrentlyOffline = true
-      window.dispatchEvent(new CustomEvent('msm:network-offline'))
-    }
-    throw fetchErr
+    throwMappedFetchError(fetchErr)
   }
   captureCsrfFromResponse(res)
 
@@ -595,30 +629,27 @@ export async function api<T>(path: string, options?: ApiOptions): Promise<T> {
       } else {
         delete newHeaders['X-CSRF-Token']
       }
+      activeHeaders = newHeaders
       try {
-        res = await doFetchWithTimeout(newHeaders)
+        res = await doFetchWithTimeout(activeHeaders)
         captureCsrfFromResponse(res)
       } catch (retryErr) {
         // Ein Netzwerkfehler, Timeout oder AbortError beim wiederholten Request
         // darf NIEMALS useAuthStore.getState().clearSession() aufrufen!
-        const isTimeout =
-          (retryErr && typeof retryErr === 'object' && (retryErr as any).name === 'TimeoutError') ||
-          (retryErr instanceof Error && retryErr.message.toLowerCase().includes('timeout'))
+        throwMappedFetchError(retryErr)
+      }
+    }
+  }
 
-        if (isTimeout) {
-          throw new SanitizedApiError(
-            i18n.t('errors.REQUEST_TIMEOUT', {
-              defaultValue: 'Zeitüberschreitung der Anfrage (Server antwortet nicht rechtzeitig).',
-            }),
-            { status: 408, code: 'timeout' }
-          )
-        }
-
-        if (!isCurrentlyOffline && typeof window !== 'undefined' && isNetworkOrOfflineError(retryErr) && !istAbbruch(retryErr)) {
-          isCurrentlyOffline = true
-          window.dispatchEvent(new CustomEvent('msm:network-offline'))
-        }
-        throw retryErr
+  if (res.status === 429 && method === 'GET') {
+    const shortRetryMs = parseShortRetryAfterMs(res)
+    if (shortRetryMs !== null) {
+      await waitWithSignal(shortRetryMs, options?.signal)
+      try {
+        res = await doFetchWithTimeout(activeHeaders)
+        captureCsrfFromResponse(res)
+      } catch (retryErr) {
+        throwMappedFetchError(retryErr)
       }
     }
   }

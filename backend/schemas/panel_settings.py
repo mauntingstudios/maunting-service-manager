@@ -98,7 +98,7 @@ class PanelSettingsResponse(BaseModel):
     proactive_enabled: bool = True
     # Rate-Limits (Anfragen pro Minute pro IP); Defaults = Runtime-Fallback
     rate_limit_auth: int = 10
-    rate_limit_global: int = 100
+    rate_limit_global: int = 300
     allow_localhost_connections: bool = False
     # Whitelabeling & Branding (Akzentfarben bleiben fest im Design-System).
     brand_name: str = ""
