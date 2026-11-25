@@ -151,7 +151,7 @@ jobs:
         shell: bash
         run: python scripts/collect-browser-artifacts.py "${{ steps.version.outputs.tag }}"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: msb-windows
           path: browser-release/*
@@ -250,7 +250,7 @@ jobs:
           [ -n "$universal" ] || { echo "Kein signiertes Universal-APK gefunden." >&2; exit 1; }
           cp -v "$universal" browser-android/MauntingSecureBrowser.apk
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: msb-android
           path: browser-android/MauntingSecureBrowser.apk
