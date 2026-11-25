@@ -212,6 +212,57 @@ class TestStripeCheckout:
         assert gespeichert["payment_provider"] == "stripe"
         assert gespeichert["payment_reference"] == "cs_test_999"
 
+    def test_post_form_serializes_tuple_list_without_typeerror(
+        self, client: TestClient, owner_cookies: dict, csrf_token: str,
+        user_cookies: dict, user_csrf_token: str,
+        monkeypatch,
+    ):
+        import httpx
+        from urllib.parse import parse_qsl
+
+        _configure()
+        plan = _plan(client, owner_cookies, csrf_token)
+        order = _order(client, user_cookies, user_csrf_token, plan["id"])
+
+        captured: list[tuple[str, str, list[tuple[str, str]]]] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            body_bytes = request.read()
+            captured.append(
+                (
+                    request.url.path,
+                    request.headers.get("content-type", ""),
+                    parse_qsl(body_bytes.decode("utf-8")),
+                )
+            )
+            return httpx.Response(
+                200,
+                json={"id": "cs_test_transport", "url": "https://checkout.stripe.test/transport"},
+            )
+
+        transport = httpx.MockTransport(handler)
+        real_client = httpx.Client(transport=transport)
+        monkeypatch.setattr(stripe_service.httpx, "post", real_client.post)
+
+        try:
+            res = client.post(
+                f"/api/shop/orders/{order['id']}/checkout",
+                cookies=user_cookies,
+                headers={"X-CSRF-Token": user_csrf_token},
+            )
+        finally:
+            real_client.close()
+
+        assert res.status_code == 200, res.text
+        assert res.json()["checkout_url"] == "https://checkout.stripe.test/transport"
+        assert len(captured) == 1
+        path, content_type, form_pairs = captured[0]
+        assert path.endswith("/checkout/sessions")
+        assert content_type == "application/x-www-form-urlencoded"
+        felder = dict(form_pairs)
+        assert felder["metadata[order_id]"] == str(order["id"])
+        assert felder["line_items[0][price_data][unit_amount]"] == str(order["gross_cents"])
+
     def test_foreign_order_checkout_is_invisible(
         self, client: TestClient, owner_cookies: dict, csrf_token: str,
         user_cookies: dict, user_csrf_token: str,

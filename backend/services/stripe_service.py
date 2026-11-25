@@ -18,7 +18,7 @@ import json
 import re
 import time
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import urlencode, urlparse
 
 import httpx
 
@@ -65,13 +65,16 @@ def _post_form(
     *,
     idempotency_key: str | None = None,
 ) -> dict[str, Any]:
-    headers = {"Authorization": f"Bearer {secret}"}
+    headers = {
+        "Authorization": f"Bearer {secret}",
+        "Content-Type": "application/x-www-form-urlencoded",
+    }
     if idempotency_key:
         headers["Idempotency-Key"] = idempotency_key
     try:
         response = httpx.post(
             f"{STRIPE_API_BASE}{path}",
-            data=data,
+            content=urlencode(data).encode("utf-8"),
             headers=headers,
             timeout=STRIPE_TIMEOUT_SECONDS,
         )
