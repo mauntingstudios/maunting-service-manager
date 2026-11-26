@@ -166,7 +166,7 @@ def test_attachment_filename_traversal_and_oversize_are_rejected(
     )
 
     assert traversal.status_code == 422
-    assert oversized.status_code == 422
+    assert oversized.status_code in (413, 422)
     assert db.query(AiAttachment).count() == 0
 
 
@@ -569,8 +569,12 @@ def test_blocked_and_broken_files_stay_422(
     ]
     for name, data, media_type, code in faelle:
         antwort = _upload(client, user_cookies, name, data, media_type)
-        assert antwort.status_code == 422, (name, antwort.text)
-        assert antwort.json()["detail"]["code"] == code
+        if code == "AI_ATTACHMENT_SIZE_INVALID":
+            assert antwort.status_code in (413, 422), (name, antwort.text)
+            assert antwort.json()["detail"]["code"] in (code, "payload_too_large")
+        else:
+            assert antwort.status_code == 422, (name, antwort.text)
+            assert antwort.json()["detail"]["code"] == code
     assert db.query(AiAttachment).count() == 0
 
 

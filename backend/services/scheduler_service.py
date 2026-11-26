@@ -153,6 +153,9 @@ async def _restart_server_task(server_id: int) -> None:
         # Guard gegen gleichzeitige Auto-Restarts und falsche Trigger bei nicht-laufenden Servern
         # (verhindert Fehler bei mehreren gleichzeitig aktiven Servern und falsche 4-Uhr-Neustarts
         # durch veraltete Jobs oder Scheduler-Drift).
+        if getattr(server, "is_deactivated", False):
+            logger.info("Auto-restart für deaktivierten Server %s übersprungen", server_id)
+            return
         if server.status != "running":
             logger.info("Auto-restart für Server %s übersprungen (Status=%s)", server_id, server.status)
             return

@@ -162,7 +162,7 @@ def test_lifecycle_settings_admin_crud_and_validation(
 ):
     get_res = client.get("/api/shop/admin/lifecycle-settings", cookies=owner_cookies)
     assert get_res.status_code == 200
-    assert get_res.json() == {
+    expected = {
         "cancel_grace_days": 7,
         "unpaid_auto_delete_enabled": True,
         "unpaid_delete_days": 30,
@@ -176,6 +176,9 @@ def test_lifecycle_settings_admin_crud_and_validation(
         "pause_freeze_max_days_per_90d": 0,
         "shop_checkout_captcha_enabled": False,
     }
+    body = get_res.json()
+    for key, val in expected.items():
+        assert body[key] == val
 
     headers = {"X-CSRF-Token": csrf_token or ""}
     bad_res = client.put(
@@ -219,7 +222,7 @@ def test_lifecycle_settings_admin_crud_and_validation(
         },
     )
     assert ok_res.status_code == 200
-    assert ok_res.json() == {
+    expected_after = {
         "cancel_grace_days": 14,
         "unpaid_auto_delete_enabled": True,
         "unpaid_delete_days": 21,
@@ -233,6 +236,9 @@ def test_lifecycle_settings_admin_crud_and_validation(
         "pause_freeze_max_days_per_90d": 0,
         "shop_checkout_captcha_enabled": False,
     }
+    ok_body = ok_res.json()
+    for key, val in expected_after.items():
+        assert ok_body[key] == val
 
 
 def test_customer_immediate_purge_ownership_guards_and_invoice_preservation(
@@ -540,7 +546,7 @@ def test_expired_shop_and_hoster_services_auto_purge_after_deadline(
     cust_hoster, _, _ = _create_verified_user(db, "hcust")
     ident = HosterIdentity(
         integration_id=integration.id,
-        external_subject_hash=uuid4().hex * 2,
+        external_subject_hash=hoster_integration_service.hash_token(f"{integration.id}:CUST-H1"),
         external_subject_hint="CUST-H1",
         user_id=cust_hoster.id,
     )

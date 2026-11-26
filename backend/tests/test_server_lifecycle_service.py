@@ -383,7 +383,8 @@ def test_start_always_runs_steam_validate_for_steam_source():
     with patch("services.server_lifecycle_service.try_acquire_install_update_lock", return_value=True), \
          patch("services.server_lifecycle_service.release_install_update_lock"), \
          patch("services.server_lifecycle_service.open_ports"), \
-         patch("services.server_lifecycle_service.iptables_accept_server"):
+         patch("services.server_lifecycle_service.iptables_accept_server"), \
+         patch("services.backup_orchestrator.create_server_backup"):
         _run_start(db, server, plugin)
 
     assert plugin.validate_calls == 1
@@ -642,7 +643,8 @@ def test_lifecycle_job_applies_recovery_suspension(db: Session) -> None:
          patch("services.guardian_sync_service.compile_and_sync_desired_state", side_effect=fake_reconcile) as mock_reconcile, \
          patch("services.server_lifecycle_service.get_plugin", return_value=plugin), \
          patch("services.server_lifecycle_service.open_ports"), \
-         patch("services.server_lifecycle_service.iptables_accept_server"):
+         patch("services.server_lifecycle_service.iptables_accept_server"), \
+         patch("services.backup_orchestrator.create_server_backup"):
 
         _run_lifecycle_job(server.id, "start")
 
@@ -805,7 +807,8 @@ def test_failed_lease_sync_aborts_lifecycle_operation(db: Session) -> None:
          patch("services.guardian_sync_service.compile_and_sync_desired_state", side_effect=RuntimeError("Sync failed")), \
          patch("services.server_lifecycle_service.get_plugin", return_value=plugin) as mock_get_plugin, \
          patch("services.server_lifecycle_service.open_ports"), \
-         patch("services.server_lifecycle_service.iptables_accept_server"):
+         patch("services.server_lifecycle_service.iptables_accept_server"), \
+         patch("services.backup_orchestrator.create_server_backup"):
 
         with pytest.raises(RuntimeError, match="Sync failed"):
             _run_lifecycle_job(server.id, "start")

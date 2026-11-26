@@ -34,10 +34,11 @@ def sum_allocated_ram_mb(
     *,
     exclude_server_id: int | None = None,
 ) -> int:
-    """Sum of non-null server.ram_limit_mb on the node (booked RAM)."""
+    """Sum of non-null server.ram_limit_mb for active servers on the node (booked RAM)."""
     query = db.query(func.coalesce(func.sum(Server.ram_limit_mb), 0)).filter(
         Server.node_id == node_id,
         Server.ram_limit_mb.isnot(None),
+        Server.is_deactivated.is_(False),
     )
     if exclude_server_id is not None:
         query = query.filter(Server.id != exclude_server_id)
@@ -49,7 +50,7 @@ def sum_allocated_ram_mb(
 
 
 def allocated_ram_by_node_ids(db: Session, node_ids: list[int]) -> dict[int, int]:
-    """Batch SUM(ram_limit_mb) grouped by node_id."""
+    """Batch SUM(ram_limit_mb) for active servers grouped by node_id."""
     if not node_ids:
         return {}
     rows = (
@@ -57,6 +58,7 @@ def allocated_ram_by_node_ids(db: Session, node_ids: list[int]) -> dict[int, int
         .filter(
             Server.node_id.in_(node_ids),
             Server.ram_limit_mb.isnot(None),
+            Server.is_deactivated.is_(False),
         )
         .group_by(Server.node_id)
         .all()
@@ -124,10 +126,11 @@ def sum_allocated_cpu_percent(
     *,
     exclude_server_id: int | None = None,
 ) -> int:
-    """Sum of non-null server.cpu_limit_percent on the node (100 = 1 core)."""
+    """Sum of non-null server.cpu_limit_percent for active servers on the node (100 = 1 core)."""
     query = db.query(func.coalesce(func.sum(Server.cpu_limit_percent), 0)).filter(
         Server.node_id == node_id,
         Server.cpu_limit_percent.isnot(None),
+        Server.is_deactivated.is_(False),
     )
     if exclude_server_id is not None:
         query = query.filter(Server.id != exclude_server_id)
@@ -139,7 +142,7 @@ def sum_allocated_cpu_percent(
 
 
 def allocated_cpu_by_node_ids(db: Session, node_ids: list[int]) -> dict[int, int]:
-    """Batch SUM(cpu_limit_percent) grouped by node_id."""
+    """Batch SUM(cpu_limit_percent) for active servers grouped by node_id."""
     if not node_ids:
         return {}
     rows = (
@@ -147,6 +150,7 @@ def allocated_cpu_by_node_ids(db: Session, node_ids: list[int]) -> dict[int, int
         .filter(
             Server.node_id.in_(node_ids),
             Server.cpu_limit_percent.isnot(None),
+            Server.is_deactivated.is_(False),
         )
         .group_by(Server.node_id)
         .all()

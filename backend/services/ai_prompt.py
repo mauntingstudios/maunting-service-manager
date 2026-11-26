@@ -1664,7 +1664,7 @@ def build(
 
 
 #: Obergrenze des Werkzeugverzeichnisses je Segment.
-WERKZEUG_INDEX_BUDGET = 4_000
+WERKZEUG_INDEX_BUDGET = 6_000
 
 #: Reihenfolge der Gruppen im Verzeichnis. Die taeglich gebrauchten zuerst;
 #: alles, was hier nicht steht, folgt alphabetisch, die ungruppierten zuletzt.

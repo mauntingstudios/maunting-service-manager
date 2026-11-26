@@ -90,6 +90,15 @@ def _validate_lifecycle_request(
     if operation != "kill" and plugin is None:
         raise HTTPException(status_code=400, detail="Spiel-Typ nicht unterstützt")
 
+    if operation in ("start", "restart") and getattr(server, "is_deactivated", False):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "server_deactivated",
+                "message": "errors.server_deactivated",
+            },
+        )
+
     if operation == "start":
         if not server.public_bind_ip:
             from services.network_interfaces_service import default_bind_ip

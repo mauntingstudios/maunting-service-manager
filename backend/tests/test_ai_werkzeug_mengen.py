@@ -116,8 +116,9 @@ MENGEN = {
         "propose_ai_tarif_role", "propose_backup_restore", "propose_blueprint_delete",
         "propose_file_delete", "propose_hoster_integration", "propose_hoster_product",
         "propose_role_delete", "propose_secret_rotation", "propose_server_delete",
-        "propose_server_reinstall", "propose_server_wipe", "propose_team_member_remove",
-        "propose_team_role_delete",
+        "propose_server_reinstall", "propose_server_wipe", "propose_shop_addon_upsert",
+        "propose_shop_coupon_upsert", "propose_shop_plan_upsert",
+        "propose_team_member_remove", "propose_team_role_delete",
     ],
     "ASK_TOOLS": ["ask_user", "worker_frage"],
     "DELEGATION_TOOLS": [
@@ -231,14 +232,14 @@ MENGEN = {
 }
 
 KATALOG = [
-    (False, False, "off", 140, "96522797e9d90a1d79cfde355fb49114992aec0c0f5b8fe736ea84a70c633791"),
-    (False, False, "review", 140, "896ae8d6bac42f503b541a8dbe2c7b31c7e09f67631c42018662ed7e48bb5b31"),
-    (False, True, "off", 142, "4dd3a4db87e157ea5f60b6e02be4d44c9d4489b606af293ed588a2578156f436"),
-    (False, True, "review", 142, "2381508280dd8db3a655af974d9dcd9e495e683c3dcfcf20aa120aaba0113d7e"),
-    (True, False, "off", 142, "771369246d7bda0d423331c14ccd58c1d268e8509c3f453b6120348ed5d1eb3f"),
-    (True, False, "review", 142, "57b44d03a31260586476b09ea2b5792284f7a24581f75abad76083f7cd6df265"),
-    (True, True, "off", 144, "74ca6133502f43e4144ac96e944c5883f149df8bbe9cd7d0fa20c9c4d2e60f53"),
-    (True, True, "review", 144, "e2a34906ec5a899b03cabadc8b4a7736f7cfbc3f24e17b6ba880a89700442a38"),
+    (False, False, "off", 140, "a7dd6832fb7a09b2292ed4da643c3ad17d4176e4cd9fe8c189aa00b4b2af091f"),
+    (False, False, "review", 140, "2e1de3eddf1595799006ca5a0f8858c46dbca6a907a5195f44cafb59eb3e68dc"),
+    (False, True, "off", 142, "fac6e1099b7c21309e65542580b89da30dcc6cbd941d2678b097ccaa031f17ef"),
+    (False, True, "review", 142, "3bd2e185e32b39692117065ddb3367c17cf1c7bc997ab768f73981c9cbb87b3a"),
+    (True, False, "off", 142, "8a33df1bde30d1f50528ec2d356dde4b8bd16fec8fc5747164c8da70353434d5"),
+    (True, False, "review", 142, "4bf5e1989ac3df39aafea9e9ecbceba045a8d1ac2f0762e06037853e9ded829e"),
+    (True, True, "off", 144, "6b40379fdf9576f54e87293670c29603d3add7c3230cfbe990d4f27e5b1505ec"),
+    (True, True, "review", 144, "38ca45810ae0b43d28517e6a1015de77d33c083d378648b01e21fa67a51460bf"),
 ]
 
 SPRACHE_KATALOG_HASH = "d616c67eee2793c462ef37b9540cffa53dc445688fbd8a890aa3e82bc41cf266"

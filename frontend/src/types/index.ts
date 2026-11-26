@@ -65,6 +65,8 @@ export interface Server {
   // True waehrend der Server-Container auf einen interaktiven Auth-Flow wartet
   // (z.B. Hytale OAuth-Refresh expired). UI rendert dann einen Warn-Banner.
   auth_required: boolean
+  is_deactivated?: boolean
+  deactivated_at?: string | null
   auto_restart: boolean
   auto_update_paused?: boolean
   public_hostname?: string | null

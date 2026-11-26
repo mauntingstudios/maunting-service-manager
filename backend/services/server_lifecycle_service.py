@@ -687,6 +687,14 @@ def queue_lifecycle_operation(
             "operation": "kill",
         }
 
+    if operation in ("start", "restart") and getattr(server, "is_deactivated", False):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "server_deactivated",
+                "message": "errors.server_deactivated",
+            },
+        )
     if not _mark_job_active(server.id):
         raise HTTPException(
             status_code=409,
@@ -1106,9 +1114,10 @@ def _run_start(
         isinstance(server_update_check, dict)
         and server_update_check.get("reason") == "missing"
     )
-    file_update_wanted = _server_file_update_needed(server_update_check) and (
-        is_missing_install or not updates_paused
-    )
+    file_update_wanted = (
+        strategy == BlueprintUpdateStrategy.ALWAYS_VALIDATE
+        or _server_file_update_needed(server_update_check)
+    ) and (is_missing_install or not updates_paused)
     mod_update_wanted = bool(mod_updates) and not updates_paused
     if updates_paused and (
         (_server_file_update_needed(server_update_check) and not is_missing_install)
@@ -1323,9 +1332,10 @@ def _run_restart(
         isinstance(server_update_check, dict)
         and server_update_check.get("reason") == "missing"
     )
-    file_update_wanted = _server_file_update_needed(server_update_check) and (
-        is_missing_install or not updates_paused
-    )
+    file_update_wanted = (
+        strategy == BlueprintUpdateStrategy.ALWAYS_VALIDATE
+        or _server_file_update_needed(server_update_check)
+    ) and (is_missing_install or not updates_paused)
     mod_update_wanted = bool(mod_updates) and not updates_paused
     if updates_paused and (
         (_server_file_update_needed(server_update_check) and not is_missing_install)
@@ -1470,6 +1480,14 @@ async def restart_server_with_updates(db: Session, server: Server) -> dict:
 
     Auto-Restart nutzt asyncio.to_thread() um den Event Loop nicht zu blockieren.
     """
+    if getattr(server, "is_deactivated", False):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "server_deactivated",
+                "message": "errors.server_deactivated",
+            },
+        )
     if not _mark_job_active(server.id):
         raise HTTPException(
             status_code=409,

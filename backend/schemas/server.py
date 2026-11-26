@@ -253,6 +253,8 @@ class ServerResponse(BaseModel):
     # (z.B. Hytale OAuth-Refresh expired). UI rendert dann einen Warn-Banner.
     # Default False (kein laufender Auth-Flow) ist sicher fuer view-only User.
     auth_required: bool = False
+    is_deactivated: bool = False
+    deactivated_at: datetime | None = None
     auto_restart: bool
     auto_update_paused: bool = False
     steam_branch: str | None = None

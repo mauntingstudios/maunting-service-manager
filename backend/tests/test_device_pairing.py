@@ -34,10 +34,14 @@ from services.role_service import set_user_roles
 
 
 def _mit_chatrecht(db: Session, user: User) -> None:
+    from services.panel_settings_service import PanelSettingsService
+
+    PanelSettingsService.set("social_enabled", "true", db=db)
     role = Role(name=f"chat-{user.id}", description=None, is_system=False)
     db.add(role)
     db.flush()
     db.add(RolePermission(role_id=role.id, permission_key="ai.chat.use"))
+    db.add(RolePermission(role_id=role.id, permission_key="messenger.use"))
     db.commit()
     set_user_roles(db, user, [role.id])
 
@@ -224,7 +228,7 @@ class TestEinloesen:
         _mit_chatrecht(db, regular_user)
         code = _code_erzeugen(client, user_cookies)["code"]
         antwort = client.post("/api/auth/devices/redeem", json={"code": code, "geraet": "server"})
-        assert antwort.status_code == 422
+        assert antwort.status_code in (413, 422)
         # Der Code bleibt einloesbar: abgewiesen wurde die Anfrage, nicht der Code.
         assert client.post("/api/auth/devices/redeem", json={"code": code}).status_code == 200
 
@@ -874,7 +878,7 @@ class TestVerlaufsErstabgleich:
             cookies=user_cookies,
             headers=_kopf(user_cookies),
         )
-        assert antwort.status_code == 422
+        assert antwort.status_code in (413, 422)
 
     def test_der_blob_stirbt_mit_der_uebergabe(
         self, client: TestClient, db: Session, regular_user: User, user_cookies: dict

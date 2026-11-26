@@ -169,7 +169,7 @@ def auftrag_anlegen(
     from services.ai_guardian_settings import is_guardian_ai_enabled
     from sqlalchemy.exc import IntegrityError
 
-    if not is_guardian_ai_enabled():
+    if not is_guardian_ai_enabled(db=db):
         return None
 
     jetzt = _jetzt()
@@ -854,7 +854,7 @@ async def faellige_bearbeiten(db: Session) -> int:
     from services.ai_guardian_settings import is_guardian_ai_enabled
     from services import ai_run_service
 
-    if not is_guardian_ai_enabled():
+    if not is_guardian_ai_enabled(db=db):
         return 0
 
     if ai_run_service.http_client() is None:

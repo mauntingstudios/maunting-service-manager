@@ -352,6 +352,144 @@ def restart_server(
     )
 
 
+@router.post("/{server_id}/deactivate", response_model=ServerResponse)
+def deactivate_server(
+    server_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    _: None = Depends(verify_csrf),
+) -> ServerResponse:
+    """Deaktiviert einen Self-Hosted-Server und gibt gebuchtes RAM/CPU frei.
+
+    Disk-Limit, Ports, Dateien und Backups bleiben erhalten. Kundenserver
+    mit aktivem oder suspendiertem Shop-/Hoster-Vertrag sind gesperrt, damit
+    bezahlte Kapazitaet nicht doppelt vergeben wird.
+    """
+    require_server_permission(user, server_id, db, "server.resources.manage")
+    server = db.query(Server).filter(Server.id == server_id).first()
+    if not server:
+        raise HTTPException(status_code=404, detail="Server nicht gefunden")
+
+    if permission_service.is_hoster_customer_server(db, server_id):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "customer_server_cannot_be_deactivated",
+                "message": "errors.customer_server_cannot_be_deactivated",
+            },
+        )
+
+    if server.is_deactivated:
+        resp = _server_response(server, db)
+        resp.is_hoster_managed = False
+        return resp
+
+    transient_or_running = {"running", "starting", "stopping", "restarting", "installing", "updating", "queued"}
+    container_running = False
+    try:
+        container_running = bool(
+            docker_service.is_running(container_name_for(server.id), node=server.node)
+        )
+    except Exception:
+        container_running = False
+
+    if (
+        server.status in transient_or_running
+        or is_lifecycle_job_active(server_id)
+        or container_running
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "server_must_be_stopped_to_deactivate",
+                "message": "errors.server_must_be_stopped_to_deactivate",
+            },
+        )
+
+    server.is_deactivated = True
+    server.deactivated_at = datetime.now(timezone.utc)
+    server.desired_power_state = "stopped"
+    server.status = "stopped"
+    audit_service.record_privileged_action(
+        db,
+        user_id=user.id,
+        action="server.deactivate",
+        target_type="server",
+        target_id=server.id,
+        details={
+            "ram_freed_mb": server.ram_limit_mb,
+            "cpu_freed_percent": server.cpu_limit_percent,
+        },
+    )
+    db.commit()
+    db.refresh(server)
+    resp = _server_response(server, db)
+    resp.is_hoster_managed = False
+    return resp
+
+
+@router.post("/{server_id}/reactivate", response_model=ServerResponse)
+def reactivate_server(
+    server_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    _: None = Depends(verify_csrf),
+) -> ServerResponse:
+    """Reaktiviert einen deaktivierten Server nach harter RAM-/CPU-Kapazitaetspruefung."""
+    from models import Node
+    from services.node_capacity import ensure_strict_capacity_fits
+    from services.node_service import NODE_OFFLINE_MSG, is_node_offline
+
+    require_server_permission(user, server_id, db, "server.resources.manage")
+    server = db.query(Server).filter(Server.id == server_id).first()
+    if not server:
+        raise HTTPException(status_code=404, detail="Server nicht gefunden")
+
+    if not server.is_deactivated:
+        resp = _server_response(server, db)
+        resp.is_hoster_managed = permission_service.is_hoster_customer_server(db, server_id)
+        return resp
+
+    node = None
+    if server.node_id is not None:
+        node = (
+            db.query(Node)
+            .filter(Node.id == server.node_id)
+            .with_for_update()
+            .first()
+        )
+    if node is not None and is_node_offline(node):
+        raise HTTPException(status_code=503, detail=NODE_OFFLINE_MSG)
+
+    ensure_strict_capacity_fits(
+        db,
+        node,
+        new_ram_limit_mb=server.ram_limit_mb,
+        new_cpu_limit_percent=server.cpu_limit_percent,
+        exclude_server_id=server.id,
+        force=True,
+    )
+
+    server.is_deactivated = False
+    server.deactivated_at = None
+    audit_service.record_privileged_action(
+        db,
+        user_id=user.id,
+        action="server.reactivate",
+        target_type="server",
+        target_id=server.id,
+        details={
+            "ram_mb": server.ram_limit_mb,
+            "cpu_percent": server.cpu_limit_percent,
+        },
+    )
+    db.commit()
+    db.refresh(server)
+    resp = _server_response(server, db)
+    resp.is_hoster_managed = permission_service.is_hoster_customer_server(db, server_id)
+    return resp
+
+
 @router.post("/{server_id}/auth-setup/cancel")
 def cancel_auth_setup(server_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user), _: None = Depends(verify_csrf)) -> dict:
     """Bricht einen laufenden Auth-Setup-Recovery-Vorgang ab.

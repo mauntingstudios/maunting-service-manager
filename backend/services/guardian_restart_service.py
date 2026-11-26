@@ -18,6 +18,9 @@ def _trigger_guardian_auto_restart(db: Session, server_id: int) -> None:
         if not server:
             return
 
+        if getattr(server, "is_deactivated", False):
+            return
+
         if server.guardian_observed_state == "unknown":
             return
 

@@ -18,6 +18,8 @@ import {
   Network,
   Package,
   Play,
+  Power,
+  PowerOff,
   ReceiptText,
   RefreshCw,
   Rocket,
@@ -871,6 +873,43 @@ export function ServerDetail() {
     }
   };
 
+  const handleDeactivate = async () => {
+    const aktionsId = serverId;
+    const nochAktuell = () => aktionsId === serverIdRef.current;
+    const ok = await confirm({
+      message: t("servers.deactivateConfirm"),
+      confirmText: t("servers.deactivateAction"),
+    });
+    if (!ok) return;
+    if (nochAktuell()) setActionLoading("deactivate");
+    try {
+      await api(`/servers/${aktionsId}/deactivate`, { method: "POST" });
+      toast.success(t("servers.deactivatedSuccess"));
+      await fetchAll();
+    } catch (err: unknown) {
+      const raw = err instanceof Error ? err.message : String(err);
+      toast.error(t(raw, { defaultValue: raw }) || t("common.error"));
+    } finally {
+      if (nochAktuell()) setActionLoading(null);
+    }
+  };
+
+  const handleReactivate = async () => {
+    const aktionsId = serverId;
+    const nochAktuell = () => aktionsId === serverIdRef.current;
+    if (nochAktuell()) setActionLoading("reactivate");
+    try {
+      await api(`/servers/${aktionsId}/reactivate`, { method: "POST" });
+      toast.success(t("servers.reactivatedSuccess"));
+      await fetchAll();
+    } catch (err: unknown) {
+      const raw = err instanceof Error ? err.message : String(err);
+      toast.error(t(raw, { defaultValue: raw }) || t("common.error"));
+    } finally {
+      if (nochAktuell()) setActionLoading(null);
+    }
+  };
+
   const gameName = (gameId: string) =>
     (Array.isArray(games) ? games : []).find((g) => g.id === gameId)?.name || gameId;
 
@@ -1161,9 +1200,11 @@ export function ServerDetail() {
     "restarting",
     "queued",
   ].includes(effectiveStatus);
-  const canShowStart = !isTransientLifecycle && effectiveStatus !== "running";
+  const isDeactivated = Boolean(server.is_deactivated);
+  const canShowStart = !isTransientLifecycle && effectiveStatus !== "running" && !isDeactivated;
   const canKill = ["starting", "running", "stopping", "restarting"].includes(effectiveStatus);
   const canInstallOrSwitch = effectiveStatus !== "installing" && effectiveStatus !== "queued";
+  const canToggleDeactivate = showResourceEdit && !server.is_hoster_managed;
 
   const showStartAction = !isRolePreviewActive || canStartInPreview;
   const showStopAction = !isRolePreviewActive || canStopInPreview;
@@ -1249,6 +1290,31 @@ export function ServerDetail() {
             disabled: !!actionLoading,
             onSelect: () => setShowWallpaper(true),
           } satisfies ActionMenuItem,
+        ]
+      : []),
+    ...(canToggleDeactivate
+      ? [
+          isDeactivated
+            ? ({
+                key: "reactivate",
+                label:
+                  actionLoading === "reactivate"
+                    ? t("common.loading")
+                    : t("servers.reactivateAction"),
+                icon: <Power className="h-4 w-4" />,
+                disabled: !!actionLoading || isNodeUnreachable,
+                onSelect: () => void handleReactivate(),
+              } satisfies ActionMenuItem)
+            : ({
+                key: "deactivate",
+                label:
+                  actionLoading === "deactivate"
+                    ? t("common.loading")
+                    : t("servers.deactivateAction"),
+                icon: <PowerOff className="h-4 w-4" />,
+                disabled: !!actionLoading || effectiveStatus !== "stopped",
+                onSelect: () => void handleDeactivate(),
+              } satisfies ActionMenuItem),
         ]
       : []),
     ...(showDeleteAction
@@ -1337,6 +1403,16 @@ export function ServerDetail() {
             <span className={`font-mono-sm text-mono-sm px-2.5 py-1 rounded-full border ${statusClasses(displayStatus)}`}>
               {t(`servers.status.${displayStatus}`, { defaultValue: displayStatus })}
             </span>
+
+            {isDeactivated && (
+              <span
+                className="inline-flex items-center gap-1.5 font-mono-sm text-mono-sm px-2.5 py-1 rounded-full border bg-status-warning/10 border-status-warning/30 text-status-warning"
+                data-testid="server-deactivated-badge"
+              >
+                <PowerOff className="w-3 h-3" aria-hidden="true" />
+                {t("servers.deactivatedBadge")}
+              </span>
+            )}
 
             {server.active_frontend_build && (
               <span className="inline-flex items-center gap-1.5 font-mono-sm text-mono-sm px-2.5 py-1 rounded-full border bg-status-warning/10 border-status-warning/30 text-status-warning animate-pulse">
@@ -1447,7 +1523,7 @@ export function ServerDetail() {
                   <Button
                     variant="secondary"
                     onClick={() => doAction("restart")}
-                    disabled={!!actionLoading || isNodeUnreachable || isTransientLifecycle}
+                    disabled={!!actionLoading || isNodeUnreachable || isTransientLifecycle || isDeactivated}
                     className="inline-flex min-h-[44px] md:min-h-[38px] items-center gap-2 disabled:opacity-50"
                   >
                     <RefreshCw className="w-4 h-4" />
@@ -1493,6 +1569,39 @@ export function ServerDetail() {
         {/* Ruhiger Ressourcen-, Node- & Netzwerk-Streifen direkt im oberen Deck */}
         <ServerTechnikPanel {...technikPanelProps} />
       </header>
+
+      {/* Deaktiviert-Hinweis: RAM & CPU freigegeben, Speicherplatz, Dateien, Backups & Ports bleiben reserviert */}
+      {isDeactivated && (
+        <div
+          className="msm-card p-4 border-status-warning/40 bg-status-warning/5 flex flex-wrap items-start justify-between gap-3"
+          data-testid="server-deactivated-banner"
+        >
+          <div className="flex items-start gap-3 min-w-0 flex-1">
+            <PowerOff className="w-5 h-5 text-status-warning flex-shrink-0 mt-0.5" aria-hidden="true" />
+            <div>
+              <p className="font-headline text-body-md text-on-surface mb-1">
+                {t("servers.deactivatedBannerTitle")}
+              </p>
+              <p className="font-body-md text-body-sm text-on-surface-variant">
+                {t("servers.deactivatedBannerDescription")}
+              </p>
+            </div>
+          </div>
+          {canToggleDeactivate && (
+            <Button
+              variant="secondary"
+              size="sm"
+              type="button"
+              onClick={() => void handleReactivate()}
+              disabled={!!actionLoading || isNodeUnreachable}
+              className="inline-flex min-h-[38px] items-center gap-2 shrink-0"
+            >
+              <Power className="w-4 h-4" />
+              {actionLoading === "reactivate" ? t("common.loading") : t("servers.reactivateAction")}
+            </Button>
+          )}
+        </div>
+      )}
 
       {/* Auth-Setup-Banner: sichtbar waehrend der Container auf interaktiven Auth-Flow wartet */}
       {server.auth_required && <AuthSetupBanner serverId={server.id} />}

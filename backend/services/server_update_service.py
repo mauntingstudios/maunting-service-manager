@@ -137,7 +137,12 @@ def _verify_update_permissions_and_preconditions(
             )
 
     # RAM-/Disk-Kapazitätsprüfung bei konkretem Zahlenwert (None = unbegrenzt).
-    ram_target = plan.payload.get("ram_limit_mb") if plan.ram_changed else None
+    # Deaktivierte Server belegen aktuell nur Disk; RAM wird erst beim Reaktivieren geprueft.
+    ram_target = (
+        plan.payload.get("ram_limit_mb")
+        if plan.ram_changed and not getattr(server, "is_deactivated", False)
+        else None
+    )
     disk_target = plan.payload.get("disk_limit_gb") if plan.disk_changed else None
     if ram_target is not None or disk_target is not None:
         from models import Node as NodeModel

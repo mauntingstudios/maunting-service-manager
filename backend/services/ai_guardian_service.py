@@ -365,7 +365,7 @@ def briefing_nachricht(db: Session, user: User) -> tuple[str, list[int]] | None:
     import json
     from services.ai_guardian_settings import is_guardian_ai_enabled
 
-    if not is_guardian_ai_enabled():
+    if not is_guardian_ai_enabled(db=db):
         return None
 
     vorfaelle = offene_briefings(db, user)
@@ -579,7 +579,7 @@ async def heilungslauf_starten(
     from services.ai_guardian_settings import is_guardian_ai_enabled
     from services.ai_stream_service import lauf_beginnen
 
-    if not is_guardian_ai_enabled():
+    if not is_guardian_ai_enabled(db=db):
         logger.debug("Guardian-Heilung uebersprungen: KI-Integration deaktiviert")
         return None
 
@@ -780,7 +780,7 @@ async def vorfaelle_bearbeiten(db: Session) -> int:
     """
     from services.ai_guardian_settings import is_guardian_ai_enabled
 
-    if not is_guardian_ai_enabled():
+    if not is_guardian_ai_enabled(db=db):
         return 0
 
     from models import AiAutonomyGrant, AiGuardianRepair

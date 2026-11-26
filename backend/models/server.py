@@ -102,6 +102,8 @@ class Server(Base):
     # Auth-Setup-Recovery-Thread gesetzt und vom Cancel-Endpoint zurueckgesetzt.
     # UI rendert einen Warn-Banner solange True. Default False (kein laufender Auth-Flow).
     auth_required: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    is_deactivated: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
+    deactivated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     restart_interval_hours: Mapped[int | None] = mapped_column(Integer, nullable=True)
     restart_time_utc: Mapped[str | None] = mapped_column(String(8), nullable=True)  # HH:MM
     restart_times_utc: Mapped[str | None] = mapped_column(String(256), nullable=True)  # HH:MM,HH:MM

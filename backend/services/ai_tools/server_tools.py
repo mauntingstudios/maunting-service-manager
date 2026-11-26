@@ -355,7 +355,7 @@ def angebotene_werkzeuge(db: Session, user: User) -> frozenset[str]:
         name for name in WERKZEUGE
         if not angebotsrechte(name) or any(key in gehalten for key in angebotsrechte(name))
     )
-    if not is_guardian_ai_enabled():
+    if not is_guardian_ai_enabled(db=db):
         verfuegbar -= GUARDIAN_TOOLS
 
     # Dokumentwerkzeuge brauchen drei Dinge gleichzeitig: das Modul, `docs.use`

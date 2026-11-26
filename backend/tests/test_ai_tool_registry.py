@@ -212,6 +212,10 @@ def test_die_sperre_ist_ausgeschrieben() -> None:
         "propose_hoster_integration",
         "propose_hoster_product",
         "propose_ai_tarif_role",
+        # Shop-Preise, Add-ons und Gutscheine
+        "propose_shop_addon_upsert",
+        "propose_shop_coupon_upsert",
+        "propose_shop_plan_upsert",
     }
     assert ai_tool_registry.GEPLANT_IMMER_BESTAETIGEN == {
         "propose_server_wipe",

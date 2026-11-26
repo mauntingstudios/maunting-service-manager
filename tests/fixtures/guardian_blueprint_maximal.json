@@ -5,7 +5,10 @@
     "name": "Guardian Maximal Contract",
     "category": "bot",
     "author": "MSM",
-    "description": "Shared JSON and Web Editor parity fixture."
+    "description": "Shared JSON and Web Editor parity fixture.",
+    "platforms": [
+      "pc"
+    ]
   },
   "runtime": {
     "image": "node:22-bookworm-slim",
@@ -144,5 +147,6 @@
       "config/",
       "saves/"
     ]
-  }
+  },
+  "variables": []
 }

@@ -72,7 +72,7 @@ def lies_vorfaelle(db: Session, *, user: User, server: Server, arguments: dict) 
     _require_no_arguments("read_guardian_incidents", arguments)
     from services.ai_guardian_settings import is_guardian_ai_enabled
 
-    if not is_guardian_ai_enabled():
+    if not is_guardian_ai_enabled(db=db):
         raise AiActionValidationError("Die Guardian-KI-Integration ist deaktiviert.")
 
     from models import Incident
