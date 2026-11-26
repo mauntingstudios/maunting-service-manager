@@ -223,6 +223,43 @@ async def ermitteln(
     Chat anhalten.
     """
     try:
+        if provider.provider_kind == "singra_router":
+            if db is None:
+                return unbekannt()
+            from services import ai_router_service
+
+            candidates = ai_router_service.resolve_candidates(db, tier="standard")
+            seen_pairs: set[tuple[int, str]] = set()
+            known_windows: list[Fenster] = []
+            for cand in candidates:
+                pid = int(cand["provider_id"])
+                cname = str(cand["model"] or "").strip()
+                if (pid, cname) in seen_pairs:
+                    continue
+                seen_pairs.add((pid, cname))
+                target = db.get(AiProvider, pid)
+                if target is None or not target.enabled:
+                    continue
+                res = await ermitteln(
+                    client, target, db=db, user_id=user_id, model_id=cname
+                )
+                if res.bekannt:
+                    known_windows.append(res)
+                if len(seen_pairs) >= 6:
+                    break
+            if not known_windows:
+                return unbekannt()
+            min_fenster = min(w.fenster_tokens for w in known_windows)
+            min_nutzbar = min(w.nutzbar_tokens for w in known_windows)
+            sieht_vals = [w.sieht for w in known_windows if w.sieht is not None]
+            return Fenster(
+                bekannt=True,
+                fenster_tokens=min_fenster,
+                nutzbar_tokens=min_nutzbar,
+                zeichen=min_nutzbar * ZEICHEN_JE_TOKEN,
+                sieht=any(sieht_vals) if sieht_vals else None,
+            )
+
         ziel_modell = (model_id or "").strip() or None
         if db is not None and user_id is not None:
             fuer_kwargs = {"model_id": ziel_modell} if ziel_modell else {}

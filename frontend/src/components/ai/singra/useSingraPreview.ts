@@ -24,43 +24,8 @@ interface UseSingraPreviewOptions {
   onStartNewProjectChat: (initialTitle?: string) => void | Promise<void>
 }
 
-export function useSingraPreview({
-  selectedProject,
-  files,
-  productionFiles,
-  projectChats,
-  envState,
-  sendTaskToProjectChat,
-  onOpenProjectChat,
-  onStartNewProjectChat,
-}: UseSingraPreviewOptions) {
-  const [previewDevice, setPreviewDevice] = useState<'desktop' | 'tablet' | 'mobile'>('desktop')
-  const [inspectMode, setInspectMode] = useState(false)
-  const [previewEnv, setPreviewEnv] = useState<'dev' | 'production'>('dev')
-  const [devPreviewMode, setDevPreviewMode] = useState<'bundle' | 'live'>('bundle')
-  const [inspectElement, setInspectElement] = useState<string | null>(null)
-  const [inspectTargetChatId, setInspectTargetChatId] = useState<string>('__latest__')
-  const previewIframeRef = useRef<HTMLIFrameElement>(null)
-  const [previewError, setPreviewError] = useState<{ message: string; detail?: string } | null>(null)
-  const [previewErrorDismissed, setPreviewErrorDismissed] = useState(false)
-  const [fixTargetChatId, setFixTargetChatId] = useState<string>('__latest__')
-
-  const [visualModalOpen, setVisualModalOpen] = useState(false)
-  const [visualInspection, setVisualInspection] = useState<AiPreviewInspectionResult | null>(null)
-  const [visualLoading, setVisualLoading] = useState(false)
-
-  const [devConsoleOpen, setDevConsoleOpen] = useState(false)
-  const [consoleLogs, setConsoleLogs] = useState<ConsoleLogEntry[]>([])
-  const [consoleFilter, setConsoleFilter] = useState<'all' | 'log' | 'warn' | 'error'>('all')
-
-  const previewSrcDoc = useMemo(() => {
-    const activeFiles: Array<{ path: string; content: string }> =
-      previewEnv === 'production' ? productionFiles : files
-    const base = buildPreviewDocument(activeFiles, envState?.preview?.entry_file ?? null)
-    if (!base) return null
-    let doc = base
-
-    const bridgeScript = `
+export function buildPreviewBridgeScript(): string {
+  return `
 <script>
 (function() {
   var _l = console.log, _i = console.info, _w = console.warn, _e = console.error;
@@ -84,18 +49,19 @@ export function useSingraPreview({
   });
 
   document.addEventListener('click', function(e) {
-    var target = e.target;
-    while (target && target.tagName !== 'A') {
-      target = target.parentElement;
+    var target = e.target && e.target.closest ? e.target.closest('a') : null;
+    if (!target) return;
+    var href = (target.getAttribute('href') || '').trim();
+    if (!href.startsWith('#') && !href.toLowerCase().startsWith('javascript:')) {
+      e.preventDefault();
     }
-    if (target && target.tagName === 'A') {
-      var href = target.getAttribute('href') || '';
-      if (href && !href.startsWith('#') && !href.startsWith('javascript:')) {
-        e.preventDefault();
-        e.stopPropagation();
-      }
+  }, false);
+
+  document.addEventListener('submit', function(e) {
+    if (!e.defaultPrevented) {
+      e.preventDefault();
     }
-  }, true);
+  }, false);
 
   var activeHover = null;
   var style = document.createElement('style');
@@ -152,6 +118,45 @@ export function useSingraPreview({
 })();
 </script>
 `
+}
+
+export function useSingraPreview({
+  selectedProject,
+  files,
+  productionFiles,
+  projectChats,
+  envState,
+  sendTaskToProjectChat,
+  onOpenProjectChat,
+  onStartNewProjectChat,
+}: UseSingraPreviewOptions) {
+  const [previewDevice, setPreviewDevice] = useState<'desktop' | 'tablet' | 'mobile'>('desktop')
+  const [inspectMode, setInspectMode] = useState(false)
+  const [previewEnv, setPreviewEnv] = useState<'dev' | 'production'>('dev')
+  const [devPreviewMode, setDevPreviewMode] = useState<'bundle' | 'live'>('bundle')
+  const [inspectElement, setInspectElement] = useState<string | null>(null)
+  const [inspectTargetChatId, setInspectTargetChatId] = useState<string>('__latest__')
+  const previewIframeRef = useRef<HTMLIFrameElement>(null)
+  const [previewError, setPreviewError] = useState<{ message: string; detail?: string } | null>(null)
+  const [previewErrorDismissed, setPreviewErrorDismissed] = useState(false)
+  const [fixTargetChatId, setFixTargetChatId] = useState<string>('__latest__')
+
+  const [visualModalOpen, setVisualModalOpen] = useState(false)
+  const [visualInspection, setVisualInspection] = useState<AiPreviewInspectionResult | null>(null)
+  const [visualLoading, setVisualLoading] = useState(false)
+
+  const [devConsoleOpen, setDevConsoleOpen] = useState(false)
+  const [consoleLogs, setConsoleLogs] = useState<ConsoleLogEntry[]>([])
+  const [consoleFilter, setConsoleFilter] = useState<'all' | 'log' | 'warn' | 'error'>('all')
+
+  const previewSrcDoc = useMemo(() => {
+    const activeFiles: Array<{ path: string; content: string }> =
+      previewEnv === 'production' ? productionFiles : files
+    const base = buildPreviewDocument(activeFiles, envState?.preview?.entry_file ?? null)
+    if (!base) return null
+    let doc = base
+
+    const bridgeScript = buildPreviewBridgeScript()
     if (doc.includes('</body>')) {
       doc = doc.replace('</body>', `${bridgeScript}</body>`)
     } else {

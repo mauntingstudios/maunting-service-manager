@@ -558,13 +558,40 @@ async def get_context_status(
             if allowed_models is None or ("*" not in allowed_models and requested_model not in allowed_models):
                 requested_model = None
 
+    target_provider = provider
+    if ai_router_service.is_router_provider(provider):
+        requested_model = None
+        last_routed = (
+            db.query(AiMessage)
+            .filter(
+                AiMessage.conversation_id == conversation.id,
+                AiMessage.role == "assistant",
+                AiMessage.routed_model.isnot(None),
+                AiMessage.provider_id.isnot(None),
+            )
+            .order_by(AiMessage.created_at.desc(), AiMessage.id.desc())
+            .first()
+        )
+        if last_routed is not None and last_routed.provider_id:
+            routed_prov = db.get(AiProvider, last_routed.provider_id)
+            if routed_prov is not None and routed_prov.enabled:
+                target_provider = routed_prov
+                requested_model = last_routed.routed_model
+
     fenster = await ai_context_window.ermitteln(
         request.app.state.ai_http_client,
-        provider,
+        target_provider,
         db=db,
         user_id=user.id,
         model_id=requested_model,
     )
+    if target_provider.id != provider.id and not fenster.bekannt:
+        fenster = await ai_context_window.ermitteln(
+            request.app.state.ai_http_client,
+            provider,
+            db=db,
+            user_id=user.id,
+        )
     context_chars = fenster.zeichen if fenster.bekannt else None
     grenzen = ai_context_service.teilbudgets(context_chars)
     belegt = ai_context_service.geschaetzte_belegung(db, conversation, grenzen)

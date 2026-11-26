@@ -20,7 +20,7 @@ from models import (
     User,
 )
 from services import ai_provider_service, ai_router_service, ai_usage_service
-from services.ai_limit_service import LIMIT_FIELDS, set_role_limit
+from services.ai_limit_service import LIMIT_FIELDS, set_role_context_ceiling, set_role_limit
 from services.ai_stream import engine as stream_engine
 from services.openai_compatible_adapter import StreamUsage
 from services.role_service import set_user_roles
@@ -34,6 +34,7 @@ def _make_chat_user(
     soft_cap_downgrade: bool = False,
     five_hour_limit: int | None = None,
     daily_limit: int | None = None,
+    max_context_tokens: int | None = None,
 ) -> Role:
     role = Role(name=f"router-role-{uuid4().hex[:6]}", description=None, is_system=False)
     db.add(role)
@@ -42,6 +43,8 @@ def _make_chat_user(
     vals = {field: None for field in LIMIT_FIELDS}
     vals["five_hour_token_limit"] = five_hour_limit
     vals["daily_token_limit"] = daily_limit
+    if "max_context_tokens" in vals:
+        vals["max_context_tokens"] = max_context_tokens
     set_role_limit(
         db,
         role.id,
@@ -50,6 +53,8 @@ def _make_chat_user(
         router_only=router_only,
         soft_cap_downgrade=soft_cap_downgrade,
     )
+    if max_context_tokens is not None:
+        set_role_context_ceiling(db, role.id, max_context_tokens)
     db.commit()
     set_user_roles(db, user, [role.id])
     return role
@@ -960,6 +965,96 @@ def test_project_workspace_configure_preview_schema_accepts_port_and_healthcheck
                 user=regular_user,
                 arguments={"action": "configure_preview", "project_id": "p", "port": bad_port},
             )
+
+
+def test_router_context_window_dynamic_for_pool_and_routed_message(
+    client: TestClient,
+    db: Session,
+    regular_user: User,
+    user_cookies: dict,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Kontextmeter kennt das Fenster des Routers (Pool-Minimum vor erster Nachricht, dann konkretes Modell)."""
+    from services import ai_model_catalog
+    from services.ai_provider_registry import Modell
+
+    _make_chat_user(db, regular_user, router_only=True, max_context_tokens=120_000)
+    prov = _create_chat_provider(
+        db,
+        name="Ctx-Prov",
+        default_model="model-200k",
+        enabled_models=["model-200k", "gpt-6-luna"],
+    )
+    cfg = ai_router_service.update_router_config(
+        db,
+        {
+            "enabled": True,
+            "standard_models": [{"provider_id": prov.id, "model": "model-200k"}],
+            "flagship_models": [{"provider_id": prov.id, "model": "gpt-6-luna"}],
+        },
+    )
+    router_provider_id = cfg["router_provider_id"]
+    db.commit()
+
+    catalog = {
+        "model-200k": Modell(model_id="model-200k", name="Model 200k", denkt=True, kontext_tokens=200_000, max_ausgabe_tokens=8_192, sieht=True),
+        "gpt-6-luna": Modell(model_id="gpt-6-luna", name="GPT-6 Luna", denkt=True, kontext_tokens=1_000_000, max_ausgabe_tokens=16_384, sieht=True),
+    }
+
+    async def fake_fuer_provider(_client, _db, _provider, *, user_id=None, model_id=None):
+        return catalog.get(model_id or _provider.default_model)
+
+    monkeypatch.setattr(ai_model_catalog, "fuer_provider", fake_fuer_provider)
+
+    conv = AiConversation(
+        id=str(uuid4()),
+        user_id=regular_user.id,
+        kind="primary",
+        title="Router Context Test",
+    )
+    db.add(conv)
+    db.commit()
+
+    # 1. Neue Unterhaltung ohne Nachricht -> Pool-Fenster (konservatives Minimum 200k), gedeckelt durch Rolle (120k)
+    res1 = client.get(
+        "/api/ai/conversation/context",
+        params={"provider_id": router_provider_id, "conversation_id": conv.id},
+        cookies=user_cookies,
+    )
+    assert res1.status_code == 200
+    body1 = res1.json()
+    assert body1["known"] is True
+    assert body1["window_tokens"] == 200_000
+    assert body1["usable_tokens"] == 120_000
+
+    # 2. Nach einer gerouteten Nachricht (gpt-6-luna, 1M) -> dynamisch 1M-Fenster der laufenden Unterhaltung
+    db.add(
+        AiMessage(
+            id=str(uuid4()),
+            conversation_id=conv.id,
+            role="assistant",
+            content="Fertig.",
+            status="complete",
+            provider_id=prov.id,
+            model="gpt-6-luna",
+            routed_tier="flagship",
+            routed_model="gpt-6-luna",
+            routed_provider_name=prov.name,
+            routed_reason="semantic_local",
+        )
+    )
+    db.commit()
+
+    res2 = client.get(
+        "/api/ai/conversation/context",
+        params={"provider_id": router_provider_id, "conversation_id": conv.id},
+        cookies=user_cookies,
+    )
+    assert res2.status_code == 200
+    body2 = res2.json()
+    assert body2["known"] is True
+    assert body2["window_tokens"] == 1_000_000
+    assert body2["usable_tokens"] == 120_000
 
 
 async def _noop_async() -> None:
