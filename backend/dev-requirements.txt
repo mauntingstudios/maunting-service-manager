@@ -36,4 +36,4 @@ pytest-timeout==2.4.0
 # still übersprungen — neun Tests, die Betriebsbedingungen erzwingen sollen,
 # wären wirkungslos geworden, ohne dass jemand es bemerkt.
 # Test-only; kein Produktionseinsatz.
-PyYAML==6.0.3
+PyYAML==6.0.4
