@@ -138,11 +138,15 @@ export const memoryApi = {
   listPendingSkills: () => api<AiSkillManaged[]>('/ai/skills/pending'),
   saveSkill: (payload: {
     skill_key: string; name: string; description: string; body: string
-    team_id: number | null; enabled: boolean
+    team_id: number | null; enabled: boolean; always_active?: boolean
   }) => api<AiSkillManaged>('/ai/skills', { method: 'PUT', body: JSON.stringify(payload) }),
   toggleSkill: (skillId: string, enabled: boolean) => api<AiSkillManaged>(`/ai/skills/${skillId}/enabled`, {
     method: 'PUT', body: JSON.stringify({ enabled }),
   }),
+  toggleSkillAlwaysActive: (skillId: string, always_active: boolean) =>
+    api<AiSkillManaged>(`/ai/skills/${skillId}/always-active`, {
+      method: 'PUT', body: JSON.stringify({ always_active }),
+    }),
   approveSkill: (skillId: string, fingerprint: string) => api<AiSkillManaged>(`/ai/skills/${skillId}/approve`, {
     method: 'POST', body: JSON.stringify({ fingerprint }),
   }),

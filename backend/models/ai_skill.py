@@ -70,6 +70,7 @@ class AiSkill(Base):
     # Betreibers und wirken bis dahin fuer niemanden.
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="active")
     enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    always_active: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_by: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )

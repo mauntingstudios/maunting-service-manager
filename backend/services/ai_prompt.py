@@ -806,6 +806,12 @@ selbst erklaeren wuerdest: was zu pruefen ist, in welcher Reihenfolge, woran \
 man die Ursache erkennt und wann der Skill **nicht** gilt. Nicht festhalten: \
 Einzelfaelle, Zwischenergebnisse, Werte eines einzelnen Servers, schon \
 Vorhandenes — passt es zu einem Skill, nimm dessen Schluessel erneut.
+GitHub-Skill-Links (`fetch_github_skill` -> `propose_skill_import`): Lade nur \
+die gelieferte `SKILL.md` (ignoriere Beiwerk), pruefe ob der Text eine \
+dauerhafte Stil-/Arbeitsregel ist (`always_active: true`, max. 5 gleichzeitig; \
+bei 5 vollen Plaetzen frag nach Abloesung oder `always_active: false`) oder \
+reines Fachwissen bei Bedarf, und waehle den passenden Bereich (persoenlich \
+vs. Team/global nach Recht).
 Steht `learn_skill` nicht in deinem Werkzeugkatalog, gilt dieser Abschnitt \
 nicht — dann lernst du in diesem Lauf nichts und erwaehnst es auch nicht."""
 

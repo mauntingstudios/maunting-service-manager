@@ -216,6 +216,8 @@ def test_die_sperre_ist_ausgeschrieben() -> None:
         "propose_shop_addon_upsert",
         "propose_shop_coupon_upsert",
         "propose_shop_plan_upsert",
+        # Externe Skills (Prompt-Injection-Schutz)
+        "propose_skill_import",
     }
     assert ai_tool_registry.GEPLANT_IMMER_BESTAETIGEN == {
         "propose_server_wipe",

@@ -12,6 +12,7 @@ from database import get_db
 from dependencies import get_current_user, require_global, verify_csrf
 from models import AiSkill, User
 from schemas.ai_skill import (
+    AiSkillAlwaysActiveToggle,
     AiSkillApprove,
     AiSkillDetail,
     AiSkillManaged,
@@ -29,7 +30,7 @@ def _summary(view) -> AiSkillSummary:
     return AiSkillSummary(
         id=view.id, skill_key=view.skill_key, name=view.name, description=view.description,
         scope=view.scope, origin=view.origin, team_id=view.team_id, status=view.status,
-        enabled=view.enabled, editable=view.editable,
+        enabled=view.enabled, always_active=view.always_active, editable=view.editable,
     )
 
 
@@ -38,6 +39,7 @@ def _managed(row: AiSkill) -> AiSkillManaged:
         id=row.id, skill_key=row.skill_key, name=row.name, description=row.description,
         body=row.body, scope="global" if row.team_id is None else "team",
         origin=row.origin, team_id=row.team_id, status=row.status, enabled=row.enabled,
+        always_active=bool(getattr(row, "always_active", False)),
         created_by=row.created_by, created_at=row.created_at, updated_at=row.updated_at,
         fingerprint=ai_skill_service.content_fingerprint(row),
     )
@@ -103,6 +105,7 @@ def upsert_skill(
         db, user=user, skill_key=payload.skill_key, name=payload.name,
         description=payload.description, body=payload.body, team_id=payload.team_id,
         origin="operator", status="active", enabled=payload.enabled,
+        always_active=payload.always_active,
     ))
 
 
@@ -116,6 +119,19 @@ def toggle_skill(
 ) -> AiSkillManaged:
     return _managed(ai_skill_service.set_enabled(
         db, user=user, skill_id=skill_id, enabled=payload.enabled
+    ))
+
+
+@router.put("/{skill_id}/always-active", response_model=AiSkillManaged)
+def toggle_skill_always_active(
+    skill_id: str,
+    payload: AiSkillAlwaysActiveToggle,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    _: None = Depends(verify_csrf),
+) -> AiSkillManaged:
+    return _managed(ai_skill_service.set_always_active(
+        db, user=user, skill_id=skill_id, always_active=payload.always_active
     ))
 
 

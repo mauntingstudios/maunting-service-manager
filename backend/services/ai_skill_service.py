@@ -70,6 +70,9 @@ logger = logging.getLogger(__name__)
 MAX_BODY_CHARS = 12_000
 MAX_NAME_CHARS = 100
 MAX_DESCRIPTION_CHARS = 500
+# So viele Skills stehen hoechstens gleichzeitig als dauerhafte Regeln voll im Kontext.
+MAX_ALWAYS_ACTIVE_SKILLS = 5
+MAX_ALWAYS_ACTIVE_TOTAL_CHARS = 16_000
 # So viele Skills stehen hoechstens gleichzeitig im Skill-Verzeichnis (die
 # Datennachricht hinter dem Systemprompt). Darueber entscheidet die
 # Bedeutungsaehnlichkeit zur Frage, welche mitkommen.
@@ -110,6 +113,7 @@ class SkillView:
     status: str           # "active" | "pending"
     enabled: bool
     editable: bool
+    always_active: bool = False
     id: str | None = None
     #: Wann die Datenbankzeile zuletzt geschrieben wurde. ``None`` heißt
     #: mitgeliefert — eine Datei hat kein Änderungsdatum. Gebraucht wird das
@@ -120,6 +124,22 @@ class SkillView:
 
 def shipped_directory() -> Path:
     return Path(__file__).resolve().parent.parent / "ai_skills"
+
+
+def parse_skill_frontmatter(raw: str) -> tuple[dict[str, Any], str] | None:
+    """Zerlegt YAML-Frontmatter + Body einer Markdown-Skilldatei."""
+    match = _FRONTMATTER_RE.match(raw)
+    if match is None:
+        return None
+    if yaml is None:
+        return {}, match.group(2).strip()
+    try:
+        meta = yaml.safe_load(match.group(1))
+    except yaml.YAMLError:
+        return None
+    if not isinstance(meta, dict):
+        return None
+    return meta, match.group(2).strip()
 
 
 def _parse_shipped(path: Path) -> ShippedSkill | None:
@@ -143,22 +163,14 @@ def _parse_shipped(path: Path) -> ShippedSkill | None:
         logger.warning("Skill-Datei %s nicht lesbar (%s)", path.name, type(exc).__name__)
         return None
 
-    match = _FRONTMATTER_RE.match(raw)
-    if match is None:
+    parsed = parse_skill_frontmatter(raw)
+    if parsed is None:
         logger.warning("Skill-Datei %s hat keinen gueltigen Kopf", path.name)
         return None
-    try:
-        meta = yaml.safe_load(match.group(1))
-    except yaml.YAMLError:
-        logger.warning("Skill-Datei %s hat einen ungueltigen Kopf", path.name)
-        return None
-    if not isinstance(meta, dict):
-        logger.warning("Skill-Datei %s hat einen ungueltigen Kopf", path.name)
-        return None
+    meta, body = parsed
 
     name = str(meta.get("name") or "").strip()
     description = str(meta.get("description") or "").strip()
-    body = match.group(2).strip()
     key = path.stem.lower()
     if not name or not description or not body or not _SKILL_KEY_RE.match(key):
         logger.warning("Skill-Datei %s ist unvollstaendig", path.name)
@@ -257,7 +269,9 @@ def _overlay(by_key: dict[str, SkillView], rows: list[AiSkill]) -> None:
             id=row.id, skill_key=row.skill_key, name=row.name, description=row.description,
             scope="global" if row.team_id is None else "team",
             origin=row.origin, team_id=row.team_id, status=row.status,
-            enabled=row.enabled, editable=True, updated_at=row.updated_at,
+            enabled=row.enabled, editable=True,
+            always_active=bool(getattr(row, "always_active", False)),
+            updated_at=row.updated_at,
         )
 
 
@@ -528,6 +542,72 @@ def _neueste_zuerst(views: list[SkillView]) -> list[SkillView]:
     return sorted(gewaehlt, key=lambda item: item.skill_key)
 
 
+def active_always_on_skills(
+    db: Session,
+    user: User,
+    *,
+    nur_team_id: int | None = None,
+    nur_persoenlich: bool = False,
+) -> list[tuple[SkillView, str]]:
+    """Laedt bis zu ``MAX_ALWAYS_ACTIVE_SKILLS`` dauerhaft aktive Skills samt Inhalt."""
+    views = [
+        item
+        for item in visible_skills(db, user, nur_team_id=nur_team_id, nur_persoenlich=nur_persoenlich)
+        if item.always_active and item.id is not None
+    ]
+    if not views:
+        return []
+    views = views[:MAX_ALWAYS_ACTIVE_SKILLS]
+    ids = [view.id for view in views if view.id is not None]
+    rows_by_id = {
+        row.id: row
+        for row in db.query(AiSkill).filter(AiSkill.id.in_(ids)).all()
+    }
+    loaded: list[tuple[SkillView, str]] = []
+    remaining = MAX_ALWAYS_ACTIVE_TOTAL_CHARS
+    for view in views:
+        row = rows_by_id.get(view.id or "")
+        if row is None or not row.body:
+            continue
+        text = row.body.strip()
+        if not text:
+            continue
+        if remaining <= 0:
+            break
+        if len(text) > remaining:
+            if remaining < 200:
+                break
+            text = text[: remaining - 15].rstrip() + "\n...[gekuerzt]"
+        remaining -= len(text)
+        loaded.append((view, text))
+    return loaded
+
+
+def _assert_always_active_limit(
+    db: Session,
+    user: User,
+    *,
+    exclude_skill_keys: tuple[str, ...] | set[str] = (),
+) -> None:
+    """Begrenzt dauerhaft aktive Skills je Nutzerkontext auf ``MAX_ALWAYS_ACTIVE_SKILLS``."""
+    excluded = {k for k in exclude_skill_keys if k}
+    active_always = [
+        item
+        for item in visible_skills(db, user)
+        if item.always_active and item.skill_key not in excluded
+    ]
+    if len(active_always) >= MAX_ALWAYS_ACTIVE_SKILLS:
+        names = ", ".join(f"{item.name} ({item.skill_key})" for item in active_always)
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Maximal {MAX_ALWAYS_ACTIVE_SKILLS} dauerhaft aktive Skills gleichzeitig "
+                f"moeglich (aktuell aktiv: {names}). Bitte zuerst einen davon auf "
+                "'Nur bei Bedarf' umstellen."
+            ),
+        )
+
+
 def skill_index(
     db: Session,
     user: User,
@@ -535,6 +615,7 @@ def skill_index(
     *,
     nur_team_id: int | None = None,
     nur_persoenlich: bool = False,
+    exclude_skill_keys: set[str] | frozenset[str] = frozenset(),
 ) -> list[SkillView]:
     """Die Skills, die in das Skill-Verzeichnis kommen — eine eigene, als Daten
     gekennzeichnete Nachricht direkt hinter dem Systemprompt
@@ -574,7 +655,11 @@ def skill_index(
     Die Reservierung wäre selbst wieder eine Auswahl, sobald mehr als
     `MAX_INDEXED_SKILLS` Dateien mitgeliefert werden; bei neun ist das weit weg.
     """
-    views = visible_skills(db, user, nur_team_id=nur_team_id, nur_persoenlich=nur_persoenlich)
+    views = [
+        item
+        for item in visible_skills(db, user, nur_team_id=nur_team_id, nur_persoenlich=nur_persoenlich)
+        if item.skill_key not in exclude_skill_keys and (exclude_skill_keys or not item.always_active)
+    ]
     if len(views) <= MAX_INDEXED_SKILLS or not query.strip():
         return _neueste_zuerst(views)
 
@@ -649,7 +734,8 @@ def assert_may_write(db: Session, user: User, team_id: int | None) -> None:
 def upsert_skill(
     db: Session, *, user: User, skill_key: str, name: str, description: str, body: str,
     team_id: int | None, origin: str = "operator", status: str = "active",
-    enabled: bool = True, skip_permission_check: bool = False,
+    enabled: bool = True, always_active: bool = False, skip_permission_check: bool = False,
+    commit: bool = True,
 ) -> AiSkill:
     """Legt einen Skill an oder ersetzt ihn unter demselben Schluessel.
 
@@ -675,6 +761,8 @@ def upsert_skill(
     safe_name = _safe_text(name, MAX_NAME_CHARS, "Skill-Name")
     safe_description = _safe_text(description, MAX_DESCRIPTION_CHARS, "Skill-Beschreibung")
     safe_body = _safe_text(body, MAX_BODY_CHARS, "Skill-Text")
+    if always_active and enabled and status == "active":
+        _assert_always_active_limit(db, user, exclude_skill_keys=(key,))
 
     row = (
         db.query(AiSkill)
@@ -789,7 +877,8 @@ def upsert_skill(
         row = AiSkill(
             id=str(uuid4()), scope_identity=identity, team_id=team_id, skill_key=key,
             name=safe_name, description=safe_description, body=safe_body,
-            origin=origin, status=status, enabled=enabled, created_by=user.id,
+            origin=origin, status=status, enabled=enabled,
+            always_active=bool(always_active), created_by=user.id,
         )
         db.add(row)
         action = "ai.skill.created"
@@ -856,6 +945,7 @@ def upsert_skill(
             # Abschalten ist eine Handlung des Betreibers, und nur die
             # Handlung darf wirken.
             row.enabled = enabled
+            row.always_active = bool(always_active)
         # Wer zuletzt geschrieben hat, steht auch dran. Vorher blieb
         # `created_by` beim urspruenglichen Einreicher stehen — eine wartende
         # Zeile liess sich ueberschreiben, und in der Freigabe-Ansicht stand
@@ -871,14 +961,17 @@ def upsert_skill(
         details={"skill_key": key, "scope": identity, "origin": origin, "status": status},
         origin="ai" if origin == "ai" else "direct",
     )
-    try:
-        db.commit()
-    except IntegrityError as exc:
-        db.rollback()
-        raise HTTPException(
-            status_code=409, detail="Skill wurde parallel geaendert. Bitte erneut versuchen.",
-        ) from exc
-    db.refresh(row)
+    if commit:
+        try:
+            db.commit()
+        except IntegrityError as exc:
+            db.rollback()
+            raise HTTPException(
+                status_code=409, detail="Skill wurde parallel geaendert. Bitte erneut versuchen.",
+            ) from exc
+        db.refresh(row)
+    else:
+        db.flush()
     return row
 
 
@@ -897,13 +990,15 @@ def content_fingerprint(row: AiSkill) -> str:
     """Abdruck des Inhalts, den eine Freigabe bestaetigt.
 
     Ueber alles, was panelweit wirkt: Name und Beschreibung stehen dauerhaft
-    im Skill-Verzeichnis jedes Kontexts, der Text kommt bei `read_skill` —
-    wer eines der drei Felder nach dem Lesen austauscht, muss die Freigabe
+    im Skill-Verzeichnis jedes Kontexts, ``always_active`` regelt die
+    Dauerinjektion und der Text kommt bei `read_skill` —
+    wer eines der Felder nach dem Lesen austauscht, muss die Freigabe
     verlieren. Laengenpraefixe statt blossem Aneinanderhaengen, damit sich
     Feldgrenzen nicht verschieben lassen ("ab"+"c" == "a"+"bc").
     """
+    always_tag = "1" if bool(getattr(row, "always_active", False)) else "0"
     quelle = "\x1f".join(
-        f"{len(teil)}:{teil}" for teil in (row.name, row.description, row.body)
+        f"{len(teil)}:{teil}" for teil in (row.name, row.description, row.body, always_tag)
     )
     return hashlib.sha256(quelle.encode("utf-8")).hexdigest()
 
@@ -911,6 +1006,8 @@ def content_fingerprint(row: AiSkill) -> str:
 def set_enabled(db: Session, *, user: User, skill_id: str, enabled: bool) -> AiSkill:
     row = get_skill(db, skill_id)
     assert_may_write(db, user, row.team_id)
+    if enabled and row.always_active and row.status == "active":
+        _assert_always_active_limit(db, user, exclude_skill_keys=(row.skill_key,))
     row.enabled = enabled
     row.updated_at = datetime.now(timezone.utc)
     audit_service.record_privileged_action(
@@ -920,6 +1017,32 @@ def set_enabled(db: Session, *, user: User, skill_id: str, enabled: bool) -> AiS
     )
     db.commit()
     db.refresh(row)
+    return row
+
+
+def set_always_active(
+    db: Session, *, user: User, skill_id: str, always_active: bool, commit: bool = True
+) -> AiSkill:
+    row = get_skill(db, skill_id)
+    assert_may_write(db, user, row.team_id)
+    if always_active and row.enabled and row.status == "active":
+        _assert_always_active_limit(db, user, exclude_skill_keys=(row.skill_key,))
+    row.always_active = bool(always_active)
+    row.updated_at = datetime.now(timezone.utc)
+    audit_service.record_privileged_action(
+        db,
+        user_id=user.id,
+        action="ai.skill.always_active_toggled",
+        target_type="ai_skill",
+        target_id=row.id,
+        details={"skill_key": row.skill_key, "always_active": bool(always_active)},
+        origin="direct",
+    )
+    if commit:
+        db.commit()
+        db.refresh(row)
+    else:
+        db.flush()
     return row
 
 
@@ -963,6 +1086,8 @@ def approve(db: Session, *, user: User, skill_id: str, fingerprint: str) -> AiSk
                 "Lies die neue Fassung und gib dann frei."
             ),
         )
+    if row.always_active and row.enabled:
+        _assert_always_active_limit(db, user, exclude_skill_keys=(row.skill_key,))
     row.status = "active"
     row.updated_at = datetime.now(timezone.utc)
     audit_service.record_privileged_action(

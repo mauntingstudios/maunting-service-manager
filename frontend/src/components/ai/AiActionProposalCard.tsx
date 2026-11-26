@@ -1,4 +1,4 @@
-import { Activity, AlertTriangle, Blocks, Bot, CalendarClock, ChevronDown, Database, Eye, FilePenLine, FileX, Globe, HardDriveDownload, HardDriveUpload, Mail, Network, Newspaper, Package, Plug, Power, ServerCog, ShieldCheck, SlidersHorizontal, Trash2, Users, Wrench } from 'lucide-react'
+import { Activity, AlertTriangle, Blocks, BookOpen, Bot, CalendarClock, ChevronDown, Database, Eye, FilePenLine, FileX, Globe, HardDriveDownload, HardDriveUpload, Mail, Network, Newspaper, Package, Plug, Power, ServerCog, ShieldCheck, SlidersHorizontal, Trash2, Users, Wrench } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -99,6 +99,11 @@ const TATSACHEN: readonly string[] = [
   'memory_scope',
   'memory_keys',
   'skill_key',
+  'scope_label',
+  'mode_label',
+  'source_url',
+  'disable_always_active_key',
+  'body_preview',
   // Rechte anderer Benutzer: wer, was danach gilt, und getrennt davon, was neu
   // dazukommt und was wegfaellt. Ohne die beiden letzten muesste der
   // Bestaetigende zwei Listen im Kopf vergleichen, um zu sehen, dass er gerade
@@ -247,6 +252,7 @@ export function AiActionProposalCard({
     propose_task_set: CalendarClock,
     propose_task_delete: CalendarClock,
     propose_news_upsert: Newspaper,
+    propose_skill_import: BookOpen,
     // Auch die eingebauten Zeitplaene sind Uhren: eingestellt wird, **wann**
     // neu gestartet oder gesichert wird — nicht der Vorgang selbst.
     propose_restart_schedule_set: CalendarClock,

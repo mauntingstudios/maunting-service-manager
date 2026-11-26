@@ -93,6 +93,11 @@ export function AiSkillDirectory() {
               <span className="rounded-full border border-outline-variant/40 px-2 py-0.5 text-label-sm uppercase tracking-wider text-on-surface-variant">
                 {herkunft(skill)}
               </span>
+              {skill.always_active && (
+                <span className="rounded-full border border-primary/40 bg-primary/10 px-2 py-0.5 text-label-sm uppercase tracking-wider text-primary">
+                  {t('ai.skills.alwaysActiveBadge')}
+                </span>
+              )}
               {skill.origin === 'ai' && (
                 <span className="inline-flex items-center gap-1 text-label-sm uppercase tracking-wider text-tertiary">
                   <Sparkles className="h-3 w-3" aria-hidden="true" />

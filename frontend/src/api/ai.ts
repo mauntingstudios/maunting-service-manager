@@ -106,6 +106,7 @@ export const SCHREIBWERKZEUGE = [
   'propose_note_delete',
   'propose_popup_set',
   'propose_news_upsert',
+  'propose_skill_import',
   'propose_shop_plan_upsert',
   'propose_shop_coupon_upsert',
   'propose_shop_addon_upsert',

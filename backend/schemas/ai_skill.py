@@ -27,10 +27,15 @@ class AiSkillWrite(BaseModel):
     # NULL bedeutet global. Ein Team-Skill braucht die Nummer seines Teams.
     team_id: int | None = Field(default=None, ge=1)
     enabled: bool = True
+    always_active: bool = False
 
 
 class AiSkillToggle(BaseModel):
     enabled: bool
+
+
+class AiSkillAlwaysActiveToggle(BaseModel):
+    always_active: bool
 
 
 class AiSkillSummary(BaseModel):
@@ -45,6 +50,7 @@ class AiSkillSummary(BaseModel):
     team_id: int | None = None
     status: SkillStatus = "active"
     enabled: bool = True
+    always_active: bool = False
     # Mitgelieferte Skills sind nicht aenderbar, nur ueberschreibbar.
     editable: bool = False
 
@@ -66,6 +72,7 @@ class AiSkillManaged(BaseModel):
     team_id: int | None
     status: SkillStatus
     enabled: bool
+    always_active: bool = False
     created_by: int | None
     created_at: datetime
     updated_at: datetime

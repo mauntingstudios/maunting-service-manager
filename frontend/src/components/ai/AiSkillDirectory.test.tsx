@@ -17,7 +17,7 @@ const basis = {
 const skills: AiSkillSummary[] = [
   { ...basis, skill_key: 'dayz-start', name: 'DayZ-Start', description: 'a', scope: 'shipped', origin: 'shipped', team_id: null },
   { ...basis, id: '1', skill_key: 'backup', name: 'Backup-Routine', description: 'b', scope: 'global', origin: 'operator', team_id: null },
-  { ...basis, id: '2', skill_key: 'meins', name: 'Meine Art', description: 'c', scope: 'team', origin: 'ai', team_id: 1 },
+  { ...basis, id: '2', skill_key: 'meins', name: 'Meine Art', description: 'c', scope: 'team', origin: 'ai', team_id: 1, always_active: true },
   { ...basis, id: '3', skill_key: 'freitags', name: 'Freitags', description: 'd', scope: 'team', origin: 'operator', team_id: 2 },
 ]
 
@@ -86,5 +86,6 @@ describe('AiSkillDirectory', () => {
     expect(screen.queryByLabelText('Skill-Schlüssel')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Hinzufügen' })).not.toBeInTheDocument()
     expect(screen.queryByRole('switch')).not.toBeInTheDocument()
+    expect(screen.getByText('Immer aktiv')).toBeInTheDocument()
   })
 })

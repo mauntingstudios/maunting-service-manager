@@ -4,14 +4,14 @@ import { useTranslation } from 'react-i18next'
 
 import { aiApi, type AiSkillManaged, type AiSkillSummary } from '@/api/ai'
 import { SanitizedApiError } from '@/api/client'
-import { Button, Switch } from '@maunting/ui'
+import { Button, Checkbox, Switch } from '@maunting/ui'
 import { confirm } from '@/stores/confirmStore'
 import { toast } from '@/stores/toastStore'
 
 import { AiKnowledgeShell } from './AiKnowledgeShell'
 import { type AiSkillScope, skillScopeTeamId } from './knowledgeScope'
 
-const EMPTY_DRAFT = { skill_key: '', name: '', description: '', body: '' }
+const EMPTY_DRAFT = { skill_key: '', name: '', description: '', body: '', always_active: false }
 
 /**
  * Dieselbe Regel, die `AiSkillWrite` im Backend erzwingt.
@@ -48,6 +48,7 @@ interface Zeile {
   origin: 'shipped' | 'operator' | 'ai'
   status: 'active' | 'pending'
   enabled: boolean
+  always_active: boolean
   fingerprint: string
 }
 
@@ -55,7 +56,7 @@ function ausVerwaltet(row: AiSkillManaged): Zeile {
   return {
     id: row.id, skill_key: row.skill_key, name: row.name, description: row.description,
     body: row.body, origin: row.origin, status: row.status, enabled: row.enabled,
-    fingerprint: row.fingerprint,
+    always_active: Boolean(row.always_active), fingerprint: row.fingerprint,
   }
 }
 
@@ -63,7 +64,7 @@ function ausVerzeichnis(row: AiSkillSummary): Zeile {
   return {
     id: row.id, skill_key: row.skill_key, name: row.name, description: row.description,
     body: '', origin: row.origin, status: row.status, enabled: row.enabled,
-    fingerprint: '',
+    always_active: Boolean(row.always_active), fingerprint: '',
   }
 }
 
@@ -130,85 +131,75 @@ export function AiSkillManager({ scope }: Props) {
       `${row.name} ${row.skill_key} ${row.description}`.toLowerCase().includes(nadel))
   }, [zeilen, suche])
 
-  const save = async () => {
+  const runBusy = async (task: () => Promise<void>, errorKey = 'ai.skills.errors.save') => {
     if (busy) return
     setBusy(true)
     try {
-      // Der Schalter der Zeile entscheidet, nicht das Formular. Vorher stand
-      // hier fest `enabled: true`, und das Backend übernimmt den Wert im
-      // Update-Zweig ungefragt: wer an einem abgeschalteten Skill einen
-      // Tippfehler in der Beschreibung ausbesserte, hat ihn damit stillschweigend
-      // wieder für alle im Bereich scharf gestellt — nirgends stand, dass
-      // Speichern auch einschaltet.
-      //
-      // Gelesen wird aus `zeilen`, nicht aus einer Kopie im Entwurf: sonst gäbe
-      // ein Klick auf den Schalter während des Bearbeitens einen zweiten,
-      // veralteten Wahrheitsstand, der die Umschaltung beim Speichern wieder
-      // zurücknähme.
-      const bestand = editingId === null ? null : zeilen.find((row) => row.id === editingId)
-      await aiApi.saveSkill({
-        skill_key: draft.skill_key.trim().toLowerCase(),
-        name: draft.name.trim(),
-        description: draft.description.trim(),
-        body: draft.body.trim(),
-        team_id: teamId,
-        enabled: bestand?.enabled ?? true,
-      })
-      setDraft({ ...EMPTY_DRAFT })
-      setEditingId(null)
-      await reload()
-      toast.success(t('ai.skills.saved'))
+      await task()
     } catch (error: unknown) {
-      toast.error(error instanceof SanitizedApiError ? error.message : t('ai.skills.errors.save'))
+      toast.error(error instanceof SanitizedApiError ? error.message : t(errorKey))
     } finally {
       setBusy(false)
     }
   }
 
+  const save = () => runBusy(async () => {
+    const bestand = editingId === null ? null : zeilen.find((row) => row.id === editingId)
+    await aiApi.saveSkill({
+      skill_key: draft.skill_key.trim().toLowerCase(),
+      name: draft.name.trim(),
+      description: draft.description.trim(),
+      body: draft.body.trim(),
+      team_id: teamId,
+      enabled: bestand?.enabled ?? true,
+      always_active: draft.always_active,
+    })
+    setDraft({ ...EMPTY_DRAFT })
+    setEditingId(null)
+    await reload()
+    toast.success(t('ai.skills.saved'))
+  })
+
   const remove = async (row: Zeile) => {
     if (row.id === null) return
     if (!await confirm({ message: t('ai.skills.remove'), confirmText: t('common.delete'), danger: true })) return
-    setBusy(true)
-    try {
-      await aiApi.deleteSkill(row.id)
+    await runBusy(async () => {
+      await aiApi.deleteSkill(row.id!)
       if (editingId === row.id) {
         setDraft({ ...EMPTY_DRAFT })
         setEditingId(null)
       }
       await reload()
       toast.success(t('ai.skills.deleted'))
-    } catch (error: unknown) {
-      toast.error(error instanceof SanitizedApiError ? error.message : t('ai.skills.errors.save'))
-    } finally {
-      setBusy(false)
-    }
+    })
   }
 
-  const toggle = async (row: Zeile, enabled: boolean) => {
+  const toggle = (row: Zeile, enabled: boolean) => {
     if (row.id === null) return
-    setBusy(true)
-    try {
-      await aiApi.toggleSkill(row.id, enabled)
+    void runBusy(async () => {
+      await aiApi.toggleSkill(row.id!, enabled)
       await reload()
-    } catch (error: unknown) {
-      toast.error(error instanceof SanitizedApiError ? error.message : t('ai.skills.errors.save'))
-    } finally {
-      setBusy(false)
-    }
+    })
   }
 
-  const approve = async (row: Zeile) => {
+  const toggleAlwaysActive = (row: Zeile, alwaysActive: boolean) => {
+    if (row.id === null) return
+    void runBusy(async () => {
+      await aiApi.toggleSkillAlwaysActive(row.id!, alwaysActive)
+      if (editingId === row.id) {
+        setDraft((prev) => ({ ...prev, always_active: alwaysActive }))
+      }
+      await reload()
+    })
+  }
+
+  const approve = (row: Zeile) => {
     if (row.id === null || !row.fingerprint) return
-    setBusy(true)
-    try {
-      await aiApi.approveSkill(row.id, row.fingerprint)
+    void runBusy(async () => {
+      await aiApi.approveSkill(row.id!, row.fingerprint)
       await reload()
       toast.success(t('ai.skills.saved'))
-    } catch (error: unknown) {
-      toast.error(error instanceof SanitizedApiError ? error.message : t('ai.skills.errors.save'))
-    } finally {
-      setBusy(false)
-    }
+    })
   }
 
   if (loading) return null
@@ -252,6 +243,7 @@ export function AiSkillManager({ scope }: Props) {
                     setDraft({
                       skill_key: row.skill_key, name: row.name,
                       description: row.description, body: row.body,
+                      always_active: row.always_active,
                     })
                     setEditingId(row.id)
                   }}
@@ -269,12 +261,30 @@ export function AiSkillManager({ scope }: Props) {
                     {t('ai.skills.origins.ai')}
                   </span>
                 )}
+                {(!darfAendern || row.status === 'pending') && row.always_active && (
+                  <span className="rounded-full border border-primary/40 bg-primary/10 px-2 py-0.5 text-label-sm uppercase tracking-wider text-primary">
+                    {t('ai.skills.alwaysActiveBadge')}
+                  </span>
+                )}
                 {row.status === 'pending' && <span>{t('ai.skills.pending')}</span>}
               </span>
               <p className="mt-1 text-xs leading-5 text-on-surface-variant">{row.description}</p>
             </div>
             {darfAendern && (
               <>
+                {row.id !== null && row.status !== 'pending' && (
+                  <Button
+                    type="button"
+                    variant={row.always_active ? 'secondary' : 'ghost'}
+                    size="sm"
+                    disabled={busy}
+                    aria-pressed={row.always_active}
+                    aria-label={`${t('ai.skills.alwaysActive')}: ${row.name}`}
+                    onClick={() => void toggleAlwaysActive(row, !row.always_active)}
+                  >
+                    {row.always_active ? t('ai.skills.alwaysActiveBadge') : t('ai.skills.onDemandBadge')}
+                  </Button>
+                )}
                 {row.status === 'pending' && row.id !== null && row.fingerprint && (
                   <Button
                     type="button" variant="secondary" size="sm" disabled={busy}
@@ -363,6 +373,24 @@ export function AiSkillManager({ scope }: Props) {
               aria-label={t('ai.skills.body')}
             />
             <span className="block text-xs text-on-surface-variant">{t('ai.skills.bodyHint')}</span>
+          </label>
+
+          <label className="flex items-start gap-2.5 rounded-lg border border-outline-variant/40 bg-surface-container/40 px-3 py-2.5 cursor-pointer">
+            <Checkbox
+              className="mt-0.5"
+              checked={draft.always_active}
+              disabled={busy}
+              onCheckedChange={(checked) => setDraft({ ...draft, always_active: checked })}
+              aria-label={t('ai.skills.alwaysActive')}
+            />
+            <span className="space-y-0.5">
+              <span className="block text-xs font-medium text-on-surface">
+                {t('ai.skills.alwaysActive')}
+              </span>
+              <span className="block text-xs text-on-surface-variant">
+                {t('ai.skills.alwaysActiveHint')}
+              </span>
+            </span>
           </label>
 
           <div className="flex flex-wrap gap-2">

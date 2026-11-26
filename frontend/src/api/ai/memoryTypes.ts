@@ -205,6 +205,7 @@ export interface AiSkillSummary {
   team_id: number | null
   status: 'active' | 'pending'
   enabled: boolean
+  always_active?: boolean
   editable: boolean
 }
 
@@ -220,6 +221,7 @@ export interface AiSkillManaged {
   team_id: number | null
   status: 'active' | 'pending'
   enabled: boolean
+  always_active?: boolean
   created_by: number | null
   created_at: string
   updated_at: string

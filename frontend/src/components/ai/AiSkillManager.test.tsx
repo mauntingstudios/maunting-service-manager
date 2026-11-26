@@ -13,6 +13,7 @@ vi.mock('@/api/ai', () => ({
     saveSkill: vi.fn(),
     deleteSkill: vi.fn(),
     toggleSkill: vi.fn(),
+    toggleSkillAlwaysActive: vi.fn(),
   },
 }))
 vi.mock('@/stores/toastStore', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
@@ -122,5 +123,25 @@ describe('AiSkillManager', () => {
     expect(feld).toHaveValue('backup')
     fireEvent.change(feld, { target: { value: '' } })
     expect(screen.getByText('DayZ-Start')).toBeInTheDocument()
+  })
+
+  it('erlaubt Immer-aktiv-Umschaltung beim Anlegen und an bestehenden Skills', async () => {
+    vi.mocked(aiApi.toggleSkillAlwaysActive).mockResolvedValue({ ...basis, always_active: true })
+    render(<AiSkillManager scope={panel} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Immer im Kontext aktiv: Valheim-RAM' }))
+    await waitFor(() => expect(aiApi.toggleSkillAlwaysActive).toHaveBeenCalledWith('1', true))
+
+    fireEvent.change(screen.getByLabelText('Schlüssel'), { target: { value: 'i-have-adhd' } })
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'ADHS Stil' } })
+    fireEvent.change(screen.getByLabelText('Beschreibung'), { target: { value: 'Antwortstil' } })
+    fireEvent.change(screen.getByLabelText('Vorgehensweise'), { target: { value: 'Immer zuerst die Aktion nennen.' } })
+    fireEvent.click(screen.getByLabelText('Immer im Kontext aktiv'))
+    fireEvent.click(screen.getByRole('button', { name: 'Neuer Skill' }))
+
+    await waitFor(() => expect(aiApi.saveSkill).toHaveBeenCalledWith(expect.objectContaining({
+      skill_key: 'i-have-adhd',
+      always_active: true,
+    })))
   })
 })

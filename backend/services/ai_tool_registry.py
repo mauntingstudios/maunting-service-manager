@@ -662,7 +662,7 @@ ATTACHMENT_TOOLS = _mit_gruppe("attachments")
 # Werkzeug mehr, das den Messenger anfasst. Siehe docs/agent-rules/security.md,
 # Abschnitt 5.1.
 CHAT_INTERACTION_TOOLS = (
-    MAIL_TOOLS | CALENDAR_TOOLS | POPUP_TOOLS | NEWS_TOOLS | SHOP_TOOLS | TASK_TOOLS | NOTES_TOOLS | ATTACHMENT_TOOLS
+    MAIL_TOOLS | CALENDAR_TOOLS | POPUP_TOOLS | NEWS_TOOLS | SHOP_TOOLS | TASK_TOOLS | NOTES_TOOLS | ATTACHMENT_TOOLS | (SKILL_TOOLS & WRITE_TOOLS)
 )
 ASK_TOOLS = _mit_art("ask")
 DELEGATION_TOOLS = _mit_art("delegation")

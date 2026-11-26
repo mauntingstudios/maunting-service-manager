@@ -515,7 +515,10 @@ def test_the_tool_catalogue_stays_within_a_stated_budget(
         # Stand 24.11.2026 (News-System): 114.531 Zeichen App (147 Werkzeuge),
         # 109.459 Zeichen Panel (141 Werkzeuge) mit `news_read` und
         # `propose_news_upsert`.
-        assert len(katalog) < 116_000, (
+        # Stand 26.11.2026 (GitHub-Skills-Import & Always-Active): 117.096 Zeichen
+        # Desktop-App / 112.024 Zeichen Panel mit `fetch_github_skill`,
+        # `propose_skill_import` und `learn_skill.always_active`.
+        assert len(katalog) < 119_000, (
             f"Der Werkzeugkatalog der Herkunft '{herkunft}' ist auf "
             f"{len(katalog)} Zeichen gewachsen. Er geht in jeder Runde mit und "
             "taucht in keiner Budgetrechnung auf. Wer die Grenze anhebt, misst "

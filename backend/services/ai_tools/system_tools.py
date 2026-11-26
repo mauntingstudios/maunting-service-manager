@@ -9,10 +9,12 @@ from models import User
 from services import permission_service
 from services.ai_action_errors import AiActionValidationError
 from services.ai_redaction import redact_sensitive_text
-from services.ai_tool_spec import werkzeug
+from services.ai_tool_spec import spaet, spaet_vorschlag, werkzeug
 from services.ai_tools.base import (
     _function,
     _resolve_server,
+    _RATIONALE_SCHEMA,
+    _RATIONALE_REQUIRED,
     MAX_QUESTION_OPTIONS,
     MAX_QUESTION_CHARS,
     MAX_OPTION_CHARS,
@@ -706,7 +708,7 @@ def _execute_learn_skill(db: Session, *, user: User, arguments: dict) -> dict:
         row = ai_skill_service.upsert_skill(
             db, user=user, skill_key=arguments["skill_key"], name=arguments["name"],
             description=arguments["description"], body=arguments["body"],
-            team_id=team_id, origin="ai", status=status,
+            team_id=team_id, origin="ai", status=status, always_active=False,
             # Auf dem globalen Weg **ist** die Lernpolitik die Berechtigung:
             # `resolve_global_status` hat die Entscheidung des Betreibers
             # bereits umgesetzt — "off" endet oben, "review" ohne
@@ -732,6 +734,51 @@ def _execute_learn_skill(db: Session, *, user: User, arguments: dict) -> dict:
             "Der Skill wartet auf die Freigabe des Betreibers und wirkt bis "
             "dahin nicht." if row.status == "pending" else None
         ),
+    }
+
+
+def _execute_fetch_github_skill(db: Session, *, user: User, arguments: dict) -> dict:
+    """Liest reine SKILL.md-Dateien aus einem GitHub-Link und prueft Limits/Bereiche."""
+    from services import ai_skill_service, github_skill_service, team_service
+
+    if not permission_service.has_global_permission(db, user, "ai.skills.use"):
+        raise AiActionValidationError("Skills sind fuer diesen Benutzer nicht freigegeben")
+    if set(arguments) - {"url", "skill_path"}:
+        raise AiActionValidationError("GitHub-Skill-Abruf hat ungueltige Argumente")
+    raw_url = arguments.get("url")
+    if not isinstance(raw_url, str) or not raw_url.strip():
+        raise AiActionValidationError("GitHub-Adresse (url) fehlt")
+    skill_path = arguments.get("skill_path")
+    if skill_path is not None and not isinstance(skill_path, str):
+        raise AiActionValidationError("skill_path muss eine Zeichenkette sein")
+
+    try:
+        fetched = github_skill_service.fetch_github_skills(
+            raw_url, skill_path=skill_path if skill_path else None
+        )
+    except HTTPException as exc:
+        raise AiActionValidationError(str(exc.detail)) from exc
+
+    current_always = [
+        {"skill_key": s.skill_key, "name": s.name, "scope": s.scope}
+        for s in ai_skill_service.visible_skills(db, user)
+        if s.always_active
+    ]
+    writable_teams = [
+        {"name": "Persönlich", "is_personal": True},
+        *(
+            {"name": team.name, "is_personal": False}
+            for team in team_service.learning_teams(db, user, schalter="skills")
+        ),
+    ]
+
+    return {
+        **fetched,
+        "untrusted": True,
+        "always_active_current": current_always,
+        "always_active_max": ai_skill_service.MAX_ALWAYS_ACTIVE_SKILLS,
+        "can_manage_global": permission_service.has_global_permission(db, user, "ai.skills.manage"),
+        "writable_teams": writable_teams,
     }
 
 def _execute_web_search(
@@ -959,6 +1006,32 @@ _READ_SKILL = _function(
             },
             ["skill_key"],
         )
+_FETCH_GITHUB_SKILL = _function(
+            "fetch_github_skill",
+            "Laedt nur SKILL.md aus einer github.com-URL (ohne Hooks/Skripte) und zeigt aktive Always-On-Skills.",
+            {
+                "url": {"type": "string", "maxLength": 500},
+                "skill_path": {"type": ["string", "null"], "maxLength": 200},
+            },
+            ["url"],
+        )
+_PROPOSE_SKILL_IMPORT = _function(
+            "propose_skill_import",
+            "Schlaegt einen geprueften Skill zum Speichern unter Wissen vor (mit Vorschau-Bestaetigung).",
+            {
+                "skill_key": {"type": "string", "maxLength": 64},
+                "name": {"type": "string", "maxLength": 100},
+                "description": {"type": "string", "maxLength": 500},
+                "body": {"type": "string", "maxLength": 12000},
+                "scope": {"type": "string", "enum": ["team", "global"]},
+                "team": {"type": ["string", "null"], "maxLength": 64},
+                "always_active": {"type": "boolean"},
+                "source_url": {"type": ["string", "null"], "maxLength": 500},
+                "disable_always_active_key": {"type": ["string", "null"], "maxLength": 64},
+                **_RATIONALE_SCHEMA,
+            },
+            ["skill_key", "name", "description", "body", "scope", *_RATIONALE_REQUIRED],
+        )
 _SEARCH_MEMORY = _function(
             "search_memory",
             "Durchsucht das Gedaechtnis nach Bedeutung, auch anders "
@@ -997,7 +1070,7 @@ _FORGET_SKILL = _function(
         )
 
 DOKU_DEFINITIONEN = [_SEARCH_DOCS, _READ_DOCS]
-SKILL_LESE_DEFINITIONEN = [_READ_SKILL]
+SKILL_LESE_DEFINITIONEN = [_READ_SKILL, _FETCH_GITHUB_SKILL, _PROPOSE_SKILL_IMPORT]
 MEMORY_DEFINITIONEN = [_SEARCH_MEMORY, _FORGET_SKILL]
 
 
@@ -1011,6 +1084,10 @@ def _lies_doku(db, *, user, arguments, lauf=None):
 
 def _lies_skill(db, *, user, arguments, lauf=None):
     return _execute_read_skill(db, user=user, arguments=arguments)
+
+
+def _lies_github_skill(db, *, user, arguments, lauf=None):
+    return _execute_fetch_github_skill(db, user=user, arguments=arguments)
 
 
 def _lies_memory(db, *, user, arguments, lauf=None):
@@ -1042,6 +1119,26 @@ werkzeug(
     angebot=("ai.skills.use",),
     hinweis="Laedt den Text eines freigegebenen Skills.",
     global_handler=_lies_skill,
+)
+werkzeug(
+    _FETCH_GITHUB_SKILL,
+    art="global_read",
+    gruppe="skill",
+    angebot=("ai.skills.use",),
+    hinweis="Laedt SKILL.md aus einer GitHub-Adresse ohne Hooks/Skripte.",
+    global_handler=_lies_github_skill,
+)
+werkzeug(
+    _PROPOSE_SKILL_IMPORT,
+    art="global_write",
+    gruppe="skill",
+    recht="ai.skills.use",
+    recht_global=True,
+    angebot=("ai.skills.use",),
+    immer_bestaetigen=True,
+    hinweis="Schlaegt den Import eines externen Skills unter Wissen vor.",
+    vorschlag=spaet_vorschlag("services.ai_proposals.skill_proposals._skill_import_payload"),
+    ausfuehren=spaet("services.ai_proposals.skill_proposals._ausfuehren_skill_import"),
 )
 werkzeug(
     _SEARCH_MEMORY,
