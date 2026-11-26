@@ -69,6 +69,8 @@ from services.openai_compatible_adapter import (
     _ganzzahl,
     _iter_sse_lines,
     _kurzfassung,
+    normalize_anthropic_tool_call_ids,
+    retry_after_for_error,
     schluesselkopf,
 )
 
@@ -353,7 +355,7 @@ def nachrichten_uebersetzen(
     systemtexte: list[str] = []
     ausgabe: list[dict[str, Any]] = []
 
-    for nachricht in messages:
+    for nachricht in normalize_anthropic_tool_call_ids(messages):
         if not isinstance(nachricht, dict):
             continue
         rolle = nachricht.get("role")
@@ -623,7 +625,12 @@ async def stream_messages(
                     model or provider.default_model,
                     response.status_code,
                 )
-                raise AiProviderRequestError(_error_code(response.status_code), detail)
+                marke = _error_code(response.status_code)
+                raise AiProviderRequestError(
+                    marke,
+                    detail,
+                    retry_after_seconds=retry_after_for_error(response, marke),
+                )
 
             # Ab hier ist die Anfrage angekommen und wird abgerechnet, auch
             # wenn der Strom gleich abbricht — gezaehlt wird deshalb hier.

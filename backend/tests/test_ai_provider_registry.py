@@ -595,3 +595,45 @@ def test_anthropic_direct_provider_and_catalog_parser() -> None:
     assert modell.abschaltung == "2028-01-15"
 
     assert leser({"id": "claude-2.1", "lifecycle": "retired"}) is None
+
+
+def test_groq_and_mistral_providers_and_catalog_parsers() -> None:
+    """Groq und Mistral AI sind als Chat-Provider registriert und parsen ihre Kataloge."""
+    groq_spec = ai_provider_registry.anbieter("groq")
+    assert groq_spec.base_url == "https://api.groq.com/openai/v1"
+    assert groq_spec.key_prefix == "gsk_"
+    assert groq_spec.gehoer_wege == ("endpunkt",)
+    assert groq_spec.gehoer_form == "multipart"
+
+    groq_reader = ai_provider_registry.katalog_leser("groq")
+    groq_model = groq_reader({
+        "id": "llama-3.3-70b-versatile",
+        "active": True,
+        "context_window": 131_072,
+        "max_completion_tokens": 32_768,
+    })
+    assert groq_model is not None
+    assert groq_model.model_id == "llama-3.3-70b-versatile"
+    assert groq_model.kontext_tokens == 131_072
+    assert groq_model.max_ausgabe_tokens == 32_768
+    assert groq_reader({"id": "deprecated-model", "active": False}) is None
+
+    mistral_spec = ai_provider_registry.anbieter("mistral")
+    assert mistral_spec.base_url == "https://api.mistral.ai/v1"
+    assert mistral_spec.key_prefix is None
+    assert mistral_spec.gehoer_wege == ()
+
+    mistral_reader = ai_provider_registry.katalog_leser("mistral")
+    mistral_model = mistral_reader({
+        "id": "mistral-small-latest",
+        "name": "Mistral Small",
+        "max_context_length": 128_000,
+        "capabilities": {"vision": True},
+        "deprecation": "2027-06-01T00:00:00Z",
+    })
+    assert mistral_model is not None
+    assert mistral_model.model_id == "mistral-small-latest"
+    assert mistral_model.name == "Mistral Small"
+    assert mistral_model.kontext_tokens == 128_000
+    assert mistral_model.sieht is True
+    assert mistral_model.abschaltung == "2027-06-01"

@@ -51,6 +51,7 @@ from services.openai_compatible_adapter import (
     _teilmenge,
     anbieter_fehlercode,
     fehler_der_antwort,
+    retry_after_for_error,
     schluesselkopf,
 )
 from services.openai_responses_websocket import (
@@ -398,7 +399,11 @@ async def stream_responses_http(
                     model or provider.default_model,
                     response.status_code,
                 )
-                raise AiProviderRequestError(marke, detail)
+                raise AiProviderRequestError(
+                    marke,
+                    detail,
+                    retry_after_seconds=retry_after_for_error(response, marke),
+                )
 
             usage.anfragen += 1
 

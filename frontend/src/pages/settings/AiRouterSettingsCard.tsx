@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, Route, Save, SlidersHorizontal, Trash2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import { aiApi, type AiRouterConfig, type AiRouterPoolEntry } from '@/api/ai'
+import { aiApi, type AiRouterConfig, type AiRouterPoolEntry, type AiRouterRoutingMode } from '@/api/ai'
 import { SanitizedApiError } from '@/api/client'
 import { toast } from '@/stores/toastStore'
 import { Button, Dropdown, NumberStepper, Spinner, Switch } from '@maunting/ui'
@@ -10,6 +10,7 @@ import { Button, Dropdown, NumberStepper, Spinner, Switch } from '@maunting/ui'
 type TierKey = 'eco' | 'standard' | 'flagship' | 'fallback'
 
 const TIER_ORDER: readonly TierKey[] = ['eco', 'standard', 'flagship', 'fallback']
+const ROUTING_MODES: readonly AiRouterRoutingMode[] = ['quality', 'free_first_tier', 'free_first_global']
 
 const TIER_POOL_FIELD: Record<TierKey, 'eco_models' | 'standard_models' | 'flagship_models' | 'fallback_models'> = {
   eco: 'eco_models',
@@ -80,12 +81,19 @@ export function AiRouterSettingsCard({ canWrite }: { canWrite: boolean }) {
     if (!target || !canWrite || saving) return
     setSaving(true)
     try {
+      const mapPool = (entries: AiRouterPoolEntry[]) =>
+        entries.map((e) => ({
+          provider_id: e.provider_id,
+          model: e.model,
+          is_free: Boolean(e.is_free),
+        }))
       const saved = await aiApi.updateRouterConfig({
         enabled: target.enabled,
-        eco_models: target.eco_models.map((e) => ({ provider_id: e.provider_id, model: e.model })),
-        standard_models: target.standard_models.map((e) => ({ provider_id: e.provider_id, model: e.model })),
-        flagship_models: target.flagship_models.map((e) => ({ provider_id: e.provider_id, model: e.model })),
-        fallback_models: target.fallback_models.map((e) => ({ provider_id: e.provider_id, model: e.model })),
+        routing_mode: target.routing_mode ?? 'quality',
+        eco_models: mapPool(target.eco_models),
+        standard_models: mapPool(target.standard_models),
+        flagship_models: mapPool(target.flagship_models),
+        fallback_models: mapPool(target.fallback_models),
         eco_weight: target.eco_weight,
         standard_weight: target.standard_weight,
         flagship_weight: target.flagship_weight,
@@ -113,10 +121,22 @@ export function AiRouterSettingsCard({ canWrite }: { canWrite: boolean }) {
     const entry: AiRouterPoolEntry = {
       provider_id: choice.provider_id,
       model: choice.model,
+      is_free: choice.model.toLowerCase().endsWith(':free'),
       provider_name: prov?.provider_name,
       available: true,
     }
     setConfig({ ...config, [field]: [...current, entry] })
+  }
+
+  const toggleModelFreeInTier = (tier: TierKey, idx: number) => {
+    if (!config) return
+    const field = TIER_POOL_FIELD[tier]
+    setConfig({
+      ...config,
+      [field]: config[field].map((entry, i) =>
+        i === idx ? { ...entry, is_free: !entry.is_free } : entry,
+      ),
+    })
   }
 
   const removeModelFromTier = (tier: TierKey, idx: number) => {
@@ -201,7 +221,37 @@ export function AiRouterSettingsCard({ canWrite }: { canWrite: boolean }) {
           {t('ai.router.noConfiguredProviders')}
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <>
+          <div className="flex flex-col gap-2 rounded-xl border border-outline-variant/40 bg-surface-container-low/30 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="space-y-0.5">
+              <label
+                htmlFor="ai-router-mode"
+                className="block text-sm font-medium text-on-surface"
+              >
+                {t('ai.router.routingMode.label')}
+              </label>
+              <p className="text-xs text-on-surface-variant">
+                {t(`ai.router.routingMode.hints.${config.routing_mode ?? 'quality'}`)}
+              </p>
+            </div>
+            <div className="w-full sm:w-72 shrink-0">
+              <Dropdown
+                id="ai-router-mode"
+                value={config.routing_mode ?? 'quality'}
+                disabled={!canWrite || saving}
+                options={ROUTING_MODES.map((mode) => ({
+                  value: mode,
+                  label: t(`ai.router.routingMode.options.${mode}`),
+                }))}
+                onChange={(val) =>
+                  setConfig({ ...config, routing_mode: val as AiRouterRoutingMode })
+                }
+                aria-label={t('ai.router.routingMode.label')}
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           {TIER_ORDER.map((tier) => {
             const pool = config[TIER_POOL_FIELD[tier]]
             const remainingChoices = allModelChoices.filter(
@@ -246,37 +296,61 @@ export function AiRouterSettingsCard({ canWrite }: { canWrite: boolean }) {
                               </span>
                             )}
                           </div>
-                          {canWrite && (
-                            <div className="flex shrink-0 items-center gap-1">
-                              <button
-                                type="button"
-                                disabled={idx === 0 || saving}
-                                onClick={() => moveModelInTier(tier, idx, -1)}
-                                className="rounded p-1 text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface disabled:opacity-30"
-                                aria-label={t('ai.router.moveUp')}
-                              >
-                                <ArrowUp className="h-3.5 w-3.5" aria-hidden="true" />
-                              </button>
-                              <button
-                                type="button"
-                                disabled={idx === pool.length - 1 || saving}
-                                onClick={() => moveModelInTier(tier, idx, 1)}
-                                className="rounded p-1 text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface disabled:opacity-30"
-                                aria-label={t('ai.router.moveDown')}
-                              >
-                                <ArrowDown className="h-3.5 w-3.5" aria-hidden="true" />
-                              </button>
+                          <div className="flex shrink-0 items-center gap-1">
+                            {canWrite ? (
                               <button
                                 type="button"
                                 disabled={saving}
-                                onClick={() => removeModelFromTier(tier, idx)}
-                                className="rounded p-1 text-on-surface-variant hover:bg-status-destructive/15 hover:text-status-destructive disabled:opacity-30"
-                                aria-label={t('ai.router.removeModel')}
+                                aria-pressed={Boolean(entry.is_free)}
+                                aria-label={t('ai.router.toggleFreeAria', { model: entry.model })}
+                                onClick={() => toggleModelFreeInTier(tier, idx)}
+                                className={`rounded-full px-2 py-0.5 text-label-sm font-medium transition-colors disabled:opacity-40 ${
+                                  entry.is_free
+                                    ? 'bg-status-success/15 text-status-success hover:bg-status-success/25'
+                                    : 'bg-surface-container-high text-on-surface-variant hover:text-on-surface'
+                                }`}
                               >
-                                <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                                {entry.is_free ? t('ai.router.freeBadge') : t('ai.router.paidBadge')}
                               </button>
-                            </div>
-                          )}
+                            ) : (
+                              entry.is_free && (
+                                <span className="rounded-full bg-status-success/15 px-2 py-0.5 text-label-sm font-medium text-status-success">
+                                  {t('ai.router.freeBadge')}
+                                </span>
+                              )
+                            )}
+                            {canWrite && (
+                              <>
+                                <button
+                                  type="button"
+                                  disabled={idx === 0 || saving}
+                                  onClick={() => moveModelInTier(tier, idx, -1)}
+                                  className="rounded p-1 text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface disabled:opacity-30"
+                                  aria-label={t('ai.router.moveUp')}
+                                >
+                                  <ArrowUp className="h-3.5 w-3.5" aria-hidden="true" />
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={idx === pool.length - 1 || saving}
+                                  onClick={() => moveModelInTier(tier, idx, 1)}
+                                  className="rounded p-1 text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface disabled:opacity-30"
+                                  aria-label={t('ai.router.moveDown')}
+                                >
+                                  <ArrowDown className="h-3.5 w-3.5" aria-hidden="true" />
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={saving}
+                                  onClick={() => removeModelFromTier(tier, idx)}
+                                  className="rounded p-1 text-on-surface-variant hover:bg-status-destructive/15 hover:text-status-destructive disabled:opacity-30"
+                                  aria-label={t('ai.router.removeModel')}
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                                </button>
+                              </>
+                            )}
+                          </div>
                         </li>
                       ))}
                     </ul>
@@ -304,7 +378,8 @@ export function AiRouterSettingsCard({ canWrite }: { canWrite: boolean }) {
               </div>
             )
           })}
-        </div>
+          </div>
+        </>
       )}
 
       <div className="border-t border-outline-variant/25 pt-3">

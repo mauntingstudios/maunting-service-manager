@@ -316,7 +316,8 @@ Singra stellt vier runtime-steuerbare Denkstufen zur Verfügung:
 
 ### 6.1 Modulare Provider-Architektur
 Die Provider-Schicht (`backend/services/ai_provider_registry/`) ist modular aufgebaut:
-- **Unterstützte Dienste**: OpenAI (GPT-4o, GPT-5/Luna, o1/o3), Anthropic / Azure Anthropic (Claude 3.5 Sonnet, Haiku), Azure OpenAI, Google (Gemini 1.5 Pro, Flash), OpenRouter und ElevenLabs (Sprachsynthese).
+- **Unterstützte Dienste**: OpenAI (GPT-4o, GPT-5/Luna, o1/o3), Anthropic / Azure Anthropic (Claude 3.5 Sonnet, Haiku), Azure OpenAI, Google (Gemini 1.5 Pro, Flash), OpenRouter, Groq, Mistral AI, ElevenLabs (Sprachsynthese) sowie beliebige OpenAI-/Anthropic-kompatible Endpunkte über `custom` (inkl. externer Gateways wie OmniRoute oder LiteLLM).
+- **Singra KI-Router (`ai_router_service.py`)**: Klassifiziert Anfragen semantisch und mathematisch in die Stufen `eco`, `standard`, `flagship` und `fallback`. Über die wählbare Strategie (`quality`, `free_first_tier`, `free_first_global`) lassen sich als kostenlos markierte Modelle vor kostenpflichtigen APIs abarbeiten. Bei Rate-Limits (`429`, inkl. Auswertung von `Retry-After`) oder `5xx`-Ausfällen schaltet die Stream-Engine auch zwischen einzelnen Tool-Runden innerhalb eines laufenden Auftrags auf den nächsten Kandidaten um.
 - **Kein SSRF-Risiko**: Basis-URLs liegen als feste Konstanten im Programmcode vor. Bei Azure-Deployments wird lediglich ein geprüftes DNS-Label über Regex validiert (`_assert_ressource`).
 
 ### 6.2 Lokale souveräne Inferenz (Ollama / vLLM)

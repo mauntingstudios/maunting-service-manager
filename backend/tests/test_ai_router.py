@@ -1060,3 +1060,373 @@ def test_router_context_window_dynamic_for_pool_and_routed_message(
 async def _noop_async() -> None:
     return None
 
+
+def test_routing_mode_free_first_tier_and_global(db: Session) -> None:
+    """free_first_tier und free_first_global ziehen kostenlose Modelle vor bezahlte."""
+    ai_router_service.clear_cooldowns()
+    p_paid = _create_chat_provider(db, name="Paid-Prov", default_model="paid-std")
+    p_free = _create_chat_provider(db, name="Free-Prov", default_model="free-model:free")
+
+    # 1. free_first_tier: in jeder Stufe zuerst kostenlos, erst dann bezahlt der Stufe
+    cfg_tier = ai_router_service.update_router_config(
+        db,
+        {
+            "enabled": True,
+            "routing_mode": "free_first_tier",
+            "eco_models": [{"provider_id": p_free.id, "model": "free-eco:free", "is_free": True}],
+            "standard_models": [
+                {"provider_id": p_paid.id, "model": "paid-std", "is_free": False},
+                {"provider_id": p_free.id, "model": "free-std:free", "is_free": True},
+            ],
+            "flagship_models": [
+                {"provider_id": p_paid.id, "model": "paid-flag", "is_free": False},
+            ],
+        },
+    )
+    assert cfg_tier["routing_mode"] == "free_first_tier"
+    cands_tier = ai_router_service.resolve_candidates(db, tier="standard")
+    assert [(c["model"], c["is_free"]) for c in cands_tier] == [
+        ("free-std:free", True),
+        ("paid-std", False),
+        ("paid-flag", False),
+        ("free-eco:free", True),
+    ]
+
+    # Bei Cooldown auf free-std:free rutscht paid-std auf Platz 1
+    ai_router_service.mark_model_cooldown(p_free.id, "free-std:free", seconds=60)
+    cands_tier_cooled = ai_router_service.resolve_candidates(db, tier="standard")
+    assert [c["model"] for c in cands_tier_cooled[:2]] == ["paid-std", "paid-flag"]
+    assert cands_tier_cooled[-1]["model"] == "free-std:free"
+
+    # Auch wenn alle Modelle der Stufe gekuehlt sind, bleibt kostenlos vor bezahlt in der Stufe
+    ai_router_service.mark_model_cooldown(p_paid.id, "paid-std", seconds=60)
+    ai_router_service.mark_model_cooldown(p_paid.id, "paid-flag", seconds=60)
+    ai_router_service.mark_model_cooldown(p_free.id, "free-eco:free", seconds=60)
+    cands_all_cooled = ai_router_service.resolve_candidates(db, tier="standard")
+    assert [c["model"] for c in cands_all_cooled] == [
+        "free-std:free",
+        "paid-std",
+        "paid-flag",
+        "free-eco:free",
+    ]
+
+    # 2. free_first_global: alle aktiven kostenlosen Modelle (ueber Stufen hinweg) vor jedem bezahlten
+    ai_router_service.clear_cooldowns()
+    cfg_global = ai_router_service.update_router_config(
+        db,
+        {
+            "routing_mode": "free_first_global",
+        },
+    )
+    assert cfg_global["routing_mode"] == "free_first_global"
+    cands_global = ai_router_service.resolve_candidates(db, tier="standard")
+    assert [(c["model"], c["is_free"]) for c in cands_global] == [
+        ("free-std:free", True),
+        ("free-eco:free", True),
+        ("paid-std", False),
+        ("paid-flag", False),
+    ]
+
+    # Sind beide kostenlosen Modelle im Cooldown, uebernimmt paid-std automatisch
+    ai_router_service.mark_model_cooldown(p_free.id, "free-std:free", seconds=60)
+    ai_router_service.mark_model_cooldown(p_free.id, "free-eco:free", seconds=60)
+    cands_global_cooled = ai_router_service.resolve_candidates(db, tier="standard")
+    assert [c["model"] for c in cands_global_cooled[:2]] == ["paid-std", "paid-flag"]
+    ai_router_service.clear_cooldowns()
+
+
+@pytest.mark.asyncio
+async def test_mid_run_failover_on_rate_limit_in_round_two(
+    db: Session,
+    regular_user: User,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Ein 429 in Runde 2 (nach Tool-Call in Runde 1) schaltet nahtlos um und bricht nicht ab."""
+    from datetime import timedelta
+    from email.utils import format_datetime
+    import time
+    import httpx
+    import services.ai_stream as ai_stream
+    from services import ai_run_service
+    from services.ai_stream.types import _Anlauf, _Vorbereitung
+    from services.openai_compatible_adapter import (
+        AiProviderRequestError,
+        ProviderToolCall,
+        StreamChunk,
+        parse_retry_after_seconds,
+        retry_after_for_error,
+    )
+
+    resp_429 = httpx.Response(429, headers={"Retry-After": "120"})
+    assert parse_retry_after_seconds(resp_429) == 120
+    assert retry_after_for_error(resp_429, "AI_PROVIDER_RATE_LIMITED") == 120
+    assert retry_after_for_error(resp_429, "AI_PROVIDER_UNAVAILABLE") is None
+    assert parse_retry_after_seconds(httpx.Response(429, headers={"Retry-After": "5"})) == 15
+    assert parse_retry_after_seconds(httpx.Response(429, headers={"Retry-After": "9999"})) == 900
+    assert parse_retry_after_seconds(httpx.Response(429)) is None
+    future_http_date = format_datetime(datetime.now(timezone.utc) + timedelta(seconds=180), usegmt=True)
+    parsed_date = parse_retry_after_seconds(httpx.Response(429, headers={"Retry-After": future_http_date}))
+    assert parsed_date is not None and 160 <= parsed_date <= 185
+
+    ai_router_service.clear_cooldowns()
+    p1 = _create_chat_provider(
+        db,
+        name="Free-R1",
+        default_model="free-m1",
+        token_price_micro_usd_per_million=0,
+    )
+    p2 = _create_chat_provider(
+        db,
+        name="Paid-R2",
+        default_model="paid-m2",
+        token_price_micro_usd_per_million=2_000_000,
+    )
+
+    conv = AiConversation(
+        id=str(uuid4()),
+        user_id=regular_user.id,
+        kind="primary",
+        title="Mid-Run Failover Test",
+    )
+    db.add(conv)
+    db.flush()
+
+    msg_id = str(uuid4())
+    req_id = str(uuid4())
+    db.add(
+        AiMessage(
+            id=msg_id,
+            conversation_id=conv.id,
+            role="assistant",
+            content="",
+            status="streaming",
+            provider_id=p1.id,
+            model="free-m1",
+            routed_tier="standard",
+            routed_model="free-m1",
+            routed_provider_name=p1.name,
+            routed_reason="semantic_local",
+            request_id=req_id,
+        )
+    )
+    ev = AiUsageEvent(
+        request_id=req_id,
+        user_id=regular_user.id,
+        provider_id=p1.id,
+        model="free-m1",
+        status="reserved",
+        reserved_tokens=50,
+        reserved_cost_microunits=0,
+        accounted_tokens=50,
+        accounted_cost_microunits=0,
+    )
+    db.add(ev)
+    db.flush()
+
+    zustand = {
+        "requested_model": "free-m1",
+        "last_response_id": "resp_provider_1",
+        "routing": {
+            "tier": "standard",
+            "model": "free-m1",
+            "provider_id": p1.id,
+            "provider_name": p1.name,
+            "reason": "semantic_local",
+            "weight": 1.0,
+            "candidate_index": 0,
+            "candidates": [
+                {"provider_id": p1.id, "provider_name": p1.name, "model": "free-m1", "tier": "standard", "weight": 1.0, "is_free": True},
+                {"provider_id": p2.id, "provider_name": p2.name, "model": "paid-m2", "tier": "standard", "weight": 1.0, "is_free": False},
+            ],
+        },
+    }
+    run = AiRun(
+        id=str(uuid4()),
+        conversation_id=conv.id,
+        user_id=regular_user.id,
+        provider_id=p1.id,
+        message_id=msg_id,
+        status="running",
+        state_json="{}",
+    )
+    db.add(run)
+    db.commit()
+    db.refresh(p1)
+    p1_id, p2_id = p1.id, p2.id
+    db.expunge(p1)
+
+    vorbereitung = _Vorbereitung(
+        run_id=run.id,
+        user_id=regular_user.id,
+        conversation_id=conv.id,
+        provider=p1,
+        api_key="sk-or-v1-test",
+        message_id=msg_id,
+        usage_event_id=ev.id,
+        request_id=req_id,
+        reasoning=False,
+        reasoning_effort=None,
+        token_price_micro_usd_per_million=0,
+        zustand=zustand,
+        angebotene_werkzeuge=frozenset({"read_server_status"}),
+    )
+    async_client = httpx.AsyncClient()
+    anlauf = _Anlauf(
+        vorbereitung=vorbereitung,
+        client=async_client,
+        zustand=zustand,
+        provider_messages=[{"role": "system", "content": "System"}, {"role": "user", "content": "Status?"}],
+        conversation_id=conv.id,
+        user_id=regular_user.id,
+        message_id=msg_id,
+        guardian=None,
+        aufgabe=None,
+        rolle="voll",
+        herkunft="panel",
+        worker=None,
+        unbeaufsichtigt=False,
+    )
+
+    async def fake_segment_anlaufen(_run_id, _client):
+        return anlauf
+
+    async def fake_werkzeuge_und_grenze(**_kw):
+        return (
+            [{"type": "function", "function": {"name": "read_server_status", "parameters": {"type": "object", "properties": {}}}}],
+            False,
+            100_000,
+            False,
+            None,
+        )
+
+    async def fake_leserunde_ausfuehren(
+        *,
+        current_usage,
+        provider_messages,
+        rundentext,
+        denknaht,
+        **_kwargs,
+    ):
+        provider_messages.append({"role": "assistant", "content": rundentext})
+        for tc in current_usage.tool_calls:
+            provider_messages.append({"role": "tool", "tool_call_id": tc.id, "content": '{"ok": true}'})
+        return denknaht
+
+    round_calls: list[tuple[int, str | None]] = []
+    p1_round = 0
+
+    async def fake_stream_chat_completion(_client, *, provider, usage, model=None, previous_response_id=None, **_kw):
+        nonlocal p1_round
+        round_calls.append((provider.id, previous_response_id))
+        if provider.id == p1_id:
+            p1_round += 1
+            if p1_round == 1:
+                usage.prompt_tokens = 10
+                usage.completion_tokens = 10
+                usage.total_tokens = 20
+                usage.anfragen = 1
+                usage.tool_calls.append(
+                    ProviderToolCall(id="tc-1", name="read_server_status", arguments={})
+                )
+                yield StreamChunk("content", "Ich pruefe kurz. ")
+                return
+            raise AiProviderRequestError("AI_PROVIDER_RATE_LIMITED", "429", retry_after_seconds=120)
+
+        usage.prompt_tokens = 15
+        usage.completion_tokens = 10
+        usage.total_tokens = 25
+        usage.anfragen = 1
+        yield StreamChunk("content", "Alles laeuft.")
+
+    monkeypatch.setattr(ai_stream, "_segment_anlaufen", fake_segment_anlaufen)
+    monkeypatch.setattr(ai_stream, "_werkzeuge_und_grenze", fake_werkzeuge_und_grenze)
+    monkeypatch.setattr(ai_stream, "stream_chat_completion", fake_stream_chat_completion)
+    monkeypatch.setattr(stream_engine, "_alle_aufrufe_autonom_erlaubt", lambda *_a, **_kw: True)
+    monkeypatch.setattr(ai_stream, "_leserunde_ausfuehren", fake_leserunde_ausfuehren)
+    monkeypatch.setattr(stream_engine, "_gedaechtnis_vormerken", lambda _cid: _noop_async())
+
+    try:
+        await stream_engine.segment_ausfuehren(run.id, client=async_client)
+    finally:
+        await async_client.aclose()
+
+    assert round_calls == [
+        (p1_id, "resp_provider_1"),
+        (p1_id, "resp_provider_1"),
+        (p2_id, None),
+    ]
+    assert ai_router_service.is_in_cooldown(p1_id, "free-m1") is True
+    remaining = ai_router_service._COOLDOWNS[(p1_id, "free-m1")] - time.monotonic()
+    assert 90 < remaining <= 125
+
+    db.expire_all()
+    msg_after = db.get(AiMessage, msg_id)
+    assert msg_after is not None
+    assert msg_after.status == "complete"
+    assert msg_after.content == "Ich pruefe kurz. Alles laeuft."
+    assert msg_after.provider_id == p2_id
+    assert msg_after.routed_model == "paid-m2"
+    run_after = db.get(AiRun, run.id)
+    assert run_after is not None
+    assert "last_response_id" not in ai_run_service.zustand_lesen(run_after)
+    ev_after = db.get(AiUsageEvent, ev.id)
+    assert ev_after is not None
+    # Runde 1 (20 Tokens @ $0) darf beim Wechsel zu P2 ($2/1M) nicht nachtraeglich bepreist werden:
+    # nur Runde 2 (25 Tokens * $2/1M = 50 Micro-USD).
+    assert ev_after.accounted_cost_microunits == 50
+    ai_router_service.clear_cooldowns()
+
+
+def test_cross_provider_dialect_sanitization_strips_google_and_normalizes_ids() -> None:
+    """Google-Signaturen werden fuer Fremdanbieter entfernt; Mistral/Anthropic erhalten konforme Tool-IDs."""
+    from services.anthropic_messages_adapter import nachrichten_uebersetzen
+    from services.openai_compatible_adapter import (
+        normalize_mistral_tool_call_ids,
+        strip_google_thought_signatures,
+    )
+
+    google_msgs = [
+        {"role": "user", "content": "Pruefe das"},
+        {
+            "role": "assistant",
+            "content": "",
+            "extra_content": {"google": {"thought_signature": "sig-1"}},
+            "tool_calls": [
+                {
+                    "id": "call_openai_long_id.123:4",
+                    "type": "function",
+                    "thought_signature": "sig-1",
+                    "extra_content": {"google": {"thought_signature": "sig-1"}},
+                    "function": {
+                        "name": "read_server_status",
+                        "arguments": "{}",
+                        "thought_signature": "sig-1",
+                    },
+                }
+            ],
+        },
+        {
+            "role": "tool",
+            "tool_call_id": "call_openai_long_id.123:4",
+            "content": '{"ok": true}',
+        },
+    ]
+
+    stripped = strip_google_thought_signatures(google_msgs)
+    assert "extra_content" not in stripped[1]
+    assert "thought_signature" not in stripped[1]["tool_calls"][0]
+    assert "extra_content" not in stripped[1]["tool_calls"][0]
+    assert "thought_signature" not in stripped[1]["tool_calls"][0]["function"]
+    # Original bleibt unberuehrt
+    assert "extra_content" in google_msgs[1]
+
+    mistral_msgs = normalize_mistral_tool_call_ids(stripped)
+    m_id = mistral_msgs[1]["tool_calls"][0]["id"]
+    assert len(m_id) == 9 and m_id.isalnum()
+    assert mistral_msgs[2]["tool_call_id"] == m_id
+
+    _, anth_msgs = nachrichten_uebersetzen(stripped)
+    a_id = anth_msgs[1]["content"][0]["id"]
+    assert a_id.startswith("tc_") and "." not in a_id and ":" not in a_id
+    assert anth_msgs[2]["content"][0]["tool_use_id"] == a_id
+

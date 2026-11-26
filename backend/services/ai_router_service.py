@@ -32,6 +32,7 @@ ROUTER_PROVIDER_NAME = "Singra Router"
 ROUTER_DEFAULT_MODEL = "auto"
 
 TIERS = ("eco", "standard", "flagship", "fallback")
+ROUTING_MODES = ("quality", "free_first_tier", "free_first_global")
 COOLDOWN_SECONDS = 60
 WEIGHT_MIN = 0.1
 WEIGHT_MAX = 10.0
@@ -173,7 +174,13 @@ def parse_pool_json(raw: str | None) -> list[dict]:
         if key in seen:
             continue
         seen.add(key)
-        result.append({"provider_id": pid, "model": model[:256]})
+        result.append(
+            {
+                "provider_id": pid,
+                "model": model[:256],
+                "is_free": bool(item.get("is_free", False)),
+            }
+        )
     return result
 
 
@@ -325,6 +332,7 @@ def serialize_router_config(db: Session, cfg: AiRouterConfig, *, ensure_provider
                 {
                     "provider_id": entry["provider_id"],
                     "model": entry["model"],
+                    "is_free": bool(entry.get("is_free", False)),
                     "provider_name": p.name if p is not None else f"Provider #{entry['provider_id']}",
                     "available": _is_provider_usable_for_router(p),
                 }
@@ -338,8 +346,11 @@ def serialize_router_config(db: Session, cfg: AiRouterConfig, *, ensure_provider
     total_active = sum(
         1 for pool in (eco_pool, standard_pool, flagship_pool, fallback_pool) for e in pool if e["available"]
     )
+    raw_mode = getattr(cfg, "routing_mode", None)
+    routing_mode = raw_mode if raw_mode in ROUTING_MODES else "quality"
     return {
         "enabled": bool(cfg.enabled),
+        "routing_mode": routing_mode,
         "router_provider_id": router_provider.id if router_provider is not None else None,
         "ready": bool(cfg.enabled and total_active > 0),
         "eco_models": eco_pool,
@@ -374,7 +385,13 @@ def _validate_pool_entries(db: Session, entries: Iterable[dict] | None) -> list[
         if key in seen:
             continue
         seen.add(key)
-        result.append({"provider_id": pid, "model": model[:256]})
+        result.append(
+            {
+                "provider_id": pid,
+                "model": model[:256],
+                "is_free": bool(item.get("is_free", False)),
+            }
+        )
     return result
 
 
@@ -383,6 +400,11 @@ def update_router_config(db: Session, payload: dict) -> dict:
     cfg = get_or_create_router_config(db)
     if "enabled" in payload and payload["enabled"] is not None:
         cfg.enabled = bool(payload["enabled"])
+    if "routing_mode" in payload and payload["routing_mode"] is not None:
+        mode = str(payload["routing_mode"]).strip()
+        if mode not in ROUTING_MODES:
+            raise ValueError(f"Unbekannter Routing-Modus: {mode}")
+        cfg.routing_mode = mode
 
     for tier in TIERS:
         key = f"{tier}_models"
@@ -623,6 +645,8 @@ def resolve_candidates(
     """Loest alle verfuegbaren Zielmodelle in priorisierter Failover-Reihenfolge auf."""
     cfg = get_or_create_router_config(db)
     order = ("fallback", "eco", "standard") if soft_cap else _TIER_ORDER.get(tier, _TIER_ORDER["standard"])
+    raw_mode = getattr(cfg, "routing_mode", None)
+    routing_mode = raw_mode if raw_mode in ROUTING_MODES else "quality"
 
     providers = {
         p.id: p
@@ -638,6 +662,10 @@ def resolve_candidates(
     for pool_tier in order:
         raw_pool = getattr(cfg, _pool_field(pool_tier), "[]")
         weight = _clamp_weight(getattr(cfg, _weight_field(pool_tier), 1.0))
+        tier_free: list[dict] = []
+        tier_paid: list[dict] = []
+        tier_cooled_free: list[dict] = []
+        tier_cooled_paid: list[dict] = []
         for entry in parse_pool_json(raw_pool):
             pid = entry["provider_id"]
             model = entry["model"]
@@ -648,16 +676,35 @@ def resolve_candidates(
             if not _is_provider_usable_for_router(provider):
                 continue
             seen.add(key)
+            is_free = bool(entry.get("is_free", False))
             candidate = {
                 "provider_id": pid,
                 "provider_name": provider.name,
                 "model": model,
                 "tier": pool_tier,
                 "weight": weight,
+                "is_free": is_free,
             }
             if is_in_cooldown(pid, model):
-                cooled.append(candidate)
+                if routing_mode == "free_first_tier":
+                    (tier_cooled_free if is_free else tier_cooled_paid).append(candidate)
+                else:
+                    cooled.append(candidate)
+            elif routing_mode == "free_first_tier":
+                (tier_free if is_free else tier_paid).append(candidate)
             else:
                 active.append(candidate)
+        if routing_mode == "free_first_tier":
+            active.extend(tier_free)
+            active.extend(tier_paid)
+            cooled.extend(tier_cooled_free)
+            cooled.extend(tier_cooled_paid)
 
+    if routing_mode == "free_first_global":
+        return [
+            *[c for c in active if c["is_free"]],
+            *[c for c in active if not c["is_free"]],
+            *[c for c in cooled if c["is_free"]],
+            *[c for c in cooled if not c["is_free"]],
+        ]
     return [*active, *cooled]

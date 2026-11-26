@@ -3,8 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
+import hashlib
 import json
 import logging
+import math
+import re
 import time
 from typing import Any, AsyncIterator
 import uuid
@@ -70,9 +75,16 @@ class AiProviderRequestError(RuntimeError):
     und `routers.ai_providers._stimmzugang_pruefen` halten sich beide daran.
     """
 
-    def __init__(self, code: str, detail: str | None = None) -> None:
+    def __init__(
+        self,
+        code: str,
+        detail: str | None = None,
+        *,
+        retry_after_seconds: int | None = None,
+    ) -> None:
         self.code = code
         self.detail = detail
+        self.retry_after_seconds = retry_after_seconds
         super().__init__(code)
 
 
@@ -524,6 +536,47 @@ async def _error_detail(response: httpx.Response) -> str | None:
     return (await _fehlerkoerper(response))[1]
 
 
+RETRY_AFTER_MIN_SECONDS = 15
+RETRY_AFTER_MAX_SECONDS = 900
+
+_MISTRAL_TOOL_ID_RE = re.compile(r"^[A-Za-z0-9]{9}$")
+_ANTHROPIC_TOOL_ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+
+
+def parse_retry_after_seconds(response: httpx.Response) -> int | None:
+    """Liest den Retry-After-Header (Sekunden oder RFC-9110-HTTP-Datum, 15..900 s)."""
+    headers = getattr(response, "headers", None)
+    if headers is None:
+        return None
+    raw = headers.get("retry-after")
+    if not isinstance(raw, str):
+        return None
+    cleaned = raw.strip()
+    if not cleaned:
+        return None
+    seconds: float
+    try:
+        seconds = float(cleaned)
+    except ValueError:
+        try:
+            dt = parsedate_to_datetime(cleaned)
+        except (TypeError, ValueError):
+            return None
+        if dt is None:
+            return None
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        seconds = (dt.astimezone(timezone.utc) - datetime.now(timezone.utc)).total_seconds()
+    if not math.isfinite(seconds) or seconds <= 0:
+        return None
+    return max(RETRY_AFTER_MIN_SECONDS, min(RETRY_AFTER_MAX_SECONDS, math.ceil(seconds)))
+
+
+def retry_after_for_error(response: httpx.Response, code: str) -> int | None:
+    """Extrahiert Retry-After ausschliesslich bei Rate-Limit-Fehlern."""
+    return parse_retry_after_seconds(response) if code == "AI_PROVIDER_RATE_LIMITED" else None
+
+
 async def fehler_der_antwort(response: httpx.Response) -> tuple[str, str | None]:
     """Marke und Wortlaut zu einer Antwort mit Fehlerstatus.
 
@@ -648,6 +701,113 @@ def ensure_google_thought_signatures(messages: list[dict]) -> list[dict]:
                 msg_copy["extra_content"] = {"google": {"thought_signature": first_sig}}
         angepasst.append(msg_copy)
     return angepasst
+
+
+def strip_google_thought_signatures(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Entfernt Google-spezifische Signaturen vor nicht-Google-Zielen (ohne Mutation)."""
+    bereinigt: list[dict[str, Any]] = []
+    for msg in messages:
+        if not isinstance(msg, dict):
+            bereinigt.append(msg)
+            continue
+        msg_copy = {k: v for k, v in msg.items() if k not in ("thought_signature", "extra_content")}
+        tool_calls = msg_copy.get("tool_calls")
+        if isinstance(tool_calls, list):
+            neue_calls: list[Any] = []
+            for tc in tool_calls:
+                if not isinstance(tc, dict):
+                    neue_calls.append(tc)
+                    continue
+                tc_copy = {k: v for k, v in tc.items() if k not in ("thought_signature", "extra_content")}
+                func = tc_copy.get("function")
+                if isinstance(func, dict) and "thought_signature" in func:
+                    tc_copy["function"] = {k: v for k, v in func.items() if k != "thought_signature"}
+                neue_calls.append(tc_copy)
+            msg_copy["tool_calls"] = neue_calls
+        bereinigt.append(msg_copy)
+    return bereinigt
+
+
+def _map_tool_id(
+    raw_id: object,
+    mapping: dict[str, str],
+    used: set[str],
+    pattern: re.Pattern[str],
+    *,
+    fixed_len: int | None = None,
+) -> str | None:
+    if not isinstance(raw_id, str) or not raw_id:
+        return None
+    if pattern.fullmatch(raw_id):
+        used.add(raw_id)
+        return raw_id
+    if raw_id in mapping:
+        return mapping[raw_id]
+    nonce = 0
+    while True:
+        seed = raw_id if nonce == 0 else f"{raw_id}:{nonce}"
+        digest = hashlib.sha256(seed.encode("utf-8")).hexdigest()
+        candidate = digest[:fixed_len] if fixed_len else f"tc_{digest[:20]}"
+        if candidate not in used:
+            used.add(candidate)
+            mapping[raw_id] = candidate
+            return candidate
+        nonce += 1
+
+
+def normalize_tool_call_ids(
+    messages: list[dict[str, Any]],
+    *,
+    pattern: re.Pattern[str] = _MISTRAL_TOOL_ID_RE,
+    fixed_len: int | None = 9,
+) -> list[dict[str, Any]]:
+    """Normalisiert inkompatible Tool-Call-IDs konsistent fuer strikte Anbieter (z. B. Mistral)."""
+    mapping: dict[str, str] = {}
+    used: set[str] = set()
+    for msg in messages:
+        if not isinstance(msg, dict):
+            continue
+        if isinstance(msg.get("tool_calls"), list):
+            for tc in msg["tool_calls"]:
+                if isinstance(tc, dict) and isinstance(tc.get("id"), str) and pattern.fullmatch(tc["id"]):
+                    used.add(tc["id"])
+        if isinstance(msg.get("tool_call_id"), str) and pattern.fullmatch(msg["tool_call_id"]):
+            used.add(msg["tool_call_id"])
+
+    out: list[dict[str, Any]] = []
+    for msg in messages:
+        if not isinstance(msg, dict):
+            out.append(msg)
+            continue
+        msg_copy = dict(msg)
+        if msg_copy.get("role") == "tool" and "tool_call_id" in msg_copy:
+            mapped = _map_tool_id(msg_copy.get("tool_call_id"), mapping, used, pattern, fixed_len=fixed_len)
+            if mapped is not None:
+                msg_copy["tool_call_id"] = mapped
+        if isinstance(msg_copy.get("tool_calls"), list):
+            neue_calls: list[Any] = []
+            for tc in msg_copy["tool_calls"]:
+                if not isinstance(tc, dict):
+                    neue_calls.append(tc)
+                    continue
+                tc_copy = dict(tc)
+                mapped = _map_tool_id(tc_copy.get("id"), mapping, used, pattern, fixed_len=fixed_len)
+                if mapped is not None:
+                    tc_copy["id"] = mapped
+                neue_calls.append(tc_copy)
+            msg_copy["tool_calls"] = neue_calls
+        out.append(msg_copy)
+    return out
+
+
+def normalize_mistral_tool_call_ids(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Erzwingt Mistrals 9-stelliges alphanumerisches Tool-Call-ID-Format."""
+    return normalize_tool_call_ids(messages, pattern=_MISTRAL_TOOL_ID_RE, fixed_len=9)
+
+
+def normalize_anthropic_tool_call_ids(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Erzwingt Anthropics ``^[a-zA-Z0-9_-]+$``-Format fuer Tool-IDs."""
+    return normalize_tool_call_ids(messages, pattern=_ANTHROPIC_TOOL_ID_RE, fixed_len=None)
 
 
 class _ThinkTagSplitter:
@@ -949,7 +1109,14 @@ async def stream_chat_completion(
         provider.provider_kind == "google"
         or "generativelanguage.googleapis.com" in target_base
     )
-    sende_nachrichten = ensure_google_thought_signatures(messages) if (is_google and messages) else messages
+    if is_google and messages:
+        sende_nachrichten = ensure_google_thought_signatures(messages)
+    elif messages:
+        sende_nachrichten = strip_google_thought_signatures(messages)
+    else:
+        sende_nachrichten = messages
+    if provider.provider_kind == "mistral" and sende_nachrichten:
+        sende_nachrichten = normalize_mistral_tool_call_ids(sende_nachrichten)
 
     request_body = {
         # ``model`` uebersteuert das Standardmodell des Zugangs. Es gibt genau
@@ -1032,7 +1199,11 @@ async def stream_chat_completion(
                     model or provider.default_model,
                     response.status_code,
                 )
-                raise AiProviderRequestError(marke, detail)
+                raise AiProviderRequestError(
+                    marke,
+                    detail,
+                    retry_after_seconds=retry_after_for_error(response, marke),
+                )
 
             # Ab hier ist die Anfrage beim Anbieter angekommen und wird von ihm
             # abgerechnet — auch wenn der Strom gleich abbricht. Gezaehlt wird

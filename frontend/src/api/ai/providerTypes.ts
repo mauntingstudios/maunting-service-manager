@@ -741,9 +741,12 @@ export interface AiProviderWrite {
   clear_operator_api_key?: boolean
 }
 
+export type AiRouterRoutingMode = 'quality' | 'free_first_tier' | 'free_first_global'
+
 export interface AiRouterPoolEntry {
   provider_id: number
   model: string
+  is_free?: boolean
   provider_name?: string
   available?: boolean
 }
@@ -757,6 +760,7 @@ export interface AiRouterAvailableProviderModels {
 
 export interface AiRouterConfig {
   enabled: boolean
+  routing_mode?: AiRouterRoutingMode
   router_provider_id: number | null
   ready: boolean
   eco_models: AiRouterPoolEntry[]
@@ -773,10 +777,11 @@ export interface AiRouterConfig {
 
 export interface AiRouterConfigUpdate {
   enabled?: boolean
-  eco_models?: Array<{ provider_id: number; model: string }>
-  standard_models?: Array<{ provider_id: number; model: string }>
-  flagship_models?: Array<{ provider_id: number; model: string }>
-  fallback_models?: Array<{ provider_id: number; model: string }>
+  routing_mode?: AiRouterRoutingMode
+  eco_models?: Array<{ provider_id: number; model: string; is_free?: boolean }>
+  standard_models?: Array<{ provider_id: number; model: string; is_free?: boolean }>
+  flagship_models?: Array<{ provider_id: number; model: string; is_free?: boolean }>
+  fallback_models?: Array<{ provider_id: number; model: string; is_free?: boolean }>
   eco_weight?: number
   standard_weight?: number
   flagship_weight?: number

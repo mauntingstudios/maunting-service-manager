@@ -20,10 +20,17 @@ vi.mock('@/api/ai', async (importOriginal) => {
 
 const initialConfig: AiRouterConfig = {
   enabled: false,
+  routing_mode: 'quality',
   router_provider_id: 77,
   ready: false,
   eco_models: [
-    { provider_id: 1, model: 'google/gemini-2.5-flash', provider_name: 'OpenRouter', available: true },
+    {
+      provider_id: 1,
+      model: 'google/gemini-2.5-flash',
+      is_free: false,
+      provider_name: 'OpenRouter',
+      available: true,
+    },
   ],
   standard_models: [],
   flagship_models: [],
@@ -37,7 +44,7 @@ const initialConfig: AiRouterConfig = {
       provider_id: 1,
       provider_name: 'OpenRouter',
       provider_kind: 'openrouter',
-      models: ['google/gemini-2.5-flash', 'anthropic/claude-sonnet-4'],
+      models: ['google/gemini-2.5-flash', 'anthropic/claude-sonnet-4', 'meta-llama/llama-3.3-70b:free'],
     },
   ],
   updated_at: null,
@@ -52,13 +59,29 @@ describe('AiRouterSettingsCard', () => {
     vi.mocked(aiApi.getRouterConfig).mockResolvedValue(initialConfig)
   })
 
-  it('loads router pools, adds a model via Dropdown and saves configuration', async () => {
+  it('loads router pools, toggles free marker, updates routing mode and saves configuration', async () => {
     vi.mocked(aiApi.updateRouterConfig).mockResolvedValue({
       ...initialConfig,
       enabled: true,
+      routing_mode: 'free_first_global',
       ready: true,
+      eco_models: [
+        {
+          provider_id: 1,
+          model: 'google/gemini-2.5-flash',
+          is_free: true,
+          provider_name: 'OpenRouter',
+          available: true,
+        },
+      ],
       standard_models: [
-        { provider_id: 1, model: 'anthropic/claude-sonnet-4', provider_name: 'OpenRouter', available: true },
+        {
+          provider_id: 1,
+          model: 'meta-llama/llama-3.3-70b:free',
+          is_free: true,
+          provider_name: 'OpenRouter',
+          available: true,
+        },
       ],
     })
 
@@ -66,6 +89,21 @@ describe('AiRouterSettingsCard', () => {
 
     await screen.findByText('Singra Router')
     expect(screen.getByText('google/gemini-2.5-flash')).toBeInTheDocument()
+
+    // Routing-Strategie auf "Immer erst kostenlose Modelle" umstellen
+    fireEvent.click(screen.getByRole('button', { name: /Routing-Strategie/i }))
+    fireEvent.click(await screen.findByRole('option', { name: 'Immer erst kostenlose Modelle' }))
+
+    // Kostenlos-Markierung umschalten
+    fireEvent.click(
+      screen.getByRole('button', { name: /Kostenlos-Markierung für google\/gemini-2.5-flash/i }),
+    )
+
+    // :free-Modell zum Standard-Pool hinzufuegen -> automatisch als kostenlos markiert
+    fireEvent.click(
+      screen.getByRole('button', { name: /Modell hinzufügen …: Mittel \(Standard\)/i }),
+    )
+    fireEvent.click(await screen.findByRole('option', { name: /meta-llama\/llama-3\.3-70b:free/i }))
 
     // Aktivieren
     fireEvent.click(screen.getByRole('switch', { name: /Singra Router aktivieren/i }))
@@ -77,7 +115,11 @@ describe('AiRouterSettingsCard', () => {
       expect(aiApi.updateRouterConfig).toHaveBeenCalledWith(
         expect.objectContaining({
           enabled: true,
-          eco_models: [{ provider_id: 1, model: 'google/gemini-2.5-flash' }],
+          routing_mode: 'free_first_global',
+          eco_models: [{ provider_id: 1, model: 'google/gemini-2.5-flash', is_free: true }],
+          standard_models: [
+            { provider_id: 1, model: 'meta-llama/llama-3.3-70b:free', is_free: true },
+          ],
         }),
       )
     })

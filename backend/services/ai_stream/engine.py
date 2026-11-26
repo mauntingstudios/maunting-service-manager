@@ -107,6 +107,8 @@ from services.ai_usage_service import (
 from services.dis_client import DisSidecarError
 from services.openai_compatible_adapter import (
     MAX_REASONING_CHARS,
+    RETRY_AFTER_MAX_SECONDS,
+    RETRY_AFTER_MIN_SECONDS,
     AiProviderRequestError,
     StreamUsage,
     stream_chat_completion,
@@ -490,19 +492,24 @@ def _router_failover_schritt(
     failed_model: str,
     zustand: dict,
     error_code: str | None = None,
+    retry_after_seconds: int | None = None,
 ) -> tuple[Any, str | None, dict] | None:
-    """Schaltet vor dem ersten Token auf den naechsten Pool-Kandidaten um."""
+    """Schaltet vor dem ersten Token der aktuellen Runde auf den naechsten Pool-Kandidaten um."""
     routing = zustand.get("routing")
     if not isinstance(routing, dict):
         return None
     candidates = routing.get("candidates")
     if not isinstance(candidates, list) or not candidates:
         return None
-    cooldown_sec = (
-        300
-        if error_code in _LONG_COOLDOWN_ERROR_CODES
-        else ai_router_service.COOLDOWN_SECONDS
-    )
+    if error_code in _LONG_COOLDOWN_ERROR_CODES:
+        cooldown_sec = 300
+    elif isinstance(retry_after_seconds, int) and retry_after_seconds > 0:
+        cooldown_sec = max(
+            RETRY_AFTER_MIN_SECONDS,
+            min(RETRY_AFTER_MAX_SECONDS, retry_after_seconds),
+        )
+    else:
+        cooldown_sec = ai_router_service.COOLDOWN_SECONDS
     provider_wide = error_code in _PROVIDER_WIDE_COOLDOWN_ERROR_CODES
     if provider_wide:
         ai_router_service.mark_provider_cooldown(
@@ -565,6 +572,7 @@ def _router_failover_schritt(
             next_routing["weight"] = cand.get("weight", 1.0)
             zustand["routing"] = next_routing
             zustand["requested_model"] = model
+            zustand.pop("last_response_id", None)
             if run is not None:
                 ai_run_service.zustand_schreiben(run, zustand)
             u_obj = db.get(User, user_id)
@@ -833,6 +841,23 @@ async def segment_ausfuehren(run_id: str, *, client: httpx.AsyncClient | None = 
     budget_erschoepft = False
     fruehe_leseaufgaben: dict[str, asyncio.Task] = {}
     last_response_id: str | None = zustand.get("last_response_id")
+    failover_locked_tokens = 0
+    failover_locked_cost_micro_usd = 0
+
+    def _effektiver_preis_fuer_abrechnung() -> int | None:
+        if failover_locked_tokens <= 0:
+            return vorbereitung.token_price_micro_usd_per_million
+        total_tokens = int(usage.total_tokens or 0)
+        if total_tokens <= 0:
+            return vorbereitung.token_price_micro_usd_per_million
+        rest_tokens = max(0, total_tokens - failover_locked_tokens)
+        rest_cost = (
+            rest_tokens * int(vorbereitung.token_price_micro_usd_per_million or 0)
+        ) // 1_000_000
+        total_cost = failover_locked_cost_micro_usd + rest_cost
+        if total_cost <= 0:
+            return 0
+        return (total_cost * 1_000_000 + total_tokens - 1) // total_tokens
 
     def _abbruch_abrechnen() -> None:
         """Der ehrliche Abschluss eines Laufs, der nicht zu Ende kam."""
@@ -847,7 +872,7 @@ async def segment_ausfuehren(run_id: str, *, client: httpx.AsyncClient | None = 
                 estimated_actual_tokens=0,
                 failed=True,
                 had_output=bool(chunks),
-                token_price_micro_usd_per_million=vorbereitung.token_price_micro_usd_per_million,
+                token_price_micro_usd_per_million=_effektiver_preis_fuer_abrechnung(),
                 reasoning="".join(thoughts),
                 abschnitte=ai_run_broker.abschnitte(run_id),
                 token_weight=float((zustand.get("routing") or {}).get("weight") or 1.0),
@@ -890,6 +915,7 @@ async def segment_ausfuehren(run_id: str, *, client: httpx.AsyncClient | None = 
                     segment_prepared = True
                 frueh_schloss = asyncio.Semaphore(ai_stream._werkzeug_nebenlaeufigkeit())
                 rundenbeginn = len(chunks)
+                runden_thoughts_beginn = len(thoughts)
                 provider_messages = auf_budget_kuerzen(provider_messages, kontextgrenze)
                 # **Direkt hinter der Kuerzung**, damit jeder Ausstieg den aktuellen Verlauf sichert.
                 zustand["provider_messages"] = provider_messages
@@ -929,12 +955,13 @@ async def segment_ausfuehren(run_id: str, *, client: httpx.AsyncClient | None = 
                     exc.code in _RETRYABLE_ROUTER_ERROR_CODES
                 )
                 if (
-                    len(chunks) == 0
-                    and len(thoughts) == 0
+                    len(chunks) == rundenbeginn
+                    and len(thoughts) == runden_thoughts_beginn
                     and not current_usage.tool_calls
                     and retryable
                     and isinstance(zustand.get("routing"), dict)
                 ):
+                    prev_weight = float((zustand.get("routing") or {}).get("weight") or 1.0)
                     umgeschaltet = await asyncio.to_thread(
                         _router_failover_schritt,
                         run_id=run_id,
@@ -949,9 +976,27 @@ async def segment_ausfuehren(run_id: str, *, client: httpx.AsyncClient | None = 
                             if isinstance(exc, AiProviderConfigurationError)
                             else exc.code
                         ),
+                        retry_after_seconds=getattr(exc, "retry_after_seconds", None),
                     )
                     if umgeschaltet is not None:
+                        await _fruehe_leseaufgaben_verwerfen(fruehe_leseaufgaben)
+                        last_response_id = None
+                        zustand.pop("last_response_id", None)
                         next_provider, next_api_key, next_routing = umgeschaltet
+                        spent_tokens = int(usage.total_tokens or 0)
+                        if spent_tokens > failover_locked_tokens:
+                            delta_tokens = spent_tokens - failover_locked_tokens
+                            failover_locked_tokens = spent_tokens
+                            failover_locked_cost_micro_usd += (
+                                delta_tokens
+                                * int(vorbereitung.token_price_micro_usd_per_million or 0)
+                            ) // 1_000_000
+                        if spent_tokens > 0:
+                            preserved_weight = max(
+                                prev_weight, float(next_routing.get("weight") or 1.0)
+                            )
+                            next_routing["weight"] = preserved_weight
+                            zustand["routing"]["weight"] = preserved_weight
                         vorbereitung = replace(
                             vorbereitung,
                             provider=next_provider,
@@ -1218,7 +1263,10 @@ async def segment_ausfuehren(run_id: str, *, client: httpx.AsyncClient | None = 
                 user_id=user_id,
                 conversation_id=conversation_id,
                 client=client,
-                vorbereitung=vorbereitung,
+                vorbereitung=replace(
+                    vorbereitung,
+                    token_price_micro_usd_per_million=_effektiver_preis_fuer_abrechnung(),
+                ),
                 zustand=zustand,
                 provider_messages=provider_messages,
                 signaturen=signaturen,

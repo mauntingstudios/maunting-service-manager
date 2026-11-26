@@ -619,9 +619,13 @@ class AiProviderTestResponse(BaseModel):
     detail: str | None = None
 
 
+AiRouterRoutingMode = Literal["quality", "free_first_tier", "free_first_global"]
+
+
 class AiRouterPoolEntryInput(BaseModel):
     provider_id: int = Field(ge=1)
     model: str = Field(min_length=1, max_length=256)
+    is_free: bool = False
 
 
 class AiRouterPoolEntryResponse(AiRouterPoolEntryInput):
@@ -638,6 +642,7 @@ class AiRouterAvailableProviderModels(BaseModel):
 
 class AiRouterConfigUpdate(BaseModel):
     enabled: bool | None = None
+    routing_mode: AiRouterRoutingMode | None = None
     eco_models: list[AiRouterPoolEntryInput] | None = None
     standard_models: list[AiRouterPoolEntryInput] | None = None
     flagship_models: list[AiRouterPoolEntryInput] | None = None
@@ -650,6 +655,7 @@ class AiRouterConfigUpdate(BaseModel):
 
 class AiRouterConfigResponse(BaseModel):
     enabled: bool = False
+    routing_mode: AiRouterRoutingMode = "quality"
     router_provider_id: int | None = None
     ready: bool = False
     eco_models: list[AiRouterPoolEntryResponse] = Field(default_factory=list)

@@ -1253,6 +1253,22 @@
       "removeModel": "Remove model",
       "addModelPlaceholder": "Add model …",
       "allModelsAdded": "All configured models assigned",
+      "freeBadge": "Free",
+      "paidBadge": "Paid",
+      "toggleFreeAria": "Toggle free tier marker for {{model}}",
+      "routingMode": {
+        "label": "Routing strategy",
+        "options": {
+          "quality": "Quality first (default)",
+          "free_first_tier": "Free models in tier first",
+          "free_first_global": "All free models first"
+        },
+        "hints": {
+          "quality": "Always picks the highest-priority model in the matched quality tier.",
+          "free_first_tier": "Uses free models in the matched tier first and falls back to paid models in that tier on rate limits.",
+          "free_first_global": "Exhausts all models marked as free across tiers before switching to paid APIs."
+        }
+      },
       "weightsToggle": "Advanced: Quota weights",
       "weightsHint": "Multiplier for quota token accounting (10 = 1.0x, 20 = 2.0x). Actual USD costs are always recorded accurately.",
       "saved": "Router configuration saved.",

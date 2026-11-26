@@ -211,6 +211,7 @@ def update_router_settings(
         target_id=1,
         details={
             "enabled": data["enabled"],
+            "routing_mode": data["routing_mode"],
             "eco_count": len(data["eco_models"]),
             "standard_count": len(data["standard_models"]),
             "flagship_count": len(data["flagship_models"]),
