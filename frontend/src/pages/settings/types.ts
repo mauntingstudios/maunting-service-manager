@@ -28,6 +28,9 @@ export interface PanelSettings {
   curseforge_api_key: string
   curseforge_api_configured: boolean
   curseforge_api_source: 'env' | 'panel' | 'none'
+  modrinth_api_key: string
+  modrinth_api_configured: boolean
+  modrinth_api_source: 'env' | 'panel' | 'none'
   steam_account_username: string
   steam_account_configured: boolean
   time_format: '24h' | '12h'
@@ -117,6 +120,9 @@ export const EMPTY_PANEL_SETTINGS: PanelSettings = {
   curseforge_api_key: '',
   curseforge_api_configured: false,
   curseforge_api_source: 'none',
+  modrinth_api_key: '',
+  modrinth_api_configured: false,
+  modrinth_api_source: 'none',
   steam_account_username: '',
   steam_account_configured: false,
   time_format: '24h',

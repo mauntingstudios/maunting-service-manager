@@ -20,6 +20,7 @@ from schemas.panel_settings import (
     ResendKeyRequest,
     SteamApiKeyRequest,
     CurseForgeApiKeyRequest,
+    ModrinthApiKeyRequest,
     CloudflareApiTokenRequest,
     SteamAccountRequest,
     SingraWidgetInstallIdRequest,
@@ -55,6 +56,13 @@ from services.curseforge_api_key_service import (
     set_panel_key as set_curseforge_panel_key,
     clear_panel_key as clear_curseforge_panel_key,
     status as curseforge_api_status,
+)
+from services.modrinth_api_key_service import (
+    current_source as modrinth_api_source,
+    resolve_key as resolve_modrinth_api_key,
+    set_panel_key as set_modrinth_panel_key,
+    clear_panel_key as clear_modrinth_panel_key,
+    status as modrinth_api_status,
 )
 from services.cloudflare_api_key_service import (
     current_source as cloudflare_api_source,
@@ -186,6 +194,8 @@ def get_settings(db: Session = Depends(get_db), _=Depends(require_global("panel.
     api_st = steam_api_status()
     curseforge_key = resolve_curseforge_api_key()
     cf_st = curseforge_api_status()
+    modrinth_key = resolve_modrinth_api_key()
+    mr_st = modrinth_api_status()
     cf_token = resolve_cloudflare_api_key()
     cfl_st = cloudflare_api_status()
     return {
@@ -208,6 +218,9 @@ def get_settings(db: Session = Depends(get_db), _=Depends(require_global("panel.
         "curseforge_api_key": _mask_secret(curseforge_key),
         "curseforge_api_configured": bool(curseforge_key),
         "curseforge_api_source": cf_st.get("source", "none"),
+        "modrinth_api_key": _mask_secret(modrinth_key),
+        "modrinth_api_configured": bool(modrinth_key),
+        "modrinth_api_source": mr_st.get("source", "none"),
         "steam_account_username": SteamAccountService.get_username(),
         "steam_account_configured": SteamAccountService.is_configured(),
         "time_format": all_db.get("time_format", "24h"),
@@ -805,6 +818,61 @@ def delete_curseforge_api_key(
     """Removes the CurseForge API key from panel database."""
     clear_curseforge_panel_key()
     return {"message": "CurseForge API-Key entfernt", "curseforge_api_source": curseforge_api_source()}
+
+
+@router.post("/modrinth-api-key", status_code=200)
+def update_modrinth_api_key(
+    req: ModrinthApiKeyRequest,
+    _=Depends(require_global("panel.settings.write")),
+    __=Depends(verify_csrf),
+) -> dict:
+    """Stores the optional Modrinth API token securely in panel database (DIS-encrypted)."""
+    key = req.modrinth_api_key.strip()
+    if not key or len(key) < 10:
+        raise HTTPException(status_code=400, detail="Ungültiger Modrinth API-Token")
+    if any(c in key for c in ("\n", "\r", "\0")) or len(key) > 512:
+        raise HTTPException(status_code=400, detail="Ungültiger Modrinth API-Token")
+
+    set_modrinth_panel_key(key)
+    return {"message": "Modrinth API-Token gespeichert", "modrinth_api_source": modrinth_api_source()}
+
+
+@router.delete("/modrinth-api-key", status_code=200)
+def delete_modrinth_api_key(
+    _=Depends(require_global("panel.settings.write")),
+    __=Depends(verify_csrf),
+) -> dict:
+    """Removes the optional Modrinth API token from panel database."""
+    clear_modrinth_panel_key()
+    return {"message": "Modrinth API-Token entfernt", "modrinth_api_source": modrinth_api_source()}
+
+
+@router.post("/modrinth-key/test", status_code=200)
+async def test_modrinth_key(
+    _=Depends(require_global("panel.settings.read")),
+    __=Depends(verify_csrf),
+) -> dict:
+    """Tests connectivity to Modrinth API (and validates optional token if configured)."""
+    from services.modrinth_service import get_modrinth_service
+
+    svc = await get_modrinth_service()
+    res = await svc.test_connection()
+    if res.get("ok"):
+        if res.get("authenticated"):
+            return {
+                "message": f"Modrinth API-Token ist gültig ({res.get('username')})",
+                "valid": True,
+                "authenticated": True,
+            }
+        return {
+            "message": "Modrinth API erreichbar (öffentlicher Modus ohne Token)",
+            "valid": True,
+            "authenticated": False,
+        }
+    return {
+        "message": f"Modrinth Verbindungstest fehlgeschlagen: {res.get('error')}",
+        "valid": False,
+    }
 
 
 @router.post("/cloudflare-token", status_code=200)

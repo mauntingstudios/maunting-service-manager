@@ -66,7 +66,7 @@ export type SettingsSectionId =
   | 'storage'
 
 export type SecuritySubTab = 'security' | 'captcha' | 'cloudflare'
-export type GameIntegrationSubTab = 'steam' | 'curseforge'
+export type GameIntegrationSubTab = 'steam' | 'curseforge' | 'modrinth'
 export type CommunicationSubTab = 'email' | 'messenger' | 'supportWidget'
 export type AnnouncementsSubTab = 'popup' | 'news'
 export type StorageSubTab = 'vaultStorage' | 'backup'
@@ -149,6 +149,8 @@ export function resolveSettingsTarget(rawTab: string | null): ResolvedSettingsTa
       return { section: 'gameIntegrations', gameIntegrations: 'steam' }
     case 'curseforge':
       return { section: 'gameIntegrations', gameIntegrations: 'curseforge' }
+    case 'modrinth':
+      return { section: 'gameIntegrations', gameIntegrations: 'modrinth' }
     case 'shop':
       return { section: 'shop', shop: 'overview' }
     case 'hoster':

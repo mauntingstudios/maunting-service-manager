@@ -92,10 +92,20 @@ def list_game_info() -> list[dict]:
             "mod_support": bp_mods.supportsMods,
             "supports_steam_workshop": bp_mods.supportsSteamWorkshop,
             "supports_curseforge": bp_mods.supportsCurseForge,
+            "supports_modrinth": bp_mods.supportsModrinth,
+            "supports_thunderstore": bp_mods.supportsThunderstore,
             "curseforge_game_id": bp_mods.curseforgeGameId if bp_mods.supportsCurseForge else None,
             "curseforge_class_id": bp_mods.curseforgeClassId if bp_mods.supportsCurseForge else None,
-            "supports_modpacks": bool(bp_mods.supportsCurseForge),
-            "mod_provider": "curseforge" if bp_mods.supportsCurseForge else ("steam" if bp_mods.supportsSteamWorkshop else None),
+            "modrinth_project_types": list(bp_mods.modrinthProjectTypes) if bp_mods.supportsModrinth else [],
+            "modrinth_loaders": list(bp_mods.modrinthLoaders) if bp_mods.supportsModrinth else [],
+            "thunderstore_community": bp_mods.thunderstoreCommunity if bp_mods.supportsThunderstore else None,
+            "supports_modpacks": bool(
+                bp_mods.supportsCurseForge
+                or (bp_mods.supportsModrinth and "modpack" in bp_mods.modrinthProjectTypes)
+                or bp_mods.supportsThunderstore
+            ),
+            "mod_providers": bp_mods.available_providers(),
+            "mod_provider": (bp_mods.available_providers()[0] if bp_mods.available_providers() else None),
             "supports_server_file_updates": supports_file_updates,
             # v1.4.7+: Exec-Tab-Opt-in pro Blueprint. UI nutzt das, um den
             # Tab nur dann anzuzeigen, wenn der Server-Blueprint das Feature

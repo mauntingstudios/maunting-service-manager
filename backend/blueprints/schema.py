@@ -1077,6 +1077,13 @@ class BlueprintMods(BaseModel):
     curseforgeGameId: str | None = None
     curseforgeClassId: str | None = None
     curseforgeInstallPath: str | None = None
+    supportsModrinth: bool = False
+    modrinthProjectTypes: list[str] = Field(default_factory=list, max_length=8)
+    modrinthLoaders: list[str] = Field(default_factory=list, max_length=12)
+    modrinthInstallPath: str | None = None
+    supportsThunderstore: bool = False
+    thunderstoreCommunity: str | None = None
+    thunderstoreInstallPath: str | None = None
     filterTags: list[str] = Field(default_factory=list, max_length=10)
     modInjection: BlueprintModInjection = BlueprintModInjection.NONE
     modStartupArgumentFormat: str | None = Field(default=None, max_length=256)
@@ -1136,6 +1143,69 @@ class BlueprintMods(BaseModel):
         if not _is_safe_relative_path(v):
             raise ValueError(
                 "mods.curseforgeInstallPath muss sicherer relativer Pfad ohne '..' sein."
+            )
+        return v
+
+    @field_validator("modrinthProjectTypes")
+    @classmethod
+    def _check_modrinth_project_types(cls, v: list[str]) -> list[str]:
+        allowed = {"mod", "modpack", "plugin", "datapack", "shader", "resourcepack"}
+        out: list[str] = []
+        for item in v:
+            val = str(item or "").strip().lower()
+            if val not in allowed:
+                raise ValueError(
+                    f"mods.modrinthProjectTypes enthaelt ungueltigen Typ '{item}'."
+                )
+            if val not in out:
+                out.append(val)
+        return out
+
+    @field_validator("modrinthLoaders")
+    @classmethod
+    def _check_modrinth_loaders(cls, v: list[str]) -> list[str]:
+        out: list[str] = []
+        for item in v:
+            val = str(item or "").strip().lower()
+            if not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,31}", val):
+                raise ValueError(
+                    f"mods.modrinthLoaders enthaelt ungueltigen Loader '{item}'."
+                )
+            if val not in out:
+                out.append(val)
+        return out
+
+    @field_validator("modrinthInstallPath")
+    @classmethod
+    def _check_modrinth_install_path(cls, v: str | None) -> str | None:
+        if v is None or v == "":
+            return None
+        if not _is_safe_relative_path(v):
+            raise ValueError(
+                "mods.modrinthInstallPath muss sicherer relativer Pfad ohne '..' sein."
+            )
+        return v
+
+    @field_validator("thunderstoreCommunity")
+    @classmethod
+    def _check_thunderstore_community(cls, v: str | None) -> str | None:
+        if v is None or v == "":
+            return None
+        val = v.strip().lower()
+        if not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", val):
+            raise ValueError(
+                "mods.thunderstoreCommunity muss ein gueltiger Community-Slug sein (a-z, 0-9, '-')."
+            )
+        return val
+
+    @field_validator("thunderstoreInstallPath")
+    @classmethod
+    def _check_thunderstore_install_path(cls, v: str | None) -> str | None:
+        if v is None or v == "":
+            return None
+        if not _is_safe_relative_path(v):
+            raise ValueError(
+                "mods.thunderstoreInstallPath muss sicherer relativer Pfad ohne '..' sein."
             )
         return v
 
@@ -1204,6 +1274,11 @@ class BlueprintMods(BaseModel):
                 raise ValueError(
                     "mods.curseforgeGameId ist Pflicht, wenn supportsCurseForge=true."
                 )
+        if self.supportsThunderstore:
+            if not self.thunderstoreCommunity:
+                raise ValueError(
+                    "mods.thunderstoreCommunity ist Pflicht, wenn supportsThunderstore=true."
+                )
 
         if self.modInjection == BlueprintModInjection.STARTUP_ARG:
             if not self.modStartupArgumentFormat:
@@ -1236,6 +1311,18 @@ class BlueprintMods(BaseModel):
         if self.modListContent == BlueprintModListContent.INI_KEY and not self.modListKey and not self.modListTargets:
             raise ValueError("mods.modListKey ist Pflicht bei modListContent=iniKey.")
         return self
+
+    def available_providers(self) -> list[str]:
+        providers: list[str] = []
+        if self.supportsCurseForge:
+            providers.append("curseforge")
+        if self.supportsModrinth:
+            providers.append("modrinth")
+        if self.supportsSteamWorkshop:
+            providers.append("steam")
+        if self.supportsThunderstore:
+            providers.append("thunderstore")
+        return providers
 
     def effective_mod_list_targets(self) -> list[BlueprintModListTarget]:
         if self.modListTargets:

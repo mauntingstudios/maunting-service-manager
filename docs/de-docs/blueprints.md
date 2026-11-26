@@ -278,9 +278,9 @@ starten kann. Deshalb ist `source.type=dockerOnly` ausreichend.
   hat wahrscheinlich keinen Zugriff, der Code ist abgelaufen oder die lokal
   gespeicherten Hytale-Downloader-Credentials müssen erneuert werden.
 
-## Workshop- und CurseForge-Mods
+## Workshop-, CurseForge-, Modrinth- und Thunderstore-Mods
 
-Steam Workshop und CurseForge werden über `mods` im Blueprint konfiguriert:
+Steam Workshop, CurseForge, Modrinth und Thunderstore werden über `mods` im Blueprint konfiguriert. Ein Blueprint kann mehrere Quellen gleichzeitig aktivieren (z. B. CurseForge und Modrinth für Minecraft oder Steam Workshop und Thunderstore für Palworld); im Mod-Manager erscheint dann ein Quellen-Umschalter.
 
 ### Steam Workshop
 ```json
@@ -316,6 +316,29 @@ Steam Workshop und CurseForge werden über `mods` im Blueprint konfiguriert:
 `curseforgeClassId` (optional) filtert auf bestimmte Kategorien (z. B. `6` für Minecraft Mods, `4552` für Bukkit Plugins).
 `curseforgeInstallPath` (optional) definiert das relative Zielverzeichnis für heruntergeladene .jar/.zip-Dateien (z. B. `mods` oder `plugins`).
 `modStartupArgumentSeparator` (optional, default `;`) steuert das Trennzeichen zwischen Mod-IDs in `{MOD_ARG}` (z. B. `,` für ARK: Survival Ascended).
+
+### Modrinth
+```json
+{
+  "supportsMods": true,
+  "supportsModrinth": true,
+  "modrinthProjectTypes": ["mod", "modpack", "datapack"],
+  "modrinthLoaders": ["fabric"],
+  "modrinthInstallPath": "mods"
+}
+```
+Modrinth nutzt die öffentliche Labrinth-v2-API ohne Pflicht-API-Key (ein optionaler Personal Access Token kann unter **Einstellungen → Spiele-APIs → Modrinth** hinterlegt werden). Downloads prüfen SHA-512/SHA-1-Prüfsummen und unterstützen sowohl `.jar`-Dateien als auch `.mrpack`-Modpacks.
+
+### Thunderstore
+```json
+{
+  "supportsMods": true,
+  "supportsThunderstore": true,
+  "thunderstoreCommunity": "valheim",
+  "thunderstoreInstallPath": "BepInEx/plugins"
+}
+```
+Thunderstore nutzt den öffentlichen Community-Paketindex ohne API-Key (`thunderstoreCommunity` entspricht dem Community-Slug, z. B. `valheim`, `v-rising`, `palworld`). BepInExPack-Archive werden ins Server-Wurzelverzeichnis entpackt, reguläre Plugins in `thunderstoreInstallPath/<Owner>-<Name>/`.
 
 `filterTags` (optional, Liste von Strings, max. 10 Tags) definiert Tags, nach denen die Mod-Suche und -Auflistung im Steam Workshop gefiltert wird. Das Feld verhindert, dass inkompatible Versionen gemischt angezeigt werden (z. B. Legacy- und Enhanced-Mods bei Conan Exiles). Erlaubte Zeichen in Tags sind Alphanumerisch, Leerzeichen, `_`, `-` und `+` (max. 64 Zeichen pro Tag).
 

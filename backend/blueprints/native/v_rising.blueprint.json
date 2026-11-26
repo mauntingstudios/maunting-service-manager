@@ -72,9 +72,12 @@
     "updateStrategy": "checkBased"
   },
   "mods": {
-    "supportsMods": false,
+    "supportsMods": true,
     "supportsSteamWorkshop": false,
     "workshopAppId": null,
+    "supportsThunderstore": true,
+    "thunderstoreCommunity": "v-rising",
+    "thunderstoreInstallPath": "BepInEx/plugins",
     "modInjection": "none",
     "modStartupArgumentFormat": null,
     "modListFilePath": null,

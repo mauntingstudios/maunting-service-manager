@@ -48,6 +48,9 @@ class PanelSettingsResponse(BaseModel):
     curseforge_api_key: str = ""
     curseforge_api_configured: bool = False
     curseforge_api_source: str = "none"  # "env" | "panel" | "none"
+    modrinth_api_key: str = ""
+    modrinth_api_configured: bool = False
+    modrinth_api_source: str = "none"  # "env" | "panel" | "none"
     steam_account_username: str = ""
     steam_account_configured: bool = False
     time_format: str = "24h"
@@ -186,6 +189,10 @@ class SteamApiKeyRequest(BaseModel):
 
 class CurseForgeApiKeyRequest(BaseModel):
     curseforge_api_key: str
+
+
+class ModrinthApiKeyRequest(BaseModel):
+    modrinth_api_key: str
 
 
 class CloudflareApiTokenRequest(BaseModel):

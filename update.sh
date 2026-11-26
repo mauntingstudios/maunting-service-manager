@@ -5,7 +5,7 @@ umask 077
 # ═══════════════════════════════════════════════════════════════
 #  Maunting Service Manager — Updater
 #
-#  Usage:  sudo bash update.sh [--check-only] [--force]
+#  Usage:  sudo bash update.sh [--check-only] [--force] [--restart-all] [--no-drain]
 #
 #  Prüft zuerst GitHub-Releases, falls keine existieren
 #  wird der neueste main-Branch-Commit verwendet.
@@ -159,21 +159,50 @@ prepare_app_venv() {
 
 CHECK_ONLY=false
 FORCE=false
+RESTART_ALL=false
+SKIP_DRAIN=false
 UPDATE_SUCCEEDED=false
 PANEL_WAS_ACTIVE=false
 DB_BACKUP_FILE=""
+DRAIN_FLAG_FILE="$MSM_DIR/.msm-draining.json"
+MSM_UPDATE_DRAIN_TIMEOUT="${MSM_UPDATE_DRAIN_TIMEOUT:-60}"
+
+NEED_FRONTEND=true
+NEED_BACKEND=true
+NEED_AGENT=true
+NEED_DIS=true
+NEED_DOCS=true
+NEED_SEARXNG=true
+NEED_WETTER=true
+NEED_LIVEKIT=true
+FRONTEND_STAGED=false
+DRAIN_ENABLED_BY_UPDATER=false
 
 cleanup_on_failure() {
     local exit_code=$?
+    if $DRAIN_ENABLED_BY_UPDATER; then
+        rm -f "$DRAIN_FLAG_FILE" 2>/dev/null || true
+    fi
+    rm -rf "$MSM_DIR/frontend/dist.next" 2>/dev/null || true
     if [[ "$UPDATE_SUCCEEDED" != "true" && $exit_code -ne 0 ]]; then
         warn "Update nicht abgeschlossen. Es wird bewusst kein Erfolg gemeldet."
         [[ -n "$DB_BACKUP_FILE" ]] && warn "PostgreSQL-Sicherung: $DB_BACKUP_FILE"
         if ${SYSTEMD_AVAILABLE:-false} && $PANEL_WAS_ACTIVE; then
             # Sidecar zuerst: der Code ist womoeglich schon neu, und das neue
             # Panel verweigert den Dienst mit einem alten Sidecar.
-            systemctl restart msm-dis-sidecar.service 2>/dev/null || true
-            [[ -f /etc/systemd/system/msm-docs-sidecar.service ]]                 && systemctl restart msm-docs-sidecar.service 2>/dev/null || true
-            systemctl restart msm-panel.service 2>/dev/null || true
+            if $NEED_DIS || ! systemctl is-active --quiet msm-dis-sidecar.service 2>/dev/null; then
+                systemctl restart msm-dis-sidecar.service 2>/dev/null || true
+            fi
+            if [[ -f /etc/systemd/system/msm-docs-sidecar.service ]] \
+                && { $NEED_DOCS || ! systemctl is-active --quiet msm-docs-sidecar.service 2>/dev/null; }; then
+                systemctl restart msm-docs-sidecar.service 2>/dev/null || true
+            fi
+            if $NEED_BACKEND || $NEED_DIS || ! systemctl is-active --quiet msm-panel.service 2>/dev/null; then
+                systemctl restart msm-panel.service 2>/dev/null || true
+                if [[ -f /etc/systemd/system/msm-worker.service ]] && systemctl is-enabled --quiet msm-worker.service 2>/dev/null; then
+                    systemctl restart msm-worker.service 2>/dev/null || true
+                fi
+            fi
         fi
     fi
 }
@@ -183,6 +212,8 @@ for arg in "$@"; do
     case "$arg" in
         --check-only) CHECK_ONLY=true ;;
         --force) FORCE=true ;;
+        --restart-all) RESTART_ALL=true ;;
+        --no-drain) SKIP_DRAIN=true ;;
     esac
 done
 
@@ -435,6 +466,10 @@ ok "Datenbank-Backup erstellt und verifiziert: $DB_BACKUP_FILE"
 
 # ── Git Pull oder Tarball ──
 cd "$MSM_DIR"
+OLD_COMMIT_SHA=""
+if [[ -d "$MSM_DIR/.git" ]]; then
+    OLD_COMMIT_SHA=$(git rev-parse HEAD 2>/dev/null || echo "")
+fi
 
 if [[ "$UPDATE_MODE" == "git" ]]; then
     log "Aktualisiere via Git pull..."
@@ -443,8 +478,7 @@ if [[ "$UPDATE_MODE" == "git" ]]; then
     fi
     git pull --ff-only origin "$CURRENT_BRANCH" \
         || err "Git-Update ist kein sicherer Fast-Forward und wurde abgebrochen."
-    # Alte Build-Artefakte entfernen (nur dist/, keine Server-Daten!)
-    rm -rf frontend/dist 2>/dev/null || true
+    # Bestehendes frontend/dist bleibt bis zum atomaren Swap aktiv!
     # git pull lief als root -> neue/geaenderte Dateien sind jetzt root-owned.
     # Ohne den folgenden Chown scheitert `su - msm -c 'npm install'` mit EACCES
     # auf z.B. frontend/package-lock.json.
@@ -505,6 +539,47 @@ print(checksum_url)
         rm -rf "$RELEASE_TMP"
     fi
     restore_panel_ownership
+fi
+
+NEW_COMMIT_SHA=""
+if [[ -d "$MSM_DIR/.git" ]]; then
+    NEW_COMMIT_SHA=$(git rev-parse HEAD 2>/dev/null || echo "")
+fi
+
+if ! $RESTART_ALL && [[ -n "$OLD_COMMIT_SHA" && -n "$NEW_COMMIT_SHA" && "$OLD_COMMIT_SHA" != "$NEW_COMMIT_SHA" ]]; then
+    CHANGED_FILES=$(git diff --name-only "$OLD_COMMIT_SHA" "$NEW_COMMIT_SHA" 2>/dev/null || true)
+    if [[ -n "$CHANGED_FILES" ]]; then
+        NEED_FRONTEND=false
+        NEED_BACKEND=false
+        NEED_AGENT=false
+        NEED_DIS=false
+        NEED_DOCS=false
+        NEED_SEARXNG=false
+        NEED_WETTER=false
+        NEED_LIVEKIT=false
+        while IFS= read -r _cf; do
+            case "$_cf" in
+                frontend/*) NEED_FRONTEND=true ;;
+                backend/*|scripts/*|update.sh|msm.service.template) NEED_BACKEND=true ;;
+                msm-agent/*|helper-scripts/install-msm-agent.sh) NEED_AGENT=true ;;
+                dis-sidecar/*) NEED_DIS=true ;;
+                docs-sidecar/*) NEED_DOCS=true ;;
+                searxng-sidecar/*) NEED_SEARXNG=true ;;
+                wetter-sidecar/*) NEED_WETTER=true ;;
+                livekit-sidecar/*) NEED_LIVEKIT=true ;;
+            esac
+        done <<< "$CHANGED_FILES"
+        log "Betroffene Bereiche: frontend=$NEED_FRONTEND backend=$NEED_BACKEND agent=$NEED_AGENT dis=$NEED_DIS docs=$NEED_DOCS"
+    fi
+fi
+
+# Fehlende Artefakte oder nicht laufende Dienste sicherheitshalber mitziehen
+if [[ ! -f "$MSM_DIR/frontend/dist/index.html" ]]; then
+    NEED_FRONTEND=true
+fi
+if $SYSTEMD_AVAILABLE; then
+    systemctl is-active --quiet msm-panel.service 2>/dev/null || NEED_BACKEND=true
+    systemctl is-active --quiet msm-dis-sidecar.service 2>/dev/null || NEED_DIS=true
 fi
 
 # ── sudoers + iptables-Wrapper direkt als root schreiben (Sicherheitsfix) ──
@@ -969,9 +1044,13 @@ chown msm:msm /opt/msm/backups 2>/dev/null || true
 install -d -o msm -g msm -m 700 /opt/msm/vault-blobs 2>/dev/null || true
 
 # ── Backend aktualisieren ──
-log "Aktualisiere Python-Abhängigkeiten..."
-prepare_app_venv "$MSM_DIR/backend" "Python-Backend" false
-ok "Backend Dependencies aktualisiert"
+if $NEED_BACKEND || [[ ! -x "$MSM_DIR/backend/venv/bin/python" ]]; then
+    log "Aktualisiere Python-Abhängigkeiten..."
+    prepare_app_venv "$MSM_DIR/backend" "Python-Backend" false
+    ok "Backend Dependencies aktualisiert"
+else
+    log "Backend unverändert — überspringe venv/pip-Sync."
+fi
 
 # Lokales Embeddingmodell fuer die KI-Gedaechtnissuche (~470 MB).
 # Bewusst hier und nicht zur Laufzeit: das Panel laedt im Betrieb niemals
@@ -1337,8 +1416,12 @@ fi
 
 # ── MSM Agent aktualisieren (Monorepo, rootless Node, User $MSM_AGENT_USER) ──
 if [[ -d "$MSM_DIR/msm-agent" ]]; then
-    log "Aktualisiere MSM Agent..."
-    prepare_app_venv "$MSM_DIR/msm-agent" "MSM Agent" false "$MSM_AGENT_USER"
+    if $NEED_AGENT || [[ ! -x "$MSM_DIR/msm-agent/venv/bin/python" ]]; then
+        log "Aktualisiere MSM Agent..."
+        prepare_app_venv "$MSM_DIR/msm-agent" "MSM Agent" false "$MSM_AGENT_USER"
+    else
+        log "MSM Agent unverändert — überspringe venv/pip-Sync."
+    fi
     AGENT_ENV="$MSM_DIR/msm-agent/.env"
     if [[ ! -f "$AGENT_ENV" ]]; then
         AGENT_TOKEN=$(python3 -c "import secrets; print(secrets.token_urlsafe(32))")
@@ -1431,18 +1514,20 @@ EOF
     ok "MSM Agent Dependencies & 3-User Isolation aktualisiert"
 fi
 
-# ── Datenbank-Migrationen ──
+# ── Datenbank-Migrationen (online vor dem kurzen Neustart) ──
 if $SYSTEMD_AVAILABLE && systemctl is-active --quiet msm-panel.service; then
     PANEL_WAS_ACTIVE=true
-    log "Nehme Panel für das Schema-Upgrade kurz in Wartung..."
-    systemctl stop msm-panel.service || err "Panel konnte nicht in Wartung genommen werden."
 fi
-log "Führe geprüfte PostgreSQL-Schemamigration durch..."
-su - msm -c "
-    cd $MSM_DIR/backend
-    source venv/bin/activate
-    python3 scripts/prepare_phase8_schema.py
-" 2>&1 | tee -a "$LOG_FILE" || err "PostgreSQL-Schemamigration fehlgeschlagen."
+if $NEED_BACKEND; then
+    log "Führe geprüfte PostgreSQL-Schemamigration durch (Panel läuft währenddessen weiter)..."
+    su - msm -c "
+        cd $MSM_DIR/backend
+        source venv/bin/activate
+        python3 scripts/prepare_phase8_schema.py
+    " 2>&1 | tee -a "$LOG_FILE" || err "PostgreSQL-Schemamigration fehlgeschlagen."
+else
+    log "Backend unverändert — überspringe Schema-Upgrade."
+fi
 
 # ── DIS Config laden/generieren ──
 log "Lade/Generiere kryptografischen DIS-Config..."
@@ -1674,29 +1759,33 @@ for _kandidat in /etc/caddy/conf.d/msm.caddy /etc/caddy/conf.d/msm.conf; do
 done
 
 # ── DIS Sidecar Abhängigkeiten installieren ──
-log "Installiere DIS Sidecar-Abhängigkeiten..."
-if ! su - "$MSM_USER" -c "
-    set -e
-    cd $MSM_DIR/dis-sidecar
-    npm ci -q --omit=dev
-" 2>&1 | tee -a "$LOG_FILE"; then
-    err "DIS Sidecar npm ci fehlgeschlagen. Prüfe dis-sidecar/package.json und package-lock.json."
+if $NEED_DIS || [[ ! -d "$MSM_DIR/dis-sidecar/node_modules" ]]; then
+    log "Installiere DIS Sidecar-Abhängigkeiten..."
+    if ! su - "$MSM_USER" -c "
+        set -e
+        cd $MSM_DIR/dis-sidecar
+        npm ci -q --omit=dev
+    " 2>&1 | tee -a "$LOG_FILE"; then
+        err "DIS Sidecar npm ci fehlgeschlagen. Prüfe dis-sidecar/package.json und package-lock.json."
+    fi
+    ok "DIS Sidecar Abhängigkeiten installiert."
 fi
-ok "DIS Sidecar Abhängigkeiten installiert."
 
 # ── Dokumente-Sidecar Abhängigkeiten ──
-if [[ "$(node -v | cut -d'v' -f2 | cut -d'.' -f1)" -lt 22 ]]; then
-    err "Node >=22 wird fuer den Dokumente-Sidecar benoetigt (gefunden: $(node -v))."
+if $NEED_DOCS || [[ ! -d "$MSM_DIR/docs-sidecar/node_modules" ]]; then
+    if [[ "$(node -v | cut -d'v' -f2 | cut -d'.' -f1)" -lt 22 ]]; then
+        err "Node >=22 wird fuer den Dokumente-Sidecar benoetigt (gefunden: $(node -v))."
+    fi
+    log "Installiere Dokumente-Sidecar-Abhaengigkeiten..."
+    if ! su - "$MSM_USER" -c "
+        set -e
+        cd $MSM_DIR/docs-sidecar
+        npm ci -q --omit=dev --install-links
+    " 2>&1 | tee -a "$LOG_FILE"; then
+        err "Dokumente-Sidecar npm ci fehlgeschlagen. Pruefe docs-sidecar/package.json und package-lock.json."
+    fi
+    ok "Dokumente-Sidecar Abhaengigkeiten installiert."
 fi
-log "Installiere Dokumente-Sidecar-Abhaengigkeiten..."
-if ! su - "$MSM_USER" -c "
-    set -e
-    cd $MSM_DIR/docs-sidecar
-    npm ci -q --omit=dev --install-links
-" 2>&1 | tee -a "$LOG_FILE"; then
-    err "Dokumente-Sidecar npm ci fehlgeschlagen. Pruefe docs-sidecar/package.json und package-lock.json."
-fi
-ok "Dokumente-Sidecar Abhaengigkeiten installiert."
 
 # ── systemd Services registrieren ──
 if $SYSTEMD_AVAILABLE; then
@@ -1951,10 +2040,11 @@ OOMScoreAdjust=-800
 WorkingDirectory=/opt/msm/backend
 Environment="PATH=/opt/msm/backend/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 Environment="MSM_WORKER_MODE=${PANEL_WORKER_MODE}"
-ExecStart=/opt/msm/backend/venv/bin/uvicorn main:app --host 127.0.0.1 --port 8000 --workers ${MSM_UVICORN_WORKERS} --proxy-headers --forwarded-allow-ips=127.0.0.1 --timeout-graceful-shutdown 5
+Environment="MSM_DRAIN_FLAG_FILE=${DRAIN_FLAG_FILE}"
+ExecStart=/opt/msm/backend/venv/bin/uvicorn main:app --host 127.0.0.1 --port 8000 --workers ${MSM_UVICORN_WORKERS} --proxy-headers --forwarded-allow-ips=127.0.0.1 --timeout-graceful-shutdown 30
 Restart=on-failure
 RestartSec=5
-TimeoutStopSec=10
+TimeoutStopSec=45
 StandardOutput=journal
 StandardError=journal
 
@@ -1968,7 +2058,7 @@ WantedBy=multi-user.target
 EOF
 
     # Dedizierter Hintergrund-Worker (APScheduler / Pumpen / Node Heartbeats)
-    cat > /etc/systemd/system/msm-worker.service <<'EOF'
+    cat > /etc/systemd/system/msm-worker.service <<EOF
 [Unit]
 Description=Maunting Service Manager Background Worker
 After=network.target postgresql.service redis-server.service msm-dis-sidecar.service msm-docs-sidecar.service
@@ -1984,10 +2074,11 @@ OOMScoreAdjust=-300
 WorkingDirectory=/opt/msm/backend
 Environment="PATH=/opt/msm/backend/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 Environment="MSM_WORKER_MODE=worker"
+Environment="MSM_DRAIN_FLAG_FILE=${DRAIN_FLAG_FILE}"
 ExecStart=/opt/msm/backend/venv/bin/python -u worker.py
 Restart=on-failure
 RestartSec=5
-TimeoutStopSec=15
+TimeoutStopSec=45
 StandardOutput=journal
 StandardError=journal
 PrivateTmp=true
@@ -2060,20 +2151,27 @@ EOF
     ok "systemd Services registriert."
 fi
 
-# ── Frontend bauen ──
-# Letzte Verteidigungslinie: selbst wenn alle vorherigen Pfade einen Chown
-# ausgelassen haben sollten (z.B. unerwarteter Code-Pfad), stellen wir hier
-# noch einmal sicher, dass der msm-User in frontend/ schreiben kann. Idempotent
-# und billig.
+# ── Frontend bauen (in Staging-Ordner dist.next, laufendes dist bleibt online) ──
 restore_panel_ownership
-log "Baue Frontend..."
-if ! su - msm -c "
-    set -e
-    cd $MSM_DIR/frontend
-    npm install -q
-    npm run build
-" 2>&1 | tee -a "$LOG_FILE"; then
-    err "Frontend-Build fehlgeschlagen. Update abgebrochen."
+if $NEED_FRONTEND || [[ ! -f "$MSM_DIR/frontend/dist/index.html" ]]; then
+    log "Baue Frontend in Staging-Verzeichnis (dist.next)..."
+    rm -rf "$MSM_DIR/frontend/dist.next" 2>/dev/null || true
+    if ! su - msm -c "
+        set -e
+        cd $MSM_DIR/frontend
+        npm install -q
+        npm run check
+        npx tsc
+        npx vite build --outDir dist.next
+    " 2>&1 | tee -a "$LOG_FILE"; then
+        rm -rf "$MSM_DIR/frontend/dist.next" 2>/dev/null || true
+        err "Frontend-Build fehlgeschlagen. Bestehendes Frontend bleibt aktiv; Update abgebrochen."
+    fi
+    [[ -f "$MSM_DIR/frontend/dist.next/index.html" ]] \
+        || err "Frontend-Build unvollständig (dist.next/index.html fehlt)."
+    FRONTEND_STAGED=true
+else
+    log "Frontend unverändert — überspringe Build."
 fi
 
 # ── Panel-Service reparieren: NoNewPrivileges entfernen (blockiert sudo) ──
@@ -2191,82 +2289,188 @@ EOF
     fi
 fi
 
-# ── Service neustarten ──
-log "Starte Services neu..."
+swap_frontend_dist() {
+    $FRONTEND_STAGED || return 0
+    local fe_dir="$MSM_DIR/frontend"
+    [[ -f "$fe_dir/dist.next/index.html" ]] || return 0
+    rm -rf "$fe_dir/dist.prev"
+    if [[ -e "$fe_dir/dist" ]]; then
+        mv "$fe_dir/dist" "$fe_dir/dist.prev"
+    fi
+    if ! mv "$fe_dir/dist.next" "$fe_dir/dist"; then
+        if [[ -e "$fe_dir/dist.prev" && ! -e "$fe_dir/dist" ]]; then
+            mv "$fe_dir/dist.prev" "$fe_dir/dist" 2>/dev/null || true
+        fi
+        err "Frontend-Tausch fehlgeschlagen; vorheriges frontend/dist wiederhergestellt."
+    fi
+    rm -rf "$fe_dir/dist.prev"
+    FRONTEND_STAGED=false
+    ok "Frontend aktualisiert (staged swap)."
+}
+
+drain_backend_workloads() {
+    $SKIP_DRAIN && return 0
+    systemctl is-active --quiet msm-panel.service 2>/dev/null || return 0
+    local timeout_sec="$MSM_UPDATE_DRAIN_TIMEOUT"
+    [[ "$timeout_sec" =~ ^[0-9]+$ ]] || timeout_sec=60
+    if (( timeout_sec <= 0 )); then
+        return 0
+    fi
+    if (( timeout_sec > 780 )); then
+        timeout_sec=780
+    fi
+
+    log "Aktiviere Graceful Drain (max. ${timeout_sec}s Wartezeit für laufende KI-Streams & Builds)..."
+    local py_bin="$MSM_DIR/backend/venv/bin/python"
+    if ! su -s /bin/bash "$MSM_USER" -c "
+        cd $(printf '%q' "$MSM_DIR/backend")
+        MSM_DRAIN_FLAG_FILE=$(printf '%q' "$DRAIN_FLAG_FILE") $(printf '%q' "$py_bin") -c \"from services.drain_service import enable_drain; enable_drain(reason='panel_update', ttl_seconds=$((timeout_sec + 120)))\"
+    " >>"$LOG_FILE" 2>&1; then
+        warn "Graceful Drain konnte nicht aktiviert werden — fahre ohne Wartezeit fort."
+        return 0
+    fi
+    DRAIN_ENABLED_BY_UPDATER=true
+
+    local drain_rc=0
+    su -s /bin/bash "$MSM_USER" -c "
+        cd $(printf '%q' "$MSM_DIR/backend")
+        MSM_DRAIN_FLAG_FILE=$(printf '%q' "$DRAIN_FLAG_FILE") $(printf '%q' "$py_bin") - \"$timeout_sec\" <<'PY'
+import sys, time
+from database import SessionLocal
+from services.drain_service import count_active_workloads
+
+timeout = int(sys.argv[1])
+deadline = time.monotonic() + timeout
+while True:
+    db = SessionLocal()
+    try:
+        c = count_active_workloads(db)
+    finally:
+        db.close()
+    total = int(c.get('active_total') or 0)
+    if total == 0:
+        print('DRAIN_IDLE', flush=True)
+        sys.exit(0)
+    if time.monotonic() >= deadline:
+        print(f\"DRAIN_TIMEOUT total={total} ai={c.get('active_ai_runs', 0)} builds={c.get('active_frontend_builds', 0)}\", flush=True)
+        sys.exit(2)
+    print(f\"Graceful Drain aktiv (total={total}, ai={c.get('active_ai_runs', 0)}, builds={c.get('active_frontend_builds', 0)}) — warte kurz auf Abschluss...\", flush=True)
+    time.sleep(2)
+PY
+    " 2>>"$LOG_FILE" | while IFS= read -r _line; do
+        case "$_line" in
+            DRAIN_IDLE) ok "Alle laufenden KI-/Sandbox-Aufgaben abgeschlossen; starte Panel sauber neu." ;;
+            DRAIN_TIMEOUT*) warn "Drain-Timeout (${timeout_sec}s) erreicht (${_line#DRAIN_TIMEOUT }) — fahre mit kontrolliertem Service-Neustart fort." ;;
+            *) log "$_line" ;;
+        esac
+    done || drain_rc=$?
+    if (( drain_rc != 0 )); then
+        warn "Drain-Statusprüfung beendet (Exit ${drain_rc}) — fahre mit Service-Neustart fort."
+    fi
+}
+
+# ── Service neustarten (selektiv nach geänderten Bereichen) ──
+log "Prüfe und starte betroffene Services neu..."
 if $SYSTEMD_AVAILABLE; then
-    log "Starte DIS Sidecar..."
-    systemctl restart msm-dis-sidecar.service 2>/dev/null \
-        || systemctl start msm-dis-sidecar.service 2>/dev/null \
-        || err "DIS Sidecar konnte nicht gestartet werden."
-    if ! systemctl is-active --quiet msm-dis-sidecar.service; then
-        err "DIS Sidecar ist nicht aktiv. Prüfe: journalctl -u msm-dis-sidecar -n 50"
+    NEED_PANEL_CYCLE=false
+    if $NEED_BACKEND || $NEED_DIS || ! systemctl is-active --quiet msm-panel.service 2>/dev/null; then
+        NEED_PANEL_CYCLE=true
+    fi
+    if $NEED_PANEL_CYCLE; then
+        drain_backend_workloads
+    fi
+
+    if $NEED_DIS || ! systemctl is-active --quiet msm-dis-sidecar.service 2>/dev/null; then
+        log "Starte DIS Sidecar..."
+        systemctl restart msm-dis-sidecar.service 2>/dev/null \
+            || systemctl start msm-dis-sidecar.service 2>/dev/null \
+            || err "DIS Sidecar konnte nicht gestartet werden."
+        if ! systemctl is-active --quiet msm-dis-sidecar.service; then
+            err "DIS Sidecar ist nicht aktiv. Prüfe: journalctl -u msm-dis-sidecar -n 50"
+        fi
+    else
+        ok "DIS Sidecar unverändert — kein Neustart nötig."
     fi
 
     if [[ -f /etc/systemd/system/msm-docs-sidecar.service ]]; then
-        log "Starte Dokumente-Sidecar..."
-        systemctl restart msm-docs-sidecar.service 2>/dev/null \
-            || systemctl start msm-docs-sidecar.service 2>/dev/null || true
-        systemctl is-active --quiet msm-docs-sidecar.service \
-            || warn "Dokumente-Sidecar ist nicht aktiv. Pruefe: journalctl -u msm-docs-sidecar -n 50"
+        if $NEED_DOCS || ! systemctl is-active --quiet msm-docs-sidecar.service 2>/dev/null; then
+            log "Starte Dokumente-Sidecar..."
+            systemctl restart msm-docs-sidecar.service 2>/dev/null \
+                || systemctl start msm-docs-sidecar.service 2>/dev/null || true
+            systemctl is-active --quiet msm-docs-sidecar.service \
+                || warn "Dokumente-Sidecar ist nicht aktiv. Pruefe: journalctl -u msm-docs-sidecar -n 50"
+        else
+            ok "Dokumente-Sidecar unverändert — kein Neustart nötig."
+        fi
     fi
 
     if [[ -f /etc/systemd/system/msm-searxng.service ]]; then
-        log "Starte SearXNG Search Sidecar..."
-        systemctl restart msm-searxng.service 2>/dev/null \
-            || systemctl start msm-searxng.service 2>/dev/null || true
-        ok "SearXNG Sidecar bereit."
+        if $NEED_SEARXNG || ! systemctl is-active --quiet msm-searxng.service 2>/dev/null; then
+            log "Starte SearXNG Search Sidecar..."
+            systemctl restart msm-searxng.service 2>/dev/null \
+                || systemctl start msm-searxng.service 2>/dev/null || true
+            ok "SearXNG Sidecar bereit."
+        else
+            ok "SearXNG Sidecar unverändert — kein Neustart nötig."
+        fi
     fi
 
     # Wetter Sidecar starten
     if [[ -f /etc/systemd/system/msm-wetter.service ]]; then
-        log "Starte Wetter Sidecar..."
-        systemctl restart msm-wetter.service 2>/dev/null             || systemctl start msm-wetter.service 2>/dev/null || true
-        _wetter_ok=false
-        for _ in $(seq 1 20); do
-            if curl -fsS --max-time 2 http://127.0.0.1:8890/health >/dev/null 2>&1; then
-                _wetter_ok=true
-                break
+        if $NEED_WETTER || ! systemctl is-active --quiet msm-wetter.service 2>/dev/null; then
+            log "Starte Wetter Sidecar..."
+            systemctl restart msm-wetter.service 2>/dev/null \
+                || systemctl start msm-wetter.service 2>/dev/null || true
+            _wetter_ok=false
+            for _ in $(seq 1 20); do
+                if curl -fsS --max-time 2 http://127.0.0.1:8890/health >/dev/null 2>&1; then
+                    _wetter_ok=true
+                    break
+                fi
+                sleep 2
+            done
+            if [[ "$_wetter_ok" == true ]]; then
+                ok "Wetter Sidecar bereit."
+            else
+                warn "Wetter Sidecar antwortet nicht auf 127.0.0.1:8890. Ursache: journalctl -u msm-wetter -n 30"
             fi
-            sleep 2
-        done
-        if [[ "$_wetter_ok" == true ]]; then
-            ok "Wetter Sidecar bereit."
         else
-            warn "Wetter Sidecar antwortet nicht auf 127.0.0.1:8890. Ursache: journalctl -u msm-wetter -n 30"
+            ok "Wetter Sidecar unverändert — kein Neustart nötig."
         fi
     fi
 
     if [[ -f /etc/systemd/system/msm-livekit.service ]]; then
-        log "Starte LiveKit Media Sidecar..."
-        systemctl restart msm-livekit.service 2>/dev/null \
-            || systemctl start msm-livekit.service 2>/dev/null || true
-        # Erst pruefen, dann „bereit“ sagen: systemctl gelingt auch, wenn der
-        # Container darin an belegten Ports scheitert. Am 27.09.2026 hielt ein
-        # fremder LiveKit 7881/7882, und nichts im Lauf sagte das.
-        _livekit_ok=false
-        for _ in $(seq 1 15); do
-            if curl -fsS --max-time 2 http://127.0.0.1:7880 >/dev/null 2>&1; then
-                _livekit_ok=true
-                break
+        if $NEED_LIVEKIT || ! systemctl is-active --quiet msm-livekit.service 2>/dev/null; then
+            log "Starte LiveKit Media Sidecar..."
+            systemctl restart msm-livekit.service 2>/dev/null \
+                || systemctl start msm-livekit.service 2>/dev/null || true
+            _livekit_ok=false
+            for _ in $(seq 1 15); do
+                if curl -fsS --max-time 2 http://127.0.0.1:7880 >/dev/null 2>&1; then
+                    _livekit_ok=true
+                    break
+                fi
+                sleep 1
+            done
+            if [[ "$_livekit_ok" == true ]]; then
+                ok "LiveKit Sidecar bereit."
+            else
+                warn "LiveKit Sidecar antwortet nicht auf 127.0.0.1:7880. Anrufe im Messenger gehen so nicht."
+                _livekit_belegt=$(ss -Hlntup '( sport = :7880 or sport = :7881 or sport = :7882 )' 2>/dev/null || true)
+                if [[ -n "$_livekit_belegt" ]]; then
+                    warn "  Auf seinen Ports lauscht bereits:"
+                    while IFS= read -r _zeile; do warn "    $_zeile"; done <<< "$_livekit_belegt"
+                    warn "  Diesen Dienst anhalten oder auf andere Ports legen, dann: systemctl restart msm-livekit"
+                fi
+                warn "  Ursache im Journal: journalctl -u msm-livekit -n 30"
             fi
-            sleep 1
-        done
-        if [[ "$_livekit_ok" == true ]]; then
-            ok "LiveKit Sidecar bereit."
         else
-            warn "LiveKit Sidecar antwortet nicht auf 127.0.0.1:7880. Anrufe im Messenger gehen so nicht."
-            _livekit_belegt=$(ss -Hlntup '( sport = :7880 or sport = :7881 or sport = :7882 )' 2>/dev/null || true)
-            if [[ -n "$_livekit_belegt" ]]; then
-                warn "  Auf seinen Ports lauscht bereits:"
-                while IFS= read -r _zeile; do warn "    $_zeile"; done <<< "$_livekit_belegt"
-                warn "  Diesen Dienst anhalten oder auf andere Ports legen, dann: systemctl restart msm-livekit"
-            fi
-            warn "  Ursache im Journal: journalctl -u msm-livekit -n 30"
+            ok "LiveKit Sidecar unverändert — kein Neustart nötig."
         fi
     fi
 
-    # DIS Migration: Fernet -> DIS (einmalig, nur wenn alte Daten vorhanden)
-    if grep -q '^MSM_DATABASE_URL=.*postgresql' "$ENV_FILE" 2>/dev/null; then
+    # DIS Migration: Fernet -> DIS (einmalig, nur wenn Backend aktualisiert und alte Daten vorhanden)
+    if $NEED_BACKEND && grep -q '^MSM_DATABASE_URL=.*postgresql' "$ENV_FILE" 2>/dev/null; then
         log "Pruefe DIS-Migration (Fernet -> DIS)..."
         su - "$MSM_USER" -c "
             cd $MSM_DIR/backend
@@ -2276,38 +2480,66 @@ if $SYSTEMD_AVAILABLE; then
     fi
 
     if [[ -f /etc/systemd/system/msm-agent.service ]]; then
-        systemctl restart msm-agent.service 2>/dev/null \
-            || systemctl start msm-agent.service 2>/dev/null \
-            || err "Lokaler MSM Agent konnte nicht gestartet werden."
-        AGENT_READY=false
+        if $NEED_AGENT || ! systemctl is-active --quiet msm-agent.service 2>/dev/null; then
+            systemctl restart msm-agent.service 2>/dev/null \
+                || systemctl start msm-agent.service 2>/dev/null \
+                || err "Lokaler MSM Agent konnte nicht gestartet werden."
+            AGENT_READY=false
+            for _attempt in $(seq 1 30); do
+                if curl -fsS --max-time 2 http://127.0.0.1:9000/health >/dev/null 2>&1; then
+                    AGENT_READY=true
+                    break
+                fi
+                sleep 1
+            done
+            $AGENT_READY || err "Lokaler MSM Agent ist nicht erreichbar. Prüfe: journalctl -u msm-agent -n 50"
+        else
+            ok "Lokaler MSM Agent unverändert — kein Neustart nötig."
+        fi
+    fi
+
+    if $NEED_PANEL_CYCLE; then
+        systemctl restart msm-panel.service || err "Panel konnte nicht gestartet werden."
+        if [[ -f /etc/systemd/system/msm-worker.service ]] && systemctl is-enabled --quiet msm-worker.service 2>/dev/null; then
+            systemctl restart msm-worker.service \
+                || systemctl start msm-worker.service \
+                || err "Hintergrund-Worker (msm-worker) konnte nicht gestartet werden."
+            ok "Hintergrund-Worker aktiv (msm-worker)"
+        fi
+        PANEL_READY=false
         for _attempt in $(seq 1 30); do
-            if curl -fsS --max-time 2 http://127.0.0.1:9000/health >/dev/null 2>&1; then
-                AGENT_READY=true
+            if curl -fsS --max-time 2 http://127.0.0.1:8000/api/health >/dev/null 2>&1; then
+                PANEL_READY=true
                 break
             fi
             sleep 1
         done
-        $AGENT_READY || err "Lokaler MSM Agent ist nicht erreichbar. Prüfe: journalctl -u msm-agent -n 50"
+        $PANEL_READY || err "Panel-Healthcheck fehlgeschlagen. Prüfe: journalctl -u msm-panel -n 50"
+        if $DRAIN_ENABLED_BY_UPDATER; then
+            rm -f "$DRAIN_FLAG_FILE" 2>/dev/null || true
+            DRAIN_ENABLED_BY_UPDATER=false
+        fi
+    else
+        if [[ -f /etc/systemd/system/msm-worker.service ]] \
+            && systemctl is-enabled --quiet msm-worker.service 2>/dev/null \
+            && ! systemctl is-active --quiet msm-worker.service 2>/dev/null; then
+            systemctl start msm-worker.service \
+                || err "Hintergrund-Worker (msm-worker) konnte nicht gestartet werden."
+            ok "Hintergrund-Worker gestartet (msm-worker)"
+        fi
+        ok "Backend unverändert — Panel und Worker laufen ohne Neustart weiter."
     fi
 
-    systemctl restart msm-panel.service || err "Panel konnte nicht gestartet werden."
-    if [[ -f /etc/systemd/system/msm-worker.service ]] && systemctl is-enabled --quiet msm-worker.service 2>/dev/null; then
-        systemctl restart msm-worker.service \
-            || systemctl start msm-worker.service \
-            || err "Hintergrund-Worker (msm-worker) konnte nicht gestartet werden."
-        ok "Hintergrund-Worker aktiv (msm-worker)"
+    swap_frontend_dist
+
+    if systemctl is-active --quiet caddy 2>/dev/null; then
+        systemctl reload caddy 2>/dev/null \
+            || systemctl restart caddy 2>/dev/null \
+            || err "Caddy konnte nicht neu geladen werden."
+    else
+        systemctl restart caddy 2>/dev/null \
+            || err "Caddy konnte nicht neu gestartet werden."
     fi
-    PANEL_READY=false
-    for _attempt in $(seq 1 30); do
-        if curl -fsS --max-time 2 http://127.0.0.1:8000/api/health >/dev/null 2>&1; then
-            PANEL_READY=true
-            break
-        fi
-        sleep 1
-    done
-    $PANEL_READY || err "Panel-Healthcheck fehlgeschlagen. Prüfe: journalctl -u msm-panel -n 50"
-    systemctl restart caddy 2>/dev/null \
-        || err "Caddy konnte nicht neu gestartet werden."
     systemctl is-active --quiet caddy \
         || err "Caddy ist nach dem Update nicht aktiv."
 else

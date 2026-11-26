@@ -51,6 +51,16 @@ from games.base import (
     run_steamcmd_workshop_download_batch,
 )
 from games.curseforge_installer import install_curseforge_mods
+from games.modrinth_installer import (
+    cleanup_modrinth_mod,
+    install_modrinth_mods,
+    sync_modrinth_enabled_state,
+)
+from games.thunderstore_installer import (
+    cleanup_thunderstore_mod,
+    install_thunderstore_mods,
+    sync_thunderstore_enabled_state,
+)
 from games.ini_utils import set_ini_value
 from games.steamcmd_runner import cleanup_workshop_state
 from services.docker_service import PortPublish, VolumeBind
@@ -397,6 +407,8 @@ class BlueprintPlugin(GamePlugin):
         self.supports_mods = bp_mods.supportsMods
         self.supports_steam_workshop = bp_mods.supportsSteamWorkshop
         self.supports_curseforge = bp_mods.supportsCurseForge
+        self.supports_modrinth = bp_mods.supportsModrinth
+        self.supports_thunderstore = bp_mods.supportsThunderstore
 
     # ─ Identitaet ─────────────────────────────────────────────────────────
 
@@ -1068,19 +1080,24 @@ class BlueprintPlugin(GamePlugin):
         if not self.supports_mods:
             return None
         bp_mods = self._blueprint.effective_mods()
-        provider = "none"
-        if bp_mods.supportsCurseForge:
-            provider = "curseforge"
-        elif bp_mods.supportsSteamWorkshop:
-            provider = "steam"
+        providers = bp_mods.available_providers()
+        provider = providers[0] if providers else "none"
         return {
             "provider": provider,
+            "providers": providers,
             "supports_steam_workshop": bp_mods.supportsSteamWorkshop,
             "supports_curseforge": bp_mods.supportsCurseForge,
+            "supports_modrinth": bp_mods.supportsModrinth,
+            "supports_thunderstore": bp_mods.supportsThunderstore,
             "workshop_id": bp_mods.workshopAppId,
             "curseforge_game_id": bp_mods.curseforgeGameId,
             "curseforge_class_id": bp_mods.curseforgeClassId,
             "curseforge_install_path": bp_mods.curseforgeInstallPath,
+            "modrinth_project_types": list(bp_mods.modrinthProjectTypes),
+            "modrinth_loaders": list(bp_mods.modrinthLoaders),
+            "modrinth_install_path": bp_mods.modrinthInstallPath,
+            "thunderstore_community": bp_mods.thunderstoreCommunity,
+            "thunderstore_install_path": bp_mods.thunderstoreInstallPath,
             "dependency_resolution": False,
             "required_tags": bp_mods.filterTags,
         }
@@ -1091,20 +1108,18 @@ class BlueprintPlugin(GamePlugin):
     def _install_curseforge_mods(self, server, workshop_ids: list[str]) -> dict:
         return install_curseforge_mods(self, server, workshop_ids)
 
-    def install_mods(self, server, workshop_ids: list[str]) -> dict:
-        bp_mods = self._blueprint.effective_mods()
-        if not bp_mods.supportsMods:
-            return {"error": "Mods nicht in dieser Blueprint aktiviert"}
-        if bp_mods.supportsCurseForge:
-            return self._install_curseforge_mods(server, workshop_ids)
+    def _install_modrinth_mods(self, server, workshop_ids: list[str]) -> dict:
+        return install_modrinth_mods(self, server, workshop_ids)
+
+    def _install_thunderstore_mods(self, server, workshop_ids: list[str]) -> dict:
+        return install_thunderstore_mods(self, server, workshop_ids)
+
+    def _install_steam_workshop_mods(self, server, bp_mods, clean_ids: list[str]) -> dict:
         if not bp_mods.supportsSteamWorkshop or not bp_mods.workshopAppId:
             return {"error": "Steam Workshop nicht in dieser Blueprint aktiviert"}
         workshop_app_id = bp_mods.workshopAppId
         server_id = server.id
         install_dir = server.install_dir
-        clean_ids = [str(wid).strip() for wid in workshop_ids if str(wid).strip()]
-        if not clean_ids:
-            return {"ok": True, "applied": 0, "items": {}}
         requires_login = False
         if self._blueprint.source.type == BlueprintSourceType.STEAM and self._blueprint.source.steam:
             requires_login = self._blueprint.source.steam.requiresLogin
@@ -1160,6 +1175,68 @@ class BlueprintPlugin(GamePlugin):
         thread.start()
         thread.join()
         return result
+
+    def install_mods(self, server, workshop_ids: list[str]) -> dict:
+        bp_mods = self._blueprint.effective_mods()
+        if not bp_mods.supportsMods:
+            return {"error": "Mods nicht in dieser Blueprint aktiviert"}
+        clean_ids = [str(wid).strip() for wid in workshop_ids if str(wid).strip()]
+        if not clean_ids:
+            return {"ok": True, "applied": 0, "items": {}}
+
+        modrinth_ids = [wid for wid in clean_ids if wid.lower().startswith("modrinth:")]
+        thunderstore_ids = [wid for wid in clean_ids if wid.lower().startswith("thunderstore:")]
+        default_ids = [wid for wid in clean_ids if not wid.lower().startswith(("modrinth:", "thunderstore:"))]
+
+        groups: list[tuple[str, list[str]]] = []
+        if modrinth_ids:
+            groups.append(("modrinth", modrinth_ids))
+        if thunderstore_ids:
+            groups.append(("thunderstore", thunderstore_ids))
+        if default_ids:
+            groups.append(("default", default_ids))
+
+        def _dispatch(kind: str, ids: list[str]) -> dict:
+            if kind == "modrinth":
+                if not bp_mods.supportsModrinth:
+                    return {"ok": False, "error": "Modrinth nicht in dieser Blueprint aktiviert", "items": {wid: {"ok": False, "error": "Modrinth nicht aktiviert"} for wid in ids}}
+                res = self._install_modrinth_mods(server, ids)
+                self.update_modlist(server)
+                return res
+            if kind == "thunderstore":
+                if not bp_mods.supportsThunderstore:
+                    return {"ok": False, "error": "Thunderstore nicht in dieser Blueprint aktiviert", "items": {wid: {"ok": False, "error": "Thunderstore nicht aktiviert"} for wid in ids}}
+                res = self._install_thunderstore_mods(server, ids)
+                self.update_modlist(server)
+                return res
+            if bp_mods.supportsCurseForge:
+                return self._install_curseforge_mods(server, ids)
+            return self._install_steam_workshop_mods(server, bp_mods, ids)
+
+        if len(groups) == 1:
+            return _dispatch(groups[0][0], groups[0][1])
+
+        merged_items: dict = {}
+        merged_errors: list[str] = []
+        merged_applied = 0
+        for kind, ids in groups:
+            res = _dispatch(kind, ids)
+            if isinstance(res, dict):
+                merged_items.update(res.get("items") or {})
+                merged_applied += int(res.get("applied") or 0)
+                if res.get("errors"):
+                    merged_errors.extend(str(e) for e in res["errors"])
+                elif res.get("error"):
+                    merged_errors.append(str(res["error"]))
+        out: dict = {
+            "ok": len(merged_errors) == 0,
+            "applied": merged_applied,
+            "errors": merged_errors,
+            "items": merged_items,
+        }
+        if merged_errors:
+            out["error"] = "; ".join(merged_errors)
+        return out
 
     def format_modlist_lines(self, server, mods: list) -> list[str]:
         bp_mods = self._blueprint.effective_mods()
@@ -1373,44 +1450,59 @@ class BlueprintPlugin(GamePlugin):
         return {"ok": not errors, "synced": synced, "errors": errors}
 
     def update_modlist(self, server) -> None:
-        """Aktualisiert Mod-Status (z. B. .disabled für dateibasierte CurseForge-Mods oder Modlist-Dateien)."""
+        """Aktualisiert Mod-Status (z. B. .disabled für dateibasierte Mods oder Modlist-Dateien)."""
         bp_mods = self._blueprint.effective_mods()
-        if bp_mods.supportsCurseForge and bp_mods.modInjection != "startupArg":
+        has_file_based = (
+            bp_mods.supportsCurseForge
+            or bp_mods.supportsModrinth
+            or bp_mods.supportsThunderstore
+        )
+        if has_file_based and bp_mods.modInjection != "startupArg":
             from services.node_capacity import should_delegate_node_fs_to_agent
 
-            if should_delegate_node_fs_to_agent(getattr(server, "node", None)):
-                return
-            target_dir_rel = bp_mods.curseforgeInstallPath or "mods"
-            from database import SessionLocal
-            from models import Mod
-            db = SessionLocal()
-            try:
-                mods = db.query(Mod).filter(Mod.server_id == server.id).all()
-                base = Path(server.install_dir).resolve()
-                target_dir = (base / target_dir_rel).resolve()
+            if not should_delegate_node_fs_to_agent(getattr(server, "node", None)):
+                target_dir_rel = bp_mods.curseforgeInstallPath or "mods"
+                from database import SessionLocal
+                from models import Mod
+                db = SessionLocal()
                 try:
-                    target_dir.relative_to(base)
-                    if target_dir.exists() and target_dir.is_dir():
+                    mods = db.query(Mod).filter(Mod.server_id == server.id).all()
+                    base = Path(server.install_dir).resolve()
+                    cf_target_dir = (base / target_dir_rel).resolve()
+                    try:
+                        cf_target_dir.relative_to(base)
                         for mod in mods:
-                            wid = str(mod.workshop_id)
-                            matches = list(target_dir.glob(f"*{wid}*"))
-                            for p in matches:
-                                if not p.is_file():
-                                    continue
-                                if mod.enabled and p.name.endswith(".disabled"):
-                                    new_name = p.name[:-9]
-                                    p.rename(p.parent / new_name)
-                                elif not mod.enabled and not p.name.endswith(".disabled"):
-                                    p.rename(p.parent / f"{p.name}.disabled")
-                except Exception as exc:
-                    logger.warning("Fehler beim Synchronisieren des CurseForge-Mod-Status für Server %s: %s", server.id, exc)
-            finally:
-                db.close()
-            return
+                            wid = str(mod.workshop_id or "")
+                            if wid.lower().startswith("modrinth:"):
+                                sync_modrinth_enabled_state(base, wid, bool(mod.enabled))
+                            elif wid.lower().startswith("thunderstore:"):
+                                sync_thunderstore_enabled_state(base, wid, bool(mod.enabled))
+                            elif bp_mods.supportsCurseForge and cf_target_dir.exists() and cf_target_dir.is_dir():
+                                matches = list(cf_target_dir.glob(f"*{wid}*"))
+                                for p in matches:
+                                    if not p.is_file():
+                                        continue
+                                    if mod.enabled and p.name.endswith(".disabled"):
+                                        new_name = p.name[:-9]
+                                        p.rename(p.parent / new_name)
+                                    elif not mod.enabled and not p.name.endswith(".disabled"):
+                                        p.rename(p.parent / f"{p.name}.disabled")
+                    except Exception as exc:
+                        logger.warning("Fehler beim Synchronisieren des Mod-Status für Server %s: %s", server.id, exc)
+                finally:
+                    db.close()
+            if not bp_mods.supportsSteamWorkshop:
+                return
 
         super().update_modlist(server)
 
     def cleanup_mod(self, server, workshop_id: str) -> dict:
+        wid_lower = str(workshop_id or "").lower()
+        if wid_lower.startswith("modrinth:"):
+            return cleanup_modrinth_mod(server, workshop_id)
+        if wid_lower.startswith("thunderstore:"):
+            return cleanup_thunderstore_mod(server, workshop_id)
+
         bp_mods = self._blueprint.effective_mods()
         if bp_mods.supportsCurseForge:
             target_dir_rel = bp_mods.curseforgeInstallPath or "mods"

@@ -52,6 +52,7 @@ from services import (
     ai_reasoning,
     ai_run_broker,
     ai_run_service,
+    drain_service,
 )
 from services.ai_redaction import redact_sensitive_text
 # Das Fenster auf einen Lauf kommt vom Vermittler, die Arbeit von der Schleife.
@@ -864,6 +865,8 @@ async def stream_message(
             )
         else:
             raise HTTPException(status_code=409, detail="AI-Anfrage ist bereits aktiv oder fehlgeschlagen")
+
+    drain_service.require_not_draining()
 
     conversation = None
     if payload.conversation_id:

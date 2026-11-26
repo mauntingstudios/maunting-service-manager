@@ -31,6 +31,7 @@ import { oeffneBrowser } from '@/desktop/tauri'
 import { toast } from '@/stores/toastStore'
 import { confirm } from '@/stores/confirmStore'
 import { getModInstallPresentation, hasActiveModInstall } from '@/services/modInstallStatus'
+import type { ModProvider } from '@/types'
 import {
   ActionMenu,
   Badge,
@@ -200,9 +201,15 @@ interface ModManagerProps {
     mod_support?: boolean
     supports_steam_workshop?: boolean
     supports_curseforge?: boolean
-    mod_provider?: 'steam' | 'curseforge' | null
+    supports_modrinth?: boolean
+    supports_thunderstore?: boolean
+    mod_providers?: ModProvider[]
+    mod_provider?: ModProvider | null
     curseforge_game_id?: string | null
     curseforge_class_id?: string | null
+    modrinth_project_types?: string[]
+    modrinth_loaders?: string[]
+    thunderstore_community?: string | null
     supports_modpacks?: boolean
   }
 }
@@ -247,10 +254,50 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
     targetId: number
   } | null>(null)
 
-  const isCurseForge = Boolean(gameInfo?.supports_curseforge || gameInfo?.mod_provider === 'curseforge')
-  const supportsModpacks = isCurseForge && Boolean(gameInfo?.supports_modpacks ?? true)
-  const providerLabel = isCurseForge ? 'CurseForge' : 'Steam Workshop'
-  const ansehenText = isCurseForge ? t('mods.viewInCurseForge', { defaultValue: 'Auf CurseForge anzeigen' }) : t('mods.viewInWorkshop')
+  const availableProviders: ModProvider[] = (() => {
+    if (gameInfo?.mod_providers && gameInfo.mod_providers.length > 0) {
+      return gameInfo.mod_providers
+    }
+    const list: ModProvider[] = []
+    if (gameInfo?.supports_curseforge || gameInfo?.mod_provider === 'curseforge') list.push('curseforge')
+    if (gameInfo?.supports_modrinth || gameInfo?.mod_provider === 'modrinth') list.push('modrinth')
+    if (gameInfo?.supports_steam_workshop || gameInfo?.mod_provider === 'steam') list.push('steam')
+    if (gameInfo?.supports_thunderstore || gameInfo?.mod_provider === 'thunderstore') list.push('thunderstore')
+    return list.length > 0 ? list : ['steam']
+  })()
+  const availableProvidersKey = availableProviders.join(',')
+  const [activeProvider, setActiveProvider] = useState<ModProvider>(availableProviders[0])
+
+  useEffect(() => {
+    if (!availableProviders.includes(activeProvider)) {
+      setActiveProvider(availableProviders[0])
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [serverId, availableProvidersKey])
+
+  const isCurseForge = activeProvider === 'curseforge'
+  const isModrinth = activeProvider === 'modrinth'
+  const isThunderstore = activeProvider === 'thunderstore'
+  const isSteam = activeProvider === 'steam'
+  const modrinthProjectTypes = gameInfo?.modrinth_project_types ?? []
+  const supportsModpacks =
+    (isCurseForge && Boolean(gameInfo?.supports_modpacks ?? true)) ||
+    (isModrinth && modrinthProjectTypes.includes('modpack')) ||
+    isThunderstore
+  const providerLabelMap: Record<ModProvider, string> = {
+    curseforge: 'CurseForge',
+    modrinth: 'Modrinth',
+    steam: 'Steam Workshop',
+    thunderstore: 'Thunderstore',
+  }
+  const providerLabel = providerLabelMap[activeProvider]
+  const ansehenText = isCurseForge
+    ? t('mods.viewInCurseForge', { defaultValue: 'Auf CurseForge anzeigen' })
+    : isModrinth
+      ? t('mods.viewInModrinth', { defaultValue: 'Auf Modrinth anzeigen' })
+      : isThunderstore
+        ? t('mods.viewInThunderstore', { defaultValue: 'Auf Thunderstore anzeigen' })
+        : t('mods.viewInWorkshop')
 
   // Workshop / CurseForge Browser (inline section)
   const [steamQuery, setSteamQuery] = useState('')
@@ -382,7 +429,7 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
           if (!wid) continue
           const existing = next[wid]
           const merged: InstalledModMeta = {
-            provider: existing?.provider ?? (isCurseForge ? 'curseforge' : 'steam'),
+            provider: existing?.provider ?? activeProvider,
             title: item?.title || existing?.title,
             description: item?.description || existing?.description,
             creator: item?.creator || existing?.creator,
@@ -413,7 +460,7 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
         return changed ? next : prev
       })
     },
-    [isCurseForge],
+    [activeProvider],
   )
 
   useEffect(() => {
@@ -451,11 +498,18 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
 
   useEffect(() => {
     setSelectedGameFilter('')
+    setContentType('all')
     setBrowserCache({})
     setSteamResults([])
     setSearchActive(false)
     setBrowserPage(1)
-    if (!isCurseForge) {
+    if (isModrinth || isThunderstore) {
+      setCurseforgeClasses([])
+      setCurseforgeCategories([])
+      setSteamFilterTags([])
+      return
+    }
+    if (isSteam) {
       setCurseforgeClasses([])
       setCurseforgeCategories([])
       let cancelled = false
@@ -505,7 +559,7 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
     return () => {
       cancelled = true
     }
-  }, [isCurseForge, serverId])
+  }, [activeProvider, isModrinth, isSteam, isThunderstore, serverId])
 
   useEffect(() => {
     if (searchActive && steamQuery.trim()) {
@@ -514,7 +568,7 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
       void loadBrowserTab(browserTab, 1, false, contentType, steamContentType, selectedGameFilter)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [serverId, browserTab, isCurseForge, contentType, steamContentType, selectedGameFilter])
+  }, [serverId, browserTab, activeProvider, contentType, steamContentType, selectedGameFilter])
 
   const buildCurseForgeClassParam = (typeFilter: string): string => {
     if (!isCurseForge) return ''
@@ -537,7 +591,7 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
     typeFilter: string,
     steamType: 'mods' | 'collections',
     gameFilter: string,
-  ) => `${serverId}::${tab}::${typeFilter}::${steamType}::${gameFilter}::p${page}`
+  ) => `${serverId}::${activeProvider}::${tab}::${typeFilter}::${steamType}::${gameFilter}::p${page}`
 
   const buildGameFilterParam = (gameFilter: string, steamType: 'mods' | 'collections'): string => {
     if (!gameFilter) return ''
@@ -566,7 +620,24 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
   const resolveModPageUrl = (workshopId: string, title?: string | null, directUrl?: string | null): string => {
     if (directUrl) return directUrl
     if (modMetadata[workshopId]?.direct_url) return modMetadata[workshopId].direct_url
-    if (isCurseForge) {
+    if (workshopId.toLowerCase().startsWith('modrinth:')) {
+      return `https://modrinth.com/project/${encodeURIComponent(workshopId.slice(9))}`
+    }
+    if (workshopId.toLowerCase().startsWith('thunderstore:')) {
+      const slug = workshopId.slice(13)
+      const dashIdx = slug.indexOf('-')
+      const community = gameInfo?.thunderstore_community || 'valheim'
+      if (dashIdx > 0) {
+        return `https://thunderstore.io/c/${community}/p/${slug.slice(0, dashIdx)}/${slug.slice(dashIdx + 1)}/`
+      }
+      return `https://thunderstore.io/c/${community}/`
+    }
+    const serverSupportsCurseForge = Boolean(
+      gameInfo?.supports_curseforge ||
+        gameInfo?.mod_provider === 'curseforge' ||
+        modMetadata[workshopId]?.provider === 'curseforge',
+    )
+    if (serverSupportsCurseForge) {
       return (
         curseforgeUrlMap[workshopId] ||
         `https://www.curseforge.com/search?search=${encodeURIComponent(title || workshopId)}`
@@ -600,15 +671,31 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
     const reqId = ++browserRequestIdRef.current
     setBrowserLoading(true)
     try {
-      const classParam = buildCurseForgeClassParam(typeFilter)
-      const steamTypeParam = !isCurseForge && steamType === 'collections' ? '&content_type=collections' : ''
-      const filterParam = buildGameFilterParam(gameFilter, steamType)
-      const endpoint = isCurseForge
-        ? `/curseforge/popular?server_id=${serverId}&sort=${tab}&limit=${BROWSER_PAGE_SIZE}&page=${page}${classParam}${filterParam}`
-        : `/steam/workshop/popular?server_id=${serverId}&sort=${tab}&limit=${BROWSER_PAGE_SIZE}&page=${page}${steamTypeParam}${filterParam}`
-      const data = await api<SteamMod[]>(endpoint)
+      let items: SteamMod[] = []
+      if (isModrinth) {
+        const mrSort = tab === 'newest' ? 'newest' : tab === 'updated' ? 'updated' : 'downloads'
+        const typeParam = typeFilter && typeFilter !== 'all' ? `&project_type=${encodeURIComponent(typeFilter)}` : ''
+        const data = await api<{ mods?: SteamMod[] }>(
+          `/modrinth/servers/${serverId}/search?q=&page=${page}&per_page=${BROWSER_PAGE_SIZE}&sort=${mrSort}${typeParam}`,
+        )
+        items = Array.isArray(data?.mods) ? data.mods : []
+      } else if (isThunderstore) {
+        const tsSort = tab === 'newest' ? 'newest' : tab === 'updated' ? 'updated' : 'downloads'
+        const data = await api<{ mods?: SteamMod[] }>(
+          `/thunderstore/servers/${serverId}/search?q=&page=${page}&per_page=${BROWSER_PAGE_SIZE}&sort=${tsSort}`,
+        )
+        items = Array.isArray(data?.mods) ? data.mods : []
+      } else {
+        const classParam = buildCurseForgeClassParam(typeFilter)
+        const steamTypeParam = isSteam && steamType === 'collections' ? '&content_type=collections' : ''
+        const filterParam = buildGameFilterParam(gameFilter, steamType)
+        const endpoint = isCurseForge
+          ? `/curseforge/popular?server_id=${serverId}&sort=${tab}&limit=${BROWSER_PAGE_SIZE}&page=${page}${classParam}${filterParam}`
+          : `/steam/workshop/popular?server_id=${serverId}&sort=${tab}&limit=${BROWSER_PAGE_SIZE}&page=${page}${steamTypeParam}${filterParam}`
+        const data = await api<SteamMod[]>(endpoint)
+        items = Array.isArray(data) ? data : []
+      }
       if (reqId !== browserRequestIdRef.current) return
-      const items = Array.isArray(data) ? data : []
       cacheCurseForgeUrls(items)
       cacheModMetadata(items)
       setBrowserPage(page)
@@ -686,18 +773,42 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
     setSteamLoading(true)
     try {
       const q = encodeURIComponent(steamQuery.trim())
-      const classParam = buildCurseForgeClassParam(typeFilter)
-      const steamTypeParam = !isCurseForge && steamType === 'collections' ? '&content_type=collections' : ''
-      const filterParam = buildGameFilterParam(gameFilter, steamType)
-      const endpoint = isCurseForge
-        ? `/curseforge/search?server_id=${serverId}&query=${q}&per_page=${BROWSER_PAGE_SIZE}&page=${page}&sort=${sortTab}${classParam}${filterParam}`
-        : `/steam/workshop/search?server_id=${serverId}&query=${q}&per_page=${BROWSER_PAGE_SIZE}&page=${page}&sort=${sortTab}${steamTypeParam}${filterParam}`
-      const data = await api<SteamMod[]>(endpoint)
-      cacheCurseForgeUrls(data)
-      cacheModMetadata(data)
-      setSteamResults((prev) => (append ? [...prev, ...data] : data))
+      let items: SteamMod[] = []
+      if (isModrinth) {
+        const mrSort =
+          sortTab === 'newest'
+            ? 'newest'
+            : sortTab === 'updated'
+              ? 'updated'
+              : sortTab === 'popular'
+                ? 'downloads'
+                : 'relevance'
+        const typeParam = typeFilter && typeFilter !== 'all' ? `&project_type=${encodeURIComponent(typeFilter)}` : ''
+        const res = await api<{ mods?: SteamMod[] }>(
+          `/modrinth/servers/${serverId}/search?q=${q}&page=${page}&per_page=${BROWSER_PAGE_SIZE}&sort=${mrSort}${typeParam}`,
+        )
+        items = Array.isArray(res?.mods) ? res.mods : []
+      } else if (isThunderstore) {
+        const tsSort = sortTab === 'newest' ? 'newest' : sortTab === 'updated' ? 'updated' : 'downloads'
+        const res = await api<{ mods?: SteamMod[] }>(
+          `/thunderstore/servers/${serverId}/search?q=${q}&page=${page}&per_page=${BROWSER_PAGE_SIZE}&sort=${tsSort}`,
+        )
+        items = Array.isArray(res?.mods) ? res.mods : []
+      } else {
+        const classParam = buildCurseForgeClassParam(typeFilter)
+        const steamTypeParam = isSteam && steamType === 'collections' ? '&content_type=collections' : ''
+        const filterParam = buildGameFilterParam(gameFilter, steamType)
+        const endpoint = isCurseForge
+          ? `/curseforge/search?server_id=${serverId}&query=${q}&per_page=${BROWSER_PAGE_SIZE}&page=${page}&sort=${sortTab}${classParam}${filterParam}`
+          : `/steam/workshop/search?server_id=${serverId}&query=${q}&per_page=${BROWSER_PAGE_SIZE}&page=${page}&sort=${sortTab}${steamTypeParam}${filterParam}`
+        const res = await api<SteamMod[]>(endpoint)
+        items = Array.isArray(res) ? res : []
+      }
+      cacheCurseForgeUrls(items)
+      cacheModMetadata(items)
+      setSteamResults((prev) => (append ? [...prev, ...items] : items))
       setSteamPage(page)
-      setSteamHasMore(data.length === BROWSER_PAGE_SIZE)
+      setSteamHasMore(items.length === BROWSER_PAGE_SIZE)
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : t('mods.steamSearchError'))
     } finally {
@@ -935,11 +1046,18 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
       let resolvedDeps: SteamMod[] = []
       let unavailableIds: string[] = []
 
-      if (/^\d{1,20}$/.test(cleanId)) {
+      if (cleanId.toLowerCase().startsWith('modrinth:') || cleanId.toLowerCase().startsWith('thunderstore:') || /^\d{1,20}$/.test(cleanId)) {
         try {
-          const endpoint = isCurseForge
-            ? `/curseforge/mod/${cleanId}/dependencies?server_id=${serverId}`
-            : `/steam/workshop/mod/${cleanId}/dependencies?server_id=${serverId}`
+          const useCurseForgeForNumeric = Boolean(
+            gameInfo?.supports_curseforge || gameInfo?.mod_provider === 'curseforge',
+          )
+          const endpoint = cleanId.toLowerCase().startsWith('modrinth:')
+            ? `/modrinth/servers/${serverId}/mods/${encodeURIComponent(cleanId)}/dependencies`
+            : cleanId.toLowerCase().startsWith('thunderstore:')
+              ? `/thunderstore/servers/${serverId}/mods/${encodeURIComponent(cleanId)}/dependencies`
+              : useCurseForgeForNumeric
+                ? `/curseforge/mod/${cleanId}/dependencies?server_id=${serverId}`
+                : `/steam/workshop/mod/${cleanId}/dependencies?server_id=${serverId}`
           const depData = await api<{
             mod?: SteamMod
             dependencies?: SteamMod[]
@@ -1944,8 +2062,8 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
           (installedRecord.install_status === 'pending' && installedRecord.install_action === 'update')),
     )
     const isRowInstalling = Boolean(installedRecord && hasActiveModInstall(installedRecord))
-    const isCollection = !isCurseForge && (mod.item_type === 'collection' || steamContentType === 'collections')
-    const isModpack = isCurseForge && Boolean(mod.is_modpack || mod.item_type === 'modpack')
+    const isCollection = isSteam && (mod.item_type === 'collection' || steamContentType === 'collections')
+    const isModpack = (isCurseForge || isModrinth || isThunderstore) && Boolean(mod.is_modpack || mod.item_type === 'modpack')
     const displayTags = (mod.tags ?? []).slice(0, 2)
     const isListMode = viewMode === 'list'
 
@@ -2265,15 +2383,52 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
           className={`space-y-4 min-w-0 ${mobileSection === 'library' ? 'block' : 'hidden lg:block'}`}
           aria-label={t('mods.libraryTitle')}
         >
-          {/* Bibliotheks-Kopf mit Provider-Inhaltstypen */}
+          {/* Bibliotheks-Kopf mit Quellen-Umschalter und Provider-Inhaltstypen */}
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-            <h2 className="font-headline text-body-lg text-on-surface inline-flex items-center gap-2">
-              <Globe className="w-4 h-4 text-secondary shrink-0" />
-              <span>{t('mods.libraryTitle')}</span>
-            </h2>
+            <div className="flex items-center gap-3 flex-wrap">
+              <h2 className="font-headline text-body-lg text-on-surface inline-flex items-center gap-2">
+                <Globe className="w-4 h-4 text-secondary shrink-0" />
+                <span>{t('mods.libraryTitle')}</span>
+              </h2>
+
+              {availableProviders.length > 1 && (
+                <div
+                  role="tablist"
+                  aria-label={t('mods.providerSwitcher')}
+                  className="inline-flex gap-1 bg-surface-container rounded-lg p-1 border border-outline-variant/25"
+                >
+                  {availableProviders.map((prov) => {
+                    const selected = activeProvider === prov
+                    return (
+                      <button
+                        key={prov}
+                        type="button"
+                        role="tab"
+                        aria-selected={selected}
+                        onClick={() => {
+                          setSelectedGameFilter('')
+                          setContentType('all')
+                          setSearchActive(false)
+                          setSteamResults([])
+                          setBrowserPage(1)
+                          setActiveProvider(prov)
+                        }}
+                        className={`min-h-9 sm:min-h-7 px-3 py-1 rounded-md text-xs font-body-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+                          selected
+                            ? 'bg-surface text-primary shadow-sm font-semibold'
+                            : 'text-on-surface-variant hover:text-on-surface'
+                        }`}
+                      >
+                        {providerLabelMap[prov]}
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
 
             <div className="flex items-center gap-2 flex-wrap">
-              {!isCurseForge && (
+              {isSteam && (
                 <div className="flex gap-1 bg-surface-container rounded-lg p-1 border border-outline-variant/25">
                   <button
                     type="button"
@@ -2298,6 +2453,44 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
                     <Layers className="w-3.5 h-3.5 shrink-0" />
                     {t('mods.tabCollections')}
                   </button>
+                </div>
+              )}
+
+              {isModrinth && modrinthProjectTypes.length > 1 && (
+                <div className="flex gap-1 bg-surface-container rounded-lg p-1 border border-outline-variant/25 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={() => handleContentTypeChange('all')}
+                    className={`min-h-9 sm:min-h-7 px-3.5 py-1 rounded-md text-xs font-body-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+                      contentType === 'all'
+                        ? 'bg-surface text-primary shadow-sm font-semibold'
+                        : 'text-on-surface-variant hover:text-on-surface'
+                    }`}
+                  >
+                    {t('mods.tabAll')}
+                  </button>
+                  {modrinthProjectTypes.map((pt) => (
+                    <button
+                      key={pt}
+                      type="button"
+                      onClick={() => handleContentTypeChange(pt)}
+                      className={`min-h-9 sm:min-h-7 px-3.5 py-1 rounded-md text-xs font-body-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+                        contentType === pt
+                          ? 'bg-surface text-primary shadow-sm font-semibold'
+                          : 'text-on-surface-variant hover:text-on-surface'
+                      }`}
+                    >
+                      {pt === 'mod'
+                        ? t('mods.typeMods')
+                        : pt === 'modpack'
+                          ? t('mods.typeModpacks')
+                          : pt === 'plugin'
+                            ? t('mods.typePlugins')
+                            : pt === 'datapack'
+                              ? t('mods.typeDatapacks')
+                              : pt}
+                    </button>
+                  ))}
                 </div>
               )}
 
@@ -2396,9 +2589,13 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
                     ? supportsModpacks
                       ? t('mods.searchPlaceholderCurseForge', { defaultValue: 'CurseForge Mods & Modpacks suchen …' })
                       : t('mods.searchPlaceholderCurseForgeModsOnly', { defaultValue: 'CurseForge Mods suchen …' })
-                    : steamContentType === 'collections'
-                      ? t('mods.searchPlaceholderCollections')
-                      : t('mods.librarySearchPlaceholder')
+                    : isModrinth
+                      ? t('mods.searchPlaceholderModrinth')
+                      : isThunderstore
+                        ? t('mods.searchPlaceholderThunderstore')
+                        : steamContentType === 'collections'
+                          ? t('mods.searchPlaceholderCollections')
+                          : t('mods.librarySearchPlaceholder')
                 }
                 value={steamQuery}
                 onChange={(e) => setSteamQuery(e.target.value)}

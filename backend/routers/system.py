@@ -8,6 +8,7 @@ import psutil
 from sqlalchemy import text
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from config import settings
@@ -15,7 +16,7 @@ from database import SessionLocal, get_db
 from dependencies import get_current_user, get_optional_user, require_global, verify_csrf
 from games import list_game_info
 from models import User
-from services import network_interfaces_service
+from services import drain_service, network_interfaces_service
 from services.panel_settings_service import PanelSettingsService
 
 router = APIRouter(prefix="/api/system", tags=["system"])
@@ -485,5 +486,46 @@ def incident_alerts(
         }
         for inc in filtered_incidents
     ]
+
+
+class DrainRequest(BaseModel):
+    reason: str = Field(default="panel_update", max_length=64)
+    ttl_seconds: int = Field(
+        default=drain_service.DEFAULT_DRAIN_TTL_SECONDS,
+        ge=10,
+        le=drain_service.MAX_DRAIN_TTL_SECONDS,
+    )
+
+
+@router.get("/drain-status")
+def get_drain_status(
+    db: Session = Depends(get_db),
+    _: User = Depends(require_global("panel.settings.read")),
+) -> dict:
+    """Liefert Drain-Status sowie Anzahl aktiver KI-Laeufe und Sandbox-Builds."""
+    return drain_service.get_drain_status(db)
+
+
+@router.post("/drain")
+def enable_drain_mode(
+    req: DrainRequest | None = None,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_global("panel.settings.write")),
+    __: None = Depends(verify_csrf),
+) -> dict:
+    """Aktiviert den Graceful-Drain-Modus vor einem Panel-Neustart."""
+    payload = req or DrainRequest()
+    state = drain_service.enable_drain(reason=payload.reason, ttl_seconds=payload.ttl_seconds)
+    return {**state, **drain_service.count_active_workloads(db)}
+
+
+@router.delete("/drain")
+def disable_drain_mode(
+    _: User = Depends(require_global("panel.settings.write")),
+    __: None = Depends(verify_csrf),
+) -> dict:
+    """Beendet den Graceful-Drain-Modus manuell."""
+    return drain_service.disable_drain()
+
 
 

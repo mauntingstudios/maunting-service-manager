@@ -159,6 +159,96 @@ def _fetch_curseforge_mods_updated(mod_ids: list[str]) -> dict[str, datetime]:
     return results
 
 
+def _fetch_modrinth_mods_updated(mod_ids: list[str]) -> dict[str, datetime]:
+    """Ruft aktualisierte Timestamps fuer Modrinth-Projekte per Batch-Abfrage ab."""
+    from services.modrinth_api_key_service import resolve_key
+    from services.modrinth_service import MODRINTH_API_BASE, MODRINTH_USER_AGENT, strip_modrinth_prefix
+
+    wanted_by_lower = {strip_modrinth_prefix(mid).lower(): mid for mid in mod_ids if mid}
+    raw_ids = list(dict.fromkeys(strip_modrinth_prefix(mid) for mid in mod_ids if mid))
+    if not raw_ids:
+        return {}
+    headers = {"User-Agent": MODRINTH_USER_AGENT, "Accept": "application/json"}
+    token = resolve_key()
+    if token:
+        headers["Authorization"] = token
+    results: dict[str, datetime] = {}
+    try:
+        with httpx.Client(timeout=15.0, headers=headers, follow_redirects=False) as client:
+            resp = client.get(
+                f"{MODRINTH_API_BASE}/projects",
+                params={"ids": json.dumps(raw_ids, separators=(",", ":"))},
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            if isinstance(data, list):
+                for item in data:
+                    if not isinstance(item, dict):
+                        continue
+                    pid = str(item.get("id") or "")
+                    slug = str(item.get("slug") or "")
+                    dt_str = item.get("updated")
+                    if isinstance(dt_str, str) and (pid or slug):
+                        try:
+                            dt = datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
+                            if dt.tzinfo is None:
+                                dt = dt.replace(tzinfo=timezone.utc)
+                            for key in (pid.lower(), slug.lower()):
+                                if key and key in wanted_by_lower:
+                                    results[wanted_by_lower[key]] = dt
+                        except ValueError:
+                            pass
+    except Exception as exc:
+        logger.warning("Modrinth-Details fuer Mods konnten nicht abgerufen werden: %s", type(exc).__name__)
+    return results
+
+
+def _fetch_thunderstore_mods_updated(community: str, mod_ids: list[str]) -> dict[str, datetime]:
+    """Ruft aktualisierte Timestamps fuer Thunderstore-Pakete einer Community ab."""
+    from services.thunderstore_service import (
+        THUNDERSTORE_USER_AGENT,
+        _COMMUNITY_RE,
+        strip_thunderstore_prefix,
+    )
+
+    slug = str(community or "").strip().lower()
+    if not slug or not _COMMUNITY_RE.fullmatch(slug) or not mod_ids:
+        return {}
+    wanted = {strip_thunderstore_prefix(mid).lower(): mid for mid in mod_ids if mid}
+    if not wanted:
+        return {}
+    results: dict[str, datetime] = {}
+    try:
+        url = f"https://thunderstore.io/c/{slug}/api/v1/package/"
+        with httpx.Client(
+            timeout=20.0,
+            headers={"User-Agent": THUNDERSTORE_USER_AGENT, "Accept": "application/json"},
+            follow_redirects=True,
+        ) as client:
+            resp = client.get(url)
+            resp.raise_for_status()
+            data = resp.json()
+            if isinstance(data, list):
+                for item in data:
+                    if not isinstance(item, dict):
+                        continue
+                    full_name = str(item.get("full_name") or "").strip().lower()
+                    if full_name not in wanted:
+                        continue
+                    dt_str = item.get("date_updated")
+                    if isinstance(dt_str, str):
+                        try:
+                            dt = datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
+                            if dt.tzinfo is None:
+                                dt = dt.replace(tzinfo=timezone.utc)
+                            results[wanted[full_name]] = dt
+                        except ValueError:
+                            pass
+    except Exception as exc:
+        logger.warning("Thunderstore-Details fuer %s konnten nicht abgerufen werden: %s", slug, type(exc).__name__)
+    return results
+
+
 def _fetch_steam_mod_updated(app_id: str, workshop_id: str) -> datetime | None:
     """
     Ruft time_updated (als UTC-Datetime) für eine Workshop-Mod über die
@@ -368,8 +458,13 @@ def check_workshop_mod_updates(
     Keine neuen Klassen, keine Pipelines.
     """
     bp_mods = blueprint.effective_mods()
-    if not (bp_mods.supportsSteamWorkshop or bp_mods.supportsCurseForge):
-        logger.debug("Mod-Update-Check übersprungen: kein Steam-Workshop- oder CurseForge-Support im Blueprint.")
+    if not (
+        bp_mods.supportsSteamWorkshop
+        or bp_mods.supportsCurseForge
+        or bp_mods.supportsModrinth
+        or bp_mods.supportsThunderstore
+    ):
+        logger.debug("Mod-Update-Check übersprungen: kein Mod-Provider-Support im Blueprint.")
         return []
 
     from services.node_capacity import agent_server_key, should_delegate_node_fs_to_agent
@@ -402,15 +497,25 @@ def check_workshop_mod_updates(
 
     # Batch-Abfrage aller aktiven Mod-Timestamps vor der Schleife, um N+1 HTTP-Requests zu vermeiden
     mod_ids = [str(m.workshop_id) for m in active_mods if m.workshop_id]
-    if is_curseforge:
-        remote_updates = _fetch_curseforge_mods_updated(mod_ids) if (has_api_key and mod_ids) else {}
-    else:
-        remote_updates = _fetch_steam_mods_updated(workshop_app_id, mod_ids) if (has_api_key and mod_ids) else {}
+    modrinth_ids = [mid for mid in mod_ids if mid.lower().startswith("modrinth:")]
+    thunderstore_ids = [mid for mid in mod_ids if mid.lower().startswith("thunderstore:")]
+    default_ids = [mid for mid in mod_ids if not mid.lower().startswith(("modrinth:", "thunderstore:"))]
+
+    remote_updates: dict[str, datetime] = {}
+    if default_ids:
+        if is_curseforge:
+            remote_updates.update(_fetch_curseforge_mods_updated(default_ids) if has_api_key else {})
+        elif bp_mods.supportsSteamWorkshop:
+            remote_updates.update(_fetch_steam_mods_updated(workshop_app_id, default_ids) if has_api_key else {})
+    if modrinth_ids and bp_mods.supportsModrinth:
+        remote_updates.update(_fetch_modrinth_mods_updated(modrinth_ids))
+    if thunderstore_ids and bp_mods.supportsThunderstore and bp_mods.thunderstoreCommunity:
+        remote_updates.update(_fetch_thunderstore_mods_updated(bp_mods.thunderstoreCommunity, thunderstore_ids))
 
     # Remote-Workshop-Verzeichnisse einmalig als Batch listen statt N Einzelabfragen an den Node-Agenten
     remote_workshop_dirs: set[str] | None = None
     batch_remote_checked = False
-    if client is not None and not is_curseforge and len(mod_ids) > 1:
+    if client is not None and not is_curseforge and bp_mods.supportsSteamWorkshop and len(default_ids) > 1:
         batch_remote_checked = True
         try:
             parent_entries = client.files_list(
@@ -438,7 +543,47 @@ def check_workshop_mod_updates(
         if not workshop_id:
             continue
 
-        if is_curseforge:
+        is_modrinth_item = workshop_id.lower().startswith("modrinth:")
+        is_thunderstore_item = workshop_id.lower().startswith("thunderstore:")
+        item_has_api_key = True if (is_modrinth_item or is_thunderstore_item) else has_api_key
+
+        if is_modrinth_item:
+            from games.modrinth_installer import MODRINTH_META_DIR, read_modrinth_metadata
+            from services.modrinth_service import strip_modrinth_prefix
+
+            if client is not None:
+                try:
+                    entries = client.files_list(server_key, MODRINTH_META_DIR)
+                    expected = f"{strip_modrinth_prefix(workshop_id).lower()}.json"
+                    is_installed = any(str(e.get("name", "")).lower() == expected for e in entries)
+                except Exception:
+                    is_installed = False
+            else:
+                base_dir = Path(server.install_dir).resolve()
+                meta = read_modrinth_metadata(base_dir, workshop_id)
+                if meta and meta.get("files"):
+                    is_installed = any((base_dir / str(f)).exists() for f in meta["files"])
+                else:
+                    is_installed = False
+        elif is_thunderstore_item:
+            from games.thunderstore_installer import THUNDERSTORE_META_DIR, read_thunderstore_metadata
+            from services.thunderstore_service import strip_thunderstore_prefix
+
+            if client is not None:
+                try:
+                    entries = client.files_list(server_key, THUNDERSTORE_META_DIR)
+                    expected = f"{strip_thunderstore_prefix(workshop_id).lower()}.json"
+                    is_installed = any(str(e.get("name", "")).lower() == expected for e in entries)
+                except Exception:
+                    is_installed = False
+            else:
+                base_dir = Path(server.install_dir).resolve()
+                meta = read_thunderstore_metadata(base_dir, workshop_id)
+                if meta and meta.get("files"):
+                    is_installed = any((base_dir / str(f)).exists() for f in meta["files"])
+                else:
+                    is_installed = False
+        elif is_curseforge:
             if bp_mods.curseforgeInstallPath:
                 from services.node_capacity import agent_server_key, should_delegate_node_fs_to_agent
                 from services.node_client import NodeClient
@@ -542,10 +687,10 @@ def check_workshop_mod_updates(
                     remote_updated.isoformat() if remote_updated else "unbekannt",
                     db_updated.isoformat() if db_updated else "None",
                 )
-            elif remote_updated is None and has_api_key:
+            elif remote_updated is None and item_has_api_key:
                 update_status = "unknown"
                 update_reason = "steam_metadata_unavailable"
-            elif remote_updated is None and not has_api_key:
+            elif remote_updated is None and not item_has_api_key:
                 update_status = "unknown"
                 update_reason = "steam_api_key_missing"
 

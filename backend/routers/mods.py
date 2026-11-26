@@ -39,7 +39,9 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/mods", tags=["mods"])
 
 _MOD_ACTIONS = {"install", "update", "reinstall"}
-_WORKSHOP_ID_RE = re.compile(r"^\d{1,20}$")
+_WORKSHOP_ID_RE = re.compile(
+    r"^(?:\d{1,20}|modrinth:[A-Za-z0-9_-]{1,64}|thunderstore:[A-Za-z0-9_.-]{1,100})$"
+)
 _BATCH_CHUNK_SIZE = 25
 try:
     from games.blueprint_plugin import WORKSHOP_BATCH_SIZE as _BATCH_CHUNK_SIZE
@@ -48,7 +50,7 @@ except Exception:
 
 
 class BatchModItem(BaseModel):
-    workshop_id: str = Field(..., min_length=1, max_length=32)
+    workshop_id: str = Field(..., min_length=1, max_length=128)
     name: str | None = Field(default=None, max_length=255)
 
 
@@ -76,7 +78,7 @@ def _safe_error(value: object) -> str:
 
 def _validate_workshop_id(workshop_id: str) -> str:
     value = str(workshop_id or "").strip()
-    if not _WORKSHOP_ID_RE.fullmatch(value):
+    if ".." in value or not _WORKSHOP_ID_RE.fullmatch(value):
         raise HTTPException(status_code=400, detail="errors.invalid_workshop_id")
     return value
 
@@ -821,18 +823,23 @@ async def get_installed_mods_metadata(
     if not mods:
         return {}
 
-    wids = [str(m.workshop_id).strip() for m in mods if m.workshop_id and str(m.workshop_id).strip().isdigit()]
-    if not wids:
+    all_wids = [str(m.workshop_id).strip() for m in mods if m.workshop_id and str(m.workshop_id).strip()]
+    if not all_wids:
         return {}
+
+    modrinth_wids = [wid for wid in all_wids if wid.lower().startswith("modrinth:")]
+    thunderstore_wids = [wid for wid in all_wids if wid.lower().startswith("thunderstore:")]
+    wids = [wid for wid in all_wids if wid.isdigit()]
 
     mod_support = plugin.get_mod_support() or {}
     workshop_appid = mod_support.get("workshop_id")
     cf_game_id = mod_support.get("curseforge_game_id")
+    ts_community = mod_support.get("thunderstore_community")
     provider_hint = str(mod_support.get("provider") or mod_support.get("mod_provider") or "").lower()
     prefer_cf = bool(cf_game_id) and (provider_hint == "curseforge" or not workshop_appid)
 
     metadata: dict[str, dict] = {}
-    if not prefer_cf and (workshop_appid or provider_hint == "steam"):
+    if wids and not prefer_cf and (workshop_appid or provider_hint == "steam"):
         try:
             from services.steam_service import get_steam_service
             steam_service = await get_steam_service()
@@ -856,6 +863,50 @@ async def get_installed_mods_metadata(
                 metadata[str(info.publishedfileid)] = _serialize_mod_metadata(info, "curseforge")
         except Exception as exc:
             logger.debug("CurseForge metadata batch lookup skipped for server %s: %s", server_id, type(exc).__name__)
+
+    if modrinth_wids:
+        try:
+            from services.modrinth_service import get_modrinth_service
+            mr_service = await get_modrinth_service()
+            projects = await mr_service.get_projects(modrinth_wids)
+            for p in projects or []:
+                metadata[p.publishedfileid] = {
+                    "provider": "modrinth",
+                    "title": p.title,
+                    "description": p.description,
+                    "creator": p.creator,
+                    "preview_url": p.icon_url,
+                    "direct_url": p.direct_url,
+                    "file_size": 0,
+                    "file_size_mb": 0,
+                    "tags": list(p.categories),
+                    "subscriptions": p.downloads,
+                    "updated": p.updated.isoformat(),
+                }
+        except Exception as exc:
+            logger.debug("Modrinth metadata batch lookup skipped for server %s: %s", server_id, type(exc).__name__)
+
+    if thunderstore_wids and ts_community:
+        try:
+            from services.thunderstore_service import get_thunderstore_service
+            ts_service = await get_thunderstore_service()
+            packages = await ts_service.get_packages(str(ts_community), thunderstore_wids)
+            for pkg in packages or []:
+                metadata[pkg.publishedfileid] = {
+                    "provider": "thunderstore",
+                    "title": pkg.name,
+                    "description": pkg.description,
+                    "creator": pkg.owner,
+                    "preview_url": pkg.icon_url,
+                    "direct_url": pkg.package_url,
+                    "file_size": pkg.file_size,
+                    "file_size_mb": round(pkg.file_size / (1024 * 1024), 2) if pkg.file_size > 0 else 0,
+                    "tags": list(pkg.categories),
+                    "subscriptions": pkg.downloads,
+                    "updated": pkg.updated.isoformat(),
+                }
+        except Exception as exc:
+            logger.debug("Thunderstore metadata batch lookup skipped for server %s: %s", server_id, type(exc).__name__)
 
     return metadata
 

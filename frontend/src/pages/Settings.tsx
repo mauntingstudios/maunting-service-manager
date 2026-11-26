@@ -13,6 +13,7 @@ import {
   Megaphone,
   MessageSquare,
   Newspaper,
+  Package,
   Shield,
   ShieldAlert,
 } from 'lucide-react'
@@ -22,6 +23,7 @@ import { GeneralTab } from './settings/GeneralTab'
 import { EmailTab } from './settings/EmailTab'
 import { SteamTab } from './settings/SteamTab'
 import { CurseForgeTab } from './settings/CurseForgeTab'
+import { ModrinthTab } from './settings/ModrinthTab'
 import { OAuthTab } from './settings/OAuthTab'
 import { BackupTab } from './settings/BackupTab'
 import { ImprintTab } from './settings/ImprintTab'
@@ -221,6 +223,7 @@ export function Settings() {
   const gameItems: SubTabItem<GameIntegrationSubTab>[] = [
     { id: 'steam', labelKey: 'settings.tabs.steam', icon: Gamepad2, render: () => <SteamTab /> },
     { id: 'curseforge', labelKey: 'settings.tabs.curseforge', icon: Flame, render: () => <CurseForgeTab /> },
+    { id: 'modrinth', labelKey: 'settings.tabs.modrinth', icon: Package, render: () => <ModrinthTab /> },
   ]
 
   const communicationItems: SubTabItem<CommunicationSubTab>[] = [

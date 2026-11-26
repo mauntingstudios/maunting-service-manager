@@ -44,7 +44,7 @@ A blueprint defines an application or server archetype, not a single running ins
 | `runtime` | Target container image, working directory, environment variables, startup command, seed files, config patches, and hardening flags. |
 | `ports` | Declarative network requirements with functional names (`game`, `query`, `rcon`, `voice`, `web`, `peer`, `database`, `custom`) rather than hardcoded port numbers. |
 | `source` | Upstream asset distribution: SteamCMD, HTTPS archive download, prebuilt Docker image, Git repository, or manual upload. |
-| `mods` | Optional integration with CurseForge, Steam Workshop, multi-target mod lists (`modListTargets`), ID resolvers (`modIdResolvers`), `iniKey` lists, and `postInstall` (`purgeBefore`). |
+| `mods` | Optional multi-source integration with CurseForge, Modrinth, Thunderstore, and Steam Workshop, plus multi-target mod lists (`modListTargets`), ID resolvers (`modIdResolvers`), `iniKey` lists, and `postInstall` (`purgeBefore`). |
 | `guardian` | Autonomous health checking, log pattern monitoring, diagnostics, and recovery policies. |
 
 ### Source Types

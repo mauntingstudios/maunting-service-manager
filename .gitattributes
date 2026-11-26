@@ -21,6 +21,7 @@ backend/scripts/msm-*     text eol=lf
 *.conf          text eol=lf
 *.cfg           text eol=lf
 *.tpl           text eol=lf
+*.template      text eol=lf
 *.md            text eol=lf
 *.txt           text eol=lf
 *.sql           text eol=lf

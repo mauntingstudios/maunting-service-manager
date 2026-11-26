@@ -314,6 +314,8 @@ export interface SteamBranchOption {
   requires_password: boolean
 }
 
+export type ModProvider = 'curseforge' | 'modrinth' | 'steam' | 'thunderstore'
+
 export interface GameInfo {
   id: string
   name: string
@@ -327,10 +329,16 @@ export interface GameInfo {
   mod_support: boolean
   supports_steam_workshop: boolean
   supports_curseforge?: boolean
+  supports_modrinth?: boolean
+  supports_thunderstore?: boolean
   curseforge_game_id?: string | null
   curseforge_class_id?: string | null
+  modrinth_project_types?: string[]
+  modrinth_loaders?: string[]
+  thunderstore_community?: string | null
   supports_modpacks?: boolean
-  mod_provider?: 'curseforge' | 'steam' | null
+  mod_providers?: ModProvider[]
+  mod_provider?: ModProvider | null
   supports_server_file_updates?: boolean
   // v1.4.7+: Exec-Tab-Opt-in aus dem Blueprint (runtime.enableExec).
   enable_exec?: boolean

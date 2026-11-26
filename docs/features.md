@@ -294,7 +294,7 @@ Minecraft variants, FiveM/RedM, Hytale), plus backends, a database and a static 
 | `runtime` | image, workdir, numeric non-root `user`, env, startup argv, startup profiles, directories, seed files, config patches, stop grace, startup check, exec switch |
 | `ports` | named ports (game, query, rcon, voice, web, peer, database, custom) with TCP/UDP |
 | `source` | how files arrive: Steam, HTTPS archive, GitHub, manual upload, docker-only |
-| `mods` | workshop or CurseForge support, injection method, mod list target |
+| `mods` | Steam Workshop, CurseForge, Modrinth, and Thunderstore support (multi-source capable), injection method, mod list target |
 | `backup` | include paths as relative globs, exclusions |
 | `health` | process, port, application and startup probes |
 | `logs` | log sources and redaction rules |
@@ -328,9 +328,11 @@ open work instead of claiming completeness.
 
 ## 6. Mod manager
 
-The mod manager installs three kinds of content: Steam Workshop items, CurseForge mods and
-CurseForge modpacks. It keeps enough state to update, disable and reorder them without touching
-the files manually.
+The mod manager installs content from four sources: Steam Workshop, CurseForge (mods and modpacks),
+Modrinth (mods, plugins, datapacks, and `.mrpack` modpacks), and Thunderstore (BepInEx packs and
+plugins). Blueprints can enable multiple sources at once (such as CurseForge + Modrinth for
+Minecraft or Steam Workshop + Thunderstore for Palworld) and the UI offers a source switcher. It
+keeps enough state to update, disable and reorder items without touching files manually.
 
 ### 6.1 What the user can do
 
@@ -1275,9 +1277,6 @@ It exists so the document can be used as a reference without repeating claims th
 
 ### 22.1 Missing features that are sometimes assumed
 
-- **Modrinth is not integrated.** `docs/blueprints.md` mentions it; the schema and services know
-  Steam Workshop and CurseForge only. A Modrinth mod cannot be installed through the mod manager
-  today.
 - **No command palette.** The panel has no global command palette or global keyboard shortcut
   layer. Shortcuts exist in the browser and in the document editor.
 - **Kubernetes is experimental.** `deploy/kubernetes/` covers the control plane only, with one
@@ -1360,7 +1359,7 @@ same command instead of copying the number.
 | Panel API | `backend/main.py`, `backend/routers/` |
 | Servers | `routers/servers.py`, `services/server_lifecycle_service.py`, `server_provisioning_service.py` |
 | Blueprints | `blueprints/schema.py`, `routers/blueprints.py`, `backend/blueprints/native/` |
-| Mods | `routers/mods.py`, `routers/curseforge.py`, `services/mod_update_service.py` |
+| Mods | `routers/mods.py`, `routers/curseforge.py`, `routers/modrinth.py`, `routers/thunderstore.py`, `services/mod_update_service.py` |
 | Backups | `services/backup_orchestrator.py`, `backup_service.py`, `backup_crypto_service.py` |
 | Databases | `services/postgres_ddl.py`, `routers/postgres_studio.py`, `routers/sqlite_studio.py` |
 | Nodes | `msm-agent/`, `routers/nodes.py`, `services/node_enrollment_service.py` |

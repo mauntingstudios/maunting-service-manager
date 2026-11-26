@@ -80,8 +80,14 @@ async def _pruefe_worker() -> Tuple[bool, str]:
 
 async def pruefe_gesundheit(deep: bool = False) -> Tuple[int, Dict[str, Any]]:
     """Ermittelt den Gesundheitszustand des Backends."""
+    from services import drain_service
+
+    draining = drain_service.is_draining()
     if not deep:
-        return 200, {"status": "ok"}
+        body: Dict[str, Any] = {"status": "ok"}
+        if draining:
+            body["draining"] = True
+        return 200, body
 
     from services import redis_backplane
 
@@ -104,6 +110,6 @@ async def pruefe_gesundheit(deep: bool = False) -> Tuple[int, Dict[str, Any]]:
         checks["worker"] = worker_msg
 
     if db_ok and dis_ok and disk_ok and redis_ok and worker_ok:
-        return 200, {"status": "ok", "checks": checks}
+        return 200, {"status": "ok", "draining": draining, "checks": checks}
     else:
-        return 503, {"status": "degraded", "checks": checks}
+        return 503, {"status": "degraded", "draining": draining, "checks": checks}

@@ -2530,10 +2530,11 @@ WorkingDirectory=/opt/msm/backend
 # Systemd-Units erben kein PATH vom Login-Shell. venv zuerst, danach System-Pfade.
 Environment="PATH=/opt/msm/backend/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 Environment="MSM_WORKER_MODE=${PANEL_WORKER_MODE}"
-ExecStart=/opt/msm/backend/venv/bin/uvicorn main:app --host 127.0.0.1 --port 8000 --workers ${MSM_UVICORN_WORKERS} --proxy-headers --forwarded-allow-ips=127.0.0.1 --timeout-graceful-shutdown 5
+Environment="MSM_DRAIN_FLAG_FILE=${MSM_DIR}/.msm-draining.json"
+ExecStart=/opt/msm/backend/venv/bin/uvicorn main:app --host 127.0.0.1 --port 8000 --workers ${MSM_UVICORN_WORKERS} --proxy-headers --forwarded-allow-ips=127.0.0.1 --timeout-graceful-shutdown 30
 Restart=on-failure
 RestartSec=5
-TimeoutStopSec=10
+TimeoutStopSec=45
 StandardOutput=journal
 StandardError=journal
 
@@ -2548,7 +2549,7 @@ ReadWritePaths=/opt/msm -/etc/ufw -/var/lib/ufw -/run/ufw -/run/ufw.lock -/run/s
 WantedBy=multi-user.target
 EOF
 
-    cat > /etc/systemd/system/msm-worker.service <<'EOF'
+    cat > /etc/systemd/system/msm-worker.service <<EOF
 [Unit]
 Description=Maunting Service Manager Background Worker
 After=network.target postgresql.service redis-server.service msm-dis-sidecar.service msm-docs-sidecar.service
@@ -2564,10 +2565,11 @@ OOMScoreAdjust=-300
 WorkingDirectory=/opt/msm/backend
 Environment="PATH=/opt/msm/backend/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 Environment="MSM_WORKER_MODE=worker"
+Environment="MSM_DRAIN_FLAG_FILE=${MSM_DIR}/.msm-draining.json"
 ExecStart=/opt/msm/backend/venv/bin/python -u worker.py
 Restart=on-failure
 RestartSec=5
-TimeoutStopSec=15
+TimeoutStopSec=45
 StandardOutput=journal
 StandardError=journal
 PrivateTmp=true

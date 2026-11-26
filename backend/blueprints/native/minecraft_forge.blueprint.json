@@ -61,6 +61,10 @@
     "curseforgeGameId": "432",
     "curseforgeClassId": "6",
     "curseforgeInstallPath": "mods",
+    "supportsModrinth": true,
+    "modrinthProjectTypes": ["mod", "modpack", "datapack"],
+    "modrinthLoaders": ["forge"],
+    "modrinthInstallPath": "mods",
     "modInjection": "none",
     "modStartupArgumentFormat": null,
     "modListFilePath": null

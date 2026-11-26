@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from database import get_db
 from dependencies import get_current_user, require_server_permission, verify_csrf
 from models import FrontendDeployment, Server, User
-from services import frontend_deploy_service, frontend_domain_service, github_hook_service
+from services import drain_service, frontend_deploy_service, frontend_domain_service, github_hook_service
 from services.frontend_caddy_config import slugify_branch
 
 router = APIRouter(prefix="/api/servers/{server_id}/frontend", tags=["frontend"])
@@ -286,6 +286,7 @@ def trigger_deployment(
     _: None = Depends(verify_csrf),
 ) -> dict[str, Any]:
     require_server_permission(user, server_id, db, "server.restart")
+    drain_service.require_not_draining()
     server = _get_frontend_server(server_id, db)
     fs = frontend_deploy_service.get_or_create_settings(db, server)
     branch = (req.branch or fs.production_branch).strip()

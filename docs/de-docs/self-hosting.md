@@ -662,6 +662,30 @@ Verbrauchsübersicht):
 Ohne eingerichteten KI-Zugang passiert nichts; die Umstellung beginnt, sobald
 einer da ist.
 
+## Schonende Updates ohne harte Unterbrechung (`update.sh`)
+
+`update.sh` baut Frontend und Abhängigkeiten, während das laufende Panel weiter
+erreichbar bleibt, und tauscht bzw. startet Dienste erst am Ende gezielt neu:
+
+- **Gestaffelter Frontend-Tausch:** `frontend/dist` wird nicht vor dem Build
+  gelöscht, sondern in `frontend/dist.next` gebaut und erst nach erfolgreichem
+  Build per kurzem Verzeichnis-Tausch (`mv` mit Fallback-Wiederherstellung)
+  aktiviert. Reine Frontend-Updates laufen damit ohne Backend-Neustart und
+  ohne spürbare Ausfallzeit.
+- **Gezielte Dienst-Neustarts (`git diff`):** Anhand der geänderten Pfade werden
+  nur tatsächlich betroffene Dienste (`msm-panel`, `msm-worker`, `msm-agent`,
+  Sidecars) neu gestartet; Caddy wird per `systemctl reload caddy` ohne
+  Verbindungsabbruch neu geladen. `--restart-all` erzwingt bei Bedarf einen
+  vollständigen Neustart.
+- **Graceful Drain für KI-Läufe & Sandbox-Builds:** Steht ein Backend-Neustart
+  an, setzt `update.sh` das Drain-Flag (`MSM_DRAIN_FLAG_FILE`, Standard
+  `/opt/msm/.msm-draining.json`), blockiert neue lange Aufgaben mit HTTP `503`
+  (`panel_draining`, `Retry-After: 5`) und wartet bis zu
+  `MSM_UPDATE_DRAIN_TIMEOUT` Sekunden (Standard `60`, mit `--no-drain`
+  überspringbar), bis laufende KI-Streams (`AiRun`) und Sandbox-Builds
+  (`FrontendDeployment`) sauber beendet sind. Systemd- und Uvicorn-Stop-Fristen
+  liegen bei `30s` / `45s`.
+
 ## Tresor-Cloud: Dateien im Tresor
 
 Die App legt im Tresor auch Dateien ab: Fotos, Videos, Dokumente. Sie werden

@@ -11,7 +11,7 @@ class Mod(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     server_id: Mapped[int] = mapped_column(Integer, ForeignKey("servers.id"), nullable=False)
-    workshop_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    workshop_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     name: Mapped[str | None] = mapped_column(String(256), nullable=True)
     last_updated: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     installed_version: Mapped[int | None] = mapped_column(Integer, nullable=True)

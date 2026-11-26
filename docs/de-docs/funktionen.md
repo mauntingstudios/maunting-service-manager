@@ -302,7 +302,7 @@ Frontend.
 | `runtime` | Image, Arbeitsverzeichnis, numerischer Nicht-root-`user`, Env, Start-argv, Startprofile, Verzeichnisse, Seed-Dateien, Konfigurationspatches, Stop-Frist, Startprüfung, Exec-Schalter |
 | `ports` | benannte Ports (Spiel, Query, RCON, Sprache, Web, Peer, Datenbank, eigener) mit TCP/UDP |
 | `source` | wie Dateien ankommen: Steam, HTTPS-Archiv, GitHub, manueller Upload, nur Docker |
-| `mods` | Workshop- oder CurseForge-Unterstützung, Injektionsart, Ziel der Modliste |
+| `mods` | Steam-Workshop-, CurseForge-, Modrinth- und Thunderstore-Unterstützung (auch kombiniert), Injektionsart, Ziel der Modliste |
 | `backup` | enthaltene Pfade als relative Globs, Ausschlüsse |
 | `health` | Prozess-, Port-, Anwendungs- und Startprüfungen |
 | `logs` | Logquellen und Maskierungsregeln |
@@ -337,9 +337,12 @@ offenen Arbeiten, statt Vollständigkeit zu behaupten.
 
 ## 6. Modmanager
 
-Der Modmanager installiert drei Arten von Inhalt: Steam-Workshop-Einträge, CurseForge-Mods und
-CurseForge-Modpacks. Er hält genug Zustand, um sie zu aktualisieren, zu deaktivieren und zu
-sortieren, ohne Dateien von Hand anzufassen.
+Der Modmanager installiert Inhalte aus vier Quellen: Steam Workshop, CurseForge (Mods und Modpacks),
+Modrinth (Mods, Plugins, Datapacks und `.mrpack`-Modpacks) sowie Thunderstore (BepInEx-Pakete und
+Plugins). Blueprints können mehrere Quellen gleichzeitig aktivieren (z. B. CurseForge + Modrinth für
+Minecraft oder Steam Workshop + Thunderstore für Palworld); die Oberfläche bietet dann einen
+Quellen-Umschalter. Der Manager hält genug Zustand, um Einträge zu aktualisieren, zu deaktivieren
+und zu sortieren, ohne Dateien von Hand anzufassen.
 
 ### 6.1 Was der Nutzer kann
 
@@ -1322,9 +1325,6 @@ damit das Dokument als Referenz taugt, ohne Behauptungen zu wiederholen, die nic
 
 ### 22.1 Fehlende Funktionen, die manchmal angenommen werden
 
-- **Modrinth ist nicht angebunden.** `docs/blueprints.md` nennt es; Schema und Dienste kennen nur
-  Steam Workshop und CurseForge. Ein Modrinth-Mod lässt sich heute nicht über den Modmanager
-  installieren.
 - **Keine Command-Palette.** Das Panel hat keine globale Befehlspalette und keine panelweiten
   Tastenkürzel. Kürzel gibt es im Browser und im Dokumenteneditor.
 - **Kubernetes ist experimentell.** `deploy/kubernetes/` deckt nur die Control Plane ab, mit einer
@@ -1408,7 +1408,7 @@ mit demselben Befehl neu zählen, statt die Zahl zu übernehmen.
 | Panel-API | `backend/main.py`, `backend/routers/` |
 | Server | `routers/servers.py`, `services/server_lifecycle_service.py`, `server_provisioning_service.py` |
 | Blueprints | `backend/blueprints/schema.py`, `routers/blueprints.py`, `backend/blueprints/native/` |
-| Mods | `routers/mods.py`, `routers/curseforge.py`, `services/mod_update_service.py` |
+| Mods | `routers/mods.py`, `routers/curseforge.py`, `routers/modrinth.py`, `routers/thunderstore.py`, `services/mod_update_service.py` |
 | Backups | `services/backup_orchestrator.py`, `backup_service.py`, `backup_crypto_service.py` |
 | Datenbanken | `services/postgres_ddl.py`, `routers/postgres_studio.py`, `routers/sqlite_studio.py` |
 | Nodes | `msm-agent/`, `routers/nodes.py`, `services/node_enrollment_service.py` |
