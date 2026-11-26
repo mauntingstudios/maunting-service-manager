@@ -424,7 +424,7 @@ prepare_app_venv() {
         pip install -r requirements.txt -q
         test -x venv/bin/python
     " 2>&1 | tee -a "$LOG_FILE"; then
-        err "$label: venv-Setup fehlgeschlagen. Ownership jetzt: $(stat -c '%U:%G' "$app_dir" 2>/dev/null || echo '?') — erwarte $MSM_USER:$MSM_USER"
+        err "$label: venv-Setup fehlgeschlagen. Ownership jetzt: $(stat -c '%U:%G' "$app_dir" 2>/dev/null || echo '?') — erwarte $target_user:$target_user"
     fi
 
     if [[ ! -x "$app_dir/venv/bin/python" ]]; then
@@ -435,8 +435,8 @@ prepare_app_venv() {
     # python is often a symlink; ownership of the link target may vary — check venv dir
     local venv_owner
     venv_owner=$(stat -c '%U' "$app_dir/venv" 2>/dev/null || echo "")
-    if [[ "$venv_owner" != "$MSM_USER" ]]; then
-        err "$label: venv gehört $venv_owner, nicht $MSM_USER"
+    if [[ "$venv_owner" != "$target_user" ]]; then
+        err "$label: venv gehört $venv_owner, nicht $target_user"
     fi
 }
 
@@ -634,10 +634,25 @@ PATHEOF
         su -s /bin/bash "$MSM_DOCKER_USER" -c "export DOCKER_HOST='${MSM_DOCKER_HOST}'; docker pull cm2network/steamcmd:root" 2>&1 | tee -a "$LOG_FILE" || \
             warn "Konnte SteamCMD-Image nicht vorziehen — wird beim ersten Server-Install nachgeholt."
         su -s /bin/bash "$MSM_DOCKER_USER" -c "export DOCKER_HOST='${MSM_DOCKER_HOST}'; docker pull alpine/git:latest" 2>/dev/null || true
+        local _sandbox_src=""
         if [[ -f "$MSM_DIR/containers/coding-sandbox/Dockerfile" ]]; then
+            _sandbox_src="$MSM_DIR/containers/coding-sandbox"
+        elif [[ -n "${SCRIPT_DIR:-}" && -f "$SCRIPT_DIR/containers/coding-sandbox/Dockerfile" ]]; then
+            _sandbox_src="$SCRIPT_DIR/containers/coding-sandbox"
+        fi
+        if [[ -n "$_sandbox_src" ]]; then
             log "Baue Coding-Sandbox-Image (msm-coding-sandbox:latest)..."
-            su -s /bin/bash "$MSM_DOCKER_USER" -c "export DOCKER_HOST='${MSM_DOCKER_HOST}'; docker build -t msm-coding-sandbox:latest '$MSM_DIR/containers/coding-sandbox'" 2>&1 | tee -a "$LOG_FILE" || \
-                warn "Konnte Coding-Sandbox-Image nicht vorab bauen."
+            local _sandbox_ctx
+            _sandbox_ctx=$(mktemp -d /tmp/msm-coding-sandbox.XXXXXX 2>/dev/null || true)
+            if [[ -n "$_sandbox_ctx" ]]; then
+                cp -a "$_sandbox_src/." "$_sandbox_ctx/"
+                chown -R "$MSM_DOCKER_USER:$MSM_DOCKER_USER" "$_sandbox_ctx" 2>/dev/null || true
+                su -s /bin/bash "$MSM_DOCKER_USER" -c "export DOCKER_HOST='${MSM_DOCKER_HOST}'; docker build -t msm-coding-sandbox:latest '$_sandbox_ctx'" 2>&1 | tee -a "$LOG_FILE" || \
+                    warn "Konnte Coding-Sandbox-Image nicht vorab bauen."
+                rm -rf "$_sandbox_ctx"
+            else
+                warn "Konnte temporaeren Build-Kontext fuer Coding-Sandbox-Image nicht anlegen."
+            fi
         fi
     else
         warn "systemd nicht verfügbar. Rootless Docker wird vorbereitet, aber der User-Service kann nicht aktiviert werden."
