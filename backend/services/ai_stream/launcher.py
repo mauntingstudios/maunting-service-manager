@@ -268,7 +268,13 @@ def lauf_beginnen(
         estimated_tokens = estimate_reserved_tokens(provider_messages)
         # Das Modell der Rolle — ein Worker bucht und beschriftet mit dem
         # Arbeitsmodell des Betreibers, nicht mit `default_model`.
-        vorab_zustand = {"requested_model": requested_model} if requested_model else None
+        vorab_zustand: dict | None = None
+        if requested_model or routing_meta:
+            vorab_zustand = {}
+            if requested_model:
+                vorab_zustand["requested_model"] = requested_model
+            if routing_meta:
+                vorab_zustand["routing"] = routing_meta
         modell = _modell_fuer(provider, rolle, vorab_zustand)
         try:
             usage_event = ai_stream.reserve_ai_usage(

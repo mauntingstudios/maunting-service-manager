@@ -174,6 +174,10 @@ def _modell_fuer(
     gehen durch diese eine Funktion — eine vergessene Stelle hiesse: gebucht
     wird das eine Modell, gearbeitet auf dem anderen.
     """
+    if isinstance(zustand, dict) and isinstance(zustand.get("routing"), dict):
+        gewuenscht = str(zustand.get("requested_model") or "").strip()
+        if gewuenscht:
+            return gewuenscht
     if rolle == "worker" and provider.worker_model:
         return str(provider.worker_model)
     if isinstance(zustand, dict):

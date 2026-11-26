@@ -63,6 +63,7 @@ def _create_chat_provider(
     default_model: str = "google/gemini-2.5-flash",
     enabled_models: list[str] | None = None,
     enabled: bool = True,
+    **extra,
 ) -> AiProvider:
     provider = ai_provider_service.create_provider(
         db,
@@ -73,86 +74,109 @@ def _create_chat_provider(
         enabled=enabled,
         requires_api_key=True,
         operator_api_key="sk-or-v1-test-router-key-1234",
+        **extra,
     )
     db.commit()
     db.refresh(provider)
     return provider
 
 
-def test_classify_request_stage1_and_quality_guard(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Einfache/kurze Aeusserungen -> eco (auch mit Projekt/Reasoning); echte Aufgaben -> standard/flagship."""
-    monkeypatch.setattr(ai_router_service.ai_embedding_service, "is_ready", lambda: False)
+def test_classify_request_no_wordlists_and_math_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Router enthaelt keine Regex-/Wortlisten; rein mathematischer Fallback ohne Embedding."""
+    assert not hasattr(ai_router_service, "_CODE_SIGNAL_RE")
+    assert not hasattr(ai_router_service, "_COMPLEX_KEYWORDS")
+    assert not hasattr(ai_router_service, "_SIMPLE_GREETING_RE")
+
+    monkeypatch.setattr(ai_router_service.ai_embedding_service, "encode", lambda texts, db=None, nur_lokal=False: None)
 
     tier_hi, _, reason_hi = ai_router_service.classify_request(text="Hallo!")
     assert tier_hi == "eco"
-    assert reason_hi == "short_utterance"
+    assert reason_hi == "math_fallback"
 
     tier_proj_hi, _, reason_proj_hi = ai_router_service.classify_request(
-        text="Hallo!", project_id="proj-123"
+        text="Hallo!", project_id="proj-123", reasoning=True
     )
     assert tier_proj_hi == "eco"
-    assert reason_proj_hi == "short_utterance"
+    assert reason_proj_hi == "math_fallback"
 
-    tier_think_hi, _, reason_think_hi = ai_router_service.classify_request(
-        text="Hallo!", reasoning=True
-    )
-    assert tier_think_hi == "eco"
-    assert reason_think_hi == "short_utterance"
-
-    tier_proj_task, _, reason_proj_task = ai_router_service.classify_request(
-        text="Prüfe bitte den Login-Ablauf im Backend", project_id="proj-123"
-    )
-    assert tier_proj_task in ("standard", "flagship")
-    assert reason_proj_task in ("agentic_quality_guard", "grey_zone_default")
-
-    tier_short_tech, _, _ = ai_router_service.classify_request(
-        text="fix backend/auth.py", project_id="proj-123"
-    )
-    assert tier_short_tech in ("standard", "flagship")
-
-    tier_code, _, _ = ai_router_service.classify_request(
-        text="Bitte debugge diesen Stacktrace:\n```python\nTraceback (most recent call last):\n  File 'app.py'\n```"
-    )
-    assert tier_code == "flagship"
-
-    tier_think, _, _ = ai_router_service.classify_request(
-        text="Erkläre mir den Unterschied zwischen TCP und UDP im Detail", reasoning=True
-    )
-    assert tier_think in ("standard", "flagship")
-
-
-def test_classify_request_stage2_embedding_tiebreaker_and_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Grauzone und kurze Alltagsfragen nutzen lokales Embedding, mit Fallback auf standard."""
-    # Grauzone (ca. 300 Zeichen ohne Code/Keywords)
     grey_text = "Kannst du mir bitte kurz helfen? " * 10
+    tier_med, _, reason_med = ai_router_service.classify_request(text=grey_text)
+    assert tier_med == "standard"
+    assert reason_med == "math_fallback"
 
-    monkeypatch.setattr(ai_router_service.ai_embedding_service, "is_ready", lambda: False)
-    tier, _, reason = ai_router_service.classify_request(text=grey_text)
-    assert tier == "standard"
-    assert reason == "grey_zone_default"
+    dense_code = "def f(x):\n    if x == {1: 2}:\n        return x;\n" * 45
+    tier_dense, _, reason_dense = ai_router_service.classify_request(text=dense_code)
+    assert tier_dense == "flagship"
+    assert reason_dense == "math_fallback"
 
-    # Mock: Embedding ist bereit und waehlt klar flagship fuer grey_text
-    ai_router_service._PROTO_VECTORS = None
-    def fake_encode(txt: str):
-        if "Komplexe Softwarearchitektur" in txt or txt.startswith("Kannst du mir"):
-            return [1.0, 0.0, 0.0]
-        if "Kurze Begrüßung" in txt or txt.startswith("Wie spät"):
-            return [0.0, 0.0, 1.0]
-        return [0.0, 1.0, 0.0]
+    tier_img, _, _ = ai_router_service.classify_request(text="Hallo!", has_images=True)
+    assert tier_img in ("standard", "flagship")
 
-    monkeypatch.setattr(ai_router_service.ai_embedding_service, "is_ready", lambda: True)
+
+def test_classify_request_semantic_local_and_remote_fallback(
+    db: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Semantische Klassifikation nutzt Kodierung vom lokalen Modell oder Remote-Rueckfall getrennt."""
+    from services.ai_embedding_service import Kodierung, MODEL_TAG
+
+    ai_router_service._PROTO_CACHE.clear()
+    active_model = MODEL_TAG
+
+    def fake_encode(texts: list[str], db=None, nur_lokal=False):
+        vecs = []
+        for t in texts:
+            low = t.lower()
+            if (
+                "kurze begrüßung" in low
+                or "einfache wissensfrage" in low
+                or "kleine routineaufgabe" in low
+                or t.startswith("Hallo")
+                or "port=25565" in low
+                or "wie spät" in low
+            ):
+                vecs.append([1.0, 0.0, 0.0])
+            elif (
+                "komplexe softwarearchitektur" in low
+                or "root-cause" in low
+                or "sicherheitsaudit" in low
+                or "auth-architektur" in low
+            ):
+                vecs.append([0.0, 0.0, 1.0])
+            else:
+                vecs.append([0.0, 1.0, 0.0])
+        return Kodierung(vektoren=vecs, modell=active_model)
+
     monkeypatch.setattr(ai_router_service.ai_embedding_service, "encode", fake_encode)
 
-    tier_emb, _, reason_emb = ai_router_service.classify_request(text=grey_text)
-    assert tier_emb == "flagship"
-    assert reason_emb == "embedding_tiebreaker"
-
-    tier_semantic_eco, _, reason_semantic_eco = ai_router_service.classify_request(
-        text="Wie spät ist es in Tokio?", project_id="proj-123", reasoning=True
+    tier_eco, _, reason_eco = ai_router_service.classify_request(
+        text="Ändere port=25565 in server.properties", project_id="proj-123", db=db
     )
-    assert tier_semantic_eco == "eco"
-    assert reason_semantic_eco == "semantic_eco"
-    ai_router_service._PROTO_VECTORS = None
+    assert tier_eco == "eco"
+    assert reason_eco == "semantic_local"
+
+    tier_std, _, reason_std = ai_router_service.classify_request(
+        text="Prüfe bitte die Nginx-Logs", db=db
+    )
+    assert tier_std == "standard"
+    assert reason_std == "semantic_local"
+
+    tier_flag, _, reason_flag = ai_router_service.classify_request(
+        text="Entwirf die neue Auth-Architektur über alle Module", db=db
+    )
+    assert tier_flag == "flagship"
+    assert reason_flag == "semantic_local"
+
+    # Remote-Rueckfall (z. B. Google AI Studio) cached unter eigenem Modellraum
+    active_model = "google:text-embedding-004"
+    tier_rem, _, reason_rem = ai_router_service.classify_request(
+        text="Wie spät ist es in Tokio?", project_id="proj-123", reasoning=True, db=db
+    )
+    assert tier_rem == "eco"
+    assert reason_rem == "semantic_remote"
+    assert MODEL_TAG in ai_router_service._PROTO_CACHE
+    assert "google:text-embedding-004" in ai_router_service._PROTO_CACHE
+    ai_router_service._PROTO_CACHE.clear()
 
 
 def test_router_settings_api_rbac_csrf_and_pools(
@@ -659,6 +683,108 @@ async def test_segment_ausfuehren_failover_with_frozen_vorbereitung(
     assert ev_after is not None
     assert ev_after.accounted_tokens == 60  # 30 tokens * weight 2.0
     ai_router_service.clear_cooldowns()
+
+
+def test_worker_start_routes_via_singra_router(
+    db: Session,
+    regular_user: User,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Ein über den Router gestarteter Worker klassifiziert seinen Auftrag über dieselbe Pipeline."""
+    from services import ai_run_service, ai_worker_service
+    from services.ai_embedding_service import Kodierung, MODEL_TAG
+
+    ai_router_service._PROTO_CACHE.clear()
+    ai_router_service.clear_cooldowns()
+
+    role = _make_chat_user(db, regular_user, router_only=True)
+    db.add(RolePermission(role_id=role.id, permission_key="ai.background.use"))
+    db.commit()
+
+    prov_eco = _create_chat_provider(db, name="Eco-Worker-Prov", default_model="eco-fast")
+    prov_std = _create_chat_provider(
+        db,
+        name="Std-Worker-Prov",
+        default_model="std-main",
+        worker_enabled=True,
+        worker_model="teures-worker-modell",
+    )
+
+    ai_router_service.update_router_config(
+        db,
+        {
+            "enabled": True,
+            "eco_models": [{"provider_id": prov_eco.id, "model": "eco-fast"}],
+            "standard_models": [{"provider_id": prov_std.id, "model": "std-main"}],
+        },
+    )
+    db.commit()
+
+    def fake_encode(texts: list[str], db=None, nur_lokal=False):
+        vecs = []
+        for t in texts:
+            low = t.lower()
+            if "kleine routineaufgabe" in low or "kurze begrüßung" in low or "server.properties" in low:
+                vecs.append([1.0, 0.0, 0.0])
+            elif "komplexe softwarearchitektur" in low:
+                vecs.append([0.0, 0.0, 1.0])
+            else:
+                vecs.append([0.0, 1.0, 0.0])
+        return Kodierung(vektoren=vecs, modell=MODEL_TAG)
+
+    monkeypatch.setattr(ai_router_service.ai_embedding_service, "encode", fake_encode)
+    monkeypatch.setattr(ai_run_service, "anlauf", lambda _db, _run: True)
+
+    parent_conv = AiConversation(
+        id=str(uuid4()),
+        user_id=regular_user.id,
+        kind="primary",
+        title="Router Gehirn",
+    )
+    db.add(parent_conv)
+    db.flush()
+    parent_run = AiRun(
+        id=str(uuid4()),
+        conversation_id=parent_conv.id,
+        user_id=regular_user.id,
+        provider_id=prov_std.id,
+        status="running",
+        state_json='{"routing":{"tier":"standard","model":"std-main"}}',
+    )
+    db.add(parent_run)
+    db.commit()
+
+    res = ai_worker_service.worker_start(
+        db,
+        user=regular_user,
+        arguments={"auftrag": "Ändere max-players in server.properties auf 20", "titel": "Config"},
+        conversation_id=parent_conv.id,
+    )
+    assert res["started"] is True
+
+    worker_conv_id = res["worker_id"]
+    worker_run = (
+        db.query(AiRun)
+        .filter(AiRun.conversation_id == worker_conv_id)
+        .order_by(AiRun.created_at.desc())
+        .first()
+    )
+    assert worker_run is not None
+    assert worker_run.provider_id == prov_eco.id
+    worker_state = ai_run_service.zustand_lesen(worker_run)
+    assert worker_state["requested_model"] == "eco-fast"
+    assert worker_state["routing"]["tier"] == "eco"
+    assert worker_state["routing"]["reason"] == "semantic_local"
+
+    worker_msg = (
+        db.query(AiMessage)
+        .filter(AiMessage.conversation_id == worker_conv_id, AiMessage.role == "assistant")
+        .first()
+    )
+    assert worker_msg is not None
+    assert worker_msg.model == "eco-fast"
+    assert worker_msg.routed_model == "eco-fast"
+    ai_router_service._PROTO_CACHE.clear()
 
 
 async def _noop_async() -> None:

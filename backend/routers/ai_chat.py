@@ -945,45 +945,18 @@ async def stream_message(
             .filter(AiMessage.conversation_id == conversation.id)
             .count()
         )
-        soft_cap = bool(
-            effective_limits.soft_cap_downgrade
-            and ai_usage_service.is_five_hour_limit_exceeded(
-                db, user, max(1, len(safe_content) // 4 + 2048)
-            )
+        routed = ai_router_service.resolve_route_for_text(
+            db,
+            user=user,
+            text=safe_content,
+            has_images=has_unbound_attachments,
+            reasoning=payload.reasoning,
+            project_id=payload.project_id or conversation.project_id,
+            history_len=history_len,
         )
-        if soft_cap:
-            tier, score, route_reason = "fallback", 0.0, "soft_cap_5h"
-        else:
-            tier, score, route_reason = ai_router_service.classify_request(
-                text=safe_content,
-                has_images=has_unbound_attachments,
-                reasoning=payload.reasoning,
-                project_id=payload.project_id or conversation.project_id,
-                history_len=history_len,
-            )
-        candidates = ai_router_service.resolve_candidates(
-            db, tier=tier, soft_cap=soft_cap
-        )
-        if not candidates:
+        if routed is None:
             raise HTTPException(status_code=503, detail="AI_ROUTER_NO_AVAILABLE_MODEL")
-        first = candidates[0]
-        resolved = db.get(AiProvider, first["provider_id"])
-        if resolved is None or not resolved.enabled:
-            raise HTTPException(status_code=503, detail="AI_ROUTER_NO_AVAILABLE_MODEL")
-        target_provider = resolved
-        requested_model = first["model"]
-        routing_meta = {
-            "tier": first["tier"],
-            "model": first["model"],
-            "provider_id": first["provider_id"],
-            "provider_name": first["provider_name"],
-            "reason": route_reason,
-            "score": score,
-            "weight": first["weight"],
-            "soft_cap": soft_cap,
-            "candidates": candidates,
-            "candidate_index": 0,
-        }
+        target_provider, requested_model, routing_meta = routed
 
     if is_generic_title and raw_content:
         # 2. Asynchrone Verfeinerung durch das aufgelöste Zielmodell im Hintergrund

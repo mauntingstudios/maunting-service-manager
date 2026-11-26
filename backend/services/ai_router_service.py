@@ -1,12 +1,9 @@
-"""Singra KI-Router (Smart Model Routing) — zweistufiges Routing ohne extra LLM-Kosten.
+"""Singra KI-Router (Smart Model Routing) — semantisch + mathematisch ohne Wortlisten.
 
-Stufe 1 bewertet jede Anfrage deterministisch (0-1 ms) nach Laenge, Code-/Fehler-
-Mustern, Projektkontext, Reasoning-Anforderung und Anhaengen — inklusive
-Qualitaets-Guard fuer Coding-Projekte und Multi-Step-Aufgaben.
-
-Stufe 2 nutzt in der Grauzone (Score 0.35-0.65) optional das bereits geladene
-lokale Satz-Embedding-Modell (`ai_embedding_service`), faellt aber konservativ
-auf ``standard`` zurueck, falls das Modell offline/nicht geladen ist.
+Kombiniert das lokale Satz-Embedding (`paraphrase-multilingual-MiniLM-L12-v2`, ~6 ms)
+bzw. den konfigurierten Betreiber-Rueckfall (Google AI Studio / OpenAI) mit rein
+mathematisch-strukturellen Signalen (Textlaenge, Zeilenstruktur, Syntaxdichte,
+Anhaenge, Reasoning, Verlaufstiefe). Enthaelt bewusst keine Regex- oder Wortlisten.
 """
 
 from __future__ import annotations
@@ -14,16 +11,18 @@ from __future__ import annotations
 import json
 import logging
 import math
-import re
 import threading
 import time
-from typing import Iterable
+from typing import TYPE_CHECKING, Iterable
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from models import AiProvider, AiRouterConfig
 from services import ai_embedding_service, ai_provider_registry, ai_provider_service
+
+if TYPE_CHECKING:
+    from models import User
 
 
 logger = logging.getLogger(__name__)
@@ -44,64 +43,40 @@ _TIER_ORDER: dict[str, tuple[str, ...]] = {
     "fallback": ("fallback", "eco", "standard", "flagship"),
 }
 
-_CODE_SIGNAL_RE = re.compile(
-    r"(```|traceback\b|exception:|stack\s*trace|diff\s+--git|"
-    r"\b(def\s+\w+|class\s+\w+|function\s+\w+|async\s+def|const\s+\w+\s*=|"
-    r"import\s+\w+|select\s+.+\s+from|create\s+table|alter\s+table|"
-    r"systemctl|journalctl|docker\s+compose|kubernetes|kubectl|alembic)\b)",
-    re.IGNORECASE,
-)
-
-_COMPLEX_KEYWORDS = (
-    "architektur",
-    "architecture",
-    "refactor",
-    "refactoring",
-    "debug",
-    "analyse",
-    "analysiere",
-    "analyze",
-    "optimier",
-    "optimize",
-    "migration",
-    "sicherheit",
-    "security",
-    "vulnerability",
-    "schritt für schritt",
-    "schritt fuer schritt",
-    "step by step",
-    "vergleich",
-    "compare",
-    "root cause",
-    "ursache",
-    "konzept",
-    "implementier",
-    "implement",
-)
-
-_PROTOTYPE_TEXTS: dict[str, str] = {
+_TIER_PROTOTYPES: dict[str, tuple[str, ...]] = {
     "eco": (
-        "Kurze Begrüßung, Hallo, Danke, Smalltalk, einfache Wissensfrage, kleine Übersetzung, "
-        "Rechtschreibung prüfen oder knappe Zusammenfassung ohne Programmcode. "
-        "Short greeting, hello, thanks, smalltalk, quick factual question, simple translation or brief summary."
+        "Kurze Begrüßung, Hallo, Guten Tag, Danke, Smalltalk oder Verabschiedung. "
+        "Short greeting, hello, thanks, smalltalk or goodbye.",
+        "Einfache Wissensfrage, kurze Erklärung, kleine Übersetzung, Rechtschreibprüfung oder knappe Zusammenfassung. "
+        "Simple factual question, quick definition, short translation, spell check or brief summary.",
+        "Kleine Routineaufgabe, einzelne Konfigurationszeile anpassen, Mod installieren oder Port freigeben. "
+        "Simple routine task, tweak a single config option, install a mod or change one setting.",
     ),
     "standard": (
-        "Alltägliche Arbeitsaufgabe, Server-Status prüfen, Logzeilen erklären, kleine "
-        "Konfigurationsänderung oder konkretes Hilfeskript schreiben. "
-        "Everyday technical support, check logs, small configuration help or scripting."
+        "Alltägliche technische Arbeitsaufgabe, Server-Status prüfen, Logs analysieren oder Dienst neu starten. "
+        "Everyday technical support, inspect server status, read logs or restart a service.",
+        "Einzelne Funktion schreiben, Hilfsskript erstellen, konkreten Bug eingrenzen oder API-Aufruf umsetzen. "
+        "Write a helper script, implement a single endpoint or debug a localized bug.",
+        "Vergleich mehrerer Optionen, schrittweise Anleitung oder strukturierte Auswertung von Daten. "
+        "Compare technical options, write a step-by-step guide or evaluate structured data.",
     ),
     "flagship": (
-        "Komplexe Softwarearchitektur, tiefes Debugging mit Stacktrace, Sicherheitsaudit, "
-        "Datenbank-Migration, mehrstufige Systemanalyse und kritisches Refactoring. "
-        "Complex architecture design, multi-file debugging, security audit and migration."
+        "Komplexe Softwarearchitektur entwerfen, Systemdesign über mehrere Module und langfristige Abwägungen. "
+        "Design complex software architecture across multiple modules and evaluate deep trade-offs.",
+        "Tiefes Root-Cause-Debugging über Stacktraces und verteilte Komponenten oder kritisches Refactoring. "
+        "Deep root-cause debugging across stacktraces and distributed systems or large refactoring.",
+        "Umfassendes Sicherheitsaudit, Schwachstellenanalyse, Kryptographie oder komplexe Datenbank-Migration. "
+        "Comprehensive security audit, vulnerability analysis, cryptography or complex database migration.",
     ),
 }
+
+_SYNTAX_CHARS = frozenset("{}()[];=/\\`<>|")
 
 _COOLDOWN_LOCK = threading.Lock()
 _COOLDOWNS: dict[tuple[int, str], float] = {}
 
 _PROTO_LOCK = threading.Lock()
-_PROTO_VECTORS: dict[str, list[float]] | None = None
+_PROTO_CACHE: dict[str, dict[str, list[list[float]]]] = {}
 
 
 def mark_model_cooldown(provider_id: int, model: str, seconds: int = COOLDOWN_SECONDS) -> None:
@@ -423,37 +398,118 @@ def _cosine_similarity(a: list[float], b: list[float]) -> float:
     return dot / (norm_a * norm_b)
 
 
-def _embedding_tiebreaker(text: str, *, guard_min_standard: bool) -> str | None:
-    """Nutzt ausschliesslich das lokale Satz-Embedding fuer die Grauzone (0 kosten)."""
-    global _PROTO_VECTORS
-    if not text or not ai_embedding_service.is_ready():
+def _encode_single(
+    text: str, *, db: Session | None = None
+) -> tuple[list[float], str] | None:
+    """Kodiert einen Text ueber lokales Embedding oder Betreiber-Rueckfall."""
+    res = ai_embedding_service.encode([text[:1500]], db=db)
+    if res is None or not res.vektoren:
+        return None
+    return list(res.vektoren[0]), res.modell
+
+
+def _get_tier_prototypes(
+    model_tag: str, *, db: Session | None = None
+) -> dict[str, list[list[float]]] | None:
+    """Laedt bzw. berechnet die Prototyp-Vektoren passend zum aktiven Modellraum."""
+    with _PROTO_LOCK:
+        cached = _PROTO_CACHE.get(model_tag)
+        if cached is not None:
+            return cached
+
+    ordered_tiers: list[str] = []
+    flat_texts: list[str] = []
+    for tier, phrases in _TIER_PROTOTYPES.items():
+        for phrase in phrases:
+            ordered_tiers.append(tier)
+            flat_texts.append(phrase)
+
+    res = ai_embedding_service.encode(flat_texts, db=db)
+    if res is None or len(res.vektoren) != len(flat_texts):
+        return None
+
+    grouped: dict[str, list[list[float]]] = {t: [] for t in _TIER_PROTOTYPES}
+    for tier, vec in zip(ordered_tiers, res.vektoren):
+        grouped[tier].append(list(vec))
+
+    with _PROTO_LOCK:
+        _PROTO_CACHE[res.modell] = grouped
+        return _PROTO_CACHE.get(model_tag)
+
+
+def _semantic_classify(
+    text: str, *, db: Session | None = None
+) -> tuple[str, float, str] | None:
+    """Semantische Stufenerkennung ueber lokales Modell oder konfigurierten Rueckfall."""
+    if not text:
         return None
     try:
-        with _PROTO_LOCK:
-            if _PROTO_VECTORS is None:
-                proto_map: dict[str, list[float]] = {}
-                for tier, desc in _PROTOTYPE_TEXTS.items():
-                    vec = ai_embedding_service.encode(desc)
-                    if vec is None:
-                        return None
-                    proto_map[tier] = list(vec)
-                _PROTO_VECTORS = proto_map
-            protos = _PROTO_VECTORS
-        query_vec = ai_embedding_service.encode(text[:1500])
-        if query_vec is None:
+        encoded = _encode_single(text, db=db)
+        if encoded is None:
             return None
-        q = list(query_vec)
+        query_vec, model_tag = encoded
+        protos = _get_tier_prototypes(model_tag, db=db)
+        if not protos:
+            return None
+
         scores = {
-            tier: _cosine_similarity(q, vec)
-            for tier, vec in protos.items()
-            if not (guard_min_standard and tier == "eco")
+            tier: max(_cosine_similarity(query_vec, pvec) for pvec in vecs)
+            for tier, vecs in protos.items()
+            if vecs
         }
         ranked = sorted(scores.items(), key=lambda kv: kv[1], reverse=True)
-        if len(ranked) >= 2 and ranked[0][1] - ranked[1][1] >= 0.03:
-            return ranked[0][0]
+        if len(ranked) < 2:
+            return None
+        margin = ranked[0][1] - ranked[1][1]
+        return ranked[0][0], margin, model_tag
     except Exception:
-        logger.debug("Router-Embedding-Tiebreaker uebersprungen", exc_info=True)
-    return None
+        logger.debug("Router-Embedding-Klassifikation uebersprungen", exc_info=True)
+        return None
+
+
+def _structural_score(
+    cleaned: str,
+    *,
+    has_images: bool,
+    reasoning: bool,
+    history_len: int,
+) -> float:
+    """Rein mathematische Komplexitaetsbewertung ohne Wortlisten oder Regex."""
+    length = len(cleaned)
+    if length <= 60:
+        score = 0.10
+    elif length <= 220:
+        score = 0.24
+    elif length <= 700:
+        score = 0.42
+    elif length <= 1800:
+        score = 0.58
+    else:
+        score = 0.74
+
+    lines = cleaned.count("\n") + 1
+    if lines >= 12:
+        score += 0.14
+    elif lines >= 4:
+        score += 0.07
+
+    non_ws = sum(1 for ch in cleaned if not ch.isspace())
+    if non_ws >= 20:
+        syntax_count = sum(1 for ch in cleaned if ch in _SYNTAX_CHARS)
+        density = syntax_count / non_ws
+        if density >= 0.08:
+            score += 0.18
+        elif density >= 0.04:
+            score += 0.10
+
+    if has_images:
+        score += 0.18
+    if reasoning:
+        score += 0.12
+    if history_len >= 8:
+        score += 0.06
+
+    return round(max(0.0, min(1.0, score)), 3)
 
 
 def classify_request(
@@ -463,71 +519,98 @@ def classify_request(
     reasoning: bool = False,
     project_id: str | None = None,
     history_len: int = 0,
+    db: Session | None = None,
 ) -> tuple[str, float, str]:
-    """Klassifiziert eine Anfrage zweistufig in ``eco``, ``standard`` oder ``flagship``."""
+    """Klassifiziert eine Anfrage semantisch und rein mathematisch in ``eco``, ``standard`` oder ``flagship``."""
+    del project_id  # Projektkontext allein erzwingt kein hoeheres Modell mehr
     cleaned = (text or "").strip()
-    low = cleaned.lower()
-    length = len(cleaned)
-    word_count = len(cleaned.split())
-    has_path_or_symbol = any(ch in cleaned for ch in ("/", "\\", "`", "{", "}", ";", "=", "->"))
+    struct_score = _structural_score(
+        cleaned,
+        has_images=has_images,
+        reasoning=reasoning,
+        history_len=history_len,
+    )
 
-    if length <= 60:
-        score = 0.12
-    elif length <= 220:
-        score = 0.28
-    elif length <= 700:
-        score = 0.48
-    elif length <= 1800:
-        score = 0.64
+    math_tier = "eco" if struct_score < 0.30 else ("flagship" if struct_score > 0.65 else "standard")
+    semantic = _semantic_classify(cleaned, db=db)
+
+    if semantic is not None:
+        sem_tier, margin, model_tag = semantic
+        source = "local" if model_tag == ai_embedding_service.MODEL_TAG else "remote"
+
+        if struct_score >= 0.80:
+            return "flagship", struct_score, f"semantic_{source}"
+
+        if margin >= 0.02:
+            tier = sem_tier
+            if has_images and tier == "eco":
+                tier = "standard"
+            if struct_score >= 0.70 and tier == "eco":
+                tier = "standard"
+            elif struct_score >= 0.75 and tier == "standard":
+                tier = "flagship"
+            return tier, struct_score, f"semantic_{source}"
+
+        tie_tier = math_tier
+        if has_images and tie_tier == "eco":
+            tie_tier = "standard"
+        return tie_tier, struct_score, "math_tiebreaker"
+
+    if has_images and math_tier == "eco":
+        math_tier = "standard"
+    return math_tier, struct_score, "math_fallback"
+
+
+def resolve_route_for_text(
+    db: Session,
+    *,
+    user: "User",
+    text: str,
+    has_images: bool = False,
+    reasoning: bool = False,
+    project_id: str | None = None,
+    history_len: int = 0,
+) -> tuple[AiProvider, str, dict] | None:
+    """Klassifiziert eine Anfrage, prueft 5h-Soft-Cap und liefert (Provider, Modell, routing_meta)."""
+    from services import ai_limit_service, ai_usage_service
+
+    effective_limits = ai_limit_service.resolve_effective_limits(db, user)
+    soft_cap = bool(
+        effective_limits.soft_cap_downgrade
+        and ai_usage_service.is_five_hour_limit_exceeded(
+            db, user, max(1, len(text) // 4 + 2048)
+        )
+    )
+    if soft_cap:
+        tier, score, route_reason = "fallback", 0.0, "soft_cap_5h"
     else:
-        score = 0.80
-
-    has_code = bool(_CODE_SIGNAL_RE.search(cleaned))
-    if has_code:
-        score += 0.28
-
-    complex_hits = sum(1 for kw in _COMPLEX_KEYWORDS if kw in low)
-    if complex_hits == 1:
-        score += 0.22
-    elif complex_hits >= 2:
-        score += 0.34
-
-    if project_id:
-        score += 0.24
-    if reasoning:
-        score += 0.20
-    if has_images:
-        score += 0.16
-    if history_len >= 8:
-        score += 0.08
-
-    score = round(max(0.0, min(1.0, score)), 3)
-    hard_guard = has_code or bool(has_images)
-    guard_min_standard = hard_guard or bool(project_id) or bool(reasoning)
-
-    if not hard_guard and complex_hits == 0 and length <= 140:
-        tied_eco = _embedding_tiebreaker(cleaned, guard_min_standard=False)
-        if tied_eco == "eco":
-            return "eco", min(score, 0.25), "semantic_eco"
-        if (
-            not ai_embedding_service.is_ready()
-            and not has_path_or_symbol
-            and word_count <= 3
-            and length <= 24
-        ):
-            return "eco", min(score, 0.2), "short_utterance"
-
-    if score < 0.35 and not guard_min_standard:
-        return "eco", score, "simple_score"
-    if score < 0.35 and guard_min_standard:
-        return "standard", max(0.35, score), "agentic_quality_guard"
-    if score > 0.65:
-        return "flagship", score, "complex_score"
-
-    tied = _embedding_tiebreaker(cleaned, guard_min_standard=guard_min_standard)
-    if tied in ("eco", "standard", "flagship"):
-        return tied, score, "embedding_tiebreaker"
-    return "standard", score, "grey_zone_default"
+        tier, score, route_reason = classify_request(
+            text=text,
+            has_images=has_images,
+            reasoning=reasoning,
+            project_id=project_id,
+            history_len=history_len,
+            db=db,
+        )
+    candidates = resolve_candidates(db, tier=tier, soft_cap=soft_cap)
+    for idx, cand in enumerate(candidates):
+        resolved = db.get(AiProvider, cand["provider_id"])
+        if resolved is None or not resolved.enabled:
+            continue
+        routing_meta = {
+            "tier": cand["tier"],
+            "model": cand["model"],
+            "provider_id": cand["provider_id"],
+            "provider_name": cand["provider_name"],
+            "reason": route_reason,
+            "score": score,
+            "weight": cand["weight"],
+            "soft_cap": soft_cap,
+            "candidates": candidates,
+            "candidate_index": idx,
+        }
+        return resolved, cand["model"], routing_meta
+    return None
 
 
 def resolve_candidates(

@@ -216,10 +216,33 @@ def worker_start(
             ),
         }
 
-    from services import ai_chat_service, ai_provider_service
+    from services import ai_chat_service, ai_limit_service, ai_provider_service, ai_router_service
 
     anbieter = ai_provider_service.worker_anbieter(db, user)
-    if anbieter is None:
+    parent_routed = False
+    if conversation_id:
+        parent_run = (
+            db.query(AiRun)
+            .filter(AiRun.conversation_id == conversation_id)
+            .order_by(AiRun.created_at.desc(), AiRun.id.desc())
+            .first()
+        )
+        if parent_run is not None:
+            parent_routed = isinstance(
+                ai_run_service.zustand_lesen(parent_run).get("routing"), dict
+            )
+
+    effective_limits = ai_limit_service.resolve_effective_limits(db, user)
+    should_route = (
+        parent_routed
+        or ai_router_service.is_router_provider(anbieter)
+        or bool(effective_limits.router_only)
+    )
+
+    worker_requested_model: str | None = None
+    worker_routing_meta: dict | None = None
+
+    if anbieter is None and not should_route:
         return {
             "started": False,
             "reason": "kein_anbieter",
@@ -230,6 +253,34 @@ def worker_start(
             ),
         }
 
+    # Das Projekt erbt der Auftrag vom aufrufenden Lauf — wie Herkunft und
+    # Familie, und ebenso aus dem Laufzustand statt aus den Argumenten. Die
+    # Kennung kommt aus der Unterhaltung, nicht aus dem Modell: was ein Modell
+    # schreiben kann, ist keine Tatsache über die Welt, aus der es spricht.
+    project_id = _projekt_des_laufs(db, user, conversation_id)
+
+    if should_route:
+        stufe_vorab = anbieter.worker_reasoning_effort if anbieter is not None else None
+        routed = ai_router_service.resolve_route_for_text(
+            db,
+            user=user,
+            text=auftrag,
+            has_images=False,
+            reasoning=bool(stufe_vorab),
+            project_id=project_id,
+            history_len=0,
+        )
+        if routed is None:
+            return {
+                "started": False,
+                "reason": "kein_anbieter",
+                "detail": (
+                    "Der Singra KI-Router hat derzeit kein verfügbares Zielmodell "
+                    "für diesen Auftrag."
+                ),
+            }
+        anbieter, worker_requested_model, worker_routing_meta = routed
+
     # Der Auftrag behaelt den gewaehlten Anbieter. Ohne Worker-Modell
     # verwendet der Sendepfad dessen default_model.
     if anbieter.requires_api_key and not anbieter.operator_api_key_encrypted:
@@ -239,11 +290,6 @@ def worker_start(
             "detail": "Am KI-Zugang fehlt der Schlüssel des Betreibers.",
         }
 
-    # Das Projekt erbt der Auftrag vom aufrufenden Lauf — wie Herkunft und
-    # Familie, und ebenso aus dem Laufzustand statt aus den Argumenten. Die
-    # Kennung kommt aus der Unterhaltung, nicht aus dem Modell: was ein Modell
-    # schreiben kann, ist keine Tatsache über die Welt, aus der es spricht.
-    project_id = _projekt_des_laufs(db, user, conversation_id)
     if project_id:
         # Die Projektzeile sperren, bevor geprueft wird: zwei gleichzeitige
         # Starts — auch von zwei Teammitgliedern — saehen sonst beide keinen
@@ -336,6 +382,8 @@ def worker_start(
         unbeaufsichtigt=True,
         docs_document_uid=docs_document_uid,
         docs_team_id=docs_team_id,
+        requested_model=worker_requested_model,
+        routing_meta=worker_routing_meta,
     )
     if run is None:
         # Das eben angelegte Fenster wieder wegraeumen: ohne Lauf ist es in
@@ -483,6 +531,16 @@ def worker_antwort(db: Session, *, user: User, arguments: dict) -> dict:
 
     herkunft = herkunft_aus_zustand(alter_zustand)
     familie = familie_aus_zustand(alter_zustand)
+    worker_routing = (
+        alter_zustand.get("routing")
+        if isinstance(alter_zustand.get("routing"), dict)
+        else None
+    )
+    worker_requested_model = (
+        str(alter_zustand.get("requested_model") or "").strip() or None
+        if worker_routing is not None
+        else None
+    )
 
     stufe = anbieter.worker_reasoning_effort
     run, fehler = lauf_beginnen(
@@ -499,6 +557,8 @@ def worker_antwort(db: Session, *, user: User, arguments: dict) -> dict:
         familie=familie,
         guardian_briefing_unterdruecken=True,
         unbeaufsichtigt=True,
+        requested_model=worker_requested_model,
+        routing_meta=worker_routing,
     )
     if run is None:
         return {
