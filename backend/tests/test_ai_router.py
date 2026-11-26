@@ -82,27 +82,24 @@ def _create_chat_provider(
 
 
 def test_classify_request_no_wordlists_and_math_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Router enthaelt keine Regex-/Wortlisten; rein mathematischer Fallback ohne Embedding."""
+    """Router enthaelt keine Regex-/Wortlisten; Fallback ohne Embedding schuetzt Qualitaet (nie blind eco)."""
     assert not hasattr(ai_router_service, "_CODE_SIGNAL_RE")
     assert not hasattr(ai_router_service, "_COMPLEX_KEYWORDS")
     assert not hasattr(ai_router_service, "_SIMPLE_GREETING_RE")
 
     monkeypatch.setattr(ai_router_service.ai_embedding_service, "encode", lambda texts, db=None, nur_lokal=False: None)
 
-    tier_hi, _, reason_hi = ai_router_service.classify_request(text="Hallo!")
-    assert tier_hi == "eco"
-    assert reason_hi == "math_fallback"
-
-    tier_proj_hi, _, reason_proj_hi = ai_router_service.classify_request(
-        text="Hallo!", project_id="proj-123", reasoning=True
+    # Kurze komplexe Anfrage darf ohne Embedding niemals auf eco abrutschen
+    tier_short_app, _, reason_short_app = ai_router_service.classify_request(
+        text="Baue mir eine App für meine Steuererklärung"
     )
-    assert tier_proj_hi == "eco"
-    assert reason_proj_hi == "math_fallback"
+    assert tier_short_app == "standard"
+    assert reason_short_app == "math_fallback"
 
-    grey_text = "Kannst du mir bitte kurz helfen? " * 10
-    tier_med, _, reason_med = ai_router_service.classify_request(text=grey_text)
-    assert tier_med == "standard"
-    assert reason_med == "math_fallback"
+    # Auch ohne Embedding wird nie blind eco geraten (konservativ standard)
+    tier_hi, _, reason_hi = ai_router_service.classify_request(text="Hallo!")
+    assert tier_hi == "standard"
+    assert reason_hi == "math_fallback"
 
     dense_code = "def f(x):\n    if x == {1: 2}:\n        return x;\n" * 45
     tier_dense, _, reason_dense = ai_router_service.classify_request(text=dense_code)
@@ -117,7 +114,7 @@ def test_classify_request_semantic_local_and_remote_fallback(
     db: Session,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Semantische Klassifikation nutzt Kodierung vom lokalen Modell oder Remote-Rueckfall getrennt."""
+    """Semantische Klassifikation nutzt Kodierung vom lokalen Modell oder Remote-Rueckfall und sichert Qualitaet."""
     from services.ai_embedding_service import Kodierung, MODEL_TAG
 
     ai_router_service._PROTO_CACHE.clear()
@@ -129,43 +126,66 @@ def test_classify_request_semantic_local_and_remote_fallback(
             low = t.lower()
             if (
                 "kurze begrüßung" in low
-                or "einfache wissensfrage" in low
-                or "kleine routineaufgabe" in low
+                or "triviale einzelne" in low
                 or t.startswith("Hallo")
-                or "port=25565" in low
                 or "wie spät" in low
             ):
-                vecs.append([1.0, 0.0, 0.0])
+                vecs.append([1.0, 0.0, 0.0, 0.0])
             elif (
-                "komplexe softwarearchitektur" in low
+                "vollständige app" in low
+                or "komplexe softwarearchitektur" in low
                 or "root-cause" in low
                 or "sicherheitsaudit" in low
+                or "steuererklärung" in low
+                or "wetter-app" in low
                 or "auth-architektur" in low
             ):
-                vecs.append([0.0, 0.0, 1.0])
+                vecs.append([0.0, 0.0, 1.0, 0.0])
+            elif "knappe mehrdeutigkeit" in low:
+                # eco leicht vorn, aber Margin < 0.04 -> muss auf standard landen
+                vecs.append([0.714, 0.700, 0.0, 0.0])
+            elif "schwache aehnlichkeit" in low:
+                # eco vorn gegenueber std/flag, aber Cosine < 0.35 -> muss auf standard landen
+                vecs.append([0.30, 0.0, 0.0, 0.95])
             else:
-                vecs.append([0.0, 1.0, 0.0])
+                vecs.append([0.0, 1.0, 0.0, 0.0])
         return Kodierung(vektoren=vecs, modell=active_model)
 
     monkeypatch.setattr(ai_router_service.ai_embedding_service, "encode", fake_encode)
 
+    # Klare triviale Begruessung -> eco (auch bei Projektkontext)
     tier_eco, _, reason_eco = ai_router_service.classify_request(
-        text="Ändere port=25565 in server.properties", project_id="proj-123", db=db
+        text="Hallo!", project_id="proj-123", db=db
     )
     assert tier_eco == "eco"
     assert reason_eco == "semantic_local"
 
+    # Kurze App-Bau-Anfrage -> flagship
+    tier_app, _, reason_app = ai_router_service.classify_request(
+        text="Baue mir eine App für meine Steuererklärung", project_id="proj-123", db=db
+    )
+    assert tier_app == "flagship"
+    assert reason_app == "semantic_local"
+
+    # Alltaegliche Server-/Config-Aufgabe -> standard
     tier_std, _, reason_std = ai_router_service.classify_request(
         text="Prüfe bitte die Nginx-Logs", db=db
     )
     assert tier_std == "standard"
     assert reason_std == "semantic_local"
 
-    tier_flag, _, reason_flag = ai_router_service.classify_request(
-        text="Entwirf die neue Auth-Architektur über alle Module", db=db
+    # Knappe Marge (< 0.04) oder schwache Aehnlichkeit (< 0.35) -> nie eco, sondern standard
+    tier_tight, _, reason_tight = ai_router_service.classify_request(
+        text="Knappe Mehrdeutigkeit", db=db
     )
-    assert tier_flag == "flagship"
-    assert reason_flag == "semantic_local"
+    assert tier_tight == "standard"
+    assert reason_tight == "math_tiebreaker"
+
+    tier_weak, _, reason_weak = ai_router_service.classify_request(
+        text="Schwache Aehnlichkeit", db=db
+    )
+    assert tier_weak == "standard"
+    assert reason_weak == "math_tiebreaker"
 
     # Remote-Rueckfall (z. B. Google AI Studio) cached unter eigenem Modellraum
     active_model = "google:text-embedding-004"
@@ -724,9 +744,13 @@ def test_worker_start_routes_via_singra_router(
         vecs = []
         for t in texts:
             low = t.lower()
-            if "kleine routineaufgabe" in low or "kurze begrüßung" in low or "server.properties" in low:
+            if (
+                "kurze begrüßung" in low
+                or "triviale einzelne" in low
+                or "sag kurz hallo" in low
+            ):
                 vecs.append([1.0, 0.0, 0.0])
-            elif "komplexe softwarearchitektur" in low:
+            elif "komplexe softwarearchitektur" in low or "vollständige app" in low:
                 vecs.append([0.0, 0.0, 1.0])
             else:
                 vecs.append([0.0, 1.0, 0.0])
@@ -757,7 +781,7 @@ def test_worker_start_routes_via_singra_router(
     res = ai_worker_service.worker_start(
         db,
         user=regular_user,
-        arguments={"auftrag": "Ändere max-players in server.properties auf 20", "titel": "Config"},
+        arguments={"auftrag": "Sag kurz Hallo zur Begrüßung im Team", "titel": "Hallo"},
         conversation_id=parent_conv.id,
     )
     assert res["started"] is True
@@ -785,6 +809,157 @@ def test_worker_start_routes_via_singra_router(
     assert worker_msg.model == "eco-fast"
     assert worker_msg.routed_model == "eco-fast"
     ai_router_service._PROTO_CACHE.clear()
+
+
+def test_failover_handles_auth_payment_and_rejects_with_long_cooldown(
+    db: Session,
+    regular_user: User,
+) -> None:
+    """Auth-/Zahlungs-/Ablehnungsfehler triggern Failover + laengeren Cooldown; Safety-Stopp nicht."""
+    import time
+
+    for code in (
+        "AI_PROVIDER_AUTH_FAILED",
+        "AI_PROVIDER_KEY_MISSING",
+        "AI_PROVIDER_PAYMENT_REQUIRED",
+        "AI_PROVIDER_REQUEST_REJECTED",
+        "AI_PROVIDER_PROTOCOL_ERROR",
+    ):
+        assert code in stream_engine._RETRYABLE_ROUTER_ERROR_CODES
+    assert "AI_PROVIDER_SAFETY_STOPPED" not in stream_engine._RETRYABLE_ROUTER_ERROR_CODES
+
+    ai_router_service.clear_cooldowns()
+    p1 = _create_chat_provider(db, name="BadKey-P1", default_model="model-a")
+    p2 = _create_chat_provider(db, name="Healthy-P2", default_model="model-b")
+
+    conv = AiConversation(
+        id=str(uuid4()),
+        user_id=regular_user.id,
+        kind="primary",
+        title="Auth Failover Test",
+    )
+    db.add(conv)
+    db.flush()
+
+    msg_id = str(uuid4())
+    req_id = str(uuid4())
+    db.add(
+        AiMessage(
+            id=msg_id,
+            conversation_id=conv.id,
+            role="assistant",
+            content="",
+            status="streaming",
+            provider_id=p1.id,
+            model="model-a",
+            routed_tier="standard",
+            routed_model="model-a",
+            routed_provider_name=p1.name,
+            routed_reason="semantic_local",
+            request_id=req_id,
+        )
+    )
+    ev = AiUsageEvent(
+        request_id=req_id,
+        user_id=regular_user.id,
+        provider_id=p1.id,
+        model="model-a",
+        status="reserved",
+        reserved_tokens=50,
+        reserved_cost_microunits=0,
+        accounted_tokens=50,
+        accounted_cost_microunits=0,
+    )
+    db.add(ev)
+    db.flush()
+
+    zustand = {
+        "routing": {
+            "tier": "standard",
+            "model": "model-a",
+            "provider_id": p1.id,
+            "provider_name": p1.name,
+            "weight": 1.0,
+            "candidate_index": 0,
+            "candidates": [
+                {"provider_id": p1.id, "provider_name": p1.name, "model": "model-a", "tier": "standard", "weight": 1.0},
+                {"provider_id": p2.id, "provider_name": p2.name, "model": "model-b", "tier": "standard", "weight": 1.0},
+            ],
+        }
+    }
+    run = AiRun(
+        id=str(uuid4()),
+        conversation_id=conv.id,
+        user_id=regular_user.id,
+        provider_id=p1.id,
+        message_id=msg_id,
+        status="running",
+        state_json="{}",
+    )
+    db.add(run)
+    db.commit()
+
+    # Zweites Modell desselben kaputten Providers wird bei Auth-Fehler ebenfalls uebersprungen
+    zustand_multi = {
+        "routing": {
+            "tier": "standard",
+            "model": "model-a",
+            "provider_id": p1.id,
+            "provider_name": p1.name,
+            "weight": 1.0,
+            "candidate_index": 0,
+            "candidates": [
+                {"provider_id": p1.id, "provider_name": p1.name, "model": "model-a", "tier": "standard", "weight": 1.0},
+                {"provider_id": p1.id, "provider_name": p1.name, "model": "model-a2", "tier": "standard", "weight": 1.0},
+                {"provider_id": p2.id, "provider_name": p2.name, "model": "model-b", "tier": "standard", "weight": 1.0},
+            ],
+        }
+    }
+    switched = stream_engine._router_failover_schritt(
+        run_id=run.id,
+        user_id=regular_user.id,
+        message_id=msg_id,
+        usage_event_id=ev.id,
+        failed_provider_id=p1.id,
+        failed_model="model-a",
+        zustand=zustand_multi,
+        error_code="AI_PROVIDER_AUTH_FAILED",
+    )
+    assert switched is not None
+    next_prov, _, next_routing = switched
+    assert next_prov.id == p2.id
+    assert next_routing["model"] == "model-b"
+
+    assert ai_router_service.is_in_cooldown(p1.id, "model-a") is True
+    assert ai_router_service.is_in_cooldown(p1.id, "model-a2") is True
+    remaining = ai_router_service._COOLDOWNS[(p1.id, "*")] - time.monotonic()
+    assert remaining > 120
+    ai_router_service.clear_cooldowns()
+
+
+def test_project_workspace_configure_preview_schema_accepts_port_and_healthcheck(
+    db: Session,
+    regular_user: User,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """configure_preview-Schema deckt port und healthcheck_path wie im Prompt versprochen ab."""
+    from services.ai_action_errors import AiActionValidationError
+    from services.ai_tools import project_tools
+
+    props = project_tools._WORKSPACE["function"]["parameters"]["properties"]
+    assert "port" in props
+    assert props["port"]["type"] == "integer"
+    assert "healthcheck_path" in props
+    assert props["healthcheck_path"]["type"] == "string"
+
+    monkeypatch.setattr(project_tools, "_pruefe_projekt_sperre", lambda *a, **kw: None)
+    for bad_port in ("abc", True, 0, 70000):
+        with pytest.raises(AiActionValidationError):
+            project_tools.projekt_werkzeug(
+                db,
+                user=regular_user,
+                arguments={"action": "configure_preview", "project_id": "p", "port": bad_port},
+            )
 
 
 async def _noop_async() -> None:

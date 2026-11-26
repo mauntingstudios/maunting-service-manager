@@ -490,14 +490,44 @@ def worker_antwort(db: Session, *, user: User, arguments: dict) -> dict:
     # Der Auftrag bleibt auf seinem Zugang. Erst wenn der zwischenzeitlich
     # weg oder abgeschaltet ist, gilt der Erbweg von `worker_start`.
     from models import AiProvider
-    from services import ai_provider_service
+    from services import ai_limit_service, ai_provider_service, ai_router_service
 
     anbieter = (
         db.get(AiProvider, juengster.provider_id) if juengster.provider_id else None
     )
     if anbieter is None or not anbieter.enabled:
         anbieter = ai_provider_service.worker_anbieter(db, user)
-    if anbieter is None:
+
+    alter_zustand = ai_run_service.zustand_lesen(juengster)
+    effective_limits = ai_limit_service.resolve_effective_limits(db, user)
+    should_route = (
+        isinstance(alter_zustand.get("routing"), dict)
+        or ai_router_service.is_router_provider(anbieter)
+        or bool(effective_limits.router_only)
+    )
+
+    worker_requested_model: str | None = None
+    worker_routing: dict | None = None
+    if should_route:
+        stufe_vorab = anbieter.worker_reasoning_effort if anbieter is not None else None
+        routed = ai_router_service.resolve_route_for_text(
+            db,
+            user=user,
+            text=antwort,
+            has_images=False,
+            reasoning=bool(stufe_vorab),
+            project_id=fenster.project_id,
+            history_len=0,
+        )
+        if routed is None:
+            return {
+                "delivered": False,
+                "worker_id": fenster.id,
+                "reason": "kein_anbieter",
+                "detail": "Der Singra KI-Router hat derzeit kein verfügbares Zielmodell.",
+            }
+        anbieter, worker_requested_model, worker_routing = routed
+    elif anbieter is None:
         return {
             "delivered": False,
             "worker_id": fenster.id,
@@ -505,9 +535,16 @@ def worker_antwort(db: Session, *, user: User, arguments: dict) -> dict:
             "detail": "Es ist kein KI-Zugang bestimmbar, der die Antwort tragen könnte.",
         }
 
+    if anbieter.requires_api_key and not anbieter.operator_api_key_encrypted:
+        return {
+            "delivered": False,
+            "worker_id": fenster.id,
+            "reason": "kein_schluessel",
+            "detail": "Am KI-Zugang fehlt der Schlüssel des Betreibers.",
+        }
+
     # Der Rahmen des Vorgaengers traegt Kanal und Titel — die Antwort aendert
     # daran nichts.
-    alter_zustand = ai_run_service.zustand_lesen(juengster)
     alter_rahmen = alter_zustand.get("worker")
     if not isinstance(alter_rahmen, dict):
         alter_rahmen = {}
@@ -531,16 +568,6 @@ def worker_antwort(db: Session, *, user: User, arguments: dict) -> dict:
 
     herkunft = herkunft_aus_zustand(alter_zustand)
     familie = familie_aus_zustand(alter_zustand)
-    worker_routing = (
-        alter_zustand.get("routing")
-        if isinstance(alter_zustand.get("routing"), dict)
-        else None
-    )
-    worker_requested_model = (
-        str(alter_zustand.get("requested_model") or "").strip() or None
-        if worker_routing is not None
-        else None
-    )
 
     stufe = anbieter.worker_reasoning_effort
     run, fehler = lauf_beginnen(

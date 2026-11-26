@@ -59,6 +59,8 @@ _WORKSPACE = _function(
             "path": {"type": "string", "maxLength": 240},
             "entry_file": {"type": "string", "maxLength": 240, "description": "Vorschau-Einstieg (index.html, src/App.tsx)."},
             "framework": {"type": "string", "maxLength": 64, "description": "html, react, fullstack."},
+            "port": {"type": "integer", "minimum": 1, "maximum": 65535, "description": "Optionaler Vorschau-Port (configure_preview)."},
+            "healthcheck_path": {"type": "string", "maxLength": 240, "description": "Optionaler Healthcheck-Pfad (configure_preview)."},
             "viewports": {
                 "type": "array",
                 "items": {"type": "string", "enum": ["mobile", "tablet", "desktop"]},
@@ -403,13 +405,24 @@ def projekt_werkzeug(
         if action in ("test_project", "verify_project"):
             return ai_project_service.verify_project_sandbox(db, user, pid)
         if action == "configure_preview":
+            raw_port = arguments.get("port")
+            parsed_port: int | None = None
+            if raw_port is not None and raw_port != "":
+                if isinstance(raw_port, bool):
+                    raise AiActionValidationError("port muss eine ganze Zahl zwischen 1 und 65535 sein")
+                try:
+                    parsed_port = int(raw_port)
+                except (TypeError, ValueError) as exc:
+                    raise AiActionValidationError("port muss eine ganze Zahl zwischen 1 und 65535 sein") from exc
+                if not 1 <= parsed_port <= 65535:
+                    raise AiActionValidationError("port muss zwischen 1 und 65535 liegen")
             return ai_project_service.configure_project_preview(
                 db,
                 user,
                 pid,
                 entry_file=str(arguments.get("entry_file") or arguments.get("path") or "").strip() or None,
                 framework=str(arguments.get("framework") or "").strip() or None,
-                port=int(arguments["port"]) if arguments.get("port") else None,
+                port=parsed_port,
                 healthcheck_path=str(arguments.get("healthcheck_path") or "").strip() or None,
             )
         if action == "preview_inspect":

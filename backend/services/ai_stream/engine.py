@@ -43,6 +43,7 @@ from services.ai_proposal_service import (
     execute_autonomously,
 )
 from services.ai_provider_service import resolve_api_key
+from services.dis_client import DisSidecarError
 from services.ai_guardrails import (
     build_prompt_fingerprints,
     scrub_prompt_leak,
@@ -459,6 +460,23 @@ _RETRYABLE_ROUTER_ERROR_CODES = frozenset({
     "AI_PROVIDER_STREAM_TIMEOUT",
     "AI_PROVIDER_STREAM_INCOMPLETE",
     "AI_PROVIDER_ENDPOINT_NOT_FOUND",
+    "AI_PROVIDER_AUTH_FAILED",
+    "AI_PROVIDER_KEY_MISSING",
+    "AI_PROVIDER_PAYMENT_REQUIRED",
+    "AI_PROVIDER_REQUEST_REJECTED",
+    "AI_PROVIDER_PROTOCOL_ERROR",
+    "AI_PROVIDER_CONTEXT_EXCEEDED",
+})
+
+_PROVIDER_WIDE_COOLDOWN_ERROR_CODES = frozenset({
+    "AI_PROVIDER_AUTH_FAILED",
+    "AI_PROVIDER_KEY_MISSING",
+    "AI_PROVIDER_PAYMENT_REQUIRED",
+    "AI_PROVIDER_CONFIGURATION_ERROR",
+})
+
+_LONG_COOLDOWN_ERROR_CODES = _PROVIDER_WIDE_COOLDOWN_ERROR_CODES | frozenset({
+    "AI_PROVIDER_ENDPOINT_NOT_FOUND",
 })
 
 
@@ -471,6 +489,7 @@ def _router_failover_schritt(
     failed_provider_id: int,
     failed_model: str,
     zustand: dict,
+    error_code: str | None = None,
 ) -> tuple[Any, str | None, dict] | None:
     """Schaltet vor dem ersten Token auf den naechsten Pool-Kandidaten um."""
     routing = zustand.get("routing")
@@ -479,7 +498,20 @@ def _router_failover_schritt(
     candidates = routing.get("candidates")
     if not isinstance(candidates, list) or not candidates:
         return None
-    ai_router_service.mark_model_cooldown(failed_provider_id, failed_model)
+    cooldown_sec = (
+        300
+        if error_code in _LONG_COOLDOWN_ERROR_CODES
+        else ai_router_service.COOLDOWN_SECONDS
+    )
+    provider_wide = error_code in _PROVIDER_WIDE_COOLDOWN_ERROR_CODES
+    if provider_wide:
+        ai_router_service.mark_provider_cooldown(
+            failed_provider_id, seconds=cooldown_sec
+        )
+    else:
+        ai_router_service.mark_model_cooldown(
+            failed_provider_id, failed_model, seconds=cooldown_sec
+        )
     try:
         idx = int(routing.get("candidate_index", 0))
     except (TypeError, ValueError):
@@ -496,12 +528,15 @@ def _router_failover_schritt(
             model = str(cand.get("model") or "").strip()
             if not pid or not model:
                 continue
+            if provider_wide and int(pid) == int(failed_provider_id):
+                continue
             next_provider = db.get(AiProvider, int(pid))
             if next_provider is None or not next_provider.enabled:
                 continue
             try:
+                ai_provider_service.effective_spec(next_provider, mit_adresse=True)
                 api_key = resolve_api_key(db, next_provider, user_id)
-            except DisSidecarError:
+            except (AiProviderConfigurationError, KeyError, DisSidecarError):
                 continue
             if next_provider.requires_api_key and not api_key:
                 continue
@@ -821,44 +856,48 @@ async def segment_ausfuehren(run_id: str, *, client: httpx.AsyncClient | None = 
             logger.exception("Abrechnung des abgebrochenen AI-Laufs gescheitert run_id=%s", run_id)
 
     try:
-        (
-            tools,
-            angebotene_werkzeuge,
-            cache_marke,
-            kontextgrenze,
-            denken,
-            denkstufe,
-            modellname,
-            provider_messages,
-            docs_nachricht,
-        ) = await _segment_katalog_und_modell_vorbereiten(
-            client=client,
-            vorbereitung=vorbereitung,
-            guardian=guardian,
-            aufgabe=aufgabe,
-            rolle=rolle,
-            herkunft=herkunft,
-            zustand=zustand,
-            provider_messages=provider_messages,
-            run_id=run_id,
-        )
+        modellname = _modell_fuer(vorbereitung.provider, rolle, zustand)
+        segment_prepared = False
         letzte_runde = False
         rundenbeginn = 0
         current_usage = usage
         signaturen: dict[str, int] = dict(zustand.get("tool_signatures") or {})
 
         while True:
-            frueh_schloss = asyncio.Semaphore(ai_stream._werkzeug_nebenlaeufigkeit())
-            rundenbeginn = len(chunks)
-            provider_messages = auf_budget_kuerzen(provider_messages, kontextgrenze)
-            # **Direkt hinter der Kuerzung**, damit jeder Ausstieg den aktuellen Verlauf sichert.
-            zustand["provider_messages"] = provider_messages
-            anfrage_messages = (
-                [*provider_messages, docs_nachricht]
-                if docs_nachricht is not None
-                else provider_messages
-            )
             try:
+                if not segment_prepared:
+                    (
+                        tools,
+                        angebotene_werkzeuge,
+                        cache_marke,
+                        kontextgrenze,
+                        denken,
+                        denkstufe,
+                        modellname,
+                        provider_messages,
+                        docs_nachricht,
+                    ) = await _segment_katalog_und_modell_vorbereiten(
+                        client=client,
+                        vorbereitung=vorbereitung,
+                        guardian=guardian,
+                        aufgabe=aufgabe,
+                        rolle=rolle,
+                        herkunft=herkunft,
+                        zustand=zustand,
+                        provider_messages=provider_messages,
+                        run_id=run_id,
+                    )
+                    segment_prepared = True
+                frueh_schloss = asyncio.Semaphore(ai_stream._werkzeug_nebenlaeufigkeit())
+                rundenbeginn = len(chunks)
+                provider_messages = auf_budget_kuerzen(provider_messages, kontextgrenze)
+                # **Direkt hinter der Kuerzung**, damit jeder Ausstieg den aktuellen Verlauf sichert.
+                zustand["provider_messages"] = provider_messages
+                anfrage_messages = (
+                    [*provider_messages, docs_nachricht]
+                    if docs_nachricht is not None
+                    else provider_messages
+                )
                 last_response_id, denknaht, gedachte_zeichen = await _anbieter_runde_streamen(
                     client=client,
                     vorbereitung=vorbereitung,
@@ -905,6 +944,11 @@ async def segment_ausfuehren(run_id: str, *, client: httpx.AsyncClient | None = 
                         failed_provider_id=vorbereitung.provider.id,
                         failed_model=modellname,
                         zustand=zustand,
+                        error_code=(
+                            "AI_PROVIDER_CONFIGURATION_ERROR"
+                            if isinstance(exc, AiProviderConfigurationError)
+                            else exc.code
+                        ),
                     )
                     if umgeschaltet is not None:
                         next_provider, next_api_key, next_routing = umgeschaltet
@@ -930,27 +974,8 @@ async def segment_ausfuehren(run_id: str, *, client: httpx.AsyncClient | None = 
                             )
                         else:
                             zustand["context_chars"] = None
-                        (
-                            tools,
-                            angebotene_werkzeuge,
-                            cache_marke,
-                            kontextgrenze,
-                            denken,
-                            denkstufe,
-                            modellname,
-                            provider_messages,
-                            docs_nachricht,
-                        ) = await _segment_katalog_und_modell_vorbereiten(
-                            client=client,
-                            vorbereitung=vorbereitung,
-                            guardian=guardian,
-                            aufgabe=aufgabe,
-                            rolle=rolle,
-                            herkunft=herkunft,
-                            zustand=zustand,
-                            provider_messages=provider_messages,
-                            run_id=run_id,
-                        )
+                        modellname = str(next_routing.get("model") or modellname)
+                        segment_prepared = False
                         ai_run_broker.veroeffentlichen(
                             run_id,
                             "message",
