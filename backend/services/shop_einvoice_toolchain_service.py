@@ -20,8 +20,14 @@ from pathlib import Path
 from xml.etree.ElementTree import ParseError
 from xml.sax.saxutils import escape as xml_escape
 
-from defusedxml import ElementTree as SafeET
-from defusedxml.common import DefusedXmlException
+try:
+    from defusedxml import ElementTree as SafeET
+    from defusedxml.common import DefusedXmlException
+except ImportError:  # pragma: no cover - weicher Import fuer Panel-Start ohne E-Rechnungs-Parser
+    SafeET = None  # type: ignore[assignment]
+
+    class DefusedXmlException(Exception):  # type: ignore[no-redef]
+        pass
 
 from scripts.fetch_einvoice_toolchain import KOSIT_VALIDATOR_FILENAME
 
@@ -139,6 +145,8 @@ def _dedup_errors(items: list[str]) -> list[str]:
 
 
 def _parse_kosit_reports(report_paths: list[Path]) -> tuple[bool, list[str]]:
+    if SafeET is None:
+        return False, ["defusedxml nicht verfuegbar"]
     accepted = False
     rejected = False
     errors: list[str] = []
@@ -257,6 +265,8 @@ def validate_xrechnung_xml(xml_text: str) -> dict[str, object]:
 
 
 def _parse_verapdf_mrr(xml_text: str) -> tuple[bool, list[str]]:
+    if SafeET is None:
+        return False, ["defusedxml nicht verfuegbar"]
     if not xml_text.strip():
         return False, ["Leerer veraPDF-Pruefbericht"]
     try:

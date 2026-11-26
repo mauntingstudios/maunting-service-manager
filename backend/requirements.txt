@@ -168,3 +168,6 @@ pyyaml==6.0.3
 # Sicherheitsgewinn) und der Eigenbau (siehe Notwendigkeit).
 segno==1.6.6
 sentry-sdk==2.75.0
+# XXE-/XML-Bomb-Schutz fuer E-Rechnung / KoSIT-Pruefberichte
+# (weich importiert in services/shop_einvoice_toolchain_service.py, keine transitiven Abhaengigkeiten).
+defusedxml==0.7.1
