@@ -15,6 +15,7 @@ from services import (
     ai_project_publish,
     ai_project_quota_service,
     ai_project_service,
+    ai_project_wiki_service,
     permission_service,
 )
 from services.ai_project_publish import AiProjectPublishGuardError
@@ -85,6 +86,10 @@ class AiProjectResponse(BaseModel):
     git_branch: str | None = None
     git_token_configured: bool = False
     file_count: int = 0
+    wiki_enabled: bool = False
+    wiki_auto_update: bool = False
+    wiki_path: str = ".singra/wiki"
+    wiki_status: str = "idle"
     created_at: datetime
     updated_at: datetime
 
@@ -308,6 +313,13 @@ def write_project_file(
             content=payload.content,
             mime_type=payload.mime_type,
         )
+        try:
+            proj = ai_project_service.get_project(db, user, project_id)
+            ai_project_wiki_service.maybe_schedule_auto_update(
+                db, user, proj, changed_path=row.path
+            )
+        except Exception:
+            pass
         resp = AiProjectFileResponse.model_validate(row)
         resp.diff = getattr(row, "_last_diff", None)
         return resp
@@ -329,6 +341,13 @@ def delete_project_file(
 ) -> Response:
     try:
         ai_project_service.delete_project_file(db, user, project_id, path)
+        try:
+            proj = ai_project_service.get_project(db, user, project_id)
+            ai_project_wiki_service.maybe_schedule_auto_update(
+                db, user, proj, changed_path=path
+            )
+        except Exception:
+            pass
         return Response(status_code=status.HTTP_204_NO_CONTENT)
     except AiProjectQuotaError as exc:
         raise HTTPException(
@@ -996,4 +1015,218 @@ def get_project_deployment(
         "created_at": dep.created_at.isoformat() if dep.created_at else None,
         "finished_at": dep.finished_at.isoformat() if dep.finished_at else None,
     }
+
+
+# ── Projekt-Wiki (DeepWiki) ──────────────────────────────────────────────
+
+
+class AiProjectWikiSettingsPayload(BaseModel):
+    wiki_enabled: bool | None = None
+    wiki_auto_update: bool | None = None
+    wiki_path: str | None = Field(default=None, max_length=120)
+
+
+class AiProjectWikiPageWritePayload(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
+    category: str = Field(default="module", max_length=32)
+    summary: str = Field(default="", max_length=500)
+    content_markdown: str = Field(default="")
+    source_files: list[str] = Field(default_factory=list)
+
+
+class AiProjectWikiGeneratePayload(BaseModel):
+    mode: str = Field(default="generate", pattern="^(generate|update)$")
+    changed_files: list[str] | None = None
+
+
+class AiProjectWikiCommitPayload(BaseModel):
+    message: str | None = Field(default=None, max_length=500)
+    push: bool = False
+
+
+def _wiki_error_to_http(exc: Exception) -> HTTPException:
+    if isinstance(exc, AiProjectQuotaError):
+        return HTTPException(status_code=403, detail={"code": exc.code, "message": str(exc)})
+    msg = str(exc)
+    status_code = 404 if "nicht gefunden" in msg.lower() else 400
+    return HTTPException(status_code=status_code, detail=msg)
+
+
+@router.get("/{project_id}/wiki")
+def get_project_wiki(
+    project_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_global("ai.projects.wiki")),
+) -> dict[str, object]:
+    try:
+        return ai_project_wiki_service.get_wiki_overview(db, user, project_id)
+    except (AiProjectQuotaError, AiProjectError) as exc:
+        raise _wiki_error_to_http(exc) from exc
+
+
+@router.patch("/{project_id}/wiki/settings")
+def patch_project_wiki_settings(
+    project_id: str,
+    payload: AiProjectWikiSettingsPayload,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_global("ai.projects.wiki")),
+    _: None = Depends(verify_csrf),
+) -> dict[str, object]:
+    try:
+        return ai_project_wiki_service.update_wiki_settings(
+            db,
+            user,
+            project_id,
+            wiki_enabled=payload.wiki_enabled,
+            wiki_auto_update=payload.wiki_auto_update,
+            wiki_path=payload.wiki_path,
+        )
+    except (AiProjectQuotaError, AiProjectError) as exc:
+        raise _wiki_error_to_http(exc) from exc
+
+
+@router.get("/{project_id}/wiki/search")
+def search_project_wiki(
+    project_id: str,
+    q: str = Query(min_length=1, max_length=500),
+    limit: int = Query(5, ge=1, le=15),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_global("ai.projects.wiki")),
+) -> list[dict[str, object]]:
+    try:
+        return ai_project_wiki_service.search_wiki(db, user, project_id, q, limit=limit)
+    except (AiProjectQuotaError, AiProjectError) as exc:
+        raise _wiki_error_to_http(exc) from exc
+
+
+@router.get("/{project_id}/wiki/pages/{slug}")
+def get_project_wiki_page(
+    project_id: str,
+    slug: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_global("ai.projects.wiki")),
+) -> dict[str, object]:
+    try:
+        return ai_project_wiki_service.get_wiki_page(db, user, project_id, slug)
+    except (AiProjectQuotaError, AiProjectError) as exc:
+        raise _wiki_error_to_http(exc) from exc
+
+
+@router.put("/{project_id}/wiki/pages/{slug}")
+def put_project_wiki_page(
+    project_id: str,
+    slug: str,
+    payload: AiProjectWikiPageWritePayload,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_global("ai.projects.wiki")),
+    _: None = Depends(verify_csrf),
+) -> dict[str, object]:
+    try:
+        return ai_project_wiki_service.upsert_wiki_page(
+            db,
+            user,
+            project_id,
+            slug=slug,
+            title=payload.title,
+            category=payload.category,
+            summary=payload.summary,
+            markdown=payload.content_markdown,
+            source_files=payload.source_files,
+            updated_by="user",
+        )
+    except (AiProjectQuotaError, AiProjectError) as exc:
+        raise _wiki_error_to_http(exc) from exc
+
+
+@router.delete("/{project_id}/wiki/pages/{slug}")
+def delete_project_wiki_page(
+    project_id: str,
+    slug: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_global("ai.projects.wiki")),
+    _: None = Depends(verify_csrf),
+) -> dict[str, object]:
+    try:
+        return ai_project_wiki_service.delete_wiki_page(db, user, project_id, slug)
+    except (AiProjectQuotaError, AiProjectError) as exc:
+        raise _wiki_error_to_http(exc) from exc
+
+
+@router.post("/{project_id}/wiki/pages/{slug}/doc")
+def open_project_wiki_doc(
+    project_id: str,
+    slug: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_global("ai.projects.wiki")),
+    _: None = Depends(verify_csrf),
+) -> dict[str, object]:
+    try:
+        return ai_project_wiki_service.open_page_doc(db, user, project_id, slug)
+    except (AiProjectQuotaError, AiProjectError) as exc:
+        raise _wiki_error_to_http(exc) from exc
+
+
+@router.post("/{project_id}/wiki/pages/{slug}/doc/sync")
+def sync_project_wiki_doc(
+    project_id: str,
+    slug: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_global("ai.projects.wiki")),
+    _: None = Depends(verify_csrf),
+) -> dict[str, object]:
+    try:
+        return ai_project_wiki_service.sync_page_from_doc(db, user, project_id, slug)
+    except (AiProjectQuotaError, AiProjectError) as exc:
+        raise _wiki_error_to_http(exc) from exc
+
+
+@router.post("/{project_id}/wiki/sync")
+def sync_project_wiki_workspace(
+    project_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_global("ai.projects.wiki")),
+    _: None = Depends(verify_csrf),
+) -> dict[str, object]:
+    try:
+        return ai_project_wiki_service.sync_from_workspace(db, user, project_id)
+    except (AiProjectQuotaError, AiProjectError) as exc:
+        raise _wiki_error_to_http(exc) from exc
+
+
+@router.post("/{project_id}/wiki/generate")
+def generate_project_wiki(
+    project_id: str,
+    payload: AiProjectWikiGeneratePayload | None = None,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_global("ai.projects.wiki")),
+    _: None = Depends(verify_csrf),
+) -> dict[str, object]:
+    mode = "update" if (payload and payload.mode == "update") else "generate"
+    changed = payload.changed_files if payload else None
+    try:
+        return ai_project_wiki_service.trigger_wiki_worker(
+            db, user, project_id, mode=mode, changed_files=changed
+        )
+    except (AiProjectQuotaError, AiProjectError) as exc:
+        raise _wiki_error_to_http(exc) from exc
+
+
+@router.post("/{project_id}/wiki/commit")
+def commit_project_wiki(
+    project_id: str,
+    payload: AiProjectWikiCommitPayload | None = None,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_global("ai.projects.wiki")),
+    _: None = Depends(verify_csrf),
+) -> dict[str, object]:
+    try:
+        return ai_project_wiki_service.commit_wiki(
+            db,
+            user,
+            project_id,
+            message=payload.message if payload else None,
+            push=bool(payload.push) if payload else False,
+        )
+    except (AiProjectQuotaError, AiProjectError) as exc:
+        raise _wiki_error_to_http(exc) from exc
 

@@ -67,6 +67,7 @@ const KI_PUNKTE = [
   'mailboxes',
   'calendars',
   'customProviders',
+  'projectWiki',
 ] as const;
 
 describe('Privacy page', () => {
@@ -150,13 +151,13 @@ describe('Privacy page', () => {
    * ist praktisch eine stille Aenderung — deshalb haengt die Zusage hier an den
    * konkreten Werten und nicht an "irgendeiner" Version.
    */
-  it('weist die Fassung 3.49 vom 2026-11-25 aus (Rate-Limiting und IP-Verarbeitung hinter Reverse-Proxy)', () => {
+  it('weist die Fassung 3.50 vom 2026-11-26 aus (Projekt-Wiki und Rate-Limiting)', () => {
     const { container } = renderPrivacy();
 
     expect(
-      screen.getByText(new RegExp(`${i18n.t('privacyPolicy.versionLabel')}\\s+v?3\\.49`)),
+      screen.getByText(new RegExp(`${i18n.t('privacyPolicy.versionLabel')}\\s+v?3\\.50`)),
     ).toBeInTheDocument();
-    // 3.49: Proxy-Client-IP-Auswertung fuer Rate-Limiting (fluechtig, max. 60s) und Betriebslogs.
+    // 3.49/3.50: Proxy-Client-IP-Auswertung fuer Rate-Limiting (fluechtig, max. 60s) und Betriebslogs.
     const rateLimitDe = i18n.t('privacyPolicy.sections.accounts.items.rateLimit', { lng: 'de' });
     expect(rateLimitDe).toMatch(/X-Forwarded-For/);
     expect(rateLimitDe).toMatch(/60 Sekunden/);
@@ -451,8 +452,11 @@ describe('Privacy page', () => {
     // sechzehn seit dem Google-Rückfall der Bedeutungssuche (24.09.2026),
     // siebzehn seit ein Hintergrundschritt das Gedächtnis schreibt (06.10.2026),
     // achtzehn seit der Import mit dem Gedächtnis-Modell liest (07.10.2026),
-    // neunzehn seit frei konfigurierbare lokale/eigene Endpunkte dokumentiert sind (11.11.2026).
-    expect(gerendert).toHaveLength(19);
+    // neunzehn seit frei konfigurierbare lokale/eigene Endpunkte dokumentiert sind (11.11.2026),
+    // zwanzig seit das Projekt-Wiki im Datenschutzhinweis steht (26.11.2026).
+    expect(gerendert).toHaveLength(20);
+    expect(i18n.t('privacyPolicy.sections.ai.items.projectWiki', { lng: 'de' })).toMatch(/ai\.projects\.wiki/);
+    expect(i18n.t('privacyPolicy.sections.ai.items.projectWiki', { lng: 'en' })).toMatch(/\.singra\/wiki\//);
   });
 
   /**

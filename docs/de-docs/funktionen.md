@@ -841,8 +841,12 @@ Frontend mitliefern; sonst hat die Sprachoberfläche nichts zu zeigen.
 
 ### 13.10 Projekte und Coding-Sandbox
 
-`routers/ai_projects.py` (33 Routen) gibt der KI einen Projektarbeitsbereich mit Dateien,
-Befehlen, Git und Vorschau. Die Sandbox ist keine Shell: Befehle werden gegen eine Allowlist von
+`routers/ai_projects.py` (45 Routen) gibt der KI einen Projektarbeitsbereich mit Dateien,
+Befehlen, Git, Vorschau und einem optionalen Projekt-Wiki (`wiki_enabled`, standardmäßig aus,
+Berechtigung `ai.projects.wiki`). Wissenskarten liegen als Markdown mit YAML-Frontmatter unter
+`.singra/wiki/` im Arbeitsbereich, werden rein semantisch über `ai_embedding_service` indiziert,
+nutzen optional Maunting Docs zur gemeinsamen Team-Bearbeitung und lassen sich über
+Hintergrund-Worker auf Stand halten. Die Sandbox ist keine Shell: Befehle werden gegen eine Allowlist von
 Entwicklerwerkzeugen geprüft, Pfade bleiben im Projektverzeichnis verankert
 (`ai_project_service.py`), und Git-Zugangsdaten löst das System je Nutzer über `GIT_ASKPASS` auf,
 statt sie in eine URL zu schreiben.

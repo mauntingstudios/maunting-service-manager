@@ -3,6 +3,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
 import { MarkdownBild, MarkdownLink } from '@/components/viewer/Markdownansicht'
+import { MermaidBlock } from './MermaidBlock'
 
 /**
  * Rendert Modellausgabe als Markdown.
@@ -31,6 +32,9 @@ export const AiMarkdown = memo(function AiMarkdown({ content }: { content: strin
             // `react-markdown` unterscheidet Inline- von Blockcode ueber die
             // Sprachklasse des umschliessenden <pre>. Ohne Klasse ist es Inline.
             const isBlock = Boolean(className)
+            if (isBlock && className?.includes('language-mermaid')) {
+              return <MermaidBlock chart={String(children ?? '').replace(/\n$/, '')} />
+            }
             if (isBlock) {
               return <code className="font-mono text-xs">{children}</code>
             }
@@ -40,11 +44,23 @@ export const AiMarkdown = memo(function AiMarkdown({ content }: { content: strin
               </code>
             )
           },
-          pre: ({ children }) => (
-            <pre className="my-2 overflow-x-auto rounded-lg border border-outline-variant/40 bg-surface-container-low/60 p-3">
-              {children}
-            </pre>
-          ),
+          pre: ({ children }) => {
+            const first = Array.isArray(children) ? children[0] : children
+            if (
+              first &&
+              typeof first === 'object' &&
+              'props' in first &&
+              typeof (first as { props?: { className?: string } }).props?.className === 'string' &&
+              (first as { props?: { className?: string } }).props?.className?.includes('language-mermaid')
+            ) {
+              return <>{children}</>
+            }
+            return (
+              <pre className="my-2 overflow-x-auto rounded-lg border border-outline-variant/40 bg-surface-container-low/60 p-3">
+                {children}
+              </pre>
+            )
+          },
           table: ({ children }) => (
             <div className="my-2 overflow-x-auto">
               <table className="w-full border-collapse text-xs">{children}</table>

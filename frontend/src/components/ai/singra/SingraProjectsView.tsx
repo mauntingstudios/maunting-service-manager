@@ -3,6 +3,7 @@ import { detectLineEnding, parentPath, pathSegments } from '@/components/server/
 import type { EditorTab, SearchResult } from '@/components/server/fileWorkspaceTypes'
 import {
   ArrowLeft,
+  BookOpen,
   Database,
   Eye,
   FileCode,
@@ -64,6 +65,7 @@ import { SingraFilesTab } from './SingraFilesTab'
 import { SingraPreviewTab } from './SingraPreviewTab'
 import { useSingraPreview } from './useSingraPreview'
 import { SingraSettingsTab } from './SingraSettingsTab'
+import { SingraWikiTab } from './SingraWikiTab'
 import { SingraProjectModals } from './SingraProjectModals'
 import { SingraCreateProjectModal } from './SingraCreateProjectModal'
 import { SingraPublishModal } from './SingraPublishModal'
@@ -73,6 +75,7 @@ export function SingraProjectsView({
   onOpenProjectChat,
 }: SingraProjectsViewProps) {
   const canStartDevPreview = useHasPermission('ai.projects.preview')
+  const canUseWiki = useHasPermission('ai.projects.wiki')
   const [projects, setProjects] = useState<AiProject[]>([])
   const [projectQuota, setProjectQuota] = useState<AiProjectQuotaSummary | null>(null)
   const [teams, setTeams] = useState<Team[]>([])
@@ -1434,17 +1437,18 @@ export function SingraProjectsView({
               </div>
             </div>
 
-            {/* 6 Cozy Workspace Tabs: Mobile 6-Column Control, Desktop Pills */}
-            <div className="grid grid-cols-6 gap-1 border-b border-outline-variant/20 bg-surface-container-low/30 p-1 sm:hidden shrink-0">
+            {/* Workspace Tabs: Mobile Responsive Grid, Desktop Pills */}
+            <div className={`grid gap-1 border-b border-outline-variant/20 bg-surface-container-low/30 p-1 sm:hidden shrink-0 ${canUseWiki ? 'grid-cols-7' : 'grid-cols-6'}`}>
               {(
                 [
                   { id: 'chats', label: 'Unterhaltungen', mobileLabel: 'Chats', icon: MessageSquare },
                   { id: 'files', label: 'Dateien', mobileLabel: 'Dateien', icon: FileCode },
                   { id: 'preview', label: 'Vorschau', mobileLabel: 'Vorschau', icon: Globe },
                   { id: 'database', label: 'Datenbank', mobileLabel: 'DB', icon: Database },
+                  ...(canUseWiki ? [{ id: 'wiki' as const, label: 'Wiki', mobileLabel: 'Wiki', icon: BookOpen }] : []),
                   { id: 'tests', label: 'Tests & Gate', mobileLabel: 'Tests', icon: ShieldCheck },
                   { id: 'settings', label: 'Einstellungen', mobileLabel: 'Optionen', icon: Settings2 },
-                ] as const
+                ] satisfies ReadonlyArray<{ id: ProjectTab; label: string; mobileLabel: string; icon: typeof MessageSquare }>
               ).map((tab) => {
                 const Icon = tab.icon
                 const active = activeTab === tab.id
@@ -1474,9 +1478,10 @@ export function SingraProjectsView({
                   { id: 'files', label: 'Dateien', icon: FileCode },
                   { id: 'preview', label: 'Vorschau', icon: Globe },
                   { id: 'database', label: 'Datenbank', icon: Database },
+                  ...(canUseWiki ? [{ id: 'wiki' as const, label: 'Wiki', icon: BookOpen }] : []),
                   { id: 'tests', label: 'Tests & Gate', icon: ShieldCheck },
                   { id: 'settings', label: 'Einstellungen', icon: Settings2 },
-                ] as const
+                ] satisfies ReadonlyArray<{ id: ProjectTab; label: string; icon: typeof MessageSquare }>
               ).map((tab) => {
                 const Icon = tab.icon
                 const active = activeTab === tab.id
@@ -1616,6 +1621,16 @@ export function SingraProjectsView({
                   onReloadTab={handleEditorReloadTab}
                   onDeleteFile={(path) => void handleDeleteFile(path)}
                   onRunCommand={handleRunCommand}
+                />
+              )}
+
+              {activeTab === 'wiki' && canUseWiki && (
+                <SingraWikiTab
+                  selectedProject={selectedProject}
+                  onOpenSourceFile={(filePath) => {
+                    void openFileInEditor(filePath)
+                    setActiveTab('files')
+                  }}
                 />
               )}
 

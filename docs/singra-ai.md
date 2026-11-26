@@ -506,6 +506,7 @@ Singra is equipped with an integrated development and deployment studio (`backen
   24. `dev_stop`: Pauses dev containers to free system RAM.
   25. `dev_status`: Returns runtime status and health metrics of dev containers.
   26. `git_branch`, `git_open_pr`, `merge_to_main`: Manages branch lifecycles and pull request reviews.
+  27. `wiki_search`, `wiki_read`, `wiki_upsert`: Requires `ai.projects.wiki` and an enabled project wiki (`wiki_enabled`); searches indexed wiki chunks semantically via `ai_embedding_service`, reads Knowledge Cards, and writes Markdown Knowledge Cards under `.singra/wiki/`.
 
 #### 7.6.9 Rich Text Documents Engine (11 Tools)
 Allows Singra to collaborate on Word-like rich text documents, contracts, architecture notes, and documentation inside MSM.

@@ -1,7 +1,7 @@
 import type { AiProjectFile } from '@/api/ai'
 import type { FileEntry } from '@/components/server/fileWorkspaceTypes'
 
-export type ProjectTab = 'chats' | 'files' | 'preview' | 'database' | 'tests' | 'settings'
+export type ProjectTab = 'chats' | 'files' | 'wiki' | 'preview' | 'database' | 'tests' | 'settings'
 export type ProjectCreateMode = 'empty' | 'create_repo' | 'clone_repo'
 
 export interface SingraProjectsViewProps {

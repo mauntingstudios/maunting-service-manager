@@ -249,6 +249,7 @@ def git_commit_and_push(
     message: str,
     push: bool = False,
     token: str | None = None,
+    paths: list[str] | None = None,
 ) -> dict[str, object]:
     from services.ai_project_service import ensure_project_workspace, get_project, _materialize_db_files_to_workspace
     project = get_project(db, user, project_id)
@@ -275,7 +276,11 @@ def git_commit_and_push(
         if project.git_repo_url:
             _run_git(["remote", "add", "origin", project.git_repo_url], cwd=ws, env=env, text=False, timeout=10)
 
-    _run_git(["add", "-A"], cwd=ws, env=env, text=False, timeout=15)
+    if paths:
+        add_args = ["add", "--", *[p for p in paths if p and not p.startswith("-")]]
+        _run_git(add_args, cwd=ws, env=env, text=False, timeout=15)
+    else:
+        _run_git(["add", "-A"], cwd=ws, env=env, text=False, timeout=15)
     commit_res = _run_git(["-c", "commit.gpgsign=false", "commit", "-m", commit_msg], cwd=ws, env=env, timeout=15)
     push_output = ""
     if push and project.git_repo_url:
@@ -603,7 +608,11 @@ def git_create_remote_repository(
         _run_git(["init", "-b", target_branch], cwd=ws, env=env, text=False, timeout=10)
     _run_git(["remote", "remove", "origin"], cwd=ws, env=env, text=False, timeout=10)
     _run_git(["remote", "add", "origin", clone_url], cwd=ws, env=env, text=False, timeout=10)
-    _run_git(["add", "-A"], cwd=ws, env=env, text=False, timeout=15)
+    if paths:
+        add_args = ["add", "--", *[p for p in paths if p and not p.startswith("-")]]
+        _run_git(add_args, cwd=ws, env=env, text=False, timeout=15)
+    else:
+        _run_git(["add", "-A"], cwd=ws, env=env, text=False, timeout=15)
     _run_git(["commit", "-m", "Initial commit"], cwd=ws, env=env, timeout=15)
     clean_auth_url = _clean_git_remote_url(clone_url, target_provider)
     _run_git(["push", "-u", clean_auth_url, f"HEAD:{target_branch}"], cwd=ws, env=env, timeout=45)

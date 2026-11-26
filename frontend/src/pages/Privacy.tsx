@@ -185,6 +185,7 @@ export function Privacy({ zurueck, zurueckAktion }: { zurueck?: string; zurueckA
           t('privacyPolicy.sections.ai.items.mailboxes'),
           t('privacyPolicy.sections.ai.items.calendars'),
           t('privacyPolicy.sections.ai.items.customProviders'),
+          t('privacyPolicy.sections.ai.items.projectWiki'),
         ],
       },
       {

@@ -50,6 +50,9 @@ _WORKSPACE = _function(
                     "git_branch",
                     "git_open_pr",
                     "merge_to_main",
+                    "wiki_search",
+                    "wiki_read",
+                    "wiki_upsert",
                 ],
             },
             "project_id": {"type": "string", "description": "Projekt-ID (UUID)."},
@@ -112,9 +115,13 @@ _WORKSPACE = _function(
             "branch": {"type": "string", "maxLength": 120},
             "message": {"type": "string", "maxLength": 500},
             "push": {"type": "boolean"},
-            "title": {"type": "string", "maxLength": 200, "description": "PR-Titel für git_open_pr."},
+            "title": {"type": "string", "maxLength": 200, "description": "Titel (git_open_pr, wiki_upsert)."},
             "body": {"type": "string", "maxLength": 4000, "description": "PR-Beschreibung für git_open_pr."},
             "target_branch": {"type": "string", "maxLength": 120, "description": "Zielbranch (Standard: main)."},
+            "slug": {"type": "string", "maxLength": 120, "description": "Wiki-Slug (wiki_read, wiki_upsert)."},
+            "category": {"type": "string", "enum": ["overview", "architecture", "module", "api", "data", "workflow", "pitfalls"]},
+            "summary": {"type": "string", "maxLength": 500, "description": "Kurzzusammenfassung der Knowledge Card."},
+            "source_files": {"type": "array", "items": {"type": "string", "maxLength": 240}},
         },
         ["action"],
     )
@@ -156,7 +163,38 @@ _LESENDE_AKTIONEN = frozenset({
     "db_rows",
     "git_status",
     "dev_status",
+    "wiki_search",
+    "wiki_read",
 })
+
+
+def _maybe_auto_update_wiki(
+    db: Session, user: User, project_id: str, changed_path: str, lauf: dict | None
+) -> None:
+    """Stösst bei aktivem Projekt-Auto-Update entprellt einen Wiki-Worker an."""
+    try:
+        from services import ai_project_service, ai_project_wiki_service
+
+        proj = ai_project_service.get_project(db, user, project_id)
+        kontext = (lauf or {}).get("kontext")
+        conv_id = (
+            getattr(kontext, "conversation_id", None)
+            if kontext is not None
+            else None
+        ) or (
+            kontext.get("conversation_id")
+            if isinstance(kontext, dict)
+            else None
+        ) or (lauf or {}).get("conversation_id")
+        ai_project_wiki_service.maybe_schedule_auto_update(
+            db,
+            user,
+            proj,
+            changed_path=changed_path,
+            conversation_id=str(conv_id) if conv_id else None,
+        )
+    except Exception:
+        pass
 
 
 def _pruefe_projekt_sperre(
@@ -342,6 +380,7 @@ def projekt_werkzeug(
                 str(arguments.get("content") or ""),
             )
             diff_info = getattr(f, "_last_diff", None)
+            _maybe_auto_update_wiki(db, user, pid, f.path, lauf)
             return {
                 "project_id": pid,
                 "path": f.path,
@@ -383,6 +422,7 @@ def projekt_werkzeug(
                 edits_list,
             )
             diff_info = getattr(f, "_last_diff", None)
+            _maybe_auto_update_wiki(db, user, pid, f.path, lauf)
             return {
                 "project_id": pid,
                 "path": f.path,
@@ -394,7 +434,9 @@ def projekt_werkzeug(
         if action == "delete_file":
             if not (permission_service.has_global_permission(db, user, "ai.projects.manage") or permission_service.has_global_permission(db, user, "ai.coding.use")):
                 raise AiActionValidationError("Dateien löschen ist für diesen Benutzer nicht freigegeben")
-            ai_project_service.delete_project_file(db, user, pid, str(arguments.get("path") or ""))
+            del_path = str(arguments.get("path") or "")
+            ai_project_service.delete_project_file(db, user, pid, del_path)
+            _maybe_auto_update_wiki(db, user, pid, del_path, lauf)
             return {"project_id": pid, "deleted": True}
         if action == "run_command":
             if not permission_service.has_global_permission(db, user, "ai.coding.use"):
@@ -545,6 +587,45 @@ def projekt_werkzeug(
             return ai_project_service.git_open_pr(db, user, pid, title=title, body=body, target_branch=target_branch, token=token)
         if action == "merge_to_main":
             return ai_project_service.merge_to_main(db, user, pid)
+        if action in ("wiki_search", "wiki_read", "wiki_upsert"):
+            from services import ai_project_wiki_service
+
+            if not permission_service.has_global_permission(db, user, ai_project_wiki_service.WIKI_PERMISSION):
+                raise AiActionValidationError("Projekt-Wiki erfordert die Berechtigung ai.projects.wiki")
+            proj = ai_project_wiki_service.require_wiki_access(db, user, pid)
+            if not proj.wiki_enabled:
+                raise AiActionValidationError("Projekt-Wiki ist für dieses Projekt deaktiviert")
+            if action == "wiki_search":
+                q = str(arguments.get("query") or "").strip()
+                if not q:
+                    raise AiActionValidationError("wiki_search benötigt 'query'")
+                return {
+                    "project_id": pid,
+                    "hits": ai_project_wiki_service.search_wiki(
+                        db, user, pid, q, limit=int(arguments.get("limit") or 5)
+                    ),
+                }
+            if action == "wiki_read":
+                slug = str(arguments.get("slug") or arguments.get("path") or "").strip()
+                if not slug:
+                    raise AiActionValidationError("wiki_read benötigt 'slug'")
+                return ai_project_wiki_service.get_wiki_page(db, user, pid, slug)
+            slug = str(arguments.get("slug") or arguments.get("title") or "").strip()
+            title = str(arguments.get("title") or slug).strip()
+            src_raw = arguments.get("source_files")
+            src_list = [str(x) for x in src_raw] if isinstance(src_raw, list) else None
+            return ai_project_wiki_service.upsert_wiki_page(
+                db,
+                user,
+                pid,
+                slug=slug,
+                title=title,
+                category=str(arguments.get("category") or "module"),
+                summary=str(arguments.get("summary") or ""),
+                markdown=str(arguments.get("content") or ""),
+                source_files=src_list,
+                updated_by="ai",
+            )
         raise AiActionValidationError(f"Unbekannte project_workspace-Aktion: {action}")
     except AiProjectError as exc:
         raise AiActionValidationError(str(exc)) from exc

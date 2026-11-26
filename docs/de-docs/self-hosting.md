@@ -2183,6 +2183,14 @@ einer Frist von zehn Sekunden. Im Panel-Tarball liegt der Sidecar unter
 `docs-sidecar/` (`server.mjs`, `package.json`, `package-lock.json`); die
 Release-Pipeline prüft das bei jedem Build.
 
+Das optionale **Projekt-Wiki** in Singra-Projekten (`ai.projects.wiki`,
+standardmäßig je Projekt deaktiviert) nutzt denselben `docs-sidecar`, wenn
+Benutzer eine Wissenskarte gleichzeitig im Team bearbeiten (`docs_enabled` vorausgesetzt).
+Ohne `docs-sidecar` bleiben Speicherung im Workspace (`.singra/wiki/`), Markdown-Bearbeitung,
+Mermaid-Diagramme, Worker-Generierung und rein semantische Suche über `ai_embedding_service`
+(lokales Modell zuerst, optional konfigurierter Ersatzanbieter nur bei fehlendem Lokalmodell)
+vollständig nutzbar.
+
 ## Messenger: Sprach-, Video- und Gruppenanrufe
 
 Anrufe im Messenger laufen über einen Medienserver (LiveKit). Er nimmt die

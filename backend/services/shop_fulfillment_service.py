@@ -69,6 +69,7 @@ SHOP_ALLOWED_ROLE_PERMISSIONS: frozenset[str] = frozenset(
         "ai.coding.use",
         "ai.projects.manage",
         "ai.projects.preview",
+        "ai.projects.wiki",
         "ai.mcp.manage",
         "ai.docs.use",
     }

@@ -675,6 +675,13 @@ def _lauf_nachbereiten(db, run: AiRun, zustand: dict | None) -> None:
         rahmen="worker", marke="worker_gemeldet",
         versenden=ai_meldestelle.lauf_beendet,
     )
+    try:
+        from services import ai_project_wiki_service
+
+        ai_project_wiki_service.on_worker_finished(db, run, zustand)
+    except Exception:
+        db.rollback()
+        logger.warning("Projekt-Wiki-Status nicht fortgeschrieben run_id=%s", run.id)
 
 
 def _bericht_zustellen(db, run: AiRun, zustand: dict, *, rahmen: str, marke: str,

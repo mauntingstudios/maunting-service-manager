@@ -1959,7 +1959,91 @@
     },
     "projects": {
       "statusReady": "Projekt bereit",
-      "openProject": "Projekt öffnen"
+      "openProject": "Projekt öffnen",
+      "wiki": {
+        "overviewTitle": "Übersicht",
+        "knowledgeCardsTitle": "Wissenskarten",
+        "knowledgeCardsSubtitle": "Gespeichert im Workspace unter {{path}}",
+        "statusTitle": "Wiki-Status",
+        "searchPlaceholder": "Wiki semantisch durchsuchen...",
+        "searchResults": "{{count}} Treffer im Wiki",
+        "noSearchResults": "Keine passenden Wiki-Abschnitte gefunden.",
+        "emptyList": "Noch keine Wiki-Seiten angelegt.",
+        "emptyPage": "Diese Seite enthält noch keinen Text.",
+        "emptyStateTitle": "Noch keine Wissenskarten vorhanden",
+        "emptyStateHint": "Erzeuge ein erstes Wiki aus dem Projektcode oder lege eine eigene Seite an.",
+        "docsCollabActive": "Gemeinsame Echtzeit-Bearbeitung über Maunting Docs aktiv",
+        "confirmDelete": "Wiki-Seite „{{title}}“ wirklich löschen?",
+        "outlineTitle": "Gliederung",
+        "linkedSources": "Verknüpfte Quelldateien",
+        "sourceFileCount": "{{count}} Quellen",
+        "disabled": {
+          "title": "Projekt-Wiki ist für dieses Projekt deaktiviert",
+          "description": "Das Wiki speichert kompakte Wissenskarten als Markdown direkt im Projektverzeichnis (.singra/wiki/), lässt sich semantisch durchsuchen und gemeinsam über Maunting Docs bearbeiten."
+        },
+        "autoUpdate": {
+          "label": "Bei Code-Änderungen automatisch aktualisieren",
+          "shortLabel": "Auto-Update",
+          "hint": "Aktualisiert betroffene Wiki-Karten zeitverzögert im Hintergrund über einen Singra-Worker, wenn Projektdateien geändert werden."
+        },
+        "status": {
+          "idle": "Bereit",
+          "generating": "Wird erzeugt",
+          "updating": "Aktualisiert",
+          "error": "Fehler"
+        },
+        "categories": {
+          "overview": "Überblick",
+          "architecture": "Architektur",
+          "module": "Module",
+          "api": "Schnittstellen",
+          "data": "Datenmodell",
+          "workflow": "Abläufe",
+          "pitfalls": "Stolperfallen"
+        },
+        "actions": {
+          "enableAndGenerate": "Wiki aktivieren und erstellen",
+          "enableEmpty": "Leer aktivieren",
+          "generateNow": "Jetzt per KI erstellen",
+          "newPage": "Neue Seite",
+          "editCollab": "Gemeinsam bearbeiten",
+          "editMarkdown": "Markdown bearbeiten",
+          "syncAndFinish": "Übernehmen & beenden",
+          "deletePage": "Seite löschen",
+          "refreshWithAi": "Per KI aktualisieren",
+          "syncWorkspace": "Aus Workspace laden",
+          "commitWiki": "Wiki committen"
+        },
+        "fields": {
+          "title": "Titel",
+          "category": "Kategorie",
+          "slug": "Slug",
+          "summary": "Kurzbeschreibung",
+          "sourceFiles": "Verknüpfte Quelldateien (kommagetrennt)",
+          "content": "Inhalt (Markdown & Mermaid)"
+        },
+        "messages": {
+          "workerStarted": "Wiki-Worker wurde gestartet und baut die Wissenskarten im Hintergrund auf.",
+          "workerSkipped": "Es läuft bereits ein Wiki-Auftrag für dieses Projekt.",
+          "syncedFromDoc": "Änderungen aus Maunting Docs übernommen und im Workspace gespeichert.",
+          "saved": "Wiki-Seite gespeichert.",
+          "deleted": "Wiki-Seite gelöscht.",
+          "workspaceSynced": "{{count}} von {{total}} Wiki-Dateien aus dem Workspace abgeglichen.",
+          "committed": "Wiki-Änderungen im Projekt-Repository committed."
+        },
+        "errors": {
+          "loadFailed": "Projekt-Wiki konnte nicht geladen werden.",
+          "pageLoadFailed": "Wiki-Seite konnte nicht geladen werden.",
+          "settingsFailed": "Wiki-Einstellungen konnten nicht gespeichert werden.",
+          "generateFailed": "Wiki-Worker konnte nicht gestartet werden.",
+          "searchFailed": "Semantische Wiki-Suche ist fehlgeschlagen.",
+          "syncFailed": "Wiki-Synchronisation ist fehlgeschlagen.",
+          "titleRequired": "Bitte gib einen gültigen Titel an.",
+          "saveFailed": "Wiki-Seite konnte nicht gespeichert werden.",
+          "deleteFailed": "Wiki-Seite konnte nicht gelöscht werden.",
+          "commitFailed": "Wiki konnte nicht committed werden."
+        }
+      }
     },
     "errors": {
       "codes": {
@@ -6918,7 +7002,7 @@
       "intro": "Gemeinsames Bearbeiten in Echtzeit trägt ein eigener Node-Prozess: docs-sidecar hält den geteilten Dokumentzustand (Yjs über Hocuspocus-WebSocket), nimmt KI-Bearbeitungen entgegen und rendert Exporte. Ohne ihn bleibt das Modul dunkel.",
       "zweck": {
         "title": "Zweck",
-        "body": "Der Sidecar hält den geteilten Dokumentzustand, prüft Collab-Tokens gegen das Backend und rendert Markdown- und HTML-Exporte. Das Backend verweigert ohne ihn Collab-Tokens, die Oberfläche zeigt ein Banner statt des Editors."
+        "body": "Der Sidecar hält den geteilten Dokumentzustand, prüft Collab-Tokens gegen das Backend und rendert Markdown- und HTML-Exporte. Auch das optionale Projekt-Wiki in KI-Projekten nutzt ihn für die gemeinsame Team-Bearbeitung von Wissenskarten. Das Backend verweigert ohne ihn Collab-Tokens, die Oberfläche zeigt ein Banner statt des Editors bzw. fällt im Projekt-Wiki auf den Markdown-Editor zurück."
       },
       "ports": {
         "title": "Ports",
@@ -7999,7 +8083,8 @@
           "tasks": "Ein im Chat oder in der Aufgabenliste angelegter stehender Auftrag („KI-Aufgabe“) speichert Name, Auftragstext, Zeitplan, Zeitzone und Zustellweg und löst zum vereinbarten Zeitpunkt eine Verarbeitung aus, ohne dass der Nutzer anwesend ist. Sie läuft im Hintergrund mit den Rechten und dem Kontingent des Anlegenden; bei jedem fälligen Lauf werden Auftragstext und die abgerufenen Serverdaten an den gewählten Modellanbieter übertragen. Auf Wunsch geht das Ergebnis zusätzlich per E-Mail an die hinterlegte Adresse und enthält modellerzeugten Text. Aufträge sind im Chat und in der Aufgabenliste jederzeit auflistbar, pausierbar und löschbar.",
           "mailboxes": "Verknüpfte E-Mail-Postfächer (IMAP / SMTP): Hinterlegte Zugangsdaten (Passwörter, App-Passwörter oder OAuth-Tokens) werden mit DIS AES-256-GCM verschlüsselt gespeichert und verlassen das Panel niemals im Klartext. E-Mails werden ausschließlich auf Ihre Anweisung hin durchsucht oder gelesen. Singra sendet niemals eigenständig E-Mails: Jeder E-Mail-Versand wird im Chat als Vorschlagskarte mit Betreff, Empfänger und Inhalt vorgelegt und erst nach Ihrer ausdrücklichen manuellen Bestätigung versendet.",
           "calendars": "Integrierter & verknüpfter Kalender: Termine des nativen Kalenders verbleiben in der lokalen Panel-Datenbank unter voller Datenhoheit des Nutzers. Bei externen CalDAV-Konten werden Zugangsdaten über DIS AES-256-GCM verschlüsselt abgelegt. Die KI liest Termine nur auf konkrete Anfrage. Das Erstellen, Ändern oder Löschen von Terminen erzeugt eine verbindliche Vorschlagskarte im Chat und wird erst nach Prüfung durch den Nutzer ausgeführt (im autonomen Modus automatisch protokolliert).",
-          "customProviders": "Frei konfigurierbare lokale oder selbst betriebene Endpunkte (etwa Ollama, LM Studio, llama.cpp, vLLM oder ein eigener GPU- und Whisper-Server): Anfragen gehen ausschließlich vom Panel-Backend an die vom Betreiber eingetragene Basis-URL. Browser und Desktop-Clients bauen keine Direktverbindung auf und geben ihre IP-Adresse an den Modellserver nicht weiter. Übertragen werden derselbe minimierte Gesprächskontext beziehungsweise bei Whisper-Transkription nur der jeweilige Sprachmitschnitt; optionale API-Schlüssel liegen DIS-verschlüsselt im Panel und werden bei einer URL-Änderung automatisch gelöscht. Standort, Protokollierung und Speicherung auf dem Zielsystem verantwortet der Betreiber."
+          "customProviders": "Frei konfigurierbare lokale oder selbst betriebene Endpunkte (etwa Ollama, LM Studio, llama.cpp, vLLM oder ein eigener GPU- und Whisper-Server): Anfragen gehen ausschließlich vom Panel-Backend an die vom Betreiber eingetragene Basis-URL. Browser und Desktop-Clients bauen keine Direktverbindung auf und geben ihre IP-Adresse an den Modellserver nicht weiter. Übertragen werden derselbe minimierte Gesprächskontext beziehungsweise bei Whisper-Transkription nur der jeweilige Sprachmitschnitt; optionale API-Schlüssel liegen DIS-verschlüsselt im Panel und werden bei einer URL-Änderung automatisch gelöscht. Standort, Protokollierung und Speicherung auf dem Zielsystem verantwortet der Betreiber.",
+          "projectWiki": "Projekt-Wiki in KI-Projekten (standardmäßig aus): Ist die Berechtigung „ai.projects.wiki“ erteilt und das Wiki für ein Projekt aktiviert, legt das Panel Wissenskarten als Markdown-Dateien im Projekt-Workspace (Standard: .singra/wiki/) und indiziert deren Abschnitte als Bedeutungsvektoren in der Panel-Datenbank. Für die Vektorsuche nutzt das Panel denselben Weg wie bei der Gedächtnissuche: zuerst das lokale Embedding-Modell, nur bei dessen Fehlen einen ausdrücklich eingerichteten Ersatzanbieter. Für die gleichzeitige Bearbeitung im Team überträgt das Panel den Seiteninhalt vorübergehend in Maunting Docs. Wird der Aufbau oder das Auto-Update per KI-Worker ausgelöst, gehen relevante Projektdateien und Wiki-Seiten über das Kontingent des auslösenden Kontos an den gewählten Modellanbieter."
         }
       },
       "desktopApp": {

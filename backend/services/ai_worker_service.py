@@ -143,6 +143,7 @@ def worker_start(
     db: Session, *, user: User, arguments: dict, herkunft: str = "panel",
     familie: str | None = None, docs_document_uid: str | None = None,
     docs_team_id: int | None = None, conversation_id: str | None = None,
+    project_id: str | None = None,
 ) -> dict:
     """Deklariert einen Auftrag: eigenes Fenster, eigener Lauf, sofort zurueck.
 
@@ -257,7 +258,7 @@ def worker_start(
     # Familie, und ebenso aus dem Laufzustand statt aus den Argumenten. Die
     # Kennung kommt aus der Unterhaltung, nicht aus dem Modell: was ein Modell
     # schreiben kann, ist keine Tatsache über die Welt, aus der es spricht.
-    project_id = _projekt_des_laufs(db, user, conversation_id)
+    project_id = project_id or _projekt_des_laufs(db, user, conversation_id)
 
     if should_route:
         stufe_vorab = anbieter.worker_reasoning_effort if anbieter is not None else None

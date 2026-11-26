@@ -1051,3 +1051,38 @@ Alternativen:
   Reine Python-PDF-Bibliotheken (z. B. ReportLab/WeasyPrint/factur-x) wurden
   geprueft, liefern aber ohne veraPDF/KoSIT keinen pruefbaren Nachweis fuer
   PDF/A-3b und XRechnung-3.0-Schematron.
+
+### Mermaid (`mermaid@^12.3.0`) im Frontend
+
+Zweck:
+  Rendert Architektur- und Ablaufdiagramme in ` ```mermaid``` `-Codebloecken
+  innerhalb von `AiMarkdown.tsx` (Projekt-Wiki Knowledge Cards und KI-Antworten)
+  als lokal generiertes SVG im Browser.
+
+Notwendigkeit:
+  `react-markdown` / Tailwind verfuegen ueber keinen Diagramm-Renderer; eigenes
+  SVG-Layout fuer Fluss-, Sequenz- und ER-Diagramme wuerde unverhaeltnismaessige
+  Parser- und Graphlayout-Logik duplizieren.
+
+Security:
+  Initialisierung erfolgt explizit mit `startOnLoad: false` und
+  `securityLevel: 'strict'` (DOMPurify-Bereinigung im Mermaid-Kern, keine
+  Script-Ausfuehrung oder Event-Handler im SVG). Keine Netzwerkaufrufe, keine
+  Credentials, kein Storage-Zugriff.
+
+Wartung & Advisories:
+  Aktiv gepflegtes Standardpaket (MIT-Lizenz, v12.3.0). Bei Renderfehlern
+  bereinigt `MermaidBlock.tsx` temporaere DOM-Reste und faellt auf den rohen
+  Quelltextblock (`<pre><code>`) zurueck.
+
+Transitive Flaeche, API & Bundle:
+  Wird ausschliesslich per dynamischem `import('mermaid')` in `MermaidBlock.tsx`
+  lazy geladen, sodass Haupt-Bundle und Login-Routen unbeeinflusst bleiben;
+  nur Seiten mit Mermaid-Bloecken laden die Render-Chunks nach.
+
+Lizenz:
+  MIT (kompatibel mit MSM AGPL-3.0).
+
+Kapselung:
+  Ausschließlich `frontend/src/components/ai/MermaidBlock.tsx` importiert
+  `mermaid`; `AiMarkdown.tsx` delegiert `language-mermaid`-Fences dorthin.

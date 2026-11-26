@@ -1959,7 +1959,91 @@
     },
     "projects": {
       "statusReady": "Project ready",
-      "openProject": "Open project"
+      "openProject": "Open project",
+      "wiki": {
+        "overviewTitle": "Overview",
+        "knowledgeCardsTitle": "Knowledge cards",
+        "knowledgeCardsSubtitle": "Stored in the workspace at {{path}}",
+        "statusTitle": "Wiki status",
+        "searchPlaceholder": "Semantic wiki search...",
+        "searchResults": "{{count}} matches in wiki",
+        "noSearchResults": "No matching wiki sections found.",
+        "emptyList": "No wiki pages yet.",
+        "emptyPage": "This page has no content yet.",
+        "emptyStateTitle": "No knowledge cards yet",
+        "emptyStateHint": "Generate an initial wiki from the project code or create a page manually.",
+        "docsCollabActive": "Live team collaboration via Maunting Docs active",
+        "confirmDelete": "Delete wiki page \"{{title}}\"?",
+        "outlineTitle": "Outline",
+        "linkedSources": "Linked source files",
+        "sourceFileCount": "{{count}} sources",
+        "disabled": {
+          "title": "Project wiki is disabled for this project",
+          "description": "The wiki stores structured knowledge cards as Markdown inside the project directory (.singra/wiki/), supports semantic search, and lets teams co-edit pages via Maunting Docs."
+        },
+        "autoUpdate": {
+          "label": "Update automatically on code changes",
+          "shortLabel": "Auto-update",
+          "hint": "Schedules a debounced Singra worker in the background to update affected wiki cards when project files change."
+        },
+        "status": {
+          "idle": "Ready",
+          "generating": "Generating",
+          "updating": "Updating",
+          "error": "Error"
+        },
+        "categories": {
+          "overview": "Overview",
+          "architecture": "Architecture",
+          "module": "Modules",
+          "api": "APIs",
+          "data": "Data model",
+          "workflow": "Workflows",
+          "pitfalls": "Pitfalls"
+        },
+        "actions": {
+          "enableAndGenerate": "Enable & generate wiki",
+          "enableEmpty": "Enable empty",
+          "generateNow": "Generate with AI",
+          "newPage": "New page",
+          "editCollab": "Co-edit in Docs",
+          "editMarkdown": "Edit Markdown",
+          "syncAndFinish": "Apply & finish",
+          "deletePage": "Delete page",
+          "refreshWithAi": "Refresh with AI",
+          "syncWorkspace": "Sync from workspace",
+          "commitWiki": "Commit wiki"
+        },
+        "fields": {
+          "title": "Title",
+          "category": "Category",
+          "slug": "Slug",
+          "summary": "Summary",
+          "sourceFiles": "Linked source files (comma-separated)",
+          "content": "Content (Markdown & Mermaid)"
+        },
+        "messages": {
+          "workerStarted": "Wiki worker started and is building the knowledge cards in the background.",
+          "workerSkipped": "A wiki job is already running for this project.",
+          "syncedFromDoc": "Changes imported from Maunting Docs and saved to the workspace.",
+          "saved": "Wiki page saved.",
+          "deleted": "Wiki page deleted.",
+          "workspaceSynced": "Synced {{count}} of {{total}} wiki files from the workspace.",
+          "committed": "Wiki changes committed to the project repository."
+        },
+        "errors": {
+          "loadFailed": "Could not load project wiki.",
+          "pageLoadFailed": "Could not load wiki page.",
+          "settingsFailed": "Could not save wiki settings.",
+          "generateFailed": "Could not start wiki worker.",
+          "searchFailed": "Semantic wiki search failed.",
+          "syncFailed": "Wiki synchronization failed.",
+          "titleRequired": "Please enter a valid title.",
+          "saveFailed": "Could not save wiki page.",
+          "deleteFailed": "Could not delete wiki page.",
+          "commitFailed": "Could not commit wiki changes."
+        }
+      }
     },
     "errors": {
       "codes": {
@@ -6918,7 +7002,7 @@
       "intro": "Realtime co-editing is carried by its own Node process: docs-sidecar holds the shared document state (Yjs over Hocuspocus WebSocket), accepts AI edits and renders exports. Without it the module stays dark.",
       "zweck": {
         "title": "Purpose",
-        "body": "The sidecar holds the shared document state, validates collab tokens against the backend and renders Markdown and HTML exports. Without it the backend refuses collab tokens and the UI shows a banner instead of the editor."
+        "body": "The sidecar holds the shared document state, validates collab tokens against the backend and renders Markdown and HTML exports. The optional project wiki in AI projects also uses it for simultaneous team editing of knowledge cards. Without it the backend refuses collab tokens and the UI shows a banner instead of the editor (or falls back to the Markdown editor in the project wiki)."
       },
       "ports": {
         "title": "Ports",
@@ -7999,7 +8083,8 @@
           "tasks": "A standing task created in chat or in the task list (“AI task”) stores its name, instruction, schedule, time zone and delivery channel, and triggers processing at the agreed time while the user is not present. It runs in the background with the permissions and quota of whoever created it; on each due run the instruction and the server data it retrieves are transmitted to the selected model provider. On request the result is additionally sent by email to the stored address and contains model-generated text. Tasks can be listed, paused and deleted from the chat and the task list at any time.",
           "mailboxes": "Linked email mailboxes (IMAP / SMTP): Stored credentials (passwords, app passwords, or OAuth tokens) are encrypted with DIS AES-256-GCM and never leave the panel in plaintext. Emails are searched or read solely upon your explicit instruction. Singra never sends emails autonomously: every email transmission is presented in the chat as an action proposal card with subject, recipient, and content, and is only sent after your explicit confirmation.",
           "calendars": "Integrated & linked calendar: Events of the native calendar remain within the local panel database under full user data sovereignty. For external CalDAV accounts, credentials are encrypted with DIS AES-256-GCM. The AI only reads events upon specific request. Creating, modifying, or deleting events produces an action proposal card in the chat and is executed only after user confirmation (or logged automatically when autonomous mode is enabled).",
-          "customProviders": "Operator-configured local or self-hosted endpoints (such as Ollama, LM Studio, llama.cpp, vLLM, or a dedicated GPU or Whisper server): Requests are sent solely by the panel backend to the operator's configured base URL. Browsers and desktop clients never connect directly to the model host and do not expose their IP addresses to it. Only the same minimized conversation context (or the recorded audio clip for Whisper transcription) is transmitted; optional API keys are DIS-encrypted in the panel and cleared automatically if the base URL changes. Location, logging, and retention on the target host remain the operator's responsibility."
+          "customProviders": "Operator-configured local or self-hosted endpoints (such as Ollama, LM Studio, llama.cpp, vLLM, or a dedicated GPU or Whisper server): Requests are sent solely by the panel backend to the operator's configured base URL. Browsers and desktop clients never connect directly to the model host and do not expose their IP addresses to it. Only the same minimized conversation context (or the recorded audio clip for Whisper transcription) is transmitted; optional API keys are DIS-encrypted in the panel and cleared automatically if the base URL changes. Location, logging, and retention on the target host remain the operator's responsibility.",
+          "projectWiki": "Project wiki in AI projects (off by default): When the permission “ai.projects.wiki” is granted and the wiki is enabled for a project, the panel stores knowledge cards as Markdown files inside the project workspace (default: .singra/wiki/) and indexes their sections as meaning vectors in the panel database. Semantic search follows the same path as memory search: the local embedding model runs first, and an explicitly configured fallback provider is only contacted if the local model is missing. For simultaneous team editing, the panel temporarily bridges page content into Maunting Docs. When wiki generation or auto-update runs via a background AI worker, relevant project files and wiki pages are sent to the selected model provider under the triggering account's quota."
         }
       },
       "desktopApp": {

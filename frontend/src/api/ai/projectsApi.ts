@@ -15,6 +15,10 @@ import type {
   AiProjectPublishOptions,
   AiProjectPublishResult,
   AiProjectQuotaSummary,
+  AiProjectWikiDocSession,
+  AiProjectWikiOverview,
+  AiProjectWikiPageDetail,
+  AiProjectWikiSearchHit,
   AiProjectWrite,
   SingraDeploymentItem,
   SingraTestRunItem,
@@ -245,4 +249,75 @@ export const projectsApi = {
     api<{ deleted: boolean }>(`/ai/mcp/${encodeURIComponent(serverId)}`, {
       method: 'DELETE',
     }),
+  getProjectWiki: (projectId: string) =>
+    api<AiProjectWikiOverview>(
+      `/ai/projects/${encodeURIComponent(projectId)}/wiki`,
+    ),
+  updateProjectWikiSettings: (
+    projectId: string,
+    payload: { wiki_enabled?: boolean; wiki_auto_update?: boolean; wiki_path?: string },
+  ) =>
+    api<AiProjectWikiOverview>(
+      `/ai/projects/${encodeURIComponent(projectId)}/wiki/settings`,
+      { method: 'PATCH', body: JSON.stringify(payload) },
+    ),
+  searchProjectWiki: (projectId: string, query: string, limit = 5) =>
+    api<AiProjectWikiSearchHit[]>(
+      `/ai/projects/${encodeURIComponent(projectId)}/wiki/search?q=${encodeURIComponent(query)}&limit=${limit}`,
+    ),
+  getProjectWikiPage: (projectId: string, slug: string) =>
+    api<AiProjectWikiPageDetail>(
+      `/ai/projects/${encodeURIComponent(projectId)}/wiki/pages/${encodeURIComponent(slug)}`,
+    ),
+  saveProjectWikiPage: (
+    projectId: string,
+    slug: string,
+    payload: {
+      title: string
+      category: string
+      summary: string
+      content_markdown: string
+      source_files: string[]
+    },
+  ) =>
+    api<AiProjectWikiPageDetail>(
+      `/ai/projects/${encodeURIComponent(projectId)}/wiki/pages/${encodeURIComponent(slug)}`,
+      { method: 'PUT', body: JSON.stringify(payload) },
+    ),
+  deleteProjectWikiPage: (projectId: string, slug: string) =>
+    api<{ deleted: boolean; slug: string }>(
+      `/ai/projects/${encodeURIComponent(projectId)}/wiki/pages/${encodeURIComponent(slug)}`,
+      { method: 'DELETE' },
+    ),
+  openProjectWikiDoc: (projectId: string, slug: string) =>
+    api<AiProjectWikiDocSession>(
+      `/ai/projects/${encodeURIComponent(projectId)}/wiki/pages/${encodeURIComponent(slug)}/doc`,
+      { method: 'POST' },
+    ),
+  syncProjectWikiDoc: (projectId: string, slug: string) =>
+    api<AiProjectWikiPageDetail>(
+      `/ai/projects/${encodeURIComponent(projectId)}/wiki/pages/${encodeURIComponent(slug)}/doc/sync`,
+      { method: 'POST' },
+    ),
+  syncProjectWikiWorkspace: (projectId: string) =>
+    api<{ synced_files: number; updated: number; removed: number }>(
+      `/ai/projects/${encodeURIComponent(projectId)}/wiki/sync`,
+      { method: 'POST' },
+    ),
+  generateProjectWiki: (
+    projectId: string,
+    payload?: { mode?: 'generate' | 'update'; changed_files?: string[] },
+  ) =>
+    api<{ started: boolean; wiki_status?: string; worker_id?: string }>(
+      `/ai/projects/${encodeURIComponent(projectId)}/wiki/generate`,
+      { method: 'POST', body: JSON.stringify(payload ?? { mode: 'generate' }) },
+    ),
+  commitProjectWiki: (
+    projectId: string,
+    payload?: { message?: string; push?: boolean },
+  ) =>
+    api<AiProjectGitStatus>(
+      `/ai/projects/${encodeURIComponent(projectId)}/wiki/commit`,
+      { method: 'POST', body: JSON.stringify(payload ?? {}) },
+    ),
 }

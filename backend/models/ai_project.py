@@ -12,8 +12,10 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    LargeBinary,
     String,
     Text,
+    UniqueConstraint,
     text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
@@ -91,6 +93,27 @@ class AiProject(Base):
     )
     archived: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=text("false")
+    )
+    wiki_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
+    wiki_auto_update: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
+    wiki_path: Mapped[str] = mapped_column(
+        String(120), nullable=False, default=".singra/wiki", server_default=".singra/wiki"
+    )
+    wiki_status: Mapped[str] = mapped_column(
+        String(24), nullable=False, default="idle", server_default="idle"
+    )
+    wiki_last_indexed_commit: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
+    wiki_last_updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    wiki_last_error: Mapped[str | None] = mapped_column(
+        ai_text("ai_projects.wiki_last_error"), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -196,4 +219,105 @@ class AiProjectFile(Base):
         default=lambda: datetime.now(timezone.utc),
         onupdate=lambda: datetime.now(timezone.utc),
         nullable=False,
+    )
+
+
+class AiProjectWikiPage(Base):
+    """Strukturierte Knowledge Card / Wiki-Seite eines AI-Projekts."""
+
+    __tablename__ = "ai_project_wiki_pages"
+    __table_args__ = (
+        UniqueConstraint("project_id", "slug", name="uq_ai_project_wiki_pages_project_slug"),
+        Index("ix_ai_project_wiki_pages_project_sort", "project_id", "sort_order"),
+    )
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid4())
+    )
+    project_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("ai_projects.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    slug: Mapped[str] = mapped_column(String(120), nullable=False)
+    title: Mapped[str] = mapped_column(ai_text("ai_project_wiki_pages.title"), nullable=False)
+    category: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="module", server_default="module"
+    )
+    summary: Mapped[str] = mapped_column(
+        ai_text("ai_project_wiki_pages.summary"), nullable=False, default="", server_default=""
+    )
+    file_path: Mapped[str] = mapped_column(String(320), nullable=False)
+    doc_uid: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("documents.doc_uid", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    source_files_json: Mapped[str] = mapped_column(
+        ai_text("ai_project_wiki_pages.source_files_json"),
+        nullable=False,
+        default="[]",
+        server_default="[]",
+    )
+    content_markdown: Mapped[str] = mapped_column(
+        ai_text("ai_project_wiki_pages.content_markdown"),
+        nullable=False,
+        default="",
+        server_default="",
+    )
+    content_hash: Mapped[str] = mapped_column(
+        String(64), nullable=False, default="", server_default=""
+    )
+    sort_order: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=100, server_default="100"
+    )
+    updated_by: Mapped[str] = mapped_column(
+        String(24), nullable=False, default="ai", server_default="ai"
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+
+class AiProjectWikiChunk(Base):
+    """Semantisch eingebetteter Abschnitt einer Projekt-Wiki-Seite."""
+
+    __tablename__ = "ai_project_wiki_chunks"
+    __table_args__ = (
+        Index("ix_ai_project_wiki_chunks_project_page", "project_id", "page_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    page_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("ai_project_wiki_pages.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    project_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("ai_projects.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    heading: Mapped[str] = mapped_column(
+        ai_text("ai_project_wiki_chunks.heading"), nullable=False, default="", server_default=""
+    )
+    content: Mapped[str] = mapped_column(
+        ai_text("ai_project_wiki_chunks.content"), nullable=False, default="", server_default=""
+    )
+    embedding: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    embedding_model: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    chunk_index: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
     )

@@ -496,6 +496,7 @@ Singra greift direkt auf dieselbe Diensteinheit wie das visuelle Studio im Panel
   24. `dev_stop`: Pausiert Dev-Container zur Ressourcenschonung.
   25. `dev_status`: Zeigt aktuellen Zustand der Dev-Umgebung.
   26. `git_branch`, `git_open_pr`, `merge_to_main`: Steuert Branches und Pull-Requests.
+  27. `wiki_search`, `wiki_read`, `wiki_upsert`: Erfordert `ai.projects.wiki` und ein aktiviertes Projekt-Wiki (`wiki_enabled`); durchsucht Wiki-Abschnitte rein semantisch über `ai_embedding_service`, liest Wissenskarten und speichert Markdown-Wissenskarten unter `.singra/wiki/`.
 
 #### 7.6.9 Dokumenten-Verwaltung (11 Werkzeuge)
 Für gemeinsames Arbeiten an strukturierten Dokumenten, Notizen und Architekturentwürfen.

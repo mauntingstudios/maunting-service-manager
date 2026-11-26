@@ -324,6 +324,17 @@ def _project_context_message(
     else:
         lines.append("\nDateibaum im Projekt: Noch keine Dateien angelegt.")
 
+    try:
+        from services import ai_project_wiki_service
+
+        wiki_ctx = ai_project_wiki_service.build_project_wiki_context(
+            db, user, project, query
+        )
+        if wiki_ctx:
+            lines.append(f"\n{wiki_ctx}")
+    except Exception:
+        pass
+
     if project.project_kind == "coding":
         try:
             reusable = ai_project_service.search_cross_project_components(

@@ -883,7 +883,10 @@ Installation und Tests trennen. Vor `publish_production` zwingend \
 - Features auf `singra/<feature-name>` (`git_branch`) entwickeln und per \
 `git_open_pr` einreichen; `merge_to_main` nur auf Wunsch. DNS bei Cloudflare \
 automatisch, sonst noetigen A-Record nennen. `AGENTS.md` und `README.md` \
-existieren genau einmal im Projekt-Root und werden aktuell gehalten."""
+existieren genau einmal im Projekt-Root und werden aktuell gehalten.
+- Bei aktivem Projekt-Wiki: Wissen über `wiki_search` / `wiki_read` \
+abrufen und neue Architektur- oder Modul-Erkenntnisse über `wiki_upsert` \
+einsprachig als Knowledge Cards im Repo festhalten."""
 
 
 BLUEPRINTS = """\

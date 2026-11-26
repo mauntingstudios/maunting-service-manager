@@ -244,6 +244,7 @@ The documents module edits texts together in realtime. The Node process `docs-si
 - **Secrets:** `MSM_DOCS_SIDECAR_TOKEN` and `MSM_DOCS_COLLAB_SECRET` must match in `backend/.env` and `docs-sidecar/.env`; install/update generate missing values. `MSM_DOCS_SIGNING_SECRET` is read by the backend only and belongs in `backend/.env`.
 - **Service:** `msm-docs-sidecar.service`, exactly one instance (process-local collab state).
 - **Release:** shipped in the panel tarball under `docs-sidecar/` (`server.mjs`, `package.json`, `package-lock.json`); verified on every build.
+- **Project Wiki:** The optional AI project wiki (`ai.projects.wiki`, off by default per project) reuses `docs-sidecar` when teams co-edit a Knowledge Card via Maunting Docs (`docs_enabled` required). Without `docs-sidecar`, workspace storage (`.singra/wiki/`), Markdown editing, Mermaid diagrams, worker generation, and semantic search via `ai_embedding_service` remain available.
 
 ---
 

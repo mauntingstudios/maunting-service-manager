@@ -815,8 +815,12 @@ sent to the frontend; otherwise the voice UI has nothing to render.
 
 ### 13.10 Projects and coding sandbox
 
-`routers/ai_projects.py` (33 routes) gives the AI a project workspace with files, commands, Git
-and preview. The sandbox is not a shell: commands are validated against an allowlist of developer
+`routers/ai_projects.py` (45 routes) gives the AI a project workspace with files, commands, Git,
+preview, and an optional repository wiki (`wiki_enabled`, disabled by default, gated by
+`ai.projects.wiki`). Wiki Knowledge Cards are stored as Markdown with YAML frontmatter under
+`.singra/wiki/` in the workspace, indexed semantically via `ai_embedding_service`, co-editable
+through the Maunting Docs collaboration engine, and optionally kept up to date by background
+Singra workers. The sandbox is not a shell: commands are validated against an allowlist of developer
 tools, paths are anchored inside the project directory (`ai_project_service.py`), and Git
 credentials are resolved per user through `GIT_ASKPASS` rather than embedded in a URL.
 

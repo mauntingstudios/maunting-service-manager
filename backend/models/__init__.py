@@ -12,7 +12,7 @@ from .operation_task import OperationTask
 from .ai_provider import AiProvider
 from .ai_router_config import AiRouterConfig
 from .ai_conversation import AiConversation, AiMessage
-from .ai_project import AiProject, AiProjectFile
+from .ai_project import AiProject, AiProjectFile, AiProjectWikiChunk, AiProjectWikiPage
 from .ai_mcp_server import AiMcpServer
 from .ai_run import AiRun
 from .ai_action_proposal import AiActionProposal
@@ -160,7 +160,7 @@ from .lifecycle_notice import LifecycleDeletionNotice
 
 __all__ = [
     "User", "UserRole", "RoleAiLimit", "RoleAiModelAccess", "RoleVaultQuota", "RoleFrontendBuildQuota", "RoleAiProjectQuota", "AiUsageEvent", "OperationTask",
-    "AiProvider", "AiRouterConfig", "AiConversation", "AiMessage", "AiProject", "AiProjectFile", "AiMcpServer", "AiActionProposal",
+    "AiProvider", "AiRouterConfig", "AiConversation", "AiMessage", "AiProject", "AiProjectFile", "AiProjectWikiPage", "AiProjectWikiChunk", "AiMcpServer", "AiActionProposal",
     "AiMemoryBegriff", "AiMemoryBeleg", "AiMemoryEntry", "AiMemoryPflege", "AiMemoryPreference", "AiMemoryTopic", "AiMemoryVersion",
     "AiSkill", "AiAttachment",
     "AiAutonomyGrant", "AiToolResult", "AiRun", "AiGuardianNotice",

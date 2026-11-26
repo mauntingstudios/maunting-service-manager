@@ -16,8 +16,71 @@ export interface AiProject {
   git_branch: string
   git_token_configured: boolean
   file_count: number
+  wiki_enabled?: boolean
+  wiki_auto_update?: boolean
+  wiki_path?: string
+  wiki_status?: 'idle' | 'generating' | 'updating' | 'error' | string
   created_at: string
   updated_at: string
+}
+
+export type WikiCategory =
+  | 'overview'
+  | 'architecture'
+  | 'module'
+  | 'api'
+  | 'data'
+  | 'workflow'
+  | 'pitfalls'
+
+export interface AiProjectWikiPageSummary {
+  id: string
+  slug: string
+  title: string
+  category: WikiCategory | string
+  summary: string
+  file_path: string
+  doc_uid: string | null
+  source_files: string[]
+  sort_order: number
+  updated_by: string
+  updated_at: string | null
+}
+
+export interface AiProjectWikiPageDetail extends AiProjectWikiPageSummary {
+  content_markdown: string
+  content_hash: string
+}
+
+export interface AiProjectWikiOverview {
+  project_id: string
+  wiki_enabled: boolean
+  wiki_auto_update: boolean
+  wiki_path: string
+  wiki_status: 'idle' | 'generating' | 'updating' | 'error' | string
+  wiki_last_indexed_commit: string | null
+  wiki_last_updated_at: string | null
+  wiki_last_error: string | null
+  docs_collab_available: boolean
+  git_configured: boolean
+  page_count: number
+  pages: AiProjectWikiPageSummary[]
+}
+
+export interface AiProjectWikiSearchHit {
+  slug: string
+  title: string
+  category: string
+  heading: string
+  content: string
+  score: number
+  source_files: string[]
+}
+
+export interface AiProjectWikiDocSession {
+  mode: 'docs' | 'markdown'
+  doc_uid: string | null
+  page: AiProjectWikiPageDetail
 }
 
 export interface AiProjectWrite {
