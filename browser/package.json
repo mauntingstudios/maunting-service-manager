@@ -1,7 +1,7 @@
 {
   "name": "maunting-secure-browser",
   "private": true,
-  "version": "7.0.0",
+  "version": "8.0.0",
   "type": "module",
   "description": "Maunting Pontis, datenschutzorientierter Browser auf Tauri-v2-Basis",
   "scripts": {
