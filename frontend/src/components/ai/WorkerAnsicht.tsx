@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Bot, RefreshCw, Sparkles, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import { aiApi, type AiRunInfo } from '@/api/ai'
+import type { AiActionProposal, AiRunInfo } from '@/api/ai'
+import { aiApi } from '@/api/ai'
 import { SanitizedApiError } from '@/api/client'
 import { Button, Kurzinfo } from '@maunting/ui'
 import { ChatHintergrund } from '@/features/chatHintergrund'
@@ -25,11 +26,9 @@ const NACHSEHEN_MS = 20_000
  * geht an das Gehirn, das `worker_cancel` ruft
  * (docs/agentic-framework.md, §6).
  *
- * Auch die Vorschlagskarten sind hier nur zu sehen (Betreiber, 25.09.2026:
- * „Der Worker-Chat ist eigentlich nur zum Nachschauen"). Bestätigt wird im
- * Chat oder in der Sprachansicht; beide zeigen die offenen Karten lebender
- * Worker mit Knöpfen. Der Klick dort weckt den geparkten Lauf, und dieses
- * Fenster hängt sich beim nächsten Nachsehen an.
+ * Vorschlagskarten lassen sich direkt hier (oder genauso im Hauptchat und in
+ * der Sprachansicht) bestätigen oder ablehnen. Der Klick weckt den geparkten
+ * Lauf, und dieses Fenster lädt anschließend direkt den aktualisierten Status.
  */
 export interface WorkerAnsichtProps {
   conversationId: string
@@ -69,6 +68,21 @@ export function WorkerAnsicht({ conversationId, compact = false, onClose }: Work
     setLauf(aktiverLauf)
     return aktiverLauf
   }, [conversationId, setEntries])
+
+  const vorschlagGeaendert = useCallback(
+    (aktualisiert: AiActionProposal) => {
+      merkeVorschlag(aktualisiert)
+      if (aktualisiert.status === 'proposed') return
+      const runId = aktualisiert.run_id ?? lauf?.id
+      if (runId) {
+        angehaengtRef.current = runId
+        void haengeAn(runId)
+      } else {
+        void laden().catch(() => undefined)
+      }
+    },
+    [haengeAn, laden, lauf?.id, merkeVorschlag],
+  )
 
   useEffect(() => {
     let lebt = true
@@ -280,8 +294,7 @@ export function WorkerAnsicht({ conversationId, compact = false, onClose }: Work
             <AiVerlauf
               entries={entries}
               laufendeWerkzeuge={laufendeWerkzeuge}
-              onProposalChange={merkeVorschlag}
-              nurAnsicht
+              onProposalChange={vorschlagGeaendert}
             />
           )}
         </div>

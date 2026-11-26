@@ -372,15 +372,15 @@ def test_ai_news_tools_read_draft_vs_publish_confirmation(
     assert read_res["posts"][0]["post_id"] == post_id
     assert read_res["posts"][0]["sources"][0]["url"] == "https://www.minecraft.net/en-us/article/1-21-5"
 
-    # Veroeffentlichen ueber propose_news_upsert verlangt zwingend Klick-Bestaetigung
+    # Veroeffentlichen ueber propose_news_upsert laeuft im Autonomie-Modus ohne always_confirm
     payload_pub, preview_pub = _news_upsert_payload(
         db,
         owner_user,
         {"post_id": post_id, "is_published": True},
     )
     assert preview_pub["operation"] == "news_update"
-    assert preview_pub["always_confirm"] is True
-    assert ai_tool_registry.verlangt_klick("propose_news_upsert", preview_pub) is True
+    assert "always_confirm" not in preview_pub
+    assert ai_tool_registry.verlangt_klick("propose_news_upsert", preview_pub) is False
 
     # Nicht-HTTPS Quellen werden im Payload abgelehnt
     with pytest.raises(AiActionValidationError, match="https://"):

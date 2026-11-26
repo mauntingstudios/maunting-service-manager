@@ -813,12 +813,10 @@ function AiWartezeile({ aufrufe }: { aufrufe: AiToolPlanAufruf[] }) {
  * genau dort, wo er steht. Wer gerade im Panel sitzt, soll nicht auf die
  * E-Mail warten müssen.
  */
-export function AiVerlauf({ entries, laufendeWerkzeuge, onProposalChange, nurAnsicht = false }: {
+export function AiVerlauf({ entries, laufendeWerkzeuge, onProposalChange }: {
   entries: Entry[]
   laufendeWerkzeuge: AiToolPlanAufruf[]
   onProposalChange: (proposal: AiActionProposal) => void
-  /** Karten ohne Knöpfe — das Worker-Fenster (`AiActionProposalCard`). */
-  nurAnsicht?: boolean
 }) {
   const { t } = useTranslation()
   return (
@@ -839,7 +837,6 @@ export function AiVerlauf({ entries, laufendeWerkzeuge, onProposalChange, nurAns
               key={entry.id}
               proposal={entry.proposal}
               onChange={onProposalChange}
-              nurAnsicht={nurAnsicht}
             />
           )
         }

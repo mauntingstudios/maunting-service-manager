@@ -170,7 +170,7 @@ def list_conversation_actions(
         conversation = ai_chat_service.get_or_create_conversation(db, user, _art(kind))
         db.commit()
     bedingung = AiActionProposal.conversation_id == conversation.id
-    if conversation_id is None and conversation.kind == "primary":
+    if conversation.kind == "primary":
         # Nur Fenster mit einem **lebenden** Lauf. Ein abgebrochener oder
         # abgeloester Auftrag laesst seine Karte auf 'proposed' stehen; ohne
         # diese Bedingung stuende sie von da an dauerhaft im Dauerchat und

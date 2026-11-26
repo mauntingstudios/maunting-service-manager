@@ -8,8 +8,8 @@
  * 1. Das Fenster lädt über die **Kennung** — `kind=worker` ist mehrdeutig,
  *    und ein Laden über die Art griffe bei N Aufträgen den falschen.
  * 2. Es gibt kein Eingabefeld und keinen Abbruch-Knopf; die Fusszeile nennt
- *    den Steuerweg (im Gespräch, `worker_cancel` ruft das Gehirn). Auch die
- *    Vorschlagskarten sind hier nur zu sehen (seit 25.09.2026).
+ *    den Steuerweg (im Gespräch, `worker_cancel` ruft das Gehirn).
+ *    Vorschlagskarten sind hier direkt bestätigbar und ablehnbar.
  * 3. Die Leiste zeigt, was das Backend als lebend meldet, führt über die
  *    UUID in das Fenster — und rendert ohne Aufträge gar nichts.
  */
@@ -33,6 +33,9 @@ vi.mock('@/api/ai', async (importOriginal) => {
       listWorkerActions: vi.fn(),
       getWorkerRun: vi.fn(),
       listWorkers: vi.fn(),
+      confirmAction: vi.fn(),
+      executeAction: vi.fn(),
+      rejectAction: vi.fn(),
     },
     attachAiRun: vi.fn(),
   }
@@ -104,10 +107,7 @@ describe('WorkerAnsicht', () => {
     expect(screen.getByText(/Gesteuert wird im Gespräch/)).toBeInTheDocument()
   })
 
-  it('zeigt eine wartende Karte ohne Knöpfe und sagt, wo bestätigt wird', async () => {
-    // Betreiber, 25.09.2026: „Der Worker-Chat ist eigentlich nur zum
-    // Nachschauen". Dieselbe Karte steht mit Knöpfen im Chat und in der
-    // Sprachansicht.
+  it('zeigt eine wartende Karte mit Knöpfen zur direkten Bestätigung oder Ablehnung', async () => {
     const karte: AiActionProposal = {
       id: '0b7e7a52-2f6e-4a39-9d4e-3c2d1f0a9b11',
       conversation_id: 'konv-worker-1',
@@ -135,9 +135,26 @@ describe('WorkerAnsicht', () => {
     )
 
     expect(await screen.findByText(i18n.t('ai.actions.tools.propose_backup'))).toBeInTheDocument()
-    expect(screen.getByText(i18n.t('ai.actions.nurAnsicht'))).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: i18n.t('ai.actions.execute') })).toBeNull()
-    expect(screen.queryByRole('button', { name: i18n.t('ai.actions.reject') })).toBeNull()
+    const ausfuehrenBtn = screen.getByRole('button', { name: i18n.t('ai.actions.execute') })
+    expect(ausfuehrenBtn).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: i18n.t('ai.actions.reject') })).toBeInTheDocument()
+
+    vi.mocked(aiApi.confirmAction).mockResolvedValue({
+      proposal_id: karte.id,
+      confirmation_token: 'tok-1',
+      expires_at: '2026-08-18T05:00:00Z',
+    })
+    vi.mocked(aiApi.executeAction).mockResolvedValue({
+      proposal: { ...karte, status: 'succeeded' },
+      result: { ok: true },
+    })
+
+    fireEvent.click(ausfuehrenBtn)
+
+    await waitFor(() => expect(aiApi.executeAction).toHaveBeenCalledWith(karte.id, 'tok-1'))
+    await waitFor(() =>
+      expect(attachAiRun).toHaveBeenCalledWith('lauf-1', expect.any(Function), expect.any(AbortSignal)),
+    )
   })
 
   it('sagt ruhig, wenn es diesen Auftrag nicht gibt', async () => {

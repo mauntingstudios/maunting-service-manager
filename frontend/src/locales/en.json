@@ -1565,7 +1565,6 @@
       },
       "reasonLabel": "AI reasoning",
       "effectLabel": "Expected effect",
-      "nurAnsicht": "Confirm in the chat or in the voice view.",
       "autonomousBadge": "Executed automatically",
       "autonomousHint": "This action ran without asking because you enabled autonomous mode for this scope. Permissions were checked unchanged; the operation is fully recorded in the audit log."
     },

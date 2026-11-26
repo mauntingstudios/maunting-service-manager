@@ -287,6 +287,54 @@ def test_der_dauerchat_zeigt_die_offenen_karten_seiner_auftraege(
     assert [k["id"] for k in im_fenster.json()] == [karte.id]
 
 
+def test_primary_chat_mit_expliziter_conversation_id_sieht_offene_worker_karten(
+    client: TestClient,
+    db: Session,
+    owner_user: User,
+    regular_user: User,
+    user_cookies: dict,
+) -> None:
+    """Auch ein explizit über `conversation_id` geladener Primary-Chat sieht offene Worker-Karten."""
+    primary_chat = AiConversation(
+        id=str(uuid4()), user_id=regular_user.id, kind="primary", title="Hauptchat"
+    )
+    db.add(primary_chat)
+    db.commit()
+
+    lebend_fenster, lebend_lauf = _worker_fenster(
+        db, regular_user, status="waiting_confirmation"
+    )
+    offene_karte = _wartende_karte(db, regular_user, lebend_fenster, lebend_lauf)
+    erledigte_karte = _wartende_karte(
+        db, regular_user, lebend_fenster, lebend_lauf, status="succeeded"
+    )
+
+    abgebrochen_fenster, abgebrochen_lauf = _worker_fenster(
+        db, regular_user, status="cancelled"
+    )
+    abgebrochene_karte = _wartende_karte(
+        db, regular_user, abgebrochen_fenster, abgebrochen_lauf
+    )
+
+    fremd_fenster, fremd_lauf = _worker_fenster(
+        db, owner_user, status="waiting_confirmation"
+    )
+    fremde_karte = _wartende_karte(db, owner_user, fremd_fenster, fremd_lauf)
+
+    antwort = client.get(
+        "/api/ai/conversation/actions",
+        params={"kind": "primary", "conversation_id": primary_chat.id},
+        cookies=user_cookies,
+    )
+
+    assert antwort.status_code == 200
+    geliefert = {k["id"] for k in antwort.json()}
+    assert offene_karte.id in geliefert
+    assert erledigte_karte.id not in geliefert
+    assert abgebrochene_karte.id not in geliefert
+    assert fremde_karte.id not in geliefert
+
+
 def test_der_dauerchat_zeigt_nur_die_offenen_karten(
     client: TestClient, db: Session, regular_user: User, user_cookies: dict
 ) -> None:

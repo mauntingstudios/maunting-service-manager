@@ -232,21 +232,57 @@ self.addEventListener('push', (event) => {
   );
 });
 
+function sichereZielUrl(rawUrl) {
+  try {
+    const parsed = new URL(String(rawUrl || '/messenger'), self.location.origin);
+    if (
+      parsed.origin === self.location.origin &&
+      (parsed.protocol === 'http:' || parsed.protocol === 'https:')
+    ) {
+      return `${parsed.pathname}${parsed.search}${parsed.hash}`;
+    }
+  } catch {
+    // Ungültige URL fällt auf den sicheren Standardpfad zurück
+  }
+  return '/messenger';
+}
+
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  const targetUrl = event.notification.data?.url || '/messenger';
+  const targetPath = sichereZielUrl(event.notification.data?.url);
 
   event.waitUntil(
-    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
-      // Existierendes Fenster in den Vordergrund bringen
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(async (clientList) => {
+      // Tab, der bereits exakt auf der Ziel-URL steht, ohne Reload fokussieren
       for (const client of clientList) {
-        if ('focus' in client && typeof client.focus === 'function') {
-          return client.focus();
+        try {
+          const clientUrl = new URL(client.url);
+          if (`${clientUrl.pathname}${clientUrl.search}${clientUrl.hash}` === targetPath) {
+            if ('focus' in client && typeof client.focus === 'function') {
+              return client.focus();
+            }
+          }
+        } catch {
+          // URL nicht lesbar
+        }
+      }
+      // Andernfalls ein bestehendes Fenster zur Ziel-URL navigieren und fokussieren
+      for (const client of clientList) {
+        let targetClient = client;
+        if ('navigate' in client && typeof client.navigate === 'function') {
+          try {
+            targetClient = (await client.navigate(targetPath)) || client;
+          } catch {
+            // Navigation nicht möglich
+          }
+        }
+        if ('focus' in targetClient && typeof targetClient.focus === 'function') {
+          return targetClient.focus();
         }
       }
       // Falls kein Fenster offen ist, neues Fenster öffnen
       if (self.clients.openWindow) {
-        return self.clients.openWindow(targetUrl);
+        return self.clients.openWindow(targetPath);
       }
     }),
   );

@@ -352,9 +352,6 @@ def _news_upsert_payload(db: Session, user: User, rest: dict) -> tuple[dict, dic
     if remove_cover:
         payload["remove_cover"] = True
 
-    will_touch_public = bool(payload.get("is_published")) or (
-        bestehend is not None and bool(bestehend.is_published)
-    )
     effective_sources = (
         payload["sources"]
         if "sources" in payload
@@ -393,8 +390,6 @@ def _news_upsert_payload(db: Session, user: User, rest: dict) -> tuple[dict, dic
             redact_sensitive_text(str(bestehend.content_markdown)) if bestehend else "",
         )[:300],
     }
-    if will_touch_public:
-        preview["always_confirm"] = True
     return payload, preview
 
 def _task_set_payload(db: Session, user: User, arguments: dict) -> tuple[dict, dict]:

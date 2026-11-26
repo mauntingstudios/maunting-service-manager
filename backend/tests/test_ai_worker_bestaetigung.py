@@ -249,3 +249,45 @@ async def test_der_geparkte_auftrag_sagt_bescheid(
     assert "Freigabe" in meldung.text
     assert "Neustart" in meldung.text
     assert meldung.worker_id == run.conversation_id
+
+
+@pytest.mark.asyncio
+async def test_der_geparkte_auftrag_sendet_webpush_ohne_secrets(
+    db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Beim Parken auf `waiting_confirmation` wird ein datensparsamer WebPush ausgelöst."""
+    from services import webpush_service
+
+    user = _benutzer(db, "push-empfaenger")
+    _provider(db)
+    server = _server(db, user, "viertark")
+    _fake_stream(monkeypatch, ProviderToolCall(
+        id="a4",
+        name="propose_server_lifecycle",
+        arguments={
+            "server_id": server.id,
+            "operation": "restart",
+            "reason": "Der Benutzer hat den Neustart verlangt.",
+            "expected_effect": "Der Server startet neu.",
+        },
+    ))
+
+    gesendet: list[tuple[int, dict]] = []
+
+    def fake_sende(db_session, target_user_id: int, nutzlast: dict) -> int:
+        gesendet.append((target_user_id, dict(nutzlast)))
+        return 1
+
+    monkeypatch.setattr(webpush_service, "sende_an_konto", fake_sende)
+
+    run = await _worker_lauf_abarbeiten(db, user)
+
+    assert run.status == "waiting_confirmation"
+    assert len(gesendet) == 1
+    target_id, payload = gesendet[0]
+    assert target_id == user.id
+    assert payload["type"] == "ai_approval"
+    assert payload["url"] == f"/ai?ansicht=worker&id={run.conversation_id}"
+    assert "token" not in payload
+    assert "sender_user_id" not in payload
+    assert "from_user_id" not in payload

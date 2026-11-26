@@ -188,16 +188,9 @@ const UNUMKEHRBAR: readonly string[] = [
 export function AiActionProposalCard({
   proposal,
   onChange,
-  nurAnsicht = false,
 }: {
   proposal: AiActionProposal
   onChange: (proposal: AiActionProposal) => void
-  /**
-   * Ohne Knöpfe, mit dem Hinweis, wo bestätigt wird. Für das Worker-Fenster:
-   * es ist zum Nachsehen da (Betreiber, 25.09.2026), und dieselbe Karte steht
-   * mit Knöpfen im Chat und in der Sprachansicht.
-   */
-  nurAnsicht?: boolean
 }) {
   const { t } = useTranslation()
   const [busy, setBusy] = useState(false)
@@ -423,12 +416,7 @@ export function AiActionProposalCard({
           )}
           {proposal.error_code && <p className="mt-1.5 flex items-center gap-1 text-xs text-status-destructive"><AlertTriangle className="h-3.5 w-3.5" />{t('ai.actions.failed')}</p>}
         </div>
-        {proposal.status === 'proposed' && !proposal.autonomous && nurAnsicht && (
-          <p className="mt-2 w-full text-xs text-on-surface-variant sm:mt-0 sm:w-auto sm:max-w-[14rem] sm:text-right">
-            {t('ai.actions.nurAnsicht')}
-          </p>
-        )}
-        {proposal.status === 'proposed' && !proposal.autonomous && !nurAnsicht && (
+        {proposal.status === 'proposed' && !proposal.autonomous && (
           <div className="flex w-full sm:w-auto flex-wrap items-center gap-2 justify-end mt-2 sm:mt-0">
             <Button
               type="button"

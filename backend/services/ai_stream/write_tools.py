@@ -376,6 +376,59 @@ def _freigabe_melden(user_id: int, conversation_id: str, zustand: dict) -> None:
         )
 
 
+def _freigabe_push_senden(
+    user_id: int,
+    conversation_id: str,
+    proposal_ids: list[str],
+    *,
+    worker: dict | None = None,
+) -> None:
+    """Sendet einen datensparsamen WebPush, wenn eine KI-Aktion auf Freigabe wartet.
+
+    Keine Tokens und keine Geheimnisse im Payload: die Benachrichtigung führt
+    direkt in das Worker-Fenster bzw. den Chat, wo der Benutzer angemeldet
+    bestätigen kann. Ist ein Tab aktiv im Vordergrund, verwirft ``sw.js`` den
+    Push selbst.
+    """
+    from services import webpush_service
+
+    titel = ""
+    if isinstance(worker, dict):
+        titel = str(worker.get("titel") or "").strip()[:120]
+    first_id = proposal_ids[0] if proposal_ids else conversation_id
+    body = (
+        f'Der Auftrag "{titel}" wartet auf deine Bestätigung.'
+        if titel
+        else "Eine KI-Aktion wartet auf deine Bestätigung."
+    )
+    url = (
+        f"/ai?ansicht=worker&id={conversation_id}"
+        if worker is not None
+        else "/ai"
+    )
+
+    try:
+        with SessionLocal() as db:
+            webpush_service.sende_an_konto(
+                db,
+                user_id,
+                {
+                    "type": "ai_approval",
+                    "title": "KI wartet auf Freigabe",
+                    "body": body,
+                    "tag": f"msm-ai-approval-{first_id}",
+                    "ereignis": f"ai-approval:{first_id}",
+                    "url": url,
+                },
+            )
+    except Exception:  # noqa: BLE001 - ein Pushfehler beendet keinen Lauf
+        logger.warning(
+            "Freigabe-Push nicht zugestellt conversation_id=%s",
+            conversation_id,
+            exc_info=True,
+        )
+
+
 def _freigabe_per_mail_erbeten(run_id: str, proposal_ids: list[str]) -> bool:
     """Fragt per E-Mail nach — fuer **genau einen** der offenen Vorschlaege.
 
@@ -920,9 +973,7 @@ async def _schreibrunde_ausfuehren(
         )
     if offen:
         zustand["pending"] = {
-            "proposal_ids": [
-                proposal["id"] for proposal in proposals if proposal.get("id")
-            ],
+            "proposal_ids": list(offen),
         }
         if rolle == "worker":
             # Ein Worker schreibt in sein eigenes Fenster, das niemand

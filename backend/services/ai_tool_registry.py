@@ -1097,7 +1097,7 @@ AUFGABEN_HANDELN = frozenset({
     "propose_email_send",
     "propose_calendar_event_create",
     "propose_calendar_event_update",
-    # Redaktionelle News-Entwuerfe (mit is_published=True greift verlangt_klick).
+    # Redaktionelle News-Beiträge (bei aktivem Autonomie-Modus auch veröffentlicht).
     "propose_news_upsert",
 })
 

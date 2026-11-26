@@ -514,6 +514,14 @@ async def _segment_erfolgreich_abschliessen(
             stop_reason="awaiting_confirmation",
             zustand=zustand,
         )
+        pending_ids = list((zustand.get("pending") or {}).get("proposal_ids") or [])
+        await asyncio.to_thread(
+            ai_stream._freigabe_push_senden,
+            user_id,
+            conversation_id,
+            pending_ids,
+            worker=worker,
+        )
         return
     if wecker is not None:
         ai_stream._lauf_abschliessen(

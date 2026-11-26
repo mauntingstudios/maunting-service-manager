@@ -1565,7 +1565,6 @@
       },
       "reasonLabel": "Begründung der KI",
       "effectLabel": "Erwartete Wirkung",
-      "nurAnsicht": "Bestätigen im Chat oder in der Sprachansicht.",
       "autonomousBadge": "Automatisch ausgeführt",
       "autonomousHint": "Diese Aktion lief ohne Rückfrage, weil du den autonomen Modus für diesen Bereich freigegeben hast. Berechtigungen wurden unverändert geprüft; der Vorgang steht vollständig im Audit-Log."
     },
