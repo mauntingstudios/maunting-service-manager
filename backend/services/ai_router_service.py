@@ -44,13 +44,6 @@ _TIER_ORDER: dict[str, tuple[str, ...]] = {
     "fallback": ("fallback", "eco", "standard", "flagship"),
 }
 
-_SIMPLE_GREETING_RE = re.compile(
-    r"^(hallo|hi|hey|moin|servus|guten\s+(morgen|tag|abend)|"
-    r"danke(\s+sch[oö]n)?|thanks|thank\s+you|thx|ok|okay|alles\s+klar|"
-    r"tsch[uü]ss|bye|wie\s+geht(?:'s|\s+es\s+dir)?|how\s+are\s+you|wer\s+bist\s+du)[!.?\s]*$",
-    re.IGNORECASE,
-)
-
 _CODE_SIGNAL_RE = re.compile(
     r"(```|traceback\b|exception:|stack\s*trace|diff\s+--git|"
     r"\b(def\s+\w+|class\s+\w+|function\s+\w+|async\s+def|const\s+\w+\s*=|"
@@ -88,9 +81,9 @@ _COMPLEX_KEYWORDS = (
 
 _PROTOTYPE_TEXTS: dict[str, str] = {
     "eco": (
-        "Kurze Begrüßung, einfache Wissensfrage, kleine Übersetzung, Rechtschreibung prüfen "
-        "oder knappe Zusammenfassung ohne Programmcode. "
-        "Short greeting, quick factual question, simple translation or brief summary."
+        "Kurze Begrüßung, Hallo, Danke, Smalltalk, einfache Wissensfrage, kleine Übersetzung, "
+        "Rechtschreibung prüfen oder knappe Zusammenfassung ohne Programmcode. "
+        "Short greeting, hello, thanks, smalltalk, quick factual question, simple translation or brief summary."
     ),
     "standard": (
         "Alltägliche Arbeitsaufgabe, Server-Status prüfen, Logzeilen erklären, kleine "
@@ -475,6 +468,8 @@ def classify_request(
     cleaned = (text or "").strip()
     low = cleaned.lower()
     length = len(cleaned)
+    word_count = len(cleaned.split())
+    has_path_or_symbol = any(ch in cleaned for ch in ("/", "\\", "`", "{", "}", ";", "=", "->"))
 
     if length <= 60:
         score = 0.12
@@ -497,9 +492,6 @@ def classify_request(
     elif complex_hits >= 2:
         score += 0.34
 
-    if not has_code and complex_hits == 0 and _SIMPLE_GREETING_RE.match(low):
-        score -= 0.25
-
     if project_id:
         score += 0.24
     if reasoning:
@@ -510,7 +502,20 @@ def classify_request(
         score += 0.08
 
     score = round(max(0.0, min(1.0, score)), 3)
-    guard_min_standard = bool(project_id) or bool(reasoning) or has_code or bool(has_images)
+    hard_guard = has_code or bool(has_images)
+    guard_min_standard = hard_guard or bool(project_id) or bool(reasoning)
+
+    if not hard_guard and complex_hits == 0 and length <= 140:
+        tied_eco = _embedding_tiebreaker(cleaned, guard_min_standard=False)
+        if tied_eco == "eco":
+            return "eco", min(score, 0.25), "semantic_eco"
+        if (
+            not ai_embedding_service.is_ready()
+            and not has_path_or_symbol
+            and word_count <= 3
+            and length <= 24
+        ):
+            return "eco", min(score, 0.2), "short_utterance"
 
     if score < 0.35 and not guard_min_standard:
         return "eco", score, "simple_score"

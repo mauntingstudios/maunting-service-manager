@@ -79,29 +79,50 @@ def _create_chat_provider(
     return provider
 
 
-def test_classify_request_stage1_and_quality_guard() -> None:
-    """Einfache Fragen -> eco; Coding/Projekt/Reasoning -> mindestens standard/flagship."""
+def test_classify_request_stage1_and_quality_guard(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Einfache/kurze Aeusserungen -> eco (auch mit Projekt/Reasoning); echte Aufgaben -> standard/flagship."""
+    monkeypatch.setattr(ai_router_service.ai_embedding_service, "is_ready", lambda: False)
+
     tier_hi, _, reason_hi = ai_router_service.classify_request(text="Hallo!")
     assert tier_hi == "eco"
-    assert reason_hi == "simple_score"
+    assert reason_hi == "short_utterance"
 
-    tier_proj, _, reason_proj = ai_router_service.classify_request(
+    tier_proj_hi, _, reason_proj_hi = ai_router_service.classify_request(
         text="Hallo!", project_id="proj-123"
     )
-    assert tier_proj in ("standard", "flagship")
-    assert reason_proj == "agentic_quality_guard"
+    assert tier_proj_hi == "eco"
+    assert reason_proj_hi == "short_utterance"
+
+    tier_think_hi, _, reason_think_hi = ai_router_service.classify_request(
+        text="Hallo!", reasoning=True
+    )
+    assert tier_think_hi == "eco"
+    assert reason_think_hi == "short_utterance"
+
+    tier_proj_task, _, reason_proj_task = ai_router_service.classify_request(
+        text="Prüfe bitte den Login-Ablauf im Backend", project_id="proj-123"
+    )
+    assert tier_proj_task in ("standard", "flagship")
+    assert reason_proj_task in ("agentic_quality_guard", "grey_zone_default")
+
+    tier_short_tech, _, _ = ai_router_service.classify_request(
+        text="fix backend/auth.py", project_id="proj-123"
+    )
+    assert tier_short_tech in ("standard", "flagship")
 
     tier_code, _, _ = ai_router_service.classify_request(
         text="Bitte debugge diesen Stacktrace:\n```python\nTraceback (most recent call last):\n  File 'app.py'\n```"
     )
     assert tier_code == "flagship"
 
-    tier_think, _, _ = ai_router_service.classify_request(text="Kurze Frage", reasoning=True)
+    tier_think, _, _ = ai_router_service.classify_request(
+        text="Erkläre mir den Unterschied zwischen TCP und UDP im Detail", reasoning=True
+    )
     assert tier_think in ("standard", "flagship")
 
 
 def test_classify_request_stage2_embedding_tiebreaker_and_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Grauzone nutzt lokales Embedding, faellt ohne Modell sauber auf standard zurueck."""
+    """Grauzone und kurze Alltagsfragen nutzen lokales Embedding, mit Fallback auf standard."""
     # Grauzone (ca. 300 Zeichen ohne Code/Keywords)
     grey_text = "Kannst du mir bitte kurz helfen? " * 10
 
@@ -110,11 +131,13 @@ def test_classify_request_stage2_embedding_tiebreaker_and_fallback(monkeypatch: 
     assert tier == "standard"
     assert reason == "grey_zone_default"
 
-    # Mock: Embedding ist bereit und waehlt klar flagship
+    # Mock: Embedding ist bereit und waehlt klar flagship fuer grey_text
     ai_router_service._PROTO_VECTORS = None
     def fake_encode(txt: str):
         if "Komplexe Softwarearchitektur" in txt or txt.startswith("Kannst du mir"):
             return [1.0, 0.0, 0.0]
+        if "Kurze Begrüßung" in txt or txt.startswith("Wie spät"):
+            return [0.0, 0.0, 1.0]
         return [0.0, 1.0, 0.0]
 
     monkeypatch.setattr(ai_router_service.ai_embedding_service, "is_ready", lambda: True)
@@ -123,6 +146,12 @@ def test_classify_request_stage2_embedding_tiebreaker_and_fallback(monkeypatch: 
     tier_emb, _, reason_emb = ai_router_service.classify_request(text=grey_text)
     assert tier_emb == "flagship"
     assert reason_emb == "embedding_tiebreaker"
+
+    tier_semantic_eco, _, reason_semantic_eco = ai_router_service.classify_request(
+        text="Wie spät ist es in Tokio?", project_id="proj-123", reasoning=True
+    )
+    assert tier_semantic_eco == "eco"
+    assert reason_semantic_eco == "semantic_eco"
     ai_router_service._PROTO_VECTORS = None
 
 
