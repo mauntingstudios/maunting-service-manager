@@ -692,6 +692,10 @@
     "maxContextTokensHint": "Upper limit for one request in tokens, even if the model supports more. Without an entry, 44,000 applies. The model's window stays an additional hard limit, and older history beyond it is summarized.",
     "allowAllModels": "Allow all global models for this role",
     "allowAllModelsHint": "When enabled, this role can use all globally configured AI providers and models. When disabled, allowed providers and specific models can be restricted.",
+    "routerOnly": "Require Singra Router only",
+    "routerOnlyHint": "Members of this role only use Singra Router in chat and cannot select individual provider models directly.",
+    "softCapDowngrade": "Soft-cap on 5h limit",
+    "softCapDowngradeHint": "When the 5-hour quota is reached, the router switches to fallback and eco models instead of blocking while daily and monthly limits allow it.",
     "providerModelAccess": "Provider & model access",
     "providerModelAccessDesc": "Controls which globally configured AI providers and models are available to users of this role.",
     "providerAccessBlocked": "Blocked",
@@ -1233,6 +1237,52 @@
       "deleteConfirmMessage": "Do you really want to remove this file from AI storage?",
       "deleteAlsoFromVault": "Also delete from my personal vault",
       "totalSize": "Total size"
+    },
+    "router": {
+      "title": "Singra Router",
+      "description": "Routes chat requests automatically across your already configured models. No extra API key or pre-routing LLM is needed.",
+      "enableToggle": "Enable Singra Router",
+      "statusActive": "Active",
+      "statusNoModels": "Active, no model assigned yet",
+      "statusOff": "Off",
+      "noConfiguredProviders": "Configure at least one active chat provider first so models appear here.",
+      "emptyPool": "No models assigned yet.",
+      "unavailable": "Provider inactive",
+      "moveUp": "Move priority up",
+      "moveDown": "Move priority down",
+      "removeModel": "Remove model",
+      "addModelPlaceholder": "Add model …",
+      "allModelsAdded": "All configured models assigned",
+      "weightsToggle": "Advanced: Quota weights",
+      "weightsHint": "Multiplier for quota token accounting (10 = 1.0x, 20 = 2.0x). Actual USD costs are always recorded accurately.",
+      "saved": "Router configuration saved.",
+      "routedVia": "Singra Router → {{model}} · {{tier}}",
+      "errors": {
+        "load": "Could not load router configuration.",
+        "save": "Could not save router configuration."
+      },
+      "tiers": {
+        "eco": {
+          "title": "Light (Eco)",
+          "short": "Light",
+          "description": "Short questions, greetings and straightforward text tasks without code or project context."
+        },
+        "standard": {
+          "title": "Medium (Standard)",
+          "short": "Medium",
+          "description": "Everyday support, status checks, small scripts and configuration help."
+        },
+        "flagship": {
+          "title": "Heavy (Flagship)",
+          "short": "Heavy",
+          "description": "Architecture design, deep debugging, code analysis and multi-step tasks."
+        },
+        "fallback": {
+          "title": "Soft-cap / Emergency fallback",
+          "short": "Fallback",
+          "description": "Backup models used on 429/5xx failures or when a role reaches its 5h soft cap."
+        }
+      }
     },
     "chat": {
       "title": "Singra",

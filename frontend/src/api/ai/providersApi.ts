@@ -10,6 +10,8 @@ import type {
   AiProviderKind,
   AiProviderTestResult,
   AiProviderWrite,
+  AiRouterConfig,
+  AiRouterConfigUpdate,
   AiSatelliteStatus,
   AiTomTomStatus,
   AiUsageEvents,
@@ -198,5 +200,11 @@ export const providersApi = {
         max_parallel_workers: maxParallelWorkers,
         rounds_per_worker: roundsPerWorker,
       }),
+    }),
+  getRouterConfig: () => api<AiRouterConfig>('/ai/settings/router'),
+  updateRouterConfig: (payload: AiRouterConfigUpdate) =>
+    api<AiRouterConfig>('/ai/settings/router', {
+      method: 'PUT',
+      body: JSON.stringify(payload),
     }),
 }

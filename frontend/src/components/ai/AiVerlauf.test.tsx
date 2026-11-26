@@ -171,4 +171,45 @@ describe('AiAntwortblase: Übergabe an den Rechner', () => {
     )
     expect(screen.getByText('Keine Antwort erhalten.')).toBeTruthy()
   })
+
+  it('zeigt waehrend des Streamings die Licht-Welle statt robotischem Platzhaltertext', async () => {
+    const { render, screen } = await import('@testing-library/react')
+    const { AiAntwortblase, KEINE_AUFRUFE } = await import('./AiVerlauf')
+    render(
+      <AiAntwortblase
+        message={{
+          ...nachricht(undefined),
+          status: 'streaming',
+        }}
+        beantwortet={false}
+        busy
+        laufendeWerkzeuge={KEINE_AUFRUFE}
+        onAnswer={null}
+      />,
+    )
+    expect(screen.getByTestId('ai-shimmer-wait')).toBeTruthy()
+    expect(screen.queryByText('Antwort wird erstellt …')).toBeNull()
+  })
+
+  it('rendert geroutetes Zielmodell dezent im Hover-Hinweis nach Abschluss', async () => {
+    const { render, screen } = await import('@testing-library/react')
+    const { AiAntwortblase, KEINE_AUFRUFE } = await import('./AiVerlauf')
+    render(
+      <AiAntwortblase
+        message={{
+          ...nachricht([{ art: 'text', inhalt: 'Hallo!' }]),
+          content: 'Hallo!',
+          routed_model: 'google/gemini-2.5-flash',
+          routed_tier: 'eco',
+        }}
+        beantwortet
+        busy={false}
+        laufendeWerkzeuge={KEINE_AUFRUFE}
+        onAnswer={null}
+      />,
+    )
+    const hint = screen.getByTestId('routed-model-hint')
+    expect(hint).toHaveTextContent('Singra Router → google/gemini-2.5-flash · Leicht')
+    expect(hint.className).toContain('opacity-0')
+  })
 })

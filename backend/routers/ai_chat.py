@@ -50,8 +50,10 @@ from services import (
     ai_limit_service,
     ai_provider_service,
     ai_reasoning,
+    ai_router_service,
     ai_run_broker,
     ai_run_service,
+    ai_usage_service,
     drain_service,
 )
 from services.ai_redaction import redact_sensitive_text
@@ -186,6 +188,10 @@ def _message_response(message: AiMessage) -> AiMessageResponse:
         status=message.status,
         provider_id=message.provider_id,
         model=message.model,
+        routed_tier=getattr(message, "routed_tier", None),
+        routed_model=getattr(message, "routed_model", None),
+        routed_provider_name=getattr(message, "routed_provider_name", None),
+        routed_reason=getattr(message, "routed_reason", None),
         created_at=message.created_at,
     )
 
@@ -645,12 +651,24 @@ def _snapshot_message(message: AiMessage) -> dict:
         "content": message.content,
         "sections": _sections(message),
         "question": _question(message),
+        "routed_tier": getattr(message, "routed_tier", None),
+        "routed_model": getattr(message, "routed_model", None),
+        "routed_provider_name": getattr(message, "routed_provider_name", None),
+        "routed_reason": getattr(message, "routed_reason", None),
     }
 
 
 async def _replay_message(message: AiMessage | dict) -> AsyncIterator[str]:
     data = _snapshot_message(message) if isinstance(message, AiMessage) else message
-    yield sse_event("message", {"message_id": data["id"], "request_id": data["request_id"]})
+    msg_event = {"message_id": data["id"], "request_id": data["request_id"]}
+    if data.get("routed_model"):
+        msg_event.update({
+            "routed_tier": data.get("routed_tier"),
+            "routed_model": data.get("routed_model"),
+            "routed_provider_name": data.get("routed_provider_name"),
+            "routed_reason": data.get("routed_reason"),
+        })
+    yield sse_event("message", msg_event)
     # Die Wiedergabe folgt der **gespeicherten Reihenfolge**, wenn es eine gibt.
     # Ein einzelnes `delta` mit dem ganzen Text waere fuer eine Antwort, die
     # zwischen ihren Absaetzen Werkzeuge gerufen hat, eine falsche Wiedergabe:
@@ -832,9 +850,14 @@ async def stream_message(
     if provider.requires_api_key and not provider.operator_api_key_encrypted:
         raise HTTPException(status_code=409, detail="Fuer diesen Provider ist kein API-Key konfiguriert")
 
+    effective_limits = ai_limit_service.resolve_effective_limits(db, user)
+    is_router = ai_router_service.is_router_provider(provider)
+    if effective_limits.router_only and not is_router:
+        raise HTTPException(status_code=403, detail="AI_ROUTER_ONLY_REQUIRED")
+
     # Rollenbasierte Provider- und Modellfreigaben strikt durchsetzen (Fail-closed)
     effective_allowed = ai_limit_service.resolve_effective_allowed_models(db, user)
-    if effective_allowed is not None:
+    if effective_allowed is not None and not (effective_limits.router_only and is_router):
         if provider.id not in effective_allowed:
             raise HTTPException(status_code=403, detail="AI_PROVIDER_NOT_PERMITTED_FOR_ROLE")
         allowed_models = effective_allowed[provider.id]
@@ -846,7 +869,7 @@ async def stream_message(
     if existing is not None:
         if payload.conversation_id and existing.conversation_id != payload.conversation_id:
             raise HTTPException(status_code=409, detail="AI-Request-ID wurde widerspruechlich wiederverwendet")
-        if existing.provider_id != provider.id:
+        if existing.provider_id != provider.id and not (is_router and existing.routed_model):
             raise HTTPException(status_code=409, detail="AI-Request-ID wurde widerspruechlich wiederverwendet")
         if existing.status == "complete":
             conversation = db.get(AiConversation, existing.conversation_id)
@@ -893,14 +916,6 @@ async def stream_message(
     if is_generic_title and raw_content:
         # 1. Sofort-Heuristik (synchron): Bereinigt von Floskeln, sauber lesbar
         conversation.title = ai_chat_service.clean_heuristic_title(raw_content)
-        # 2. Asynchrone Verfeinerung durch das Modell im Hintergrund
-        background_tasks.add_task(
-            ai_chat_service.generate_conversation_title_llm,
-            conversation.id,
-            raw_content,
-            payload.provider_id,
-            payload.model,
-        )
     docs_document_uid: str | None = None
     docs_team_id: int | None = None
     docs_is_link_guest: bool = False
@@ -914,13 +929,71 @@ async def stream_message(
         docs_is_link_guest = scope_res.is_link_guest
     db.commit()
 
-    requested_model = _erlaubtes_wunschmodell(provider, payload.model)
-
     safe_content = redact_sensitive_text(payload.content).strip()
-    if not safe_content and not ai_attachment_service.has_unbound(
+    has_unbound_attachments = ai_attachment_service.has_unbound(
         db, conversation.id, user.id
-    ):
+    )
+    if not safe_content and not has_unbound_attachments:
         raise HTTPException(status_code=400, detail="Nachricht ist nach Sicherheitsfilter leer")
+
+    target_provider = provider
+    requested_model = _erlaubtes_wunschmodell(provider, payload.model)
+    routing_meta: dict | None = None
+    if is_router:
+        history_len = (
+            db.query(AiMessage.id)
+            .filter(AiMessage.conversation_id == conversation.id)
+            .count()
+        )
+        soft_cap = bool(
+            effective_limits.soft_cap_downgrade
+            and ai_usage_service.is_five_hour_limit_exceeded(
+                db, user, max(1, len(safe_content) // 4 + 2048)
+            )
+        )
+        if soft_cap:
+            tier, score, route_reason = "fallback", 0.0, "soft_cap_5h"
+        else:
+            tier, score, route_reason = ai_router_service.classify_request(
+                text=safe_content,
+                has_images=has_unbound_attachments,
+                reasoning=payload.reasoning,
+                project_id=payload.project_id or conversation.project_id,
+                history_len=history_len,
+            )
+        candidates = ai_router_service.resolve_candidates(
+            db, tier=tier, soft_cap=soft_cap
+        )
+        if not candidates:
+            raise HTTPException(status_code=503, detail="AI_ROUTER_NO_AVAILABLE_MODEL")
+        first = candidates[0]
+        resolved = db.get(AiProvider, first["provider_id"])
+        if resolved is None or not resolved.enabled:
+            raise HTTPException(status_code=503, detail="AI_ROUTER_NO_AVAILABLE_MODEL")
+        target_provider = resolved
+        requested_model = first["model"]
+        routing_meta = {
+            "tier": first["tier"],
+            "model": first["model"],
+            "provider_id": first["provider_id"],
+            "provider_name": first["provider_name"],
+            "reason": route_reason,
+            "score": score,
+            "weight": first["weight"],
+            "soft_cap": soft_cap,
+            "candidates": candidates,
+            "candidate_index": 0,
+        }
+
+    if is_generic_title and raw_content:
+        # 2. Asynchrone Verfeinerung durch das aufgelöste Zielmodell im Hintergrund
+        background_tasks.add_task(
+            ai_chat_service.generate_conversation_title_llm,
+            conversation.id,
+            raw_content,
+            target_provider.id,
+            requested_model,
+        )
 
     # Die Denkvorgabe wird **hier** festgelegt und nicht erst beim Senden:
     # der Anlauf kennt keinen HTTP-Client, der Modellkatalog ist aber ein
@@ -931,7 +1004,7 @@ async def stream_message(
         request.app.state.ai_http_client,
         db,
         user=user,
-        provider=provider,
+        provider=target_provider,
         aktiv=payload.reasoning,
         wunsch=payload.reasoning_effort,
         model_id=requested_model,
@@ -943,7 +1016,7 @@ async def stream_message(
     # Betreiber zwischendurch das Modell wechselt.
     fenster = await ai_context_window.ermitteln(
         request.app.state.ai_http_client,
-        provider,
+        target_provider,
         db=db,
         user_id=user.id,
         model_id=requested_model,
@@ -952,7 +1025,7 @@ async def stream_message(
     # gleich eine eigene Sitzung in einem eigenen Thread an, und die des
     # Requests darf diese Grenze nicht ueberschreiten — sie gehoert dem
     # Request-Thread und wird von ihm geschlossen.
-    user_id, conversation_id, provider_id = user.id, conversation.id, provider.id
+    user_id, conversation_id, provider_id = user.id, conversation.id, target_provider.id
     # Und sie darf auch keine offene Transaktion ueber die Grenze tragen.
     # Die Sitzung im Thread saehe ungesicherte Arbeit dieser Sitzung nicht,
     # und in der Testsuite teilen sich beide sogar eine Verbindung. Frueher
@@ -997,6 +1070,7 @@ async def stream_message(
         ),
         requested_model=requested_model,
         project_id=payload.project_id or conversation.project_id,
+        routing_meta=routing_meta,
     )
     if run_id is None:
         code, message_key = fehler or ("AI_PREPARATION_FAILED", "ai.chat.errors.unavailable")

@@ -617,3 +617,48 @@ class AiProviderTestResponse(BaseModel):
     # fehlt ("No endpoints found for openrouter-free") — genau das, was ein
     # uebersetzter Code allein nicht leisten kann.
     detail: str | None = None
+
+
+class AiRouterPoolEntryInput(BaseModel):
+    provider_id: int = Field(ge=1)
+    model: str = Field(min_length=1, max_length=256)
+
+
+class AiRouterPoolEntryResponse(AiRouterPoolEntryInput):
+    provider_name: str
+    available: bool = True
+
+
+class AiRouterAvailableProviderModels(BaseModel):
+    provider_id: int
+    provider_name: str
+    provider_kind: str
+    models: list[str] = Field(default_factory=list)
+
+
+class AiRouterConfigUpdate(BaseModel):
+    enabled: bool | None = None
+    eco_models: list[AiRouterPoolEntryInput] | None = None
+    standard_models: list[AiRouterPoolEntryInput] | None = None
+    flagship_models: list[AiRouterPoolEntryInput] | None = None
+    fallback_models: list[AiRouterPoolEntryInput] | None = None
+    eco_weight: float | None = Field(default=None, ge=0.1, le=10.0)
+    standard_weight: float | None = Field(default=None, ge=0.1, le=10.0)
+    flagship_weight: float | None = Field(default=None, ge=0.1, le=10.0)
+    fallback_weight: float | None = Field(default=None, ge=0.1, le=10.0)
+
+
+class AiRouterConfigResponse(BaseModel):
+    enabled: bool = False
+    router_provider_id: int | None = None
+    ready: bool = False
+    eco_models: list[AiRouterPoolEntryResponse] = Field(default_factory=list)
+    standard_models: list[AiRouterPoolEntryResponse] = Field(default_factory=list)
+    flagship_models: list[AiRouterPoolEntryResponse] = Field(default_factory=list)
+    fallback_models: list[AiRouterPoolEntryResponse] = Field(default_factory=list)
+    eco_weight: float = 1.0
+    standard_weight: float = 1.0
+    flagship_weight: float = 1.0
+    fallback_weight: float = 1.0
+    available_providers: list[AiRouterAvailableProviderModels] = Field(default_factory=list)
+    updated_at: datetime | None = None

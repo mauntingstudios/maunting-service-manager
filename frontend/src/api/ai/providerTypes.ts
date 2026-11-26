@@ -740,3 +740,45 @@ export interface AiProviderWrite {
   operator_api_key?: string
   clear_operator_api_key?: boolean
 }
+
+export interface AiRouterPoolEntry {
+  provider_id: number
+  model: string
+  provider_name?: string
+  available?: boolean
+}
+
+export interface AiRouterAvailableProviderModels {
+  provider_id: number
+  provider_name: string
+  provider_kind: string
+  models: string[]
+}
+
+export interface AiRouterConfig {
+  enabled: boolean
+  router_provider_id: number | null
+  ready: boolean
+  eco_models: AiRouterPoolEntry[]
+  standard_models: AiRouterPoolEntry[]
+  flagship_models: AiRouterPoolEntry[]
+  fallback_models: AiRouterPoolEntry[]
+  eco_weight: number
+  standard_weight: number
+  flagship_weight: number
+  fallback_weight: number
+  available_providers: AiRouterAvailableProviderModels[]
+  updated_at: string | null
+}
+
+export interface AiRouterConfigUpdate {
+  enabled?: boolean
+  eco_models?: Array<{ provider_id: number; model: string }>
+  standard_models?: Array<{ provider_id: number; model: string }>
+  flagship_models?: Array<{ provider_id: number; model: string }>
+  fallback_models?: Array<{ provider_id: number; model: string }>
+  eco_weight?: number
+  standard_weight?: number
+  flagship_weight?: number
+  fallback_weight?: number
+}

@@ -100,6 +100,10 @@ class Abzug:
     frage: dict | None = None
     vorschlaege: list[dict] = field(default_factory=list)
     stop_reason: str | None = None
+    routed_tier: str | None = None
+    routed_model: str | None = None
+    routed_provider_name: str | None = None
+    routed_reason: str | None = None
 
     @property
     def inhalt(self) -> str:
@@ -200,6 +204,10 @@ class Abzug:
             frage=self.frage,
             vorschlaege=list(self.vorschlaege),
             stop_reason=self.stop_reason,
+            routed_tier=self.routed_tier,
+            routed_model=self.routed_model,
+            routed_provider_name=self.routed_provider_name,
+            routed_reason=self.routed_reason,
         )
 
     def als_ereignis(self) -> dict:
@@ -216,6 +224,10 @@ class Abzug:
             "question": self.frage,
             "proposals": list(self.vorschlaege),
             "stop_reason": self.stop_reason,
+            "routed_tier": self.routed_tier,
+            "routed_model": self.routed_model,
+            "routed_provider_name": self.routed_provider_name,
+            "routed_reason": self.routed_reason,
         }
 
 
@@ -307,6 +319,11 @@ def veroeffentlichen(
     # Anhaengen vollstaendig statt bruchstueckhaft.
     if ereignis == "message":
         abzug.message_id = daten.get("message_id")
+        if daten.get("routed_model"):
+            abzug.routed_tier = daten.get("routed_tier")
+            abzug.routed_model = daten.get("routed_model")
+            abzug.routed_provider_name = daten.get("routed_provider_name")
+            abzug.routed_reason = daten.get("routed_reason")
     elif ereignis == "delta":
         abzug.text_anhaengen(str(daten.get("content") or ""))
     elif ereignis == "reasoning":
@@ -331,6 +348,10 @@ def veroeffentlichen(
     if ereignis == "segment":
         abzug.abschnitte = []
         abzug.frage = None
+        abzug.routed_tier = None
+        abzug.routed_model = None
+        abzug.routed_provider_name = None
+        abzug.routed_reason = None
         # Ein neues Segment ist eine neue Nachricht: ab hier ist der Abzug
         # wieder vollstaendig, auch wenn ein frueherer Kanal geopfert wurde.
         _ABZUG_UNVOLLSTAENDIG.discard(run_id)
@@ -367,6 +388,10 @@ def _abzug_aus_snapshot(run_id: str, snap: dict) -> Abzug:
         frage=snap.get("question"),
         vorschlaege=list(snap.get("proposals") or []),
         stop_reason=snap.get("stop_reason"),
+        routed_tier=snap.get("routed_tier"),
+        routed_model=snap.get("routed_model"),
+        routed_provider_name=snap.get("routed_provider_name"),
+        routed_reason=snap.get("routed_reason"),
     )
 
 

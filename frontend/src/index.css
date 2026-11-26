@@ -1317,4 +1317,34 @@ dialog::backdrop {
   .msm-shop-card-lift:hover {
     transform: translateY(-3px);
   }
+
+  /* Singra Chat: ruhige Licht-Welle waehrend der Modell-Vorbereitung */
+  @keyframes singra-shimmer {
+    0% {
+      background-position: 200% 0;
+    }
+    100% {
+      background-position: -200% 0;
+    }
+  }
+
+  .singra-shimmer-bar {
+    height: 0.5rem;
+    border-radius: 9999px;
+    background: linear-gradient(
+      90deg,
+      hsl(var(--mui-foreground) / 0.08) 0%,
+      hsl(var(--mui-primary) / 0.34) 45%,
+      hsl(var(--mui-foreground) / 0.08) 90%
+    );
+    background-size: 220% 100%;
+    animation: singra-shimmer 1.8s ease-in-out infinite;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .singra-shimmer-bar {
+      animation: none;
+      background: hsl(var(--mui-foreground) / 0.14);
+    }
+  }
 }

@@ -211,6 +211,10 @@ export const AiAntwortblase = memo(function AiAntwortblase({
   const teile = message.sections?.length
     ? gruppiert(message.sections)
     : null
+  const hatWerkzeuge = Boolean(teile?.some((t) => t.art === 'tools'))
+  const bubbleWidthClass = isStreaming || hatWerkzeuge
+    ? 'w-full max-w-[92%] md:max-w-[85%]'
+    : 'w-full sm:w-fit sm:min-w-[22rem] md:min-w-[28rem] max-w-[92%] md:max-w-[85%]'
   return (
     <article
       className={`group flex flex-col items-start transition-colors ${
@@ -242,7 +246,7 @@ export const AiAntwortblase = memo(function AiAntwortblase({
         </span>
         <div className="flex min-w-0 flex-1 flex-col items-start">
           <div
-            className={`w-fit max-w-[92%] md:max-w-[85%] rounded-2xl transition-all ${
+            className={`${bubbleWidthClass} rounded-2xl transition-all ${
               isSelected ? 'ring-2 ring-primary bg-primary/15 p-0.5' : ''
             }`}
           >
@@ -320,14 +324,29 @@ export const AiAntwortblase = memo(function AiAntwortblase({
           </ChatBubbleSurface>
           </div>
           {!isStreaming && (
-            <ChatMessageMetaRow
-              align="end"
-              isStarred={isStarred}
-              starredLabel="Markiert"
-              onOpenMenu={onOpenMenu ? () => onOpenMenu(message) : undefined}
-              menuLabel="Nachrichtenaktionen"
-              timestamp={message.created_at ? formatMessageTime(message.created_at) : null}
-            />
+            <div className="flex flex-wrap items-center gap-3">
+              <ChatMessageMetaRow
+                align="end"
+                isStarred={isStarred}
+                starredLabel="Markiert"
+                onOpenMenu={onOpenMenu ? () => onOpenMenu(message) : undefined}
+                menuLabel="Nachrichtenaktionen"
+                timestamp={message.created_at ? formatMessageTime(message.created_at) : null}
+              />
+              {message.routed_model && (
+                <span
+                  className="pointer-events-none select-none text-label-sm text-on-surface-variant/80 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100"
+                  data-testid="routed-model-hint"
+                >
+                  {t('ai.router.routedVia', {
+                    model: message.routed_model,
+                    tier: t(`ai.router.tiers.${message.routed_tier || 'standard'}.short`, {
+                      defaultValue: message.routed_tier || 'standard',
+                    }),
+                  })}
+                </span>
+              )}
+            </div>
           )}
         </div>
       </div>
@@ -778,10 +797,16 @@ function AiWartezeile({ aufrufe }: { aufrufe: AiToolPlanAufruf[] }) {
 
   if (namen.length === 0) {
     return (
-      <p className="flex items-center gap-2 text-sm text-on-surface-variant">
-        <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" aria-hidden="true" />
-        {t('ai.chat.thinking')}
-      </p>
+      <div
+        className="space-y-2 py-1"
+        role="status"
+        aria-label={t('ai.chat.thinking')}
+        data-testid="ai-shimmer-wait"
+      >
+        <div className="singra-shimmer-bar w-48 max-w-full" />
+        <div className="singra-shimmer-bar w-64 max-w-full opacity-80" />
+        <div className="singra-shimmer-bar w-36 max-w-full opacity-60" />
+      </div>
     )
   }
   return (

@@ -96,6 +96,10 @@ class AiMessageResponse(BaseModel):
     status: str
     provider_id: int | None
     model: str | None
+    routed_tier: str | None = None
+    routed_model: str | None = None
+    routed_provider_name: str | None = None
+    routed_reason: str | None = None
     created_at: datetime
 
 

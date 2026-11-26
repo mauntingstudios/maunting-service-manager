@@ -163,6 +163,8 @@ def base_url(provider: AiProvider) -> str:
     DNS-Label bei.
     """
     spec = ai_provider_registry.anbieter(provider.provider_kind)
+    if spec.virtuell:
+        raise AiProviderConfigurationError("Virtueller Provider besitzt keine direkte Zieladresse")
     if spec.adresse_eintragbar:
         return ai_custom_ssrf.validate_custom_base_url(
             getattr(provider, "custom_base_url", None)
@@ -228,6 +230,16 @@ def _normalisiere_modellliste(models: list[str] | None, default_model: str | Non
             result.append(m)
             seen.add(m)
     return result
+
+
+def ist_virtuell(provider: AiProvider | None) -> bool:
+    """True fuer den eingebauten virtuellen KI-Router ohne direkte API-Adresse."""
+    if provider is None:
+        return False
+    return (
+        ai_provider_registry.bekannt(provider.provider_kind)
+        and bool(ai_provider_registry.anbieter(provider.provider_kind).virtuell)
+    )
 
 
 def fuer_chat(provider: AiProvider) -> bool:
@@ -889,6 +901,8 @@ def create_provider(
     suchmodell = (search_summary_model or "").strip() or None
     suchstufe = _assert_such_denkstufe(search_summary_reasoning_effort)
     kind = _assert_kind(provider_kind)
+    if ai_provider_registry.anbieter(kind).virtuell:
+        raise AiProviderConfigurationError("Virtueller KI-Router wird automatisch verwaltet")
     automatic_prices: dict[str, object] = {
         "default_model": modell,
         "worker_model": arbeitsmodell,
@@ -1028,6 +1042,8 @@ def update_provider(
     operator_api_key: str | None,
     clear_operator_api_key: bool,
 ) -> AiProvider:
+    if ist_virtuell(provider):
+        raise AiProviderConfigurationError("Virtueller KI-Router wird zentral unter Router verwaltet")
     if "name" in values and not str(values["name"] or "").strip():
         raise AiProviderConfigurationError("Provider-Name darf nicht leer sein")
     # Der gespeicherte Schluessel gehoert zu **einer** Gegenstelle. Wechselt
@@ -1043,7 +1059,10 @@ def update_provider(
         # Ein anderer Anbieter. Die Praefixpruefung beim Anlegen verhindert
         # genau diesen Fall; ohne die Zeile hier waere sie beim Wechsel
         # wirkungslos.
-        provider.provider_kind = _assert_kind(values["provider_kind"])
+        new_kind = _assert_kind(values["provider_kind"])
+        if ai_provider_registry.anbieter(new_kind).virtuell:
+            raise AiProviderConfigurationError("Virtueller KI-Router wird automatisch verwaltet")
+        provider.provider_kind = new_kind
         schluessel_verfaellt = True
     neue_ressource = (
         _assert_ressource(values["azure_resource_name"])
@@ -1359,7 +1378,7 @@ def anbieter_ohne_auswahl(db: Session, user: User) -> AiProvider | None:
     )
     if letzter is not None:
         anbieter = db.get(AiProvider, letzter.provider_id)
-        if anbieter is not None and anbieter.enabled and fuer_chat(anbieter):
+        if anbieter is not None and anbieter.enabled and fuer_chat(anbieter) and not ist_virtuell(anbieter):
             return anbieter
 
     # Gezaehlt werden nur **Chat**zugaenge mit konfiguriertem Standardmodell.
@@ -1370,7 +1389,7 @@ def anbieter_ohne_auswahl(db: Session, user: User) -> AiProvider | None:
         .filter(AiProvider.enabled.is_(True))
         .order_by(AiProvider.id)
         .all()
-        if fuer_chat(zugang)
+        if fuer_chat(zugang) and not ist_virtuell(zugang)
     ]
     return aktive[0] if len(aktive) == 1 else None
 

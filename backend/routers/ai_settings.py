@@ -96,6 +96,8 @@ def _role_response(db: Session, role: Role) -> AiRoleLimitsResponse:
         role_name=role.name,
         configured=row is not None,
         allow_all_models=row.allow_all_models if row is not None else True,
+        router_only=bool(getattr(row, "router_only", False)) if row is not None else False,
+        soft_cap_downgrade=bool(getattr(row, "soft_cap_downgrade", False)) if row is not None else False,
         model_access=model_access,
         updated_at=row.updated_at if row is not None else None,
         max_context_tokens=row.max_context_tokens if row is not None else None,
@@ -148,6 +150,16 @@ def update_role_limits(
         if "allow_all_models" in genannt
         else (bisher.allow_all_models if bisher else True)
     )
+    router_only = (
+        bool(genannt["router_only"])
+        if "router_only" in genannt
+        else (bool(getattr(bisher, "router_only", False)) if bisher else False)
+    )
+    soft_cap_downgrade = (
+        bool(genannt["soft_cap_downgrade"])
+        if "soft_cap_downgrade" in genannt
+        else (bool(getattr(bisher, "soft_cap_downgrade", False)) if bisher else False)
+    )
     # Wie bei `allow_all_models`: ein fehlendes Feld behaelt den gespeicherten
     # Wert. Ein ausdrueckliches ``null`` heisst hier „nichts hinterlegt“ —
     # dann gilt der Standarddeckel, nicht „unbegrenzt“.
@@ -157,7 +169,14 @@ def update_role_limits(
         else (bisher.max_context_tokens if bisher else None)
     )
     try:
-        ai_limit_service.set_role_limit(db, role.id, values, allow_all_models=allow_all_models)
+        ai_limit_service.set_role_limit(
+            db,
+            role.id,
+            values,
+            allow_all_models=allow_all_models,
+            router_only=router_only,
+            soft_cap_downgrade=soft_cap_downgrade,
+        )
         ai_limit_service.set_role_context_ceiling(db, role.id, deckel)
         if "model_access" in genannt and genannt["model_access"] is not None:
             ai_limit_service.set_role_model_access(db, role.id, genannt["model_access"])

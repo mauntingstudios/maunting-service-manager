@@ -309,6 +309,14 @@ export function useAiLauf({
               reasoning: data.reasoning || null,
               question: data.question,
               status: laeuft ? 'streaming' : 'complete',
+              ...(data.routed_model
+                ? {
+                    routed_tier: data.routed_tier ?? null,
+                    routed_model: data.routed_model,
+                    routed_provider_name: data.routed_provider_name ?? null,
+                    routed_reason: data.routed_reason ?? null,
+                  }
+                : {}),
             })
             if (vorhanden) {
               return current.map((entry) => (
@@ -381,10 +389,40 @@ export function useAiLauf({
           const neueId = data.message_id
           setEntries((current) => current.map((entry) => (
             entry.kind === 'message' && entry.id === optimistischeId
-              ? { ...entry, id: neueId, message: { ...entry.message, id: neueId } }
+              ? {
+                  ...entry,
+                  id: neueId,
+                  message: {
+                    ...entry.message,
+                    id: neueId,
+                    ...(data.routed_model
+                      ? {
+                          routed_tier: data.routed_tier ?? null,
+                          routed_model: data.routed_model,
+                          routed_provider_name: data.routed_provider_name ?? null,
+                          routed_reason: data.routed_reason ?? null,
+                        }
+                      : {}),
+                  },
+                }
               : entry
           )))
           offeneOptimistische = false
+        } else if (aktuell === data.message_id && data.routed_model) {
+          setEntries((current) => current.map((entry) => (
+            entry.kind === 'message' && entry.id === data.message_id
+              ? {
+                  ...entry,
+                  message: {
+                    ...entry.message,
+                    routed_tier: data.routed_tier ?? null,
+                    routed_model: data.routed_model,
+                    routed_provider_name: data.routed_provider_name ?? null,
+                    routed_reason: data.routed_reason ?? null,
+                  },
+                }
+              : entry
+          )))
         } else {
           const id = data.message_id
           setEntries((current) => (
@@ -396,6 +434,10 @@ export function useAiLauf({
                   message: {
                     id, role: 'assistant', content: '', reasoning: null, question: null,
                     status: 'streaming', provider_id: providerId, model: null,
+                    routed_tier: data.routed_tier ?? null,
+                    routed_model: data.routed_model ?? null,
+                    routed_provider_name: data.routed_provider_name ?? null,
+                    routed_reason: data.routed_reason ?? null,
                     created_at: new Date().toISOString(),
                   },
                 }]

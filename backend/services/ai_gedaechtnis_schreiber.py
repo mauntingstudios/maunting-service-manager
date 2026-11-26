@@ -1228,7 +1228,11 @@ def gedaechtnis_anbieter(
     for kennung in (bevorzugt, getattr(user, "ai_provider_id", None)):
         if kennung:
             gefunden = db.get(AiProvider, kennung)
-            if gefunden is not None and fuer_chat(gefunden):
+            if (
+                gefunden is not None
+                and fuer_chat(gefunden)
+                and not ai_provider_service.ist_virtuell(gefunden)
+            ):
                 provider = gefunden
                 break
     if provider is None:

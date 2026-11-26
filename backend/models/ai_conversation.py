@@ -277,6 +277,11 @@ class AiMessage(Base):
         Integer, ForeignKey("ai_providers.id", ondelete="SET NULL"), nullable=True
     )
     model: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    # Routing-Transparenz fuer Antworten ueber den Singra KI-Router (nur beim Hover sichtbar).
+    routed_tier: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    routed_model: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    routed_provider_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    routed_reason: Mapped[str | None] = mapped_column(String(128), nullable=True)
     request_id: Mapped[str | None] = mapped_column(String(36), unique=True, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False

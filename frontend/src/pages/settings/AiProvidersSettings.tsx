@@ -522,7 +522,7 @@ export function AiProvidersSettings({ canWrite }: { canWrite: boolean }) {
   useEffect(() => {
     let active = true
     aiApi.listProviderKinds()
-      .then((rows) => { if (active) setKinds(rows) })
+      .then((rows) => { if (active) setKinds(rows.filter((k) => k.kind !== 'singra_router')) })
       .catch(() => undefined)
     aiApi.getCostPolicy()
       .then((policy) => { if (active) setCostPolicy(policy) })
@@ -533,7 +533,9 @@ export function AiProvidersSettings({ canWrite }: { canWrite: boolean }) {
   useEffect(() => {
     let active = true
     aiApi.listProviderSettings()
-      .then((rows) => { if (active) setProviders(rows.map(toDraft)) })
+      .then((rows) => {
+        if (active) setProviders(rows.filter((r) => r.provider_kind !== 'singra_router').map(toDraft))
+      })
       .catch((error: unknown) => {
         if (active) toast.error(error instanceof SanitizedApiError ? error.message : t('ai.providers.errors.load'))
       })
@@ -663,6 +665,7 @@ export function AiProvidersSettings({ canWrite }: { canWrite: boolean }) {
       } else {
         update(index, toDraft(saved))
       }
+      window.dispatchEvent(new CustomEvent('msm:ai-providers-changed'))
       toast.success(t('ai.providers.saved'))
     } catch (error: unknown) {
       toast.error(error instanceof SanitizedApiError ? error.message : t('ai.providers.errors.save'))
@@ -684,6 +687,7 @@ export function AiProvidersSettings({ canWrite }: { canWrite: boolean }) {
     try {
       await aiApi.deleteProvider(provider.id)
       setProviders((current) => current.filter((item) => item.id !== provider.id))
+      window.dispatchEvent(new CustomEvent('msm:ai-providers-changed'))
       toast.success(t('ai.providers.deleted'))
     } catch (error: unknown) {
       toast.error(error instanceof SanitizedApiError ? error.message : t('ai.providers.errors.delete'))

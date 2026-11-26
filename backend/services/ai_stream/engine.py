@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import replace
 from datetime import datetime, timezone
 import json
 import logging
@@ -19,9 +20,12 @@ from models import AiRun, User
 from models.ai_run import BEENDET as AUSGELAUFEN
 import services.ai_stream as ai_stream
 from services import (
+    ai_context_window,
+    ai_limit_service,
     ai_meldestelle,
     ai_provider_service,
     ai_reasoning,
+    ai_router_service,
     ai_run_broker,
     ai_run_service,
     ai_worker_limits,
@@ -449,6 +453,95 @@ def _alle_aufrufe_autonom_erlaubt(user_id: int, tool_calls: list) -> bool:
         )
 
 
+_RETRYABLE_ROUTER_ERROR_CODES = frozenset({
+    "AI_PROVIDER_RATE_LIMITED",
+    "AI_PROVIDER_UNAVAILABLE",
+    "AI_PROVIDER_STREAM_TIMEOUT",
+    "AI_PROVIDER_STREAM_INCOMPLETE",
+    "AI_PROVIDER_ENDPOINT_NOT_FOUND",
+})
+
+
+def _router_failover_schritt(
+    *,
+    run_id: str,
+    user_id: int,
+    message_id: str,
+    usage_event_id: int,
+    failed_provider_id: int,
+    failed_model: str,
+    zustand: dict,
+) -> tuple[Any, str | None, dict] | None:
+    """Schaltet vor dem ersten Token auf den naechsten Pool-Kandidaten um."""
+    routing = zustand.get("routing")
+    if not isinstance(routing, dict):
+        return None
+    candidates = routing.get("candidates")
+    if not isinstance(candidates, list) or not candidates:
+        return None
+    ai_router_service.mark_model_cooldown(failed_provider_id, failed_model)
+    try:
+        idx = int(routing.get("candidate_index", 0))
+    except (TypeError, ValueError):
+        idx = 0
+
+    from models import AiMessage, AiProvider, AiUsageEvent
+
+    with SessionLocal() as db:
+        for next_idx in range(idx + 1, len(candidates)):
+            cand = candidates[next_idx]
+            if not isinstance(cand, dict):
+                continue
+            pid = cand.get("provider_id")
+            model = str(cand.get("model") or "").strip()
+            if not pid or not model:
+                continue
+            next_provider = db.get(AiProvider, int(pid))
+            if next_provider is None or not next_provider.enabled:
+                continue
+            try:
+                api_key = resolve_api_key(db, next_provider, user_id)
+            except DisSidecarError:
+                continue
+            if next_provider.requires_api_key and not api_key:
+                continue
+
+            msg = db.get(AiMessage, message_id)
+            if msg is not None:
+                msg.provider_id = next_provider.id
+                msg.model = model
+                msg.routed_tier = str(cand.get("tier") or "")[:16] or None
+                msg.routed_model = model[:256]
+                msg.routed_provider_name = str(cand.get("provider_name") or next_provider.name)[:128]
+            usage_ev = db.get(AiUsageEvent, usage_event_id)
+            if usage_ev is not None:
+                usage_ev.provider_id = next_provider.id
+                usage_ev.model = model
+            run = db.get(AiRun, run_id)
+            if run is not None:
+                run.provider_id = next_provider.id
+
+            next_routing = dict(routing)
+            next_routing["candidate_index"] = next_idx
+            next_routing["tier"] = cand.get("tier")
+            next_routing["model"] = model
+            next_routing["provider_id"] = next_provider.id
+            next_routing["provider_name"] = cand.get("provider_name") or next_provider.name
+            next_routing["weight"] = cand.get("weight", 1.0)
+            zustand["routing"] = next_routing
+            zustand["requested_model"] = model
+            if run is not None:
+                ai_run_service.zustand_schreiben(run, zustand)
+            u_obj = db.get(User, user_id)
+            ceiling_tokens = ai_limit_service.resolve_context_ceiling(db, u_obj)
+            db.commit()
+            db.refresh(next_provider)
+            db.expunge(next_provider)
+            next_routing["ceiling_chars"] = ceiling_tokens * ai_context_window.ZEICHEN_JE_TOKEN
+            return next_provider, api_key, next_routing
+    return None
+
+
 async def _segment_erfolgreich_abschliessen(
     *,
     run_id: str,
@@ -499,6 +592,7 @@ async def _segment_erfolgreich_abschliessen(
         reasoning="".join(thoughts),
         abschnitte=ai_run_broker.abschnitte(run_id),
         question=gestellte_frage,
+        token_weight=float((zustand.get("routing") or {}).get("weight") or 1.0),
     )
     if on_finalized is not None:
         on_finalized()
@@ -668,6 +762,7 @@ async def segment_ausfuehren(run_id: str, *, client: httpx.AsyncClient | None = 
     rundendeckel = _rundendeckel_fuer_rolle(rolle, run_id)
 
     ai_run_broker.neues_segment(run_id)
+    routing_info = zustand.get("routing") if isinstance(zustand.get("routing"), dict) else None
     ai_run_broker.veroeffentlichen(
         run_id,
         "message",
@@ -676,6 +771,16 @@ async def segment_ausfuehren(run_id: str, *, client: httpx.AsyncClient | None = 
             "request_id": vorbereitung.request_id,
             "run_id": run_id,
             "user_message_id": zustand.get("user_message_id"),
+            **(
+                {
+                    "routed_tier": routing_info.get("tier"),
+                    "routed_model": routing_info.get("model"),
+                    "routed_provider_name": routing_info.get("provider_name"),
+                    "routed_reason": routing_info.get("reason"),
+                }
+                if routing_info
+                else {}
+            ),
         },
     )
 
@@ -710,6 +815,7 @@ async def segment_ausfuehren(run_id: str, *, client: httpx.AsyncClient | None = 
                 token_price_micro_usd_per_million=vorbereitung.token_price_micro_usd_per_million,
                 reasoning="".join(thoughts),
                 abschnitte=ai_run_broker.abschnitte(run_id),
+                token_weight=float((zustand.get("routing") or {}).get("weight") or 1.0),
             )
         except Exception:
             logger.exception("Abrechnung des abgebrochenen AI-Laufs gescheitert run_id=%s", run_id)
@@ -752,32 +858,116 @@ async def segment_ausfuehren(run_id: str, *, client: httpx.AsyncClient | None = 
                 if docs_nachricht is not None
                 else provider_messages
             )
-            last_response_id, denknaht, gedachte_zeichen = await _anbieter_runde_streamen(
-                client=client,
-                vorbereitung=vorbereitung,
-                anfrage_messages=anfrage_messages,
-                current_usage=current_usage,
-                usage=usage,
-                modellname=modellname,
-                tools=tools,
-                letzte_runde=letzte_runde,
-                denken=denken,
-                denkstufe=denkstufe,
-                cache_marke=cache_marke,
-                last_response_id=last_response_id,
-                run_id=run_id,
-                user_id=user_id,
-                conversation_id=conversation_id,
-                herkunft=herkunft,
-                zustand=zustand,
-                angebotene_werkzeuge=angebotene_werkzeuge,
-                fruehe_leseaufgaben=fruehe_leseaufgaben,
-                frueh_schloss=frueh_schloss,
-                chunks=chunks,
-                thoughts=thoughts,
-                denknaht=denknaht,
-                gedachte_zeichen=gedachte_zeichen,
-            )
+            try:
+                last_response_id, denknaht, gedachte_zeichen = await _anbieter_runde_streamen(
+                    client=client,
+                    vorbereitung=vorbereitung,
+                    anfrage_messages=anfrage_messages,
+                    current_usage=current_usage,
+                    usage=usage,
+                    modellname=modellname,
+                    tools=tools,
+                    letzte_runde=letzte_runde,
+                    denken=denken,
+                    denkstufe=denkstufe,
+                    cache_marke=cache_marke,
+                    last_response_id=last_response_id,
+                    run_id=run_id,
+                    user_id=user_id,
+                    conversation_id=conversation_id,
+                    herkunft=herkunft,
+                    zustand=zustand,
+                    angebotene_werkzeuge=angebotene_werkzeuge,
+                    fruehe_leseaufgaben=fruehe_leseaufgaben,
+                    frueh_schloss=frueh_schloss,
+                    chunks=chunks,
+                    thoughts=thoughts,
+                    denknaht=denknaht,
+                    gedachte_zeichen=gedachte_zeichen,
+                )
+            except (AiProviderRequestError, AiProviderConfigurationError) as exc:
+                retryable = isinstance(exc, AiProviderConfigurationError) or (
+                    exc.code in _RETRYABLE_ROUTER_ERROR_CODES
+                )
+                if (
+                    len(chunks) == 0
+                    and len(thoughts) == 0
+                    and not current_usage.tool_calls
+                    and retryable
+                    and isinstance(zustand.get("routing"), dict)
+                ):
+                    umgeschaltet = await asyncio.to_thread(
+                        _router_failover_schritt,
+                        run_id=run_id,
+                        user_id=user_id,
+                        message_id=message_id,
+                        usage_event_id=vorbereitung.usage_event_id,
+                        failed_provider_id=vorbereitung.provider.id,
+                        failed_model=modellname,
+                        zustand=zustand,
+                    )
+                    if umgeschaltet is not None:
+                        next_provider, next_api_key, next_routing = umgeschaltet
+                        vorbereitung = replace(
+                            vorbereitung,
+                            provider=next_provider,
+                            api_key=next_api_key,
+                            token_price_micro_usd_per_million=next_provider.token_price_micro_usd_per_million,
+                        )
+                        ceiling_chars = next_routing.pop("ceiling_chars", None)
+                        fenster = await ai_context_window.ermitteln(
+                            client,
+                            next_provider,
+                            db=None,
+                            user_id=user_id,
+                            model_id=next_routing.get("model"),
+                        )
+                        if fenster.bekannt:
+                            zustand["context_chars"] = (
+                                min(fenster.zeichen, int(ceiling_chars))
+                                if ceiling_chars is not None
+                                else fenster.zeichen
+                            )
+                        else:
+                            zustand["context_chars"] = None
+                        (
+                            tools,
+                            angebotene_werkzeuge,
+                            cache_marke,
+                            kontextgrenze,
+                            denken,
+                            denkstufe,
+                            modellname,
+                            provider_messages,
+                            docs_nachricht,
+                        ) = await _segment_katalog_und_modell_vorbereiten(
+                            client=client,
+                            vorbereitung=vorbereitung,
+                            guardian=guardian,
+                            aufgabe=aufgabe,
+                            rolle=rolle,
+                            herkunft=herkunft,
+                            zustand=zustand,
+                            provider_messages=provider_messages,
+                            run_id=run_id,
+                        )
+                        ai_run_broker.veroeffentlichen(
+                            run_id,
+                            "message",
+                            {
+                                "message_id": message_id,
+                                "request_id": vorbereitung.request_id,
+                                "run_id": run_id,
+                                "user_message_id": zustand.get("user_message_id"),
+                                "routed_tier": next_routing.get("tier"),
+                                "routed_model": next_routing.get("model"),
+                                "routed_provider_name": next_routing.get("provider_name"),
+                                "routed_reason": next_routing.get("reason"),
+                            },
+                        )
+                        current_usage = StreamUsage()
+                        continue
+                raise
             if not current_usage.tool_calls:
                 await _fruehe_leseaufgaben_verwerfen(fruehe_leseaufgaben)
                 break

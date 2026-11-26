@@ -152,12 +152,13 @@ def _denkender_zugang(
             bevorzugt
             and bevorzugt.enabled
             and ai_provider_service.fuer_chat(bevorzugt)
+            and not ai_provider_service.ist_virtuell(bevorzugt)
             and (not bevorzugt.requires_api_key or bool(bevorzugt.operator_api_key_encrypted))
         ):
             return bevorzugt
 
     for zugang in _zugaenge(db):
-        if not ai_provider_service.fuer_chat(zugang):
+        if not ai_provider_service.fuer_chat(zugang) or ai_provider_service.ist_virtuell(zugang):
             continue
         if zugang.requires_api_key and not zugang.operator_api_key_encrypted:
             continue

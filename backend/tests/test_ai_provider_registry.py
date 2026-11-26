@@ -111,6 +111,14 @@ def test_every_registry_entry_is_complete_and_addressable() -> None:
             assert spec.sprachwege == ()
             assert not spec.realtime_tauglich
             assert not spec.ressource_noetig
+        elif spec.virtuell:
+            assert spec.kind == "singra_router"
+            assert spec.base_url == ""
+            assert spec.catalog_url is None
+            assert spec.key_url == ""
+            assert spec.sprachwege == ()
+            assert not spec.realtime_tauglich
+            assert not spec.ressource_noetig
         else:
             assert spec.base_url.startswith("https://"), spec.kind
             if spec.catalog_url is not None:

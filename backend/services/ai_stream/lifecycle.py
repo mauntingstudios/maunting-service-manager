@@ -154,6 +154,7 @@ def _finalize_stream(
     reasoning: str = "",
     question: dict | None = None,
     abschnitte: list[dict] | None = None,
+    token_weight: float = 1.0,
 ) -> None:
     with SessionLocal() as db:
         message = db.get(AiMessage, message_id)
@@ -245,6 +246,7 @@ def _finalize_stream(
                 actual_cost_microunits=accounted_cost,
                 aufschluesselung=usage,
                 cost_source=herkunft,
+                token_weight=token_weight,
             )
         db.commit()
 
@@ -301,6 +303,7 @@ def _segment_beginnen(db, run: AiRun, zustand: dict) -> tuple[str, int, str] | N
     # Das Modell der Rolle, nicht pauschal `default_model`: ein Worker-Segment
     # bucht und beschriftet mit dem Arbeitsmodell des Betreibers.
     modell = _modell_fuer(provider, rolle_aus_zustand(zustand), zustand)
+    routing_meta = zustand.get("routing") if isinstance(zustand.get("routing"), dict) else None
     request_id = str(uuid4())
     usage_event = ai_stream.reserve_ai_usage(
         db,
@@ -313,6 +316,7 @@ def _segment_beginnen(db, run: AiRun, zustand: dict) -> tuple[str, int, str] | N
         server_id=None,
         provider_id=provider.id,
         model=modell,
+        allow_five_hour_soft_cap=bool(routing_meta and routing_meta.get("soft_cap")),
     )
     message_id = str(uuid4())
     db.add(AiMessage(
@@ -323,6 +327,14 @@ def _segment_beginnen(db, run: AiRun, zustand: dict) -> tuple[str, int, str] | N
         status="streaming",
         provider_id=provider.id,
         model=modell,
+        routed_tier=str(routing_meta.get("tier"))[:16] if routing_meta and routing_meta.get("tier") else None,
+        routed_model=str(routing_meta.get("model"))[:256] if routing_meta and routing_meta.get("model") else None,
+        routed_provider_name=(
+            str(routing_meta.get("provider_name"))[:128]
+            if routing_meta and routing_meta.get("provider_name")
+            else None
+        ),
+        routed_reason=str(routing_meta.get("reason"))[:128] if routing_meta and routing_meta.get("reason") else None,
         request_id=request_id,
     ))
     db.flush()

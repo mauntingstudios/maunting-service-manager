@@ -78,6 +78,8 @@ class AiRoleLimitsUpdate(AiLimitsBase):
     """Ersetzt die KI-Limits genau einer Rolle."""
 
     allow_all_models: bool | None = None
+    router_only: bool | None = None
+    soft_cap_downgrade: bool | None = None
     model_access: list[RoleAiModelAccessItem] | None = None
     # Steht bewusst nicht in ``AiLimitsBase``: dort heißt ``None`` in jedem Feld
     # „unbegrenzt“, hier heißt es „Standard“. Fehlt das Feld im Rumpf, bleibt
@@ -92,6 +94,8 @@ class AiRoleLimitsResponse(AiLimitsBase):
     role_name: str
     configured: bool
     allow_all_models: bool = True
+    router_only: bool = False
+    soft_cap_downgrade: bool = False
     model_access: list[RoleAiModelAccessResponse] = Field(default_factory=list)
     updated_at: datetime | None = None
     max_context_tokens: ContextCeiling = None
@@ -101,6 +105,8 @@ class EffectiveAiLimitsResponse(AiLimitsBase):
     """Backendseitig aufgelöste Grenzen des aktuellen Benutzers."""
 
     role_ids: list[int] = Field(default_factory=list)
+    router_only: bool = False
+    soft_cap_downgrade: bool = False
 
 
 class AiWebSearchKeyUpdate(BaseModel):

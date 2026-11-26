@@ -29,6 +29,8 @@ from schemas.ai_provider import (
     AiProviderResponse,
     AiProviderTestResponse,
     AiProviderUpdate,
+    AiRouterConfigResponse,
+    AiRouterConfigUpdate,
     AiSprachwegResponse,
     CustomModelsPreviewRequest,
 )
@@ -38,6 +40,7 @@ from services import (
     ai_provider_registry,
     ai_provider_service,
     ai_reasoning,
+    ai_router_service,
     ai_stt,
     ai_stt_endpunkt,
     ai_tts,
@@ -166,6 +169,58 @@ def list_provider_settings(
     return [_admin_response(provider) for provider in providers]
 
 
+@router.get("/settings/router", response_model=AiRouterConfigResponse)
+def get_router_settings(
+    db: Session = Depends(get_db),
+    _: User = Depends(require_global("panel.settings.read")),
+) -> AiRouterConfigResponse:
+    """Konfiguration des eingebauten Singra KI-Routers inklusive nutzbarer Modelle."""
+    existing_router = (
+        db.query(AiProvider)
+        .filter(AiProvider.provider_kind == ai_router_service.ROUTER_PROVIDER_KIND)
+        .first()
+    )
+    existing_cfg = db.get(ai_router_service.AiRouterConfig, 1)
+    cfg = ai_router_service.get_or_create_router_config(db)
+    data = ai_router_service.serialize_router_config(db, cfg, ensure_provider=True)
+    if existing_router is None or existing_cfg is None:
+        db.commit()
+    return AiRouterConfigResponse(**data)
+
+
+@router.put("/settings/router", response_model=AiRouterConfigResponse)
+def update_router_settings(
+    payload: AiRouterConfigUpdate,
+    db: Session = Depends(get_db),
+    actor: User = Depends(require_global("panel.settings.write")),
+    _: None = Depends(verify_csrf),
+) -> AiRouterConfigResponse:
+    """Aktualisiert die Modellpools, Gewichte und Aktivierung des Singra KI-Routers."""
+    try:
+        data = ai_router_service.update_router_config(
+            db, payload.model_dump(exclude_unset=True)
+        )
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    audit_service.record_privileged_action(
+        db,
+        user_id=actor.id,
+        action="ai.router.updated",
+        target_type="ai_router",
+        target_id=1,
+        details={
+            "enabled": data["enabled"],
+            "eco_count": len(data["eco_models"]),
+            "standard_count": len(data["standard_models"]),
+            "flagship_count": len(data["flagship_models"]),
+            "fallback_count": len(data["fallback_models"]),
+        },
+    )
+    db.commit()
+    return AiRouterConfigResponse(**data)
+
+
 @contextmanager
 def _provider_fehler_uebersetzen(db: Session):
     """Uebersetzt die Fehler des Provider-Service in HTTP-Antworten.
@@ -272,6 +327,8 @@ def delete_provider(
     provider = db.get(AiProvider, provider_id)
     if provider is None:
         raise HTTPException(status_code=404, detail="Provider nicht gefunden")
+    if ai_provider_service.ist_virtuell(provider):
+        raise HTTPException(status_code=400, detail="Virtueller KI-Router kann nicht geloescht werden")
     try:
         pid = provider.id
         is_custom = provider.provider_kind == "custom"
@@ -316,6 +373,8 @@ async def test_provider(
     provider = db.get(AiProvider, provider_id)
     if provider is None:
         raise HTTPException(status_code=404, detail="Provider nicht gefunden")
+    if ai_provider_service.ist_virtuell(provider):
+        return AiProviderTestResponse(ok=True, code=None, detail=None)
     try:
         # Im Threadpool wie an jeder anderen Stelle dieses Routers: die
         # Entschluesselung ist ein synchroner HTTP-Gang zum DIS-Sidecar mit
@@ -798,9 +857,15 @@ async def list_available_providers(
         provider for provider in providers
         if ai_provider_service.fuer_chat(provider)
     ]
-    deckel = ai_limit_service.resolve_effective_limits(db, user).max_reasoning_effort
+    effective_limits = ai_limit_service.resolve_effective_limits(db, user)
+    deckel = effective_limits.max_reasoning_effort
     effective_models = ai_limit_service.resolve_effective_allowed_models(db, user)
-    if effective_models is not None:
+    if effective_limits.router_only:
+        providers = [
+            provider for provider in providers
+            if ai_router_service.is_router_provider(provider)
+        ]
+    elif effective_models is not None:
         providers = [
             provider for provider in providers
             if provider.id in effective_models and (bool(effective_models[provider.id]) or "*" in effective_models[provider.id])
@@ -808,6 +873,41 @@ async def list_available_providers(
 
     antworten: list[AiProviderAvailableResponse] = []
     for provider in providers:
+        if ai_router_service.is_router_provider(provider):
+            router_candidates = ai_router_service.resolve_candidates(db, tier="standard")
+            effs = [
+                r for r in ai_reasoning.RANGFOLGE
+                if deckel is None or ai_reasoning.RANG.get(r, 99) <= deckel
+            ]
+            can_think = deckel is None or deckel > 0
+            router_opt = AiProviderModelOption(
+                model_id=ai_router_service.ROUTER_DEFAULT_MODEL,
+                name="Singra Router (Auto)",
+                reasoning=can_think,
+                efforts=effs if can_think else [],
+                can_disable=True,
+                default_effort=None,
+            )
+            antworten.append(
+                AiProviderAvailableResponse(
+                    id=provider.id,
+                    name=provider.name,
+                    provider_kind=provider.provider_kind,
+                    default_model=ai_router_service.ROUTER_DEFAULT_MODEL,
+                    enabled_models=[ai_router_service.ROUTER_DEFAULT_MODEL],
+                    allow_all_models=False,
+                    models=[router_opt],
+                    requires_api_key=False,
+                    operator_key_available=True,
+                    available=bool(provider.enabled and len(router_candidates) > 0),
+                    reasoning=can_think,
+                    efforts=effs if can_think else [],
+                    can_disable=True,
+                    default_effort=None,
+                )
+            )
+            continue
+
         freigegeben = ai_provider_service.freigegebene_modelle(provider)
         allow_all = bool(getattr(provider, "allow_all_models", False))
         allowed_for_prov = effective_models.get(provider.id) if effective_models is not None else None

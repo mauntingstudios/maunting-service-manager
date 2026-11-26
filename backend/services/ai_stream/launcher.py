@@ -66,6 +66,7 @@ def lauf_beginnen(
     app_faehigkeiten: dict[str, Any] | None = None,
     requested_model: str | None = None,
     project_id: str | None = None,
+    routing_meta: dict[str, Any] | None = None,
 ) -> tuple[AiRun | None, tuple[str, str] | None]:
     """Legt einen Lauf an: Benutzernachricht, Kontingent, Antwortnachricht.
 
@@ -269,16 +270,70 @@ def lauf_beginnen(
         # Arbeitsmodell des Betreibers, nicht mit `default_model`.
         vorab_zustand = {"requested_model": requested_model} if requested_model else None
         modell = _modell_fuer(provider, rolle, vorab_zustand)
-        usage_event = ai_stream.reserve_ai_usage(
-            db,
-            user,
-            request_id=request_id,
-            estimated_tokens=estimated_tokens,
-            estimated_cost_microunits=estimate_cost_microunits(provider, estimated_tokens),
-            server_id=None,
-            provider_id=provider.id,
-            model=modell,
-        )
+        try:
+            usage_event = ai_stream.reserve_ai_usage(
+                db,
+                user,
+                request_id=request_id,
+                estimated_tokens=estimated_tokens,
+                estimated_cost_microunits=estimate_cost_microunits(provider, estimated_tokens),
+                server_id=None,
+                provider_id=provider.id,
+                model=modell,
+                allow_five_hour_soft_cap=bool(routing_meta and routing_meta.get("soft_cap")),
+            )
+        except AiQuotaExceeded as exc:
+            if (
+                exc.reason == "five_hour_token_limit"
+                and routing_meta is not None
+                and not routing_meta.get("soft_cap")
+            ):
+                from services import ai_limit_service, ai_router_service
+
+                if ai_limit_service.resolve_effective_limits(db, user).soft_cap_downgrade:
+                    fb_candidates = ai_router_service.resolve_candidates(
+                        db, tier="fallback", soft_cap=True
+                    )
+                    if fb_candidates:
+                        fb = fb_candidates[0]
+                        fb_prov = db.get(AiProvider, fb["provider_id"])
+                        if fb_prov is not None and fb_prov.enabled:
+                            provider = fb_prov
+                            modell = fb["model"]
+                            requested_model = modell
+                            routing_meta = {
+                                **routing_meta,
+                                "tier": fb["tier"],
+                                "model": fb["model"],
+                                "provider_id": fb["provider_id"],
+                                "provider_name": fb["provider_name"],
+                                "reason": "soft_cap_5h",
+                                "weight": fb["weight"],
+                                "soft_cap": True,
+                                "candidates": fb_candidates,
+                                "candidate_index": 0,
+                            }
+                            usage_event = ai_stream.reserve_ai_usage(
+                                db,
+                                user,
+                                request_id=request_id,
+                                estimated_tokens=estimated_tokens,
+                                estimated_cost_microunits=estimate_cost_microunits(
+                                    provider, estimated_tokens
+                                ),
+                                server_id=None,
+                                provider_id=provider.id,
+                                model=modell,
+                                allow_five_hour_soft_cap=True,
+                            )
+                        else:
+                            raise
+                    else:
+                        raise
+                else:
+                    raise
+            else:
+                raise
         message_id = str(uuid4())
         db.add(AiMessage(
             id=message_id,
@@ -288,6 +343,14 @@ def lauf_beginnen(
             status="streaming",
             provider_id=provider.id,
             model=modell,
+            routed_tier=str(routing_meta.get("tier"))[:16] if routing_meta and routing_meta.get("tier") else None,
+            routed_model=str(routing_meta.get("model"))[:256] if routing_meta and routing_meta.get("model") else None,
+            routed_provider_name=(
+                str(routing_meta.get("provider_name"))[:128]
+                if routing_meta and routing_meta.get("provider_name")
+                else None
+            ),
+            routed_reason=str(routing_meta.get("reason"))[:128] if routing_meta and routing_meta.get("reason") else None,
             request_id=str(request_id),
         ))
         conversation.updated_at = datetime.now(timezone.utc)
@@ -339,6 +402,8 @@ def lauf_beginnen(
         zustand["context_chars"] = context_chars
         if requested_model:
             zustand["requested_model"] = str(requested_model).strip()
+        if routing_meta:
+            zustand["routing"] = dict(routing_meta)
         effective_project_id = project_id or getattr(conversation, "project_id", None)
         if effective_project_id:
             zustand["project_id"] = str(effective_project_id)
@@ -464,6 +529,7 @@ def _anlauf_im_thread(
     app_faehigkeiten: dict[str, Any] | None = None,
     requested_model: str | None = None,
     project_id: str | None = None,
+    routing_meta: dict[str, Any] | None = None,
 ) -> tuple[str | None, tuple[str, str] | None]:
     """Der Anlauf mit **eigener** Sitzung — das ist der ganze Zweck.
 
@@ -511,6 +577,7 @@ def _anlauf_im_thread(
             app_faehigkeiten=app_faehigkeiten,
             requested_model=requested_model,
             project_id=project_id,
+            routing_meta=routing_meta,
         )
         # Nur die Kennung verlaesst den Thread. Ein ORM-Objekt aus einer gleich
         # geschlossenen Sitzung ist eine Falle: nach dem Commit sind seine
@@ -540,6 +607,7 @@ async def lauf_beginnen_nebenher(
     app_faehigkeiten: dict[str, Any] | None = None,
     requested_model: str | None = None,
     project_id: str | None = None,
+    routing_meta: dict[str, Any] | None = None,
 ) -> tuple[str | None, tuple[str, str] | None]:
     """`lauf_beginnen`, aber **neben** der Ereignisschleife statt auf ihr.
 
@@ -573,5 +641,6 @@ async def lauf_beginnen_nebenher(
             app_faehigkeiten=app_faehigkeiten,
             requested_model=requested_model,
             project_id=project_id,
+            routing_meta=routing_meta,
         )
 

@@ -310,6 +310,8 @@ class Anbieter:
     #: darf (``custom_base_url`` in ``ai_providers``). Nur für ``custom`` wahr —
     #: alle übrigen Anbieter behalten ihre programmfeste Zieladresse.
     adresse_eintragbar: bool = False
+    #: Virtueller Router-Provider ohne eigene HTTP-Adresse/Katalog (``singra_router``).
+    virtuell: bool = False
 
     @property
     def realtime_tauglich(self) -> bool:

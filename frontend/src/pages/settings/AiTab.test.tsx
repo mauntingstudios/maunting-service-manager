@@ -14,6 +14,7 @@ vi.mock('@/api/client', async (importOriginal) => ({
   api: vi.fn(),
 }))
 vi.mock('./AiProvidersSettings', () => ({ AiProvidersSettings: () => null }))
+vi.mock('./AiRouterSettingsCard', () => ({ AiRouterSettingsCard: () => null }))
 
 // Die beiden Wissenspanels haben eigene Tests und eigene Endpunkte. Hier zaehlt
 // nur, **dass** sie eingehaengt sind und mit welchem Bereich — panelweit, nicht
@@ -162,6 +163,8 @@ describe('AiTab', () => {
           max_reasoning_effort: 4,
           max_attachment_storage_mb: null,
           allow_all_models: true,
+          router_only: false,
+          soft_cap_downgrade: false,
           model_access: [],
           max_context_tokens: 200_000,
         }),
@@ -547,6 +550,8 @@ describe('AiTab', () => {
           max_reasoning_effort: 4,
           max_attachment_storage_mb: null,
           allow_all_models: false,
+          router_only: false,
+          soft_cap_downgrade: false,
           model_access: [
             {
               provider_id: 1,
@@ -557,6 +562,37 @@ describe('AiTab', () => {
           max_context_tokens: 200_000,
         }),
       })
+    })
+  })
+
+  it('speichert router_only und soft_cap_downgrade fuer eine Rolle', async () => {
+    render(<AiTab />)
+    fireEvent.click(await screen.findByRole('tab', { name: /Rollen & Kontingente/i }))
+
+    const routerOnlySwitch = await screen.findByRole('switch', {
+      name: /Nur Singra Router erlauben: ai-vip/i,
+    })
+    const softCapSwitch = screen.getByRole('switch', {
+      name: /Soft-Cap bei 5h-Limit: ai-vip/i,
+    })
+    fireEvent.click(routerOnlySwitch)
+    fireEvent.click(softCapSwitch)
+
+    vi.mocked(client.api).mockResolvedValue({
+      ...row,
+      router_only: true,
+      soft_cap_downgrade: true,
+    })
+    fireEvent.click(screen.getByRole('button', { name: /Speichern: ai-vip/i }))
+
+    await waitFor(() => {
+      const putCall = vi.mocked(client.api).mock.calls.find(
+        ([path]) => path === '/ai/settings/role-limits/9',
+      )
+      expect(putCall).toBeDefined()
+      const parsed = JSON.parse(String((putCall?.[1] as { body?: string })?.body))
+      expect(parsed.router_only).toBe(true)
+      expect(parsed.soft_cap_downgrade).toBe(true)
     })
   })
 })

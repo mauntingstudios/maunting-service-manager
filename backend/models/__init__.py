@@ -10,6 +10,7 @@ from .frontend_settings import FrontendSettings
 from .ai_usage_event import AiUsageEvent
 from .operation_task import OperationTask
 from .ai_provider import AiProvider
+from .ai_router_config import AiRouterConfig
 from .ai_conversation import AiConversation, AiMessage
 from .ai_project import AiProject, AiProjectFile
 from .ai_mcp_server import AiMcpServer
@@ -159,7 +160,7 @@ from .lifecycle_notice import LifecycleDeletionNotice
 
 __all__ = [
     "User", "UserRole", "RoleAiLimit", "RoleAiModelAccess", "RoleVaultQuota", "RoleFrontendBuildQuota", "RoleAiProjectQuota", "AiUsageEvent", "OperationTask",
-    "AiProvider", "AiConversation", "AiMessage", "AiProject", "AiProjectFile", "AiMcpServer", "AiActionProposal",
+    "AiProvider", "AiRouterConfig", "AiConversation", "AiMessage", "AiProject", "AiProjectFile", "AiMcpServer", "AiActionProposal",
     "AiMemoryBegriff", "AiMemoryBeleg", "AiMemoryEntry", "AiMemoryPflege", "AiMemoryPreference", "AiMemoryTopic", "AiMemoryVersion",
     "AiSkill", "AiAttachment",
     "AiAutonomyGrant", "AiToolResult", "AiRun", "AiGuardianNotice",

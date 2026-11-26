@@ -197,6 +197,10 @@ class EffectiveAiLimits:
     max_attachment_storage_mb: int | None
     #: Optionales rollendes 5-Stunden-Tokenlimit (Spitzenschutz); ``None`` heisst unbegrenzt.
     five_hour_token_limit: int | None = None
+    #: Zwingt die Rolle ausschliesslich auf den virtuellen Singra KI-Router.
+    router_only: bool = False
+    #: Schaltet beim Erreichen des 5h-Tokenlimits auf das Fallback-/Eco-Kontingent herunter.
+    soft_cap_downgrade: bool = False
 
 
 #: Felder eines Limit-Sets von vor dem 07.10.2026 (Migration 20261008_03).
@@ -306,6 +310,8 @@ def set_role_limit(
     role_id: int,
     values: dict[str, int | None],
     allow_all_models: bool = True,
+    router_only: bool | None = None,
+    soft_cap_downgrade: bool | None = None,
 ) -> RoleAiLimit:
     """Ersetzt alle KI-Limits einer existierenden Rolle in der offenen Transaktion."""
     if db.query(Role.id).filter(Role.id == role_id).first() is None:
@@ -321,12 +327,22 @@ def set_role_limit(
 
     row = get_role_limit(db, role_id)
     if row is None:
-        row = RoleAiLimit(role_id=role_id, allow_all_models=bool(allow_all_models), **values)
+        row = RoleAiLimit(
+            role_id=role_id,
+            allow_all_models=bool(allow_all_models),
+            router_only=bool(router_only) if router_only is not None else False,
+            soft_cap_downgrade=bool(soft_cap_downgrade) if soft_cap_downgrade is not None else False,
+            **values,
+        )
         db.add(row)
     else:
         for field in LIMIT_FIELDS:
             setattr(row, field, values[field])
         row.allow_all_models = bool(allow_all_models)
+        if router_only is not None:
+            row.router_only = bool(router_only)
+        if soft_cap_downgrade is not None:
+            row.soft_cap_downgrade = bool(soft_cap_downgrade)
         row.updated_at = datetime.now(timezone.utc)
     db.flush()
     return row
@@ -427,6 +443,8 @@ def resolve_effective_limits(db: Session, user: User) -> EffectiveAiLimits:
         # Siehe Modul-Docstring: das ist „nicht konfiguriert“, nicht „gesperrt“.
         return UNLIMITED_AI_LIMITS
     return EffectiveAiLimits(
+        router_only=all(bool(getattr(r, "router_only", False)) for r in rows),
+        soft_cap_downgrade=any(bool(getattr(r, "soft_cap_downgrade", False)) for r in rows),
         **{field: _resolve_field(rows, field) for field in LIMIT_FIELDS}
     )
 

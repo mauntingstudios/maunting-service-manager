@@ -692,6 +692,10 @@
     "maxContextTokensHint": "Obergrenze für eine Anfrage in Token, auch wenn das Modell mehr kann. Ohne Eintrag gelten 44.000. Das Fenster des Modells bleibt zusätzlich die harte Grenze; älterer Verlauf wird darüber hinaus zusammengefasst.",
     "allowAllModels": "Alle globalen Modelle für diese Rolle erlauben",
     "allowAllModelsHint": "Wenn aktiv, darf diese Rolle alle global eingerichteten KI-Provider und Modelle nutzen. Wenn deaktiviert, können freigegebene Provider und spezifische Modelle für diese Rolle eingegrenzt werden.",
+    "routerOnly": "Nur Singra Router erlauben",
+    "routerOnlyHint": "Mitglieder dieser Rolle nutzen im Chat ausschließlich den Singra Router und können keine Einzelmodelle direkt wählen.",
+    "softCapDowngrade": "Soft-Cap bei 5h-Limit",
+    "softCapDowngradeHint": "Ist das 5-Stunden-Kontingent erschöpft, weicht der Router auf Fallback- und Eco-Modelle aus, solange Tages- und Monatslimits noch offen sind.",
     "providerModelAccess": "Provider- & Modell-Freigaben",
     "providerModelAccessDesc": "Bestimmt, welche der global eingerichteten KI-Provider und Modelle Benutzern dieser Rolle zur Verfügung stehen.",
     "providerAccessBlocked": "Gesperrt",
@@ -1233,6 +1237,52 @@
       "deleteConfirmMessage": "Möchtest du diese Datei wirklich aus dem KI-Speicher entfernen?",
       "deleteAlsoFromVault": "Auch aus meinem persönlichen Tresor löschen",
       "totalSize": "Gesamtgröße"
+    },
+    "router": {
+      "title": "Singra Router",
+      "description": "Verteilt Chat-Anfragen automatisch auf deine bereits konfigurierten Modelle. Es ist kein zusätzlicher API-Schlüssel und kein vorgeschaltetes Modell nötig.",
+      "enableToggle": "Singra Router aktivieren",
+      "statusActive": "Aktiv",
+      "statusNoModels": "Aktiv, aber noch kein Modell im Pool",
+      "statusOff": "Aus",
+      "noConfiguredProviders": "Richte zuerst mindestens einen aktiven Chat-Provider ein, damit Modelle hier zugewiesen werden können.",
+      "emptyPool": "Noch kein Modell zugewiesen.",
+      "unavailable": "Provider inaktiv",
+      "moveUp": "Priorität erhöhen",
+      "moveDown": "Priorität verringern",
+      "removeModel": "Modell entfernen",
+      "addModelPlaceholder": "Modell hinzufügen …",
+      "allModelsAdded": "Alle konfigurierten Modelle bereits zugewiesen",
+      "weightsToggle": "Erweitert: Kontingent-Gewichtung",
+      "weightsHint": "Multiplikator für die Token-Anrechnung im Rollenlimit (10 = 1,0x, 20 = 2,0x). Echte USD-Kosten werden immer exakt verbucht.",
+      "saved": "Router-Konfiguration gespeichert.",
+      "routedVia": "Singra Router → {{model}} · {{tier}}",
+      "errors": {
+        "load": "Router-Konfiguration konnte nicht geladen werden.",
+        "save": "Router-Konfiguration konnte nicht gespeichert werden."
+      },
+      "tiers": {
+        "eco": {
+          "title": "Leicht (Eco)",
+          "short": "Leicht",
+          "description": "Kurze Fragen, Begrüßungen und einfache Textaufgaben ohne Code- oder Projektkontext."
+        },
+        "standard": {
+          "title": "Mittel (Standard)",
+          "short": "Mittel",
+          "description": "Normale Arbeitsaufgaben, Server-Checks, kleine Skripte und Konfigurationshilfen."
+        },
+        "flagship": {
+          "title": "Schwer (Flaggschiff)",
+          "short": "Schwer",
+          "description": "Architekturfragen, tiefes Debugging, Code-Analysen und mehrstufige Aufgaben."
+        },
+        "fallback": {
+          "title": "Soft-Cap / Notfall-Fallback",
+          "short": "Fallback",
+          "description": "Ersatzmodelle bei 429/5xx-Ausfällen oder wenn eine Rolle im 5h-Soft-Cap läuft."
+        }
+      }
     },
     "chat": {
       "title": "Singra",

@@ -26,6 +26,7 @@ import { AiGuardianSettings } from './AiGuardianSettings'
 import { AiMemorySearchSettings } from './AiMemorySearchSettings'
 import { AiLearningSettings } from './AiLearningSettings'
 import { AiProvidersSettings } from './AiProvidersSettings'
+import { AiRouterSettingsCard } from './AiRouterSettingsCard'
 import { AiUsageSettings } from './AiUsageSettings'
 import { AiWebSearchSettings } from './AiWebSearchSettings'
 import { AiSatelliteSettings } from './AiSatelliteSettings'
@@ -102,6 +103,8 @@ export interface AiRoleLimits {
    */
   max_context_tokens: number | null
   allow_all_models: boolean
+  router_only?: boolean
+  soft_cap_downgrade?: boolean
   model_access?: RoleAiModelAccessItem[]
   updated_at: string | null
 }
@@ -135,6 +138,8 @@ type LimitField = Exclude<
   | 'configured'
   | 'updated_at'
   | 'allow_all_models'
+  | 'router_only'
+  | 'soft_cap_downgrade'
   | 'model_access'
   | 'max_context_tokens'
 >
@@ -320,7 +325,9 @@ export function AiTab({ includeSearchEngine = false, initialTab }: AiTabProps = 
   )
 
   const chatProviders = useMemo(() => {
-    return providers.filter((p) => p.enabled && p.standard_enabled !== false)
+    return providers.filter(
+      (p) => p.enabled && p.standard_enabled !== false && p.provider_kind !== 'singra_router',
+    )
   }, [providers])
 
   /** Ändert genau ein Feld lokal; gespeichert wird anschließend das Vollset. */
@@ -340,6 +347,16 @@ export function AiTab({ includeSearchEngine = false, initialTab }: AiTabProps = 
   const updateRoleAllowAllModels = (roleId: number, allowAll: boolean) => {
     setRows((current) => current.map((row) => (
       row.role_id === roleId ? { ...row, allow_all_models: allowAll } : row
+    )))
+  }
+
+  const updateRoleRouterFlag = (
+    roleId: number,
+    flag: 'router_only' | 'soft_cap_downgrade',
+    value: boolean,
+  ) => {
+    setRows((current) => current.map((row) => (
+      row.role_id === roleId ? { ...row, [flag]: value } : row
     )))
   }
 
@@ -403,6 +420,8 @@ export function AiTab({ includeSearchEngine = false, initialTab }: AiTabProps = 
           FIELD_DEFINITIONS.map(({ key }) => [key, row[key] ?? null]),
         ),
         allow_all_models: row.allow_all_models ?? true,
+        router_only: row.router_only ?? false,
+        soft_cap_downgrade: row.soft_cap_downgrade ?? false,
         model_access: row.model_access ?? [],
         max_context_tokens: row.max_context_tokens,
       }
@@ -442,6 +461,7 @@ export function AiTab({ includeSearchEngine = false, initialTab }: AiTabProps = 
 
       {activeTab === 'providers' && (
         <div className="space-y-6">
+          <AiRouterSettingsCard canWrite={canWrite} />
           <AiProvidersSettings canWrite={canWrite} />
           {/* Die Deckel der Hintergrund-Aufträge stehen bei den Zugängen, weil
               sie zusammen die Worker-Rolle ergeben: das Modell je Zugang oben,
@@ -654,6 +674,46 @@ export function AiTab({ includeSearchEngine = false, initialTab }: AiTabProps = 
                     onCheckedChange={(next) => updateRoleAllowAllModels(selected.role_id, next)}
                     aria-label={`${t('aiSettings.allowAllModels')}: ${selected.role_name}`}
                   />
+                </div>
+              </div>
+
+              {/* Router-Zwang & Soft-Cap bei 5h-Limit */}
+              <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div className="rounded-xl border border-outline-variant/40 bg-surface-container-low/35 p-5">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="space-y-1">
+                      <h4 className="text-sm font-semibold text-on-surface">
+                        {t('aiSettings.routerOnly')}
+                      </h4>
+                      <p className="text-xs text-on-surface-variant">
+                        {t('aiSettings.routerOnlyHint')}
+                      </p>
+                    </div>
+                    <Switch
+                      checked={selected.router_only ?? false}
+                      disabled={!canWrite || saving}
+                      onCheckedChange={(next) => updateRoleRouterFlag(selected.role_id, 'router_only', next)}
+                      aria-label={`${t('aiSettings.routerOnly')}: ${selected.role_name}`}
+                    />
+                  </div>
+                </div>
+                <div className="rounded-xl border border-outline-variant/40 bg-surface-container-low/35 p-5">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="space-y-1">
+                      <h4 className="text-sm font-semibold text-on-surface">
+                        {t('aiSettings.softCapDowngrade')}
+                      </h4>
+                      <p className="text-xs text-on-surface-variant">
+                        {t('aiSettings.softCapDowngradeHint')}
+                      </p>
+                    </div>
+                    <Switch
+                      checked={selected.soft_cap_downgrade ?? false}
+                      disabled={!canWrite || saving}
+                      onCheckedChange={(next) => updateRoleRouterFlag(selected.role_id, 'soft_cap_downgrade', next)}
+                      aria-label={`${t('aiSettings.softCapDowngrade')}: ${selected.role_name}`}
+                    />
+                  </div>
                 </div>
               </div>
 

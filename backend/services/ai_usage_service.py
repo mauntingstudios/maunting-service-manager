@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
+import math
 from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
@@ -212,6 +213,22 @@ def _ensure_within(limit: int | None, current: int, requested: int, reason: str)
         raise AiQuotaExceeded(reason)
 
 
+def is_five_hour_limit_exceeded(
+    db: Session,
+    user: User,
+    estimated_tokens: int = 0,
+    now: datetime | None = None,
+) -> bool:
+    """Prueft, ob das rollende 5h-Tokenlimit fuer den Benutzer erschoepft waere."""
+    limits = resolve_effective_limits(db, user)
+    if limits.five_hour_token_limit is None:
+        return False
+    current_time = now or datetime.now(timezone.utc)
+    five_hour_start = current_time - FENSTER_5H
+    used = _sum_since(db, user.id, five_hour_start, AiUsageEvent.accounted_tokens)
+    return used + max(0, int(estimated_tokens)) > limits.five_hour_token_limit
+
+
 def reserve_ai_usage(
     db: Session,
     user: User,
@@ -227,6 +244,7 @@ def reserve_ai_usage(
     realtime: bool = False,
     dictation_seconds: int = 0,
     zweck: str | None = None,
+    allow_five_hour_soft_cap: bool = False,
 ) -> AiUsageEvent:
     """Reserviert eine Anfrage atomar oder liefert dieselbe Reservierung erneut.
 
@@ -276,12 +294,15 @@ def reserve_ai_usage(
     day_start, week_start, month_start = _period_starts(current_time)
     limits = resolve_effective_limits(db, user)
     pruef_tokens = max(estimated_tokens, minimum_token_headroom)
-    for limit_val, window_start, reason in (
-        (limits.five_hour_token_limit, five_hour_start, "five_hour_token_limit"),
+    checks = []
+    if not allow_five_hour_soft_cap:
+        checks.append((limits.five_hour_token_limit, five_hour_start, "five_hour_token_limit"))
+    checks.extend((
         (limits.daily_token_limit, day_start, "daily_token_limit"),
         (limits.weekly_token_limit, week_start, "weekly_token_limit"),
         (limits.monthly_token_limit, month_start, "monthly_token_limit"),
-    ):
+    ))
+    for limit_val, window_start, reason in checks:
         if limit_val is not None:
             _ensure_within(
                 limit_val,
@@ -580,6 +601,7 @@ def complete_ai_usage(
     aufschluesselung: "StreamUsage | None" = None,
     cost_source: str | None = None,
     now: datetime | None = None,
+    token_weight: float = 1.0,
 ) -> AiUsageEvent:
     """Schließt eine Reservierung idempotent mit dem tatsächlichen Verbrauch ab.
 
@@ -590,6 +612,10 @@ def complete_ai_usage(
     Zahlen, an denen die Kontingente hängen. Eine Wiederholung mit derselben
     Buchung, aber leerem Nachweis, ist kein Konflikt; sie ergänzt nur nichts.
     """
+    if token_weight != 1.0 and actual_tokens > 0:
+        w = float(token_weight)
+        bounded_weight = max(0.1, min(10.0, w)) if math.isfinite(w) else 1.0
+        actual_tokens = min(TOKEN_LIMIT_MAX, max(1, int(round(actual_tokens * bounded_weight))))
     if (
         actual_tokens < 0
         or actual_tokens > TOKEN_LIMIT_MAX

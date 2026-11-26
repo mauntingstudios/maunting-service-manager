@@ -3,32 +3,50 @@ import { Brain, ChevronDown } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 /**
+ * Zieht eine aussagekraeftige Ueberschrift aus dem Denktext (Markdown-Heading
+ * `# ...` oder alleinstehende fettgedruckte Zwischenzeile `**...**`).
+ * Waehrend des Streamings erscheint die juengste Ueberschrift, nach Abschluss
+ * die erste, damit der Block direkt einordnet, worueber nachgedacht wurde.
+ */
+export function extractReasoningHeading(content: string, streaming: boolean): string | null {
+  if (!content) return null
+  const headings: string[] = []
+  for (const rawLine of content.split(/\r?\n/)) {
+    const line = rawLine.trim()
+    if (!line) continue
+    let candidate = ''
+    const mdMatch = /^#{1,6}\s+(.+)$/.exec(line)
+    if (mdMatch) {
+      candidate = mdMatch[1].trim()
+    } else {
+      const boldMatch = /^\*\*([^*]+?)\*\*:?$/.exec(line)
+      if (boldMatch) {
+        candidate = boldMatch[1].trim()
+      }
+    }
+    candidate = candidate.replace(/^[*_`]+|[*_`:]+$/g, '').trim()
+    if (candidate.length >= 3 && candidate.length <= 80) {
+      headings.push(candidate)
+    }
+  }
+  if (headings.length === 0) return null
+  return streaming ? headings[headings.length - 1] : headings[0]
+}
+
+/**
  * Einklappbarer Denkschritt-Block.
  *
  * Standardmaessig zu: die Denkschritte sind eine Nebenausgabe, keine Antwort.
- * Waehrend das Modell noch denkt, ist der Block aber offen und laeuft mit —
- * genau dann ist er naemlich das Einzige, was passiert, und ein leerer
- * Bildschirm sieht aus wie ein Fehler.
- *
- * **Wo er steht, entscheidet der Aufrufer** (`AiChat`): einen Block je Runde,
- * an der Stelle, an der gedacht wurde. Früher gab es genau einen über allem,
- * weil der Denktext ein flaches Feld neben den Abschnitten war — die Gedanken
- * der dritten Runde standen dann über dem Text der ersten.
- *
- * **Er erscheint nur, wenn wirklich Denktext fließt.** Eine Zeit lang stand er
- * schon leer da, sobald in der Auswahlliste "denken" angeschaltet war — mit
- * pulsenden Punkten und der Überschrift "Denkt nach …". Das war eine
- * Behauptung über etwas, das noch gar nicht geschah: manche Modelle liefern in
- * der ersten Runde überhaupt keinen Denktext (gemessen: erste Denkzeichen nach
- * 6,5 s, in einem Fall erst nach 29 s), und bei manchen Fragen fällt er ganz
- * aus. Die Wartezeit gehört jetzt der Wartezeile in `AiChat`, die sagen kann,
- * **woran** gerade gearbeitet wird; dieser Block sagt nur noch, was tatsächlich
- * gedacht wurde.
+ * Waehrend das Modell noch denkt, ist der Block aber offen und laeuft mit.
+ * Liefert der Denktext strukturierte Zwischenueberschriften, zeigt der Kopf
+ * direkt diese aktuelle Ueberschrift als kompakten Orientierungspunkt.
  */
 export function AiReasoningBlock({ content, streaming }: { content: string; streaming: boolean }) {
   const { t } = useTranslation()
   const [manuallyToggled, setManuallyToggled] = useState<boolean | null>(null)
   const open = manuallyToggled ?? streaming
+  const heading = extractReasoningHeading(content, streaming)
+  const label = heading ?? (streaming ? t('ai.chat.thinkingNow') : t('ai.chat.thought'))
 
   return (
     <div className="mb-2 rounded-lg border border-outline-variant/40 bg-surface-container-low/40">
@@ -39,15 +57,7 @@ export function AiReasoningBlock({ content, streaming }: { content: string; stre
         className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-medium text-on-surface-variant transition-colors hover:text-on-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         <Brain className={`h-3.5 w-3.5 shrink-0 ${streaming ? 'animate-pulse text-primary' : ''}`} aria-hidden="true" />
-        {/*
-          Eigener Text, nicht `ai.chat.thinking`. Der Block trug frueher
-          waehrend des Denkens exakt denselben Satz wie der globale
-          Ladezustand ("Antwort wird erstellt …"). Damit stand ueber der
-          einzigen Stelle, an der sichtbar etwas geschah, wortwoertlich das,
-          was auch dasteht, wenn noch nichts geschieht — und "Nachgedacht"
-          erschien erst am Schluss. Der Block sagt jetzt selbst, was er tut.
-        */}
-        <span>{streaming ? t('ai.chat.thinkingNow') : t('ai.chat.thought')}</span>
+        <span className="truncate">{label}</span>
         <ChevronDown
           className={`ml-auto h-3.5 w-3.5 shrink-0 transition-transform ${open ? 'rotate-180' : ''}`}
           aria-hidden="true"

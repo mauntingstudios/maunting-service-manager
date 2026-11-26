@@ -103,6 +103,21 @@ class RoleAiLimit(Base):
         server_default=sa.true(),
         nullable=False,
     )
+    # Zwingt traegende Rollen ausschliesslich auf den virtuellen Singra KI-Router.
+    router_only: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        server_default=sa.false(),
+        nullable=False,
+    )
+    # Schaltet beim Erreichen des 5h-Tokenlimits auf das Fallback-/Eco-Kontingent
+    # herunter, statt die Anfrage hart abzuweisen (Tages-/Wochen-/Monatslimits bleiben hart).
+    soft_cap_downgrade: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        server_default=sa.false(),
+        nullable=False,
+    )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),

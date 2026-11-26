@@ -68,7 +68,17 @@ from __future__ import annotations
 
 from typing import Callable
 
-from . import anthropic, azure_anthropic, azure_openai, custom, elevenlabs, google, openai, openrouter
+from . import (
+    anthropic,
+    azure_anthropic,
+    azure_openai,
+    custom,
+    elevenlabs,
+    google,
+    openai,
+    openrouter,
+    singra_router,
+)
 from .basis import Anbieter, Modell, positive_zahl
 
 
@@ -90,7 +100,7 @@ __all__ = [
 #: fällt hier heraus — sonst nichts. Die Reihenfolge ist die Reihenfolge der
 #: Einführung und hat keine Bedeutung; ausgeliefert wird nach Beschriftung
 #: sortiert (`alle`).
-_MODULE = (anthropic, openrouter, openai, elevenlabs, azure_openai, azure_anthropic, google, custom)
+_MODULE = (anthropic, openrouter, openai, elevenlabs, azure_openai, azure_anthropic, google, custom, singra_router)
 
 #: Alle Anbieter, nach ihrem gespeicherten Schlüssel. Gebaut aus den Modulen,
 #: nicht von Hand geführt: eine zweite Liste wäre eine zweite Wahrheit, und die

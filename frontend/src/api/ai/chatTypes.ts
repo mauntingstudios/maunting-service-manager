@@ -80,6 +80,10 @@ export interface AiMessage {
   deliveryStatus?: 'queued' | 'sent' | 'delivered' | 'read' | 'failed'
   provider_id: number | null
   model: string | null
+  routed_tier?: string | null
+  routed_model?: string | null
+  routed_provider_name?: string | null
+  routed_reason?: string | null
   created_at: string
 }
 
@@ -226,6 +230,10 @@ export type AiStreamEvent =
         request_id: string
         /** Die Kennung der Benutzernachricht — ersetzt die optimistisch vergebene. */
         user_message_id?: string | null
+        routed_tier?: string | null
+        routed_model?: string | null
+        routed_provider_name?: string | null
+        routed_reason?: string | null
       }
     }
   | { event: 'delta'; data: { content: string } }
@@ -322,6 +330,10 @@ export interface AiRunSnapshot {
   question: AiQuestion | null
   proposals: AiActionProposal[]
   stop_reason: string | null
+  routed_tier?: string | null
+  routed_model?: string | null
+  routed_provider_name?: string | null
+  routed_reason?: string | null
 }
 
 export interface AiRunInfo {
