@@ -32,6 +32,7 @@ class RoleAiLimit(Base):
         ForeignKey("roles.id", ondelete="CASCADE"),
         primary_key=True,
     )
+    five_hour_token_limit: Mapped[int | None] = mapped_column(Integer, nullable=True)
     daily_token_limit: Mapped[int | None] = mapped_column(Integer, nullable=True)
     weekly_token_limit: Mapped[int | None] = mapped_column(Integer, nullable=True)
     monthly_token_limit: Mapped[int | None] = mapped_column(Integer, nullable=True)

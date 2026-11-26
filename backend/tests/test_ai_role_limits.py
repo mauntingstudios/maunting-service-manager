@@ -306,6 +306,7 @@ def test_effective_limits_endpoint_returns_union_rule(
 def _enable_usage(db: Session, user: User, role: Role, **overrides: int | None) -> None:
     """Gibt einem Testuser eine vollständig nutzbare, gezielt überschreibbare Quote."""
     values = _limits(
+        five_hour_token_limit=None,
         daily_token_limit=10_000,
         weekly_token_limit=10_000,
         monthly_token_limit=10_000,
@@ -1696,3 +1697,103 @@ def test_owner_without_assigned_role_inherits_admin_context_ceiling(
     db.commit()
 
     assert resolve_context_ceiling(db, owner) == 440_000
+
+
+def test_five_hour_rolling_window_enforces_and_resets(
+    db: Session,
+    regular_user: User,
+) -> None:
+    """Das 5-Stunden-Fenster blockt Lastspitzen und gibt alte Tokens nach 5h frei."""
+    role = _role(db, f"ai-5h-{uuid4().hex[:6]}")
+    set_role_limit(db, role.id, _limits(five_hour_token_limit=1_000, daily_token_limit=10_000, weekly_token_limit=None, monthly_token_limit=None))
+    db.commit()
+    set_user_roles(db, regular_user, [role.id])
+
+    t0 = datetime(2026, 11, 26, 10, 0, tzinfo=timezone.utc)
+    event = reserve_ai_usage(
+        db,
+        regular_user,
+        request_id=uuid4(),
+        estimated_tokens=800,
+        estimated_cost_microunits=0,
+        now=t0,
+    )
+    complete_ai_usage(db, event, actual_tokens=800, actual_cost_microunits=0)
+    db.commit()
+
+    with pytest.raises(AiQuotaExceeded) as exc:
+        reserve_ai_usage(
+            db,
+            regular_user,
+            request_id=uuid4(),
+            estimated_tokens=300,
+            estimated_cost_microunits=0,
+            now=t0 + timedelta(hours=2),
+        )
+    assert exc.value.reason == "five_hour_token_limit"
+
+    # Nach exakt 5 Stunden + 1 Sekunde fällt der erste Verbrauch aus dem 5h-Fenster.
+    after_reset = reserve_ai_usage(
+        db,
+        regular_user,
+        request_id=uuid4(),
+        estimated_tokens=300,
+        estimated_cost_microunits=0,
+        now=t0 + timedelta(hours=5, seconds=1),
+    )
+    assert after_reset.accounted_tokens == 300
+
+
+def test_usage_me_returns_5h_usage_and_exact_reset_timestamp(
+    client: TestClient,
+    db: Session,
+    regular_user: User,
+    user_cookies: dict,
+) -> None:
+    """GET /api/ai/usage/me liefert tokens_5h sowie reset_5h_at (= ältester Event + 5h)."""
+    from services.ai_usage_service import next_window_resets
+
+    role = _role(db, f"ai-5h-me-{uuid4().hex[:6]}")
+    set_role_limit(
+        db,
+        role.id,
+        {
+            **{f: None for f in LIMIT_FIELDS},
+            "five_hour_token_limit": 5_000,
+        },
+    )
+    db.commit()
+    set_user_roles(db, regular_user, [role.id])
+
+    jetzt = datetime.now(timezone.utc)
+    erster = reserve_ai_usage(
+        db,
+        regular_user,
+        request_id=uuid4(),
+        estimated_tokens=1_200,
+        estimated_cost_microunits=0,
+        now=jetzt - timedelta(hours=2),
+    )
+    complete_ai_usage(db, erster, actual_tokens=1_200, actual_cost_microunits=0)
+    zweiter = reserve_ai_usage(
+        db,
+        regular_user,
+        request_id=uuid4(),
+        estimated_tokens=800,
+        estimated_cost_microunits=0,
+        now=jetzt - timedelta(minutes=30),
+    )
+    complete_ai_usage(db, zweiter, actual_tokens=800, actual_cost_microunits=0)
+    db.commit()
+
+    res = client.get("/api/ai/usage/me", cookies=user_cookies)
+    assert res.status_code == 200, res.text
+    data = res.json()
+    assert data["tokens_5h"] == 2_000
+    assert data["limits"]["five_hour_token_limit"] == 5_000
+    assert data["reset_5h_at"] is not None
+
+    expected = next_window_resets(db, regular_user.id, resolve_effective_limits(db, regular_user), now=jetzt)["reset_5h_at"]
+    assert expected is not None
+    parsed = datetime.fromisoformat(data["reset_5h_at"].replace("Z", "+00:00"))
+    assert abs((parsed - expected).total_seconds()) < 2

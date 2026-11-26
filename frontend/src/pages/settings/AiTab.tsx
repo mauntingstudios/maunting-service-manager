@@ -54,6 +54,7 @@ export interface AiRoleLimits {
   role_name: string
   /** False heisst: für diese Rolle ist nichts gespeichert (alle Werte null). */
   configured: boolean
+  five_hour_token_limit?: number | null
   daily_token_limit: number | null
   weekly_token_limit: number | null
   monthly_token_limit: number | null
@@ -171,6 +172,7 @@ const FIELD_DEFINITIONS: Array<{
 }> = [
   // Muss `TOKEN_LIMIT_MAX` im Backend entsprechen: die Tokenspalten sind
   // PostgreSQL INTEGER, höhere Werte würden beim Speichern abbrechen.
+  { key: 'five_hour_token_limit', labelKey: 'aiSettings.fiveHourTokens', max: 2_147_483_647, step: 1_000, hintKey: 'aiSettings.fiveHourTokensHint' },
   { key: 'daily_token_limit', labelKey: 'aiSettings.dailyTokens', max: 2_147_483_647, step: 1_000 },
   { key: 'weekly_token_limit', labelKey: 'aiSettings.weeklyTokens', max: 2_147_483_647, step: 10_000 },
   { key: 'monthly_token_limit', labelKey: 'aiSettings.monthlyTokens', max: 2_147_483_647, step: 10_000 },
@@ -398,7 +400,7 @@ export function AiTab({ includeSearchEngine = false, initialTab }: AiTabProps = 
     try {
       const payload = {
         ...Object.fromEntries(
-          FIELD_DEFINITIONS.map(({ key }) => [key, row[key]]),
+          FIELD_DEFINITIONS.map(({ key }) => [key, row[key] ?? null]),
         ),
         allow_all_models: row.allow_all_models ?? true,
         model_access: row.model_access ?? [],
@@ -537,7 +539,7 @@ export function AiTab({ includeSearchEngine = false, initialTab }: AiTabProps = 
 
               <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
                 {FIELD_DEFINITIONS.map(({ key, labelKey, max, step, ranks, hintKey }) => {
-                  const unlimited = selected[key] === null
+                  const unlimited = (selected[key] ?? null) === null
                   const label = t(labelKey)
                   const fieldId = `ai-${selected.role_id}-${key}`
                   const hintId = hintKey ? `${fieldId}-hint` : undefined

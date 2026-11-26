@@ -6,6 +6,18 @@ import { aiApi, type AiUsageMine } from '@/api/ai'
 import { ProgressBar } from '@maunting/ui'
 import { betragFormatieren } from '@/utils/geld'
 
+function formatResetZeit(iso: string, language: string): string {
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime()) || date.getTime() <= Date.now()) return ''
+  const innerhalb24h = date.getTime() - Date.now() < 24 * 3600 * 1000
+  return new Intl.DateTimeFormat(
+    language,
+    innerhalb24h
+      ? { hour: '2-digit', minute: '2-digit' }
+      : { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' },
+  ).format(date)
+}
+
 /**
  * Der eigene KI-Verbrauch, mit der eigenen Grenze daneben.
  *
@@ -39,11 +51,27 @@ export function AiUsageCard() {
   const kosten = betragFormatieren(data.cost_month_micro_usd, data.cost_policy, i18n.language)
 
   const minuten = new Intl.NumberFormat(i18n.language, { maximumFractionDigits: 1 })
-  const periods: Array<{ key: string; used: number; limit: number | null; format: Intl.NumberFormat }> = [
-    { key: 'today', used: data.tokens_today, limit: data.limits.daily_token_limit, format: numbers },
-    { key: 'week', used: data.tokens_week, limit: data.limits.weekly_token_limit, format: numbers },
-    { key: 'month', used: data.tokens_month, limit: data.limits.monthly_token_limit, format: numbers },
-  ]
+  const periods: Array<{
+    key: string
+    used: number
+    limit: number | null
+    resetAt?: string | null
+    format: Intl.NumberFormat
+  }> = []
+  if (data.limits.five_hour_token_limit !== null && data.limits.five_hour_token_limit !== undefined) {
+    periods.push({
+      key: 'fiveHours',
+      used: data.tokens_5h ?? 0,
+      limit: data.limits.five_hour_token_limit,
+      resetAt: data.reset_5h_at ?? null,
+      format: numbers,
+    })
+  }
+  periods.push(
+    { key: 'today', used: data.tokens_today, limit: data.limits.daily_token_limit, resetAt: data.reset_today_at ?? null, format: numbers },
+    { key: 'week', used: data.tokens_week, limit: data.limits.weekly_token_limit, resetAt: data.reset_week_at ?? null, format: numbers },
+    { key: 'month', used: data.tokens_month, limit: data.limits.monthly_token_limit, resetAt: data.reset_month_at ?? null, format: numbers },
+  )
   // Sprach- und Diktierminuten nur, wo es etwas zu sagen gibt: eine Grenze
   // oder Verbrauch. Wer nie spricht und keine Grenze hat, braucht keine Kachel
   // mit „0 Minuten, keine Grenze".
@@ -66,7 +94,7 @@ export function AiUsageCard() {
       <p className="max-w-3xl text-sm text-on-surface-variant">{t('ai.usage.mineDescription')}</p>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        {periods.map(({ key, used, limit, format }) => {
+        {periods.map(({ key, used, limit, resetAt, format }) => {
           // Drei Zustände, nicht zwei. `null` heißt „keine Grenze hinterlegt“,
           // 0 heißt „gesperrt“ — und das ist das Gegenteil davon. Vorher fielen
           // beide in denselben Zweig, sodass ausgerechnet der Gesperrte unter
@@ -76,6 +104,7 @@ export function AiUsageCard() {
           let share: number | null = null
           if (limit === 0) share = 100
           else if (limit !== null) share = Math.min(100, (used / limit) * 100)
+          const resetZeit = limit !== null && limit > 0 && resetAt ? formatResetZeit(resetAt, i18n.language) : ''
 
           return (
             <div key={key} className="space-y-2 rounded-xl border border-outline-variant/40 bg-surface-container-low/35 p-4">
@@ -107,6 +136,11 @@ export function AiUsageCard() {
                     // wie „heute aufgebraucht, morgen wieder da“. Der Satz nennt den
                     // Unterschied: hier war nie etwas freigegeben.
                     <p className="text-xs text-status-destructive">{t('ai.usage.blocked')}</p>
+                  )}
+                  {resetZeit && (
+                    <p className="text-xs text-on-surface-variant">
+                      {t(used >= limit! ? 'ai.usage.availableAt' : 'ai.usage.nextRefillAt', { time: resetZeit })}
+                    </p>
                   )}
                 </>
               )}

@@ -38,6 +38,7 @@ const row: AiRoleLimits = {
   role_id: 9,
   role_name: 'ai-vip',
   configured: true,
+  five_hour_token_limit: null,
   daily_token_limit: 10_000,
   weekly_token_limit: 50_000,
   monthly_token_limit: 200_000,
@@ -59,6 +60,7 @@ const blankRow: AiRoleLimits = {
   role_id: 3,
   role_name: 'user',
   configured: false,
+  five_hour_token_limit: null,
   daily_token_limit: null,
   weekly_token_limit: null,
   monthly_token_limit: null,
@@ -150,6 +152,7 @@ describe('AiTab', () => {
       expect(client.api).toHaveBeenCalledWith('/ai/settings/role-limits/9', {
         method: 'PUT',
         body: JSON.stringify({
+          five_hour_token_limit: null,
           daily_token_limit: 10_000,
           weekly_token_limit: 50_000,
           monthly_token_limit: null,
@@ -534,6 +537,7 @@ describe('AiTab', () => {
       expect(client.api).toHaveBeenCalledWith('/ai/settings/role-limits/9', {
         method: 'PUT',
         body: JSON.stringify({
+          five_hour_token_limit: null,
           daily_token_limit: 10_000,
           weekly_token_limit: 50_000,
           monthly_token_limit: 200_000,

@@ -41,6 +41,7 @@ class AiLimitsBase(BaseModel):
     """Vollständiges Limit-Set; ``None`` bedeutet in jedem Feld explizit
     unbegrenzt."""
 
+    five_hour_token_limit: TokenLimit = None
     daily_token_limit: TokenLimit
     weekly_token_limit: TokenLimit
     monthly_token_limit: TokenLimit
@@ -306,6 +307,7 @@ class AiUsageEntry(BaseModel):
 
     user_id: int
     username: str
+    tokens_5h: int = 0
     tokens_today: int
     tokens_week: int
     tokens_month: int
@@ -391,6 +393,10 @@ class AiUsageMine(AiUsageEntry):
 
     limits: EffectiveAiLimitsResponse
     cost_policy: AiCostPolicyStatus
+    reset_5h_at: datetime | None = None
+    reset_today_at: datetime | None = None
+    reset_week_at: datetime | None = None
+    reset_month_at: datetime | None = None
 
 
 class AiLearningPolicyStatus(BaseModel):

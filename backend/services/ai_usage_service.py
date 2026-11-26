@@ -55,6 +55,7 @@ ZWECKE = (ZWECK_ETHIK, ZWECK_GEDAECHTNIS)
 # am Stück. Ein Verbrauch zählt jetzt genau so lange, wie sein Fenster dauert,
 # und fällt dann einzeln heraus. Die Feldnamen (`daily_token_limit` …) sind
 # geblieben; die Oberfläche nennt die Fenster beim Namen.
+FENSTER_5H = timedelta(hours=5)
 FENSTER_TAG = timedelta(hours=24)
 FENSTER_WOCHE = timedelta(days=7)
 FENSTER_MONAT = timedelta(days=30)
@@ -271,27 +272,23 @@ def reserve_ai_usage(
     # PostgreSQL serialisiert dadurch alle Quotenentscheidungen pro User.
     db.query(User.id).filter(User.id == user.id).with_for_update().one()
     current_time = now or datetime.now(timezone.utc)
+    five_hour_start = current_time - FENSTER_5H
     day_start, week_start, month_start = _period_starts(current_time)
     limits = resolve_effective_limits(db, user)
     pruef_tokens = max(estimated_tokens, minimum_token_headroom)
-    _ensure_within(
-        limits.daily_token_limit,
-        _sum_since(db, user.id, day_start, AiUsageEvent.accounted_tokens),
-        pruef_tokens,
-        "daily_token_limit",
-    )
-    _ensure_within(
-        limits.weekly_token_limit,
-        _sum_since(db, user.id, week_start, AiUsageEvent.accounted_tokens),
-        pruef_tokens,
-        "weekly_token_limit",
-    )
-    _ensure_within(
-        limits.monthly_token_limit,
-        _sum_since(db, user.id, month_start, AiUsageEvent.accounted_tokens),
-        pruef_tokens,
-        "monthly_token_limit",
-    )
+    for limit_val, window_start, reason in (
+        (limits.five_hour_token_limit, five_hour_start, "five_hour_token_limit"),
+        (limits.daily_token_limit, day_start, "daily_token_limit"),
+        (limits.weekly_token_limit, week_start, "weekly_token_limit"),
+        (limits.monthly_token_limit, month_start, "monthly_token_limit"),
+    ):
+        if limit_val is not None:
+            _ensure_within(
+                limit_val,
+                _sum_since(db, user.id, window_start, AiUsageEvent.accounted_tokens),
+                pruef_tokens,
+                reason,
+            )
     if realtime:
         _ensure_within(
             _realtime_sekunden_limit(limits),
@@ -657,10 +654,13 @@ def abschrift_aussichtslos(db: Session, user: User, *, now: datetime | None = No
     oft, wie jemand auf den Knopf drückt. Genau diesen Fall fängt das vorher ab
     und keinen anderen.
     """
-    day_start, week_start, month_start = _period_starts(now or datetime.now(timezone.utc))
+    current_time = now or datetime.now(timezone.utc)
+    five_hour_start = current_time - FENSTER_5H
+    day_start, week_start, month_start = _period_starts(current_time)
     limits = resolve_effective_limits(db, user)
     diktat = limits.monthly_dictation_minutes_limit
     grenzen = (
+        (limits.five_hour_token_limit, five_hour_start, AiUsageEvent.accounted_tokens, "five_hour_token_limit"),
         (limits.daily_token_limit, day_start, AiUsageEvent.accounted_tokens, "daily_token_limit"),
         (limits.weekly_token_limit, week_start, AiUsageEvent.accounted_tokens, "weekly_token_limit"),
         (limits.monthly_token_limit, month_start, AiUsageEvent.accounted_tokens, "monthly_token_limit"),
@@ -757,13 +757,24 @@ def realtime_verbrauch_ergaenzen(
     now = datetime.now(timezone.utc)
     sekunden = _sitzungssekunden(event, now)
     if grenzen_pruefen:
+        five_hour_start = now - FENSTER_5H
         day, week, month = _period_starts(now)
         limits = resolve_effective_limits(db, user)
         # Die Summen enthalten den bisherigen Wert dieser offenen Zeile. Nur die
         # neue Antwort wird als requested addiert.
-        _ensure_within(limits.daily_token_limit, _sum_since(db, user.id, day, AiUsageEvent.accounted_tokens), delta_tokens, "daily_token_limit")
-        _ensure_within(limits.weekly_token_limit, _sum_since(db, user.id, week, AiUsageEvent.accounted_tokens), delta_tokens, "weekly_token_limit")
-        _ensure_within(limits.monthly_token_limit, _sum_since(db, user.id, month, AiUsageEvent.accounted_tokens), delta_tokens, "monthly_token_limit")
+        for limit_val, window_start, reason in (
+            (limits.five_hour_token_limit, five_hour_start, "five_hour_token_limit"),
+            (limits.daily_token_limit, day, "daily_token_limit"),
+            (limits.weekly_token_limit, week, "weekly_token_limit"),
+            (limits.monthly_token_limit, month, "monthly_token_limit"),
+        ):
+            if limit_val is not None:
+                _ensure_within(
+                    limit_val,
+                    _sum_since(db, user.id, window_start, AiUsageEvent.accounted_tokens),
+                    delta_tokens,
+                    reason,
+                )
         # Die anderen Sitzungen nach der Wanduhr, diese mit ihrem neuen Stand.
         # Begann sie vor dem Fenster, liegt ihre Zeit davor (`_sum_since` zählt
         # nach `created_at`) und belastet das Fenster nicht.
@@ -840,6 +851,62 @@ class AiUsageSummary:
     #: der Ansicht, der Verbrauch nirgends.
     realtime_seconds_month: int = 0
     dictation_seconds_month: int = 0
+    tokens_5h: int = 0
+
+
+_TOKEN_WINDOWS: tuple[tuple[str, str, timedelta], ...] = (
+    ("reset_5h_at", "five_hour_token_limit", FENSTER_5H),
+    ("reset_today_at", "daily_token_limit", FENSTER_TAG),
+    ("reset_week_at", "weekly_token_limit", FENSTER_WOCHE),
+    ("reset_month_at", "monthly_token_limit", FENSTER_MONAT),
+)
+
+
+def next_window_resets(
+    db: Session,
+    user_id: int,
+    limits: EffectiveAiLimits,
+    *,
+    now: datetime | None = None,
+) -> dict[str, datetime | None]:
+    """Berechnet je aktivem Tokenlimit, wann der älteste Verbrauch aus dem Fenster fällt."""
+    current_time = now or datetime.now(timezone.utc)
+    result: dict[str, datetime | None] = {key: None for key, _, _ in _TOKEN_WINDOWS}
+    active = [
+        (reset_key, delta)
+        for reset_key, limit_field, delta in _TOKEN_WINDOWS
+        if (val := getattr(limits, limit_field, None)) is not None and val > 0
+    ]
+    if not active:
+        return result
+
+    earliest = min(current_time - delta for _, delta in active)
+    columns = [
+        func.min(
+            case(
+                (AiUsageEvent.created_at >= current_time - delta, AiUsageEvent.created_at),
+                else_=None,
+            )
+        ).label(reset_key)
+        for reset_key, delta in active
+    ]
+    row = (
+        db.query(*columns)
+        .filter(
+            AiUsageEvent.user_id == user_id,
+            AiUsageEvent.status.in_(ACTIVE_STATUSES),
+            AiUsageEvent.accounted_tokens > 0,
+            AiUsageEvent.created_at >= earliest,
+        )
+        .one()
+    )
+    for reset_key, delta in active:
+        oldest = getattr(row, reset_key)
+        if oldest is not None:
+            if oldest.tzinfo is None:
+                oldest = oldest.replace(tzinfo=timezone.utc)
+            result[reset_key] = oldest + delta
+    return result
 
 
 def _since(column, threshold: datetime):
@@ -856,15 +923,17 @@ def _usage_rows(
     db: Session, *, user_id: int | None, now: datetime | None = None
 ) -> list[AiUsageSummary]:
     current_time = now or datetime.now(timezone.utc)
+    five_hour_start = current_time - FENSTER_5H
     day_start, week_start, month_start = _period_starts(current_time)
-    # Das 30-Tage-Fenster umfasst die beiden kürzeren; `min` bleibt, damit
+    # Das 30-Tage-Fenster umfasst die kürzeren; `min` bleibt, damit
     # niemand die Fenster umstellt und still eine zu niedrige Wochenzahl zeigt.
-    earliest = min(week_start, month_start)
+    earliest = min(five_hour_start, week_start, month_start)
 
     query = (
         db.query(
             AiUsageEvent.user_id.label("user_id"),
             User.username.label("username"),
+            _since(AiUsageEvent.accounted_tokens, five_hour_start).label("tokens_5h"),
             _since(AiUsageEvent.accounted_tokens, day_start).label("tokens_today"),
             _since(AiUsageEvent.accounted_tokens, week_start).label("tokens_week"),
             _since(AiUsageEvent.accounted_tokens, month_start).label("tokens_month"),
@@ -896,6 +965,7 @@ def _usage_rows(
             last_request_at=row.last_request_at,
             realtime_seconds_month=int(row.realtime_seconds or 0),
             dictation_seconds_month=int(row.dictation_seconds or 0),
+            tokens_5h=int(row.tokens_5h or 0),
         )
         for row in query.all()
     ]

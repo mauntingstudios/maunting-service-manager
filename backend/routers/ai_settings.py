@@ -802,6 +802,7 @@ def _entry(row: ai_usage_service.AiUsageSummary) -> AiUsageEntry:
     return AiUsageEntry(
         user_id=row.user_id,
         username=row.username,
+        tokens_5h=row.tokens_5h,
         tokens_today=row.tokens_today,
         tokens_week=row.tokens_week,
         tokens_month=row.tokens_month,
@@ -829,12 +830,14 @@ def get_my_usage(
     zur KI selbst haengt an `ai.chat.use`; das hier ist die Rechnung dazu.
     """
     limits = ai_limit_service.resolve_effective_limits(db, user)
+    resets = ai_usage_service.next_window_resets(db, user.id, limits)
     return AiUsageMine(
         **_entry(ai_usage_service.usage_for_user(db, user)).model_dump(),
         limits=EffectiveAiLimitsResponse(
             role_ids=effective_user_role_ids(db, user), **limits.__dict__
         ),
         cost_policy=_kostenpolitik(),
+        **resets,
     )
 
 

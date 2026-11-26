@@ -141,6 +141,7 @@ MAX_SYSTEM_SCOPE_ENTRIES = 100
 # ab, und Anfragen pro Minute begrenzt das Panel ohnehin je IP; die Liste war
 # dem Betreiber zu lang und zur Hälfte unverständlich.
 LIMIT_FIELDS = (
+    "five_hour_token_limit",
     "daily_token_limit",
     "weekly_token_limit",
     "monthly_token_limit",
@@ -163,6 +164,7 @@ LIMIT_FIELDS = (
     "max_attachment_storage_mb",
 )
 LIMIT_MAXIMA = {
+    "five_hour_token_limit": TOKEN_LIMIT_MAX,
     "daily_token_limit": TOKEN_LIMIT_MAX,
     "weekly_token_limit": TOKEN_LIMIT_MAX,
     "monthly_token_limit": TOKEN_LIMIT_MAX,
@@ -193,6 +195,8 @@ class EffectiveAiLimits:
     max_memory_entries: int | None
     #: Maximaler Speicherplatz fuer KI-Dateianhaenge in MB; ``None`` heisst unbegrenzt.
     max_attachment_storage_mb: int | None
+    #: Optionales rollendes 5-Stunden-Tokenlimit (Spitzenschutz); ``None`` heisst unbegrenzt.
+    five_hour_token_limit: int | None = None
 
 
 #: Felder eines Limit-Sets von vor dem 07.10.2026 (Migration 20261008_03).
@@ -216,6 +220,8 @@ def altes_set_umschreiben(werte: dict) -> dict:
     andere Betrag unbegrenzt. Ein Set ohne alte Felder kommt unverändert zurück.
     """
     if not set(werte) & set(ALTE_FELDER):
+        if set(werte) <= set(LIMIT_FIELDS):
+            return {feld: werte.get(feld) for feld in LIMIT_FIELDS}
         return dict(werte)
     neu = {feld: werte.get(feld) for feld in LIMIT_FIELDS}
     if "monthly_realtime_cost_limit_cents" in werte and "monthly_realtime_minutes_limit" not in werte:
@@ -224,8 +230,9 @@ def altes_set_umschreiben(werte: dict) -> dict:
         )
     if any(werte.get(feld) == 0 for feld in ALTE_FELDER[:3]):
         for feld in (
-            "daily_token_limit", "weekly_token_limit", "monthly_token_limit",
-            "monthly_realtime_minutes_limit", "monthly_dictation_minutes_limit",
+            "five_hour_token_limit", "daily_token_limit", "weekly_token_limit",
+            "monthly_token_limit", "monthly_realtime_minutes_limit",
+            "monthly_dictation_minutes_limit",
         ):
             neu[feld] = 0
     return neu

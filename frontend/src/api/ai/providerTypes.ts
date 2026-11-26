@@ -165,6 +165,7 @@ export interface AiRoleLimitsResponse {
   role_id: number
   role_name: string
   configured: boolean
+  five_hour_token_limit?: number | null
   daily_token_limit: number | null
   weekly_token_limit: number | null
   monthly_token_limit: number | null
@@ -180,6 +181,7 @@ export interface AiRoleLimitsResponse {
 }
 
 export interface AiRoleLimitsUpdate {
+  five_hour_token_limit?: number | null
   daily_token_limit: number | null
   weekly_token_limit: number | null
   monthly_token_limit: number | null
@@ -574,6 +576,7 @@ export interface AiCostPolicy {
 export interface AiUsageEntry {
   user_id: number
   username: string
+  tokens_5h?: number
   tokens_today: number
   tokens_week: number
   tokens_month: number
@@ -641,7 +644,12 @@ export interface AiUsageEvents {
 /** Der eigene Verbrauch — mit den Grenzen daneben, gegen die er läuft. */
 export interface AiUsageMine extends AiUsageEntry {
   cost_policy: AiCostPolicy
+  reset_5h_at?: string | null
+  reset_today_at?: string | null
+  reset_week_at?: string | null
+  reset_month_at?: string | null
   limits: {
+    five_hour_token_limit?: number | null
     daily_token_limit: number | null
     weekly_token_limit: number | null
     monthly_token_limit: number | null

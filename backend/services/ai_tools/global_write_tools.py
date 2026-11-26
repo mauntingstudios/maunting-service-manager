@@ -115,6 +115,7 @@ _PROPOSE_AI_TARIF_ROLE = _function(
             {
                 "name": {"type": "string", "maxLength": 64},
                 "description": {"type": ["string", "null"], "maxLength": 255},
+                "five_hour_token_limit": {"type": ["integer", "null"], "minimum": 0, "description": "Je rollende 5 Stunden (optionaler Spitzenschutz)."},
                 "daily_token_limit": {"type": ["integer", "null"], "minimum": 0, "description": "Je rollende 24 Stunden."},
                 "weekly_token_limit": {"type": ["integer", "null"], "minimum": 0, "description": "Je rollende 7 Tage."},
                 "monthly_token_limit": {"type": ["integer", "null"], "minimum": 0, "description": "Je rollende 30 Tage."},

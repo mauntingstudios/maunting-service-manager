@@ -135,4 +135,19 @@ describe('AiUsageCard', () => {
     expect(zeile.textContent?.replace(/\s/g, ' ')).toContain('1,84 €')
     expect(zeile.textContent?.replace(/\s/g, ' ')).toContain('(2,00 $)')
   })
+
+  it('blendet 5-Stunden-Fenster nur bei gesetztem Limit ein und zeigt die Reset-Zeit', async () => {
+    const reset5h = new Date(Date.now() + 2 * 3600 * 1000).toISOString()
+    vi.mocked(aiApi.getMyUsage).mockResolvedValue({
+      ...usage(0, null),
+      tokens_5h: 50_000,
+      reset_5h_at: reset5h,
+      limits: { ...usage(0, null).limits, five_hour_token_limit: 50_000 },
+    })
+    render(<AiUsageCard />)
+
+    const bar = await screen.findByRole('progressbar', { name: '5 Stunden' })
+    expect(bar).toHaveAttribute('aria-valuenow', '100')
+    expect(screen.getByText(/Wieder verfügbar ab /)).toBeInTheDocument()
+  })
 })
