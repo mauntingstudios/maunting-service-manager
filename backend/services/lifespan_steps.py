@@ -23,12 +23,13 @@ def init_http_clients_and_ai_runtime(app: FastAPI, is_testing: bool) -> None:
     """Initialisiert langlebige HTTPX-Clients, Arbeitsverzeichnisse und KI-Laufzeit."""
     from config import settings
     from services import ai_run_service
+    from services.openai_compatible_adapter import MAX_FIRST_DATA_SECONDS
 
     limits = httpx.Limits(max_connections=200, max_keepalive_connections=50)
     app.state.http_client = httpx.AsyncClient(limits=limits, timeout=5.0)
     app.state.ai_http_client = httpx.AsyncClient(
         limits=httpx.Limits(max_connections=50, max_keepalive_connections=20),
-        timeout=httpx.Timeout(connect=5.0, read=90.0, write=10.0, pool=5.0),
+        timeout=httpx.Timeout(connect=5.0, read=MAX_FIRST_DATA_SECONDS, write=10.0, pool=5.0),
         follow_redirects=False,
     )
 

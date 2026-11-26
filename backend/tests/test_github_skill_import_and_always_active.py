@@ -477,3 +477,31 @@ def test_personal_scope_isolation_and_atomic_demote(db: Session, regular_user: U
     assert next(
         s for s in ai_skill_service.visible_skills(db, regular_user) if s.skill_key == "p-rule-0"
     ).always_active is False
+
+
+def test_github_skill_parser_allows_auth_placeholders_but_blocks_real_secrets() -> None:
+    allowed_md = (
+        "---\n"
+        "name: i-have-adhd\n"
+        "description: Shape output for ADHD.\n"
+        "---\n\n"
+        "# i-have-adhd\n\n"
+        'Good: "Fix: add `Authorization: Bearer ${token}` to the request."'
+    )
+    parsed = github_skill_service._parse_skill_markdown(
+        allowed_md, source_path="skills/i-have-adhd/SKILL.md", repo_name="i-have-adhd"
+    )
+    assert parsed["skill_key"] == "i-have-adhd"
+
+    for secret_line in (
+        "Authorization: Basic dXNlcjpwYXNz",
+        "Authorization: Bearer eyJhbGciOiJIUzI1NiJ9",
+    ):
+        blocked_md = (
+            "---\nname: leaky\ndescription: Leaks secret.\n---\n\n" + secret_line
+        )
+        with pytest.raises(HTTPException) as exc:
+            github_skill_service._parse_skill_markdown(
+                blocked_md, source_path="SKILL.md", repo_name="leaky"
+            )
+        assert exc.value.status_code == 422

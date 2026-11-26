@@ -232,6 +232,12 @@ def test_email_addresses_preserved_in_sensitive_text_and_redacted_in_freetext() 
         "AKIA" + "B" * 16,
         "db_pass=hunter2",
         "SECRET_KEY=abc123xyz",
+        "Authorization: Basic dXNlcjpwYXNz",
+        "Authorization: raw-secret-value-123",
+        "Authorization: Bearer real_secret_token_123",
+        'Authorization: Basic "dXNlcjpwYXNz"',
+        'Authorization: Bearer "real_secret_token_123"',
+        "Authorization: Bearer `real_secret_token_123`",
     ],
 )
 def test_real_credentials_are_rejected(text: str) -> None:
@@ -250,6 +256,15 @@ def test_real_credentials_are_rejected(text: str) -> None:
         "Token-Budget: 100000",
         "Der Benutzer mag kurze Antworten",
         "Das Passwort wird über den Passwortmanager verwaltet",
+        "Fix: add `Authorization: Bearer ${token}` to the request.",
+        "Authorization: Bearer <token>",
+        "Authorization: Basic ${b64}",
+        "Verwende Authorization: Bearer",
+        "api_key=${API_KEY}",
+        "password=<YOUR_PASSWORD>",
+        "token={{api_token}}",
+        "RCON_PASSWORD=$RCON_PASS",
+        "secret=[REDACTED]",
     ],
 )
 def test_memorable_facts_are_not_rejected(text: str) -> None:

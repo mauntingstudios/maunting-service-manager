@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
@@ -33,6 +34,10 @@ MAX_TOOL_ARGUMENT_CHARS = 128_000
 # Nebenlaeufigkeitsplatz unbegrenzt besetzt: der Lesetimeout von httpx greift
 # nur je Chunk, nicht fuer die Gesamtdauer.
 MAX_STREAM_SECONDS = 300.0
+# Bis zum ersten echten SSE-Datenframe gilt eine kuerzere Frist. So haelt ein
+# stummer oder nur Keepalives sendender Anbieter (z. B. `: OPENROUTER PROCESSING`)
+# das Router-Failover nicht volle fuenf Minuten auf.
+MAX_FIRST_DATA_SECONDS = 45.0
 MAX_STREAM_FRAMES = 20_000
 # Fremdtext aus einem Fehler-Body. Bewusst knapp: er soll die Ursache benennen,
 # nicht eine fremde Seite in unsere Oberflaeche kopieren.
@@ -358,7 +363,10 @@ def _denktext_aus_details(rohdaten: object) -> str:
 
 
 async def _iter_sse_lines(
-    response: httpx.Response, *, deadline: float
+    response: httpx.Response,
+    *,
+    deadline: float,
+    first_data_deadline: float | None = None,
 ) -> AsyncIterator[str]:
     """Zerlegt die Providerantwort in Zeilen mit harter Puffergrenze.
 
@@ -366,18 +374,36 @@ async def _iter_sse_lines(
     zurueckkommt. Ein Provider, der nie einen Zeilenumbruch sendet, koennte den
     Panel-Prozess damit in den Speicher treiben, ohne dass die nachgelagerte
     Laengenpruefung je erreicht wird. Deshalb wird hier selbst gepuffert und
-    sowohl die Puffergroesse als auch die Gesamtlaufzeit begrenzt.
+    sowohl die Puffergroesse als auch die Wartezeit bis zum ersten Datenframe
+    und die Gesamtlaufzeit begrenzt.
     """
+    if first_data_deadline is None:
+        first_data_deadline = min(deadline, time.monotonic() + MAX_FIRST_DATA_SECONDS)
     buffer = ""
-    async for chunk in response.aiter_text():
-        if time.monotonic() > deadline:
+    saw_data = False
+    aiter = response.aiter_text().__aiter__()
+    while True:
+        limit = deadline if saw_data else first_data_deadline
+        remaining = limit - time.monotonic()
+        if remaining <= 0:
+            raise AiProviderRequestError("AI_PROVIDER_STREAM_TIMEOUT")
+        try:
+            chunk = await asyncio.wait_for(aiter.__anext__(), timeout=remaining)
+        except StopAsyncIteration:
+            break
+        except asyncio.TimeoutError as exc:
+            raise AiProviderRequestError("AI_PROVIDER_STREAM_TIMEOUT") from exc
+        if time.monotonic() > limit:
             raise AiProviderRequestError("AI_PROVIDER_STREAM_TIMEOUT")
         buffer += chunk
         if len(buffer) > MAX_STREAM_LINE_CHARS:
             raise AiProviderRequestError("AI_PROVIDER_RESPONSE_TOO_LARGE")
         while "\n" in buffer:
             line, buffer = buffer.split("\n", 1)
-            yield line.rstrip("\r")
+            clean = line.rstrip("\r")
+            if clean.startswith("data:") and clean[5:].strip():
+                saw_data = True
+            yield clean
     if buffer:
         yield buffer.rstrip("\r")
 

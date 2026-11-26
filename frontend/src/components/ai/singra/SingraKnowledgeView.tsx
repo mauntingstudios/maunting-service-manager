@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import {
   BookOpen,
   Check,
@@ -32,6 +33,14 @@ import {
 import { confirm } from '@/stores/confirmStore'
 import { toast } from '@/stores/toastStore'
 
+const EMPTY_DRAFT = {
+  name: '',
+  description: '',
+  body: '',
+  skill_key: '',
+  always_active: false,
+}
+
 function generateSkillKey(name: string): string {
   const slug = name
     .toLowerCase()
@@ -45,6 +54,7 @@ function generateSkillKey(name: string): string {
 }
 
 export function SingraKnowledgeView() {
+  const { t } = useTranslation()
   const [personalTeam, setPersonalTeam] = useState<Team | null>(null)
   const [sharedTeams, setSharedTeams] = useState<Team[]>([])
   const [selectedScope, setSelectedScope] = useState<string>('personal')
@@ -59,12 +69,7 @@ export function SingraKnowledgeView() {
   const [modalOpen, setModalOpen] = useState(false)
   const [editingSkill, setEditingSkill] = useState<AiSkillManaged | null>(null)
   const [showCustomKey, setShowCustomKey] = useState(false)
-  const [draft, setDraft] = useState({
-    name: '',
-    description: '',
-    body: '',
-    skill_key: '',
-  })
+  const [draft, setDraft] = useState({ ...EMPTY_DRAFT })
 
   const loadData = useCallback(async () => {
     setLoading(true)
@@ -117,7 +122,7 @@ export function SingraKnowledgeView() {
   const openCreateModal = () => {
     setEditingSkill(null)
     setShowCustomKey(false)
-    setDraft({ name: '', description: '', body: '', skill_key: '' })
+    setDraft({ ...EMPTY_DRAFT })
     setModalOpen(true)
   }
 
@@ -129,6 +134,7 @@ export function SingraKnowledgeView() {
       description: skill.description,
       body: skill.body,
       skill_key: skill.skill_key,
+      always_active: Boolean(skill.always_active),
     })
     setModalOpen(true)
   }
@@ -149,6 +155,7 @@ export function SingraKnowledgeView() {
         body: draft.body.trim(),
         team_id: activeTeamId,
         enabled: editingSkill ? editingSkill.enabled : true,
+        always_active: draft.always_active,
       })
       setModalOpen(false)
       await loadData()
@@ -171,6 +178,25 @@ export function SingraKnowledgeView() {
       await aiApi.toggleSkill(skill.id, enabled)
       setManagedSkills((prev) =>
         prev.map((s) => (s.id === skill.id ? { ...s, enabled } : s)),
+      )
+    } catch (err: unknown) {
+      toast.error(
+        err instanceof SanitizedApiError
+          ? err.message
+          : 'Status konnte nicht geändert werden.',
+      )
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const handleToggleAlwaysActive = async (skill: AiSkillManaged, alwaysActive: boolean) => {
+    if (busy) return
+    setBusy(true)
+    try {
+      const updated = await aiApi.toggleSkillAlwaysActive(skill.id, alwaysActive)
+      setManagedSkills((prev) =>
+        prev.map((s) => (s.id === skill.id ? updated : s)),
       )
     } catch (err: unknown) {
       toast.error(
@@ -399,6 +425,11 @@ export function SingraKnowledgeView() {
                           Von Singra gelernt
                         </span>
                       )}
+                      {(!canManage || skill.status === 'pending') && skill.always_active && (
+                        <span className="rounded-full border border-primary/40 bg-primary/10 px-2 py-0.5 text-label-sm font-medium text-primary">
+                          {t('ai.skills.alwaysActiveBadge')}
+                        </span>
+                      )}
                       {skill.status === 'pending' && (
                         <span className="rounded-full bg-status-warning/15 px-2 py-0.5 text-label-sm font-medium text-status-warning">
                           Wartet auf Freigabe
@@ -413,6 +444,20 @@ export function SingraKnowledgeView() {
 
                   {canManage && (
                     <div className="mt-4 flex items-center justify-end gap-1 border-t border-outline-variant/15 pt-2.5">
+                      {skill.status !== 'pending' && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant={skill.always_active ? 'secondary' : 'ghost'}
+                          disabled={busy}
+                          className="mr-auto h-7 px-2.5 text-xs"
+                          aria-pressed={Boolean(skill.always_active)}
+                          aria-label={`${t('ai.skills.alwaysActive')}: ${skill.name}`}
+                          onClick={() => void handleToggleAlwaysActive(skill, !skill.always_active)}
+                        >
+                          {skill.always_active ? t('ai.skills.alwaysActiveBadge') : t('ai.skills.onDemandBadge')}
+                        </Button>
+                      )}
                       {skill.status === 'pending' && (
                         <Button
                           type="button"
@@ -508,6 +553,24 @@ export function SingraKnowledgeView() {
                 placeholder="Schreibe hier Schritt für Schritt auf, worauf Singra achten soll…"
                 required
                 aria-label="Anleitung und Inhalt"
+              />
+            </div>
+
+            <div className="flex items-start justify-between gap-3 rounded-xl border border-outline-variant/30 bg-surface-container-low/40 px-3.5 py-2.5">
+              <div className="space-y-0.5">
+                <span className="block text-xs font-medium text-on-surface">
+                  {t('ai.skills.alwaysActive')}
+                </span>
+                <span className="block text-xs text-on-surface-variant leading-relaxed">
+                  {t('ai.skills.alwaysActiveHint')}
+                </span>
+              </div>
+              <Switch
+                className="mt-0.5"
+                checked={draft.always_active}
+                disabled={busy}
+                onCheckedChange={(checked) => setDraft((d) => ({ ...d, always_active: checked }))}
+                aria-label={t('ai.skills.alwaysActive')}
               />
             </div>
 

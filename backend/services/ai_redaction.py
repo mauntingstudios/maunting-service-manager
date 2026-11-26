@@ -272,6 +272,13 @@ def ist_geheimer_schluessel(name: object) -> bool:
     return isinstance(name, str) and bool(_SECRET_KEY_RE.match(name.strip()))
 
 
+_AUTH_SCHEMES = frozenset({"bearer", "basic", "digest", "token", "apikey"})
+_PLATZHALTER_WERT_RE = re.compile(
+    r"^(?:\$\{[A-Za-z0-9_.-]+\}|\{\{[A-Za-z0-9_.\s-]+\}\}|<[A-Za-z0-9_.\s-]+>"
+    r"|\[REDACTED(?:_[A-Z0-9]+)?\]|\$[A-Za-z_][A-Za-z0-9_]*)$"
+)
+
+
 def _wert_ist_geheimnis(match: re.Match[str]) -> bool:
     """Ob der Wert einer getroffenen Zuweisung nach einem echten Geheimnis aussieht.
 
@@ -280,11 +287,22 @@ def _wert_ist_geheimnis(match: re.Match[str]) -> bool:
     Jahreszahlen und Budgets ("Serverwechsel-Token: 2", "Token-Budget: 100000")
     — kein Mensch legt sie als Zugangsdatum an, aber jede davon machte einen
     Gedaechtniseintrag unspeicherbar. Sehr kurze Werte ("ja", "an") sind
-    Schalter. Alles andere gilt als Geheimnis — im Zweifel wird abgewiesen.
+    Schalter. Bei ``Authorization: <Schema> <Wert>`` wird der eigentliche Wert
+    hinter dem Schema geprueft, damit Doku-Platzhalter wie ``${token}``
+    nicht als Zugangsdatum abgewiesen werden. Alles andere gilt als
+    Geheimnis — im Zweifel wird abgewiesen.
     """
     wert = (match.group("wq") if match.group("quote") else match.group("wu")) or ""
     wert = wert.strip()
-    if not wert or wert.isdigit():
+    if (
+        not match.group("quote")
+        and match.group("key").lower().endswith("authorization")
+        and wert.lower() in _AUTH_SCHEMES
+    ):
+        rest = match.string[match.end():].split("\n", 1)[0].lstrip(" \t\"'`")
+        folge = re.match(r"[^\s,;\"'`]+", rest)
+        wert = folge.group(0) if folge else ""
+    if not wert or wert.isdigit() or _PLATZHALTER_WERT_RE.match(wert):
         return False
     return len(wert) >= 4
 

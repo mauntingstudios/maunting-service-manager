@@ -1430,3 +1430,67 @@ def test_cross_provider_dialect_sanitization_strips_google_and_normalizes_ids() 
     assert a_id.startswith("tc_") and "." not in a_id and ":" not in a_id
     assert anth_msgs[2]["content"][0]["tool_use_id"] == a_id
 
+
+@pytest.mark.asyncio
+async def test_iter_sse_lines_first_data_timeout_handles_keepalive_hang_and_data() -> None:
+    """Keepalive-only und stumme Streams laufen ins First-Data-Timeout; echte Daten verlaengern bis deadline."""
+    import asyncio
+    import time
+    from services.openai_compatible_adapter import AiProviderRequestError, _iter_sse_lines
+
+    class _FakeResp:
+        def __init__(self, gen_fn):
+            self._gen_fn = gen_fn
+
+        def aiter_text(self):
+            return self._gen_fn()
+
+    # 1) Keepalive-only Stream sendet Kommentare, aber nie ein `data:`-Frame
+    async def _keepalive_only():
+        while True:
+            yield ": OPENROUTER PROCESSING\n\n"
+            await asyncio.sleep(0.03)
+
+    now = time.monotonic()
+    with pytest.raises(AiProviderRequestError) as exc_keepalive:
+        async for _ in _iter_sse_lines(
+            _FakeResp(_keepalive_only),
+            deadline=now + 5.0,
+            first_data_deadline=now + 0.08,
+        ):
+            pass
+    assert exc_keepalive.value.code == "AI_PROVIDER_STREAM_TIMEOUT"
+
+    # 2) Stummer haengender Stream liefert keinen einzigen Chunk
+    async def _silent_hang():
+        await asyncio.sleep(5.0)
+        yield "data: {}\n\n"
+
+    now = time.monotonic()
+    with pytest.raises(AiProviderRequestError) as exc_silent:
+        async for _ in _iter_sse_lines(
+            _FakeResp(_silent_hang),
+            deadline=now + 5.0,
+            first_data_deadline=now + 0.06,
+        ):
+            pass
+    assert exc_silent.value.code == "AI_PROVIDER_STREAM_TIMEOUT"
+
+    # 3) Stream mit fruehem `data:`-Frame darf danach ueber first_data_deadline hinaus weiterlaufen
+    async def _valid_then_slow():
+        yield 'data: {"choices":[]}\n\n'
+        await asyncio.sleep(0.10)
+        yield "data: [DONE]\n\n"
+
+    now = time.monotonic()
+    lines = [
+        line
+        async for line in _iter_sse_lines(
+            _FakeResp(_valid_then_slow),
+            deadline=now + 2.0,
+            first_data_deadline=now + 0.05,
+        )
+        if line
+    ]
+    assert lines == ['data: {"choices":[]}', "data: [DONE]"]
+
