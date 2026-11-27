@@ -489,4 +489,22 @@ describe('TresorDateiBereich', () => {
     const img = container.querySelector('img[src="blob:bild-vorschau"]')
     expect(img).not.toBeNull()
   })
+
+  it('wechselt zwischen Liste und Kachelansicht mit Ordnerkacheln und Vorschaubildern', () => {
+    useMiniaturMock.mockReturnValue('blob:raster-bild')
+    const foto = datei('img-1', 'urlaub.jpg', 'image/jpeg')
+    useVaultStore.setState({ items: [vertraege, pdf, foto] })
+    const { container } = render(<TresorDateiBereich />)
+
+    const rasterKnopf = screen.getByRole('button', { name: i18n.t('mss.vault.dashboard.ansichtRaster') })
+    expect(rasterKnopf).toHaveAttribute('aria-pressed', 'false')
+    fireEvent.click(rasterKnopf)
+    expect(rasterKnopf).toHaveAttribute('aria-pressed', 'true')
+
+    const rasterListe = screen.getByRole('list', { name: i18n.t('mss.vault.dateien.inhalt') })
+    expect(rasterListe.className).toContain('grid-cols-2')
+    expect(within(rasterListe).getByText('Verträge')).toBeInTheDocument()
+    expect(within(rasterListe).getByText('vertrag.pdf')).toBeInTheDocument()
+    expect(container.querySelector('img[src="blob:raster-bild"]')).not.toBeNull()
+  })
 })

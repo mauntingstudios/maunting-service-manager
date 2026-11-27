@@ -31,8 +31,11 @@ import {
   FolderPlus,
   HardDrive,
   HardDriveDownload,
+  LayoutGrid,
+  List,
   MoreHorizontal,
   Pencil,
+  Plus,
   SearchX,
   Trash2,
   Upload,
@@ -115,6 +118,9 @@ export function TresorDateiBereich({ suche = '', isTeam = false, geforderteOeffn
   // erst wenn der Zähler auf null fällt, hat die Datei die Fläche verlassen.
   const ziehZaehler = useRef(0)
   const [rechnerDateiDarueber, setRechnerDateiDarueber] = useState(false)
+  const [darstellung, setDarstellung] = useState<'liste' | 'raster'>('liste')
+  const [neuBlattOffen, setNeuBlattOffen] = useState(false)
+  const mobileDateiInputRef = useRef<HTMLInputElement>(null)
 
   const sichtbareItems = useMemo(() => sichtbareEintraege(items), [items])
   const ordnerListe = useMemo(() => sichtbareItems.filter((i) => i.category === 'ordner'), [sichtbareItems])
@@ -589,11 +595,10 @@ export function TresorDateiBereich({ suche = '', isTeam = false, geforderteOeffn
       </aside>
 
       <section className="relative flex min-w-0 flex-1 flex-col" {...flaecheAblage}>
-        <header className="flex flex-wrap items-center gap-2 border-b border-outline-variant/30 px-3 py-2 sm:px-4">
+        <header className="flex items-center gap-2 border-b border-outline-variant/30 px-3 py-2 sm:px-4">
           <Pfadleiste
             label={t('mss.vault.dateien.pfad')}
-            // Auf dem Handy steht der Pfad in einer eigenen Zeile über den Knöpfen.
-            className="basis-full text-xs msm-ohne-rollbalken sm:basis-0"
+            className="min-w-0 flex-1 text-xs msm-ohne-rollbalken"
             stamm={{ key: '', label: t('mss.vault.dateien.stamm'), icon: <HardDrive className="h-3.5 w-3.5" aria-hidden /> }}
             teile={pfad.map((o) => ({ key: o.id, label: o.service }))}
             onWaehlen={(key) => ordnerOeffnen(key || undefined)}
@@ -602,20 +607,44 @@ export function TresorDateiBereich({ suche = '', isTeam = false, geforderteOeffn
             onAblegen={(key, daten) => ablegen(key || undefined, daten)}
           />
           {!auswahl && (
-            <div className="ml-auto flex items-center gap-1.5">
-              {inhalt.length > 0 && (
-                <Button
+            <div className="ml-auto flex shrink-0 items-center gap-1.5">
+              <div className="flex items-center rounded-xl border border-outline-variant/25 bg-surface-container-low p-0.5">
+                <button
                   type="button"
-                  variant="ghost"
-                  size="sm"
-                  className={cx('md:hidden', TIPPFLAECHE)}
-                  aria-label={t('mss.vault.dateien.auswaehlen')}
-                  onClick={wahl.starten}
+                  onClick={() => setDarstellung('liste')}
+                  aria-label={t('mss.vault.dashboard.ansichtListe')}
+                  aria-pressed={darstellung === 'liste'}
+                  className={cx(
+                    'flex h-8 w-8 items-center justify-center rounded-lg transition-colors sm:h-7 sm:w-7',
+                    darstellung === 'liste' ? 'bg-primary/15 text-primary' : 'text-on-surface-variant hover:text-on-surface',
+                  )}
                 >
-                  <CheckSquare className="h-4 w-4" />
-                </Button>
-              )}
-              <Button type="button" variant="ghost" size="sm" className={TIPPFLAECHE} onClick={() => void neuerOrdner()}>
+                  <List className="h-3.5 w-3.5" aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDarstellung('raster')}
+                  aria-label={t('mss.vault.dashboard.ansichtRaster')}
+                  aria-pressed={darstellung === 'raster'}
+                  className={cx(
+                    'flex h-8 w-8 items-center justify-center rounded-lg transition-colors sm:h-7 sm:w-7',
+                    darstellung === 'raster' ? 'bg-primary/15 text-primary' : 'text-on-surface-variant hover:text-on-surface',
+                  )}
+                >
+                  <LayoutGrid className="h-3.5 w-3.5" aria-hidden="true" />
+                </button>
+              </div>
+              <Button
+                type="button"
+                variant="primary"
+                size="icon"
+                className={cx('sm:hidden', TIPPFLAECHE)}
+                aria-label={t('mss.vault.dashboard.neuKurz')}
+                onClick={() => setNeuBlattOffen(true)}
+              >
+                <Plus className="h-4 w-4" aria-hidden="true" />
+              </Button>
+              <Button type="button" variant="ghost" size="sm" className={cx('hidden sm:inline-flex', TIPPFLAECHE)} onClick={() => void neuerOrdner()}>
                 <FolderPlus className="mr-1.5 h-4 w-4" />
                 {t('mss.vault.dateien.ordnerAnlegen')}
               </Button>
@@ -623,7 +652,7 @@ export function TresorDateiBereich({ suche = '', isTeam = false, geforderteOeffn
                 multiple
                 size="sm"
                 variant="primary"
-                className={TIPPFLAECHE}
+                className={cx('hidden sm:inline-flex', TIPPFLAECHE)}
                 disabled={ohneSpeicher}
                 onFiles={(dateien) => void hochladen(dateien, aktuellerOrdner)}
               >
@@ -633,6 +662,17 @@ export function TresorDateiBereich({ suche = '', isTeam = false, geforderteOeffn
             </div>
           )}
         </header>
+        <input
+          ref={mobileDateiInputRef}
+          type="file"
+          multiple
+          className="hidden"
+          onChange={(event) => {
+            const ausgewaehlt = Array.from(event.target.files ?? [])
+            event.target.value = ''
+            if (ausgewaehlt.length > 0) void hochladen(ausgewaehlt, aktuellerOrdner)
+          }}
+        />
 
         {auswahl && (
           <div className="flex items-center border-b border-outline-variant/30 bg-primary/5 px-3 py-1.5 sm:px-4">
@@ -713,38 +753,66 @@ export function TresorDateiBereich({ suche = '', isTeam = false, geforderteOeffn
                   {t('mss.vault.dateien.trefferAnzahl', { count: inhalt.length })}
                 </p>
               )}
-              <div className={cx('hidden px-2 pb-1.5 text-label-sm text-on-surface-variant', SPALTEN)} aria-hidden>
-                <span />
-                <span className="pl-9">{t('common.name')}</span>
-                <span className="text-right">{t('mss.vault.dateien.spalteGroesse')}</span>
-                <span>{t('mss.vault.dateien.geaendert')}</span>
-                <span />
-              </div>
+              {darstellung === 'liste' && (
+                <div className={cx('hidden px-2 pb-1.5 text-label-sm text-on-surface-variant', SPALTEN)} aria-hidden>
+                  <span />
+                  <span className="pl-9">{t('common.name')}</span>
+                  <span className="text-right">{t('mss.vault.dateien.spalteGroesse')}</span>
+                  <span>{t('mss.vault.dateien.geaendert')}</span>
+                  <span />
+                </div>
+              )}
               <ul
                 aria-label={t(sucht ? 'mss.vault.dateien.treffer' : 'mss.vault.dateien.inhalt')}
-                className="overflow-hidden rounded-xl border border-outline-variant/40 bg-surface-container-low/60"
+                className={
+                  darstellung === 'raster'
+                    ? 'grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5'
+                    : 'grid grid-cols-2 gap-2 md:block md:overflow-hidden md:rounded-xl md:border md:border-outline-variant/40 md:bg-surface-container-low/60'
+                }
               >
-                {inhalt.map((item) => (
-                  <TresorDateiZeile
-                    key={item.id}
-                    item={item}
-                    ausgewaehlt={!!auswahl?.has(item.id)}
-                    auswahlAktiv={auswahl !== null}
-                    offline={!!item.datei && offline.has(item.datei.original.id)}
-                    holt={holt[item.id]}
-                    upload={uploads[item.id]}
-                    ziel={zielZeile === item.id}
-                    gezogen={gezogen.includes(item.id)}
-                    geaendert={formatZeitpunkt(item.datei?.geaendert ?? item.updatedAt, i18n.language)}
-                    ort={sucht ? ortVon(item.ordner) : undefined}
-                    ziehen={zeileZiehen(item)}
-                    ablage={item.category === 'ordner' ? ordnerAblage(item) : undefined}
-                    onKlick={(event) => zeileKlick(item, event)}
-                    onLangdruck={() => wahl.langdruck(item.id)}
-                    onKaestchen={(schieben) => (schieben ? wahl.bereich(item.id) : wahl.umschalten(item.id))}
-                    onMenue={(x, y, ausloeser, perKnopf) => setMenue({ item, x, y, ausloeser, blatt: perKnopf && amTelefon() })}
-                  />
-                ))}
+                {inhalt.map((item) =>
+                  darstellung === 'raster' ? (
+                    <TresorDateiKachel
+                      key={item.id}
+                      item={item}
+                      ausgewaehlt={!!auswahl?.has(item.id)}
+                      auswahlAktiv={auswahl !== null}
+                      offline={!!item.datei && offline.has(item.datei.original.id)}
+                      holt={holt[item.id]}
+                      upload={uploads[item.id]}
+                      ziel={zielZeile === item.id}
+                      gezogen={gezogen.includes(item.id)}
+                      geaendert={formatZeitpunkt(item.datei?.geaendert ?? item.updatedAt, i18n.language)}
+                      ort={sucht ? ortVon(item.ordner) : undefined}
+                      ziehen={zeileZiehen(item)}
+                      ablage={item.category === 'ordner' ? ordnerAblage(item) : undefined}
+                      onKlick={(event) => zeileKlick(item, event)}
+                      onLangdruck={() => wahl.langdruck(item.id)}
+                      onKaestchen={(schieben) => (schieben ? wahl.bereich(item.id) : wahl.umschalten(item.id))}
+                      onMenue={(x, y, ausloeser, perKnopf) => setMenue({ item, x, y, ausloeser, blatt: perKnopf && amTelefon() })}
+                    />
+                  ) : (
+                    <TresorDateiZeile
+                      key={item.id}
+                      item={item}
+                      ausgewaehlt={!!auswahl?.has(item.id)}
+                      auswahlAktiv={auswahl !== null}
+                      offline={!!item.datei && offline.has(item.datei.original.id)}
+                      holt={holt[item.id]}
+                      upload={uploads[item.id]}
+                      ziel={zielZeile === item.id}
+                      gezogen={gezogen.includes(item.id)}
+                      geaendert={formatZeitpunkt(item.datei?.geaendert ?? item.updatedAt, i18n.language)}
+                      ort={sucht ? ortVon(item.ordner) : undefined}
+                      ziehen={zeileZiehen(item)}
+                      ablage={item.category === 'ordner' ? ordnerAblage(item) : undefined}
+                      onKlick={(event) => zeileKlick(item, event)}
+                      onLangdruck={() => wahl.langdruck(item.id)}
+                      onKaestchen={(schieben) => (schieben ? wahl.bereich(item.id) : wahl.umschalten(item.id))}
+                      onMenue={(x, y, ausloeser, perKnopf) => setMenue({ item, x, y, ausloeser, blatt: perKnopf && amTelefon() })}
+                    />
+                  ),
+                )}
               </ul>
             </>
           )}
@@ -795,6 +863,38 @@ export function TresorDateiBereich({ suche = '', isTeam = false, geforderteOeffn
             </div>
           </>
         )}
+      </Blattmenue>
+
+      <Blattmenue offen={neuBlattOffen} onSchliessen={() => setNeuBlattOffen(false)} titel={t('mss.vault.dashboard.neuKurz')}>
+        <div className="pb-2">
+          <Blatteintrag
+            icon={<Upload className="h-4 w-4" />}
+            label={t('mss.vault.dateien.hochladen')}
+            disabled={ohneSpeicher}
+            onClick={() => {
+              setNeuBlattOffen(false)
+              mobileDateiInputRef.current?.click()
+            }}
+          />
+          <Blatteintrag
+            icon={<FolderPlus className="h-4 w-4" />}
+            label={t('mss.vault.dateien.ordnerAnlegen')}
+            onClick={() => {
+              setNeuBlattOffen(false)
+              void neuerOrdner()
+            }}
+          />
+          {inhalt.length > 0 && (
+            <Blatteintrag
+              icon={<CheckSquare className="h-4 w-4" />}
+              label={t('mss.vault.dateien.auswaehlen')}
+              onClick={() => {
+                setNeuBlattOffen(false)
+                wahl.starten()
+              }}
+            />
+          )}
+        </div>
       </Blattmenue>
 
       <Dialog open={!!verschiebenDialog} onOpenChange={(offen) => !offen && setVerschiebenDialog(null)}>
@@ -893,52 +993,20 @@ function TresorDateiZeile({
   onMenue,
 }: ZeileProps) {
   const { t } = useTranslation()
-  const lang = useLangdruck(onLangdruck)
-  const schieben = useRef(false)
-  // Android startet beim langen Drücken ein HTML-Ziehen, das nie endet. Am
-  // Finger gehört der lange Druck der Auswahl; verschoben wird über das Menü.
-  const amFinger = useRef(false)
+  const { schieben, liProps } = useDateiElementBindung({ item, ziehen, ablage, onLangdruck, onMenue })
   const istOrdner = item.category === 'ordner'
   const groesse = item.datei ? formatBytes(item.datei.original.echt) : null
-  const fortschritt =
-    holt !== undefined ? (
-      <ProgressBar value={holt * 100} ariaLabel={t('mss.vault.dateien.offlineLaedt')} />
-    ) : upload ? (
-      upload.fehler ? (
-        <span className="text-label-sm text-status-destructive">{t(`mss.vault.dateien.${upload.fehler}`)}</span>
-      ) : (
-        <ProgressBar value={upload.gesamt > 0 ? (upload.gesendet / upload.gesamt) * 100 : null} ariaLabel={t('mss.vault.dateien.wirdHochgeladen')} />
-      )
-    ) : null
+  const fortschritt = dateiStatusFortschritt(holt, upload, t)
   return (
     <li
-      {...ziehen}
-      {...ablage}
-      onDragStart={(event) => {
-        if (amFinger.current) {
-          event.preventDefault()
-          return
-        }
-        ziehen.onDragStart?.(event)
-      }}
-      onPointerDown={(event) => {
-        amFinger.current = event.pointerType === 'touch'
-        lang.onPointerDown(event)
-      }}
-      onPointerMove={lang.onPointerMove}
-      onPointerUp={lang.onPointerUp}
-      onPointerCancel={lang.onPointerCancel}
-      onContextMenu={(event) => {
-        // Am Finger gehört der lange Druck der Auswahl, nicht dem Menü.
-        lang.onContextMenu(event)
-        if (event.defaultPrevented) return
-        event.preventDefault()
-        onMenue(event.clientX, event.clientY, event.currentTarget, false)
-      }}
+      {...liProps}
       className={cx(
-        'group flex items-center gap-2 border-b border-outline-variant/40 px-2 py-1.5 last:border-b-0',
+        'group flex items-center gap-2 px-2 py-1.5 md:rounded-none md:border-x-0 md:border-t-0 md:border-b md:border-outline-variant/40 md:last:border-b-0',
+        istOrdner
+          ? 'col-span-1 rounded-xl border border-outline-variant/40'
+          : 'col-span-2 rounded-xl border border-outline-variant/30',
         SPALTEN,
-        ziel ? ABLAGEZIEL : ausgewaehlt ? 'bg-primary/10' : 'hover:bg-surface-container-high/70',
+        ziel ? ABLAGEZIEL : ausgewaehlt ? 'bg-primary/10' : 'bg-surface-container-low/70 md:bg-transparent hover:bg-surface-container-high/70',
         gezogen && 'opacity-50',
       )}
     >
@@ -956,7 +1024,7 @@ function TresorDateiZeile({
       </span>
       <button
         type="button"
-        className="flex min-h-11 min-w-0 flex-1 items-center gap-3 rounded-md px-1 text-left sm:min-h-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
+        className="flex min-h-11 min-w-0 flex-1 items-center gap-2.5 rounded-md px-1 text-left sm:min-h-10 sm:gap-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
         onClick={onKlick}
         disabled={!istOrdner && !item.datei}
       >
@@ -980,7 +1048,7 @@ function TresorDateiZeile({
         type="button"
         variant="ghost"
         size="icon"
-        className={cx('min-h-11 min-w-11 shrink-0 opacity-70 group-hover:opacity-100 sm:min-h-9 sm:min-w-9', auswahlAktiv && 'invisible')}
+        className={cx('min-h-11 min-w-11 shrink-0 opacity-70 group-hover:opacity-100 sm:min-h-9 sm:min-w-9', istOrdner && 'min-h-9 min-w-9 px-0', auswahlAktiv && 'invisible')}
         aria-label={t('mss.vault.dateien.aktionenFuer', { name: item.service })}
         aria-haspopup="menu"
         onClick={(event) => {
@@ -992,4 +1060,200 @@ function TresorDateiZeile({
       </Button>
     </li>
   )
+}
+
+/** Kachelansicht mit großen Vorschaubildern für Medien/Dokumente und kompakten Ordnerkacheln. */
+function TresorDateiKachel({
+  item,
+  ausgewaehlt,
+  auswahlAktiv,
+  offline,
+  holt,
+  upload,
+  ziel,
+  gezogen,
+  geaendert,
+  ort,
+  ziehen,
+  ablage,
+  onKlick,
+  onLangdruck,
+  onKaestchen,
+  onMenue,
+}: ZeileProps) {
+  const { t } = useTranslation()
+  const { schieben, liProps } = useDateiElementBindung({ item, ziehen, ablage, onLangdruck, onMenue })
+  const istOrdner = item.category === 'ordner'
+  const groesse = item.datei ? formatBytes(item.datei.original.echt) : null
+  const fortschritt = dateiStatusFortschritt(holt, upload, t)
+
+  if (istOrdner) {
+    return (
+      <li
+        {...liProps}
+        className={cx(
+          'group flex items-center gap-2 rounded-2xl border border-outline-variant/30 p-2.5 transition-colors',
+          ziel ? ABLAGEZIEL : ausgewaehlt ? 'bg-primary/10' : 'bg-surface-container-low/85 hover:bg-surface-container-high/70',
+          gezogen && 'opacity-50',
+        )}
+      >
+        {auswahlAktiv && (
+          <Checkbox
+            checked={ausgewaehlt}
+            aria-label={t('mss.vault.dateien.auswaehlenName', { name: item.service })}
+            onClick={(event) => {
+              schieben.current = event.shiftKey
+              event.stopPropagation()
+            }}
+            onCheckedChange={() => onKaestchen(schieben.current)}
+          />
+        )}
+        <button
+          type="button"
+          className="flex min-h-10 min-w-0 flex-1 items-center gap-2.5 rounded-lg text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
+          onClick={onKlick}
+        >
+          <TresorVorschau item={item} groesse="md" />
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-xs font-semibold text-on-surface">{item.service}</span>
+            <span className="block truncate text-label-sm text-on-surface-variant">{t('mss.vault.dateien.ordner')}</span>
+          </span>
+        </button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className={cx('min-h-9 min-w-9 shrink-0 opacity-75 group-hover:opacity-100', auswahlAktiv && 'invisible')}
+          aria-label={t('mss.vault.dateien.aktionenFuer', { name: item.service })}
+          aria-haspopup="menu"
+          onClick={(event) => {
+            const box = event.currentTarget.getBoundingClientRect()
+            onMenue(box.right, box.bottom + 4, event.currentTarget, true)
+          }}
+        >
+          <MoreHorizontal className="h-4 w-4" />
+        </Button>
+      </li>
+    )
+  }
+
+  return (
+    <li
+      {...liProps}
+      className={cx(
+        'group flex flex-col overflow-hidden rounded-2xl border border-outline-variant/30 transition-colors',
+        ziel ? ABLAGEZIEL : ausgewaehlt ? 'bg-primary/10 ring-2 ring-primary/40' : 'bg-surface-container-low/85 hover:bg-surface-container-high/70',
+        gezogen && 'opacity-50',
+      )}
+    >
+      <div className="relative aspect-[4/3] w-full overflow-hidden bg-surface-container">
+        <button
+          type="button"
+          onClick={onKlick}
+          disabled={!item.datei}
+          aria-label={item.service}
+          className="flex h-full w-full items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary/60"
+        >
+          <TresorVorschau item={item} groesse="lg" className="!h-full !w-full !rounded-none !border-0" />
+        </button>
+        <span className={cx('absolute left-2 top-2 flex items-center gap-1', !auswahlAktiv && 'opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100')}>
+          <Checkbox
+            checked={ausgewaehlt}
+            aria-label={t('mss.vault.dateien.auswaehlenName', { name: item.service })}
+            onClick={(event) => {
+              schieben.current = event.shiftKey
+              event.stopPropagation()
+            }}
+            onCheckedChange={() => onKaestchen(schieben.current)}
+          />
+        </span>
+        {offline && (
+          <span className="absolute bottom-2 left-2 rounded-full bg-surface-container/85 p-1 text-secondary backdrop-blur-sm">
+            <HardDriveDownload className="h-3.5 w-3.5" role="img" aria-label={t('mss.vault.dateien.offlineVerfuegbar')} />
+          </span>
+        )}
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className={cx(
+            'absolute right-1.5 top-1.5 min-h-9 min-w-9 rounded-full bg-surface-container/80 backdrop-blur-sm opacity-85 hover:opacity-100',
+            auswahlAktiv && 'invisible',
+          )}
+          aria-label={t('mss.vault.dateien.aktionenFuer', { name: item.service })}
+          aria-haspopup="menu"
+          onClick={(event) => {
+            const box = event.currentTarget.getBoundingClientRect()
+            onMenue(box.right, box.bottom + 4, event.currentTarget, true)
+          }}
+        >
+          <MoreHorizontal className="h-4 w-4" />
+        </Button>
+      </div>
+      <div className="flex flex-col gap-0.5 px-2.5 py-2">
+        <span className="truncate text-xs font-medium text-on-surface">{item.service}</span>
+        <span className="truncate text-label-sm text-on-surface-variant">
+          {item.datei ? `${groesse} · ${geaendert}` : t('mss.vault.dateien.unlesbar')}
+        </span>
+        {ort && <span className="truncate text-label-sm text-on-surface-variant">{ort}</span>}
+        {fortschritt && <div className="mt-1">{fortschritt}</div>}
+      </div>
+    </li>
+  )
+}
+
+function dateiStatusFortschritt(
+  holt: number | undefined,
+  upload: UploadFortschritt | undefined,
+  t: (key: string) => string,
+) {
+  if (holt !== undefined) {
+    return <ProgressBar value={holt * 100} ariaLabel={t('mss.vault.dateien.offlineLaedt')} />
+  }
+  if (!upload) return null
+  if (upload.fehler) {
+    return <span className="text-label-sm text-status-destructive">{t(`mss.vault.dateien.${upload.fehler}`)}</span>
+  }
+  return (
+    <ProgressBar
+      value={upload.gesamt > 0 ? (upload.gesendet / upload.gesamt) * 100 : null}
+      ariaLabel={t('mss.vault.dateien.wirdHochgeladen')}
+    />
+  )
+}
+
+function useDateiElementBindung({
+  ziehen,
+  ablage,
+  onLangdruck,
+  onMenue,
+}: Pick<ZeileProps, 'item' | 'ziehen' | 'ablage' | 'onLangdruck' | 'onMenue'>) {
+  const lang = useLangdruck(onLangdruck)
+  const schieben = useRef(false)
+  const amFinger = useRef(false)
+  const liProps: React.LiHTMLAttributes<HTMLLIElement> = {
+    ...ziehen,
+    ...ablage,
+    onDragStart: (event) => {
+      if (amFinger.current) {
+        event.preventDefault()
+        return
+      }
+      ziehen.onDragStart?.(event)
+    },
+    onPointerDown: (event) => {
+      amFinger.current = event.pointerType === 'touch'
+      lang.onPointerDown(event)
+    },
+    onPointerMove: lang.onPointerMove,
+    onPointerUp: lang.onPointerUp,
+    onPointerCancel: lang.onPointerCancel,
+    onContextMenu: (event) => {
+      lang.onContextMenu(event)
+      if (event.defaultPrevented) return
+      event.preventDefault()
+      onMenue(event.clientX, event.clientY, event.currentTarget, false)
+    },
+  }
+  return { schieben, liProps }
 }
