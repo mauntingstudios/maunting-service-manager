@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import re
 from pathlib import Path
 from uuid import uuid4
 
@@ -144,3 +145,85 @@ def test_ai_prompt_keeps_default_and_respects_custom_branding(db: Session):
     assert ai_label == "Singra"
     assert "Du heißt Singra" in custom_prompt
     assert "AstraHost" in custom_prompt
+    # Voller Name und Kürzel sind ersetzt, nichts vom Standardnamen bleibt stehen.
+    assert "Maunting Service Manager" not in custom_prompt
+    assert not re.search(r"\bMSM\b", custom_prompt)
+    assert "Markennamen" not in custom_prompt
+    # Der Standard bleibt unverändert und nennt weiter den Standardnamen.
+    assert "Maunting Service Manager (MSM)" in default_prompt
+
+
+def test_apply_brand_name_replaces_both_names_and_sanitizes(db: Session):
+    text = "Du betreust den Maunting Service Manager (MSM). Nutze die MSM-Werkzeuge, nicht MSM_KEY."
+    assert branding_service.apply_brand_name(text, db=db) == text
+
+    PanelSettingsService.set("brand_name", "Astra\nHost  Pro", db=db)
+    db.commit()
+    out = branding_service.apply_brand_name(text, db=db)
+    assert out == "Du betreust den Astra Host Pro. Nutze die Astra Host Pro-Werkzeuge, nicht MSM_KEY."
+    assert "\n" not in out
+
+    PanelSettingsService.set("brand_name", "X" * 200, db=db)
+    db.commit()
+    assert branding_service.apply_brand_name("MSM", db=db) == "X" * 60
+
+
+def test_branding_propagates_to_prompts_webhooks_passkeys_and_calendar(
+    db: Session, owner_user
+):
+    from services import outbound_webhook_service, passkey_service
+    from services.ai_ethics_service import ETHICS_SYSTEM_PROMPT
+    from services.ai_mail_text import SYSTEMPROMPT as MAIL_SYSTEMPROMPT
+    from services.ai_voice import live_session
+    from services.calendar_service import CalendarService
+
+    PanelSettingsService.set("brand_name", "AstraHost", db=db)
+    db.commit()
+
+    # 1. Voice-Prompt ersetzt vollen Namen und Kürzel
+    voice_prompt = live_session.live_anweisungen([], "de")
+    assert "AstraHost" in voice_prompt
+    assert "Maunting Service Manager" not in voice_prompt
+    assert not re.search(r"\bMSM\b", voice_prompt)
+
+    # 2. Mail- & Ethics-Systemprompt ersetzen inkl. Genitiv ("Maunting Service Managers")
+    mail_rendered = branding_service.apply_brand_name(MAIL_SYSTEMPROMPT, db=db)
+    assert "AstraHost" in mail_rendered
+    assert "Maunting Service Manager" not in mail_rendered
+    ethics_rendered = branding_service.apply_brand_name(ETHICS_SYSTEM_PROMPT, db=db)
+    assert "AstraHost" in ethics_rendered
+    assert "Maunting Service Manager" not in ethics_rendered
+    assert not re.search(r"\bMSM\b", ethics_rendered)
+
+    # 3. Passkey RP-Name übernimmt Markenname
+    opts = passkey_service.anlege_optionen(db, owner_user, "http://localhost:3000")
+    assert opts["rp"]["name"] == "AstraHost"
+
+    # 4. Outbound Discord Webhooks nutzen AstraHost statt hartem MSM / Maunting Service Manager
+    import json
+
+    guardian_json = json.loads(
+        outbound_webhook_service.format_discord_payload(
+            '{"server_name": "srv1", "status": "open", "incident_type": "crash"}',
+            outbound_webhook_service.EVENT_GUARDIAN_INCIDENT,
+        )
+    )
+    assert guardian_json["username"] == "AstraHost Guardian Engine"
+    assert guardian_json["embeds"][0]["footer"]["text"] == "AstraHost — Guardian Engine"
+
+    status_json = json.loads(
+        outbound_webhook_service.format_discord_payload(
+            '{"server_name": "srv1", "status": "running"}',
+            outbound_webhook_service.EVENT_STATUS_CHANGE,
+        )
+    )
+    assert status_json["username"] == "AstraHost"
+    assert status_json["embeds"][0]["footer"]["text"] == "AstraHost"
+
+    # 5. Kalender iCal-Name & Verbindungstest nutzen Kurz-Brand
+    ics = CalendarService.export_ical(db, owner_user)
+    assert "X-WR-CALNAME:AstraHost Kalender" in ics
+    cal = CalendarService.get_or_create_native_calendar(db, owner_user)
+    ok, msg = CalendarService.test_connection(cal)
+    assert ok is True
+    assert msg == "Nativer AstraHost-Kalender aktiv"

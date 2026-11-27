@@ -168,6 +168,7 @@ def live_anweisungen(tools: list[dict], sprache: str, memory: str = "", lage: st
 
         ai_name = branding_service.get_effective_ai_name()
     except Exception:
+        branding_service = None  # type: ignore[assignment]
         ai_name = ai_prompt.KI_NAME
     identitaet_block = ai_prompt.IDENTITAET
     if ai_name != ai_prompt.KI_NAME:
@@ -175,7 +176,7 @@ def live_anweisungen(tools: list[dict], sprache: str, memory: str = "", lage: st
             f"Du heißt {ai_name} (weiblich, \"sie\"). Du bist {ai_name} und keine KI. "
             "Nenne niemals ein Modell, eine Modellfamilie oder einen Anbieter."
         )
-    return "\n\n".join((
+    vorlage = "\n\n".join((
         f"Du bist {ai_name}, die Stimme im Maunting Service Manager (MSM). "
         "Hinter dir arbeitet ein Backend mit den Werkzeugen des Panels: Server, Logs, "
         "Konfigurationen, Mods, Netzwerk und Nodes, dazu Notizen, Kalender, Karten und "
@@ -207,8 +208,14 @@ def live_anweisungen(tools: list[dict], sprache: str, memory: str = "", lage: st
         "Delegiere, bevor du eine Antwort gibst, die von Backend-Arbeit abhängt. Rate kein "
         "Ergebnis, während du wartest, und melde eine Aktion erst als erledigt, wenn das "
         "Backend es bestätigt hat.",
-        *((lage,) if lage else ()),
-    )) + gedaechtnis_anhang(memory)
+    ))
+    # Nur die feste Vorlage trägt den Panelnamen; Lage und Gedächtnis sind Daten
+    # des Benutzers und bleiben unverändert.
+    try:
+        vorlage = branding_service.apply_brand_name(vorlage)
+    except Exception:
+        pass
+    return "\n\n".join((vorlage, *((lage,) if lage else ()))) + gedaechtnis_anhang(memory)
 
 
 def backend_anweisungen(basis_prompt: str, memory: str = "", lage: str = "") -> str:

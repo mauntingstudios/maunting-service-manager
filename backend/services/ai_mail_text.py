@@ -290,11 +290,14 @@ def _vorbereiten(
         if provider.requires_api_key and not api_key:
             return None
 
+        from services import branding_service
+
+        system_prompt = branding_service.apply_brand_name(SYSTEMPROMPT, db=db)
         messages = [
-            {"role": "system", "content": SYSTEMPROMPT},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": f"Angaben fuer die Mail:\n{fakten}"},
         ]
-        geschaetzt = max(1, (len(SYSTEMPROMPT) + len(fakten)) // 4)
+        geschaetzt = max(1, (len(system_prompt) + len(fakten)) // 4)
         request_id = uuid4()
         try:
             ereignis = reserve_ai_usage(

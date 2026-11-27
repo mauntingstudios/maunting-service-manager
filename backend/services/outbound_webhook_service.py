@@ -375,6 +375,10 @@ def format_discord_payload(raw_payload_str: str, event_type: str) -> str:
     except Exception:
         return raw_payload_str
 
+    from services import branding_service
+
+    brand = branding_service.get_effective_brand_name()
+    short_brand = branding_service.get_effective_short_brand_name()
     server_name = data.get("server_name") or f"Server #{data.get('server_id', '?')}"
 
     if event_type == EVENT_GUARDIAN_INCIDENT:
@@ -392,7 +396,7 @@ def format_discord_payload(raw_payload_str: str, event_type: str) -> str:
             color = 3447003  # Blue #3498DB
 
         embed = {
-            "username": "MSM Guardian Engine",
+            "username": f"{short_brand} Guardian Engine",
             "embeds": [
                 {
                     "title": f"Guardian Alert: {server_name}",
@@ -403,7 +407,7 @@ def format_discord_payload(raw_payload_str: str, event_type: str) -> str:
                         {"name": "Status", "value": str(status), "inline": True},
                     ],
                     "timestamp": data.get("timestamp") or datetime.now(timezone.utc).isoformat(),
-                    "footer": {"text": "Maunting Service Manager — Guardian Engine"},
+                    "footer": {"text": f"{brand} — Guardian Engine"},
                 }
             ],
         }
@@ -412,14 +416,14 @@ def format_discord_payload(raw_payload_str: str, event_type: str) -> str:
         status = data.get("status", "unknown")
         color = 3066993 if status == "running" else 15158332
         embed = {
-            "username": "Maunting Service Manager",
+            "username": brand,
             "embeds": [
                 {
                     "title": f"Server-Status: {server_name}",
                     "description": f"Der Status des Servers **{server_name}** hat sich geändert zu: `{status}`",
                     "color": color,
                     "timestamp": data.get("timestamp") or datetime.now(timezone.utc).isoformat(),
-                    "footer": {"text": "Maunting Service Manager"},
+                    "footer": {"text": brand},
                 }
             ],
         }
@@ -427,28 +431,28 @@ def format_discord_payload(raw_payload_str: str, event_type: str) -> str:
     elif event_type == EVENT_ERROR:
         err = data.get("error", "Unbekannter Fehler")
         embed = {
-            "username": "Maunting Service Manager",
+            "username": brand,
             "embeds": [
                 {
                     "title": f"Server-Fehler: {server_name}",
                     "description": f"```{err}```",
                     "color": 15158332,
                     "timestamp": data.get("timestamp") or datetime.now(timezone.utc).isoformat(),
-                    "footer": {"text": "Maunting Service Manager"},
+                    "footer": {"text": brand},
                 }
             ],
         }
         return json.dumps(embed, ensure_ascii=False)
 
     embed = {
-        "username": "Maunting Service Manager",
+        "username": brand,
         "embeds": [
             {
                 "title": f"Event: {event_type} ({server_name})",
                 "description": json.dumps(data, indent=2, ensure_ascii=False)[:1900],
                 "color": 3447003,
                 "timestamp": datetime.now(timezone.utc).isoformat(),
-                "footer": {"text": "Maunting Service Manager"},
+                "footer": {"text": brand},
             }
         ],
     }

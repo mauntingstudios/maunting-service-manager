@@ -1624,17 +1624,12 @@ def build(
         teile.append(SCHLUSS_GESPROCHEN.get(rolle, GESPROCHEN))
 
     eff_ai_name = KI_NAME
-    eff_brand_name = ""
     try:
         from services import branding_service
 
         eff_ai_name = branding_service.get_effective_ai_name(db=db)
-        raw_brand = branding_service.get_effective_brand_name(db=db)
-        if raw_brand != branding_service.DEFAULT_PANEL_BRAND_NAME:
-            eff_brand_name = raw_brand
     except Exception:
         eff_ai_name = KI_NAME
-        eff_brand_name = ""
 
     rendered: list[str] = list(teile)
     if eff_ai_name != KI_NAME:
@@ -1651,11 +1646,16 @@ def build(
             )
             for block in rendered
         ]
-    if eff_brand_name:
-        rendered[0] = (
-            rendered[0] + f" Dieses Panel läuft unter dem Markennamen {eff_brand_name}."
-        )
-    return "\n".join(rendered)
+    prompt = "\n".join(rendered)
+    # Eigener Marken-/Produktname ersetzt „Maunting Service Manager“ und „MSM“
+    # im ganzen Prompt; ohne eigenen Namen bleibt der Text unverändert.
+    try:
+        from services import branding_service
+
+        prompt = branding_service.apply_brand_name(prompt, db=db)
+    except Exception:
+        pass
+    return prompt
 
 
 #: Obergrenze des Werkzeugverzeichnisses je Segment.

@@ -688,7 +688,9 @@ class CalendarService:
     def test_connection(calendar: UserCalendar) -> tuple[bool, str]:
         """Prüft die Erreichbarkeit und Authentifizierung des Kalenders."""
         if calendar.provider_type == "native":
-            return True, "Nativer MSM-Kalender aktiv"
+            from services.branding_service import get_effective_short_brand_name
+
+            return True, f"Nativer {get_effective_short_brand_name()}-Kalender aktiv"
 
         if not calendar.caldav_url:
             return False, "Keine Kalender-URL hinterlegt"
@@ -893,7 +895,11 @@ class CalendarService:
                     "creator_name": creator_name,
                     "user_id": ev.user_id,
                     "can_edit": can_edit,
-                    "calendar": calendar.name if calendar else "MSM Kalender",
+                    "calendar": (
+                        calendar.name
+                        if calendar
+                        else f"{get_effective_short_brand_name(db=db)} Kalender"
+                    ),
                 }
                 if vorkommen is None:
                     result.append(formatted)
@@ -1668,17 +1674,20 @@ class CalendarService:
     @classmethod
     def export_ical(cls, db: Session, user: User, calendar_id: int | None = None) -> str:
         """Exportiert alle Termine des Benutzers als RFC-5545-konformen iCalendar (.ics) String."""
+        from services.branding_service import get_effective_short_brand_name
+
+        default_cal_name = f"{get_effective_short_brand_name(db=db)} Kalender"
         if calendar_id is not None:
             c = cls.get_calendar(db, user, calendar_id)
             calendars_to_export = [c] if c else []
-            cal_name = calendars_to_export[0].name if calendars_to_export else "MSM Kalender"
+            cal_name = calendars_to_export[0].name if calendars_to_export else default_cal_name
         else:
             calendars_to_export = db.scalars(
                 select(UserCalendar).where(UserCalendar.user_id == user.id)
             ).all()
             if not calendars_to_export:
                 calendars_to_export = [cls.get_or_create_native_calendar(db, user)]
-            cal_name = "MSM Kalender"
+            cal_name = default_cal_name
 
         tz_name = getattr(user, "time_zone", None) or "Europe/Berlin"
         tz = _user_timezone(user)
@@ -1876,11 +1885,13 @@ class CalendarService:
     @classmethod
     async def send_test_reminder(cls, db: Session, user: User) -> dict[str, Any]:
         """Sendet einen sofortigen Test-Erinnerungsdurchlauf für den eingeloggten Benutzer."""
+        from services.branding_service import get_effective_short_brand_name
+
         title = "Test-Termin: Server-Wartung & Backup-Check"
         tz = _user_timezone(user)
         tomorrow = datetime.now(tz) + timedelta(days=1)
         start_formatted = tomorrow.strftime("%d.%m.%Y um 14:00 Uhr")
-        loc = "MSM Leitstand"
+        loc = f"{get_effective_short_brand_name(db=db)} Leitstand"
         time_hint = "in 1 Tag"
 
         email_sent = False

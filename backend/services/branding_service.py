@@ -7,6 +7,7 @@ und seine Kontrastregeln auf das Design-System abgestimmt sind.
 from __future__ import annotations
 
 import hashlib
+import re
 from pathlib import Path
 from typing import Any
 
@@ -92,6 +93,36 @@ def get_effective_ai_email(db: Session | None = None) -> str:
 def get_effective_brand_name(db: Session | None = None) -> str:
     raw = PanelSettingsService.get("brand_name", "", db=db).strip()
     return raw or DEFAULT_PANEL_BRAND_NAME
+
+
+def get_effective_short_brand_name(db: Session | None = None) -> str:
+    brand = get_effective_brand_name(db=db)
+    return "MSM" if brand == DEFAULT_PANEL_BRAND_NAME else brand
+
+
+_BRAND_PROMPT_MAX_LEN = 60
+_FULL_NAME_RE = re.compile(r"Maunting Service Managers?(?:\s*\(MSM\))?")
+_SHORT_NAME_RE = re.compile(r"\bMSM\b")
+
+
+def apply_brand_name(text: str, db: Session | None = None) -> str:
+    """Ersetzt „Maunting Service Manager (MSM)“, „Maunting Service Manager“ und „MSM“ im Text.
+
+    Ohne eigenen Marken-/Produktnamen bleibt der Text unverändert. Der Name
+    wird für den Prompt auf eine Zeile und 60 Zeichen begrenzt, damit er keine
+    Anweisungen einschleusen kann.
+    """
+    try:
+        raw = get_effective_brand_name(db=db)
+    except Exception:
+        return text
+    if raw == DEFAULT_PANEL_BRAND_NAME:
+        return text
+    brand = " ".join(raw.split())[:_BRAND_PROMPT_MAX_LEN].strip()
+    if not brand:
+        return text
+    text = _FULL_NAME_RE.sub(lambda _m: brand, text)
+    return _SHORT_NAME_RE.sub(lambda _m: brand, text)
 
 
 def get_branding_settings(all_db: dict[str, str] | None = None) -> dict[str, Any]:

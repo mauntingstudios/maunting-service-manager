@@ -224,10 +224,12 @@ def anlege_optionen(db: Session, user: User, origin: str | None) -> dict:
     """`PublicKeyCredentialCreationOptions` als JSON (Binaerfelder Base64url)."""
     rp_id = rp_id_fuer(origin)
     challenge = _challenge_anlegen(db, user, _ZWECK_ANLEGEN, {"rp_id": rp_id})
+    from services import branding_service
+
     vorhandene = [p for p in user.passkeys if p.rp_id == rp_id]
     return {
         "challenge": challenge,
-        "rp": {"name": "Maunting Service Manager", "id": rp_id},
+        "rp": {"name": branding_service.get_effective_brand_name(db=db), "id": rp_id},
         "user": {
             "id": _user_handle(user),
             "name": user.username,

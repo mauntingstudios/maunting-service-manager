@@ -654,16 +654,19 @@ async def test_email(
     if not EmailService.is_configured():
         raise HTTPException(status_code=503, detail="E-Mail nicht konfiguriert")
 
-    body = "Dies ist eine Test-E-Mail vom Maunting Service Manager.\n\nDie E-Mail-Konfiguration funktioniert korrekt."
+    from services import branding_service
+
+    brand = branding_service.get_effective_brand_name(db=db)
+    body = f"Dies ist eine Test-E-Mail von {brand}.\n\nDie E-Mail-Konfiguration funktioniert korrekt."
     html = EmailService._notification_email_html(
         "",
         "Test-E-Mail",
-        "dies ist eine Test-E-Mail vom Maunting Service Manager. "
+        f"dies ist eine Test-E-Mail von {brand}. "
         "Die E-Mail-Konfiguration funktioniert korrekt.",
         kategorie="Einstellungen",
     )
 
-    ok = await EmailService.send_email(req.to, "Maunting Service Manager — Test", body, html)
+    ok = await EmailService.send_email(req.to, f"{brand} — Test", body, html)
     if not ok:
         raise HTTPException(status_code=503, detail="E-Mail konnte nicht versendet werden")
     return {"message": "Test-E-Mail gesendet"}

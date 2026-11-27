@@ -174,9 +174,11 @@ async def evaluate_decision(
             context, reason="API-Schlüssel für Ethics Engine fehlt"
         )
 
+    from services import branding_service
+
     user_prompt = _build_user_prompt(context, relevant_memories)
     messages = [
-        {"role": "system", "content": ETHICS_SYSTEM_PROMPT},
+        {"role": "system", "content": branding_service.apply_brand_name(ETHICS_SYSTEM_PROMPT, db=db)},
         {"role": "user", "content": user_prompt},
     ]
 

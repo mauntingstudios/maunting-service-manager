@@ -1145,18 +1145,20 @@ async def request_vault_reset_code(db: Session, user: User) -> tuple[bool, str]:
         return False, vorbereitet
     code, username, adresse, challenge_id = vorbereitet
 
+    from services import branding_service
     from services.email_service import EmailService
 
+    brand = branding_service.get_effective_brand_name(db=db)
     subject = "Tresor zurücksetzen: Dein Bestätigungscode"
     body = f"""Hallo {username},
 
-du hast einen Bestätigungscode zum Zurücksetzen deines Tresors im Maunting Service Manager angefordert.
+du hast einen Bestätigungscode zum Zurücksetzen deines Tresors in {brand} angefordert.
 
 Dein Bestätigungscode lautet: {code}
 
 Der Code ist 10 Minuten gültig. Falls du diese Anforderung nicht ausgelöst hast, ignoriere diese E-Mail und prüfe deine Kontosicherheit.
 
-Maunting Service Manager
+{brand}
 """
     html_content = EmailService._notification_email_html(
         username,
@@ -1234,19 +1236,21 @@ async def request_vault_hint_email(db: Session, user: User, konto: TresorKonto) 
         return False, versand
     raw_hint = versand.hinweis
 
+    from services import branding_service
     from services.email_service import EmailService
 
+    brand = branding_service.get_effective_brand_name(db=db)
     subject = "Tresor: Dein Passwort-Hinweis"
     body = f"""Hallo {versand.name},
 
-du hast den Passwort-Hinweis für deinen Tresor im Maunting Service Manager angefordert.
+du hast den Passwort-Hinweis für deinen Tresor in {brand} angefordert.
 
 Dein hinterlegter Hinweis lautet:
 {raw_hint}
 
 Falls du diese Anforderung nicht ausgelöst hast, überprüfe bitte die Sicherheit deines Kontos.
 
-Maunting Service Manager
+{brand}
 """
     # `raw_hint` ist Freitext des Benutzers und landet in einem HTML-Dokument:
     # ohne Maskierung traegt jedes `<a href=…>` darin ungeprueft in eine Mail,
