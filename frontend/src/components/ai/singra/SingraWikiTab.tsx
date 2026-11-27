@@ -85,6 +85,10 @@ export function SingraWikiTab({
   const [docDetail, setDocDetail] = useState<DocDetail | null>(null)
   const [docOutline, setDocOutline] = useState<OutlineEntry[]>([])
   const outlineJumpRef = useRef<((pos: number) => void) | null>(null)
+  const projectIdRef = useRef(selectedProject.id)
+  const overviewReqSeqRef = useRef(0)
+  const pageReqSeqRef = useRef(0)
+  projectIdRef.current = selectedProject.id
 
   // Formularzustand für direkte Markdown-Bearbeitung oder Neuanlage
   const [creatingNew, setCreatingNew] = useState(false)
@@ -113,41 +117,61 @@ export function SingraWikiTab({
   )
 
   const loadOverview = useCallback(async () => {
+    const reqProjectId = selectedProject.id
+    const seq = ++overviewReqSeqRef.current
     setLoading(true)
     try {
-      const data = await projectsApi.getProjectWiki(selectedProject.id)
+      const data = await projectsApi.getProjectWiki(reqProjectId)
+      if (projectIdRef.current !== reqProjectId || overviewReqSeqRef.current !== seq) {
+        return null
+      }
       setOverview(data)
       return data
     } catch (err) {
-      still(err, 'singra:wiki:overview')
-      toast.error(t('ai.projects.wiki.errors.loadFailed'))
+      if (projectIdRef.current === reqProjectId && overviewReqSeqRef.current === seq) {
+        still(err, 'singra:wiki:overview')
+        toast.error(t('ai.projects.wiki.errors.loadFailed'))
+      }
       return null
     } finally {
-      setLoading(false)
+      if (projectIdRef.current === reqProjectId && overviewReqSeqRef.current === seq) {
+        setLoading(false)
+      }
     }
   }, [selectedProject.id, t])
 
   const openPage = useCallback(
     async (slug: string) => {
+      const reqProjectId = selectedProject.id
+      const seq = ++pageReqSeqRef.current
       setCreatingNew(false)
       setEditMode('read')
       setDocDetail(null)
       setActiveSlug(slug)
       setPageLoading(true)
       try {
-        const detail = await projectsApi.getProjectWikiPage(selectedProject.id, slug)
+        const detail = await projectsApi.getProjectWikiPage(reqProjectId, slug)
+        if (projectIdRef.current !== reqProjectId || pageReqSeqRef.current !== seq) {
+          return
+        }
         setActivePage(detail)
       } catch (err) {
-        still(err, 'singra:wiki:page')
-        toast.error(t('ai.projects.wiki.errors.pageLoadFailed'))
+        if (projectIdRef.current === reqProjectId && pageReqSeqRef.current === seq) {
+          still(err, 'singra:wiki:page')
+          toast.error(t('ai.projects.wiki.errors.pageLoadFailed'))
+        }
       } finally {
-        setPageLoading(false)
+        if (projectIdRef.current === reqProjectId && pageReqSeqRef.current === seq) {
+          setPageLoading(false)
+        }
       }
     },
     [selectedProject.id, t],
   )
 
   useEffect(() => {
+    overviewReqSeqRef.current += 1
+    pageReqSeqRef.current += 1
     setActiveSlug(null)
     setActivePage(null)
     setEditMode('read')
@@ -161,10 +185,16 @@ export function SingraWikiTab({
   useEffect(() => {
     if (!overview?.wiki_status) return
     if (overview.wiki_status !== 'generating' && overview.wiki_status !== 'updating') return
+    const reqProjectId = selectedProject.id
     const timer = window.setInterval(() => {
+      const seq = ++overviewReqSeqRef.current
       void projectsApi
-        .getProjectWiki(selectedProject.id)
-        .then((next) => setOverview(next))
+        .getProjectWiki(reqProjectId)
+        .then((next) => {
+          if (projectIdRef.current === reqProjectId && overviewReqSeqRef.current === seq) {
+            setOverview(next)
+          }
+        })
         .catch((err) => still(err, 'singra:wiki:poll'))
     }, 4000)
     return () => window.clearInterval(timer)
@@ -507,7 +537,7 @@ export function SingraWikiTab({
               setSearchHits(null)
             }}
             className={[
-              'text-xs font-medium transition-colors',
+              'rounded text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary',
               !activeSlug && !creatingNew
                 ? 'text-primary'
                 : 'text-on-surface-variant hover:text-on-surface',
@@ -535,7 +565,7 @@ export function SingraWikiTab({
           ) : (
             groupedPages.map(([cat, list]) => (
               <div key={cat} className="space-y-1">
-                <div className="px-2 text-label-sm font-semibold uppercase tracking-wider text-on-surface-variant">
+                <div className="px-2 text-label-sm font-semibold text-on-surface-variant">
                   {categoryLabel(cat)}
                 </div>
                 {list.map((page) => {
@@ -546,7 +576,7 @@ export function SingraWikiTab({
                       type="button"
                       onClick={() => void openPage(page.slug)}
                       className={[
-                        'flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-left text-xs transition-colors',
+                        'flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-left text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary',
                         selected
                           ? 'bg-primary/14 text-primary font-medium'
                           : 'text-on-surface-variant hover:bg-surface-container-high/50 hover:text-on-surface',
@@ -563,7 +593,7 @@ export function SingraWikiTab({
       </aside>
 
       {/* Hauptbereich: Suche, Knowledge-Cards-Übersicht, Leseansicht oder Live-Editor */}
-      <section className="flex-1 min-w-0 flex flex-col rounded-2xl border border-outline-variant/25 bg-surface-container-low/30 p-4 sm:p-6 overflow-y-auto">
+      <section className="flex-1 min-w-0 flex flex-col rounded-2xl bg-surface-container-low/20 p-4 sm:p-6 overflow-y-auto">
         {searchHits !== null ? (
           <div className="space-y-4">
             <div className="flex items-center justify-between gap-2">
@@ -596,7 +626,7 @@ export function SingraWikiTab({
                       setSearchHits(null)
                       void openPage(hit.slug)
                     }}
-                    className="block w-full rounded-xl border border-outline-variant/25 bg-surface-container-high/30 p-4 text-left hover:border-primary/40 transition-colors"
+                    className="block w-full rounded-xl border border-outline-variant/25 bg-surface-container-high/30 p-4 text-left hover:border-primary/40 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                   >
                     <div className="flex items-center justify-between gap-2 mb-1">
                       <span className="text-sm font-semibold text-on-surface">
@@ -765,7 +795,7 @@ export function SingraWikiTab({
                       setActiveSlug(null)
                       setActivePage(null)
                     }}
-                    className="inline-flex items-center gap-1 text-xs text-on-surface-variant hover:text-on-surface"
+                    className="inline-flex items-center gap-1 rounded text-xs text-on-surface-variant hover:text-on-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                   >
                     <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
                     {t('ai.projects.wiki.overviewTitle')}
@@ -847,7 +877,7 @@ export function SingraWikiTab({
                     key={page.id}
                     type="button"
                     onClick={() => void openPage(page.slug)}
-                    className="flex flex-col justify-between rounded-2xl border border-outline-variant/25 bg-surface-container-low/50 p-4 text-left hover:border-primary/40 transition-colors"
+                    className="flex flex-col justify-between rounded-2xl border border-outline-variant/25 bg-surface-container-low/50 p-4 text-left hover:border-primary/40 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                   >
                     <div className="space-y-2">
                       <div className="flex items-center justify-between gap-2">
@@ -946,7 +976,7 @@ export function SingraWikiTab({
 
         {activePage && readOutline.length > 0 && editMode === 'read' && (
           <div className="border-t border-outline-variant/20 pt-3 space-y-1.5">
-            <div className="text-label-sm font-semibold uppercase tracking-wider text-on-surface-variant">
+            <div className="text-label-sm font-semibold text-on-surface-variant">
               {t('ai.projects.wiki.outlineTitle')}
             </div>
             <ul className="space-y-1">
@@ -964,7 +994,7 @@ export function SingraWikiTab({
 
         {editMode === 'docs' && docOutline.length > 0 && (
           <div className="border-t border-outline-variant/20 pt-3 space-y-1.5">
-            <div className="text-label-sm font-semibold uppercase tracking-wider text-on-surface-variant">
+            <div className="text-label-sm font-semibold text-on-surface-variant">
               {t('ai.projects.wiki.outlineTitle')}
             </div>
             <ul className="space-y-1">
@@ -973,7 +1003,7 @@ export function SingraWikiTab({
                   <button
                     type="button"
                     onClick={() => outlineJumpRef.current?.(entry.pos)}
-                    className="text-left text-on-surface-variant hover:text-primary truncate w-full"
+                    className="w-full truncate rounded text-left text-on-surface-variant hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                   >
                     {entry.text}
                   </button>
@@ -985,7 +1015,7 @@ export function SingraWikiTab({
 
         {activePage && activePage.source_files.length > 0 && (
           <div className="border-t border-outline-variant/20 pt-3 space-y-1.5">
-            <div className="text-label-sm font-semibold uppercase tracking-wider text-on-surface-variant">
+            <div className="text-label-sm font-semibold text-on-surface-variant">
               {t('ai.projects.wiki.linkedSources')}
             </div>
             <div className="space-y-1">
@@ -994,7 +1024,7 @@ export function SingraWikiTab({
                   key={src}
                   type="button"
                   onClick={() => onOpenSourceFile(src)}
-                  className="flex w-full items-center gap-1.5 rounded-lg px-2 py-1 text-left text-on-surface-variant hover:bg-surface-container-high/50 hover:text-primary transition-colors"
+                  className="flex w-full items-center gap-1.5 rounded-lg px-2 py-1 text-left text-on-surface-variant hover:bg-surface-container-high/50 hover:text-primary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                 >
                   <FileCode2 className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
                   <span className="truncate font-mono">{src}</span>

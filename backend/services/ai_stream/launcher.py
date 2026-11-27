@@ -296,44 +296,53 @@ def lauf_beginnen(
             ):
                 from services import ai_limit_service, ai_router_service
 
-                if ai_limit_service.resolve_effective_limits(db, user).soft_cap_downgrade:
-                    fb_candidates = ai_router_service.resolve_candidates(
-                        db, tier="fallback", soft_cap=True
+                effective_limits = ai_limit_service.resolve_effective_limits(db, user)
+                if effective_limits.soft_cap_downgrade:
+                    effective_allowed = (
+                        None
+                        if effective_limits.router_only
+                        else ai_limit_service.resolve_effective_allowed_models(db, user)
                     )
-                    if fb_candidates:
-                        fb = fb_candidates[0]
-                        fb_prov = db.get(AiProvider, fb["provider_id"])
-                        if fb_prov is not None and fb_prov.enabled:
-                            provider = fb_prov
-                            modell = fb["model"]
-                            requested_model = modell
-                            routing_meta = {
-                                **routing_meta,
-                                "tier": fb["tier"],
-                                "model": fb["model"],
-                                "provider_id": fb["provider_id"],
-                                "provider_name": fb["provider_name"],
-                                "reason": "soft_cap_5h",
-                                "weight": fb["weight"],
-                                "soft_cap": True,
-                                "candidates": fb_candidates,
-                                "candidate_index": 0,
-                            }
-                            usage_event = ai_stream.reserve_ai_usage(
-                                db,
-                                user,
-                                request_id=request_id,
-                                estimated_tokens=estimated_tokens,
-                                estimated_cost_microunits=estimate_cost_microunits(
-                                    provider, estimated_tokens
-                                ),
-                                server_id=None,
-                                provider_id=provider.id,
-                                model=modell,
-                                allow_five_hour_soft_cap=True,
-                            )
-                        else:
-                            raise
+                    fb_candidates = ai_router_service.filter_candidates_by_allowed(
+                        ai_router_service.resolve_candidates(db, tier="fallback", soft_cap=True),
+                        effective_allowed,
+                    )
+                    picked = ai_router_service.pick_usable_candidate(
+                        db, user_id=user.id, candidates=fb_candidates
+                    )
+                    if picked is not None:
+                        picked_idx, fb_prov, _key, fb = picked
+                        provider = fb_prov
+                        modell = fb["model"]
+                        requested_model = modell
+                        # Neues Fallback-Modell kann ein kleineres Fenster haben;
+                        # engine.py ermittelt beim Start des Segments neu.
+                        context_chars = None
+                        routing_meta = {
+                            **routing_meta,
+                            "tier": fb["tier"],
+                            "model": fb["model"],
+                            "provider_id": fb["provider_id"],
+                            "provider_name": fb["provider_name"],
+                            "reason": "soft_cap_5h",
+                            "weight": fb["weight"],
+                            "soft_cap": True,
+                            "candidates": fb_candidates,
+                            "candidate_index": picked_idx,
+                        }
+                        usage_event = ai_stream.reserve_ai_usage(
+                            db,
+                            user,
+                            request_id=request_id,
+                            estimated_tokens=estimated_tokens,
+                            estimated_cost_microunits=estimate_cost_microunits(
+                                provider, estimated_tokens
+                            ),
+                            server_id=None,
+                            provider_id=provider.id,
+                            model=modell,
+                            allow_five_hour_soft_cap=True,
+                        )
                     else:
                         raise
                 else:

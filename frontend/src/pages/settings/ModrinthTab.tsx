@@ -121,7 +121,7 @@ export function ModrinthTab() {
 
           <div className="rounded-xl border border-outline-variant/40 bg-surface-container-low/35 p-4 space-y-2">
             <div className="flex items-center justify-between">
-              <label className="block text-xs font-semibold uppercase tracking-wider text-on-surface-variant">
+              <label className="block text-xs font-semibold text-on-surface-variant">
                 {t('settings.modrinthTokenLabel')}
               </label>
               {clearKey ? (

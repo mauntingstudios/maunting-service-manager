@@ -160,14 +160,14 @@ def test_classify_request_semantic_local_and_remote_fallback(
 
     # Klare triviale Begruessung -> eco (auch bei Projektkontext)
     tier_eco, _, reason_eco = ai_router_service.classify_request(
-        text="Hallo!", project_id="proj-123", db=db
+        text="Hallo!", db=db
     )
     assert tier_eco == "eco"
     assert reason_eco == "semantic_local"
 
     # Kurze App-Bau-Anfrage -> flagship
     tier_app, _, reason_app = ai_router_service.classify_request(
-        text="Baue mir eine App für meine Steuererklärung", project_id="proj-123", db=db
+        text="Baue mir eine App für meine Steuererklärung", db=db
     )
     assert tier_app == "flagship"
     assert reason_app == "semantic_local"
@@ -195,7 +195,7 @@ def test_classify_request_semantic_local_and_remote_fallback(
     # Remote-Rueckfall (z. B. Google AI Studio) cached unter eigenem Modellraum
     active_model = "google:text-embedding-004"
     tier_rem, _, reason_rem = ai_router_service.classify_request(
-        text="Wie spät ist es in Tokio?", project_id="proj-123", reasoning=True, db=db
+        text="Wie spät ist es in Tokio?", reasoning=True, db=db
     )
     assert tier_rem == "eco"
     assert reason_rem == "semantic_remote"
@@ -1493,4 +1493,333 @@ async def test_iter_sse_lines_first_data_timeout_handles_keepalive_hang_and_data
         if line
     ]
     assert lines == ['data: {"choices":[]}', "data: [DONE]"]
+
+
+@pytest.mark.asyncio
+async def test_context_window_ermitteln_passes_api_key_when_db_is_none(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Beim Mid-Run-Failover (db=None) reicht ermitteln() api_key als schluessel durch."""
+    import httpx
+    from services import ai_context_window, ai_model_catalog
+    from services.ai_provider_registry import Modell
+
+    provider = AiProvider(
+        id=99,
+        name="GroqFailover",
+        provider_kind="groq",
+        default_model="llama-3.3-70b-versatile",
+        enabled=True,
+        requires_api_key=True,
+    )
+    seen_kwargs: dict[str, object] = {}
+
+    async def fake_finde(client, kind, model_id, **kwargs):
+        seen_kwargs.update({"kind": kind, "model_id": model_id, **kwargs})
+        return Modell(
+            model_id="llama-3.3-70b-versatile",
+            name="Llama 3.3",
+            kontext_tokens=131_072,
+            max_ausgabe_tokens=8_192,
+            denkt=False,
+        )
+
+    monkeypatch.setattr(ai_model_catalog, "finde", fake_finde)
+
+    async with httpx.AsyncClient() as client:
+        fenster = await ai_context_window.ermitteln(
+            client,
+            provider,
+            db=None,
+            user_id=1,
+            model_id="llama-3.3-70b-versatile",
+            api_key="gsk-failover-secret",
+        )
+
+    assert fenster.bekannt is True
+    assert fenster.fenster_tokens == 131_072
+    assert seen_kwargs["schluessel"] == "gsk-failover-secret"
+
+
+def test_router_respects_role_allowlist_for_non_router_only_user(
+    db: Session,
+    regular_user: User,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Nutzer mit allow_all_models=False und router_only=False duerfen ueber den Router kein verbotenes Modell nutzen."""
+    import json
+    from models import RoleAiLimit, RoleAiModelAccess
+    from services import role_service
+
+    ai_router_service.clear_cooldowns()
+    p_allowed = _create_chat_provider(db, name="AllowedProv", default_model="allowed-m")
+    p_forbidden = _create_chat_provider(db, name="ForbiddenProv", default_model="forbidden-flagship")
+
+    role = Role(name=f"Restricted-{uuid4().hex[:6]}", is_system=False)
+    db.add(role)
+    db.flush()
+    db.add(
+        RoleAiLimit(
+            role_id=role.id,
+            allow_all_models=False,
+            router_only=False,
+        )
+    )
+    db.add(
+        RoleAiModelAccess(
+            role_id=role.id,
+            provider_id=p_allowed.id,
+            allow_all=False,
+            allowed_models_json=json.dumps(["allowed-m"]),
+        )
+    )
+    db.commit()
+    role_service.set_user_roles(db, regular_user, [role.id])
+
+    cfg = ai_router_service.get_or_create_router_config(db)
+    cfg.enabled = True
+    cfg.standard_models_json = json.dumps([
+        {"provider_id": p_forbidden.id, "model": "forbidden-flagship", "is_free": False},
+        {"provider_id": p_allowed.id, "model": "allowed-m", "is_free": False},
+    ])
+    db.commit()
+
+    monkeypatch.setattr(ai_router_service, "classify_request", lambda **_kw: ("standard", 0.5, "semantic_local"))
+
+    routed = ai_router_service.resolve_route_for_text(db, user=regular_user, text="Hilfe")
+    assert routed is not None
+    prov, model, meta = routed
+    assert prov.id == p_allowed.id
+    assert model == "allowed-m"
+    assert all(c["model"] == "allowed-m" for c in meta["candidates"])
+
+
+def test_launcher_soft_cap_skips_unusable_fallback_and_resets_context_chars(
+    db: Session,
+    regular_user: User,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Soft-Cap-Downgrade ueberspringt unbrauchbaren ersten Fallback-Kandidaten und setzt context_chars zurueck."""
+    import json
+    from models import AiMessage, RoleAiLimit
+    from services import ai_run_service, ai_stream, role_service
+    from services.ai_usage_service import AiQuotaExceeded
+
+    ai_router_service.clear_cooldowns()
+    p_primary = _create_chat_provider(db, name="PrimaryPaid", default_model="flagship-1")
+    p_broken_fb = _create_chat_provider(db, name="BrokenFB", default_model="broken-fb")
+    p_good_fb = _create_chat_provider(db, name="GoodFB", default_model="good-fb")
+
+    orig_resolve_key = ai_provider_service.resolve_api_key
+
+    def _flaky_resolve_key(db_s, prov, uid):
+        if prov.id == p_broken_fb.id:
+            raise KeyError("simulated missing decrypt key")
+        return orig_resolve_key(db_s, prov, uid)
+
+    monkeypatch.setattr(ai_provider_service, "resolve_api_key", _flaky_resolve_key)
+
+    role = Role(name=f"SoftCap-{uuid4().hex[:6]}", is_system=False)
+    db.add(role)
+    db.flush()
+    db.add(
+        RoleAiLimit(
+            role_id=role.id,
+            five_hour_token_limit=100,
+            soft_cap_downgrade=True,
+            allow_all_models=True,
+            router_only=True,
+        )
+    )
+    db.commit()
+    role_service.set_user_roles(db, regular_user, [role.id])
+
+    cfg = ai_router_service.get_or_create_router_config(db)
+    cfg.enabled = True
+    cfg.fallback_models_json = json.dumps([
+        {"provider_id": p_broken_fb.id, "model": "broken-fb", "is_free": True},
+        {"provider_id": p_good_fb.id, "model": "good-fb", "is_free": True},
+    ])
+    db.commit()
+
+    conv = AiConversation(id=str(uuid4()), user_id=regular_user.id, kind="primary", title="Test")
+    db.add(conv)
+    db.commit()
+
+    def fake_reserve(db_s, user_s, *, allow_five_hour_soft_cap=False, **_kw):
+        if not allow_five_hour_soft_cap:
+            raise AiQuotaExceeded("five_hour_token_limit")
+        from models import AiUsageEvent
+        ev = AiUsageEvent(
+            user_id=user_s.id,
+            provider_id=_kw["provider_id"],
+            model=_kw["model"],
+            request_id=str(_kw["request_id"]),
+            reserved_tokens=10,
+            reserved_cost_microunits=0,
+            accounted_tokens=0,
+            accounted_cost_microunits=0,
+            status="reserved",
+        )
+        db_s.add(ev)
+        db_s.flush()
+        return ev
+
+    monkeypatch.setattr(ai_stream, "reserve_ai_usage", fake_reserve)
+
+    run, err = ai_stream.lauf_beginnen(
+        db,
+        user=regular_user,
+        conversation=conv,
+        provider=p_primary,
+        request_id=uuid4(),
+        content="Hallo",
+        reasoning=False,
+        context_chars=180_000,
+        requested_model="flagship-1",
+        routing_meta={
+            "tier": "flagship",
+            "model": "flagship-1",
+            "provider_id": p_primary.id,
+            "provider_name": p_primary.name,
+            "reason": "semantic_local",
+            "weight": 1.0,
+            "soft_cap": False,
+            "candidates": [],
+            "candidate_index": 0,
+        },
+    )
+    assert err is None
+    assert run is not None
+    assert run.provider_id == p_good_fb.id
+    zustand = ai_run_service.zustand_lesen(run)
+    assert zustand["context_chars"] is None
+    assert zustand["requested_model"] == "good-fb"
+    assert zustand["routing"]["soft_cap"] is True
+    assert zustand["routing"]["candidate_index"] == 1
+    msg = db.get(AiMessage, run.message_id)
+    assert msg is not None and msg.routed_model == "good-fb"
+    ai_router_service.clear_cooldowns()
+
+
+@pytest.mark.asyncio
+async def test_mid_run_router_failover_total_exhaustion_sets_cooldowns_and_fails_cleanly(
+    db: Session,
+    regular_user: User,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Scheitern alle Pool-Kandidaten im Mid-Run-Failover, wird der Run sauber als failed abgeschlossen."""
+    import httpx
+    from models import AiMessage, AiRun, AiUsageEvent
+    from services import ai_stream
+    from services.ai_stream import engine as stream_engine
+    from services.ai_stream.types import _Anlauf, _Vorbereitung
+    from services.openai_compatible_adapter import AiProviderRequestError
+
+    ai_router_service.clear_cooldowns()
+    p1 = _create_chat_provider(db, name="FailAll1", default_model="m1")
+    p2 = _create_chat_provider(db, name="FailAll2", default_model="m2")
+    conv = AiConversation(id=str(uuid4()), user_id=regular_user.id, kind="primary", title="FailAll")
+    db.add(conv)
+    db.flush()
+    msg_id = str(uuid4())
+    req_id = str(uuid4())
+    db.add(AiMessage(id=msg_id, conversation_id=conv.id, role="assistant", content="", status="streaming", provider_id=p1.id, model="m1", request_id=req_id))
+    ev = AiUsageEvent(
+        user_id=regular_user.id,
+        provider_id=p1.id,
+        model="m1",
+        request_id=req_id,
+        reserved_tokens=10,
+        reserved_cost_microunits=0,
+        accounted_tokens=0,
+        accounted_cost_microunits=0,
+        status="reserved",
+    )
+    db.add(ev)
+    db.flush()
+
+    zustand = {
+        "usage_event_id": ev.id,
+        "routing": {
+            "tier": "standard",
+            "model": "m1",
+            "provider_id": p1.id,
+            "provider_name": p1.name,
+            "reason": "semantic_local",
+            "weight": 1.0,
+            "candidate_index": 0,
+            "candidates": [
+                {"provider_id": p1.id, "provider_name": p1.name, "model": "m1", "tier": "standard", "weight": 1.0, "is_free": True},
+                {"provider_id": p2.id, "provider_name": p2.name, "model": "m2", "tier": "standard", "weight": 1.0, "is_free": False},
+            ],
+        },
+    }
+    run = AiRun(id=str(uuid4()), conversation_id=conv.id, user_id=regular_user.id, provider_id=p1.id, message_id=msg_id, status="running", state_json="{}")
+    db.add(run)
+    db.commit()
+    db.refresh(p1)
+    p1_id, p2_id = p1.id, p2.id
+    db.expunge(p1)
+
+    vorbereitung = _Vorbereitung(
+        run_id=run.id,
+        user_id=regular_user.id,
+        conversation_id=conv.id,
+        provider=p1,
+        api_key="k1",
+        message_id=msg_id,
+        usage_event_id=ev.id,
+        request_id=req_id,
+        reasoning=False,
+        reasoning_effort=None,
+        token_price_micro_usd_per_million=0,
+        zustand=zustand,
+        angebotene_werkzeuge=frozenset(),
+    )
+    async_client = httpx.AsyncClient()
+    anlauf = _Anlauf(
+        vorbereitung=vorbereitung,
+        client=async_client,
+        zustand=zustand,
+        provider_messages=[{"role": "user", "content": "Hi"}],
+        conversation_id=conv.id,
+        user_id=regular_user.id,
+        message_id=msg_id,
+        guardian=None,
+        aufgabe=None,
+        rolle="voll",
+        herkunft="panel",
+        worker=None,
+        unbeaufsichtigt=False,
+    )
+
+    async def fake_segment_anlaufen(_run_id, _client):
+        return anlauf
+
+    async def fake_werkzeuge_und_grenze(**_kw):
+        return ([], False, 100_000, False, None)
+
+    async def fake_stream_chat_completion(_client, **_kw):
+        if False:
+            yield
+        raise AiProviderRequestError("AI_PROVIDER_RATE_LIMITED", "429")
+
+    monkeypatch.setattr(ai_stream, "_segment_anlaufen", fake_segment_anlaufen)
+    monkeypatch.setattr(ai_stream, "_werkzeuge_und_grenze", fake_werkzeuge_und_grenze)
+    monkeypatch.setattr(ai_stream, "stream_chat_completion", fake_stream_chat_completion)
+    monkeypatch.setattr(stream_engine, "_gedaechtnis_vormerken", lambda _cid: _noop_async())
+
+    try:
+        await stream_engine.segment_ausfuehren(run.id, client=async_client)
+    finally:
+        await async_client.aclose()
+
+    assert ai_router_service.is_in_cooldown(p1_id, "m1") is True
+    assert ai_router_service.is_in_cooldown(p2_id, "m2") is True
+    db.expire_all()
+    msg_after = db.get(AiMessage, msg_id)
+    assert msg_after is not None and msg_after.status == "failed"
+    ai_router_service.clear_cooldowns()
+
 

@@ -168,9 +168,16 @@ async def test_thunderstore_service_search_sort_and_deps(monkeypatch):
 
     class _FakeResp:
         status_code = 200
+        headers = {}
 
-        def json(self):
-            return sample_raw
+        async def aiter_bytes(self, chunk_size=65536):
+            yield json.dumps(sample_raw).encode("utf-8")
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
 
     class _FakeClient:
         def __init__(self, *args, **kwargs):
@@ -182,7 +189,7 @@ async def test_thunderstore_service_search_sort_and_deps(monkeypatch):
         async def __aexit__(self, *args):
             return False
 
-        async def get(self, url, headers=None):
+        def stream(self, method, url, headers=None):
             return _FakeResp()
 
     monkeypatch.setattr("services.thunderstore_service.httpx.AsyncClient", _FakeClient)
@@ -463,3 +470,310 @@ async def test_mrpack_blocks_zip_slip_in_overrides_and_index(tmp_path: Path, mon
     assert not (tmp_path / "escape.txt").exists()
     assert not (tmp_path / "escape-index.jar").exists()
     assert not (tmp_path / "outside.cfg").exists()
+
+
+def test_modrinth_hash_mismatch_and_mrpack_failure_preserve_previous_files(tmp_path: Path, monkeypatch):
+    bp_mods = BlueprintMods(
+        supportsMods=True,
+        supportsModrinth=True,
+        modrinthProjectTypes=["mod"],
+        modrinthLoaders=["fabric"],
+        modrinthInstallPath="mods",
+    )
+    plugin = SimpleNamespace(
+        _blueprint=SimpleNamespace(effective_mods=lambda: bp_mods, runtime=SimpleNamespace(env={})),
+        _try_chown_install_path=lambda srv, p: None,
+    )
+    server = SimpleNamespace(id=10, install_dir=str(tmp_path))
+
+    # Bestehende funktionierende Mod-Datei + Metadaten hinterlegen
+    mods_dir = tmp_path / "mods"
+    mods_dir.mkdir(parents=True, exist_ok=True)
+    old_jar = mods_dir / "sodium-0.5.7.jar"
+    old_jar.write_bytes(b"working-old-version")
+    meta_dir = tmp_path / ".msm-modrinth"
+    meta_dir.mkdir(parents=True, exist_ok=True)
+    (meta_dir / "aanobbmi.json").write_text(
+        json.dumps({"project_id": "AANobbMI", "files": ["mods/sodium-0.5.7.jar"]}),
+        encoding="utf-8",
+    )
+
+    fake_project = ModrinthModInfo(
+        project_id="AANobbMI",
+        slug="sodium",
+        title="Sodium",
+        description="Fast renderer",
+        creator="jellysquid3",
+        project_type="mod",
+        downloads=100,
+        followers=50,
+        created=datetime.now(timezone.utc),
+        updated=datetime.now(timezone.utc),
+        direct_url="https://modrinth.com/mod/sodium",
+    )
+    fake_svc = SimpleNamespace(
+        get_project=AsyncMock(return_value=fake_project),
+        get_project_versions=AsyncMock(
+            return_value=[
+                {
+                    "id": "ver-bad",
+                    "version_number": "0.5.9",
+                    "files": [
+                        {
+                            "primary": True,
+                            "filename": "sodium-0.5.9.jar",
+                            "url": "https://cdn.modrinth.com/data/AANobbMI/versions/ver-bad/sodium-0.5.9.jar",
+                            "hashes": {"sha512": "0" * 128},
+                        }
+                    ],
+                }
+            ]
+        ),
+    )
+
+    class _FakeResp:
+        headers = {"content-length": "12"}
+
+        def raise_for_status(self):
+            return None
+
+        async def aiter_bytes(self, chunk_size=65536):
+            yield b"tampered-jar"
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+    class _FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        def stream(self, method, url):
+            return _FakeResp()
+
+    monkeypatch.setattr("games.modrinth_installer.get_modrinth_service", AsyncMock(return_value=fake_svc))
+    monkeypatch.setattr("games.modrinth_installer.httpx.AsyncClient", _FakeClient)
+    monkeypatch.setattr("games.modrinth_installer.set_mod_install_progress", lambda *a, **kw: None)
+    monkeypatch.setattr("games.modrinth_installer._log_console", lambda *a, **kw: None)
+    monkeypatch.setattr("games.modrinth_installer._update_modrinth_mod_title_in_db", lambda *a, **kw: None)
+
+    res = install_modrinth_mods(plugin, server, ["modrinth:AANobbMI"])
+    assert res["ok"] is False
+    assert "SHA-512" in res["error"]
+    # Vorherige funktionierende Mod-Datei bleibt erhalten
+    assert old_jar.read_bytes() == b"working-old-version"
+    assert not (mods_dir / "sodium-0.5.9.jar").exists()
+
+
+@pytest.mark.asyncio
+async def test_mrpack_requires_hashes_and_enforces_limits(tmp_path: Path, monkeypatch):
+    import tempfile
+    from games import modrinth_installer
+
+    monkeypatch.setattr("games.modrinth_installer._log_console", lambda *a, **kw: None)
+    plugin = SimpleNamespace(_try_chown_install_path=lambda srv, p: None)
+    server = SimpleNamespace(id=77, install_dir=str(tmp_path))
+
+    # 1. Datei ohne Pruefsumme muss abgewiesen werden (kein stilles Ueberspringen)
+    no_hash_index = {
+        "formatVersion": 1,
+        "files": [
+            {
+                "path": "mods/nohash.jar",
+                "downloads": ["https://cdn.modrinth.com/data/A/versions/1/nohash.jar"],
+                "hashes": {},
+            }
+        ],
+    }
+    with tempfile.SpooledTemporaryFile() as spooled:
+        with zipfile.ZipFile(spooled, "w") as zf:
+            zf.writestr("modrinth.index.json", json.dumps(no_hash_index))
+        spooled.seek(0)
+        with pytest.raises(ValueError, match="keine Pruefsumme"):
+            await modrinth_installer._install_mrpack(plugin, server, spooled, tmp_path.resolve(), "NoHashPack")
+
+    # 2. Ueberlange files-Liste wird abgelehnt
+    monkeypatch.setattr(modrinth_installer, "MAX_MODRINTH_EXTRACT_FILES", 1)
+    too_many_index = {
+        "formatVersion": 1,
+        "files": [
+            {"path": "mods/1.jar", "downloads": ["https://cdn.modrinth.com/1.jar"], "hashes": {"sha1": "a" * 40}},
+            {"path": "mods/2.jar", "downloads": ["https://cdn.modrinth.com/2.jar"], "hashes": {"sha1": "b" * 40}},
+        ],
+    }
+    with tempfile.SpooledTemporaryFile() as spooled:
+        with zipfile.ZipFile(spooled, "w") as zf:
+            zf.writestr("modrinth.index.json", json.dumps(too_many_index))
+        spooled.seek(0)
+        with pytest.raises(ValueError, match="maximale Dateianzahl"):
+            await modrinth_installer._install_mrpack(plugin, server, spooled, tmp_path.resolve(), "TooManyPack")
+
+
+@pytest.mark.asyncio
+async def test_thunderstore_blocks_redirect_invalid_content_length_and_symlinks(tmp_path: Path, monkeypatch):
+    from games import mod_archive_utils, thunderstore_installer
+    from services.thunderstore_service import is_allowed_thunderstore_download_url
+
+    # 1. Redirect zu fremder Domain wird blockiert
+    class _FakeRedirectResp:
+        status_code = 302
+        headers = {"location": "http://169.254.169.254/latest/meta-data/"}
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+    class _FakeRedirectClient:
+        def __init__(self, *args, **kwargs):
+            assert kwargs.get("follow_redirects") is False
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        def stream(self, method, url):
+            return _FakeRedirectResp()
+
+    with pytest.raises(ValueError, match="Redirect-Ziel"):
+        await mod_archive_utils.stream_verified_download(
+            "https://gcdn.thunderstore.io/pkg.zip",
+            user_agent="Test",
+            url_validator=is_allowed_thunderstore_download_url,
+            max_bytes=1024 * 1024,
+            domain_label="Thunderstore",
+            client_factory=_FakeRedirectClient,
+        )
+
+    # 2. Ungueltiger Content-Length-Header loest keinen ungefangenen ValueError aus
+    assert mod_archive_utils.parse_content_length("not-a-number", fallback=42) == 42
+
+    # 3. ZIP-Symlinks werden beim Entpacken uebersprungen und Entpack-Byte-Limit greift
+    import stat as _stat
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        sym = zipfile.ZipInfo("plugins/evil_link")
+        sym.external_attr = (_stat.S_IFLNK | 0o777) << 16
+        zf.writestr(sym, "/etc/passwd")
+        zf.writestr("plugins/big.dll", b"A" * 200)
+
+    import tempfile
+    plugin = SimpleNamespace(_try_chown_install_path=lambda srv, p: None)
+    server = SimpleNamespace(id=3, install_dir=str(tmp_path))
+    monkeypatch.setattr(thunderstore_installer, "MAX_THUNDERSTORE_EXTRACT_BYTES", 50)
+    with tempfile.SpooledTemporaryFile() as spooled:
+        spooled.write(buf.getvalue())
+        spooled.seek(0)
+        with pytest.raises(ValueError, match="Entpack-Limit"):
+            thunderstore_installer._extract_thunderstore_zip(
+                plugin, server, spooled, tmp_path.resolve(), tmp_path / "BepInEx" / "plugins", "Auth-Mod"
+            )
+    assert not (tmp_path / "BepInEx" / "plugins" / "Auth-Mod" / "evil_link").exists()
+
+
+def test_updater_recognizes_disabled_modrinth_and_thunderstore_mods_as_installed(
+    db: Session, tmp_path: Path, monkeypatch
+):
+    from games import updater
+    from models import Mod, Server
+
+    srv = Server(name="DisabledModSrv", game_type="minecraft_fabric", install_dir=str(tmp_path), status="stopped")
+    db.add(srv)
+    db.flush()
+    old_dt = datetime(2024, 1, 1, tzinfo=timezone.utc)
+    db.add(Mod(server_id=srv.id, workshop_id="modrinth:AANobbMI", name="Sodium", enabled=True, auto_update=True, last_updated=old_dt))
+    db.add(Mod(server_id=srv.id, workshop_id="thunderstore:Author-Pkg", name="Pkg", enabled=True, auto_update=True, last_updated=old_dt))
+    db.commit()
+
+    (tmp_path / "mods").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "mods" / "sodium.jar.disabled").write_bytes(b"jar")
+    (tmp_path / ".msm-modrinth").mkdir(parents=True, exist_ok=True)
+    (tmp_path / ".msm-modrinth" / "aanobbmi.json").write_text(
+        json.dumps({"project_id": "AANobbMI", "files": ["mods/sodium.jar"]}),
+        encoding="utf-8",
+    )
+
+    (tmp_path / "BepInEx" / "plugins" / "Author-Pkg").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "BepInEx" / "plugins" / "Author-Pkg" / "Pkg.dll.disabled").write_bytes(b"dll")
+    (tmp_path / ".msm-thunderstore").mkdir(parents=True, exist_ok=True)
+    (tmp_path / ".msm-thunderstore" / "author-pkg.json").write_text(
+        json.dumps({"full_name": "Author-Pkg", "files": ["BepInEx/plugins/Author-Pkg/Pkg.dll"]}),
+        encoding="utf-8",
+    )
+
+    bp_mods = BlueprintMods(
+        supportsMods=True,
+        supportsModrinth=True,
+        modrinthInstallPath="mods",
+        supportsThunderstore=True,
+        thunderstoreCommunity="valheim",
+        thunderstoreInstallPath="BepInEx/plugins",
+    )
+    bp = SimpleNamespace(effective_mods=lambda: bp_mods)
+    now_dt = datetime.now(timezone.utc)
+    monkeypatch.setattr(updater, "_query_active_mods", lambda _sid: db.query(Mod).filter(Mod.server_id == _sid).all())
+    monkeypatch.setattr(updater, "_fetch_modrinth_mods_updated", lambda _ids: {"modrinth:AANobbMI": now_dt})
+    monkeypatch.setattr(updater, "_fetch_thunderstore_mods_updated", lambda _c, _ids: {"thunderstore:Author-Pkg": now_dt})
+
+    rows = updater.check_workshop_mod_updates(srv, bp)
+    by_id = {r["workshop_id"]: r for r in rows}
+    assert by_id["modrinth:AANobbMI"]["installed"] is True
+    assert by_id["thunderstore:Author-Pkg"]["installed"] is True
+
+
+def test_modrinth_thunderstore_and_settings_routes_enforce_auth_and_rbac(
+    client, db: Session, tmp_path: Path
+):
+    from models import Role, Server, User
+    from services import role_service
+    from services.auth_service import AuthService
+
+    srv = Server(name="RbacModSrv", game_type="minecraft_fabric", install_dir=str(tmp_path), status="stopped")
+    db.add(srv)
+    db.flush()
+
+    uname = f"noperm-mod-{datetime.now(timezone.utc).timestamp()}"
+    user = AuthService.create_user(db, uname, f"{uname}@test.de", "ModPass123!")
+    user.email_verified = True
+    empty_role = Role(name=f"NoModRole-{srv.id}", is_system=False)
+    db.add(empty_role)
+    db.flush()
+    role_service.set_user_roles(db, user, [empty_role.id])
+    db.commit()
+
+    # Unauthentifiziert -> 401
+    assert client.get(f"/api/modrinth/servers/{srv.id}/search?q=sodium").status_code == 401
+    assert client.get("/api/modrinth/mods/metadata?ids=AANobbMI").status_code == 401
+    assert client.get(f"/api/thunderstore/servers/{srv.id}/search?q=bepinex").status_code == 401
+    assert client.post("/api/settings/modrinth-api-key", json={"modrinth_api_key": "mrp_test"}).status_code == 401
+
+    login = client.post("/api/auth/login", json={"username": uname, "password": "ModPass123!", "otp_code": None})
+    assert login.status_code == 200
+    cookies = dict(login.cookies)
+    csrf = cookies.get("__Secure-csrf_token") or ""
+
+    # Nutzer ohne server.mods.read / panel.settings.write -> 403 bzw. 404 (Existenzschutz)
+    assert client.get(f"/api/modrinth/servers/{srv.id}/search?q=sodium", cookies=cookies).status_code in (403, 404)
+    assert client.get("/api/modrinth/mods/metadata?ids=AANobbMI", cookies=cookies).status_code == 403
+    assert client.get(f"/api/thunderstore/servers/{srv.id}/search?q=bepinex", cookies=cookies).status_code in (403, 404)
+    assert (
+        client.post(
+            "/api/settings/modrinth-api-key",
+            json={"modrinth_api_key": "mrp_test"},
+            cookies=cookies,
+            headers={"X-CSRF-Token": csrf},
+        ).status_code
+        == 403
+    )
+

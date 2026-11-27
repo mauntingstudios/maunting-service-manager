@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import json
 import os
-import tempfile
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -18,6 +17,8 @@ from typing import Any
 
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
+
+from config import settings
 
 DEFAULT_DRAIN_TTL_SECONDS = 300
 MAX_DRAIN_TTL_SECONDS = 900
@@ -28,7 +29,7 @@ def drain_flag_path() -> Path:
     configured = (os.getenv("MSM_DRAIN_FLAG_FILE") or "").strip()
     if configured:
         return Path(configured)
-    return Path(tempfile.gettempdir()) / "msm-panel-draining.json"
+    return settings.setup_completed_file.parent / ".msm-draining.json"
 
 
 def _parse_iso_utc(raw: Any) -> datetime | None:

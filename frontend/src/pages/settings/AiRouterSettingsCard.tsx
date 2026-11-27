@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next'
 import { aiApi, type AiRouterConfig, type AiRouterPoolEntry, type AiRouterRoutingMode } from '@/api/ai'
 import { SanitizedApiError } from '@/api/client'
 import { toast } from '@/stores/toastStore'
-import { Button, Dropdown, NumberStepper, Spinner, Switch } from '@maunting/ui'
+import { Badge, Button, Dropdown, NumberStepper, Spinner, Switch } from '@maunting/ui'
 
 type TierKey = 'eco' | 'standard' | 'flagship' | 'fallback'
 
@@ -184,19 +184,13 @@ export function AiRouterSettingsCard({ canWrite }: { canWrite: boolean }) {
             <h3 id="ai-router-title" className="font-headline text-title-lg font-semibold text-on-surface">
               {t('ai.router.title')}
             </h3>
-            <span
-              className={`rounded-full px-2.5 py-0.5 text-label-sm font-medium ${
-                config.enabled && totalConfigured > 0
-                  ? 'bg-status-success/15 text-status-success'
-                  : 'bg-surface-container-high text-on-surface-variant'
-              }`}
-            >
+            <Badge variant={config.enabled && totalConfigured > 0 ? 'success' : 'default'}>
               {config.enabled && totalConfigured > 0
                 ? t('ai.router.statusActive')
                 : config.enabled
                   ? t('ai.router.statusNoModels')
                   : t('ai.router.statusOff')}
-            </span>
+            </Badge>
           </div>
           <p className="text-sm text-on-surface-variant">{t('ai.router.description')}</p>
         </div>
@@ -278,11 +272,11 @@ export function AiRouterSettingsCard({ canWrite }: { canWrite: boolean }) {
                       {t('ai.router.emptyPool')}
                     </p>
                   ) : (
-                    <ul className="space-y-1.5">
+                    <ul className="divide-y divide-outline-variant/25 rounded-lg bg-surface-container/40">
                       {pool.map((entry, idx) => (
                         <li
                           key={`${entry.provider_id}:${entry.model}`}
-                          className="flex items-center justify-between gap-2 rounded-lg border border-outline-variant/30 bg-surface-container/60 px-3 py-2 text-xs"
+                          className="flex items-center justify-between gap-2 px-3 py-2 text-xs"
                         >
                           <div className="min-w-0 flex-1">
                             <span className="font-mono font-medium text-on-surface break-all">
@@ -305,7 +299,7 @@ export function AiRouterSettingsCard({ canWrite }: { canWrite: boolean }) {
                                 aria-pressed={Boolean(entry.is_free)}
                                 aria-label={t('ai.router.toggleFreeAria', { model: entry.model })}
                                 onClick={() => toggleModelFreeInTier(tier, idx)}
-                                className={`rounded-full px-2 py-0.5 text-label-sm font-medium transition-colors disabled:opacity-40 ${
+                                className={`rounded-full px-2 py-0.5 text-label-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-40 ${
                                   entry.is_free
                                     ? 'bg-status-success/15 text-status-success hover:bg-status-success/25'
                                     : 'bg-surface-container-high text-on-surface-variant hover:text-on-surface'
@@ -315,9 +309,9 @@ export function AiRouterSettingsCard({ canWrite }: { canWrite: boolean }) {
                               </button>
                             ) : (
                               entry.is_free && (
-                                <span className="rounded-full bg-status-success/15 px-2 py-0.5 text-label-sm font-medium text-status-success">
+                                <Badge variant="success">
                                   {t('ai.router.freeBadge')}
-                                </span>
+                                </Badge>
                               )
                             )}
                             {canWrite && (
@@ -326,7 +320,7 @@ export function AiRouterSettingsCard({ canWrite }: { canWrite: boolean }) {
                                   type="button"
                                   disabled={idx === 0 || saving}
                                   onClick={() => moveModelInTier(tier, idx, -1)}
-                                  className="rounded p-1 text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface disabled:opacity-30"
+                                  className="rounded p-1 text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-30"
                                   aria-label={t('ai.router.moveUp')}
                                 >
                                   <ArrowUp className="h-3.5 w-3.5" aria-hidden="true" />
@@ -335,7 +329,7 @@ export function AiRouterSettingsCard({ canWrite }: { canWrite: boolean }) {
                                   type="button"
                                   disabled={idx === pool.length - 1 || saving}
                                   onClick={() => moveModelInTier(tier, idx, 1)}
-                                  className="rounded p-1 text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface disabled:opacity-30"
+                                  className="rounded p-1 text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-30"
                                   aria-label={t('ai.router.moveDown')}
                                 >
                                   <ArrowDown className="h-3.5 w-3.5" aria-hidden="true" />
@@ -344,7 +338,7 @@ export function AiRouterSettingsCard({ canWrite }: { canWrite: boolean }) {
                                   type="button"
                                   disabled={saving}
                                   onClick={() => removeModelFromTier(tier, idx)}
-                                  className="rounded p-1 text-on-surface-variant hover:bg-status-destructive/15 hover:text-status-destructive disabled:opacity-30"
+                                  className="rounded p-1 text-on-surface-variant hover:bg-status-destructive/15 hover:text-status-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-30"
                                   aria-label={t('ai.router.removeModel')}
                                 >
                                   <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
@@ -388,7 +382,7 @@ export function AiRouterSettingsCard({ canWrite }: { canWrite: boolean }) {
           type="button"
           onClick={() => setWeightsOpen((prev) => !prev)}
           aria-expanded={weightsOpen}
-          className="inline-flex items-center gap-2 text-xs font-medium text-on-surface-variant hover:text-on-surface"
+          className="inline-flex items-center gap-2 rounded text-xs font-medium text-on-surface-variant hover:text-on-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
         >
           {weightsOpen ? (
             <ChevronDown className="h-3.5 w-3.5" aria-hidden="true" />

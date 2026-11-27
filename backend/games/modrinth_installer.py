@@ -3,22 +3,24 @@
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import json
 import logging
 import shutil
-import stat
 import tempfile
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-from urllib.parse import urljoin
 
 import httpx
 
-from database import SessionLocal
-from models import Mod
+from games.mod_archive_utils import (
+    is_zip_symlink,
+    log_mod_console,
+    remove_stale_files,
+    stream_verified_download,
+    update_mod_title_in_db,
+)
 from services.mod_install_status_service import set_mod_install_progress
 from services.modrinth_service import (
     MODRINTH_USER_AGENT,
@@ -31,29 +33,15 @@ logger = logging.getLogger(__name__)
 MAX_MODRINTH_DOWNLOAD_BYTES = 512 * 1024 * 1024  # 512 MiB Sicherheitsgrenze
 MAX_MODRINTH_EXTRACT_BYTES = 2 * 1024 * 1024 * 1024  # 2 GiB Entpack-Limit (Zip-Bomb-Schutz)
 MAX_MODRINTH_EXTRACT_FILES = 5000
-_MAX_REDIRECT_HOPS = 5
-_SPOOL_MEMORY_THRESHOLD_BYTES = 16 * 1024 * 1024
 MODRINTH_META_DIR = ".msm-modrinth"
 
 
 def _log_console(server_id: int, message: str) -> None:
-    from games import blueprint_plugin as _bp
-
-    _bp._append_console_log(server_id, message)
+    log_mod_console(server_id, message)
 
 
 def _update_modrinth_mod_title_in_db(server_id: int, wid: str, title: str) -> None:
-    try:
-        db = SessionLocal()
-        try:
-            mod_row = db.query(Mod).filter(Mod.server_id == server_id, Mod.workshop_id == str(wid)).first()
-            if mod_row and (not mod_row.name or mod_row.name.startswith("Mod ") or mod_row.name == wid):
-                mod_row.name = title
-                db.commit()
-        finally:
-            db.close()
-    except Exception:
-        logger.debug("Modrinth-Mod-Titel in DB nicht aktualisierbar server_id=%s wid=%s", server_id, wid, exc_info=True)
+    update_mod_title_in_db(server_id, wid, title, label="Modrinth")
 
 
 def _select_primary_file(version: dict[str, Any]) -> dict[str, Any] | None:
@@ -84,79 +72,19 @@ async def _download_verified_file(
     wid: str | None = None,
 ) -> tuple[tempfile.SpooledTemporaryFile, str]:
     """Laedt eine Datei von der Modrinth-CDN (mit Redirect-Allowlist-Pruefung) und verifiziert SHA-512/SHA-1."""
-    current_url = url
-    if not is_allowed_modrinth_download_url(current_url):
-        raise ValueError("Download-URL liegt ausserhalb der erlaubten Modrinth-CDN")
-
-    tmp = tempfile.SpooledTemporaryFile(max_size=_SPOOL_MEMORY_THRESHOLD_BYTES)
-    hasher_512 = hashlib.sha512()
-    hasher_1 = hashlib.sha1()
-    downloaded = 0
-
-    try:
-        async with httpx.AsyncClient(
-            timeout=120.0,
-            follow_redirects=False,
-            headers={"User-Agent": MODRINTH_USER_AGENT},
-        ) as client:
-            for _hop in range(_MAX_REDIRECT_HOPS + 1):
-                async with client.stream("GET", current_url) as resp:
-                    status = getattr(resp, "status_code", 200)
-                    if status in (301, 302, 303, 307, 308):
-                        location = resp.headers.get("location")
-                        if not location:
-                            raise ValueError("Redirect ohne Location-Header")
-                        next_url = urljoin(current_url, location)
-                        if not is_allowed_modrinth_download_url(next_url):
-                            raise ValueError("Redirect-Ziel liegt ausserhalb der erlaubten Modrinth-CDN")
-                        current_url = next_url
-                        continue
-                    resp.raise_for_status()
-                    try:
-                        total_bytes = int(resp.headers.get("content-length") or 0)
-                    except (TypeError, ValueError):
-                        total_bytes = 0
-                    if total_bytes > MAX_MODRINTH_DOWNLOAD_BYTES:
-                        raise ValueError("Modrinth-Datei ueberschreitet das Download-Limit")
-                    last_pct = 20
-                    async for chunk in resp.aiter_bytes(chunk_size=65536):
-                        downloaded += len(chunk)
-                        if downloaded > MAX_MODRINTH_DOWNLOAD_BYTES:
-                            raise ValueError("Modrinth-Datei ueberschreitet das Download-Limit")
-                        tmp.write(chunk)
-                        hasher_512.update(chunk)
-                        hasher_1.update(chunk)
-                        if server_id is not None and wid is not None:
-                            pct = min(85, 20 + int((downloaded / total_bytes) * 65)) if total_bytes > 0 else min(85, last_pct + 5)
-                            if pct >= last_pct + 5:
-                                last_pct = pct
-                                set_mod_install_progress(
-                                    server_id,
-                                    wid,
-                                    pct,
-                                    current_bytes=downloaded,
-                                    total_bytes=total_bytes or None,
-                                )
-                    break
-            else:
-                raise ValueError("Zu viele Redirects beim Modrinth-Download")
-
-        actual_sha512 = hasher_512.hexdigest()
-        actual_sha1 = hasher_1.hexdigest()
-        if expected_sha512 and actual_sha512.lower() != expected_sha512.lower():
-            raise ValueError("SHA-512-Pruefsumme stimmt nicht ueberein")
-        if not expected_sha512 and expected_sha1 and actual_sha1.lower() != expected_sha1.lower():
-            raise ValueError("SHA-1-Pruefsumme stimmt nicht ueberein")
-
-        tmp.seek(0)
-        return tmp, actual_sha512
-    except Exception:
-        tmp.close()
-        raise
-
-
-def _is_zip_symlink(member: zipfile.ZipInfo) -> bool:
-    return stat.S_ISLNK(member.external_attr >> 16)
+    return await stream_verified_download(
+        url,
+        user_agent=MODRINTH_USER_AGENT,
+        url_validator=is_allowed_modrinth_download_url,
+        max_bytes=MAX_MODRINTH_DOWNLOAD_BYTES,
+        expected_sha512=expected_sha512,
+        expected_sha1=expected_sha1,
+        server_id=server_id,
+        wid=wid,
+        domain_label="Modrinth-CDN",
+        client_factory=httpx.AsyncClient,
+        progress_fn=set_mod_install_progress,
+    )
 
 
 def _safe_extract_zip_prefix(
@@ -170,7 +98,7 @@ def _safe_extract_zip_prefix(
 ) -> None:
     for member in zf.infolist():
         raw_name = member.filename.replace("\\", "/")
-        if not raw_name.startswith(prefix) or _is_zip_symlink(member):
+        if not raw_name.startswith(prefix) or is_zip_symlink(member):
             continue
         rel_part = raw_name[len(prefix) :]
         if not rel_part:
@@ -211,15 +139,20 @@ async def _install_mrpack(
     mrpack_tmp: tempfile.SpooledTemporaryFile,
     base: Path,
     title: str,
+    *,
+    installed_out: list[str] | None = None,
 ) -> list[str]:
     """Entpackt ein Modrinth .mrpack (modrinth.index.json + overrides + server-overrides)."""
-    installed_files: list[str] = []
+    installed_files: list[str] = installed_out if installed_out is not None else []
+    budget = [0]
     mrpack_tmp.seek(0)
     with zipfile.ZipFile(mrpack_tmp) as zf:
         if "modrinth.index.json" not in zf.namelist():
             raise ValueError("Ungueltiges .mrpack: modrinth.index.json fehlt")
         index_data = json.loads(zf.read("modrinth.index.json").decode("utf-8"))
         files = index_data.get("files") or []
+        if len(files) > MAX_MODRINTH_EXTRACT_FILES:
+            raise ValueError("Modpack ueberschreitet die maximale Dateianzahl")
         _log_console(
             server.id,
             f"[MSM] Modrinth Modpack {title}: {len(files)} Datei(en) werden geladen...\n",
@@ -230,38 +163,48 @@ async def _install_mrpack(
             env_spec = entry.get("env") or {}
             if isinstance(env_spec, dict) and env_spec.get("server") == "unsupported":
                 continue
-            rel_path = str(entry.get("path") or "").strip().lstrip("/")
-            if not rel_path or Path(rel_path).is_absolute() or ".." in Path(rel_path).parts:
+            raw_rel = str(entry.get("path") or "").strip().replace("\\", "/")
+            if not raw_rel or raw_rel.startswith("/") or Path(raw_rel).is_absolute() or ".." in Path(raw_rel).parts:
                 continue
-            target = (base / rel_path).resolve()
+            target = (base / raw_rel).resolve()
             try:
                 target.relative_to(base)
             except ValueError:
                 continue
+            if len(installed_files) >= MAX_MODRINTH_EXTRACT_FILES:
+                raise ValueError("Modpack ueberschreitet die maximale Dateianzahl")
             downloads = [u for u in (entry.get("downloads") or []) if isinstance(u, str) and is_allowed_modrinth_download_url(u)]
             if not downloads:
                 continue
             hashes = entry.get("hashes") or {}
+            expected_sha512 = hashes.get("sha512") if isinstance(hashes, dict) else None
+            expected_sha1 = hashes.get("sha1") if isinstance(hashes, dict) else None
+            if not expected_sha512 and not expected_sha1:
+                raise ValueError(f"Modpack-Datei {raw_rel} enthaelt keine Pruefsumme")
+
+            sub_tmp, _ = await _download_verified_file(
+                downloads[0],
+                expected_sha512=expected_sha512,
+                expected_sha1=expected_sha1,
+            )
             try:
-                sub_tmp, _ = await _download_verified_file(
-                    downloads[0],
-                    expected_sha512=hashes.get("sha512"),
-                    expected_sha1=hashes.get("sha1"),
-                )
-                try:
-                    target.parent.mkdir(parents=True, exist_ok=True)
-                    with target.open("wb") as dst_fp:
-                        shutil.copyfileobj(sub_tmp, dst_fp, length=65536)
-                    plugin._try_chown_install_path(server, target)
-                    installed_files.append(str(target.relative_to(base)).replace("\\", "/"))
-                finally:
-                    sub_tmp.close()
-            except Exception as exc:
-                logger.warning("Modpack-Datei %s uebersprungen: %s", rel_path, exc)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                with target.open("wb") as dst_fp:
+                    while True:
+                        buf = sub_tmp.read(65536)
+                        if not buf:
+                            break
+                        budget[0] += len(buf)
+                        if budget[0] > MAX_MODRINTH_EXTRACT_BYTES:
+                            raise ValueError("Modpack ueberschreitet das maximale Entpack-Limit")
+                        dst_fp.write(buf)
+                plugin._try_chown_install_path(server, target)
+                installed_files.append(str(target.relative_to(base)).replace("\\", "/"))
+            finally:
+                sub_tmp.close()
             if idx % 10 == 0 or idx == len(files):
                 _log_console(server.id, f"[MSM] Modpack Fortschritt: {idx}/{len(files)}\n")
 
-        budget = [0]
         _safe_extract_zip_prefix(plugin, server, zf, "overrides/", base, installed_files, budget)
         _safe_extract_zip_prefix(plugin, server, zf, "server-overrides/", base, installed_files, budget)
 
@@ -420,13 +363,21 @@ async def _install_single_modrinth_mod(
             server_id=server.id,
             wid=wid,
         )
+        old_meta = read_modrinth_metadata(base, wid)
+        old_files = list(old_meta.get("files") or []) if old_meta else []
+        old_file_set = {str(f).replace("\\", "/") for f in old_files}
+        installed_files: list[str] = []
         try:
             set_mod_install_progress(server.id, wid, 90)
-            # Vorherige Dateien dieses Projekts/Modpacks bereinigen, um Duplikate bei Updates zu vermeiden
-            cleanup_modrinth_mod(server, wid)
-            installed_files: list[str] = []
             if file_name.lower().endswith(".mrpack"):
-                installed_files = await _install_mrpack(plugin, server, dl_tmp, base, project.title)
+                await _install_mrpack(
+                    plugin,
+                    server,
+                    dl_tmp,
+                    base,
+                    project.title,
+                    installed_out=installed_files,
+                )
             else:
                 target_dir.mkdir(parents=True, exist_ok=True)
                 dest_file = (target_dir / file_name).resolve()
@@ -434,13 +385,20 @@ async def _install_single_modrinth_mod(
                 with dest_file.open("wb") as dst_fp:
                     shutil.copyfileobj(dl_tmp, dst_fp, length=65536)
                 plugin._try_chown_install_path(server, dest_file)
-                installed_files = [str(dest_file.relative_to(base)).replace("\\", "/")]
+                installed_files.append(str(dest_file.relative_to(base)).replace("\\", "/"))
                 _log_console(
                     server.id,
                     f"[MSM] Modrinth {project.title} ({file_name}) installiert nach {target_dir_rel}/\n",
                 )
+        except Exception:
+            # Bei Fehler neu geschriebene Dateien zurueckrollen, Altversion bleibt erhalten
+            remove_stale_files(base, installed_files, old_file_set)
+            raise
         finally:
             dl_tmp.close()
+
+        # Erst nach vollstaendiger Installation alte nicht mehr enthaltene Dateien entfernen
+        remove_stale_files(base, old_files, set(installed_files))
 
         _write_modrinth_metadata(
             base,

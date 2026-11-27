@@ -526,6 +526,13 @@ def _router_failover_schritt(
     from models import AiMessage, AiProvider, AiUsageEvent
 
     with SessionLocal() as db:
+        u_obj = db.get(User, user_id)
+        effective_allowed: dict[int, set[str]] | None = None
+        if u_obj is not None:
+            eff_limits = ai_limit_service.resolve_effective_limits(db, u_obj)
+            if not eff_limits.router_only:
+                effective_allowed = ai_limit_service.resolve_effective_allowed_models(db, u_obj)
+
         for next_idx in range(idx + 1, len(candidates)):
             cand = candidates[next_idx]
             if not isinstance(cand, dict):
@@ -536,6 +543,10 @@ def _router_failover_schritt(
                 continue
             if provider_wide and int(pid) == int(failed_provider_id):
                 continue
+            if effective_allowed is not None:
+                allowed_models = effective_allowed.get(int(pid))
+                if allowed_models is None or ("*" not in allowed_models and model not in allowed_models):
+                    continue
             next_provider = db.get(AiProvider, int(pid))
             if next_provider is None or not next_provider.enabled:
                 continue
@@ -574,8 +585,11 @@ def _router_failover_schritt(
             zustand.pop("last_response_id", None)
             if run is not None:
                 ai_run_service.zustand_schreiben(run, zustand)
-            u_obj = db.get(User, user_id)
-            ceiling_tokens = ai_limit_service.resolve_context_ceiling(db, u_obj)
+            ceiling_tokens = (
+                ai_limit_service.resolve_context_ceiling(db, u_obj)
+                if u_obj is not None
+                else ai_context_window.ANFRAGE_DECKEL_TOKENS
+            )
             db.commit()
             db.refresh(next_provider)
             db.expunge(next_provider)
@@ -1010,6 +1024,7 @@ async def segment_ausfuehren(run_id: str, *, client: httpx.AsyncClient | None = 
                             db=None,
                             user_id=user_id,
                             model_id=next_routing.get("model"),
+                            api_key=next_api_key,
                         )
                         if fenster.bekannt:
                             zustand["context_chars"] = (

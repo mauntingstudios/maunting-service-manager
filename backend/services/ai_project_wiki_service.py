@@ -21,6 +21,7 @@ from typing import Literal
 from uuid import uuid4
 
 from fastapi import HTTPException
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from models import AiProject, AiProjectWikiChunk, AiProjectWikiPage, User
@@ -160,6 +161,31 @@ def require_wiki_access(db: Session, user: User, project_id: str) -> AiProject:
     if not permission_service.has_global_permission(db, user, WIKI_PERMISSION):
         raise AiProjectError("Für das Projekt-Wiki wird die Berechtigung ai.projects.wiki benötigt")
     return ai_project_service.get_project(db, user, project_id)
+
+
+def _require_wiki_page(
+    db: Session,
+    user: User,
+    project_id: str,
+    slug: str,
+    *,
+    require_enabled: bool = True,
+    for_update: bool = False,
+) -> tuple[AiProject, AiProjectWikiPage]:
+    project = require_wiki_access(db, user, project_id)
+    if require_enabled and not project.wiki_enabled:
+        raise AiProjectError("Projekt-Wiki ist für dieses Projekt deaktiviert")
+    clean_slug = normalize_slug(slug)
+    query = db.query(AiProjectWikiPage).filter(
+        AiProjectWikiPage.project_id == project.id,
+        AiProjectWikiPage.slug == clean_slug,
+    )
+    if for_update:
+        query = query.with_for_update()
+    page = query.first()
+    if page is None:
+        raise AiProjectError(f"Wiki-Seite '{clean_slug}' nicht gefunden")
+    return project, page
 
 
 def _serialize_frontmatter(
@@ -396,12 +422,49 @@ def update_wiki_settings(
 ) -> dict:
     """Aktualisiert Wiki-Aktivierung, automatische Hintergrundpflege und Ablagepfad."""
     project = require_wiki_access(db, user, project_id)
+    old_path = normalize_wiki_path(project.wiki_path)
     if wiki_enabled is not None:
         project.wiki_enabled = bool(wiki_enabled)
     if wiki_auto_update is not None:
         project.wiki_auto_update = bool(wiki_auto_update)
     if wiki_path is not None:
-        project.wiki_path = normalize_wiki_path(wiki_path)
+        new_path = normalize_wiki_path(wiki_path)
+        project.wiki_path = new_path
+        if new_path != old_path:
+            existing_pages = (
+                db.query(AiProjectWikiPage)
+                .filter(AiProjectWikiPage.project_id == project.id)
+                .all()
+            )
+            for page in existing_pages:
+                new_rel = f"{new_path}/{page.slug}.md"
+                serialized = _serialize_frontmatter(
+                    title=page.title,
+                    category=page.category,
+                    summary=page.summary,
+                    source_files=_normalize_source_files(page.source_files_json),
+                    markdown=page.content_markdown,
+                )
+                ai_project_service.write_project_file(
+                    db,
+                    user,
+                    project.id,
+                    new_rel,
+                    serialized,
+                    mime_type="text/markdown",
+                )
+                old_rel = page.file_path
+                if old_rel and old_rel != new_rel:
+                    try:
+                        ai_project_service.delete_project_file(db, user, project.id, old_rel)
+                    except AiProjectError as exc:
+                        logger.warning(
+                            "Alte Wiki-Datei nach Pfadwechsel nicht entfernbar project_id=%s path=%s: %s",
+                            project.id,
+                            old_rel,
+                            exc,
+                        )
+                page.file_path = new_rel
     db.commit()
     db.refresh(project)
     return get_wiki_overview(db, user, project.id)
@@ -409,18 +472,40 @@ def update_wiki_settings(
 
 def get_wiki_page(db: Session, user: User, project_id: str, slug: str) -> dict:
     """Liest den Volltext einer einzelnen Wiki-Seite anhand ihres Slugs."""
-    project = require_wiki_access(db, user, project_id)
-    if not project.wiki_enabled:
-        raise AiProjectError("Projekt-Wiki ist für dieses Projekt deaktiviert")
-    clean_slug = normalize_slug(slug)
-    page = (
-        db.query(AiProjectWikiPage)
-        .filter(AiProjectWikiPage.project_id == project.id, AiProjectWikiPage.slug == clean_slug)
-        .first()
-    )
-    if page is None:
-        raise AiProjectError(f"Wiki-Seite '{clean_slug}' nicht gefunden")
+    _, page = _require_wiki_page(db, user, project_id, slug)
     return _serialize_page_detail(page)
+
+
+def _apply_wiki_page_update(
+    db: Session,
+    page: AiProjectWikiPage,
+    *,
+    clean_title: str,
+    clean_cat: str,
+    clean_summary: str,
+    rel_file_path: str,
+    clean_sources: list[str],
+    clean_body: str,
+    new_hash: str,
+    sort_order: int | None,
+    unlink_stale_doc: bool,
+    updated_by: str,
+) -> None:
+    previous_hash = page.content_hash
+    page.title = clean_title
+    page.category = clean_cat
+    page.summary = clean_summary
+    page.file_path = rel_file_path
+    page.source_files_json = json.dumps(clean_sources, ensure_ascii=False)
+    page.content_markdown = clean_body
+    page.content_hash = new_hash
+    if sort_order is not None:
+        page.sort_order = int(sort_order)
+    if unlink_stale_doc and page.doc_uid and previous_hash != new_hash:
+        _soft_delete_linked_doc(db, page.doc_uid)
+        page.doc_uid = None
+    page.updated_by = updated_by[:24]
+    page.updated_at = _now()
 
 
 def upsert_wiki_page(
@@ -471,7 +556,7 @@ def upsert_wiki_page(
     )
     if page is None:
         default_order = _CATEGORY_SORT_BASE.get(clean_cat, 200)
-        page = AiProjectWikiPage(
+        new_page = AiProjectWikiPage(
             id=str(uuid4()),
             project_id=project.id,
             slug=clean_slug,
@@ -485,24 +570,48 @@ def upsert_wiki_page(
             sort_order=default_order if sort_order is None else int(sort_order),
             updated_by=updated_by[:24],
         )
-        db.add(page)
-        db.flush()
+        try:
+            with db.begin_nested():
+                db.add(new_page)
+                db.flush()
+            page = new_page
+        except IntegrityError:
+            page = (
+                db.query(AiProjectWikiPage)
+                .filter(AiProjectWikiPage.project_id == project.id, AiProjectWikiPage.slug == clean_slug)
+                .first()
+            )
+            if page is None:
+                raise
+            _apply_wiki_page_update(
+                db,
+                page,
+                clean_title=clean_title,
+                clean_cat=clean_cat,
+                clean_summary=clean_summary,
+                rel_file_path=rel_file_path,
+                clean_sources=clean_sources,
+                clean_body=clean_body,
+                new_hash=new_hash,
+                sort_order=sort_order,
+                unlink_stale_doc=unlink_stale_doc,
+                updated_by=updated_by,
+            )
     else:
-        previous_hash = page.content_hash
-        page.title = clean_title
-        page.category = clean_cat
-        page.summary = clean_summary
-        page.file_path = rel_file_path
-        page.source_files_json = json.dumps(clean_sources, ensure_ascii=False)
-        page.content_markdown = clean_body
-        page.content_hash = new_hash
-        if sort_order is not None:
-            page.sort_order = int(sort_order)
-        if unlink_stale_doc and page.doc_uid and previous_hash != new_hash:
-            _soft_delete_linked_doc(db, page.doc_uid)
-            page.doc_uid = None
-        page.updated_by = updated_by[:24]
-        page.updated_at = _now()
+        _apply_wiki_page_update(
+            db,
+            page,
+            clean_title=clean_title,
+            clean_cat=clean_cat,
+            clean_summary=clean_summary,
+            rel_file_path=rel_file_path,
+            clean_sources=clean_sources,
+            clean_body=clean_body,
+            new_hash=new_hash,
+            sort_order=sort_order,
+            unlink_stale_doc=unlink_stale_doc,
+            updated_by=updated_by,
+        )
 
     if write_workspace_file:
         ai_project_service.write_project_file(
@@ -524,23 +633,21 @@ def upsert_wiki_page(
 
 def delete_wiki_page(db: Session, user: User, project_id: str, slug: str) -> dict:
     """Loescht eine Wiki-Seite samt Chunks, verknuepftem Docs-Entwurf und Workspace-Datei."""
-    project = require_wiki_access(db, user, project_id)
-    clean_slug = normalize_slug(slug)
-    page = (
-        db.query(AiProjectWikiPage)
-        .filter(AiProjectWikiPage.project_id == project.id, AiProjectWikiPage.slug == clean_slug)
-        .first()
-    )
-    if page is None:
-        raise AiProjectError(f"Wiki-Seite '{clean_slug}' nicht gefunden")
+    project, page = _require_wiki_page(db, user, project_id, slug, require_enabled=False)
+    clean_slug = page.slug
     rel_path = page.file_path
     _soft_delete_linked_doc(db, page.doc_uid)
     db.delete(page)
     db.flush()
     try:
         ai_project_service.delete_project_file(db, user, project.id, rel_path)
-    except AiProjectError:
-        pass
+    except AiProjectError as exc:
+        logger.warning(
+            "Wiki-Datei beim Loeschen nicht entfernbar project_id=%s path=%s: %s",
+            project.id,
+            rel_path,
+            exc,
+        )
     db.commit()
     return {"deleted": True, "slug": clean_slug}
 
@@ -557,8 +664,9 @@ def sync_from_workspace(db: Session, user: User, project_id: str) -> dict:
     if not wiki_folder.is_relative_to(ws_resolved):
         raise AiProjectError("Ungültiger Wiki-Pfad außerhalb des Projekt-Workspaces")
 
+    folder_exists = wiki_folder.is_dir() and not wiki_folder.is_symlink()
     disk_entries: list[tuple[str, str]] = []
-    if wiki_folder.is_dir() and not wiki_folder.is_symlink():
+    if folder_exists:
         for entry in sorted(wiki_folder.iterdir(), key=lambda p: p.name.lower()):
             if entry.is_symlink() or not entry.is_file():
                 continue
@@ -619,23 +727,33 @@ def sync_from_workspace(db: Session, user: User, project_id: str) -> dict:
         )
         updated += 1
 
-    orphans = (
-        db.query(AiProjectWikiPage)
-        .filter(AiProjectWikiPage.project_id == project.id)
-        .all()
-    )
     removed = 0
-    for row in orphans:
-        if row.slug not in seen_slugs:
-            _soft_delete_linked_doc(db, row.doc_uid)
-            try:
-                ai_project_service.delete_project_file(db, user, project.id, row.file_path)
-            except AiProjectError:
-                pass
-            db.delete(row)
-            removed += 1
-    if removed:
-        db.commit()
+    if folder_exists:
+        orphans = (
+            db.query(AiProjectWikiPage)
+            .filter(AiProjectWikiPage.project_id == project.id)
+            .all()
+        )
+        prefix = f"{wiki_dir}/"
+        for row in orphans:
+            rel_norm = (row.file_path or "").replace("\\", "/")
+            if not rel_norm.startswith(prefix):
+                continue
+            if row.slug not in seen_slugs:
+                _soft_delete_linked_doc(db, row.doc_uid)
+                try:
+                    ai_project_service.delete_project_file(db, user, project.id, row.file_path)
+                except AiProjectError as exc:
+                    logger.warning(
+                        "Verwaiste Wiki-Datei nicht entfernbar project_id=%s path=%s: %s",
+                        project.id,
+                        row.file_path,
+                        exc,
+                    )
+                db.delete(row)
+                removed += 1
+        if removed:
+            db.commit()
 
     return {"synced_files": len(disk_entries), "updated": updated, "removed": removed}
 
@@ -751,17 +869,7 @@ def search_wiki(
 
 def open_page_doc(db: Session, user: User, project_id: str, slug: str) -> dict:
     """Verknuepft eine Wiki-Seite bei aktivem Maunting Docs mit einem kollaborativen Dokument."""
-    project = require_wiki_access(db, user, project_id)
-    if not project.wiki_enabled:
-        raise AiProjectError("Projekt-Wiki ist für dieses Projekt deaktiviert")
-    clean_slug = normalize_slug(slug)
-    page = (
-        db.query(AiProjectWikiPage)
-        .filter(AiProjectWikiPage.project_id == project.id, AiProjectWikiPage.slug == clean_slug)
-        .first()
-    )
-    if page is None:
-        raise AiProjectError(f"Wiki-Seite '{clean_slug}' nicht gefunden")
+    project, page = _require_wiki_page(db, user, project_id, slug, for_update=True)
 
     if not _docs_collab_available(db, user):
         return {"mode": "markdown", "doc_uid": None, "page": _serialize_page_detail(page)}
@@ -806,17 +914,7 @@ def open_page_doc(db: Session, user: User, project_id: str, slug: str) -> dict:
 
 def sync_page_from_doc(db: Session, user: User, project_id: str, slug: str) -> dict:
     """Uebernimmt den aktuellen Stand aus dem verknuepften Maunting-Docs-Dokument ins Wiki."""
-    project = require_wiki_access(db, user, project_id)
-    if not project.wiki_enabled:
-        raise AiProjectError("Projekt-Wiki ist für dieses Projekt deaktiviert")
-    clean_slug = normalize_slug(slug)
-    page = (
-        db.query(AiProjectWikiPage)
-        .filter(AiProjectWikiPage.project_id == project.id, AiProjectWikiPage.slug == clean_slug)
-        .first()
-    )
-    if page is None:
-        raise AiProjectError(f"Wiki-Seite '{clean_slug}' nicht gefunden")
+    project, page = _require_wiki_page(db, user, project_id, slug)
     if not page.doc_uid:
         return _serialize_page_detail(page)
 

@@ -6,18 +6,21 @@ import asyncio
 import json
 import logging
 import shutil
-import stat
 import tempfile
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-from urllib.parse import urljoin
 
 import httpx
 
-from database import SessionLocal
-from models import Mod
+from games.mod_archive_utils import (
+    is_zip_symlink,
+    log_mod_console,
+    remove_stale_files,
+    stream_verified_download,
+    update_mod_title_in_db,
+)
 from services.mod_install_status_service import set_mod_install_progress
 from services.thunderstore_service import (
     THUNDERSTORE_USER_AGENT,
@@ -30,29 +33,15 @@ logger = logging.getLogger(__name__)
 MAX_THUNDERSTORE_DOWNLOAD_BYTES = 512 * 1024 * 1024  # 512 MiB Sicherheitsgrenze
 MAX_THUNDERSTORE_EXTRACT_BYTES = 2 * 1024 * 1024 * 1024  # 2 GiB Entpack-Limit
 MAX_THUNDERSTORE_EXTRACT_FILES = 5000
-_MAX_REDIRECT_HOPS = 5
-_SPOOL_MEMORY_THRESHOLD_BYTES = 16 * 1024 * 1024
 THUNDERSTORE_META_DIR = ".msm-thunderstore"
 
 
 def _log_console(server_id: int, message: str) -> None:
-    from games import blueprint_plugin as _bp
-
-    _bp._append_console_log(server_id, message)
+    log_mod_console(server_id, message)
 
 
 def _update_thunderstore_mod_title_in_db(server_id: int, wid: str, title: str) -> None:
-    try:
-        db = SessionLocal()
-        try:
-            mod_row = db.query(Mod).filter(Mod.server_id == server_id, Mod.workshop_id == str(wid)).first()
-            if mod_row and (not mod_row.name or mod_row.name.startswith("Mod ") or mod_row.name == wid):
-                mod_row.name = title
-                db.commit()
-        finally:
-            db.close()
-    except Exception:
-        logger.debug("Thunderstore-Mod-Titel in DB nicht aktualisierbar server_id=%s wid=%s", server_id, wid, exc_info=True)
+    update_mod_title_in_db(server_id, wid, title, label="Thunderstore")
 
 
 def _meta_key(raw_id: str) -> str:
@@ -162,10 +151,6 @@ def sync_thunderstore_enabled_state(base: Path, workshop_id: str, enabled: bool)
             active_path.rename(disabled_path)
 
 
-def _is_zip_symlink(member: zipfile.ZipInfo) -> bool:
-    return stat.S_ISLNK(member.external_attr >> 16)
-
-
 def _extract_thunderstore_zip(
     plugin,
     server,
@@ -207,7 +192,7 @@ def _extract_thunderstore_zip(
         if is_bepinex_pack:
             bep_prefix = next(name for name in top_names if name.startswith("BepInExPack")) + "/"
             for member in members:
-                if _is_zip_symlink(member):
+                if is_zip_symlink(member):
                     continue
                 raw_name = member.filename.replace("\\", "/")
                 if not raw_name.startswith(bep_prefix):
@@ -237,7 +222,7 @@ def _extract_thunderstore_zip(
             created_dirs.append(str(pkg_dir.relative_to(base)).replace("\\", "/"))
 
             for member in members:
-                if _is_zip_symlink(member):
+                if is_zip_symlink(member):
                     continue
                 raw_name = member.filename.replace("\\", "/")
                 if not raw_name or member.is_dir():
@@ -286,51 +271,23 @@ async def _install_single_thunderstore_mod(
             return False, f"{pkg.full_name}: Keine erlaubte Download-URL", {"ok": False, "error": "Ungueltige Download-URL"}
 
         set_mod_install_progress(server.id, wid, 20)
-        with tempfile.SpooledTemporaryFile(max_size=_SPOOL_MEMORY_THRESHOLD_BYTES) as dl_tmp:
-            downloaded = 0
-            async with httpx.AsyncClient(
-                timeout=120.0,
-                follow_redirects=False,
-                headers={"User-Agent": THUNDERSTORE_USER_AGENT},
-            ) as client:
-                for _hop in range(_MAX_REDIRECT_HOPS + 1):
-                    async with client.stream("GET", current_url) as resp:
-                        status = getattr(resp, "status_code", 200)
-                        if status in (301, 302, 303, 307, 308):
-                            location = resp.headers.get("location")
-                            if not location:
-                                raise ValueError("Redirect ohne Location-Header")
-                            next_url = urljoin(current_url, location)
-                            if not is_allowed_thunderstore_download_url(next_url):
-                                raise ValueError("Redirect-Ziel liegt ausserhalb der erlaubten Thunderstore-Domain")
-                            current_url = next_url
-                            continue
-                        resp.raise_for_status()
-                        total_bytes = int(resp.headers.get("content-length") or 0) or pkg.file_size
-                        if total_bytes > MAX_THUNDERSTORE_DOWNLOAD_BYTES:
-                            raise ValueError("Thunderstore-Paket ueberschreitet das Download-Limit")
-                        last_pct = 20
-                        async for chunk in resp.aiter_bytes(chunk_size=65536):
-                            downloaded += len(chunk)
-                            if downloaded > MAX_THUNDERSTORE_DOWNLOAD_BYTES:
-                                raise ValueError("Thunderstore-Paket ueberschreitet das Download-Limit")
-                            dl_tmp.write(chunk)
-                            pct = min(85, 20 + int((downloaded / total_bytes) * 65)) if total_bytes > 0 else min(85, last_pct + 5)
-                            if pct >= last_pct + 5:
-                                last_pct = pct
-                                set_mod_install_progress(
-                                    server.id,
-                                    wid,
-                                    pct,
-                                    current_bytes=downloaded,
-                                    total_bytes=total_bytes or None,
-                                )
-                        break
-                else:
-                    raise ValueError("Zu viele Redirects beim Thunderstore-Download")
-
+        dl_tmp, _ = await stream_verified_download(
+            current_url,
+            user_agent=THUNDERSTORE_USER_AGENT,
+            url_validator=is_allowed_thunderstore_download_url,
+            max_bytes=MAX_THUNDERSTORE_DOWNLOAD_BYTES,
+            fallback_total_bytes=pkg.file_size,
+            server_id=server.id,
+            wid=wid,
+            domain_label="Thunderstore",
+            client_factory=httpx.AsyncClient,
+            progress_fn=set_mod_install_progress,
+        )
+        old_meta = read_thunderstore_metadata(base, wid)
+        old_files = list(old_meta.get("files") or []) if old_meta else []
+        old_dirs = list(old_meta.get("dirs") or []) if old_meta else []
+        try:
             set_mod_install_progress(server.id, wid, 90)
-            cleanup_thunderstore_mod(server, wid)
             installed_files, created_dirs = _extract_thunderstore_zip(
                 plugin,
                 server,
@@ -340,6 +297,22 @@ async def _install_single_thunderstore_mod(
                 pkg.full_name,
                 allow_bepinex_root=pkg.name.lower().startswith("bepinexpack"),
             )
+        finally:
+            dl_tmp.close()
+
+        remove_stale_files(base, old_files, set(installed_files))
+        keep_dirs = {str(d).replace("\\", "/") for d in created_dirs}
+        for old_dir in old_dirs:
+            old_dir_norm = str(old_dir).replace("\\", "/")
+            if old_dir_norm in keep_dirs:
+                continue
+            dpath = (base / old_dir_norm).resolve()
+            try:
+                dpath.relative_to(base)
+            except ValueError:
+                continue
+            if dpath.is_dir() and dpath != base:
+                shutil.rmtree(dpath, ignore_errors=True)
 
         _write_thunderstore_metadata(
             base,

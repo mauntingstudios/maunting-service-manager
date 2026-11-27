@@ -90,16 +90,16 @@ export function AiSkillDirectory() {
               {/* Der Schlüssel ist der einzige Weg, einen mitgelieferten Skill zu
                   ersetzen — ohne ihn müsste man ihn raten. */}
               <span className="font-mono text-label-sm text-on-surface-variant">{skill.skill_key}</span>
-              <span className="rounded-full border border-outline-variant/40 px-2 py-0.5 text-label-sm uppercase tracking-wider text-on-surface-variant">
+              <span className="rounded-full border border-outline-variant/40 px-2 py-0.5 text-label-sm text-on-surface-variant">
                 {herkunft(skill)}
               </span>
               {skill.always_active && (
-                <span className="rounded-full border border-primary/40 bg-primary/10 px-2 py-0.5 text-label-sm uppercase tracking-wider text-primary">
+                <span className="rounded-full border border-primary/40 bg-primary/10 px-2 py-0.5 text-label-sm text-primary">
                   {t('ai.skills.alwaysActiveBadge')}
                 </span>
               )}
               {skill.origin === 'ai' && (
-                <span className="inline-flex items-center gap-1 text-label-sm uppercase tracking-wider text-tertiary">
+                <span className="inline-flex items-center gap-1 text-label-sm text-tertiary">
                   <Sparkles className="h-3 w-3" aria-hidden="true" />
                   {t('ai.skills.origins.ai')}
                 </span>

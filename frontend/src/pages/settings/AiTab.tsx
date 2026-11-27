@@ -12,7 +12,7 @@ import { useTranslation } from 'react-i18next'
 import { BarChart3, Bot, KeyRound, Save, Search, Sliders, Sparkles } from 'lucide-react'
 
 import { api, SanitizedApiError } from '@/api/client'
-import { type AiProviderAdmin, type RoleAiModelAccessItem } from '@/api/ai'
+import { type AiProviderAdmin, type AiRoleLimitsResponse, type RoleAiModelAccessItem } from '@/api/ai'
 import { AiMemoryManager } from '@/components/ai/AiMemoryManager'
 import { AiSkillManager } from '@/components/ai/AiSkillManager'
 import { TabBar, TabDef } from '@maunting/ui'
@@ -50,63 +50,8 @@ const AI_TABS: TabDef<AiSubTab>[] = [
   { id: 'searchEngine', labelKey: 'settings.tabs.searchEngine', icon: Search },
 ]
 
-export interface AiRoleLimits {
-  role_id: number
-  role_name: string
-  /** False heisst: für diese Rolle ist nichts gespeichert (alle Werte null). */
-  configured: boolean
-  five_hour_token_limit?: number | null
-  daily_token_limit: number | null
-  weekly_token_limit: number | null
-  monthly_token_limit: number | null
-  monthly_realtime_minutes_limit: number | null
-  monthly_dictation_minutes_limit: number | null
-  /**
-   * Wieviele Memory-Eintraege in **je einem Bereich** liegen duerfen — hier
-   * stand vorher „was ein Benutzer dieser Rolle anlegen darf", und das war
-   * falsch. Gezaehlt wird je scope_identity: persoenlich allgemein, je Server
-   * und je Team. „Je Server" meint dabei die persoenlichen Notizen zu einem
-   * Server; das geteilte „Wissen dieses Servers" ist ein anderer Bereich und
-   * haengt wie das panelweite Gedaechtnis an gar keiner Rolle. Wieviele
-   * Bereiche es gibt, bestimmt der Benutzer selbst; wer 20 Server sieht, hat
-   * bei „25" nicht 25 Eintraege, sondern 25 persoenliche plus 25 je Server
-   * plus 25 je selbst gegruendetem Team.
-   *
-   * `null` heisst unbegrenzt — dieselbe Bedeutung wie bei den Kontingenten
-   * darueber, 0 sperrt. Bis zum 05.10.2026 machte das Backend aus `null` hier
-   * still die Systemgrenze von 100, waehrend der Schalter „Unbegrenzt" zeigte.
-   * Der Kontextaufbau bleibt auch bei unbegrenztem Vorrat ueber
-   * `MAX_CONTEXT_ROWS` gedeckelt.
-   *
-   * Team-Gedaechtnis zaehlt gegen das Limit des Team-Gruenders, nicht gegen das
-   * des schreibenden Mitglieds. Das ist an der Oberflaeche sonst nicht zu
-   * erraten: wer hier eine Rolle knapp haelt, begrenzt damit auch die Teams,
-   * die ein Traeger dieser Rolle gegruendet hat.
-   */
-  max_memory_entries: number | null
-  /**
-   * Hoechste erlaubte Denktiefe als Rang: 0 = gar nicht, 1 = minimal … 6 = max.
-   * `null` heisst unbegrenzt — dieselbe Bedeutung wie bei den Kontingenten.
-   *
-   * Ein Rang und kein Wort, weil jedes Modell andere Stufen kennt: gemessen
-   * gibt es bei OpenRouter 20 verschiedene Stufenlisten. Gewaehlt wird spaeter
-   * aus den echten Stufen des Modells, der Rang vergleicht nur.
-   */
-  max_reasoning_effort: number | null
-  max_attachment_storage_mb: number | null
-  /**
-   * Obergrenze fuer die Eingabe **einer** Anfrage in Token, unabhaengig vom
-   * Fenster des gewaehlten Modells. `null` heisst hier „nichts hinterlegt" —
-   * dann gilt der Standard von 44.000. Anders als bei den Feldern darueber
-   * heisst `null` **nicht** unbegrenzt: ein unbegrenzter Deckel waere genau
-   * der Zustand, den diese Einstellung beendet.
-   */
-  max_context_tokens: number | null
-  allow_all_models: boolean
-  router_only?: boolean
-  soft_cap_downgrade?: boolean
+export type AiRoleLimits = Omit<AiRoleLimitsResponse, 'model_access'> & {
   model_access?: RoleAiModelAccessItem[]
-  updated_at: string | null
 }
 
 /**

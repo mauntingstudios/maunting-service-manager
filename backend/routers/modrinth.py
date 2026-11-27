@@ -23,6 +23,7 @@ from services.modrinth_service import (
     get_modrinth_service,
     strip_modrinth_prefix,
 )
+from services.permission_service import has_global_permission, has_server_permission
 
 router = APIRouter(prefix="/api/modrinth", tags=["modrinth"])
 
@@ -235,8 +236,13 @@ async def get_modrinth_dependencies(
 async def get_modrinth_metadata(
     ids: str = Query(..., max_length=2000),
     user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     """Batch-Metadatenabfrage fuer Modrinth-Projekte (kommagetrennte IDs)."""
+    if not has_global_permission(db, user, "server.mods.read"):
+        server_ids = [row[0] for row in db.query(Server.id).all()]
+        if not any(has_server_permission(db, user, sid, "server.mods.read") for sid in server_ids):
+            raise HTTPException(status_code=403, detail="Keine Berechtigung")
     raw_ids = [item.strip() for item in ids.split(",") if item.strip()][:50]
     if not raw_ids:
         return {"mods": {}}

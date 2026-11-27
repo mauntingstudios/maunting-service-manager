@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import html
 import json
 import logging
 import re
@@ -59,6 +60,14 @@ from services.ai_redaction import redact_sensitive_text
 # `services.ai_context_budget` direkt.
 
 
+_UNTRUSTED_CLOSE_TAG_RE = re.compile(r"(?i)</\s*untrusted_data")
+
+
+def _escape_untrusted_text(text: str) -> str:
+    """Schwaerzt Secrets und entschaerft schliessende <untrusted_data>-Tags case-insensitiv."""
+    return _UNTRUSTED_CLOSE_TAG_RE.sub("< /untrusted_data", redact_sensitive_text(text))
+
+
 def _skill_index_block(
     db: Session,
     user: User | None,
@@ -95,10 +104,11 @@ def _skill_index_block(
     if always_on:
         rule_blocks = []
         for view, body in always_on:
-            safe_body = redact_sensitive_text(body).replace("</untrusted_data", "< /untrusted_data")
-            safe_name = " ".join(view.name.splitlines())
+            safe_body = _escape_untrusted_text(body)
+            safe_key = html.escape(str(view.skill_key), quote=True)
+            safe_name = html.escape(" ".join(view.name.splitlines()), quote=True)
             rule_blocks.append(
-                f'<untrusted_data type="skill_rule" key="{view.skill_key}" name="{safe_name}">\n'
+                f'<untrusted_data type="skill_rule" key="{safe_key}" name="{safe_name}">\n'
                 f"{safe_body}\n"
                 "</untrusted_data>"
             )
@@ -347,9 +357,7 @@ def _project_context_message(
             db, user, project, query
         )
         if wiki_ctx:
-            safe_wiki = redact_sensitive_text(wiki_ctx).replace(
-                "</untrusted_data", "< /untrusted_data"
-            )
+            safe_wiki = _escape_untrusted_text(wiki_ctx)
             lines.append(
                 '\n<untrusted_data type="project_wiki">\n'
                 f"{safe_wiki}\n"

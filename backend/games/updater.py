@@ -205,9 +205,13 @@ def _fetch_modrinth_mods_updated(mod_ids: list[str]) -> dict[str, datetime]:
 
 def _fetch_thunderstore_mods_updated(community: str, mod_ids: list[str]) -> dict[str, datetime]:
     """Ruft aktualisierte Timestamps fuer Thunderstore-Pakete einer Community ab."""
+    from urllib.parse import urljoin
+
     from services.thunderstore_service import (
+        MAX_THUNDERSTORE_INDEX_BYTES,
         THUNDERSTORE_USER_AGENT,
         _COMMUNITY_RE,
+        is_allowed_thunderstore_download_url,
         strip_thunderstore_prefix,
     )
 
@@ -219,31 +223,49 @@ def _fetch_thunderstore_mods_updated(community: str, mod_ids: list[str]) -> dict
         return {}
     results: dict[str, datetime] = {}
     try:
-        url = f"https://thunderstore.io/c/{slug}/api/v1/package/"
+        current_url = f"https://thunderstore.io/c/{slug}/api/v1/package/"
+        raw_bytes = bytearray()
         with httpx.Client(
             timeout=20.0,
             headers={"User-Agent": THUNDERSTORE_USER_AGENT, "Accept": "application/json"},
-            follow_redirects=True,
+            follow_redirects=False,
         ) as client:
-            resp = client.get(url)
-            resp.raise_for_status()
-            data = resp.json()
-            if isinstance(data, list):
-                for item in data:
-                    if not isinstance(item, dict):
+            for _hop in range(6):
+                with client.stream("GET", current_url) as resp:
+                    if resp.status_code in (301, 302, 303, 307, 308):
+                        location = resp.headers.get("location")
+                        if not location:
+                            return {}
+                        next_url = urljoin(current_url, location)
+                        if not is_allowed_thunderstore_download_url(next_url):
+                            raise ValueError("Redirect-Ziel liegt ausserhalb von thunderstore.io")
+                        current_url = next_url
                         continue
-                    full_name = str(item.get("full_name") or "").strip().lower()
-                    if full_name not in wanted:
-                        continue
-                    dt_str = item.get("date_updated")
-                    if isinstance(dt_str, str):
-                        try:
-                            dt = datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
-                            if dt.tzinfo is None:
-                                dt = dt.replace(tzinfo=timezone.utc)
-                            results[wanted[full_name]] = dt
-                        except ValueError:
-                            pass
+                    resp.raise_for_status()
+                    for chunk in resp.iter_bytes(chunk_size=65536):
+                        raw_bytes.extend(chunk)
+                        if len(raw_bytes) > MAX_THUNDERSTORE_INDEX_BYTES:
+                            raise ValueError("Thunderstore-Index ueberschreitet das Groessenlimit")
+                    break
+            else:
+                return {}
+        data = json.loads(bytes(raw_bytes).decode("utf-8"))
+        if isinstance(data, list):
+            for item in data:
+                if not isinstance(item, dict):
+                    continue
+                full_name = str(item.get("full_name") or "").strip().lower()
+                if full_name not in wanted:
+                    continue
+                dt_str = item.get("date_updated")
+                if isinstance(dt_str, str):
+                    try:
+                        dt = datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
+                        if dt.tzinfo is None:
+                            dt = dt.replace(tzinfo=timezone.utc)
+                        results[wanted[full_name]] = dt
+                    except ValueError:
+                        pass
     except Exception as exc:
         logger.warning("Thunderstore-Details fuer %s konnten nicht abgerufen werden: %s", slug, type(exc).__name__)
     return results
@@ -562,7 +584,10 @@ def check_workshop_mod_updates(
                 base_dir = Path(server.install_dir).resolve()
                 meta = read_modrinth_metadata(base_dir, workshop_id)
                 if meta and meta.get("files"):
-                    is_installed = any((base_dir / str(f)).exists() for f in meta["files"])
+                    is_installed = any(
+                        (base_dir / str(f)).exists() or (base_dir / f"{f}.disabled").exists()
+                        for f in meta["files"]
+                    )
                 else:
                     is_installed = False
         elif is_thunderstore_item:
@@ -580,7 +605,10 @@ def check_workshop_mod_updates(
                 base_dir = Path(server.install_dir).resolve()
                 meta = read_thunderstore_metadata(base_dir, workshop_id)
                 if meta and meta.get("files"):
-                    is_installed = any((base_dir / str(f)).exists() for f in meta["files"])
+                    is_installed = any(
+                        (base_dir / str(f)).exists() or (base_dir / f"{f}.disabled").exists()
+                        for f in meta["files"]
+                    )
                 else:
                     is_installed = False
         elif is_curseforge:

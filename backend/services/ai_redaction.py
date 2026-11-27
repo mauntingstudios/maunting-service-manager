@@ -300,9 +300,9 @@ def _wert_ist_geheimnis(match: re.Match[str]) -> bool:
         and wert.lower() in _AUTH_SCHEMES
     ):
         rest = match.string[match.end():].split("\n", 1)[0].lstrip(" \t\"'`")
-        folge = re.match(r"[^\s,;\"'`]+", rest)
-        wert = folge.group(0) if folge else ""
-    if not wert or wert.isdigit() or _PLATZHALTER_WERT_RE.match(wert):
+        auth_span = re.split(r"[\"'`,;]", rest, maxsplit=1)[0].strip()
+        wert = auth_span
+    if not wert or wert.isdigit() or _PLATZHALTER_WERT_RE.fullmatch(wert):
         return False
     return len(wert) >= 4
 

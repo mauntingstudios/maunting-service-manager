@@ -191,6 +191,7 @@ async def ermitteln(
     db=None,
     user_id: int | None = None,
     model_id: str | None = None,
+    api_key: str | None = None,
 ) -> Fenster:
     """Das Fenster des eingestellten Modells dieses Providers.
 
@@ -274,6 +275,8 @@ async def ermitteln(
                 and ai_provider_registry.anbieter(kind).adresse_eintragbar
                 else {}
             )
+            if api_key:
+                finde_kwargs["schluessel"] = api_key
             modell = await ai_model_catalog.finde(
                 client,
                 kind,

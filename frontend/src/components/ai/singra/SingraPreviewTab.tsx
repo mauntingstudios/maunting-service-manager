@@ -25,7 +25,6 @@ import type {
   AiProjectFile,
 } from '@/api/ai'
 import { Badge, Button, Dropdown, Kurzinfo, Spinner } from '@maunting/ui'
-import { still } from '@/lib/still'
 import { toast } from '@/stores/toastStore'
 import { PreviewDiagnostics } from './PreviewDiagnostics'
 
@@ -508,19 +507,7 @@ export function SingraPreviewTab({
                   srcDoc={previewSrcDoc ?? undefined}
                   title="Projekt-Vorschau"
                   className="w-full flex-1 border-0 min-h-[400px] bg-white"
-                  sandbox="allow-scripts allow-forms allow-modals allow-same-origin"
-                  onLoad={(e) => {
-                    const frame = e.currentTarget
-                    if (!previewSrcDoc) return
-                    try {
-                      const loc = frame.contentWindow?.location
-                      if (loc && loc.href && loc.href !== 'about:srcdoc' && loc.origin === window.location.origin) {
-                        frame.srcdoc = previewSrcDoc
-                      }
-                    } catch (err) {
-                      still(err, 'singra:preview:iframe:onLoad')
-                    }
-                  }}
+                  sandbox="allow-scripts allow-forms allow-modals"
                 />
               )}
               {previewError && !previewErrorDismissed && (

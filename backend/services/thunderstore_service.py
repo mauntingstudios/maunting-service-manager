@@ -6,6 +6,7 @@ Community in einen In-Memory TTL-Cache (5 Minuten) und filtert/paginiert lokal.
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 import threading
@@ -13,7 +14,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Optional
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 import httpx
 
@@ -21,6 +22,8 @@ logger = logging.getLogger(__name__)
 
 THUNDERSTORE_USER_AGENT = "MauntingStudios/MSM (https://mauntingstudios.de)"
 THUNDERSTORE_CACHE_TTL_SECONDS = 300
+MAX_THUNDERSTORE_INDEX_BYTES = 64 * 1024 * 1024
+_MAX_REDIRECT_HOPS = 5
 _COMMUNITY_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
 _PKG_ID_RE = re.compile(r"^[A-Za-z0-9_.-]{1,100}$")
 _THUNDERSTORE_URL_RE = re.compile(
@@ -166,28 +169,52 @@ class ThunderstoreService:
             if cached and (time.monotonic() - cached[0] < THUNDERSTORE_CACHE_TTL_SECONDS):
                 return cached[1], cached[2]
 
-        url = f"https://thunderstore.io/c/{slug}/api/v1/package/"
+        current_url = f"https://thunderstore.io/c/{slug}/api/v1/package/"
+        raw_bytes = bytearray()
         try:
-            async with httpx.AsyncClient(timeout=25.0, follow_redirects=True) as client:
-                resp = await client.get(
-                    url,
-                    headers={
-                        "User-Agent": THUNDERSTORE_USER_AGENT,
-                        "Accept": "application/json",
-                    },
-                )
+            async with httpx.AsyncClient(timeout=25.0, follow_redirects=False) as client:
+                for _hop in range(_MAX_REDIRECT_HOPS + 1):
+                    async with client.stream(
+                        "GET",
+                        current_url,
+                        headers={
+                            "User-Agent": THUNDERSTORE_USER_AGENT,
+                            "Accept": "application/json",
+                        },
+                    ) as resp:
+                        status = getattr(resp, "status_code", 200)
+                        if status in (301, 302, 303, 307, 308):
+                            location = resp.headers.get("location")
+                            if not location:
+                                raise ThunderstoreApiUnavailable("thunderstore_api_unavailable", "Redirect without location")
+                            next_url = urljoin(current_url, location)
+                            if not is_allowed_thunderstore_download_url(next_url):
+                                raise ThunderstoreApiUnavailable("thunderstore_api_unavailable", "Disallowed redirect target")
+                            current_url = next_url
+                            continue
+                        if status == 404:
+                            raise ThunderstoreApiUnavailable("thunderstore_community_not_found", f"Community {slug} not found")
+                        if status == 429:
+                            raise ThunderstoreApiUnavailable("thunderstore_rate_limited", "Rate limit exceeded")
+                        if status >= 400:
+                            raise ThunderstoreApiUnavailable("thunderstore_api_unavailable", f"HTTP {status}")
+                        async for chunk in resp.aiter_bytes(chunk_size=65536):
+                            raw_bytes.extend(chunk)
+                            if len(raw_bytes) > MAX_THUNDERSTORE_INDEX_BYTES:
+                                raise ThunderstoreApiUnavailable("thunderstore_api_unavailable", "Index response too large")
+                        break
+                else:
+                    raise ThunderstoreApiUnavailable("thunderstore_api_unavailable", "Too many redirects")
+        except ThunderstoreApiUnavailable:
+            raise
         except httpx.HTTPError as exc:
             logger.warning("Thunderstore API Netzwerkfehler (%s): %s", slug, type(exc).__name__)
             raise ThunderstoreApiUnavailable("thunderstore_api_unavailable", str(type(exc).__name__)) from exc
 
-        if resp.status_code == 404:
-            raise ThunderstoreApiUnavailable("thunderstore_community_not_found", f"Community {slug} not found")
-        if resp.status_code == 429:
-            raise ThunderstoreApiUnavailable("thunderstore_rate_limited", "Rate limit exceeded")
-        if resp.status_code >= 400:
-            raise ThunderstoreApiUnavailable("thunderstore_api_unavailable", f"HTTP {resp.status_code}")
-
-        raw_list = resp.json()
+        try:
+            raw_list = json.loads(bytes(raw_bytes).decode("utf-8"))
+        except (UnicodeDecodeError, ValueError) as exc:
+            raise ThunderstoreApiUnavailable("thunderstore_api_unavailable", "Invalid JSON") from exc
         if not isinstance(raw_list, list):
             raise ThunderstoreApiUnavailable("thunderstore_api_unavailable", "Unexpected response format")
 

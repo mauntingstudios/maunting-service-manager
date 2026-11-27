@@ -978,7 +978,6 @@ async def stream_message(
             text=safe_content,
             has_images=has_unbound_attachments,
             reasoning=payload.reasoning,
-            project_id=payload.project_id or conversation.project_id,
             history_len=history_len,
         )
         if routed is None:

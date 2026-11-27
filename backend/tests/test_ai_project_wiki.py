@@ -510,6 +510,49 @@ def test_wiki_cross_user_idor_csrf_and_size_limits(
     )
     assert no_csrf.status_code == 403
 
+    # Groessenlimits: content_markdown > 120.000 und source_files > 100 werden mit 422 abgewiesen
+    owner_cookies, owner_csrf = _login(client, owner_name, owner_pw)
+    too_long_md = client.put(
+        f"/api/ai/projects/{proj.id}/wiki/pages/too-big",
+        json={
+            "title": "Zu gross",
+            "category": "overview",
+            "content_markdown": "x" * 120_001,
+        },
+        cookies=owner_cookies,
+        headers={"X-CSRF-Token": owner_csrf},
+    )
+    assert too_long_md.status_code == 422
+
+    too_many_sources = client.put(
+        f"/api/ai/projects/{proj.id}/wiki/pages/too-many-sources",
+        json={
+            "title": "Zu viele Quellen",
+            "category": "overview",
+            "content_markdown": "# Ok",
+            "source_files": [f"src/file_{i}.py" for i in range(101)],
+        },
+        cookies=owner_cookies,
+        headers={"X-CSRF-Token": owner_csrf},
+    )
+    assert too_many_sources.status_code == 422
+
+    # Workspace-Dateien oberhalb von _MAX_WORKSPACE_WIKI_BYTES werden beim Sync uebersprungen
+    ws = ai_project_service.ensure_project_workspace(proj)
+    wiki_dir = ws / ".singra" / "wiki"
+    wiki_dir.mkdir(parents=True, exist_ok=True)
+    oversized = wiki_dir / "oversized.md"
+    oversized.write_text("a" * (ai_project_wiki_service._MAX_WORKSPACE_WIKI_BYTES + 128), encoding="utf-8")
+    with patch("services.ai_embedding_service.encode", side_effect=_mock_encode_factory()):
+        sync_oversized = ai_project_wiki_service.sync_from_workspace(db, owner, proj.id)
+    assert sync_oversized["synced_files"] == 0
+    assert (
+        db.query(AiProjectWikiPage)
+        .filter(AiProjectWikiPage.project_id == proj.id, AiProjectWikiPage.slug == "oversized")
+        .first()
+        is None
+    )
+
 
 def test_wiki_security_and_worker_edge_cases(
     db: Session, tmp_path: Path, monkeypatch
@@ -660,3 +703,86 @@ def test_wiki_security_and_worker_edge_cases(
         )
     assert created["created"] is True
     assert ["add", "-A"] in git_calls
+
+
+def test_wiki_path_change_preserves_pages_and_missing_folder_sync_is_safe(
+    db: Session, tmp_path: Path, monkeypatch
+):
+    from sqlalchemy.exc import IntegrityError
+
+    monkeypatch.setattr("config.settings.servers_dir", str(tmp_path))
+    user, _, _ = _create_user_with_perms(db, extra_perms=("ai.projects.wiki",))
+    proj = ai_project_service.create_project(db, user, name="MoveWikiRepo")
+
+    with patch("services.ai_embedding_service.encode", side_effect=_mock_encode_factory()):
+        ai_project_wiki_service.update_wiki_settings(db, user, proj.id, wiki_enabled=True)
+        ai_project_wiki_service.upsert_wiki_page(
+            db,
+            user,
+            proj.id,
+            slug="overview",
+            title="Ueberblick",
+            category="overview",
+            summary="Start",
+            markdown="# Start\n\nWichtiger Inhalt.",
+            source_files=["README.md"],
+        )
+
+        # 1. Aendern von wiki_path verschiebt bestehende Dateien in den neuen Ordner
+        ai_project_wiki_service.update_wiki_settings(db, user, proj.id, wiki_path="docs/wiki")
+        ws = ai_project_service.ensure_project_workspace(proj)
+        assert not (ws / ".singra" / "wiki" / "overview.md").exists()
+        assert (ws / "docs" / "wiki" / "overview.md").is_file()
+
+        # 2. Anschliessender Sync behaelt alle Seiten
+        sync_after_move = ai_project_wiki_service.sync_from_workspace(db, user, proj.id)
+        assert sync_after_move["removed"] == 0
+        page = ai_project_wiki_service.get_wiki_page(db, user, proj.id, "overview")
+        assert page["file_path"] == "docs/wiki/overview.md"
+
+        # 3. Fehlt der Zielordner auf Platte komplett, loescht sync_from_workspace keine DB-Seiten
+        (ws / "docs" / "wiki" / "overview.md").unlink()
+        (ws / "docs" / "wiki").rmdir()
+        sync_missing_dir = ai_project_wiki_service.sync_from_workspace(db, user, proj.id)
+        assert sync_missing_dir["removed"] == 0
+        assert ai_project_wiki_service.get_wiki_page(db, user, proj.id, "overview")["title"] == "Ueberblick"
+
+        # 4. Paralleler Insert (echte Unique-Constraint-Kollision aus zweiter Session) faellt sauber auf Update zurueck
+        from database import SessionLocal
+
+        orig_flush = db.flush
+        first_race = {"done": False}
+
+        def _racy_flush(*args, **kwargs):
+            if not first_race["done"] and any(
+                isinstance(obj, AiProjectWikiPage) and obj.slug == "race-card"
+                for obj in db.new
+            ):
+                first_race["done"] = True
+                with SessionLocal() as other_db:
+                    other_user = other_db.get(User, user.id)
+                    assert other_user is not None
+                    ai_project_wiki_service.upsert_wiki_page(
+                        other_db,
+                        other_user,
+                        proj.id,
+                        slug="race-card",
+                        title="Erster Gewinner",
+                        category="module",
+                        markdown="# First",
+                    )
+            return orig_flush(*args, **kwargs)
+
+        with patch.object(db, "flush", side_effect=_racy_flush):
+            res = ai_project_wiki_service.upsert_wiki_page(
+                db,
+                user,
+                proj.id,
+                slug="race-card",
+                title="Zweiter Aufrufer",
+                category="module",
+                markdown="# Updated cleanly",
+            )
+        assert res["slug"] == "race-card"
+        assert res["title"] == "Zweiter Aufrufer"
+

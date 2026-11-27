@@ -52,7 +52,7 @@ export function buildPreviewBridgeScript(): string {
     var target = e.target && e.target.closest ? e.target.closest('a') : null;
     if (!target) return;
     var href = (target.getAttribute('href') || '').trim();
-    if (!href.startsWith('#') && !href.toLowerCase().startsWith('javascript:')) {
+    if (!href.startsWith('#')) {
       e.preventDefault();
     }
   }, false);
@@ -183,6 +183,7 @@ export function useSingraPreview({
         return
       }
       if (ev.data && ev.data.type === 'SINGRA_ELEMENT_SELECTED') {
+        if (ev.source !== previewIframeRef.current?.contentWindow) return
         const selector = String(ev.data.selector || 'Element')
         setInspectElement(selector)
         setInspectMode(false)
@@ -204,6 +205,7 @@ export function useSingraPreview({
   useEffect(() => {
     const handleDevConsoleMsg = (ev: MessageEvent) => {
       if (ev.data && ev.data.type === 'SINGRA_DEV_CONSOLE') {
+        if (ev.source !== previewIframeRef.current?.contentWindow) return
         setConsoleLogs((prev) => [
           ...prev.slice(-99),
           {

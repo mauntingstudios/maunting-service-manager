@@ -299,3 +299,14 @@ def test_update_sh_and_service_template_graceful_drain_contract():
     assert "TimeoutStopSec=45" in template
     assert "MSM_DRAIN_FLAG_FILE=" in updater
     assert "MSM_DRAIN_FLAG_FILE=" in template
+
+
+def test_drain_flag_default_path_is_not_in_system_tmp(monkeypatch):
+    import tempfile
+
+    monkeypatch.delenv("MSM_DRAIN_FLAG_FILE", raising=False)
+    default_path = drain_service.drain_flag_path()
+    tmp_root = Path(tempfile.gettempdir()).resolve()
+    assert not default_path.resolve().is_relative_to(tmp_root)
+    assert default_path.name == ".msm-draining.json"
+

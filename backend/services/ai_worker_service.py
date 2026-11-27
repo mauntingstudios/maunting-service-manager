@@ -268,7 +268,6 @@ def worker_start(
             text=auftrag,
             has_images=False,
             reasoning=bool(stufe_vorab),
-            project_id=project_id,
             history_len=0,
         )
         if routed is None:
@@ -522,7 +521,6 @@ def worker_antwort(db: Session, *, user: User, arguments: dict) -> dict:
             text=antwort,
             has_images=False,
             reasoning=bool(stufe_vorab),
-            project_id=fenster.project_id,
             history_len=0,
             min_tier=prev_tier,
         )

@@ -176,6 +176,8 @@ export interface AiRoleLimitsResponse {
   max_attachment_storage_mb: number | null
   max_context_tokens: number | null
   allow_all_models: boolean
+  router_only?: boolean
+  soft_cap_downgrade?: boolean
   model_access: RoleAiModelAccessItem[]
   updated_at: string | null
 }
@@ -192,6 +194,8 @@ export interface AiRoleLimitsUpdate {
   max_attachment_storage_mb?: number | null
   max_context_tokens?: number | null
   allow_all_models?: boolean
+  router_only?: boolean
+  soft_cap_downgrade?: boolean
   model_access?: RoleAiModelAccessItem[]
 }
 

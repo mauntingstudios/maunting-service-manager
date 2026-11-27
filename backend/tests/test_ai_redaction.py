@@ -432,3 +432,12 @@ def test_xml_gegenprobe_harmlose_elemente_bleiben() -> None:
         "<maxPlayers>40</maxPlayers>",
     ):
         assert redact_sensitive_text(probe) == probe, probe
+
+
+def test_authorization_placeholder_allows_placeholders_but_blocks_multi_token_secrets() -> None:
+    assert enthaelt_zugangsdaten("Authorization: Bearer ${token}") is False
+    assert enthaelt_zugangsdaten("Authorization: Basic ${creds}") is False
+    assert enthaelt_zugangsdaten('Use `Authorization: Bearer ${token}` in header.') is False
+    assert enthaelt_zugangsdaten("Authorization: Basic x dXNlcjpwYXNz") is True
+    assert enthaelt_zugangsdaten("Authorization: ApiKey 123 echtes_geheimnis") is True
+

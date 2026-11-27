@@ -256,13 +256,13 @@ export function AiSkillManager({ scope }: Props) {
               <span className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-on-surface-variant">
                 <span>{row.skill_key}</span>
                 {row.origin === 'ai' && (
-                  <span className="inline-flex items-center gap-1 uppercase tracking-wider text-tertiary">
+                  <span className="inline-flex items-center gap-1 text-tertiary">
                     <Sparkles className="h-3 w-3" aria-hidden="true" />
                     {t('ai.skills.origins.ai')}
                   </span>
                 )}
                 {(!darfAendern || row.status === 'pending') && row.always_active && (
-                  <span className="rounded-full border border-primary/40 bg-primary/10 px-2 py-0.5 text-label-sm uppercase tracking-wider text-primary">
+                  <span className="rounded-full border border-primary/40 bg-primary/10 px-2 py-0.5 text-label-sm text-primary">
                     {t('ai.skills.alwaysActiveBadge')}
                   </span>
                 )}

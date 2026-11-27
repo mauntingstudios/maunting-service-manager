@@ -535,12 +535,10 @@ def classify_request(
     text: str,
     has_images: bool = False,
     reasoning: bool = False,
-    project_id: str | None = None,
     history_len: int = 0,
     db: Session | None = None,
 ) -> tuple[str, float, str]:
     """Qualitaetsorientiertes Routing (semantisch + mathematisch) in ``eco``, ``standard`` oder ``flagship``."""
-    del project_id
     cleaned = (text or "").strip()
     math_score = _mathematical_complexity(
         cleaned,
@@ -578,6 +576,69 @@ def classify_request(
 _TIER_RANK: dict[str, int] = {"eco": 0, "standard": 1, "flagship": 2}
 
 
+def filter_candidates_by_allowed(
+    candidates: list[dict],
+    effective_allowed: dict[int, set[str]] | None,
+) -> list[dict]:
+    """Filtert Router-Kandidaten gegen rollenbasierte Provider-/Modellfreigaben."""
+    if effective_allowed is None:
+        return list(candidates)
+    filtered: list[dict] = []
+    for cand in candidates:
+        if not isinstance(cand, dict):
+            continue
+        raw_pid = cand.get("provider_id")
+        model = str(cand.get("model") or "").strip()
+        if not raw_pid or not model:
+            continue
+        allowed_models = effective_allowed.get(int(raw_pid))
+        if allowed_models is None:
+            continue
+        if "*" in allowed_models or model in allowed_models:
+            filtered.append(cand)
+    return filtered
+
+
+def pick_usable_candidate(
+    db: Session,
+    *,
+    user_id: int,
+    candidates: list[dict],
+    start_index: int = 0,
+    skip_provider_id: int | None = None,
+    mark_cooldown_on_error: bool = True,
+) -> tuple[int, AiProvider, str | None, dict] | None:
+    """Waehlt den ersten konfigurierten und entschluesselbaren Kandidaten ab ``start_index``."""
+    for idx in range(max(0, start_index), len(candidates)):
+        cand = candidates[idx]
+        if not isinstance(cand, dict):
+            continue
+        raw_pid = cand.get("provider_id")
+        model = str(cand.get("model") or "").strip()
+        if not raw_pid or not model:
+            continue
+        pid = int(raw_pid)
+        if skip_provider_id is not None and pid == int(skip_provider_id):
+            continue
+        resolved = db.get(AiProvider, pid)
+        if resolved is None or not resolved.enabled:
+            continue
+        try:
+            ai_provider_service.effective_spec(resolved, mit_adresse=True)
+            key = ai_provider_service.resolve_api_key(db, resolved, user_id)
+        except Exception:
+            logger.warning("Router-Kandidat %s nicht nutzbar", resolved.id, exc_info=True)
+            if mark_cooldown_on_error:
+                mark_provider_cooldown(resolved.id, seconds=300)
+            continue
+        if resolved.requires_api_key and not key:
+            if mark_cooldown_on_error:
+                mark_provider_cooldown(resolved.id, seconds=300)
+            continue
+        return idx, resolved, key, cand
+    return None
+
+
 def resolve_route_for_text(
     db: Session,
     *,
@@ -585,11 +646,10 @@ def resolve_route_for_text(
     text: str,
     has_images: bool = False,
     reasoning: bool = False,
-    project_id: str | None = None,
     history_len: int = 0,
     min_tier: str | None = None,
 ) -> tuple[AiProvider, str, dict] | None:
-    """Klassifiziert eine Anfrage, prueft 5h-Soft-Cap und liefert (Provider, Modell, routing_meta)."""
+    """Klassifiziert eine Anfrage, prueft 5h-Soft-Cap sowie Rollen-Allowlists und liefert (Provider, Modell, routing_meta)."""
     from services import ai_limit_service, ai_usage_service
 
     effective_limits = ai_limit_service.resolve_effective_limits(db, user)
@@ -606,42 +666,39 @@ def resolve_route_for_text(
             text=text,
             has_images=has_images,
             reasoning=reasoning,
-            project_id=project_id,
             history_len=history_len,
             db=db,
         )
         if min_tier in _TIER_RANK and tier in _TIER_RANK and _TIER_RANK[tier] < _TIER_RANK[min_tier]:
             tier = min_tier
             route_reason = f"{route_reason}+min_tier"
-    candidates = resolve_candidates(db, tier=tier, soft_cap=soft_cap)
-    for idx, cand in enumerate(candidates):
-        resolved = db.get(AiProvider, cand["provider_id"])
-        if resolved is None or not resolved.enabled:
-            continue
-        try:
-            ai_provider_service.effective_spec(resolved, mit_adresse=True)
-            key = ai_provider_service.resolve_api_key(db, resolved, user.id)
-        except Exception:
-            logger.warning("Router-Kandidat %s nicht nutzbar", resolved.id, exc_info=True)
-            mark_provider_cooldown(resolved.id, seconds=300)
-            continue
-        if resolved.requires_api_key and not key:
-            mark_provider_cooldown(resolved.id, seconds=300)
-            continue
-        routing_meta = {
-            "tier": cand["tier"],
-            "model": cand["model"],
-            "provider_id": cand["provider_id"],
-            "provider_name": cand["provider_name"],
-            "reason": route_reason,
-            "score": score,
-            "weight": cand["weight"],
-            "soft_cap": soft_cap,
-            "candidates": candidates,
-            "candidate_index": idx,
-        }
-        return resolved, cand["model"], routing_meta
-    return None
+
+    effective_allowed = (
+        None
+        if effective_limits.router_only
+        else ai_limit_service.resolve_effective_allowed_models(db, user)
+    )
+    candidates = filter_candidates_by_allowed(
+        resolve_candidates(db, tier=tier, soft_cap=soft_cap),
+        effective_allowed,
+    )
+    picked = pick_usable_candidate(db, user_id=user.id, candidates=candidates)
+    if picked is None:
+        return None
+    idx, resolved, _key, cand = picked
+    routing_meta = {
+        "tier": cand["tier"],
+        "model": cand["model"],
+        "provider_id": cand["provider_id"],
+        "provider_name": cand["provider_name"],
+        "reason": route_reason,
+        "score": score,
+        "weight": cand["weight"],
+        "soft_cap": soft_cap,
+        "candidates": candidates,
+        "candidate_index": idx,
+    }
+    return resolved, cand["model"], routing_meta
 
 
 def resolve_candidates(
