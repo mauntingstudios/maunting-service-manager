@@ -561,8 +561,19 @@ def clean_db():
     PanelSettingsService.invalidate_cache()
     # Der Vektorspeicher des Gedächtnisabrufs hält Bereiche über Tests hinweg;
     # die Tabellen sind geleert, dieselben Kennungen kommen wieder.
-    from services import ai_gedaechtnis_abruf
+    from services import ai_embedding_service, ai_gedaechtnis_abruf, ai_router_service
+    from services.ai_stream.lifecycle import (
+        frischer_start_cache_leeren_fuer_tests,
+        tool_router_cache_leeren_fuer_tests,
+    )
+    from services.ai_tools.server_tools import reset_tool_definitions_cache_for_tests
     ai_gedaechtnis_abruf.leeren()
+    ai_embedding_service.embedding_cache_leeren_fuer_tests()
+    tool_router_cache_leeren_fuer_tests()
+    frischer_start_cache_leeren_fuer_tests()
+    reset_tool_definitions_cache_for_tests()
+    with ai_router_service._PROTO_LOCK:
+        ai_router_service._PROTO_CACHE.clear()
     from services.mod_update_service import reset_update_check_cache
     reset_update_check_cache()
     PanelSettingsService.set("captcha_enabled", "false")

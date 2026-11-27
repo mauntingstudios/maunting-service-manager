@@ -1038,6 +1038,48 @@ async def _besorgen(
         return frisch
 
 
+def cached_finde(
+    kind: str,
+    model_id: str,
+    *,
+    provider: Any | None = None,
+) -> Modell | None:
+    """Rein synchroner Cache-Nachschlag ohne Netz-, DB- oder DIS-Zugriff."""
+    gesucht = (model_id or "").strip()
+    if not gesucht:
+        return None
+    spec = anbieter(kind)
+    schluessel_cache = _cache_key(kind, provider) if spec.adresse_eintragbar and provider is not None else kind
+    eintrag = _cache.get(schluessel_cache)
+    fremd_eintrag = _cache.get(spec.faehigkeiten_aus) if spec.faehigkeiten_aus else None
+    fremd_map = {m.model_id: m for m in fremd_eintrag.modelle} if fremd_eintrag and fremd_eintrag.modelle else {}
+
+    if eintrag and eintrag.modelle:
+        for modell in eintrag.modelle:
+            if modell.model_id == gesucht:
+                angereichert = (
+                    _anreichern(modell, fremd_map.get(f"{spec.faehigkeiten_praefix}{modell.model_id}"))
+                    if fremd_map
+                    else modell
+                )
+                if provider is not None and spec.adresse_eintragbar:
+                    return _mit_custom_ueberschreibung(angereichert, provider)
+                return angereichert
+
+    if spec.adresse_eintragbar:
+        if provider is not None and _custom_overrides_aktiv(provider):
+            return _mit_custom_ueberschreibung(
+                Modell(model_id=gesucht, name=gesucht, denkt=None), provider
+            )
+        return None
+    if spec.catalog_url is not None:
+        return None
+    fremd = fremd_map.get(f"{spec.faehigkeiten_praefix}{gesucht}")
+    if fremd is None:
+        return None
+    return _anreichern(Modell(model_id=gesucht, name=gesucht, denkt=None), fremd)
+
+
 async def finde(
     client: httpx.AsyncClient,
     kind: str,
@@ -1113,6 +1155,7 @@ async def fuer_provider(
     *,
     user_id: int,
     model_id: str | None = None,
+    schluessel: str | None = None,
 ) -> Modell | None:
     """Das eingestellte Modell eines Providers — mit Schlüssel, wenn nötig.
 
@@ -1147,14 +1190,17 @@ async def fuer_provider(
     if not modell_id:
         return None
 
-    schluessel: str | None = None
+    eff_schluessel: str | None = schluessel
     spec = ai_provider_registry.anbieter(kind)
-    if spec.katalog_braucht_schluessel or (
-        spec.adresse_eintragbar
-        and getattr(provider, "operator_api_key_encrypted", None)
+    if eff_schluessel is None and (
+        spec.katalog_braucht_schluessel
+        or (
+            spec.adresse_eintragbar
+            and getattr(provider, "operator_api_key_encrypted", None)
+        )
     ):
         try:
-            schluessel = await run_in_threadpool(
+            eff_schluessel = await run_in_threadpool(
                 resolve_api_key, db, provider, user_id
             )
         except Exception as exc:
@@ -1163,7 +1209,7 @@ async def fuer_provider(
                 kind, type(exc).__name__,
             )
 
-    finde_kwargs: dict[str, Any] = {"schluessel": schluessel}
+    finde_kwargs: dict[str, Any] = {"schluessel": eff_schluessel}
     if spec.adresse_eintragbar:
         finde_kwargs["provider"] = provider
     return await finde(client, kind, modell_id, **finde_kwargs)

@@ -4,9 +4,13 @@
 from __future__ import annotations
 
 import asyncio
+from collections import OrderedDict
 from datetime import datetime, timezone
+import hashlib
 import json
 import logging
+import threading
+import time
 from uuid import UUID, uuid4
 
 import httpx
@@ -70,6 +74,7 @@ from services.ai_stream.read_tools import (
     _runde_zaehlen,
     _rundenfehler_nachrichten,
 )
+from services.ai_latency_metrics import measure
 from services.ai_provider_errors import AiProviderConfigurationError
 from services.ai_stream.types import (
     KEIN_BLICK_GRUND,
@@ -80,6 +85,7 @@ from services.ai_stream.types import (
     POLLING_WERKZEUGE,
     GuardianRahmenUnlesbar,
     _Anlauf,
+    _FrischerStart,
     _Vorbereitung,
 )
 from services.ai_stream.write_tools import (
@@ -124,6 +130,83 @@ from services.openai_compatible_adapter import (
 
 logger = logging.getLogger(__name__)
 
+_FRISCHER_START_TTL_SEKUNDEN = 10.0
+_FRISCHER_START_MAX = 256
+_FRISCHER_START_LOCK = threading.Lock()
+_FRISCHER_START_CACHE: OrderedDict[str, _FrischerStart] = OrderedDict()
+
+_VORHERIGE_WERKZEUGE_MAX = 512
+_VORHERIGE_WERKZEUGE_LOCK = threading.Lock()
+_VORHERIGE_WERKZEUGE_CACHE: OrderedDict[str, tuple[str, tuple[str, ...]]] = OrderedDict()
+
+
+def frischer_start_registrieren(run_id: str, start: _FrischerStart) -> None:
+    """Legt einen einmaligen, kurzlebigen In-Process-Handoff fuer einen frischen Lauf ab."""
+    jetzt = time.monotonic()
+    with _FRISCHER_START_LOCK:
+        veraltet = [
+            rid
+            for rid, eintrag in _FRISCHER_START_CACHE.items()
+            if (jetzt - eintrag.erstellt_am) > _FRISCHER_START_TTL_SEKUNDEN
+        ]
+        for rid in veraltet:
+            _FRISCHER_START_CACHE.pop(rid, None)
+        _FRISCHER_START_CACHE[run_id] = start
+        _FRISCHER_START_CACHE.move_to_end(run_id)
+        while len(_FRISCHER_START_CACHE) > _FRISCHER_START_MAX:
+            _FRISCHER_START_CACHE.popitem(last=False)
+
+
+def frischer_start_konsumieren(run_id: str) -> _FrischerStart | None:
+    """Holt und loescht den Handoff sofort (einmaliger Konsum, abgelaufene werden verworfen)."""
+    with _FRISCHER_START_LOCK:
+        eintrag = _FRISCHER_START_CACHE.pop(run_id, None)
+    if eintrag is None:
+        return None
+    if (time.monotonic() - eintrag.erstellt_am) > _FRISCHER_START_TTL_SEKUNDEN:
+        return None
+    return eintrag
+
+
+def frischer_start_invalidieren(run_id: str | None) -> None:
+    """Entfernt einen Handoff, falls der Laufzustand nachtraeglich geaendert wurde."""
+    if not run_id:
+        return
+    with _FRISCHER_START_LOCK:
+        _FRISCHER_START_CACHE.pop(run_id, None)
+
+
+def vorherige_werkzeuge_cache_aktualisieren(
+    conversation_id: str | None,
+    run_id: str,
+    routed_tools: list[str] | tuple[str, ...],
+) -> None:
+    """Aktualisiert den In-Process-Cache fuer gemerkte Nicht-HOTSET-Werkzeuge."""
+    if not conversation_id:
+        return
+    gesehen: set[str] = set()
+    ergebnis: list[str] = []
+    for eintrag in routed_tools:
+        if isinstance(eintrag, str) and eintrag and eintrag not in gesehen:
+            gesehen.add(eintrag)
+            ergebnis.append(eintrag)
+            if len(ergebnis) >= MAX_STICKY_TOOLS:
+                break
+    wert = (run_id, tuple(ergebnis))
+    with _VORHERIGE_WERKZEUGE_LOCK:
+        _VORHERIGE_WERKZEUGE_CACHE[conversation_id] = wert
+        _VORHERIGE_WERKZEUGE_CACHE.move_to_end(conversation_id)
+        while len(_VORHERIGE_WERKZEUGE_CACHE) > _VORHERIGE_WERKZEUGE_MAX:
+            _VORHERIGE_WERKZEUGE_CACHE.popitem(last=False)
+
+
+def frischer_start_cache_leeren_fuer_tests() -> None:
+    """Leert Handoff- und Vorwerkzeug-Caches zwischen Tests."""
+    with _FRISCHER_START_LOCK:
+        _FRISCHER_START_CACHE.clear()
+    with _VORHERIGE_WERKZEUGE_LOCK:
+        _VORHERIGE_WERKZEUGE_CACHE.clear()
+
 
 def _abschnitt_fuer_ablage(abschnitt: dict) -> dict:
     """Ein Abschnitt so, wie er in die Datenbank darf.
@@ -155,6 +238,7 @@ def _finalize_stream(
     question: dict | None = None,
     abschnitte: list[dict] | None = None,
     token_weight: float = 1.0,
+    vermerkte_gedaechtnis_ids: tuple[str, ...] = (),
 ) -> None:
     with SessionLocal() as db:
         message = db.get(AiMessage, message_id)
@@ -248,6 +332,17 @@ def _finalize_stream(
                 cost_source=herkunft,
                 token_weight=token_weight,
             )
+        if vermerkte_gedaechtnis_ids:
+            try:
+                from services import ai_gedaechtnis_abruf
+
+                ai_gedaechtnis_abruf.markiere_gebraucht(db, vermerkte_gedaechtnis_ids)
+            except Exception as exc:
+                logger.warning(
+                    "Gedaechtnis-UseCount nicht aktualisiert message_id=%s error=%s",
+                    message_id,
+                    type(exc).__name__,
+                )
         db.commit()
 
 
@@ -261,19 +356,33 @@ def _vorherige_werkzeuge_laden(
     if not conversation_id:
         return ()
     try:
-        vorgaenger = (
-            db.query(AiRun)
+        vorgaenger_id = (
+            db.query(AiRun.id)
             .filter(
                 AiRun.conversation_id == conversation_id,
                 AiRun.id != exclude_run_id,
             )
             .order_by(AiRun.created_at.desc())
+            .limit(1)
+            .scalar()
+        )
+        if not vorgaenger_id:
+            return ()
+        with _VORHERIGE_WERKZEUGE_LOCK:
+            cached = _VORHERIGE_WERKZEUGE_CACHE.get(conversation_id)
+            if cached is not None and cached[0] == vorgaenger_id:
+                _VORHERIGE_WERKZEUGE_CACHE.move_to_end(conversation_id)
+                return cached[1]
+        vorgaenger = (
+            db.query(AiRun)
+            .filter(AiRun.id == vorgaenger_id)
             .first()
         )
         if vorgaenger is None:
             return ()
         roh = ai_run_service.zustand_lesen(vorgaenger).get("routed_tools")
         if not isinstance(roh, list):
+            vorherige_werkzeuge_cache_aktualisieren(conversation_id, vorgaenger_id, ())
             return ()
         gesehen: set[str] = set()
         ergebnis: list[str] = []
@@ -283,7 +392,9 @@ def _vorherige_werkzeuge_laden(
                 ergebnis.append(eintrag)
                 if len(ergebnis) >= MAX_STICKY_TOOLS:
                     break
-        return tuple(ergebnis)
+        result = tuple(ergebnis)
+        vorherige_werkzeuge_cache_aktualisieren(conversation_id, vorgaenger_id, result)
+        return result
     except Exception:
         return ()
 
@@ -347,6 +458,7 @@ def _segment_vorbereiten(run_id: str) -> tuple[_Vorbereitung | None, tuple[str, 
     Die Sitzung ist absichtlich kurz: waehrend der Anbieter streamt, darf keine
     Transaktion offen stehen. Genau dafuer ist der Zustand persistiert.
     """
+    handoff = frischer_start_konsumieren(run_id)
     with SessionLocal() as db:
         run = db.get(AiRun, run_id)
         if run is None:
@@ -362,7 +474,55 @@ def _segment_vorbereiten(run_id: str) -> tuple[_Vorbereitung | None, tuple[str, 
         if provider is None or not provider.enabled:
             return None, ("AI_RESOURCE_NOT_FOUND", "ai.chat.errors.notFound")
 
+        if (
+            handoff is not None
+            and (
+                not handoff.state_digest
+                or handoff.state_digest
+                == hashlib.sha256((run.state_json or "").encode("utf-8")).hexdigest()
+            )
+            and run.message_id
+            and handoff.zustand.get("usage_event_id") is not None
+            and not handoff.zustand.get("pending")
+            and not handoff.zustand.get("desktop")
+        ):
+            zustand = handoff.zustand
+            if handoff.api_key_aufgeloest:
+                api_key = handoff.api_key
+            else:
+                try:
+                    api_key = resolve_api_key(db, provider, user.id)
+                except DisSidecarError:
+                    return None, ("AI_CREDENTIAL_UNAVAILABLE", "ai.chat.errors.credential")
+                if provider.requires_api_key and not api_key:
+                    return None, ("AI_PROVIDER_KEY_MISSING", "ai.chat.errors.keyMissing")
+            message_id = run.message_id
+            usage_event_id = zustand["usage_event_id"]
+            request_id = zustand.get("request_id") or str(uuid4())
+            db.refresh(provider)
+            db.expunge(provider)
+            return _Vorbereitung(
+                run_id=run_id,
+                user_id=run.user_id,
+                conversation_id=run.conversation_id,
+                provider=provider,
+                api_key=api_key,
+                message_id=message_id,
+                usage_event_id=int(usage_event_id),
+                request_id=str(request_id),
+                reasoning=bool(run.reasoning),
+                reasoning_effort=run.reasoning_effort,
+                token_price_micro_usd_per_million=provider.token_price_micro_usd_per_million,
+                zustand=zustand,
+                angebotene_werkzeuge=handoff.angebotene_werkzeuge,
+                mcp_werkzeuge=handoff.mcp_werkzeuge,
+                mcp_schreib_werkzeuge=handoff.mcp_schreib_werkzeuge,
+                vorherige_werkzeuge=handoff.vorherige_werkzeuge,
+                vermerkte_gedaechtnis_ids=handoff.vermerkte_gedaechtnis_ids,
+            ), None
+
         zustand = ai_run_service.zustand_lesen(run)
+        zustand_geaendert = False
 
         # Fortsetzung: der Lauf erfaehrt, wie der Mensch entschieden hat.
         #
@@ -377,6 +537,7 @@ def _segment_vorbereiten(run_id: str) -> tuple[_Vorbereitung | None, tuple[str, 
             ergebnisse = _vorschlag_ergebnisse(db, list(pending.get("proposal_ids", [])))
             zustand["provider_messages"].append(_aktionsmeldung(ergebnisse))
             zustand["pending"] = None
+            zustand_geaendert = True
 
         # Dasselbe fuer den Rechner des Benutzers: was dort passiert ist,
         # erfaehrt das Modell beim Aufwachen — auch der Verfall, wenn der
@@ -401,6 +562,7 @@ def _segment_vorbereiten(run_id: str) -> tuple[_Vorbereitung | None, tuple[str, 
                     )
             zustand["provider_messages"].append(meldung)
             zustand["desktop"] = None
+            zustand_geaendert = True
 
         try:
             api_key = resolve_api_key(db, provider, user.id)
@@ -457,14 +619,16 @@ def _segment_vorbereiten(run_id: str) -> tuple[_Vorbereitung | None, tuple[str, 
             run.message_id = message_id
             zustand["usage_event_id"] = usage_event_id
             zustand["request_id"] = request_id
+            zustand_geaendert = True
 
-        ai_run_service.zustand_schreiben(run, zustand)
         vorherige_werkzeuge = _vorherige_werkzeuge_laden(
             db,
             conversation_id=run.conversation_id,
             exclude_run_id=run_id,
         )
-        db.commit()
+        if zustand_geaendert:
+            ai_run_service.zustand_schreiben(run, zustand)
+            db.commit()
         db.refresh(provider)
         db.expunge(provider)
         mcp_werkzeuge, mcp_schreib = mcp_katalog(db, user)
@@ -489,6 +653,7 @@ def _segment_vorbereiten(run_id: str) -> tuple[_Vorbereitung | None, tuple[str, 
             mcp_werkzeuge=tuple(mcp_werkzeuge),
             mcp_schreib_werkzeuge=mcp_schreib,
             vorherige_werkzeuge=vorherige_werkzeuge,
+            vermerkte_gedaechtnis_ids=handoff.vermerkte_gedaechtnis_ids if handoff is not None else (),
         ), None
 
 
@@ -496,6 +661,7 @@ def _lauf_abschliessen(
     run_id: str, *, status: str, stop_reason: str, zustand: dict | None = None,
     wake_at: datetime | None = None,
 ) -> None:
+    frischer_start_konsumieren(run_id)
     with SessionLocal() as db:
         run = db.get(AiRun, run_id)
         if run is None:
@@ -979,6 +1145,36 @@ def _werkzeuge_kanonisch_sortieren(
     return sorted(tools, key=_schluessel)
 
 
+_PANEL_ROUTER_LOCK = threading.Lock()
+_PANEL_ROUTER_CACHE: "OrderedDict[str, Any]" = OrderedDict()
+_PANEL_ROUTER_MAX = 8
+
+
+def _panel_tool_router_fuer(schemas: dict[str, dict]):
+    """Thread-sichere Factory fuer gecachte Built-in-Tool-Router nach Schema-Signatur."""
+    from services.semantic_tool_router_adapter import SemanticToolRouterAdapter
+
+    signatur = hashlib.sha256(
+        json.dumps(sorted(schemas.items()), ensure_ascii=False, sort_keys=True).encode("utf-8")
+    ).hexdigest()
+    with _PANEL_ROUTER_LOCK:
+        cached = _PANEL_ROUTER_CACHE.get(signatur)
+        if cached is not None:
+            _PANEL_ROUTER_CACHE.move_to_end(signatur)
+            return cached
+        router = SemanticToolRouterAdapter(schemas)
+        _PANEL_ROUTER_CACHE[signatur] = router
+        while len(_PANEL_ROUTER_CACHE) > _PANEL_ROUTER_MAX:
+            _PANEL_ROUTER_CACHE.popitem(last=False)
+        return router
+
+
+def tool_router_cache_leeren_fuer_tests() -> None:
+    """Leert den Built-in-Tool-Router-Cache (fuer Tests)."""
+    with _PANEL_ROUTER_LOCK:
+        _PANEL_ROUTER_CACHE.clear()
+
+
 async def _werkzeuge_semantisch_routen(
     *,
     tools: list,
@@ -991,6 +1187,30 @@ async def _werkzeuge_semantisch_routen(
     tool_search_aktiv: bool = False,
 ) -> list:
     """Wählt bei größeren Werkzeugmengen die für diese Anfrage relevanten Werkzeuge per Routing/Budget."""
+    with measure("ai_stream", "tool_routing"):
+        return await _werkzeuge_semantisch_routen_impl(
+            tools=tools,
+            erlaubt=erlaubt,
+            mcp_namen=mcp_namen,
+            docs_kontext=docs_kontext,
+            herkunft=herkunft,
+            zustand=zustand,
+            vorherige_werkzeuge=vorherige_werkzeuge,
+            tool_search_aktiv=tool_search_aktiv,
+        )
+
+
+async def _werkzeuge_semantisch_routen_impl(
+    *,
+    tools: list,
+    erlaubt: set[str],
+    mcp_namen: set[str],
+    docs_kontext,
+    herkunft: str,
+    zustand: dict,
+    vorherige_werkzeuge: tuple[str, ...] = (),
+    tool_search_aktiv: bool = False,
+) -> list:
     def _content_text(c) -> str:
         if isinstance(c, str):
             return c
@@ -1073,7 +1293,7 @@ async def _werkzeuge_semantisch_routen(
 
     hot_all = set()
     try:
-        from services.semantic_tool_router_adapter import SemanticToolRouterAdapter, gruppen_nachbarn
+        from services.semantic_tool_router_adapter import gruppen_nachbarn
         from services.tool_selection_port import HOTSET, pflichtwerkzeuge
         import logging
         _log = logging.getLogger(__name__)
@@ -1109,7 +1329,7 @@ async def _werkzeuge_semantisch_routen(
                 if n in panel_erlaubt and n not in hot_set and n not in pflicht
             ]
             if letzte and len(panel_erlaubt) > hot_and_topk:
-                router = SemanticToolRouterAdapter(
+                router = _panel_tool_router_fuer(
                     {
                         str(e.get("function", {}).get("name")): e
                         for e in tools

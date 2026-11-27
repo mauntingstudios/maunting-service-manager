@@ -639,7 +639,7 @@ def pick_usable_candidate(
     return None
 
 
-def resolve_route_for_text(
+def resolve_route_for_text_with_context(
     db: Session,
     *,
     user: "User",
@@ -648,8 +648,8 @@ def resolve_route_for_text(
     reasoning: bool = False,
     history_len: int = 0,
     min_tier: str | None = None,
-) -> tuple[AiProvider, str, dict] | None:
-    """Klassifiziert eine Anfrage, prueft 5h-Soft-Cap sowie Rollen-Allowlists und liefert (Provider, Modell, routing_meta)."""
+) -> tuple[AiProvider, str, dict, str | None, Any] | None:
+    """Klassifiziert eine Anfrage und liefert zusaetzlich bereits aufgeloesten Key + EffectiveAiLimits."""
     from services import ai_limit_service, ai_usage_service
 
     effective_limits = ai_limit_service.resolve_effective_limits(db, user)
@@ -698,7 +698,33 @@ def resolve_route_for_text(
         "candidates": candidates,
         "candidate_index": idx,
     }
-    return resolved, cand["model"], routing_meta
+    return resolved, cand["model"], routing_meta, _key, effective_limits
+
+
+def resolve_route_for_text(
+    db: Session,
+    *,
+    user: "User",
+    text: str,
+    has_images: bool = False,
+    reasoning: bool = False,
+    history_len: int = 0,
+    min_tier: str | None = None,
+) -> tuple[AiProvider, str, dict] | None:
+    """Klassifiziert eine Anfrage, prueft 5h-Soft-Cap sowie Rollen-Allowlists und liefert (Provider, Modell, routing_meta)."""
+    res = resolve_route_for_text_with_context(
+        db,
+        user=user,
+        text=text,
+        has_images=has_images,
+        reasoning=reasoning,
+        history_len=history_len,
+        min_tier=min_tier,
+    )
+    if res is None:
+        return None
+    resolved, model, routing_meta, _key, _limits = res
+    return resolved, model, routing_meta
 
 
 def resolve_candidates(

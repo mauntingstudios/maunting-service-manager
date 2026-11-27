@@ -192,6 +192,8 @@ async def ermitteln(
     user_id: int | None = None,
     model_id: str | None = None,
     api_key: str | None = None,
+    modell: ai_model_catalog.Modell | None = None,
+    deckel_tokens: int | None = None,
 ) -> Fenster:
     """Das Fenster des eingestellten Modells dieses Providers.
 
@@ -263,11 +265,14 @@ async def ermitteln(
 
         ziel_modell = (model_id or "").strip() or None
         if db is not None and user_id is not None:
-            fuer_kwargs = {"model_id": ziel_modell} if ziel_modell else {}
-            modell = await ai_model_catalog.fuer_provider(
-                client, db, provider, user_id=user_id, **fuer_kwargs
-            )
-        else:
+            if modell is None:
+                fuer_kwargs: dict[str, object] = {"model_id": ziel_modell} if ziel_modell else {}
+                if api_key:
+                    fuer_kwargs["schluessel"] = api_key
+                modell = await ai_model_catalog.fuer_provider(
+                    client, db, provider, user_id=user_id, **fuer_kwargs
+                )
+        elif modell is None:
             kind = provider.provider_kind
             finde_kwargs: dict[str, object] = (
                 {"provider": provider}
@@ -288,7 +293,8 @@ async def ermitteln(
         # ist unerwartet. Es darf trotzdem keinen Chat anhalten.
         logger.warning("Kontextfenster nicht ermittelbar error=%s", type(exc).__name__)
         return unbekannt()
-    return aus_modell(modell, _deckel_der_rolle(db, user_id))
+    deckel = deckel_tokens if deckel_tokens is not None else _deckel_der_rolle(db, user_id)
+    return aus_modell(modell, deckel)
 
 
 def _deckel_der_rolle(db, user_id: int | None) -> int | None:

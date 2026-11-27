@@ -328,6 +328,7 @@ async def stream_responses_http(
     reasoning: bool = False,
     reasoning_effort: str | None = None,
     cache_marke: bool = False,
+    prompt_cache_key: str | None = None,
 ) -> AsyncIterator[StreamChunk]:
     """Ein Chatzug über HTTP SSE ``POST /v1/responses``, immer mit dem ganzen Verlauf.
 
@@ -347,6 +348,8 @@ async def stream_responses_http(
         "stream": True,
         "store": False,
     }
+    if prompt_cache_key:
+        request_body["prompt_cache_key"] = prompt_cache_key
 
     flache_werkzeuge = _werkzeuge_uebersetzen(tools)
     if flache_werkzeuge:
@@ -549,6 +552,28 @@ async def stream_responses_http(
             await eff_client.aclose()
 
 
+def offene_ws_sitzung(provider: Any, api_key: str | None) -> OpenAiResponsesWsSession | None:
+    """Erstellt eine segmentgebundene OpenAI-Responses-WS-Sitzung, falls moeglich."""
+    if getattr(provider, "provider_kind", None) != "openai":
+        return None
+    if getattr(provider, "requires_api_key", True) and not api_key:
+        return None
+    try:
+        spec = effective_spec(provider)
+        base = provider_base_url(provider).rstrip("/")
+    except Exception:
+        return None
+    if base.startswith("https://"):
+        ws_base = "wss://" + base[len("https://"):]
+    elif base.startswith("http://"):
+        ws_base = "ws://" + base[len("http://"):]
+    else:
+        return None
+    headers = schluesselkopf(spec, api_key)
+    headers["OpenAI-Beta"] = "responses=v1"
+    return OpenAiResponsesWsSession(ws_base + "/responses", headers)
+
+
 async def stream_responses(
     client: httpx.AsyncClient,
     *,
@@ -566,6 +591,7 @@ async def stream_responses(
     use_websocket: bool = True,
     background: bool = False,
     ws_session: OpenAiResponsesWsSession | None = None,
+    prompt_cache_key: str | None = None,
     **kwargs: Any,
 ) -> AsyncIterator[StreamChunk]:
     """Zentraler Einstiegspunkt für den OpenAI Responses-Weg (WebSocket / HTTP / Background).
@@ -627,6 +653,8 @@ async def stream_responses(
             ),
             "store": False,
         }
+        if prompt_cache_key:
+            payload["prompt_cache_key"] = prompt_cache_key
         if previous_response_id:
             payload["previous_response_id"] = previous_response_id
         flache_werkzeuge = _werkzeuge_uebersetzen(tools)
@@ -667,6 +695,7 @@ async def stream_responses(
         reasoning=reasoning,
         reasoning_effort=reasoning_effort,
         cache_marke=cache_marke,
+        prompt_cache_key=prompt_cache_key,
     ):
         yield chunk
 

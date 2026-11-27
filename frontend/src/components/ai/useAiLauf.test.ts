@@ -413,3 +413,54 @@ describe('App-Faehigkeiten', () => {
     )
   })
 })
+
+describe('TTFT-Optimierungen', () => {
+  it('spült das erste Delta ohne rAF-Wartezeit sofort in die Antwort', async () => {
+    const originalRaf = globalThis.requestAnimationFrame
+    const queuedFrames: FrameRequestCallback[] = []
+    globalThis.requestAnimationFrame = ((cb: FrameRequestCallback) => {
+      queuedFrames.push(cb)
+      return queuedFrames.length
+    }) as typeof requestAnimationFrame
+
+    try {
+      vi.mocked(streamAiMessage).mockImplementation(async (_payload, onEvent) => {
+        onEvent({ event: 'message', data: { message_id: 'msg-fast', request_id: 'r-1' } })
+        onEvent({ event: 'delta', data: { content: 'Sofort' } })
+      })
+      const { result } = baueLauf()
+
+      await act(async () => { await result.current.sendContent('Hallo') })
+
+      // Erstes Stueck darf nicht im queuedFrames-Puffer liegenbleiben
+      expect(queuedFrames).toHaveLength(0)
+      expect(antworten(result.current.entries)[0].content).toBe('Sofort')
+    } finally {
+      globalThis.requestAnimationFrame = originalRaf
+    }
+  })
+
+  it('fragt listAttachments nur ab wenn mitAnhaengen gesetzt ist', async () => {
+    const api = fremdeApi()
+    vi.mocked(api.stream).mockImplementation(async (_payload, onEvent) => {
+      onEvent({
+        event: 'message',
+        data: { message_id: 'msg-1', request_id: 'r-1', user_message_id: 'u-real' },
+      })
+    })
+    const { result } = renderHook(() => useAiLauf({
+      providerId: 1,
+      canAttach: true,
+      denken: { an: false, stufe: null },
+      ladeKontext: async () => {},
+      setAttachments: () => {},
+      api,
+    }))
+
+    await act(async () => { await result.current.sendContent('Ohne Datei', false) })
+    expect(api.listAttachments).not.toHaveBeenCalled()
+
+    await act(async () => { await result.current.sendContent('Mit Datei', true) })
+    expect(api.listAttachments).toHaveBeenCalledTimes(1)
+  })
+})

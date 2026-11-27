@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import math
 import re
+import threading
 from collections import Counter
 
 from services import ai_embedding_service
@@ -163,45 +164,81 @@ class SemanticToolRouterAdapter:
     def __init__(self, tool_schemas: dict[str, dict] | None = None):
         self._schemas: dict[str, dict] = tool_schemas or {}
         self._searchable: dict[str, str] = {}
+        self._token_counts: dict[str, Counter[str]] = {}
+        self._doc_lengths: dict[str, int] = {}
+        self._doc_term_sets: dict[str, set[str]] = {}
+        self._name_stems: dict[str, list[str]] = {}
         self._vectors: dict[str, list[float]] | None = None
         # Modell der Werkzeugvektoren; Frage und Index müssen aus demselben stammen.
         self._vectors_modell: str | None = None
         self._ready = False
+        self._lock = threading.RLock()
+
+    def _index_text_features(self, name: str, doc: str) -> None:
+        self._searchable[name] = doc
+        d_terms = _stämme(doc)
+        self._token_counts[name] = Counter(d_terms)
+        self._doc_lengths[name] = len(d_terms)
+        self._doc_term_sets[name] = set(d_terms)
+        self._name_stems[name] = [
+            t for t in _stämme(name.replace("_", " ")) if t != "propos"
+        ]
 
     def _ensure_index(self, allowed: frozenset[str]) -> None:
-        needed = sorted({n for n in allowed if n not in self._searchable})
-        missing_vectors = False
-        if self._vectors is not None:
-            missing_vectors = any(n not in self._vectors for n in allowed if n in self._searchable)
-        if not needed and not missing_vectors:
-            return
-        for name in needed:
-            schema = self._schemas.get(name)
-            if schema is None:
-                try:
-                    from services import ai_action_service
-                    for e in ai_action_service.provider_tool_definitions() + ai_action_service.voice_control_tool_definitions():
-                        func = e.get("function", e) if isinstance(e, dict) else {}
-                        if func.get("name") == name:
-                            schema = e
-                            break
-                except Exception:
-                    schema = None
-            self._searchable[name] = _tool_searchable(name, schema)
-        if ai_embedding_service.is_ready():
-            to_encode = needed
-            if missing_vectors and not needed:
-                to_encode = sorted({n for n in allowed if n not in (self._vectors or {})})
-            if to_encode:
-                texts = [self._searchable[n] for n in to_encode]
-                kodierung = ai_embedding_service.encode(texts)
-                if kodierung is not None and len(kodierung.vektoren) == len(to_encode):
-                    if self._vectors is None or self._vectors_modell != kodierung.modell:
-                        self._vectors = {}
-                        self._vectors_modell = kodierung.modell
-                    for n, v in zip(to_encode, kodierung.vektoren):
-                        self._vectors[n] = v
-                    self._ready = True
+        with self._lock:
+            needed = sorted({n for n in allowed if n not in self._searchable})
+            missing_vectors = False
+            if self._vectors is not None:
+                missing_vectors = any(
+                    n not in self._vectors for n in allowed if n in self._searchable
+                )
+            if not needed and not missing_vectors:
+                return
+            for name in needed:
+                schema = self._schemas.get(name)
+                if schema is None:
+                    try:
+                        from services import ai_action_service
+
+                        for e in (
+                            ai_action_service.provider_tool_definitions()
+                            + ai_action_service.voice_control_tool_definitions()
+                        ):
+                            func = e.get("function", e) if isinstance(e, dict) else {}
+                            if func.get("name") == name:
+                                schema = e
+                                break
+                    except Exception:
+                        schema = None
+                self._index_text_features(name, _tool_searchable(name, schema))
+            if ai_embedding_service.is_ready():
+                to_encode = needed
+                if missing_vectors and not needed:
+                    to_encode = sorted(
+                        {n for n in allowed if n not in (self._vectors or {})}
+                    )
+                if to_encode:
+                    texts = [self._searchable[n] for n in to_encode]
+                    kodierung = ai_embedding_service.encode(texts)
+                    if kodierung is not None and len(kodierung.vektoren) == len(to_encode):
+                        if self._vectors is None or self._vectors_modell != kodierung.modell:
+                            self._vectors = {}
+                            self._vectors_modell = kodierung.modell
+                            if len(to_encode) < len(allowed):
+                                all_allowed = sorted(allowed)
+                                full_kod = ai_embedding_service.encode(
+                                    [self._searchable[n] for n in all_allowed]
+                                )
+                                if (
+                                    full_kod is not None
+                                    and len(full_kod.vektoren) == len(all_allowed)
+                                    and full_kod.modell == kodierung.modell
+                                ):
+                                    to_encode = all_allowed
+                                    kodierung = full_kod
+                        for n, v in zip(to_encode, kodierung.vektoren):
+                            self._vectors[n] = v
+                        self._ready = True
 
     def warm(self, allowed: frozenset[str]) -> None:
         self._ensure_index(allowed)
@@ -210,53 +247,92 @@ class SemanticToolRouterAdapter:
         if not query or not query.strip() or not allowed:
             return []
         query = query.strip()
-        self._ensure_index(allowed)
-        hot_in_allowed = [n for n in HOTSET if n in allowed]
-        candidates = sorted([n for n in allowed if n not in hot_in_allowed])
-        if not candidates:
-            return []
-        q_vec = None
-        if self._vectors is not None:
-            qv = ai_embedding_service.encode([query])
-            if qv is not None and qv.vektoren:
-                if qv.modell == self._vectors_modell:
-                    q_vec = qv.vektoren[0]
+        with self._lock:
+            self._ensure_index(allowed)
+            hot_in_allowed = [n for n in HOTSET if n in allowed]
+            candidates = sorted([n for n in allowed if n not in hot_in_allowed])
+            if not candidates:
+                return []
+            q_vec = None
+            if self._vectors is not None:
+                qv = ai_embedding_service.encode([query])
+                if qv is not None and qv.vektoren:
+                    if qv.modell == self._vectors_modell:
+                        q_vec = qv.vektoren[0]
+                    else:
+                        # Modellraum gewechselt: Index sofort im neuen Raum neu aufbauen.
+                        self._vectors = None
+                        self._vectors_modell = None
+                        self._ensure_index(allowed)
+                        if (
+                            self._vectors is not None
+                            and qv.modell == self._vectors_modell
+                        ):
+                            q_vec = qv.vektoren[0]
+
+            q_terms = _stämme(query)
+            anfrage = set(q_terms)
+            gesamt = len(candidates)
+            idf: dict[str, float] = {}
+            for t in anfrage:
+                is_long = len(t) >= 5
+                df = 0
+                for n in candidates:
+                    menge = self._doc_term_sets.get(n)
+                    if menge is None:
+                        menge = set(_stämme(self._searchable.get(n, n)))
+                    if t in menge or (is_long and any(w.endswith(t) for w in menge)):
+                        df += 1
+                idf[t] = math.log((gesamt - df + 0.5) / (df + 0.5) + 1.0)
+
+            scored: list[tuple[float, str]] = []
+            max_bm25 = 0.0
+            bm25_scores: dict[str, float] = {}
+            q_norm = len(q_terms) * 2
+            for name in candidates:
+                counter = self._token_counts.get(name)
+                d_len = self._doc_lengths.get(name, 0)
+                if counter is None:
+                    d_terms = _stämme(self._searchable.get(name, name))
+                    counter = Counter(d_terms)
+                    d_len = len(d_terms)
+                if not q_terms or not d_len:
+                    s = 0.0
                 else:
-                    # Anderes Modell als der Index: diesmal nur BM25. Der
-                    # leere Index (nicht ``None``) lässt den nächsten
-                    # `_ensure_index` alles neu rechnen.
-                    self._vectors = {}
-                    self._vectors_modell = None
-        scored: list[tuple[float, str]] = []
-        max_bm25 = 0.0
-        bm25_scores: dict[str, float] = {}
-        idf = _seltenheit(query, [self._searchable.get(n, n) for n in candidates])
-        anfrage = set(_stämme(query))
-        for name in candidates:
-            doc = self._searchable.get(name, name)
-            s = _bm25_score(query, doc, idf)
-            bm25_scores[name] = s
-            max_bm25 = max(max_bm25, s)
-        for name in candidates:
-            bm25 = bm25_scores[name] / max_bm25 if max_bm25 > 0 else 0
-            cos = 0.0
-            if q_vec is not None and self._vectors and name in self._vectors:
-                cos = _cosine(q_vec, self._vectors[name])
-                cos = (cos + 1.0) / 2.0
-            # Der Name sagt, was das Werkzeug tut; die Beschreibung, wie. Ein
-            # Wort der Anfrage im Namen zählt nach seinem Anteil am Namen:
-            # "Erstelle ein Backup" trifft `propose_backup` ganz, aber
-            # `propose_backup_schedule_set` nur zu einem Drittel. Ohne das
-            # gewann die längere Beschreibung — `propose_backup` fiel aus den
-            # fünf Treffern, weil seine Parameter die Beschreibung strecken.
-            teile = [t for t in _stämme(name.replace("_", " ")) if t != "propos"]
-            namensanteil = (
-                sum(1 for t in teile if t in anfrage) / len(teile) if teile else 0.0
-            )
-            hybrid = 0.6 * cos + 0.4 * bm25 + 0.2 * namensanteil
-            scored.append((hybrid, name))
-        scored.sort(reverse=True, key=lambda x: x[0])
-        return [n for _, n in scored[:top_k]]
+                    s = 0.0
+                    denom_len = 1.2 * (0.25 + 0.75 * d_len / 20)
+                    for t in q_terms:
+                        tf = counter.get(t, 0)
+                        if len(t) >= 5:
+                            tf += sum(
+                                anzahl
+                                for wort, anzahl in counter.items()
+                                if wort != t and wort.endswith(t)
+                            )
+                        if tf == 0:
+                            continue
+                        s += idf.get(t, 1.0) * (tf * 2.2) / (tf + denom_len)
+                    s /= q_norm
+                bm25_scores[name] = s
+                if s > max_bm25:
+                    max_bm25 = s
+
+            for name in candidates:
+                bm25 = bm25_scores[name] / max_bm25 if max_bm25 > 0 else 0
+                cos = 0.0
+                if q_vec is not None and self._vectors and name in self._vectors:
+                    cos = _cosine(q_vec, self._vectors[name])
+                    cos = (cos + 1.0) / 2.0
+                teile = self._name_stems.get(name)
+                if teile is None:
+                    teile = [t for t in _stämme(name.replace("_", " ")) if t != "propos"]
+                namensanteil = (
+                    sum(1 for t in teile if t in anfrage) / len(teile) if teile else 0.0
+                )
+                hybrid = 0.6 * cos + 0.4 * bm25 + 0.2 * namensanteil
+                scored.append((hybrid, name))
+            scored.sort(reverse=True, key=lambda x: x[0])
+            return [n for _, n in scored[:top_k]]
 
     def select_with_hot(self, query: str, allowed: frozenset[str], top_k: int = 5) -> list[str]:
         routed = self.select(query, allowed, top_k=top_k)

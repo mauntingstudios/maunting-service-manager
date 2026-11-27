@@ -553,6 +553,15 @@ def _gebraucht(db: Session, rows: list[AiMemoryEntry]) -> None:
     db.flush()
 
 
+def markiere_gebraucht(db: Session, entry_ids: list[str] | tuple[str, ...]) -> None:
+    """Vermerkt vorab ermittelte Gedaechtnistreffer asynchron nach Laufstart."""
+    ids = [str(eid) for eid in entry_ids if eid is not None]
+    if not ids:
+        return
+    rows = db.query(AiMemoryEntry).filter(AiMemoryEntry.id.in_(ids)).all()
+    _gebraucht(db, rows)
+
+
 # ── Der Abruf im Chat ────────────────────────────────────────────────────────
 
 
@@ -562,6 +571,7 @@ class Abruf:
 
     kopf: str | None
     passend: str | None
+    verwendete_ids: tuple[str, ...] = ()
 
 
 def _kopf(
@@ -628,6 +638,7 @@ def abrufen(
     *,
     nur_team_id: int | None = None,
     nur_persoenlich: bool = False,
+    gebraucht_sofort: bool = True,
 ) -> Abruf:
     """Das Gedächtnis für eine Anfrage: was im Kopf steht und was zur Frage passt.
 
@@ -672,7 +683,12 @@ def abrufen(
                 passend.append(treffer)
                 platz -= len(zeile) + 1
             gebraucht.extend(treffer.row for treffer in passend)
-    _gebraucht(db, gebraucht)
+
+    verwendete_ids: tuple[str, ...] = ()
+    if gebraucht_sofort or ausgelassen:
+        _gebraucht(db, gebraucht)
+    elif gebraucht:
+        verwendete_ids = tuple(str(row.id) for row in gebraucht)
 
     kopf_text = "\n".join(ai_memory_service._memory_line(row, text) for row, text in kopf)
     if ausgelassen:
@@ -687,7 +703,11 @@ def abrufen(
     passend_text = "\n".join(
         ai_memory_service._memory_line(treffer.row, treffer.text) for treffer in passend
     )
-    return Abruf(kopf=kopf_text or None, passend=passend_text or None)
+    return Abruf(
+        kopf=kopf_text or None,
+        passend=passend_text or None,
+        verwendete_ids=verwendete_ids,
+    )
 
 
 def anlagenwissen(db: Session, user: User, server_id: int, query: str = "") -> str | None:

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timezone
+import importlib.util
 import logging
 import os
 
@@ -31,6 +32,7 @@ def init_http_clients_and_ai_runtime(app: FastAPI, is_testing: bool) -> None:
         limits=httpx.Limits(max_connections=50, max_keepalive_connections=20),
         timeout=httpx.Timeout(connect=5.0, read=MAX_FIRST_DATA_SECONDS, write=10.0, pool=5.0),
         follow_redirects=False,
+        http2=importlib.util.find_spec("h2") is not None,
     )
 
     ai_run_service.laufzeit_setzen(
@@ -46,7 +48,46 @@ def init_http_clients_and_ai_runtime(app: FastAPI, is_testing: bool) -> None:
         ai_model_catalog.laufzeit_setzen(app.state.ai_http_client)
         ai_model_catalog.schluesselquelle_setzen(ai_provider_service.katalogschluessel)
         ai_model_catalog.vorwaermen_anstossen()
+        prewarm_ai_runtime_async()
         ai_mail_outbox.arbeiter_starten()
+
+
+def prewarm_ai_runtime() -> None:
+    """Waermt Embedding-Modell, Router-Prototypen und Built-in-Tool-Router im Hintergrund vor."""
+    try:
+        from services import ai_embedding_service, ai_router_service
+        from services.ai_action_service import provider_tool_definitions
+        from services.ai_stream.lifecycle import _panel_tool_router_fuer
+
+        if ai_embedding_service.is_available():
+            ai_embedding_service._load()
+        if ai_embedding_service.is_ready():
+            model_tag = ai_embedding_service.aktives_modell()
+            if model_tag:
+                ai_router_service._get_tier_prototypes(model_tag)
+            defs = provider_tool_definitions()
+            schemas = {
+                str(e["function"]["name"]): e
+                for e in defs
+                if isinstance(e, dict)
+                and isinstance(e.get("function"), dict)
+                and isinstance(e["function"].get("name"), str)
+            }
+            if schemas:
+                _panel_tool_router_fuer(schemas).warm(frozenset(schemas))
+    except Exception as exc:  # noqa: BLE001 - Prewarm darf Startup niemals blockieren
+        logger.debug("AI-Startup-Prewarm uebersprungen: %s", type(exc).__name__)
+
+
+def prewarm_ai_runtime_async() -> None:
+    """Startet den KI-Prewarm nicht-blockierend in einem Daemon-Thread."""
+    import threading
+
+    threading.Thread(
+        target=prewarm_ai_runtime,
+        daemon=True,
+        name="msm-ai-prewarm",
+    ).start()
 
 
 def verify_dis_and_upgrade_schema(engine, is_testing: bool) -> None:

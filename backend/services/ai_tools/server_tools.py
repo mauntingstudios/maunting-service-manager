@@ -4,6 +4,7 @@ import os
 import json
 import logging
 import re
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
@@ -304,6 +305,16 @@ def _global_tool_definitions() -> list[dict]:
         *_TEAM_DEFINITIONEN,
     ]
 
+_TOOL_DEFS_LOCK = threading.Lock()
+_TOOL_DEFS_CACHE: dict[tuple[bool, str, bool], list[dict]] = {}
+
+
+def reset_tool_definitions_cache_for_tests() -> None:
+    """Leert den Cache der statischen Werkzeug-Definitionen (fuer Tests)."""
+    with _TOOL_DEFS_LOCK:
+        _TOOL_DEFS_CACHE.clear()
+
+
 def provider_tool_definitions() -> list[dict]:
     """Feste OpenAI-Tool-Allowlist; keine freie Command-Ausfuehrung.
 
@@ -312,7 +323,17 @@ def provider_tool_definitions() -> list[dict]:
     Server steht jetzt in den Argumenten, nicht im Gespraech. Das Modell findet
     ihn ueber `list_my_servers` und fragt bei Mehrdeutigkeit nach.
     """
-    return [
+    from services.ai_learning_policy import policy as learning_policy
+    from services.ai_web_search_service import is_configured as is_web_configured
+    from services.cloudflare_service import is_configured as is_cf_configured
+
+    cache_key = (bool(is_web_configured()), str(learning_policy()), bool(is_cf_configured()))
+    with _TOOL_DEFS_LOCK:
+        cached = _TOOL_DEFS_CACHE.get(cache_key)
+        if cached is not None:
+            return list(cached)
+
+    built = [
         *_global_tool_definitions(),
         *_OPS_DEFINITIONEN,
         *_FILE_DEFINITIONEN,
@@ -330,6 +351,9 @@ def provider_tool_definitions() -> list[dict]:
         *_FRONTEND_DEFINITIONEN,
         *_SYSTEM_DEFINITIONEN,
     ]
+    with _TOOL_DEFS_LOCK:
+        _TOOL_DEFS_CACHE[cache_key] = built
+        return list(built)
 
 
 def angebotene_werkzeuge(db: Session, user: User) -> frozenset[str]:

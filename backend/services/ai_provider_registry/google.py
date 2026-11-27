@@ -113,6 +113,12 @@ def katalog_lesen(rohdaten: dict) -> Modell | None:
         ist_denkend = None
 
     # Denkstufen ermitteln
+    is_gemini_model = "gemini" in model_lower
+    is_mandatory_gemini = bool(
+        ist_denkend
+        and is_gemini_model
+        and (("pro" in model_lower and "2.5" in model_lower) or "deep-think" in model_lower)
+    )
     raw_levels = (
         rohdaten.get("thinking_levels")
         or rohdaten.get("thinkingLevels")
@@ -120,9 +126,14 @@ def katalog_lesen(rohdaten: dict) -> Modell | None:
     )
     if isinstance(raw_levels, (list, tuple)) and raw_levels:
         stufen = tuple(str(s) for s in raw_levels if isinstance(s, (str, int)))
+        if is_gemini_model and not is_mandatory_gemini and "none" not in stufen:
+            stufen = ("none", *stufen)
         standard_stufe = "medium" if "medium" in stufen else (stufen[0] if stufen else None)
     elif ist_denkend:
-        stufen = ("low", "medium", "high")
+        if is_gemini_model and not is_mandatory_gemini:
+            stufen = ("none", "low", "medium", "high")
+        else:
+            stufen = ("low", "medium", "high")
         standard_stufe = "medium"
     else:
         stufen = ()
@@ -164,7 +175,7 @@ def katalog_lesen(rohdaten: dict) -> Modell | None:
             denkt=ist_denkend,
             stufen=stufen,
             standard_stufe=standard_stufe,
-            zwingend=False,
+            zwingend=is_mandatory_gemini,
             kontext_tokens=kontext or 1_048_576,
             max_ausgabe_tokens=max_ausgabe or 8_192,
             sieht=True,

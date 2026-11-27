@@ -207,6 +207,23 @@ class _Vorbereitung:
     # Aus dem letzten Lauf derselben Konversation uebernommene Werkzeuge fuer
     # Prompt-Cache-Stabilitaet bei allen Anbietern.
     vorherige_werkzeuge: tuple[str, ...] = ()
+    vermerkte_gedaechtnis_ids: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class _FrischerStart:
+    """Einmaliger In-Process-Handoff vom Laufstart zum ersten Segment (TTL 10s)."""
+
+    zustand: dict
+    api_key: str | None
+    angebotene_werkzeuge: frozenset[str]
+    mcp_werkzeuge: tuple[dict, ...]
+    mcp_schreib_werkzeuge: frozenset[str]
+    vorherige_werkzeuge: tuple[str, ...]
+    erstellt_am: float
+    vermerkte_gedaechtnis_ids: tuple[str, ...] = ()
+    api_key_aufgeloest: bool = False
+    state_digest: str = ""
 
 
 @dataclass(frozen=True)

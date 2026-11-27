@@ -354,6 +354,7 @@ def nachrichten_uebersetzen(
     """
     systemtexte: list[str] = []
     ausgabe: list[dict[str, Any]] = []
+    konversation_begonnen = False
 
     for nachricht in normalize_anthropic_tool_call_ids(messages):
         if not isinstance(nachricht, dict):
@@ -363,8 +364,18 @@ def nachrichten_uebersetzen(
 
         if rolle == "system":
             if inhalt:
-                systemtexte.append(inhalt)
+                if not konversation_begonnen:
+                    systemtexte.append(inhalt)
+                else:
+                    gerahmt = (
+                        inhalt
+                        if inhalt.startswith("Lage (Auskunft des Panels")
+                        else f"[Panel-Systemauskunft]\n{inhalt}"
+                    )
+                    _anhaengen(ausgabe, "user", [{"type": "text", "text": gerahmt}])
             continue
+
+        konversation_begonnen = True
 
         if rolle == "tool":
             _anhaengen(ausgabe, "user", [{

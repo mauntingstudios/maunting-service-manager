@@ -6,6 +6,7 @@ from __future__ import annotations
 import asyncio
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+import hashlib
 import json
 import logging
 from typing import Any, AsyncIterator
@@ -26,6 +27,7 @@ from services import (
 from services.ai_chat_service import get_owned_conversation
 from services.ai_context_service import build_provider_messages, estimate_reserved_tokens
 from services.ai_guardian_service import briefing_nachricht
+from services.ai_latency_metrics import measure
 from services.ai_provider_errors import AiProviderConfigurationError
 from services.ai_provider_service import estimate_cost_microunits
 from services.ai_redaction import redact_sensitive_text
@@ -67,6 +69,9 @@ def lauf_beginnen(
     requested_model: str | None = None,
     project_id: str | None = None,
     routing_meta: dict[str, Any] | None = None,
+    pre_api_key: str | None = None,
+    pre_api_key_aufgeloest: bool = False,
+    worker_rahmen: dict[str, Any] | None = None,
 ) -> tuple[AiRun | None, tuple[str, str] | None]:
     """Legt einen Lauf an: Benutzernachricht, Kontingent, Antwortnachricht.
 
@@ -112,6 +117,70 @@ def lauf_beginnen(
     Runde. Ohne sie las der Betreiber im eigenen Chat Anweisungen an die KI,
     adressiert an ihn selbst.
     """
+    with measure("ai_launcher", "total"):
+        return _lauf_beginnen_impl(
+            db,
+            user=user,
+            conversation=conversation,
+            provider=provider,
+            request_id=request_id,
+            content=content,
+            reasoning=reasoning,
+            reasoning_effort=reasoning_effort,
+            context_chars=context_chars,
+            guardian_briefing_unterdruecken=guardian_briefing_unterdruecken,
+            unbeaufsichtigt=unbeaufsichtigt,
+            gesprochen=gesprochen,
+            rolle=rolle,
+            herkunft=herkunft,
+            familie=familie,
+            voice_output_checkpoint=voice_output_checkpoint,
+            intern=intern,
+            docs_document_uid=docs_document_uid,
+            docs_team_id=docs_team_id,
+            docs_is_link_guest=docs_is_link_guest,
+            modell_sieht=modell_sieht,
+            app_faehigkeiten=app_faehigkeiten,
+            requested_model=requested_model,
+            project_id=project_id,
+            routing_meta=routing_meta,
+            pre_api_key=pre_api_key,
+            pre_api_key_aufgeloest=pre_api_key_aufgeloest,
+            worker_rahmen=worker_rahmen,
+        )
+
+
+def _lauf_beginnen_impl(
+    db,
+    *,
+    user: User,
+    conversation,
+    provider: AiProvider,
+    request_id: UUID,
+    content: str,
+    reasoning: bool,
+    reasoning_effort: str | None = None,
+    context_chars: int | None = None,
+    guardian_briefing_unterdruecken: bool = False,
+    unbeaufsichtigt: bool = False,
+    gesprochen: bool = False,
+    rolle: str | None = None,
+    herkunft: str = "panel",
+    familie: str | None = None,
+    voice_output_checkpoint: str | None = None,
+    intern: bool = False,
+    docs_document_uid: str | None = None,
+    docs_team_id: int | None = None,
+    docs_is_link_guest: bool = False,
+    modell_sieht: bool | None = None,
+    app_faehigkeiten: dict[str, Any] | None = None,
+    requested_model: str | None = None,
+    project_id: str | None = None,
+    routing_meta: dict[str, Any] | None = None,
+    pre_api_key: str | None = None,
+    pre_api_key_aufgeloest: bool = False,
+    worker_rahmen: dict[str, Any] | None = None,
+) -> tuple[AiRun | None, tuple[str, str] | None]:
     safe_content = redact_sensitive_text(content).strip()
     # Ein Bild ohne Begleittext ist eine vollstaendige Frage ("Was ist das?").
     # Der Anhang wird erst beim Anlegen der Nachricht gebunden; vorher ist
@@ -185,6 +254,7 @@ def lauf_beginnen(
             ).protokoll_chat
         except (KeyError, AiProviderConfigurationError):
             provider_protokoll = None
+        gebraucht_ids_out: list[str] = []
         provider_messages = build_provider_messages(
             db, conversation, query=safe_content, server_id=serverbezug,
             context_chars=context_chars, unbeaufsichtigt=unbeaufsichtigt,
@@ -194,6 +264,7 @@ def lauf_beginnen(
             docs_is_link_guest=docs_is_link_guest,
             modell_sieht=modell_sieht, computer_use_aktiv=computer_use_aktiv,
             provider_protokoll=provider_protokoll,
+            gebraucht_ids_out=gebraucht_ids_out,
         )
         # Eine Unterbrechung ist keine neue Information des Benutzers und darf
         # deshalb weder als Chatzeile gespeichert noch in die Erinnerung
@@ -201,11 +272,11 @@ def lauf_beginnen(
         # Sprachzug, damit es nicht bei einem bereits gehoerten Satz wieder
         # einsetzt. Der Hinweis lebt darum nur in dieser Provider-Anfrage.
         effective_project_id = project_id or getattr(conversation, "project_id", None)
-        if effective_project_id:
+        if project_id and not getattr(conversation, "project_id", None):
             try:
                 from services import ai_project_service
 
-                proj = ai_project_service.get_project(db, user, str(effective_project_id))
+                proj = ai_project_service.get_project(db, user, str(project_id))
                 if proj is not None:
                     proj_lines = [
                         f"Aktives Singra-Projekt: {proj.name} (project_id: {proj.id})",
@@ -233,10 +304,14 @@ def lauf_beginnen(
                     proj_lines.append(
                         "Nutze das Werkzeug `project_workspace` mit dieser `project_id`, um Dateien zu lesen/schreiben, Befehle in der Sandbox auszuführen oder Git-Aktionen durchzuführen."
                     )
-                    provider_messages.append({
-                        "role": "system",
-                        "content": "\n".join(proj_lines),
-                    })
+                    proj_msg = {
+                        "role": "user",
+                        "content": redact_sensitive_text("\n".join(proj_lines)),
+                    }
+                    if provider_messages and provider_messages[-1].get("role") == "user":
+                        provider_messages.insert(len(provider_messages) - 1, proj_msg)
+                    else:
+                        provider_messages.append(proj_msg)
             except Exception as exc:
                 logger.debug("Projektkontext konnte nicht geladen werden: %s", type(exc).__name__)
         if voice_output_checkpoint:
@@ -422,6 +497,8 @@ def lauf_beginnen(
         effective_project_id = project_id or getattr(conversation, "project_id", None)
         if effective_project_id:
             zustand["project_id"] = str(effective_project_id)
+        if worker_rahmen is not None:
+            zustand["worker"] = dict(worker_rahmen)
         run = ai_run_service.lauf_anlegen(
             db,
             conversation_id=conversation.id,
@@ -433,7 +510,41 @@ def lauf_beginnen(
             zustand=zustand,
             last_server_id=serverbezug,
         )
+        from services.ai_action_service import angebotene_werkzeuge
+        from services.ai_stream.lifecycle import (
+            _vorherige_werkzeuge_laden,
+            frischer_start_registrieren,
+        )
+        from services.ai_stream.types import _FrischerStart
+        from services.mcp.ausfuehrung import katalog as mcp_katalog
+        import copy
+        import time
+
+        angebotene_handoff = angebotene_werkzeuge(db, user)
+        mcp_w_handoff, mcp_s_handoff = mcp_katalog(db, user)
+        vorherige_handoff = _vorherige_werkzeuge_laden(
+            db,
+            conversation_id=conversation.id,
+            exclude_run_id=run.id,
+        )
         db.commit()
+        frischer_start_registrieren(
+            run.id,
+            _FrischerStart(
+                zustand=copy.deepcopy(zustand),
+                api_key=pre_api_key,
+                api_key_aufgeloest=bool(pre_api_key_aufgeloest),
+                angebotene_werkzeuge=angebotene_handoff,
+                mcp_werkzeuge=tuple(mcp_w_handoff),
+                mcp_schreib_werkzeuge=mcp_s_handoff,
+                vorherige_werkzeuge=vorherige_handoff,
+                vermerkte_gedaechtnis_ids=tuple(gebraucht_ids_out),
+                erstellt_am=time.monotonic(),
+                state_digest=hashlib.sha256(
+                    (run.state_json or "").encode("utf-8")
+                ).hexdigest(),
+            ),
+        )
         return run, None
     except IntegrityError:
         db.rollback()
@@ -545,6 +656,9 @@ def _anlauf_im_thread(
     requested_model: str | None = None,
     project_id: str | None = None,
     routing_meta: dict[str, Any] | None = None,
+    pre_api_key: str | None = None,
+    pre_api_key_aufgeloest: bool = False,
+    worker_rahmen: dict[str, Any] | None = None,
 ) -> tuple[str | None, tuple[str, str] | None]:
     """Der Anlauf mit **eigener** Sitzung — das ist der ganze Zweck.
 
@@ -593,6 +707,9 @@ def _anlauf_im_thread(
             requested_model=requested_model,
             project_id=project_id,
             routing_meta=routing_meta,
+            pre_api_key=pre_api_key,
+            pre_api_key_aufgeloest=pre_api_key_aufgeloest,
+            worker_rahmen=worker_rahmen,
         )
         # Nur die Kennung verlaesst den Thread. Ein ORM-Objekt aus einer gleich
         # geschlossenen Sitzung ist eine Falle: nach dem Commit sind seine
@@ -623,6 +740,9 @@ async def lauf_beginnen_nebenher(
     requested_model: str | None = None,
     project_id: str | None = None,
     routing_meta: dict[str, Any] | None = None,
+    pre_api_key: str | None = None,
+    pre_api_key_aufgeloest: bool = False,
+    worker_rahmen: dict[str, Any] | None = None,
 ) -> tuple[str | None, tuple[str, str] | None]:
     """`lauf_beginnen`, aber **neben** der Ereignisschleife statt auf ihr.
 
@@ -657,5 +777,8 @@ async def lauf_beginnen_nebenher(
             requested_model=requested_model,
             project_id=project_id,
             routing_meta=routing_meta,
+            pre_api_key=pre_api_key,
+            pre_api_key_aufgeloest=pre_api_key_aufgeloest,
+            worker_rahmen=worker_rahmen,
         )
 

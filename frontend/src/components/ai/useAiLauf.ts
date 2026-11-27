@@ -186,12 +186,14 @@ export function useAiLauf({
   const machVerarbeiter = useCallback((
     optimistischeId: string | null,
     optimistischeBenutzerId: string | null = null,
+    mitAnhaengen = false,
   ) => {
     let aktuell: string | null = optimistischeId
     let offeneOptimistische = optimistischeId !== null
     let offeneBenutzerblase = optimistischeBenutzerId
     let gescheitert = false
     let benutzerGelesen = false
+    const ersteStueckGesendet = new Set<string>()
 
     const markiereBenutzerGelesen = () => {
       if (benutzerGelesen) return
@@ -240,8 +242,14 @@ export function useAiLauf({
     }
     const sammle = (id: string, art: 'text' | 'denken', inhalt: string) => {
       if (gesammelt && gesammelt.id !== id) spuele()
+      const warLeer = !ersteStueckGesendet.has(id)
       gesammelt ??= { id, stuecke: [] }
       gesammelt.stuecke.push({ art, inhalt })
+      if (warLeer) {
+        ersteStueckGesendet.add(id)
+        spuele()
+        return
+      }
       rahmen ??= requestAnimationFrame(spuele)
     }
 
@@ -378,7 +386,7 @@ export function useAiLauf({
           offeneBenutzerblase = null
           // Jetzt tragen die Anhänge eine Nachricht — nachladen, damit sie aus
           // der Chipleiste in ihre Blase wandern.
-          if (canAttach) {
+          if (canAttach && mitAnhaengen) {
             void api.listAttachments()
               .then((rows) => { if (mountedRef.current) setAttachments(rows) })
               .catch(() => undefined)
@@ -553,10 +561,11 @@ export function useAiLauf({
     beginne: (verarbeite: (event: AiStreamEvent) => void, signal: AbortSignal) => Promise<void>,
     optimistischeId: string | null,
     optimistischeBenutzerId: string | null = null,
+    mitAnhaengen = false,
   ) => {
     const controller = new AbortController()
     abortRef.current = controller
-    const { verarbeite, spuele, istGescheitert } = machVerarbeiter(optimistischeId, optimistischeBenutzerId)
+    const { verarbeite, spuele, istGescheitert } = machVerarbeiter(optimistischeId, optimistischeBenutzerId, mitAnhaengen)
     // Zwei Wege enden im selben Bild: der Wurf aus dem Strom und der
     // `error`-Rahmen, hinter dem der Strom regulär ausläuft. In beiden Fällen
     // behauptet die halb geschriebene Blase sonst eine Antwort, die nie fertig
@@ -684,6 +693,7 @@ export function useAiLauf({
         }),
         assistantId,
         optimisticUser.id,
+        mitAnhaengen,
       )
     } finally {
       streamingRef.current = false

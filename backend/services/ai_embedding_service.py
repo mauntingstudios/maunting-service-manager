@@ -52,10 +52,12 @@ Schlüssel eingetragen ist.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import threading
 import time
 from array import array
+from collections import OrderedDict
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -549,6 +551,42 @@ def aktives_modell(*, db: Session | None = None) -> str | None:
     return None if zugang is None else _tag(zugang[0], zugang[3])
 
 
+_EMBED_CACHE_MAX = 128
+_EMBED_CACHE_TTL_SECONDS = 60.0
+_EMBED_CACHE_BATCH_LIMIT = 16
+_embed_cache_lock = threading.Lock()
+_embed_cache: "OrderedDict[tuple[str, str], tuple[float, list[float]]]" = OrderedDict()
+
+
+def embedding_cache_leeren_fuer_tests() -> None:
+    """Leert den Query-Embedding-LRU-Cache (fuer Tests)."""
+    with _embed_cache_lock:
+        _embed_cache.clear()
+
+
+def _cache_get(modell_tag: str, text_hash: str, now: float) -> list[float] | None:
+    key = (modell_tag, text_hash)
+    with _embed_cache_lock:
+        entry = _embed_cache.get(key)
+        if entry is None:
+            return None
+        created_at, vec = entry
+        if (now - created_at) > _EMBED_CACHE_TTL_SECONDS:
+            _embed_cache.pop(key, None)
+            return None
+        _embed_cache.move_to_end(key)
+        return list(vec)
+
+
+def _cache_put(modell_tag: str, text_hash: str, vec: list[float], now: float) -> None:
+    key = (modell_tag, text_hash)
+    with _embed_cache_lock:
+        _embed_cache[key] = (now, list(vec))
+        _embed_cache.move_to_end(key)
+        while len(_embed_cache) > _EMBED_CACHE_MAX:
+            _embed_cache.popitem(last=False)
+
+
 def encode(
     texts: list[str], *, db: Session | None = None, nur_lokal: bool = False
 ) -> Kodierung | None:
@@ -578,28 +616,71 @@ def encode(
     if not texts:
         return Kodierung([], MODEL_TAG)
     model = _load()
-    if model is None:
+    zugang: tuple[str, str, str, str] | None = None
+    if model is not None:
+        modell_tag = MODEL_TAG
+    else:
         if nur_lokal:
             return None
         # Rückfall — nur beim Anbieter, den der Betreiber gewählt hat.
         zugang = _rueckfall_zugang(db)
         if zugang is None:
             return None
-        anbieter, key, base_url, modell = zugang
-        vektoren = encode_ueber_anbieter(texts, api_key=key, base_url=base_url, model=modell)
-        return None if vektoren is None else Kodierung(vektoren, _tag(anbieter, modell))
-    try:
-        import numpy as np
+        anbieter, _key, _base_url, modell = zugang
+        modell_tag = _tag(anbieter, modell)
 
-        vectors = model.encode(texts)
-        norms = np.linalg.norm(vectors, axis=1, keepdims=True)
-        # Ein Nullvektor entsteht bei reinem Sonderzeichentext. Ohne diesen
-        # Schutz waere das Ergebnis NaN und jede Aehnlichkeit unbrauchbar.
-        norms[norms == 0] = 1.0
-        return Kodierung((vectors / norms).astype("float32").tolist(), MODEL_TAG)
-    except Exception as exc:
-        logger.warning("AI-Embedding fehlgeschlagen error=%s", type(exc).__name__)
+    use_cache = len(texts) <= _EMBED_CACHE_BATCH_LIMIT
+    now = time.monotonic()
+    hashes: list[str] = []
+    cached_vectors: list[list[float] | None] = []
+    missing_indices: list[int] = []
+    if use_cache:
+        for idx, text in enumerate(texts):
+            th = hashlib.sha256(text.encode("utf-8")).hexdigest()
+            hashes.append(th)
+            hit = _cache_get(modell_tag, th, now)
+            cached_vectors.append(hit)
+            if hit is None:
+                missing_indices.append(idx)
+        if not missing_indices:
+            return Kodierung([v for v in cached_vectors if v is not None], modell_tag)
+        texts_to_compute = [texts[idx] for idx in missing_indices]
+    else:
+        texts_to_compute = texts
+
+    computed: list[list[float]] | None = None
+    if model is None:
+        assert zugang is not None
+        _anbieter, key, base_url, modell = zugang
+        computed = encode_ueber_anbieter(
+            texts_to_compute, api_key=key, base_url=base_url, model=modell
+        )
+    else:
+        try:
+            import numpy as np
+
+            vectors = model.encode(texts_to_compute)
+            norms = np.linalg.norm(vectors, axis=1, keepdims=True)
+            # Ein Nullvektor entsteht bei reinem Sonderzeichentext. Ohne diesen
+            # Schutz waere das Ergebnis NaN und jede Aehnlichkeit unbrauchbar.
+            norms[norms == 0] = 1.0
+            computed = (vectors / norms).astype("float32").tolist()
+        except Exception as exc:
+            logger.warning("AI-Embedding fehlgeschlagen error=%s", type(exc).__name__)
+            computed = None
+
+    if computed is None or len(computed) != len(texts_to_compute):
         return None
+
+    if not use_cache:
+        return Kodierung(computed, modell_tag)
+
+    now_store = time.monotonic()
+    for pos, orig_idx in enumerate(missing_indices):
+        vec = computed[pos]
+        cached_vectors[orig_idx] = vec
+        _cache_put(modell_tag, hashes[orig_idx], vec, now_store)
+    return Kodierung([v for v in cached_vectors if v is not None], modell_tag)
 
 
 def vektor_zu_bytes(vektor: Sequence[float]) -> bytes:
@@ -678,3 +759,4 @@ def reset_for_tests() -> None:
     with _lock:
         _model = None
         _letzter_fehlschlag = None
+    embedding_cache_leeren_fuer_tests()

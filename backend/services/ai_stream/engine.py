@@ -6,6 +6,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import replace
 from datetime import datetime, timezone
+import hashlib
 import json
 import logging
 import time
@@ -329,8 +330,12 @@ async def _anbieter_runde_streamen(
     thoughts: list[str],
     denknaht: str,
     gedachte_zeichen: int,
+    ws_session: Any | None = None,
+    prompt_cache_key: str | None = None,
 ) -> tuple[str | None, str, int]:
     """Streamt genau eine Anbieterantwort und startet zulaessige Read-Tools fruehzeitig."""
+    from services.openai_responses_adapter import spricht_responses
+
     provider_started_at = time.perf_counter()
     first_provider_chunk = True
     stream_extra_kw: dict[str, Any] = {}
@@ -340,6 +345,11 @@ async def _anbieter_runde_streamen(
         stream_extra_kw["max_tokens"] = zustand["max_ausgabe_tokens"]
     if zustand.get("defer_tool_names"):
         stream_extra_kw["defer_tool_names"] = frozenset(zustand["defer_tool_names"])
+    if spricht_responses(vorbereitung.provider):
+        if ws_session is not None:
+            stream_extra_kw["ws_session"] = ws_session
+        if prompt_cache_key:
+            stream_extra_kw["prompt_cache_key"] = prompt_cache_key
 
     async for chunk in ai_stream.stream_chat_completion(
         client,
@@ -598,6 +608,35 @@ def _router_failover_schritt(
     return None
 
 
+def _worker_frage_melden(
+    user_id: int,
+    worker: dict,
+    conversation_id: str,
+    gestellte_frage: dict,
+    run_id: str,
+) -> None:
+    try:
+        from services import ai_meldestelle
+
+        with SessionLocal() as db:
+            benutzer = db.get(User, user_id)
+            if benutzer is not None:
+                ai_meldestelle.melden(
+                    db,
+                    user=benutzer,
+                    text=str(gestellte_frage.get("question") or ""),
+                    art="frage",
+                    kanal=str(worker.get("kanal") or "chat"),
+                    worker_id=str(
+                        worker.get("conversation_id") or conversation_id
+                    ),
+                    worker_titel=str(worker.get("titel") or "") or None,
+                    question=gestellte_frage,
+                )
+    except Exception:
+        logger.warning("Worker-Frage nicht gemeldet run_id=%s", run_id)
+
+
 async def _segment_erfolgreich_abschliessen(
     *,
     run_id: str,
@@ -649,6 +688,7 @@ async def _segment_erfolgreich_abschliessen(
         abschnitte=ai_run_broker.abschnitte(run_id),
         question=gestellte_frage,
         token_weight=float((zustand.get("routing") or {}).get("weight") or 1.0),
+        vermerkte_gedaechtnis_ids=vorbereitung.vermerkte_gedaechtnis_ids,
     )
     if on_finalized is not None:
         on_finalized()
@@ -658,7 +698,8 @@ async def _segment_erfolgreich_abschliessen(
         schlusstext = "".join(chunks[rundenbeginn:]).strip()
         if schlusstext:
             provider_messages.append({"role": "assistant", "content": schlusstext})
-        ai_stream._lauf_abschliessen(
+        await asyncio.to_thread(
+            ai_stream._lauf_abschliessen,
             run_id,
             status="waiting_confirmation",
             stop_reason="awaiting_confirmation",
@@ -674,7 +715,8 @@ async def _segment_erfolgreich_abschliessen(
         )
         return
     if wecker is not None:
-        ai_stream._lauf_abschliessen(
+        await asyncio.to_thread(
+            ai_stream._lauf_abschliessen,
             run_id,
             status="waiting_wake",
             stop_reason=parkgrund,
@@ -683,31 +725,23 @@ async def _segment_erfolgreich_abschliessen(
         )
         return
     if gestellte_frage is not None:
-        ai_stream._lauf_abschliessen(
-            run_id, status="waiting_user", stop_reason="question", zustand=zustand
+        await asyncio.to_thread(
+            ai_stream._lauf_abschliessen,
+            run_id,
+            status="waiting_user",
+            stop_reason="question",
+            zustand=zustand,
         )
         await _gedaechtnis_vormerken(conversation_id)
         if worker is not None:
-            try:
-                from services import ai_meldestelle
-
-                with SessionLocal() as db:
-                    benutzer = db.get(User, user_id)
-                    if benutzer is not None:
-                        ai_meldestelle.melden(
-                            db,
-                            user=benutzer,
-                            text=str(gestellte_frage.get("question") or ""),
-                            art="frage",
-                            kanal=str(worker.get("kanal") or "chat"),
-                            worker_id=str(
-                                worker.get("conversation_id") or conversation_id
-                            ),
-                            worker_titel=str(worker.get("titel") or "") or None,
-                            question=gestellte_frage,
-                        )
-            except Exception:
-                logger.warning("Worker-Frage nicht gemeldet run_id=%s", run_id)
+            await asyncio.to_thread(
+                _worker_frage_melden,
+                user_id,
+                worker,
+                conversation_id,
+                gestellte_frage,
+                run_id,
+            )
         return
 
     try:
@@ -727,7 +761,8 @@ async def _segment_erfolgreich_abschliessen(
     except Exception as exc:
         logger.info("AI-Kompression uebersprungen error=%s", type(exc).__name__)
 
-    ai_stream._lauf_abschliessen(
+    await asyncio.to_thread(
+        ai_stream._lauf_abschliessen,
         run_id,
         status="completed",
         stop_reason="budget" if budget_erschoepft else "done",
@@ -893,6 +928,10 @@ async def segment_ausfuehren(run_id: str, *, client: httpx.AsyncClient | None = 
         except Exception:
             logger.exception("Abrechnung des abgebrochenen AI-Laufs gescheitert run_id=%s", run_id)
 
+    from services.openai_responses_adapter import offene_ws_sitzung
+
+    ws_session = offene_ws_sitzung(vorbereitung.provider, vorbereitung.api_key)
+    prompt_cache_key = hashlib.sha256(f"msm:{conversation_id}".encode("utf-8")).hexdigest()[:32]
     try:
         modellname = _modell_fuer(vorbereitung.provider, rolle, zustand)
         segment_prepared = False
@@ -963,6 +1002,8 @@ async def segment_ausfuehren(run_id: str, *, client: httpx.AsyncClient | None = 
                     thoughts=thoughts,
                     denknaht=denknaht,
                     gedachte_zeichen=gedachte_zeichen,
+                    ws_session=ws_session,
+                    prompt_cache_key=prompt_cache_key,
                 )
             except (AiProviderRequestError, AiProviderConfigurationError) as exc:
                 retryable = isinstance(exc, AiProviderConfigurationError) or (
@@ -1197,8 +1238,8 @@ async def segment_ausfuehren(run_id: str, *, client: httpx.AsyncClient | None = 
                 if filter_signal == "fertig":
                     await _fruehe_leseaufgaben_verwerfen(fruehe_leseaufgaben)
                     break
-                alle_autonom = _alle_aufrufe_autonom_erlaubt(
-                    user_id, current_usage.tool_calls
+                alle_autonom = await asyncio.to_thread(
+                    _alle_aufrufe_autonom_erlaubt, user_id, current_usage.tool_calls
                 )
             else:
                 deferred_calls = []
@@ -1262,7 +1303,12 @@ async def segment_ausfuehren(run_id: str, *, client: httpx.AsyncClient | None = 
 
         if abgeloest:
             _abbruch_abrechnen()
-            ai_stream._lauf_abschliessen(run_id, status="cancelled", stop_reason="superseded")
+            await asyncio.to_thread(
+                ai_stream._lauf_abschliessen,
+                run_id,
+                status="cancelled",
+                stop_reason="superseded",
+            )
             return
 
         abgerechnet = True
@@ -1315,4 +1361,7 @@ async def segment_ausfuehren(run_id: str, *, client: httpx.AsyncClient | None = 
             abgerechnet=abgerechnet,
             abbruch_abrechnen=_abbruch_abrechnen,
         )
+    finally:
+        if ws_session is not None:
+            await ws_session.close()
 

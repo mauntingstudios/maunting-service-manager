@@ -33,6 +33,7 @@ from collections import OrderedDict
 from dataclasses import dataclass, field
 import json
 import logging
+import time
 import os
 from typing import AsyncIterator
 
@@ -241,16 +242,66 @@ class _Kanal:
 
 
 _KANAELE: "OrderedDict[str, _Kanal]" = OrderedDict()
-#: Laeufe, deren **laufender** Kanal der Kanalgrenze geopfert wurde. Ihr Abzug
-#: ist ab da unvollstaendig: der Lauf legt beim naechsten `veroeffentlichen`
-#: einen leeren Kanal an, und `abschnitte()` saehe nur den Rest seit dem
-#: Verwerfen. `_finalize_stream` schriebe diese Restliste als `sections_json`,
-#: und die Oberflaeche zeichnete nach dem Neuladen aus ihr statt aus `content`
-#: — der Anfang der Antwort waere weg, obwohl er daneben steht. Die Marke
-#: laesst `abschnitte()` fuer solche Laeufe leer antworten; leer heisst am
-#: Speicherort "nimm den content". Ein neues Segment desselben Laufs beginnt
-#: bei null und hebt die Marke wieder auf.
 _ABZUG_UNVOLLSTAENDIG: set[str] = set()
+_SNAPSHOT_THROTTLE_SEKUNDEN = 0.4
+_LAST_SNAPSHOT_AT: dict[str, float] = {}
+_REDIS_QUEUES: dict[str, asyncio.Queue[tuple[str, dict | None, dict] | None]] = {}
+_REDIS_WORKERS: dict[str, asyncio.Task] = {}
+
+
+def _redis_worker_starten(run_id: str) -> asyncio.Queue:
+    q = _REDIS_QUEUES.get(run_id)
+    if q is None:
+        q = asyncio.Queue()
+        _REDIS_QUEUES[run_id] = q
+    task = _REDIS_WORKERS.get(run_id)
+    if task is None or task.done():
+        from services import redis_backplane
+
+        async def _worker() -> None:
+            try:
+                while True:
+                    item = await q.get()
+                    if item is None:
+                        break
+                    channel, snapshot, payload = item
+                    try:
+                        if snapshot is not None:
+                            await asyncio.to_thread(
+                                redis_backplane.ai_run_snapshot_set, run_id, snapshot
+                            )
+                        await asyncio.to_thread(
+                            redis_backplane.publish_sync, channel, payload
+                        )
+                    except Exception:
+                        pass
+            finally:
+                if _REDIS_WORKERS.get(run_id) is asyncio.current_task():
+                    _REDIS_WORKERS.pop(run_id, None)
+                    _REDIS_QUEUES.pop(run_id, None)
+
+        _REDIS_WORKERS[run_id] = asyncio.get_running_loop().create_task(
+            _worker(), name=f"ai-run-redis-{run_id}"
+        )
+    return q
+
+
+def _redis_dispatch(run_id: str, channel: str, snapshot: dict | None, payload: dict, *, finish: bool = False) -> None:
+    from services import redis_backplane
+
+    if not redis_backplane.is_redis_enabled():
+        return
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        if snapshot is not None:
+            redis_backplane.ai_run_snapshot_set(run_id, snapshot)
+        redis_backplane.publish_sync(channel, payload)
+        return
+    q = _redis_worker_starten(run_id)
+    q.put_nowait((channel, snapshot, payload))
+    if finish:
+        q.put_nowait(None)
 
 
 def _kanal(run_id: str) -> _Kanal:
@@ -366,17 +417,26 @@ def veroeffentlichen(
     if not _from_redis:
         from services import redis_backplane
 
-        redis_backplane.ai_run_snapshot_set(run_id, abzug.als_ereignis())
-        redis_backplane.publish_sync(
-            f"{redis_backplane.CHANNEL_AI_RUN_PREFIX}{run_id}",
-            {
-                "kind": "event",
-                "run_id": run_id,
-                "event": ereignis,
-                "data": daten,
-                "origin_pid": os.getpid(),
-            },
-        )
+        if redis_backplane.is_redis_enabled():
+            jetzt = time.monotonic()
+            snapshot: dict | None = None
+            if ereignis not in {"delta", "reasoning"} or (
+                jetzt - _LAST_SNAPSHOT_AT.get(run_id, 0.0)
+            ) >= _SNAPSHOT_THROTTLE_SEKUNDEN:
+                _LAST_SNAPSHOT_AT[run_id] = jetzt
+                snapshot = abzug.als_ereignis()
+            _redis_dispatch(
+                run_id,
+                f"{redis_backplane.CHANNEL_AI_RUN_PREFIX}{run_id}",
+                snapshot,
+                {
+                    "kind": "event",
+                    "run_id": run_id,
+                    "event": ereignis,
+                    "data": daten,
+                    "origin_pid": os.getpid(),
+                },
+            )
 
 
 def _abzug_aus_snapshot(run_id: str, snap: dict) -> Abzug:
@@ -435,16 +495,20 @@ def beenden(run_id: str, *, _from_redis: bool = False) -> None:
     # Opfern selbst ist die Reihenfolge in `_aufraeumen` entscheidend: erst
     # dieses `beenden`, dann die Marke — sie ueberlebt diesen Aufruf also.
     _ABZUG_UNVOLLSTAENDIG.discard(run_id)
+    _LAST_SNAPSHOT_AT.pop(run_id, None)
     kanal = _KANAELE.get(run_id)
     if not _from_redis:
         from services import redis_backplane
 
-        if kanal is not None:
-            redis_backplane.ai_run_snapshot_set(run_id, kanal.abzug.als_ereignis())
-        redis_backplane.publish_sync(
-            f"{redis_backplane.CHANNEL_AI_RUN_PREFIX}{run_id}",
-            {"kind": "end", "run_id": run_id, "origin_pid": os.getpid()},
-        )
+        if redis_backplane.is_redis_enabled():
+            snapshot = kanal.abzug.als_ereignis() if kanal is not None else None
+            _redis_dispatch(
+                run_id,
+                f"{redis_backplane.CHANNEL_AI_RUN_PREFIX}{run_id}",
+                snapshot,
+                {"kind": "end", "run_id": run_id, "origin_pid": os.getpid()},
+                finish=True,
+            )
     if kanal is None:
         return
     kanal.beendet = True
@@ -505,6 +569,12 @@ def neues_segment(run_id: str) -> None:
 def zuruecksetzen_fuer_tests() -> None:
     _ABZUG_UNVOLLSTAENDIG.clear()
     _KANAELE.clear()
+    _LAST_SNAPSHOT_AT.clear()
+    for aufgabe in list(_REDIS_WORKERS.values()):
+        if not aufgabe.done():
+            aufgabe.cancel()
+    _REDIS_WORKERS.clear()
+    _REDIS_QUEUES.clear()
 
 
 # ── Das Fenster zum Browser ───────────────────────────────────────────────

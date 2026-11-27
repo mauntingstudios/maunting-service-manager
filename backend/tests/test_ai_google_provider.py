@@ -58,7 +58,7 @@ def test_google_catalog_gemini_models() -> None:
     assert m25.model_id == "gemini-2.5-flash"
     assert m25.sieht is True
     assert m25.denkt is True
-    assert m25.stufen == ("low", "medium", "high")
+    assert m25.stufen == ("none", "low", "medium", "high")
     assert m25.standard_stufe == "medium"
     assert m25.kontext_tokens == 1_048_576
 
@@ -67,7 +67,7 @@ def test_google_catalog_gemini_models() -> None:
     assert m20_think is not None
     assert m20_think.sieht is True
     assert m20_think.denkt is True
-    assert m20_think.stufen == ("low", "medium", "high")
+    assert m20_think.stufen == ("none", "low", "medium", "high")
 
     # Gemini 1.5 Flash (ohne Thinking)
     m15 = katalog_lesen({"id": "gemini-1.5-flash", "thinking": False})
@@ -693,7 +693,7 @@ def test_google_catalog_models_prefix_and_native_limits() -> None:
     assert m.kontext_tokens == 1_000_000
     assert m.max_ausgabe_tokens == 8_192
     assert m.denkt is True
-    assert m.stufen == ("low", "medium", "high")
+    assert m.stufen == ("none", "low", "medium", "high")
     assert m.standard_stufe == "medium"
 
 
@@ -715,7 +715,7 @@ def test_google_catalog_gemini_4_dynamic() -> None:
     assert m.kontext_tokens == 2_097_152
     assert m.max_ausgabe_tokens == 65_536
     assert m.denkt is True
-    assert m.stufen == ("low", "medium", "high")
+    assert m.stufen == ("none", "low", "medium", "high")
     assert m.standard_stufe == "medium"
     assert m.sieht is True
 
@@ -1600,7 +1600,7 @@ def test_consolidate_system_messages_merges_multiple_in_order_without_mutation()
         {"role": "system", "content": "Werkzeugverzeichnis: list_my_servers"},
         {"role": "user", "content": "Hallo"},
         {"role": "assistant", "content": "Hi"},
-        {"role": "system", "content": "Lage: 03:50 Uhr"},
+        {"role": "system", "content": "Lage (Auskunft des Panels): 03:50 Uhr"},
         {"role": "user", "content": "Wer bist du?"},
     ]
     snapshot = [dict(m) for m in original]
@@ -1608,15 +1608,15 @@ def test_consolidate_system_messages_merges_multiple_in_order_without_mutation()
     merged = consolidate_system_messages(original)
 
     assert original == snapshot
-    assert [m["role"] for m in merged] == ["system", "user", "assistant", "user"]
+    assert [m["role"] for m in merged] == ["system", "user", "assistant", "user", "user"]
     assert merged[0]["content"] == (
         "ROLLE: Du bist Singra.\n\n"
-        "Werkzeugverzeichnis: list_my_servers\n\n"
-        "Lage: 03:50 Uhr"
+        "Werkzeugverzeichnis: list_my_servers"
     )
     assert merged[1:] == [
         {"role": "user", "content": "Hallo"},
         {"role": "assistant", "content": "Hi"},
+        {"role": "user", "content": "Lage (Auskunft des Panels): 03:50 Uhr"},
         {"role": "user", "content": "Wer bist du?"},
     ]
 
@@ -1626,7 +1626,7 @@ def test_consolidate_system_messages_merges_multiple_in_order_without_mutation()
 async def test_stream_chat_completion_consolidates_system_messages_for_chat_endpoints(
     provider_kind: str,
 ) -> None:
-    """Stellt sicher, dass Google (und andere chat_completions-Ziele) alle Systemblöcke erhalten."""
+    """Stellt sicher, dass Google (und andere chat_completions-Ziele) nur fuehrende Systembloecke an Index 0 konsolidieren."""
     from services.openai_compatible_adapter import StreamUsage, stream_chat_completion
 
     captured_request_json: dict = {}
@@ -1674,6 +1674,7 @@ async def test_stream_chat_completion_consolidates_system_messages_for_chat_endp
     assert sent_messages[0]["role"] == "system"
     assert "Du bist Singra im Maunting Service Manager (MSM)." in sent_messages[0]["content"]
     assert "Werkzeugverzeichnis: list_my_servers" in sent_messages[0]["content"]
-    assert "Lage (Auskunft des Panels): 03:55" in sent_messages[0]["content"]
-    assert [m["role"] for m in sent_messages] == ["system", "user", "assistant", "user"]
+    assert "Lage (Auskunft des Panels): 03:55" not in sent_messages[0]["content"]
+    assert [m["role"] for m in sent_messages] == ["system", "user", "assistant", "user", "user"]
+    assert sent_messages[-2]["content"] == "Lage (Auskunft des Panels): 03:55"
     assert sent_messages[-1]["content"] == "Welches KI-Modell bist du?"

@@ -166,14 +166,21 @@ def test_the_system_text_leaves_the_message_list() -> None:
 
 
 def test_a_late_system_message_is_not_lost() -> None:
-    """`ai_lage` haengt den Lageblock spaet als zweite Systemnachricht an."""
+    """`ai_lage` haengt den Lageblock spaet als Systemnachricht an; sie bleibt im Verlauf vor der letzten Frage."""
     system, verlauf = nachrichten_uebersetzen([
         {"role": "system", "content": "Du bist MSM."},
         {"role": "user", "content": "Hallo"},
         {"role": "system", "content": "Es ist 20:00 Uhr."},
+        {"role": "user", "content": "Wie spaet ist es?"},
     ])
-    assert system == "Du bist MSM.\n\nEs ist 20:00 Uhr."
+    assert system == "Du bist MSM."
     assert len(verlauf) == 1
+    assert verlauf[0]["role"] == "user"
+    texts = [block["text"] for block in verlauf[0]["content"]]
+    assert len(texts) == 3
+    assert texts[0] == "Hallo"
+    assert "Es ist 20:00 Uhr." in texts[1]
+    assert texts[2] == "Wie spaet ist es?"
 
 
 def test_a_tool_call_becomes_text_and_tool_use_blocks() -> None:

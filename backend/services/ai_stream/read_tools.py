@@ -1183,87 +1183,52 @@ async def _lesewellen_ausfuehren(
     # `ai.ethics.evaluated` für etwas, das nie geschah.
     from services import ai_ethics_service
 
-    ethik = await ai_ethics_service.beraten(
-        user_id=user_id, aufrufe=list(tool_calls),
+    ethik_runde = await ai_ethics_service.ethik_runde_starten(
+        user_id=user_id,
+        aufrufe=list(tool_calls),
         bevorzugt_id=ethik_anbieter_id,
     )
+    ethik = ethik_runde.hinweise
 
-    # **In Wellen, nicht alles auf einmal.** Das Budget hat zwei Aufgaben, und
-    # nur eine davon ist der Kontext.
-    #
-    # Die andere ist der Node: `read_server_logs` liefert bis zu 24.000 Zeichen,
-    # zwei davon fuellen die Runde. Ein Modell, das zehn Logauszuege nebeneinander
-    # anfordert, hat frueher **zwei** ausgeloest — die Pruefung stand vor der
-    # Ausfuehrung. Ein blosses `gather` ueber alle haette zehn Docker-Aufrufe
-    # gemacht und acht Ergebnisse weggeworfen. Gleich schnell, dreifache Last auf
-    # einem Rechner, der nebenbei Spieleserver bedient.
-    #
-    # Eine Welle ist so breit wie die Nebenlaeufigkeit. Der Normalfall — bis zu
-    # acht Aufrufe — laeuft damit vollstaendig gleichzeitig, und ein
-    # durchgedrehtes Modell wird nach der ersten Welle gebremst. In der
-    # Testsuite ist die Breite eins; dort ergibt sich exakt das alte Verhalten.
-    while offen:
-        if erledigt and spent >= ai_stream.MAX_TOOL_RESULT_CHARS_PER_ROUND:
-            for call in offen:
-                deferred.append((call, (
-                    "Fuer diese Runde war kein Platz mehr. Der Aufruf lief "
-                    "nicht — stelle ihn in der naechsten Runde erneut."
-                )))
-            break
-        welle, offen = offen[:breite], offen[breite:]
-        # `gather` haelt die **Aufrufreihenfolge** in seinem Ergebnis fest, auch
-        # wenn die Aufrufe in beliebiger Reihenfolge fertig werden. Das ist
-        # wichtig: das Budget und `_serverbezug` ("der letzte gewinnt") haengen
-        # daran. Gemeldet wird trotzdem in Fertigstellungsreihenfolge — das ist
-        # die Reihenfolge, in der es etwas zu sehen gibt.
-        for call, wert, anzeige in await asyncio.gather(
-            *(_einer(call) for call in welle)
-        ):
-            erledigt += 1
-            # Jeder ausgefuehrte Aufruf gehoert in den Verlauf und ins
-            # Protokoll — auch der, dessen Ergebnis gleich nicht mehr in die
-            # Runde passt. Er ist gelaufen, und das ist die Tatsache.
-            display.append(anzeige)
-            behalten.append((call, wert))
-            # Das Ergebnis wird ausdruecklich als unvertrauenswuerdig
-            # gekennzeichnet. Genau hier kommt der Text an, den ein Spieler ueber
-            # den Chat eines Gameservers in dessen Log geschrieben hat:
-            # read_server_logs liefert bis zu 24.000 Zeichen, die vollstaendig
-            # von aussen stammen koennen. Anhaenge tragen dieses Label seit jeher
-            # (ai_attachment_service), Tool-Ergebnisse bisher nicht — obwohl sie
-            # der offenere Kanal sind.
-            umschlag = werkzeugergebnis_umschlag(call.name, wert)
-            # Das Urteil der Ethik-Engine, wenn sie Bedenken hat. Neben den
-            # Daten und nicht in ihnen, wie in der Schreibrunde neben `outcomes`.
-            if hinweis := ethik.get(call.id):
-                umschlag["ethik"] = hinweis
-            serialized = json.dumps(
-                umschlag,
-                ensure_ascii=True,
-                separators=(",", ":"),
-            )
-            # Der erste Aufruf kommt immer durch: sonst kaeme ein einzelner
-            # grosser Logauszug nie an.
-            #
-            # Innerhalb einer Welle kann das Budget erst **nach** der Ausfuehrung
-            # reissen — die Groesse steht vorher nicht fest. Die Begruendung sagt
-            # deshalb etwas anderes als die oben: dort lief der Aufruf nicht,
-            # hier lief er und sein Ergebnis passte nicht mehr. Ein Modell, das
-            # die falsche Auskunft bekommt, holte ein bereits erledigtes
-            # `learn_skill` ein zweites Mal.
-            if erledigt > 1 and spent >= ai_stream.MAX_TOOL_RESULT_CHARS_PER_ROUND:
-                deferred.append((call, (
-                    "Der Aufruf lief, aber sein Ergebnis passte nicht mehr in "
-                    "diese Runde. Frag gezielter nach — weniger Zeilen, engerer "
-                    "Pfad — oder hol es in der naechsten Runde."
-                )))
-                continue
-            spent += len(serialized)
-            antworten[call.id] = {
-                "role": "tool",
-                "tool_call_id": call.id,
-                "content": serialized,
-            }
+    try:
+        while offen:
+            if erledigt and spent >= ai_stream.MAX_TOOL_RESULT_CHARS_PER_ROUND:
+                for call in offen:
+                    deferred.append((call, (
+                        "Fuer diese Runde war kein Platz mehr. Der Aufruf lief "
+                        "nicht — stelle ihn in der naechsten Runde erneut."
+                    )))
+                break
+            welle, offen = offen[:breite], offen[breite:]
+            welle_ergebnisse = await asyncio.gather(*(_einer(call) for call in welle))
+            await ethik_runde.abschliessen()
+            for call, wert, anzeige in welle_ergebnisse:
+                erledigt += 1
+                display.append(anzeige)
+                behalten.append((call, wert))
+                umschlag = werkzeugergebnis_umschlag(call.name, wert)
+                if hinweis := ethik.get(call.id):
+                    umschlag["ethik"] = hinweis
+                serialized = json.dumps(
+                    umschlag,
+                    ensure_ascii=True,
+                    separators=(",", ":"),
+                )
+                if erledigt > 1 and spent >= ai_stream.MAX_TOOL_RESULT_CHARS_PER_ROUND:
+                    deferred.append((call, (
+                        "Der Aufruf lief, aber sein Ergebnis passte nicht mehr in "
+                        "diese Runde. Frag gezielter nach — weniger Zeilen, engerer "
+                        "Pfad — oder hol es in der naechsten Runde."
+                    )))
+                    continue
+                spent += len(serialized)
+                antworten[call.id] = {
+                    "role": "tool",
+                    "tool_call_id": call.id,
+                    "content": serialized,
+                }
+    finally:
+        await ethik_runde.abschliessen()
     # Erst hier: die Schleife oben legt selbst weitere Aufrufe zurueck, sobald
     # das Budget aufgebraucht ist. Wuerden die Absagen vorher erzeugt, blieben
     # genau diese `tool_call_id` ohne Antwort — und manche Anbieter weisen die
@@ -1467,7 +1432,8 @@ async def _tool_followup_messages(
     Schreibrunde; bis zum 23.09.2026 liefen sie hier ohne jede Beratung.
     """
     deferred_liste = [(call, reason) for call, reason in deferred]
-    freigegeben, geordnete_aufrufe, assistant_call = _leseaufrufe_filtern_und_pruefen(
+    freigegeben, geordnete_aufrufe, assistant_call = await asyncio.to_thread(
+        _leseaufrufe_filtern_und_pruefen,
         user_id=user_id,
         conversation_id=conversation_id,
         tool_calls=tool_calls,

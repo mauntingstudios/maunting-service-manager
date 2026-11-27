@@ -197,6 +197,13 @@ def _unlesbarer_zustand() -> dict:
 def zustand_schreiben(run: AiRun, zustand: dict) -> None:
     run.state_json = json.dumps(zustand, ensure_ascii=True, separators=(",", ":"))
     run.updated_at = _jetzt()
+    if getattr(run, "id", None):
+        try:
+            from services.ai_stream.lifecycle import frischer_start_invalidieren
+
+            frischer_start_invalidieren(run.id)
+        except Exception:
+            pass
 
 
 def arbeitsspeicher_leeren(run: AiRun, zustand: dict | None = None) -> dict:

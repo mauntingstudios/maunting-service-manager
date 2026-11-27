@@ -50,6 +50,7 @@ from services import (
     ai_context_service,
     ai_context_window,
     ai_limit_service,
+    ai_model_catalog,
     ai_provider_service,
     ai_reasoning,
     ai_router_service,
@@ -59,6 +60,7 @@ from services import (
     drain_service,
     permission_service,
 )
+from services.ai_latency_metrics import measure
 from services.ai_redaction import redact_sensitive_text
 # Das Fenster auf einen Lauf kommt vom Vermittler, die Arbeit von der Schleife.
 # Frueher kam beides aus `ai_stream_service` — der Umzug macht die
@@ -981,35 +983,118 @@ async def stream_message(
         if not safe_content and not has_unbound_attachments:
             raise HTTPException(status_code=400, detail="Nachricht ist nach Sicherheitsfilter leer")
 
-        target_provider = provider
+        user_id = user.id
+        conversation_id = conversation.id
+        conv_project_id = conversation.project_id
+        provider_id = provider.id
+        target_provider_id = provider.id
         requested_model = _erlaubtes_wunschmodell(provider, payload.model)
         routing_meta: dict | None = None
-        if is_router:
-            history_len = (
-                db.query(AiMessage.id)
-                .filter(AiMessage.conversation_id == conversation.id)
-                .count()
-            )
-            routed = ai_router_service.resolve_route_for_text(
-                db,
-                user=user,
-                text=safe_content,
-                has_images=has_unbound_attachments,
-                reasoning=payload.reasoning,
-                history_len=history_len,
-            )
-            if routed is None:
-                raise HTTPException(status_code=503, detail="AI_ROUTER_NO_AVAILABLE_MODEL")
-            target_provider, requested_model, routing_meta = routed
+        history_len = (
+            db.query(AiMessage.id)
+            .filter(AiMessage.conversation_id == conversation_id)
+            .count()
+            if is_router
+            else 0
+        )
+        # Keine offene Transaktion ueber die Thread-Grenze (StaticPool in Tests).
+        db.commit()
+
+    routed_api_key: str | None = None
+    routed_api_key_aufgeloest = False
+    if is_router:
+        def _resolve_route_in_thread() -> tuple[int, str, dict, str | None, bool] | None:
+            with database.SessionLocal() as route_db:
+                route_user = route_db.get(User, user_id)
+                if route_user is None or not route_user.is_active:
+                    return None
+                with measure("ai_chat", "router_resolve"):
+                    if (
+                        getattr(ai_router_service.resolve_route_for_text, "__module__", "")
+                        == "services.ai_router_service"
+                    ):
+                        res = ai_router_service.resolve_route_for_text_with_context(
+                            route_db,
+                            user=route_user,
+                            text=safe_content,
+                            has_images=has_unbound_attachments,
+                            reasoning=payload.reasoning,
+                            history_len=history_len,
+                        )
+                        if res is None:
+                            return None
+                        r_prov, r_model, r_meta, r_key, _r_limits = res
+                        return r_prov.id, r_model, r_meta, r_key, True
+                    res = ai_router_service.resolve_route_for_text(
+                        route_db,
+                        user=route_user,
+                        text=safe_content,
+                        has_images=has_unbound_attachments,
+                        reasoning=payload.reasoning,
+                        history_len=history_len,
+                    )
+                if res is None:
+                    return None
+                r_prov, r_model, r_meta = res
+                return r_prov.id, r_model, r_meta, None, False
+
+        routed = await asyncio.to_thread(_resolve_route_in_thread)
+        if routed is None:
+            raise HTTPException(status_code=503, detail="AI_ROUTER_NO_AVAILABLE_MODEL")
+        (
+            target_provider_id,
+            requested_model,
+            routing_meta,
+            routed_api_key,
+            routed_api_key_aufgeloest,
+        ) = routed
+
+    with database.SessionLocal() as db:
+        user = db.get(User, user_id)
+        target_provider = db.get(AiProvider, target_provider_id)
+        if user is None or target_provider is None or not target_provider.enabled:
+            raise HTTPException(status_code=404, detail="Provider nicht gefunden")
 
         if is_generic_title and raw_content:
             # 2. Asynchrone Verfeinerung durch das aufgelöste Zielmodell im Hintergrund
             background_tasks.add_task(
                 ai_chat_service.generate_conversation_title_llm,
-                conversation.id,
+                conversation_id,
                 raw_content,
                 target_provider.id,
                 requested_model,
+            )
+
+        if not routed_api_key_aufgeloest:
+            try:
+                routed_api_key = await asyncio.to_thread(
+                    ai_provider_service.resolve_api_key,
+                    db,
+                    target_provider,
+                    user.id,
+                )
+                routed_api_key_aufgeloest = True
+            except Exception:
+                routed_api_key = None
+                routed_api_key_aufgeloest = False
+
+        deckel_tokens = ai_limit_service.resolve_context_ceiling(db, user)
+        vorgabe_original = (
+            getattr(ai_reasoning.vorgabe, "__module__", "") == "services.ai_reasoning"
+        )
+        ermitteln_original = (
+            getattr(ai_context_window.ermitteln, "__module__", "")
+            == "services.ai_context_window"
+        )
+        cached_modell = None
+        if vorgabe_original and ermitteln_original:
+            cached_modell = await ai_model_catalog.fuer_provider(
+                request.app.state.ai_http_client,
+                db,
+                target_provider,
+                user_id=user.id,
+                model_id=requested_model,
+                schluessel=routed_api_key if routed_api_key_aufgeloest else None,
             )
 
         # Die Denkvorgabe wird **hier** festgelegt und nicht erst beim Senden:
@@ -1017,33 +1102,59 @@ async def stream_message(
         # HTTP-Abruf. Wichtiger noch — der geklemmte Wert gehoert in den Lauf,
         # damit eine Fortsetzung nach einer Bestaetigung dieselbe Tiefe
         # verwendet wie der erste Zug.
-        denken, stufe = await ai_reasoning.vorgabe(
-            request.app.state.ai_http_client,
-            db,
-            user=user,
-            provider=target_provider,
-            aktiv=payload.reasoning,
-            wunsch=payload.reasoning_effort,
-            model_id=requested_model,
-        )
-        # Aus demselben Grund hier und nicht im Anlauf: das Kontextfenster steht
-        # im Modellkatalog, und den zu befragen ist ein HTTP-Abruf. Es gehoert
-        # ausserdem in den Lauf — eine Fortsetzung nach einer Bestaetigung muss
-        # mit demselben Budget rechnen wie der erste Zug, auch wenn der
-        # Betreiber zwischendurch das Modell wechselt.
-        fenster = await ai_context_window.ermitteln(
-            request.app.state.ai_http_client,
-            target_provider,
-            db=db,
-            user_id=user.id,
-            model_id=requested_model,
-        )
+        with measure("ai_chat", "catalog_reasoning_window"):
+            if vorgabe_original:
+                denken, stufe = await ai_reasoning.vorgabe(
+                    request.app.state.ai_http_client,
+                    db,
+                    user=user,
+                    provider=target_provider,
+                    aktiv=payload.reasoning,
+                    wunsch=payload.reasoning_effort,
+                    model_id=requested_model,
+                    modell=cached_modell,
+                    effective_limits=effective_limits,
+                    schluessel=routed_api_key if routed_api_key_aufgeloest else None,
+                )
+            else:
+                denken, stufe = await ai_reasoning.vorgabe(
+                    request.app.state.ai_http_client,
+                    db,
+                    user=user,
+                    provider=target_provider,
+                    aktiv=payload.reasoning,
+                    wunsch=payload.reasoning_effort,
+                    model_id=requested_model,
+                )
+            # Aus demselben Grund hier und nicht im Anlauf: das Kontextfenster steht
+            # im Modellkatalog, und den zu befragen ist ein HTTP-Abruf. Es gehoert
+            # ausserdem in den Lauf — eine Fortsetzung nach einer Bestaetigung muss
+            # mit demselben Budget rechnen wie der erste Zug, auch wenn der
+            # Betreiber zwischendurch das Modell wechselt.
+            if ermitteln_original:
+                fenster = await ai_context_window.ermitteln(
+                    request.app.state.ai_http_client,
+                    target_provider,
+                    db=db,
+                    user_id=user.id,
+                    model_id=requested_model,
+                    api_key=routed_api_key if routed_api_key_aufgeloest else None,
+                    modell=cached_modell,
+                    deckel_tokens=deckel_tokens,
+                )
+            else:
+                fenster = await ai_context_window.ermitteln(
+                    request.app.state.ai_http_client,
+                    target_provider,
+                    db=db,
+                    user_id=user.id,
+                    model_id=requested_model,
+                )
         # Ab hier reisen nur noch **Kennungen** weiter. Der Anlauf legt sich
         # gleich eine eigene Sitzung in einem eigenen Thread an, und die des
         # Requests darf diese Grenze nicht ueberschreiten — sie gehoert dem
         # Request-Thread und wird von ihm geschlossen.
-        user_id, conversation_id, provider_id = user.id, conversation.id, target_provider.id
-        conv_project_id = conversation.project_id
+        provider_id = target_provider.id
         # Und sie darf auch keine offene Transaktion ueber die Grenze tragen.
         # Die Sitzung im Thread saehe ungesicherte Arbeit dieser Sitzung nicht,
         # und in der Testsuite teilen sich beide sogar eine Verbindung. Frueher
@@ -1089,6 +1200,8 @@ async def stream_message(
         requested_model=requested_model,
         project_id=payload.project_id or conv_project_id,
         routing_meta=routing_meta,
+        pre_api_key=routed_api_key,
+        pre_api_key_aufgeloest=routed_api_key_aufgeloest,
     )
     if run_id is None:
         code, message_key = fehler or ("AI_PREPARATION_FAILED", "ai.chat.errors.unavailable")

@@ -43,6 +43,7 @@ from models import AiActionProposal, AiConversation, AiProject, AiRun, User
 # zurueck. Beide Listen sind heute gleich; das ist kein Vertrag, sondern Zufall.
 from models.ai_meldung import KANAELE
 from models.ai_run import BEENDET
+from services.ai_latency_metrics import measure
 
 logger = logging.getLogger(__name__)
 
@@ -179,6 +180,26 @@ def worker_start(
     **einzige** Stelle, an der ein Worker-Fenster sie je bekommt: fehlte sie
     hier, bliebe sie in jeder Fortsetzung des Auftrags leer.
     """
+    with measure("ai_worker", "worker_start"):
+        return _worker_start_impl(
+            db,
+            user=user,
+            arguments=arguments,
+            herkunft=herkunft,
+            familie=familie,
+            docs_document_uid=docs_document_uid,
+            docs_team_id=docs_team_id,
+            conversation_id=conversation_id,
+            project_id=project_id,
+        )
+
+
+def _worker_start_impl(
+    db: Session, *, user: User, arguments: dict, herkunft: str = "panel",
+    familie: str | None = None, docs_document_uid: str | None = None,
+    docs_team_id: int | None = None, conversation_id: str | None = None,
+    project_id: str | None = None,
+) -> dict:
     from services import ai_run_service, ai_worker_limits, permission_service
     from services.ai_action_service import AiActionValidationError
 
@@ -217,11 +238,13 @@ def worker_start(
             ),
         }
 
-    from services import ai_chat_service, ai_limit_service, ai_provider_service, ai_router_service
+    from services import ai_chat_service, ai_context_window, ai_limit_service, ai_model_catalog, ai_provider_service, ai_router_service
 
     anbieter = ai_provider_service.worker_anbieter(db, user)
+    effective_limits = ai_limit_service.resolve_effective_limits(db, user)
+    is_router_anbieter = ai_router_service.is_router_provider(anbieter)
     parent_routed = False
-    if conversation_id:
+    if conversation_id and not is_router_anbieter and not effective_limits.router_only:
         parent_run = (
             db.query(AiRun)
             .filter(AiRun.conversation_id == conversation_id)
@@ -233,10 +256,9 @@ def worker_start(
                 ai_run_service.zustand_lesen(parent_run).get("routing"), dict
             )
 
-    effective_limits = ai_limit_service.resolve_effective_limits(db, user)
     should_route = (
         parent_routed
-        or ai_router_service.is_router_provider(anbieter)
+        or is_router_anbieter
         or bool(effective_limits.router_only)
     )
 
@@ -360,6 +382,29 @@ def worker_start(
     # unbeaufsichtigten Lauf. Geklemmt wird sie je Segment gegen das dann
     # geltende Modell (nie teurer, nie unbekannt), nicht hier.
     stufe = anbieter.worker_reasoning_effort
+    worker_context_chars: int | None = None
+    worker_modell_sieht: bool | None = None
+    try:
+        ziel_modell_id = (
+            worker_requested_model
+            or getattr(anbieter, "worker_model", None)
+            or anbieter.default_model
+            or ""
+        )
+        cached_modell = ai_model_catalog.cached_finde(
+            anbieter.provider_kind,
+            ziel_modell_id,
+            provider=anbieter,
+        )
+        if cached_modell is not None:
+            deckel_tokens = ai_limit_service.resolve_context_ceiling(db, user)
+            fenster_cached = ai_context_window.aus_modell(cached_modell, deckel_tokens)
+            if fenster_cached.bekannt:
+                worker_context_chars = fenster_cached.zeichen
+            worker_modell_sieht = fenster_cached.sieht
+    except Exception:
+        pass
+
     run, fehler = lauf_beginnen(
         db,
         user=user,
@@ -369,10 +414,7 @@ def worker_start(
         content=auftrag,
         reasoning=bool(stufe),
         reasoning_effort=stufe,
-        # Das Fenster des Worker-Modells ist hier nicht ermittelbar (der
-        # Katalog ist ein async-Abruf, dieser Handler ein Thread). ``None``
-        # heisst „unbekannt" und faellt auf den bewaehrten Rueckfall zurueck.
-        context_chars=None,
+        context_chars=worker_context_chars,
         herkunft=herkunft,
         familie=familie,
         # Eine Vorfallsmeldung gehoert ins Gespraech mit dem Menschen, nicht
@@ -382,8 +424,14 @@ def worker_start(
         unbeaufsichtigt=True,
         docs_document_uid=docs_document_uid,
         docs_team_id=docs_team_id,
+        modell_sieht=worker_modell_sieht,
         requested_model=worker_requested_model,
         routing_meta=worker_routing_meta,
+        worker_rahmen={
+            "conversation_id": fenster.id,
+            "titel": titel,
+            "kanal": kanal,
+        },
     )
     if run is None:
         # Das eben angelegte Fenster wieder wegraeumen: ohne Lauf ist es in
@@ -402,19 +450,6 @@ def worker_start(
                 "Auftrag gerade nicht laufen kann."
             ),
         }
-
-    # **Der Rahmen erst jetzt — nach allem, was noch zurueckrollen kann.**
-    # Ginge er bei einem Rollback verloren, liefe der Lauf als gewoehnlicher
-    # Chatlauf weiter: voller Werkzeugsatz, `ask_user` erlaubt, und niemand,
-    # der je antwortet (dieselbe Reihenfolge wie bei Guardian und Aufgaben).
-    zustand = ai_run_service.zustand_lesen(run)
-    zustand["worker"] = {
-        "conversation_id": fenster.id,
-        "titel": titel,
-        "kanal": kanal,
-    }
-    ai_run_service.zustand_schreiben(run, zustand)
-    db.commit()
 
     if not ai_run_service.anlauf(db, run):
         return {

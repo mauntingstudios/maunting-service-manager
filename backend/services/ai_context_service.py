@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session, defer
 from models import AiConversation, AiMessage, User
 from models.dis_text import vorab_entschluesselt
 from services import ai_lage, ai_prompt
+from services.ai_latency_metrics import measure
 from services.ai_context_budget import (
     MAX_CONTEXT_CHARS,
     MAX_HISTORY_MESSAGES,
@@ -249,15 +250,93 @@ def _mcp_servers_message(
     return {"role": "user", "content": block}
 
 
-def _project_context_message(
+def _project_wiki_and_reusable_lines(
+    db: Session,
+    user: User,
+    project: Any,
+    query: str = "",
+) -> list[str]:
+    lines: list[str] = []
+    try:
+        from services import ai_project_service, ai_project_wiki_service
+
+        wiki_ctx = ai_project_wiki_service.build_project_wiki_context(
+            db, user, project, query
+        )
+        if wiki_ctx:
+            safe_wiki = _escape_untrusted_text(wiki_ctx)
+            lines.append(
+                '<untrusted_data type="project_wiki">\n'
+                f"{safe_wiki}\n"
+                "</untrusted_data>"
+            )
+    except Exception:
+        logger.debug(
+            "Projekt-Wiki-Kontext konnte nicht geladen werden project_id=%s",
+            project.id,
+            exc_info=True,
+        )
+
+    if getattr(project, "project_kind", None) == "coding":
+        try:
+            from services import ai_project_service
+
+            reusable = ai_project_service.search_cross_project_components(
+                db, user, current_project_id=project.id, query=query, limit=6
+            )
+            if reusable:
+                lines.append(
+                    "Wiederverwendbare Komponenten aus anderen Projekten des Benutzers "
+                    "(bei Bedarf mit project_workspace read_file über deren project_id lesbar):"
+                )
+                for comp in reusable:
+                    lines.append(
+                        f"  - {comp['component_name']} ({comp['path']} in Projekt "
+                        f"'{comp['project_name']}', project_id={comp['project_id']})"
+                    )
+        except Exception:
+            pass
+    return lines
+
+
+def _project_query_context_message(
     db: Session,
     user: User | None,
     conversation: AiConversation,
     query: str = "",
 ) -> dict[str, Any] | None:
-    """Injiziert das vollständige Projektprofil (Tier 1) und wiederverwendbare
-    Komponenten aus anderen Projekten (Tier 3), sobald die Unterhaltung zu einem
-    Singra-Projekt gehört (`conversation.project_id`).
+    """Query-abhaengiger Projektkontext (Wiki-Treffer + projektuebergreifende Komponenten) fuer den Nachspann."""
+    project_id = getattr(conversation, "project_id", None)
+    if user is None or not project_id:
+        return None
+    try:
+        from services import ai_project_service
+
+        project = ai_project_service.get_project(db, user, str(project_id))
+    except Exception:
+        return None
+    lines = _project_wiki_and_reusable_lines(db, user, project, query)
+    if not lines:
+        return None
+    return {
+        "role": "user",
+        "content": redact_sensitive_text("\n\n".join(lines)),
+    }
+
+
+def _project_context_message(
+    db: Session,
+    user: User | None,
+    conversation: AiConversation,
+    query: str = "",
+    *,
+    include_query_context: bool = True,
+) -> dict[str, Any] | None:
+    """Injiziert das statische Projektprofil (Tier 1) fuer den stabilen Vorspann.
+
+    Query-abhaengige Anteile (Wiki-Suche, projektuebergreifende Komponenten) werden im
+    Chat-Pfad ueber ``include_query_context=False`` abgetrennt und erst in ``_nachspann_bauen``
+    eingehaengt, damit der Vorspann ueber den gesamten Chat cache-stabil bleibt.
     """
     project_id = getattr(conversation, "project_id", None)
     if user is None or not project_id:
@@ -283,6 +362,14 @@ def _project_context_message(
     lines.append(f"- Git-Branch: {project.git_branch or 'main'}")
     if project.git_repo_url:
         lines.append(f"- Git-Repository: {project.git_repo_url}")
+    if getattr(project, "sandbox_enabled", False) and getattr(project, "sandbox_path", None):
+        lines.append(f"- Server-Sandbox aktiv: {project.sandbox_path}")
+    if getattr(project, "local_directory", None):
+        lines.append(f"- Lokaler Projektordner: {project.local_directory}")
+    lines.append(
+        "Hinweis: Nutze das Werkzeug `project_workspace` mit dieser `project_id`, "
+        "um Dateien zu lesen/schreiben, Befehle in der Sandbox auszuführen oder Git-Aktionen durchzuführen."
+    )
 
     prod_info = env.get("production") if isinstance(env, dict) else {}
     dev_db = env.get("dev_db") if isinstance(env, dict) else {}
@@ -350,43 +437,11 @@ def _project_context_message(
     else:
         lines.append("\nDateibaum im Projekt: Noch keine Dateien angelegt.")
 
-    try:
-        from services import ai_project_wiki_service
-
-        wiki_ctx = ai_project_wiki_service.build_project_wiki_context(
-            db, user, project, query
-        )
-        if wiki_ctx:
-            safe_wiki = _escape_untrusted_text(wiki_ctx)
-            lines.append(
-                '\n<untrusted_data type="project_wiki">\n'
-                f"{safe_wiki}\n"
-                "</untrusted_data>"
-            )
-    except Exception:
-        logger.debug(
-            "Projekt-Wiki-Kontext konnte nicht geladen werden project_id=%s",
-            project.id,
-            exc_info=True,
-        )
-
-    if project.project_kind == "coding":
-        try:
-            reusable = ai_project_service.search_cross_project_components(
-                db, user, current_project_id=project.id, query=query, limit=6
-            )
-            if reusable:
-                lines.append(
-                    "\nWiederverwendbare Komponenten aus anderen Projekten des Benutzers "
-                    "(bei Bedarf mit project_workspace read_file über deren project_id lesbar):"
-                )
-                for comp in reusable:
-                    lines.append(
-                        f"  - {comp['component_name']} ({comp['path']} in Projekt "
-                        f"'{comp['project_name']}', project_id={comp['project_id']})"
-                    )
-        except Exception:
-            pass
+    if include_query_context:
+        extra = _project_wiki_and_reusable_lines(db, user, project, query)
+        if extra:
+            lines.append("")
+            lines.extend(extra)
 
     return {
         "role": "user",
@@ -414,38 +469,89 @@ def _short_term_chat_memory_message(
         return None
 
     try:
-        recent_convs = (
-            db.query(AiConversation)
+        recent_ids = (
+            db.query(AiConversation.id)
             .filter(
                 AiConversation.user_id == user.id,
                 AiConversation.id != conversation.id,
-                AiConversation.hidden.is_(False),
+                AiConversation.kind == "primary",
             )
             .order_by(AiConversation.updated_at.desc())
             .limit(10)
-            .all()
         )
         if project_id:
-            proj_convs = (
-                db.query(AiConversation)
+            proj_ids = (
+                db.query(AiConversation.id)
                 .filter(
                     AiConversation.user_id == user.id,
                     AiConversation.id != conversation.id,
+                    AiConversation.kind == "primary",
                     AiConversation.project_id == project_id,
                 )
                 .order_by(AiConversation.updated_at.desc())
                 .limit(6)
-                .all()
             )
-            seen_ids = {c.id for c in recent_convs}
-            for pc in proj_convs:
-                if pc.id not in seen_ids:
-                    recent_convs.append(pc)
-                    seen_ids.add(pc.id)
+            target_ids_sq = recent_ids.union(proj_ids).subquery()
+            conv_q = (
+                db.query(AiConversation)
+                .join(target_ids_sq, AiConversation.id == target_ids_sq.c.id)
+                .order_by(AiConversation.updated_at.desc())
+            )
+        else:
+            conv_q = (
+                db.query(AiConversation)
+                .filter(
+                    AiConversation.user_id == user.id,
+                    AiConversation.id != conversation.id,
+                    AiConversation.kind == "primary",
+                )
+                .order_by(AiConversation.updated_at.desc())
+                .limit(10)
+            )
+        with vorab_entschluesselt(db, conv_q, AiConversation.title, AiConversation.summary):
+            recent_convs = conv_q.all()
     except Exception:
         return None
 
     if not recent_convs:
+        return None
+
+    conv_ids = [c.id for c in recent_convs]
+    msgs_by_conv: dict[str, list[AiMessage]] = {}
+    try:
+        ranked_subq = (
+            db.query(
+                AiMessage.id.label("msg_id"),
+                func.row_number()
+                .over(
+                    partition_by=AiMessage.conversation_id,
+                    order_by=(AiMessage.created_at.desc(), AiMessage.id.desc()),
+                )
+                .label("rn"),
+            )
+            .filter(
+                AiMessage.conversation_id.in_(conv_ids),
+                AiMessage.status == "complete",
+            )
+            .subquery()
+        )
+        msg_q = (
+            db.query(AiMessage)
+            .join(ranked_subq, AiMessage.id == ranked_subq.c.msg_id)
+            .filter(ranked_subq.c.rn <= 4)
+            .order_by(
+                AiMessage.conversation_id,
+                AiMessage.created_at.asc(),
+                AiMessage.id.asc(),
+            )
+        )
+        with vorab_entschluesselt(db, msg_q, AiMessage.content):
+            all_msgs = msg_q.options(
+                defer(AiMessage.reasoning), defer(AiMessage.sections_json)
+            ).all()
+        for msg in all_msgs:
+            msgs_by_conv.setdefault(msg.conversation_id, []).append(msg)
+    except Exception:
         return None
 
     tokens = [
@@ -460,18 +566,7 @@ def _short_term_chat_memory_message(
         if same_proj:
             score += 50
 
-        msg_q = (
-            db.query(AiMessage)
-            .filter(
-                AiMessage.conversation_id == conv.id,
-                AiMessage.status == "complete",
-            )
-            .order_by(AiMessage.created_at.desc(), AiMessage.id.desc())
-            .limit(4)
-        )
-        with vorab_entschluesselt(db, msg_q, AiMessage.content):
-            msgs = list(reversed(msg_q.options(defer(AiMessage.reasoning), defer(AiMessage.sections_json)).all()))
-
+        msgs = msgs_by_conv.get(conv.id, [])
         if not msgs and not conv.summary:
             continue
 
@@ -771,6 +866,7 @@ def _stabilen_vorspann_bauen(
     docs_team_id: int | None,
     docs_is_link_guest: bool,
     computer_use_aktiv: bool | None,
+    gebraucht_ids_out: list[str] | None = None,
 ) -> tuple[list[dict[str, Any]], str | None, bool]:
     """Baut den cache-stabilen Vorspann (Systemprompt, Skills, MCP, Projekt, Memory-Kopf)."""
     coding_erlaubt = True
@@ -827,7 +923,13 @@ def _stabilen_vorspann_bauen(
     if mcp_verzeichnis is not None:
         result.append(mcp_verzeichnis)
     if wissen_erlaubt and user is not None and getattr(conversation, "project_id", None):
-        projekt_kontext = _project_context_message(db, user, conversation, query)
+        projekt_kontext = _project_context_message(
+            db,
+            user,
+            conversation,
+            query,
+            include_query_context=False,
+        )
         if projekt_kontext is not None:
             result.append(projekt_kontext)
     gedaechtnis_passend: str | None = None
@@ -835,18 +937,22 @@ def _stabilen_vorspann_bauen(
         from services import ai_gedaechtnis_abruf, permission_service
 
         if permission_service.has_global_permission(db, user, "ai.memory.use"):
-            abruf = ai_gedaechtnis_abruf.abrufen(
-                db,
-                user,
-                query,
-                server_id,
-                budget=grenzen.gedaechtnis_zeichen,
-                nur_team_id=docs_team_id if docs else None,
-                nur_persoenlich=nur_persoenlich,
-            )
+            with measure("ai_context", "memory_retrieval"):
+                abruf = ai_gedaechtnis_abruf.abrufen(
+                    db,
+                    user,
+                    query,
+                    server_id,
+                    budget=grenzen.gedaechtnis_zeichen,
+                    nur_team_id=docs_team_id if docs else None,
+                    nur_persoenlich=nur_persoenlich,
+                    gebraucht_sofort=(gebraucht_ids_out is None),
+                )
             if abruf.kopf:
                 result.append(_memory_message(abruf.kopf))
             gedaechtnis_passend = abruf.passend
+            if gebraucht_ids_out is not None and abruf.verwendete_ids:
+                gebraucht_ids_out.extend(abruf.verwendete_ids)
     return result, gedaechtnis_passend, wissen_erlaubt
 
 
@@ -985,9 +1091,15 @@ def _nachspann_bauen(
         if getattr(conversation, "project_id", None) or permission_service.has_global_permission(
             db, user, "ai.memory.use"
         ):
-            kurzzeit = _short_term_chat_memory_message(db, user, conversation, query)
+            with measure("ai_context", "short_term_memory"):
+                kurzzeit = _short_term_chat_memory_message(db, user, conversation, query)
             if kurzzeit is not None:
                 nachspann.append(kurzzeit)
+
+    if wissen_erlaubt and user is not None and getattr(conversation, "project_id", None):
+        projekt_query = _project_query_context_message(db, user, conversation, query)
+        if projekt_query is not None:
+            nachspann.append(projekt_query)
 
     if user is not None:
         # Die Lage: Uhrzeit, Zeitzone, autonomer Modus. Bewusst **nicht** im
@@ -1099,6 +1211,7 @@ def build_provider_messages(
     modell_sieht: bool | None = None,
     computer_use_aktiv: bool | None = None,
     provider_protokoll: str | None = None,
+    gebraucht_ids_out: list[str] | None = None,
 ) -> list[dict[str, Any]]:
     """Baut eine neueste, begrenzte Historie unter einer Zeichenobergrenze.
 
@@ -1163,6 +1276,7 @@ def build_provider_messages(
         docs_team_id=docs_team_id,
         docs_is_link_guest=docs_is_link_guest,
         computer_use_aktiv=computer_use_aktiv,
+        gebraucht_ids_out=gebraucht_ids_out,
     )
     rows = _historie_und_anhaenge_laden(
         db,

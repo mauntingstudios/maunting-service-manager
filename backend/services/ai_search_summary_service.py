@@ -484,44 +484,51 @@ async def _stream_mit_sitzung(
         return
 
     provider, model = anbieter_tupel
-    api_key = resolve_api_key(db, provider, user.id)
+    api_key = await asyncio.to_thread(resolve_api_key, db, provider, user.id)
     if provider.requires_api_key and not api_key:
         logger.warning("Suchzusammenfassung abgelehnt grund=no_key nutzer=%s", user.id)
         yield f"data: {json.dumps({'type': 'disabled', 'reason': 'no_key'})}\n\n"
         return
 
-    # 3. Selbständige Nachrecherche bei Folgefragen: Umschreiben (Koreferenzen
-    #    auflösen), höchstens zwei gezielte Nachsuchen, danach bei Bedarf die
-    #    besten frischen Seiten öffnen. Synchrone Arbeit läuft nie auf der
-    #    Ereignisschleife (`asyncio.to_thread`). Die Kennziffern laufen immer
-    #    weiter, damit [n]-Verweise in der Kachel auf die Treffer darunter zeigen.
-    #    Ein Client für Nachrecherche und Antwortstrom gemeinsam.
+    # 3. Selbständige Nachrecherche bei Folgefragen + optionales Pre-Scraping (gedeckelt auf 2,5s)
+    from services import ai_run_service
+
     gesamt_treffer = list(treffer)
     frische_ab: int | None = None
+    shared_client = ai_run_service.http_client()
+    owned_client = shared_client is None
+    client = shared_client or httpx.AsyncClient(timeout=45.0)
     try:
-        async with httpx.AsyncClient(timeout=45.0) as client:
-            braucht_nachrecherche = bool(
-                neue_suche
-                and q.strip()
-                and (verlauf or ist_zusammengesetzte_anfrage(q))
+        braucht_nachrecherche = bool(
+            neue_suche
+            and q.strip()
+            and (verlauf or ist_zusammengesetzte_anfrage(q))
+        )
+        if braucht_nachrecherche:
+            umschrieben = await suchanfragen_umschreiben(
+                client,
+                provider=provider,
+                api_key=api_key,
+                model=model,
+                frage=q.strip(),
+                verlauf=verlauf or [],
             )
-            if braucht_nachrecherche:
-                umschrieben = await suchanfragen_umschreiben(
-                    client,
-                    provider=provider,
-                    api_key=api_key,
-                    model=model,
-                    frage=q.strip(),
-                    verlauf=verlauf or [],
+            if verlauf and umschrieben["themenwechsel"]:
+                gesamt_treffer = []
+            frische_ab = len(gesamt_treffer)
+            bekannte_urls = {t.get("url") for t in gesamt_treffer}
+            frische_eintraege: list[dict[str, Any]] = []
+            nachsuchen = list(umschrieben["suchanfragen"][:NACHSUCHE_MAX_RUNDEN])
+            for anfrage in nachsuchen:
+                yield f"data: {json.dumps({'type': 'recherche', 'anfrage': anfrage})}\n\n"
+            if nachsuchen:
+                suchergebnisse = await asyncio.gather(
+                    *(
+                        asyncio.to_thread(ai_web_search_service.searxng_treffer, anfrage, limit=5)
+                        for anfrage in nachsuchen
+                    )
                 )
-                if verlauf and umschrieben["themenwechsel"]:
-                    gesamt_treffer = []
-                frische_ab = len(gesamt_treffer)
-                bekannte_urls = {t.get("url") for t in gesamt_treffer}
-                frische_eintraege: list[dict[str, Any]] = []
-                for anfrage in umschrieben["suchanfragen"][:NACHSUCHE_MAX_RUNDEN]:
-                    yield f"data: {json.dumps({'type': 'recherche', 'anfrage': anfrage})}\n\n"
-                    frische = await asyncio.to_thread(ai_web_search_service.searxng_treffer, anfrage, limit=5)
+                for frische in suchergebnisse:
                     for t in frische:
                         u = t.get("url")
                         if u and u not in bekannte_urls:
@@ -535,68 +542,96 @@ async def _stream_mit_sitzung(
                             }
                             gesamt_treffer.append(eintrag)
                             frische_eintraege.append(eintrag)
-                for eintrag in frische_eintraege[:SEITEN_MAX]:
-                    seite = await asyncio.to_thread(ai_web_search_service.scrape_url, eintrag.get("url", ""))
-                    inhalt = (seite.get("content") or "").strip()
-                    if inhalt:
-                        eintrag["volltext"] = inhalt[:2500]
-                if frische_eintraege:
-                    yield f"data: {json.dumps({'type': 'neue_treffer', 'treffer': frische_eintraege})}\n\n"
-
-            # Top-Webseiten im Volltext einlesen (bis zu 5 Seiten parallel im Thread-Pool)
-            seiten_kandidaten = [
-                t for t in gesamt_treffer[:5]
-                if t.get("url") and not t.get("volltext")
+            frische_urls = [
+                e.get("url") for e in frische_eintraege[:SEITEN_MAX] if e.get("url")
             ]
-            if seiten_kandidaten:
-                urls_zum_scrapen = [t["url"] for t in seiten_kandidaten]
-                scraped_texte = await asyncio.to_thread(
-                    ai_web_search_service.scrape_top_urls_parallel,
-                    urls_zum_scrapen,
-                    2500,
-                    len(urls_zum_scrapen),
+            if frische_urls:
+                try:
+                    frische_texte = await asyncio.wait_for(
+                        asyncio.to_thread(
+                            ai_web_search_service.scrape_top_urls_parallel,
+                            frische_urls,
+                            2500,
+                            len(frische_urls),
+                        ),
+                        timeout=2.5,
+                    )
+                    for eintrag in frische_eintraege[:SEITEN_MAX]:
+                        txt = frische_texte.get(eintrag.get("url"))
+                        if txt:
+                            eintrag["volltext"] = txt
+                except TimeoutError:
+                    logger.debug("Suchzusammenfassung: Pre-Scraping frischer Treffer nach 2,5s uebersprungen")
+            if frische_eintraege:
+                yield f"data: {json.dumps({'type': 'neue_treffer', 'treffer': frische_eintraege})}\n\n"
+
+        # Top-Webseiten im Volltext einlesen (bis zu 5 Seiten parallel, maximal 2,5s Wartezeit)
+        seiten_kandidaten = [
+            t for t in gesamt_treffer[:5]
+            if t.get("url") and not t.get("volltext")
+        ]
+        if seiten_kandidaten:
+            urls_zum_scrapen = [t["url"] for t in seiten_kandidaten]
+            try:
+                scraped_texte = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        ai_web_search_service.scrape_top_urls_parallel,
+                        urls_zum_scrapen,
+                        2500,
+                        len(urls_zum_scrapen),
+                    ),
+                    timeout=2.5,
                 )
                 for t in seiten_kandidaten:
                     u = t.get("url")
                     if u in scraped_texte:
                         t["volltext"] = scraped_texte[u]
+            except TimeoutError:
+                logger.debug("Suchzusammenfassung: Pre-Scraping der Top-Treffer nach 2,5s uebersprungen")
 
-            # Deep-Dive Erkennung bei Folgefragen oder Detailanfragen:
-            # Falls gezielt Quellen referenziert werden (z. B. [1], Domain oder Detailfragen),
-            # bis zu 15.000 Zeichen Volltext nachladen.
-            if verlauf:
-                deep_kandidaten = erkenne_deep_dive_quellen(q, gesamt_treffer)
-                for ziel in deep_kandidaten:
-                    u = ziel.get("url")
-                    if u and not ziel.get("deep"):
-                        titel_kurz = ziel.get("titel") or u
-                        yield f"data: {json.dumps({'type': 'recherche', 'anfrage': f'Deep Dive: {titel_kurz}'})}\n\n"
-                        deep_res = await asyncio.to_thread(
-                            ai_web_search_service.scrape_url,
-                            u,
-                            15000,
-                            deep=True,
-                        )
-                        if isinstance(deep_res, dict) and "error" not in deep_res:
-                            inhalt = (deep_res.get("content") or "").strip()
-                            if inhalt:
-                                ziel["volltext"] = inhalt
-                                ziel["deep"] = True
+        # Deep-Dive Erkennung bei Folgefragen oder Detailanfragen:
+        if verlauf:
+            deep_kandidaten = erkenne_deep_dive_quellen(q, gesamt_treffer)
+            for ziel in deep_kandidaten:
+                u = ziel.get("url")
+                if u and not ziel.get("deep"):
+                    titel_kurz = ziel.get("titel") or u
+                    yield f"data: {json.dumps({'type': 'recherche', 'anfrage': f'Deep Dive: {titel_kurz}'})}\n\n"
+                    deep_res = await asyncio.to_thread(
+                        ai_web_search_service.scrape_url,
+                        u,
+                        15000,
+                        deep=True,
+                    )
+                    if isinstance(deep_res, dict) and "error" not in deep_res:
+                        inhalt = (deep_res.get("content") or "").strip()
+                        if inhalt:
+                            ziel["volltext"] = inhalt
+                            ziel["deep"] = True
 
-            # 4. Denkstufe aus der Anbieter-Einstellung (leer = schnellste
-            #    Antwort). Die Suche fragt nicht je Anfrage danach; das
-            #    Rollenlimit kappt die Stufe in `vorgabe` nach oben.
-            wunsch_stufe = (provider.search_summary_reasoning_effort or "").strip().lower() or None
-            aktiv_denken = bool(wunsch_stufe)
+        # 4. Denkstufe aus der Anbieter-Einstellung (leer = schnellste Antwort)
+        wunsch_stufe = (provider.search_summary_reasoning_effort or "").strip().lower() or None
+        aktiv_denken = bool(wunsch_stufe)
 
-            # 5. Nachrichten zusammenstellen
-            messages = baue_nachrichten(q, gesamt_treffer, verlauf, frische_ab)
+        # 5. Nachrichten zusammenstellen
+        messages = baue_nachrichten(q, gesamt_treffer, verlauf, frische_ab)
 
-            # 6. Streamen
-            usage = StreamUsage()
-            zeichen = 0
-            yield f"data: {json.dumps({'type': 'start', 'model': model, 'provider': provider.name})}\n\n"
+        # 6. Streamen
+        usage = StreamUsage()
+        zeichen = 0
+        yield f"data: {json.dumps({'type': 'start', 'model': model, 'provider': provider.name})}\n\n"
 
+        if getattr(ai_reasoning.vorgabe, "__module__", "") == "services.ai_reasoning":
+            denken, stufe = await ai_reasoning.vorgabe(
+                client,
+                db,
+                user=user,
+                provider=provider,
+                aktiv=aktiv_denken,
+                wunsch=wunsch_stufe,
+                schluessel=api_key,
+            )
+        else:
             denken, stufe = await ai_reasoning.vorgabe(
                 client,
                 db,
@@ -606,42 +641,38 @@ async def _stream_mit_sitzung(
                 wunsch=wunsch_stufe,
             )
 
-            async for chunk in stream_chat_completion(
-                client,
-                provider=provider,
-                api_key=api_key,
-                messages=messages,
-                usage=usage,
-                model=model,
-                reasoning=denken,
-                reasoning_effort=stufe,
-            ):
-                if chunk.kind == "reasoning" and chunk.text:
-                    yield f"data: {json.dumps({'type': 'thought', 'text': chunk.text})}\n\n"
-                elif chunk.kind == "content" and chunk.text:
-                    zeichen += len(chunk.text)
-                    yield f"data: {json.dumps({'type': 'content', 'text': chunk.text})}\n\n"
+        async for chunk in stream_chat_completion(
+            client,
+            provider=provider,
+            api_key=api_key,
+            messages=messages,
+            usage=usage,
+            model=model,
+            reasoning=denken,
+            reasoning_effort=stufe,
+        ):
+            if chunk.kind == "reasoning" and chunk.text:
+                yield f"data: {json.dumps({'type': 'thought', 'text': chunk.text})}\n\n"
+            elif chunk.kind == "content" and chunk.text:
+                zeichen += len(chunk.text)
+                yield f"data: {json.dumps({'type': 'content', 'text': chunk.text})}\n\n"
 
-            if zeichen == 0:
-                # Fertig ohne einen einzigen Text: Das ist keine Antwort, und der
-                # Client soll den Grund sehen statt „konnte nicht erzeugt werden".
-                logger.warning("Suchzusammenfassung fehlgeschlagen fehler=leere_antwort nutzer=%s", user.id)
-                yield f"data: {json.dumps({'type': 'error', 'message': 'AI_PROVIDER_EMPTY_RESPONSE'})}\n\n"
-                return
+        if zeichen == 0:
+            logger.warning("Suchzusammenfassung fehlgeschlagen fehler=leere_antwort nutzer=%s", user.id)
+            yield f"data: {json.dumps({'type': 'error', 'message': 'AI_PROVIDER_EMPTY_RESPONSE'})}\n\n"
+            return
 
-            yield f"data: {json.dumps({'type': 'done', 'model': model})}\n\n"
-            logger.info(
-                "Suchzusammenfassung fertig modell=%s zeichen=%d nutzer=%s",
-                model,
-                zeichen,
-                user.id,
-            )
+        yield f"data: {json.dumps({'type': 'done', 'model': model})}\n\n"
+        logger.info(
+            "Suchzusammenfassung fertig modell=%s zeichen=%d nutzer=%s",
+            model,
+            zeichen,
+            user.id,
+        )
     except Exception as exc:
-        # Abgelehnt und fehlgeschlagen sind gut sichtbar (WARNING), damit sich
-        # „keine Zusammenfassung" im Log einem Grund zuordnen lässt. Der Suchtext
-        # und der Inhalt gehören nicht ins Log.
         fehler = str(exc) if isinstance(exc, AiProviderRequestError) else type(exc).__name__
         logger.warning("Suchzusammenfassung fehlgeschlagen fehler=%s nutzer=%s", fehler, user.id)
-        # Eine leere Ausnahme (z. B. ein nackter TimeoutError) ergäbe eine leere
-        # Meldung; dann nennt der Client wenigstens die Fehlerklasse.
         yield f"data: {json.dumps({'type': 'error', 'message': str(exc) or fehler})}\n\n"
+    finally:
+        if owned_client:
+            await client.aclose()

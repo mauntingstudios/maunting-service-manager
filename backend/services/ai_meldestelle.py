@@ -195,7 +195,7 @@ def sofort_zustellung_triggern(user_id: int) -> None:
         return
 
     async def _zustell_lauf() -> None:
-        await asyncio.sleep(0.3)
+        await asyncio.sleep(0.05)
         from database import SessionLocal
         db = SessionLocal()
         try:

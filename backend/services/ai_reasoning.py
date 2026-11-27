@@ -339,6 +339,9 @@ async def vorgabe(
     aktiv: bool,
     wunsch: str | None,
     model_id: str | None = None,
+    modell: ai_model_catalog.Modell | None = None,
+    effective_limits: Any | None = None,
+    schluessel: str | None = None,
 ) -> tuple[bool, str | None]:
     """Was für diesen Benutzer, diesen Provider und diesen Wunsch tatsächlich gilt.
 
@@ -363,10 +366,15 @@ async def vorgabe(
     greift wieder, sobald der Katalog antwortet; bis dahin steht es im
     Protokoll, statt still zu passieren.
     """
-    modell = await ai_model_catalog.fuer_provider(
-        client, db, provider, user_id=user.id, model_id=model_id
-    )
-    deckel = ai_limit_service.resolve_effective_limits(db, user).max_reasoning_effort
+    if modell is None:
+        fuer_kwargs: dict[str, Any] = {"user_id": user.id, "model_id": model_id}
+        if schluessel is not None:
+            fuer_kwargs["schluessel"] = schluessel
+        modell = await ai_model_catalog.fuer_provider(
+            client, db, provider, **fuer_kwargs
+        )
+    limits = effective_limits if effective_limits is not None else ai_limit_service.resolve_effective_limits(db, user)
+    deckel = limits.max_reasoning_effort
     if modell is None:
         if deckel is not None and deckel <= MIN_RANG:
             if not _kennt_schalter(provider.provider_kind, provider):

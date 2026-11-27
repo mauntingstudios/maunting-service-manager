@@ -96,12 +96,9 @@ ANBIETER = Anbieter(
     schluessel_praefix="",
     faehigkeiten_aus="openrouter",
     faehigkeiten_praefix="anthropic/",
-    # Leer, und das ist kein Versehen: ``anfrage_erweiterungen`` beschreibt den
-    # Wortschatz von ``/chat/completions``. Dieser Zugang spricht ihn gar nicht
-    # — was er zum Nachdenken sendet, entscheidet `anthropic_messages_adapter`
-    # aus den Parametern der gemeinsamen Signatur, genau wie es der
-    # Responses-Adapter für OpenAI tut.
-    anfrage_erweiterungen=frozenset(),
+    # Top-Level Prompt-Caching (``{"type": "ephemeral"}``) wird ueber
+    # ``/anthropic/v1/messages`` ebenfalls unterstuetzt.
+    anfrage_erweiterungen=frozenset({"cache_control"}),
     protokoll_chat="anthropic_messages",
     # Claude hört nicht zu; einen Transkriptionsendpunkt gibt es unter
     # ``/anthropic`` nicht.

@@ -720,7 +720,7 @@ async def _schreibrunde_ausfuehren(
     #
     # Gefragt wird genau hier und nicht in jeder Runde: das ist der
     # einzige Punkt, an dem der Lauf etwas veraendert.
-    if ai_run_broker.lauf_status(run_id) != "running":
+    if await asyncio.to_thread(ai_run_broker.lauf_status, run_id) != "running":
         return _SchreibrundenErgebnis(denknaht=denknaht, abgeloest=True)
     # **Das Gehirn fasst keine Server an.** Server-Schreibwerkzeuge bleiben dem
     # Worker vorbehalten — dieser Zweig ist der Spiegel dazu im Vorschlagspfad,
@@ -786,34 +786,24 @@ async def _schreibrunde_ausfuehren(
     # Selbst ein Urteil haette nur im Log gestanden.
     from services import ai_ethics_service
 
-    ethik = await ai_ethics_service.beraten(
+    ethik_runde = await ai_ethics_service.ethik_runde_starten(
         user_id=user_id,
         aufrufe=list(current_usage.tool_calls),
         bevorzugt_id=getattr(vorbereitung.provider, "id", None),
     )
-    # **Als Ganzes in einen Thread, innen unveraendert sequenziell.**
-    #
-    # Hier entstehen die Backups, Neustarts und
-    # Konfigurationsaenderungen — die langsamste Arbeit des ganzen
-    # Laufs, und bisher lief sie auf der Ereignisschleife. Drei
-    # Backups zu drei Sekunden hiessen neun Sekunden, in denen das
-    # Panel niemandem antwortete.
-    #
-    # Was **nicht** nebenlaeufig wird: der Inhalt. Die Reihenfolge
-    # "erst sichern, dann anfassen" und der Abbruch der Runde nach
-    # einer Ablehnung sind Zusagen an den Benutzer, keine
-    # Ablaufdetails. Sie stehen unveraendert in
-    # `_persist_write_proposals`.
-    proposals = await asyncio.to_thread(
-        ai_stream._persist_write_proposals,
-        user_id=user_id,
-        conversation_id=conversation_id,
-        tool_calls=current_usage.tool_calls,
-        correlation_id=vorbereitung.request_id,
-        run_id=run_id,
-        guardian=guardian,
-        aufgabe=aufgabe,
-    )
+    try:
+        proposals = await asyncio.to_thread(
+            ai_stream._persist_write_proposals,
+            user_id=user_id,
+            conversation_id=conversation_id,
+            tool_calls=current_usage.tool_calls,
+            correlation_id=vorbereitung.request_id,
+            run_id=run_id,
+            guardian=guardian,
+            aufgabe=aufgabe,
+        )
+    finally:
+        ethik = await ethik_runde.abschliessen()
     call_by_id = {call.id: call for call in current_usage.tool_calls}
     for proposal in proposals:
         call = call_by_id.get(proposal.get("call_id"))
@@ -842,14 +832,16 @@ async def _schreibrunde_ausfuehren(
     # jeder `tool_call_id` genau eine Antwort — und das Modell soll
     # den Vorgang in Worte fassen koennen, statt eine leere Blase
     # ueber der Bestaetigungskarte zu hinterlassen.
-    provider_messages.extend(_write_followup_messages(
+    followup_msgs = await asyncio.to_thread(
+        _write_followup_messages,
         conversation_id=conversation_id,
         tool_calls=current_usage.tool_calls,
         proposals=proposals,
         run_id=run_id,
         rundentext=rundentext,
         ethik=ethik,
-    ))
+    )
+    provider_messages.extend(followup_msgs)
     zustand["write_rounds"] = int(zustand.get("write_rounds", 0)) + 1
     # Dieselbe Rundennaht wie im Lesepfad weiter unten, und sie steht
     # **vor** den vier Ausstiegen dieser Schreibrunde, weil nach

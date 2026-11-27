@@ -773,42 +773,63 @@ def _extract_system_text(content: Any) -> str:
     return ""
 
 
+def _frame_late_system_text(text: str) -> str:
+    if text.startswith("Lage (Auskunft des Panels"):
+        return text
+    return f"[Panel-Systemauskunft]\n{text}"
+
+
 def consolidate_system_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Fuehrt mehrere ``system``-Nachrichten in eine fuehrende Systemnachricht zusammen.
+    """Fuehrt nur fuehrende ``system``-Nachrichten in eine fuehrende Systemnachricht zusammen.
 
     OpenAI-kompatible Endpunkte wie Google Gemini (``/v1beta/openai/chat/completions``)
     mappen jede ``role: "system"``-Nachricht auf ein einzelnes ``systemInstruction``-Feld
     und ueberschreiben fruehere Systemnachrichten mit der letzten (z. B. dem Lageblock).
-    Dadurch gingen Haupt-Systemprompt (ROLLE, IDENTITAET, HALTUNG) und Werkzeugverzeichnis
-    verloren. Diese Funktion bewahrt alle nicht-leeren Systembloecke in ihrer Reihenfolge
-    als eine einzige ``system``-Nachricht am Listenanfang, ohne die Eingabe zu mutieren.
+    Gleichzeitig wuerde das Hochziehen minuetlicher Spaet-Systembloecke (Lage,
+    ``voice_output_checkpoint``) in ``messages[0]`` den Prefix-KV-Cache bei jedem Zug
+    ab Token 0 invalidieren.
+
+    Deshalb werden ausschliesslich **fuehrende** ``system``-Nachrichten (vor der ersten
+    Nicht-``system``-Nachricht) am Listenanfang zusammengefasst; spaete ``system``-
+    Nachrichten bleiben an ihrer chronologischen Position vor der letzten Frage und
+    werden als ``role: "user"`` mit klarer Panel-Rahmung uebertragen.
     """
     if not messages:
         return messages
 
-    system_indices: list[int] = [
-        idx
-        for idx, msg in enumerate(messages)
-        if isinstance(msg, dict) and msg.get("role") == "system"
-    ]
-    if not system_indices:
-        return messages
-    if len(system_indices) == 1 and system_indices[0] == 0:
+    leading_end = 0
+    while leading_end < len(messages):
+        msg = messages[leading_end]
+        if isinstance(msg, dict) and msg.get("role") == "system":
+            leading_end += 1
+        else:
+            break
+
+    has_late_system = any(
+        isinstance(msg, dict) and msg.get("role") == "system"
+        for msg in messages[leading_end:]
+    )
+    if leading_end <= 1 and not has_late_system:
         return messages
 
-    system_parts: list[str] = []
-    other_messages: list[dict[str, Any]] = []
-    for msg in messages:
+    leading_parts: list[str] = []
+    for msg in messages[:leading_end]:
+        text = _extract_system_text(msg.get("content"))
+        if text:
+            leading_parts.append(text)
+
+    out: list[dict[str, Any]] = []
+    if leading_parts:
+        out.append({"role": "system", "content": "\n\n".join(leading_parts)})
+
+    for msg in messages[leading_end:]:
         if isinstance(msg, dict) and msg.get("role") == "system":
             text = _extract_system_text(msg.get("content"))
             if text:
-                system_parts.append(text)
+                out.append({"role": "user", "content": _frame_late_system_text(text)})
         else:
-            other_messages.append(msg)
-
-    if not system_parts:
-        return other_messages
-    return [{"role": "system", "content": "\n\n".join(system_parts)}, *other_messages]
+            out.append(msg)
+    return out
 
 
 def _map_tool_id(
