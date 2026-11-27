@@ -31,6 +31,11 @@ vi.mock('./tresorBlobApi', async (original) => ({
 }))
 
 const offlineAnheften = vi.hoisted(() => vi.fn(async () => undefined))
+const useMiniaturMock = vi.hoisted(() => vi.fn((): string | null => null))
+vi.mock('./tresorMiniaturen', async (original) => ({
+  ...(await original<typeof import('./tresorMiniaturen')>()),
+  useMiniatur: useMiniaturMock,
+}))
 vi.mock('./tresorDateien', async (original) => ({
   ...(await original<typeof import('./tresorDateien')>()),
   angeheftet: vi.fn().mockResolvedValue(new Set()),
@@ -117,6 +122,8 @@ describe('TresorDateiBereich', () => {
     usePromptStore.setState({ pending: null })
     useTresorUploads.setState({ je: {} })
     offlineAnheften.mockClear()
+    useMiniaturMock.mockReset()
+    useMiniaturMock.mockReturnValue(null)
     mehrereAufGeraetSpeichern.mockClear()
     useVaultStore.setState({
       items: [vertraege, fotos, miete, pdf, notiz, beleg, brief],
@@ -472,5 +479,14 @@ describe('TresorDateiBereich', () => {
     expect(await screen.findByTestId('tresor-texteditor')).toBeInTheDocument()
     expect(await screen.findByLabelText('inhalt')).toHaveValue('Zeile eins')
     expect(screen.getByText(`${i18n.t('mss.vault.dateien.stamm')} / notiz.txt`)).toBeInTheDocument()
+  })
+
+  it('rendert bei Mediendateien in der Liste echte Vorschaubilder über useMiniatur', () => {
+    useMiniaturMock.mockReturnValue('blob:bild-vorschau')
+    const foto = datei('img-1', 'urlaub.jpg', 'image/jpeg')
+    useVaultStore.setState({ items: [foto] })
+    const { container } = render(<TresorDateiBereich />)
+    const img = container.querySelector('img[src="blob:bild-vorschau"]')
+    expect(img).not.toBeNull()
   })
 })

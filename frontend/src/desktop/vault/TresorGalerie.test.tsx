@@ -34,8 +34,13 @@ vi.mock('./tresorBlobApi', async (original) => ({
   speicherAbfragen,
 }))
 
-vi.mock('./tresorMiniaturen', () => ({
-  useMiniatur: () => null,
+const useMiniaturStatusMock = vi.hoisted(() =>
+  vi.fn(() => ({ url: null as string | null, status: 'leer' as const, erneut: vi.fn() })),
+)
+vi.mock('./tresorMiniaturen', async (original) => ({
+  ...(await original<typeof import('./tresorMiniaturen')>()),
+  useMiniatur: () => useMiniaturStatusMock().url,
+  useMiniaturStatus: useMiniaturStatusMock,
   miniaturenVorladen: vi.fn(async () => undefined),
 }))
 
@@ -99,6 +104,8 @@ describe('TresorGalerie', () => {
     blobLesen.mockReset()
     blobLesen.mockResolvedValue(new Blob(['bild'], { type: 'image/webp' }))
     useToastStore.setState({ toasts: [] })
+    useMiniaturStatusMock.mockReset()
+    useMiniaturStatusMock.mockReturnValue({ url: null, status: 'leer', erneut: vi.fn() })
     useVaultStore.setState({
       userKey: {} as CryptoKey,
       trashItem,
@@ -420,6 +427,17 @@ describe('TresorGalerie', () => {
       // Ohne Nachbarn bleibt der Fokus stehen.
       fireEvent.keyDown(kacheln[0], { key: 'ArrowLeft' })
       expect(kacheln[0]).toHaveFocus()
+    })
+
+    it('zeigt bei fehlgeschlagener Miniatur einen Retry-Hinweis und lädt per Klick neu', () => {
+      const erneut = vi.fn()
+      useMiniaturStatusMock.mockReturnValue({ url: null, status: 'fehler' as never, erneut })
+      render(<TresorGalerie />)
+      const zelle = kachel('a.jpg')
+      expect(within(zelle).getByText(i18n.t('mss.vault.fotos.vorschauFehlt'))).toBeInTheDocument()
+      fireEvent.click(zelle)
+      expect(erneut).toHaveBeenCalledTimes(1)
+      expect(screen.queryByRole('dialog')).toBeNull()
     })
   })
 })

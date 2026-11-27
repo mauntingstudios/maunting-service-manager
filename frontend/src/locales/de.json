@@ -246,11 +246,11 @@
     "today": "Heute",
     "gestern": "Gestern",
     "range": {
-      "label": "Zeitraum",
       "1": "Letzte 24 Stunden",
       "7": "Letzte 7 Tage",
       "30": "Letzte 30 Tage",
-      "90": "Letzte 90 Tage"
+      "90": "Letzte 90 Tage",
+      "label": "Zeitraum"
     },
     "stats": {
       "label": "Kennzahlen",
@@ -10170,7 +10170,9 @@
           "archiv_other": "{{count}} Einträge ließen sich nicht archivieren.",
           "albumPapierkorb": "Das Album ließ sich nicht in den Papierkorb legen.",
           "rueckgaengig": "Rückgängig machen hat nicht geklappt. Die Einträge findest du im Papierkorb oder im Archiv."
-        }
+        },
+        "vorschauFehlt": "Vorschau laden",
+        "vorschauFehltLabel": "Vorschau für {{name}} erneut laden"
       },
       "bearbeiten": {
         "titel": "{{name}} bearbeiten",

@@ -46,8 +46,10 @@ vi.mock('./tresorBlobApi', () => ({
   blobBasisSetzen: vi.fn(),
 }))
 
-vi.mock('./tresorMiniaturen', () => ({
+vi.mock('./tresorMiniaturen', async (original) => ({
+  ...(await original<typeof import('./tresorMiniaturen')>()),
   useMiniatur: () => null,
+  useMiniaturStatus: () => ({ url: null, status: 'leer' as const, erneut: vi.fn() }),
   miniaturenVorladen: vi.fn(async () => undefined),
 }))
 

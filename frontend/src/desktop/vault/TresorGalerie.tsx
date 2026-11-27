@@ -36,6 +36,7 @@ import {
   Pencil,
   Play,
   Plus,
+  RefreshCw,
   Trash2,
   Upload,
   Check,
@@ -52,7 +53,7 @@ import { useVaultStore } from './vaultStore'
 import { useTeamVaultStore } from './teamVaultStore'
 import { type VaultItem } from './vaultEintrag'
 import { ansichtOeffnen, ansichtSchliessen, blobLesen, useTresorUploads, angeheftet, offlineAnheften, offlineLoesen } from './tresorDateien'
-import { miniaturenVorladen, useMiniatur } from './tresorMiniaturen'
+import { miniaturenVorladen, useMiniatur, useMiniaturStatus } from './tresorMiniaturen'
 import { dateiAufsGeraet, mehrereAufGeraetSpeichern } from './tresorAnzeige'
 import { gruppieren, hashesBerechnen } from './tresorAehnlich'
 import { BEARBEITBAR, TresorBildeditor } from './TresorBildeditor'
@@ -213,13 +214,14 @@ const Kachel = memo(function Kachel({
   const { t } = useTranslation()
   const ref = useRef<HTMLButtonElement>(null)
   const sichtbar = useSichtbar(ref)
-  const url = useMiniatur(item.datei?.miniatur, item.id, sichtbar)
+  const { url, status, erneut } = useMiniaturStatus(item.datei?.miniatur, item.id, sichtbar)
   const upload = useTresorUploads((s) => s.je[item.id])
   const lang = useLangdruck(() => onLangdruck(item.id))
   const beschreibung = useId()
   const video = istVideo(item)
   const Symbol = video ? Film : ImageIcon
   const dauer = item.datei?.dauer ? formatDauer(item.datei.dauer) : null
+  const fehlgeschlagen = !url && status === 'fehler' && ausgewaehlt === undefined
   return (
     <button
       ref={ref}
@@ -227,7 +229,13 @@ const Kachel = memo(function Kachel({
       data-kachel={item.id}
       tabIndex={tabHalt ? 0 : -1}
       onFocus={() => onFokus(item.id)}
-      onClick={(event) => onKlick(item.id, event)}
+      onClick={(event) => {
+        if (fehlgeschlagen) {
+          erneut()
+          return
+        }
+        onKlick(item.id, event)
+      }}
       onPointerDown={lang.onPointerDown}
       onPointerMove={lang.onPointerMove}
       onPointerUp={lang.onPointerUp}
@@ -252,6 +260,11 @@ const Kachel = memo(function Kachel({
           draggable={false}
           className={`h-full w-full object-cover transition-transform ${ausgewaehlt ? 'scale-90 rounded' : 'group-hover:scale-[1.03]'}`}
         />
+      ) : fehlgeschlagen ? (
+        <span className="flex h-full w-full flex-col items-center justify-center gap-1 px-1 text-center text-on-surface-variant">
+          <RefreshCw className="h-5 w-5" aria-hidden="true" />
+          <span className="text-[0.68rem] leading-tight">{t('mss.vault.fotos.vorschauFehlt')}</span>
+        </span>
       ) : (
         <span className="flex h-full w-full items-center justify-center text-on-surface-variant/60">
           <Symbol className="h-6 w-6" />

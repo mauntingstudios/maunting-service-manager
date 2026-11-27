@@ -1,26 +1,19 @@
-import React from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   ArchiveRestore,
   Check,
   Copy,
-  CreditCard,
   Edit2,
   ExternalLink,
   Eye,
   EyeOff,
-  File as FileIcon,
-  Folder,
-  Images,
-  Landmark,
   RotateCcw,
   Star,
   Trash2,
 } from 'lucide-react'
-import { BrandIcon, Button } from '@maunting/ui'
-import { getBrandIcon } from './brandCatalog'
+import { Button } from '@maunting/ui'
 import { verdeckt } from './zahlung'
-import { useMiniatur } from './tresorMiniaturen'
+import { TresorVorschau } from './TresorVorschau'
 import { formatBytes } from '@/lib/format'
 import {
   PAPIERKORB_TAGE,
@@ -38,23 +31,8 @@ export function restTageImPapierkorb(trashedAt: number, jetzt = Date.now()): num
 }
 
 /** Miniatur einer Datei im Archiv oder Papierkorb, sonst das Marken-/Kategoriesymbol. */
-function ZeilenBild({ item, Symbol }: { item: VaultItem; Symbol: React.ComponentType<{ className?: string }> }) {
-  const url = useMiniatur(item.datei?.miniatur, item.id, true)
-  if (url) return <img src={url} alt="" className="h-9 w-9 shrink-0 rounded-xl object-cover" />
-  if (
-    item.category === 'ordner' ||
-    item.category === 'album' ||
-    item.category === 'datei' ||
-    item.category === 'secure_note' ||
-    item.zahlung
-  ) {
-    return (
-      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-outline-variant/20 bg-surface-container p-1.5 shadow-sm text-primary">
-        <Symbol className="h-5 w-5" />
-      </div>
-    )
-  }
-  return <BrandIcon name={item.service} domainOrUrl={item.url} size="md" />
+function ZeilenBild({ item }: { item: VaultItem }) {
+  return <TresorVorschau item={item} />
 }
 
 export interface VaultItemRowProps {
@@ -102,16 +80,6 @@ export function VaultItemRow({
         item.category === 'secure_note' ||
         item.zahlung),
   )
-  const ItemBrand =
-    item.category === 'ordner'
-      ? Folder
-      : item.category === 'album'
-        ? Images
-        : item.zahlung
-          ? item.zahlung.art === 'konto' ? Landmark : CreditCard
-          : istDatei
-            ? FileIcon
-            : getBrandIcon(item.service, item.url)
 
   const zeilenUntertitel = istDatei ? (
     <div className="mt-0.5 text-label-sm text-on-surface-variant">
@@ -160,7 +128,7 @@ export function VaultItemRow({
             onClick={() => onOpen(item)}
             className="flex min-h-11 min-w-0 flex-1 items-center gap-3 rounded-lg text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 sm:min-h-9"
           >
-            <ZeilenBild item={item} Symbol={ItemBrand} />
+            <ZeilenBild item={item} />
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-1.5 flex-wrap">
                 <span className="text-xs font-semibold text-on-surface truncate">
@@ -177,7 +145,7 @@ export function VaultItemRow({
           </button>
         ) : (
           <>
-            <ZeilenBild item={item} Symbol={ItemBrand} />
+            <ZeilenBild item={item} />
 
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-1.5 flex-wrap">

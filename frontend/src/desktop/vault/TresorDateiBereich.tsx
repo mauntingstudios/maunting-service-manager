@@ -26,7 +26,6 @@ import {
   Archive,
   CheckSquare,
   Download,
-  Folder,
   FolderInput,
   FolderOpen,
   FolderPlus,
@@ -54,8 +53,9 @@ import { dateienUnter, darfAlleVerschieben, darfVerschieben, obersteAuswahl, pfa
 import { TresorOrdnerBaum } from './TresorOrdnerBaum'
 import { fehlerText } from './tresorFehler'
 import { inDenPapierkorb, insArchiv, type SammelStand } from './tresorSammel'
-import { TresorDateiAnsicht, dateiIcon, oeffnetImEditor } from './TresorDateiAnsicht'
+import { TresorDateiAnsicht, oeffnetImEditor } from './TresorDateiAnsicht'
 import { TresorSpeicherAnzeige, TresorUploadStand, useTresorSpeicher } from './TresorSpeicher'
+import { TresorVorschau } from './TresorVorschau'
 import type { TresorOeffnenAnfrage } from './tresorOeffnenAnfrage'
 
 /** Kennzeichnet beim Ziehen Einträge aus dem Tresor (im Unterschied zu Dateien vom Rechner). Wert: JSON-Liste der IDs. */
@@ -899,7 +899,6 @@ function TresorDateiZeile({
   // Finger gehört der lange Druck der Auswahl; verschoben wird über das Menü.
   const amFinger = useRef(false)
   const istOrdner = item.category === 'ordner'
-  const Icon = istOrdner ? Folder : dateiIcon(item.datei?.typ ?? '', item.service)
   const groesse = item.datei ? formatBytes(item.datei.original.echt) : null
   const fortschritt =
     holt !== undefined ? (
@@ -961,7 +960,7 @@ function TresorDateiZeile({
         onClick={onKlick}
         disabled={!istOrdner && !item.datei}
       >
-        <Icon className={cx('h-5 w-5 shrink-0', istOrdner ? 'text-primary' : 'text-on-surface-variant')} aria-hidden />
+        <TresorVorschau item={item} groesse="sm" />
         <span className="min-w-0 flex-1">
           <span className="flex min-w-0 items-center gap-1.5">
             <span className="truncate text-sm text-on-surface">{item.service}</span>

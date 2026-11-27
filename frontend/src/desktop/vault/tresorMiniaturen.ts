@@ -11,13 +11,16 @@
  * neuen Schlüssel und fängt leer an.
  */
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useVaultStore } from './vaultStore'
 import { useTeamVaultStore } from './teamVaultStore'
 import { ansichtOeffnen, ansichtSchliessen, miniaturenLesen } from './tresorDateien'
 import type { BlobKopf } from './tresorDatei'
 
 const HALTEN = 400
+const RETRY_ABSTAENDE_MS = [1500, 4000] as const
+
+export type MiniaturStatus = 'leer' | 'laedt' | 'bereit' | 'fehler'
 
 interface Gehalten {
   url: string
@@ -136,6 +139,88 @@ export function miniaturFreigeben(blobId: string): void {
   }
 }
 
+export interface MiniaturErgebnis {
+  url: string | null
+  status: MiniaturStatus
+  erneut: () => void
+}
+
+/**
+ * Lädt die Miniatur eines Blobs mit begrenztem Auto-Retry bei flüchtigen
+ * Fehlern sowie manuellem und netzgestütztem Neuladen.
+ */
+export function useMiniaturStatus(
+  kopf: BlobKopf | undefined,
+  eintragId: string,
+  aktiv: boolean,
+  schluesselOverride?: CryptoKey | null,
+): MiniaturErgebnis {
+  const vaultUserKey = useVaultStore((s) => s.userKey)
+  const teamUserKey = useTeamVaultStore((s) => s.userKey)
+  const userKey = schluesselOverride !== undefined ? schluesselOverride : (vaultUserKey ?? teamUserKey)
+  const [url, setUrl] = useState<string | null>(null)
+  const [status, setStatus] = useState<MiniaturStatus>('leer')
+  const [lauf, setLauf] = useState(0)
+  const blobId = kopf && kopf.echt > 0 ? kopf.id : null
+
+  const erneut = useCallback(() => {
+    setLauf((n) => n + 1)
+  }, [])
+
+  useEffect(() => {
+    if (!aktiv || !blobId || !kopf || !userKey) {
+      setUrl(null)
+      setStatus('leer')
+      return
+    }
+    let offen = true
+    let erhalten: string | null = null
+    let timer: ReturnType<typeof setTimeout> | null = null
+    let versuch = 0
+
+    const laden = () => {
+      if (!offen) return
+      setStatus('laedt')
+      void miniaturHolen(kopf, eintragId, userKey).then((u) => {
+        if (!offen) {
+          if (u) miniaturFreigeben(blobId)
+          return
+        }
+        if (u) {
+          erhalten = u
+          setUrl(u)
+          setStatus('bereit')
+          return
+        }
+        if (versuch < RETRY_ABSTAENDE_MS.length) {
+          const warte = RETRY_ABSTAENDE_MS[versuch]
+          versuch += 1
+          timer = setTimeout(laden, warte)
+        } else {
+          setStatus('fehler')
+        }
+      })
+    }
+
+    laden()
+
+    return () => {
+      offen = false
+      if (timer) clearTimeout(timer)
+      if (erhalten) miniaturFreigeben(blobId)
+    }
+    // kopf ändert sich nur mit blobId
+  }, [aktiv, blobId, eintragId, userKey, lauf])
+
+  useEffect(() => {
+    if (status !== 'fehler' || typeof window === 'undefined') return
+    window.addEventListener('online', erneut)
+    return () => window.removeEventListener('online', erneut)
+  }, [status, erneut])
+
+  return { url, status, erneut }
+}
+
 /** Die Miniatur-URL eines Blobs, solange `aktiv` gilt; sonst `null`. */
 export function useMiniatur(
   kopf: BlobKopf | undefined,
@@ -143,34 +228,7 @@ export function useMiniatur(
   aktiv: boolean,
   schluesselOverride?: CryptoKey | null,
 ): string | null {
-  const vaultUserKey = useVaultStore((s) => s.userKey)
-  const teamUserKey = useTeamVaultStore((s) => s.userKey)
-  const userKey = schluesselOverride !== undefined ? schluesselOverride : (vaultUserKey ?? teamUserKey)
-  const [url, setUrl] = useState<string | null>(null)
-  const blobId = kopf && kopf.echt > 0 ? kopf.id : null
-  useEffect(() => {
-    if (!aktiv || !blobId || !kopf || !userKey) {
-      setUrl(null)
-      return
-    }
-    let offen = true
-    let erhalten: string | null = null
-    void miniaturHolen(kopf, eintragId, userKey).then((u) => {
-      if (!u) return
-      if (!offen) {
-        miniaturFreigeben(blobId)
-        return
-      }
-      erhalten = u
-      setUrl(u)
-    })
-    return () => {
-      offen = false
-      if (erhalten) miniaturFreigeben(blobId)
-    }
-    // kopf ändert sich nur mit blobId
-  }, [aktiv, blobId, eintragId, userKey])
-  return url
+  return useMiniaturStatus(kopf, eintragId, aktiv, schluesselOverride).url
 }
 
 /** Füllt den Offline-Cache mit allen Miniaturen, in Paketen und abbrechbar. */

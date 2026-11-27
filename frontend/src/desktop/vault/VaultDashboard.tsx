@@ -9,12 +9,10 @@ import {
   FolderPlus,
   Gamepad2,
   Image as ImageIcon,
-  Images,
   KeyRound,
   Layers,
   LayoutGrid,
   List,
-  Lock,
   Monitor,
   MoreHorizontal,
   MoreVertical,
@@ -32,13 +30,13 @@ import {
 } from 'lucide-react'
 import {
   ActionMenu,
-  BrandIcon,
   Button,
   Dropdown,
   FileButton,
   ProgressBar,
   Zustandsflaeche,
 } from '@maunting/ui'
+import { TresorVorschau } from './TresorVorschau'
 import { formatBytes } from '@/lib/format'
 import { useTageszeitMotiv } from '@/lib/tageszeit'
 import { TageszeitHintergrund } from '@/components/layout/TageszeitHintergrund'
@@ -120,35 +118,7 @@ function StandardKategorieIcon({ schluessel }: { schluessel?: StandardKategorieD
 }
 
 function EintragVorschauSymbol({ item }: { item: VaultItem }) {
-  if (item.category === 'ordner') {
-    return (
-      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-outline-variant/20 bg-surface-container text-primary">
-        <Folder className="h-4 w-4" aria-hidden="true" />
-      </span>
-    )
-  }
-  if (item.category === 'album') {
-    return (
-      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-outline-variant/20 bg-surface-container text-primary">
-        <Images className="h-4 w-4" aria-hidden="true" />
-      </span>
-    )
-  }
-  if (item.category === 'datei') {
-    return (
-      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-outline-variant/20 bg-surface-container text-primary">
-        <FileText className="h-4 w-4" aria-hidden="true" />
-      </span>
-    )
-  }
-  if (item.category === 'secure_note') {
-    return (
-      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-outline-variant/20 bg-surface-container text-primary">
-        <Lock className="h-4 w-4" aria-hidden="true" />
-      </span>
-    )
-  }
-  return <BrandIcon name={item.service} domainOrUrl={item.url} size="md" />
+  return <TresorVorschau item={item} />
 }
 
 function Kennzahl({

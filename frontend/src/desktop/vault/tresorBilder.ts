@@ -31,27 +31,61 @@ const MINIATUR_KANTE = 256
 const VORSCHAU_KANTE = 1600
 const EXIF_LESEN = 256 * 1024
 
-type Quelle = ImageBitmap | HTMLVideoElement
+type Quelle = ImageBitmap | HTMLVideoElement | HTMLImageElement
 
 function kanten(quelle: Quelle): [number, number] {
-  return quelle instanceof HTMLVideoElement ? [quelle.videoWidth, quelle.videoHeight] : [quelle.width, quelle.height]
+  if (typeof HTMLVideoElement !== 'undefined' && quelle instanceof HTMLVideoElement) {
+    return [quelle.videoWidth, quelle.videoHeight]
+  }
+  if (typeof HTMLImageElement !== 'undefined' && quelle instanceof HTMLImageElement) {
+    return [quelle.naturalWidth || quelle.width, quelle.naturalHeight || quelle.height]
+  }
+  return [quelle.width, quelle.height]
 }
 
 async function alsWebp(quelle: Quelle, kante: number, grenze: number): Promise<Uint8Array | undefined> {
   const [b, h] = kanten(quelle)
   if (!b || !h) return undefined
-  const faktor = Math.min(1, kante / Math.max(b, h))
-  const leinwand = document.createElement('canvas')
-  leinwand.width = Math.max(1, Math.round(b * faktor))
-  leinwand.height = Math.max(1, Math.round(h * faktor))
-  const g = leinwand.getContext('2d')
-  if (!g) return undefined
-  g.drawImage(quelle, 0, 0, leinwand.width, leinwand.height)
-  for (const qualitaet of [0.82, 0.7, 0.55, 0.4, 0.25]) {
-    const blob = await new Promise<Blob | null>((r) => leinwand.toBlob(r, 'image/webp', qualitaet))
-    if (blob && blob.size <= grenze) return new Uint8Array(await blob.arrayBuffer())
+  for (const zielKante of [kante, Math.max(128, Math.round(kante * 0.65))]) {
+    const faktor = Math.min(1, zielKante / Math.max(b, h))
+    const leinwand = document.createElement('canvas')
+    leinwand.width = Math.max(1, Math.round(b * faktor))
+    leinwand.height = Math.max(1, Math.round(h * faktor))
+    const g = leinwand.getContext('2d')
+    if (!g) return undefined
+    g.drawImage(quelle, 0, 0, leinwand.width, leinwand.height)
+    for (const qualitaet of [0.82, 0.7, 0.55, 0.4, 0.25, 0.15]) {
+      const blob = await new Promise<Blob | null>((r) => leinwand.toBlob(r, 'image/webp', qualitaet))
+      if (blob && blob.size <= grenze) return new Uint8Array(await blob.arrayBuffer())
+    }
   }
   return undefined
+}
+
+async function bildPerImgElement(datei: Blob): Promise<HTMLImageElement | null> {
+  if (typeof Image === 'undefined' || typeof URL.createObjectURL !== 'function') return null
+  if (typeof navigator !== 'undefined' && /jsdom/i.test(navigator.userAgent)) return null
+  const url = URL.createObjectURL(datei)
+  const img = new Image()
+  img.src = url
+  try {
+    await new Promise<void>((ok, fehler) => {
+      const timer = setTimeout(() => fehler(new Error('zeit')), 8000)
+      img.onload = () => {
+        clearTimeout(timer)
+        ok()
+      }
+      img.onerror = () => {
+        clearTimeout(timer)
+        fehler(new Error('bild'))
+      }
+    })
+    return img.naturalWidth > 0 && img.naturalHeight > 0 ? img : null
+  } catch {
+    return null
+  } finally {
+    URL.revokeObjectURL(url)
+  }
 }
 
 async function videoBild(datei: Blob): Promise<{ video: HTMLVideoElement; url: string } | null> {
@@ -84,15 +118,30 @@ export async function bildAngaben(datei: Blob): Promise<BildAngaben> {
   if (datei.type === 'image/jpeg') Object.assign(angaben, await exifLesen(datei).catch(() => ({})))
   if (typeof document === 'undefined') return angaben
   try {
-    if (datei.type.startsWith('image/') && typeof createImageBitmap === 'function') {
-      const bild = await createImageBitmap(datei, { imageOrientation: 'from-image' })
-      try {
-        angaben.breite = bild.width
-        angaben.hoehe = bild.height
-        angaben.vorschau = await alsWebp(bild, VORSCHAU_KANTE, VORSCHAU_GROESSE)
-        angaben.miniatur = await alsWebp(bild, MINIATUR_KANTE, MINIATUR_GROESSE)
-      } finally {
-        bild.close()
+    if (datei.type.startsWith('image/')) {
+      let bitmap: ImageBitmap | null = null
+      if (typeof createImageBitmap === 'function') {
+        bitmap = await createImageBitmap(datei, { imageOrientation: 'from-image' })
+          .catch(() => createImageBitmap(datei))
+          .catch(() => null)
+      }
+      if (bitmap) {
+        try {
+          angaben.breite = bitmap.width
+          angaben.hoehe = bitmap.height
+          angaben.vorschau = await alsWebp(bitmap, VORSCHAU_KANTE, VORSCHAU_GROESSE)
+          angaben.miniatur = await alsWebp(bitmap, MINIATUR_KANTE, MINIATUR_GROESSE)
+        } finally {
+          bitmap.close()
+        }
+      } else {
+        const img = await bildPerImgElement(datei)
+        if (img) {
+          angaben.breite = img.naturalWidth
+          angaben.hoehe = img.naturalHeight
+          angaben.vorschau = await alsWebp(img, VORSCHAU_KANTE, VORSCHAU_GROESSE)
+          angaben.miniatur = await alsWebp(img, MINIATUR_KANTE, MINIATUR_GROESSE)
+        }
       }
     } else if (datei.type.startsWith('video/')) {
       const bild = await videoBild(datei)

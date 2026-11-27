@@ -11,7 +11,8 @@ vi.mock('react-router-dom', () => ({
 vi.mock('@/desktop/vault/vaultStore', () => ({
   useVaultStore: (auswahl: (state: Record<string, any>) => unknown) => auswahl(zustand.wert),
 }))
-vi.mock('@/desktop/vault/tresorMiniaturen', () => ({
+vi.mock('@/desktop/vault/tresorMiniaturen', async (original) => ({
+  ...(await original<typeof import('@/desktop/vault/tresorMiniaturen')>()),
   useMiniatur: () => 'blob:mini',
 }))
 vi.mock('@/desktop/vault/tresorDateien', () => ({
