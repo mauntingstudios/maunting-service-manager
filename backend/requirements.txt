@@ -116,7 +116,7 @@ tokenizers==0.23.3
 # eine, die ohnehin schon im Prozess laeuft, statt einer zweiten daneben.
 # Exit-Plan: ai_tts_elevenlabs kapselt die gesamte Nutzung; ein Wechsel auf
 # aiohttp oder wsproto beruehrt nur diese eine Datei.
-websockets==16.0
+websockets==17.4
 # Pipecat orchestriert ausschließlich die internen Audio- und Steuerframes des
 # Sprachmodus. Die vorhandenen MSM-Adapter bleiben für STT, TTS, Provider,
 # AiRun, RBAC und Tool-Ausführung zuständig; deshalb keine Provider-Extras.
