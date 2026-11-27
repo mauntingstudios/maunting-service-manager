@@ -401,7 +401,7 @@ describe('VaultView: Fotos', () => {
 
   it('zeigt Bilder und Videos nach Monaten, ohne Papierkorb, PDFs und Passwörter', () => {
     render(<VaultView />)
-    fireEvent.click(reiter('mss.vault.ansicht.fotos'))
+    fireEvent.click(screen.getByRole('tab', { name: new RegExp(i18n.t('mss.vault.ansicht.fotos')) }))
 
     const juli = screen.getByRole('region', { name: 'Juli 2026' })
     const juni = screen.getByRole('region', { name: 'Juni 2026' })
@@ -418,7 +418,7 @@ describe('VaultView: Fotos', () => {
 
   it('filtert nach Videos, Quelle und Suchwort', () => {
     render(<VaultView />)
-    fireEvent.click(reiter('mss.vault.ansicht.fotos'))
+    fireEvent.click(screen.getByRole('tab', { name: new RegExp(i18n.t('mss.vault.ansicht.fotos')) }))
 
     fireEvent.click(reiter('mss.vault.fotos.videos'))
     expect(kachel('wellen.mp4')).not.toBeNull()
@@ -444,7 +444,7 @@ describe('VaultView: Fotos', () => {
 
   it('zeigt ähnliche Fotos in Gruppen', async () => {
     render(<VaultView />)
-    fireEvent.click(reiter('mss.vault.ansicht.fotos'))
+    fireEvent.click(screen.getByRole('tab', { name: new RegExp(i18n.t('mss.vault.ansicht.fotos')) }))
     fireEvent.click(reiter('mss.vault.fotos.aehnlich'))
     const gruppe = await screen.findByRole('region', { name: i18n.t('mss.vault.fotos.aehnlicheGruppe', { count: 2 }) })
     expect(within(gruppe).getAllByRole('button').map((b) => b.getAttribute('aria-label'))).toEqual([
@@ -456,7 +456,7 @@ describe('VaultView: Fotos', () => {
 
   it('öffnet die Lichtbox mit der Vorschau, blättert und lädt das Video erst auf Wunsch', async () => {
     render(<VaultView />)
-    fireEvent.click(reiter('mss.vault.ansicht.fotos'))
+    fireEvent.click(screen.getByRole('tab', { name: new RegExp(i18n.t('mss.vault.ansicht.fotos')) }))
     fireEvent.click(kachel('strand.jpg')!)
 
     const box = screen.getByRole('dialog', { name: 'strand.jpg' })
@@ -481,7 +481,7 @@ describe('VaultView: Fotos', () => {
 
   it('wählt aus und legt daraus ein neues Album an', async () => {
     render(<VaultView />)
-    fireEvent.click(reiter('mss.vault.ansicht.fotos'))
+    fireEvent.click(screen.getByRole('tab', { name: new RegExp(i18n.t('mss.vault.ansicht.fotos')) }))
     fireEvent.click(screen.getByRole('button', { name: new RegExp(i18n.t('mss.vault.dateien.auswaehlen')) }))
     fireEvent.click(kachel('strand.jpg')!)
     fireEvent.click(kachel('wellen.mp4')!)
@@ -501,7 +501,7 @@ describe('VaultView: Fotos', () => {
     zurueckStapelLeeren()
     window.history.replaceState({}, '')
     render(<VaultView />)
-    fireEvent.click(reiter('mss.vault.ansicht.fotos'))
+    fireEvent.click(screen.getByRole('tab', { name: new RegExp(i18n.t('mss.vault.ansicht.fotos')) }))
     fireEvent.click(screen.getByRole('button', { name: new RegExp(i18n.t('mss.vault.dateien.auswaehlen')) }))
     fireEvent.click(kachel('strand.jpg')!)
     expect(kachel('strand.jpg')).toHaveAttribute('aria-pressed', 'true')
@@ -513,7 +513,7 @@ describe('VaultView: Fotos', () => {
 
   it('zeigt im Album nur, was noch da ist, und nimmt Ausgewähltes heraus', async () => {
     render(<VaultView />)
-    fireEvent.click(reiter('mss.vault.ansicht.fotos'))
+    fireEvent.click(screen.getByRole('tab', { name: new RegExp(i18n.t('mss.vault.ansicht.fotos')) }))
     fireEvent.click(reiter('mss.vault.fotos.alben'))
     fireEvent.click(screen.getByRole('button', { name: /Sommer/ }))
     expect(screen.getByRole('heading', { name: 'Sommer' })).toBeInTheDocument()
@@ -736,5 +736,27 @@ describe('VaultView: Direktes Öffnen & Kamera-Vorschau', () => {
 
     await vi.waitFor(() => expect(within(screen.getByRole('dialog')).queryByText(i18n.t('mss.vault.fotos.wirdGesichert'))).toBeNull())
     expect(await screen.findByRole('dialog', { name: 'IMG_20261114_190000.jpg' })).toBeInTheDocument()
+  })
+
+  it('blendet die mobile Kopfzeile beim Runterscrollen aus und schaltet die Suche um', () => {
+    useVaultStore.setState({ items: [eintrag('p1', 'Alpha')] })
+    const { container } = render(<VaultView />)
+    const kopf = container.querySelector('[data-vault-header-versteckt]') as HTMLElement
+    expect(kopf).toHaveAttribute('data-vault-header-versteckt', 'false')
+
+    const scroller = kopf.parentElement?.querySelector('.overflow-y-auto') as HTMLElement
+    Object.defineProperty(scroller, 'scrollTop', { value: 120, configurable: true, writable: true })
+    fireEvent.scroll(scroller)
+    expect(kopf).toHaveAttribute('data-vault-header-versteckt', 'true')
+
+    Object.defineProperty(scroller, 'scrollTop', { value: 70, configurable: true, writable: true })
+    fireEvent.scroll(scroller)
+    expect(kopf).toHaveAttribute('data-vault-header-versteckt', 'false')
+
+    fireEvent.click(screen.getByRole('tab', { name: new RegExp(i18n.t('mss.vault.ansicht.fotos')) }))
+    const suchKnopf = screen.getByRole('button', { name: i18n.t('mss.vault.dashboard.sucheOeffnen') })
+    expect(suchKnopf).toHaveAttribute('aria-expanded', 'false')
+    fireEvent.click(suchKnopf)
+    expect(screen.getByRole('button', { name: i18n.t('mss.vault.dashboard.sucheSchliessen') })).toHaveAttribute('aria-expanded', 'true')
   })
 })

@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   Folder,
@@ -46,6 +47,8 @@ export interface VaultHeaderBereichProps {
   onSavingHintChange: (saving: boolean) => void
   onSaveHint: (hint: string) => Promise<void>
   onClearEditHintInput: () => void
+  /** Am Telefon beim Runterscrollen aus dem Sichtfeld schieben. */
+  kopfVersteckt?: boolean
 }
 
 /** Kopfzeile, Status-Hinweise, Filter-Chips, Suche und Hinweis-Erinnerung des Tresors. */
@@ -80,20 +83,31 @@ export function VaultHeaderBereich({
   onSavingHintChange,
   onSaveHint,
   onClearEditHintInput,
+  kopfVersteckt = false,
 }: VaultHeaderBereichProps) {
   const { t } = useTranslation()
+  const [sucheOffenMobil, setSucheOffenMobil] = useState(false)
+  const hatSuche = ansicht !== 'uebersicht'
+  const zeigeSuchleisteMobil = sucheOffenMobil || Boolean(searchQuery.trim()) || ansicht === 'tresor'
 
   return (
     <>
-      {/* KOPFZEILE */}
-      <div className="flex items-center justify-between border-b border-outline-variant/20 bg-surface-container px-4 py-2.5 backdrop-blur-xl">
+      {/* KOPFZEILE (am Handy kompakt & beim Runterscrollen sauber aus dem Flex-Fluss schieben) */}
+      <div
+        data-vault-header-versteckt={kopfVersteckt ? 'true' : 'false'}
+        className={`flex shrink-0 items-center justify-between border-b border-outline-variant/20 bg-surface-container/95 px-3 py-2 backdrop-blur-xl transition-[margin-top,opacity] duration-200 sm:px-4 sm:py-2.5 max-md:h-12 ${
+          kopfVersteckt
+            ? 'max-md:-mt-12 max-md:opacity-0 max-md:pointer-events-none focus-within:max-md:mt-0 focus-within:max-md:opacity-100 focus-within:max-md:pointer-events-auto'
+            : ''
+        }`}
+      >
         <div className="flex min-w-0 items-center gap-2.5">
           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary border border-primary/20">
-            <Shield className="h-4 w-4" />
+            <Shield className="h-4 w-4" aria-hidden="true" />
           </div>
           <div className="min-w-0">
-            <h1 className="truncate text-xs font-bold text-on-surface">{ansichtsTitel}</h1>
-            <p className="truncate text-label-sm text-on-surface-variant">
+            <h1 className="truncate text-sm font-bold text-on-surface md:text-xs">{ansichtsTitel}</h1>
+            <p className="hidden truncate text-label-sm text-on-surface-variant sm:block">
               {isTeam ? (teamName ? `${teamName} · ${t('teams.vault')}` : t('teams.vault')) : t('mss.vault.titelManager')}
             </p>
           </div>
@@ -106,10 +120,25 @@ export function VaultHeaderBereich({
               fingerziel
               onClick={onNewEntry}
               aria-label={t('mss.vault.neuerEintrag')}
-              className="hidden md:flex items-center gap-1 bg-primary text-on-primary hover:bg-primary-hover shadow-sm px-2.5 py-1.5 text-xs font-medium"
+              className="flex items-center gap-1 bg-primary text-on-primary hover:bg-primary-hover shadow-sm px-2.5 py-1.5 text-xs font-medium"
             >
-              <Plus className="h-3.5 w-3.5" />
-              <span>{t('mss.vault.neuerEintrag')}</span>
+              <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+              <span className="md:hidden">{t('mss.vault.dashboard.neuKurz')}</span>
+              <span className="hidden md:inline">{t('mss.vault.neuerEintrag')}</span>
+            </Button>
+          )}
+
+          {hatSuche && ansicht !== 'tresor' && (
+            <Button
+              fingerziel
+              size="icon"
+              variant="ghost"
+              onClick={() => setSucheOffenMobil((offen) => !offen)}
+              aria-label={t(sucheOffenMobil ? 'mss.vault.dashboard.sucheSchliessen' : 'mss.vault.dashboard.sucheOeffnen')}
+              aria-expanded={zeigeSuchleisteMobil}
+              className="md:hidden text-on-surface-variant hover:text-on-surface"
+            >
+              <Search className="h-4 w-4" aria-hidden="true" />
             </Button>
           )}
 
@@ -122,7 +151,7 @@ export function VaultHeaderBereich({
             aria-label={t('mss.vault.abgleichen')}
             className="text-on-surface-variant hover:text-on-surface"
           >
-            <RefreshCw className={`h-3.5 w-3.5 ${syncStatus === 'syncing' ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`h-3.5 w-3.5 ${syncStatus === 'syncing' ? 'animate-spin' : ''}`} aria-hidden="true" />
           </Button>
         </div>
       </div>
@@ -176,9 +205,13 @@ export function VaultHeaderBereich({
         </div>
       )}
 
-      {/* FILTER, SAMMLUNG UND SUCHE */}
-      {ansicht !== 'uebersicht' && (
-        <div className="flex flex-col gap-2 border-b border-outline-variant/15 bg-surface-container px-4 py-2">
+      {/* FILTER, SAMMLUNG UND SUCHE (bei Fotos/Dateien am Handy nur bei Bedarf offen) */}
+      {hatSuche && (
+        <div
+          className={`flex flex-col gap-2 border-b border-outline-variant/15 bg-surface-container px-4 py-2 ${
+            zeigeSuchleisteMobil ? '' : 'hidden md:flex'
+          }`}
+        >
           {ansicht === 'tresor' && (
             <div className="msm-ohne-rollbalken flex items-center gap-1.5 overflow-x-auto" role="group" aria-label={t('mss.vault.dashboard.werkzeuge')}>
               {TRESOR_FILTER.map((eintrag) => {

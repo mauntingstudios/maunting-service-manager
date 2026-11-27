@@ -10432,7 +10432,9 @@
           "importLeer": "No new entries found in the file.",
           "importFehler": "The file could not be read.",
           "exportErfolg": "Vault export downloaded."
-        }
+        },
+        "sucheOeffnen": "Show search",
+        "sucheSchliessen": "Hide search"
       },
       "generator": {
         "titel": "Generate password",

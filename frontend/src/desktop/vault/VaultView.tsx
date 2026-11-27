@@ -394,6 +394,27 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
   const [ansicht, setAnsicht] = useState<Ansicht>('uebersicht')
   const [filter, setFilter] = useState<TresorFilter>('alle')
   const [ordnerFilter, setOrdnerFilter] = useState<string | null>(null)
+  const [kopfVersteckt, setKopfVersteckt] = useState(false)
+  const letzteScrollY = useRef(0)
+
+  useEffect(() => {
+    setKopfVersteckt(false)
+    letzteScrollY.current = 0
+  }, [ansicht])
+
+  const beiInhaltScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const ziel = e.target
+    if (!(ziel instanceof HTMLElement)) return
+    const y = Math.max(0, ziel.scrollTop)
+    if (y <= 16) {
+      setKopfVersteckt(false)
+    } else if (y > letzteScrollY.current + 6 && y > 56) {
+      setKopfVersteckt(true)
+    } else if (y < letzteScrollY.current - 6) {
+      setKopfVersteckt(false)
+    }
+    letzteScrollY.current = y
+  }
   const [lokalOeffnen, setLokalOeffnen] = useState<TresorOeffnenAnfrage | null>(null)
   const offnenAnfrage = useTresorOeffnenAnfrage((s) => (isTeam ? null : s.anfrage))
   const aktivesOeffnenZiel = offnenAnfrage ?? lokalOeffnen
@@ -1184,7 +1205,10 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
         }
       />
 
-      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+      <div
+        onScrollCapture={beiInhaltScroll}
+        className="flex min-w-0 flex-1 flex-col overflow-hidden"
+      >
       <VaultHeaderBereich
         ansichtsTitel={ansichtsTitel}
         isTeam={isTeam}
@@ -1225,6 +1249,7 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
         onSavingHintChange={setIsSavingHint}
         onSaveHint={activeSaveHint}
         onClearEditHintInput={() => setEditHintInput('')}
+        kopfVersteckt={kopfVersteckt}
       />
 
       {/* ÜBERSICHT / LISTE */}
@@ -1424,14 +1449,6 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
             setAnsicht(naechste)
             if (naechste === 'tresor') setFilter('alle')
             if (naechste !== 'tresor') setOrdnerFilter(null)
-          }}
-          onNeuerEintrag={() => {
-            if (ansicht === 'tresor' && filter === 'notizen') {
-              setNotizBearbeitet(null)
-              setNotizDialogOffen(true)
-            } else {
-              openNewEntryModal()
-            }
           }}
           anzahlImPapierkorb={anzahlImPapierkorb}
           notizenAktiv={ansicht === 'tresor' && filter === 'notizen'}

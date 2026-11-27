@@ -11,9 +11,7 @@ import {
   LayoutGrid,
   Lock,
   MoreHorizontal,
-  Plus,
   QrCode,
-  Shield,
   ShieldCheck,
   Sparkles,
   Trash2,
@@ -24,7 +22,6 @@ import type { VaultAnsicht } from './vaultAnsichten'
 export interface TresorUntereLeisteProps {
   ansicht: VaultAnsicht
   onAnsicht: (ansicht: VaultAnsicht) => void
-  onNeuerEintrag: () => void
   anzahlImPapierkorb: number
   notizenAktiv?: boolean
   onNotizen?: () => void
@@ -38,11 +35,10 @@ export interface TresorUntereLeisteProps {
 
 const SYMBOL = 'h-5 w-5'
 
-/** Untere Leiste am Telefon. „Freigaben“ gibt es nicht — der Tresor teilt nichts. */
+/** Untere Leiste am Telefon: 5 Hauptziele, Nebensachen im „Mehr“-Blatt. */
 export function TresorUntereLeiste({
   ansicht,
   onAnsicht,
-  onNeuerEintrag,
   anzahlImPapierkorb,
   notizenAktiv = false,
   onNotizen,
@@ -72,8 +68,8 @@ export function TresorUntereLeiste({
     </button>
   )
 
-  const mehrAktiv = ansicht !== 'uebersicht' && ansicht !== 'tresor'
-  const darfNeuAnlegen = ansicht === 'uebersicht' || ansicht === 'tresor'
+  const mehrAktiv =
+    ansicht === 'zahlung' || ansicht === 'archiv' || ansicht === 'papierkorb' || Boolean(notizenAktiv)
 
   return (
     <>
@@ -82,28 +78,35 @@ export function TresorUntereLeiste({
           role="tablist"
           aria-orientation="horizontal"
           aria-label={t('mss.vault.titelManager')}
-          className="grid grid-cols-5 items-center px-2 py-1"
+          className="grid grid-cols-5 items-center px-1.5 py-1"
         >
-          {reiter('uebersicht', ansicht === 'uebersicht', 'mss.vault.dashboard.uebersicht', <LayoutGrid className={SYMBOL} />, () => onAnsicht('uebersicht'))}
-          {reiter('tresor', ansicht === 'tresor' && !notizenAktiv, 'mss.vault.ansicht.tresor', <Shield className={SYMBOL} />, () => onAnsicht('tresor'))}
-          <button
-            type="button"
-            onClick={onNeuerEintrag}
-            aria-label={
-              darfNeuAnlegen
-                ? t('mss.vault.neuerEintrag')
-                : t('mss.vault.dashboard.neuKurz')
-            }
-            className="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-primary text-on-primary shadow-md"
-          >
-            <Plus className="h-5 w-5" aria-hidden="true" />
-          </button>
           {reiter(
-            'notizen',
-            Boolean(notizenAktiv),
-            'mss.vault.dashboard.filterNotizen',
-            <FileText className={SYMBOL} />,
-            () => (onNotizen ? onNotizen() : onAnsicht('tresor')),
+            'uebersicht',
+            ansicht === 'uebersicht',
+            'mss.vault.dashboard.uebersicht',
+            <LayoutGrid className={SYMBOL} aria-hidden="true" />,
+            () => onAnsicht('uebersicht'),
+          )}
+          {reiter(
+            'tresor',
+            ansicht === 'tresor' && !notizenAktiv,
+            'mss.vault.ansicht.tresor',
+            <KeyRound className={SYMBOL} aria-hidden="true" />,
+            () => onAnsicht('tresor'),
+          )}
+          {reiter(
+            'dateien',
+            ansicht === 'dateien',
+            'mss.vault.ansicht.dateien',
+            <FolderLock className={SYMBOL} aria-hidden="true" />,
+            () => onAnsicht('dateien'),
+          )}
+          {reiter(
+            'fotos',
+            ansicht === 'fotos',
+            'mss.vault.ansicht.fotos',
+            <Images className={SYMBOL} aria-hidden="true" />,
+            () => onAnsicht('fotos'),
           )}
           <button
             type="button"
@@ -114,20 +117,20 @@ export function TresorUntereLeiste({
               mehrAktiv ? 'text-primary' : 'text-on-surface-variant'
             }`}
           >
-            <MoreHorizontal className={SYMBOL} />
+            <MoreHorizontal className={SYMBOL} aria-hidden="true" />
             <span>{t('mss.vault.dashboard.mehr')}</span>
           </button>
         </div>
       </div>
 
       <Blattmenue offen={mehrOffen} onSchliessen={() => setMehrOffen(false)} titel={t('mss.vault.dashboard.mehr')}>
-        {onWallet && (
+        {onNotizen && (
           <Blatteintrag
-            icon={<QrCode className={SYMBOL} />}
-            label={t('mss.vault.walletModus', 'Smartcard-Wallet')}
+            icon={<FileText className={SYMBOL} />}
+            label={t('mss.vault.dashboard.filterNotizen')}
             onClick={() => {
               setMehrOffen(false)
-              onWallet()
+              onNotizen()
             }}
           />
         )}
@@ -137,22 +140,6 @@ export function TresorUntereLeiste({
           onClick={() => {
             setMehrOffen(false)
             onAnsicht('zahlung')
-          }}
-        />
-        <Blatteintrag
-          icon={<FolderLock className={SYMBOL} />}
-          label={t('mss.vault.ansicht.dateien')}
-          onClick={() => {
-            setMehrOffen(false)
-            onAnsicht('dateien')
-          }}
-        />
-        <Blatteintrag
-          icon={<Images className={SYMBOL} />}
-          label={t('mss.vault.ansicht.fotos')}
-          onClick={() => {
-            setMehrOffen(false)
-            onAnsicht('fotos')
           }}
         />
         <Blatteintrag
@@ -175,6 +162,16 @@ export function TresorUntereLeiste({
             onAnsicht('papierkorb')
           }}
         />
+        {onWallet && (
+          <Blatteintrag
+            icon={<QrCode className={SYMBOL} />}
+            label={t('mss.vault.walletModus', 'Smartcard-Wallet')}
+            onClick={() => {
+              setMehrOffen(false)
+              onWallet()
+            }}
+          />
+        )}
         {onPasswortGenerieren && (
           <Blatteintrag
             icon={<Sparkles className={SYMBOL} />}
@@ -219,6 +216,7 @@ export function TresorUntereLeiste({
           <Blatteintrag
             icon={<Lock className={SYMBOL} />}
             label={t('mss.vault.sperren')}
+            gefahr
             onClick={() => {
               setMehrOffen(false)
               onSperren()

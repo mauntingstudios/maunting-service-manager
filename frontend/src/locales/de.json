@@ -10432,7 +10432,9 @@
           "importLeer": "Keine neuen Einträge in der Datei gefunden.",
           "importFehler": "Die Datei konnte nicht gelesen werden.",
           "exportErfolg": "Tresor-Export wurde heruntergeladen."
-        }
+        },
+        "sucheOeffnen": "Suche einblenden",
+        "sucheSchliessen": "Suche ausblenden"
       },
       "generator": {
         "titel": "Passwort generieren",
