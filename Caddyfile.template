@@ -4,7 +4,7 @@
 {{DOMAIN}} {
     root * /opt/msm/frontend/dist
 
-    encode gzip
+    encode zstd gzip
 
     request_body {
         max_size 128MB

@@ -4,7 +4,7 @@
 // Assets aendern (neue JS-Bundles, neue Icons, ...). Sonst liefert der SW
 // nach einem Deploy die alten Bundles aus dem Cache und der Browser sieht
 // den neuen Code nicht.
-const CACHE_NAME = 'msm-v8';
+const CACHE_NAME = 'msm-v9';
 const STATIC_ASSETS = [
   '/',
   '/manifest.json',
@@ -51,60 +51,72 @@ self.addEventListener('fetch', (event) => {
     event.request.headers.get('accept')?.includes('text/html');
 
   if (isHashedAsset) {
-    // Network-First fuer Vite-Hashes: nach Deploy referenziert index.html neue
-    // Chunk-Namen; Cache-First lieferte alte Chunks oder HTML-Fallback als JS.
+    // Cache-First fuer unveraenderliche Vite-Hash-Assets (/assets/*).
+    // Nur echte 200er ohne text/html werden gespeichert (Schutz gegen HTML-Fallback-als-JS).
     event.respondWith(
-      fetch(event.request)
-        .then((response) => {
-          if (response && response.status === 200) {
-            const responseClone = response.clone();
-            caches.open(CACHE_NAME).then((cache) => {
-              cache.put(event.request, responseClone);
-            });
-          }
-          return response;
-        })
-        .catch(() =>
-          caches.match(event.request).then(
-            (cached) =>
-              cached ||
+      caches.match(event.request).then((cached) => {
+        if (cached) return cached;
+        return fetch(event.request)
+          .then((response) => {
+            const contentType = (response.headers.get('content-type') || '').toLowerCase();
+            if (
+              response &&
+              response.ok &&
+              response.status === 200 &&
+              !contentType.includes('text/html')
+            ) {
+              const responseClone = response.clone();
+              caches.open(CACHE_NAME).then((cache) => {
+                cache.put(event.request, responseClone);
+              });
+            }
+            return response;
+          })
+          .catch(
+            () =>
               new Response('Asset offline', {
                 status: 503,
                 statusText: 'Offline',
                 headers: { 'Content-Type': 'text/plain' },
               }),
-          ),
-        ),
+          );
+      }),
     );
     return;
   }
 
   if (isHtmlRequest) {
     event.respondWith(
-      fetch(event.request)
-        .then((response) => {
-          if (response && response.status === 200) {
-            const responseClone = response.clone();
-            caches.open(CACHE_NAME).then((cache) => {
-              cache.put(event.request, responseClone);
-            });
-          }
-          return response;
-        })
-        .catch(() =>
-          caches
-            .match(event.request)
-            .then((response) => response || caches.match('/'))
-            .then(
-              (response) =>
-                response ||
-                new Response('Offline', {
-                  status: 503,
-                  statusText: 'Offline',
-                  headers: { 'Content-Type': 'text/plain' },
-                }),
-            ),
-        ),
+      (() => {
+        const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+        const timer = controller ? setTimeout(() => controller.abort(), 4000) : null;
+        return fetch(event.request, controller ? { signal: controller.signal } : undefined)
+          .then((response) => {
+            if (timer) clearTimeout(timer);
+            if (response && response.ok && response.status === 200) {
+              const responseClone = response.clone();
+              caches.open(CACHE_NAME).then((cache) => {
+                cache.put(event.request, responseClone);
+              });
+            }
+            return response;
+          })
+          .catch(() => {
+            if (timer) clearTimeout(timer);
+            return caches
+              .match(event.request)
+              .then((response) => response || caches.match('/'))
+              .then(
+                (response) =>
+                  response ||
+                  new Response('Offline', {
+                    status: 503,
+                    statusText: 'Offline',
+                    headers: { 'Content-Type': 'text/plain' },
+                  }),
+              );
+          });
+      })(),
     );
   } else {
     event.respondWith(

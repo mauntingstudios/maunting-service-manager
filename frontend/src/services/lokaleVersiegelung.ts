@@ -27,6 +27,7 @@
 import { decryptString, encryptString } from '@msdis/shield/aead'
 
 import { angemeldetesKonto } from '@/lib/angemeldetesKonto'
+import { registerSessionCleanup } from '@/stores/sessionCleanupRegistry'
 
 /**
  * Merker im localStorage, ob für dieses Konto auf diesem Gerät ein PIN
@@ -71,6 +72,9 @@ let beiVerschlossenemZugriff: (() => void) | null = null
 export function setzeInhaltsSchluessel(schluessel: CryptoKey | null): void {
   inhaltsSchluessel = schluessel
 }
+registerSessionCleanup(() => {
+  setzeInhaltsSchluessel(null)
+})
 
 /**
  * Meldet der Sperre, dass jemand an eine verschlossene Zeile geraten ist.

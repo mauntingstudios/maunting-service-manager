@@ -30,6 +30,7 @@
  */
 
 import type { DirectChatItem } from '@/api/social'
+import { registerSessionCleanup } from '@/stores/sessionCleanupRegistry'
 import { entsiegleZeile, istOffen, versiegleZeile } from './lokaleVersiegelung'
 
 const ABLAGE_SCHLUESSEL = 'msm:gespraeche'
@@ -301,6 +302,7 @@ export function leereGespraeche(): void {
     /* nichts zu räumen */
   }
 }
+registerSessionCleanup(leereGespraeche)
 
 /**
  * Die Gesprächsliste in der Form, die der Server bis Stufe 6b lieferte.

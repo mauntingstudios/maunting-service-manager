@@ -91,6 +91,46 @@ class PanelSettingsService:
         return cls._cache.get(key, default)
 
     @classmethod
+    def set_many(
+        cls,
+        updates: dict[str, str],
+        db: Session | None = None,
+        *,
+        bump_remote: bool = True,
+    ) -> None:
+        """Schreibt mehrere Panel-Einstellungen in genau einem Batch-SELECT.
+
+        Wird ``db`` übergeben, überlässt die Methode ``db.commit()`` dem
+        Aufrufer (z. B. zusammen mit dem Audit-Log in einer Transaktion).
+        """
+        if not updates:
+            return
+        keys = list(updates.keys())
+        own_session = db is None
+        target_db = SessionLocal() if own_session else db
+        try:
+            existing_rows = (
+                target_db.query(PanelSetting)
+                .filter(PanelSetting.key.in_(keys))
+                .all()
+            )
+            by_key = {row.key: row for row in existing_rows}
+            for key, value in updates.items():
+                cls._cache[key] = value
+                row = by_key.get(key)
+                if row is not None:
+                    row.value = value
+                else:
+                    target_db.add(PanelSetting(key=key, value=value))
+            if own_session:
+                target_db.commit()
+            if bump_remote:
+                cls._bump_remote_version()
+        finally:
+            if own_session:
+                target_db.close()
+
+    @classmethod
     def set(cls, key: str, value: str, db: Session | None = None) -> None:
         cls._cache[key] = value
         if db is not None:

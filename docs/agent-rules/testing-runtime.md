@@ -300,3 +300,14 @@ Nicht akzeptabel:
 - [ ] Ist die Konsole sauber?
 - [ ] Gibt es keine Secrets in Testdaten, Logs, Toasts oder Diffs?
 - [ ] Sind nicht geprüfte Punkte ehrlich genannt?
+
+---
+
+## 12. Performance- und Wirksamkeitsnachweis
+
+Für jede Performance- oder Stabilitätsänderung gelten über die grüne Regressions-Suite hinaus vier verbindliche Beweis-Gates (vorab Baseline dokumentieren, danach reproduzierbar gegenprüfen):
+
+1. **Query-Count-Assertion:** Bei Listen-, Detail-, Status- oder Batch-Endpunkten konstante Query- und Commit-Anzahl nachweisen (kein N+1, keine unnötigen `UPDATE`/`COMMIT`-Zyklen bei unverändertem Zustand).
+2. **`EXPLAIN (ANALYZE, BUFFERS)`:** Bei neuen Indizes oder umgebauten SQL-Queries den Ausführungsplan gegen PostgreSQL prüfen (`Index Scan` / `Bitmap Index Scan` statt `Seq Scan` auf großen Tabellen).
+3. **Concurrency- und Latenz-Test:** Bei Locks, Upserts, Caches oder Kryptografie-Workern parallele Zugriffe sowie p95-Latenz bzw. Lock-Freiheit (`idle`, nicht `idle in transaction`) messen.
+4. **Fault-Injection-Test:** Bei UI-Ladezuständen, Timeouts, Service-Worker-Fallbacks und Session-Invalidierung gezielt hängende, `500`- oder `401`-Antworten einspeisen und fail-closed sowie hängerfreies UI-Verhalten beweisen.

@@ -2,7 +2,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm import Session, load_only, selectinload
 
 from database import get_db
 from models import (
@@ -13,6 +13,7 @@ from models import (
     Server,
     ServerPermission,
     User,
+    UserPasskey,
 )
 from schemas.user import AdminUserCreate, UserResponse, UserUpdate
 from schemas.role import (
@@ -77,8 +78,31 @@ def list_users(
     db: Session = Depends(get_db),
     _: User = Depends(require_global("users.read")),
 ) -> list[User]:
-    # Rollen mitladen: sonst kostet role_ids je Benutzer eine eigene Abfrage.
-    return db.query(User).options(selectinload(User.role_assignments)).all()
+    from models.user import email_chiffrat_fuer_dis
+    from services.dis_client import DisClient
+
+    # Rollen, Passkeys und E-Mail-Entschluesselung im Batch laden (kein N+1).
+    users = (
+        db.query(User)
+        .options(
+            selectinload(User.role_assignments),
+            selectinload(User.passkeys).load_only(UserPasskey.id, UserPasskey.user_id),
+        )
+        .all()
+    )
+    to_decrypt = [
+        (u, email_chiffrat_fuer_dis(u.email_encrypted))
+        for u in users
+        if u.email_encrypted
+    ]
+    if to_decrypt:
+        plaintexts = DisClient.decrypt_many(
+            [(ct, "msm:user:email") for _, ct in to_decrypt]
+        )
+        for (u, _), dec in zip(to_decrypt, plaintexts):
+            if dec is not None:
+                u._predecrypted_email_pair = (u.email_encrypted, dec)
+    return users
 
 
 @router.get("/users/{user_id}", response_model=UserResponse)

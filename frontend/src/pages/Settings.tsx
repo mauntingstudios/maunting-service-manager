@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import type { LucideIcon } from 'lucide-react'
@@ -17,26 +17,34 @@ import {
   Shield,
   ShieldAlert,
 } from 'lucide-react'
-import { SettingsLayout, TabBar, type SettingsSectionEintrag, type TabDef } from '@maunting/ui'
+import { SettingsLayout, Spinner, TabBar, type SettingsSectionEintrag, type TabDef } from '@maunting/ui'
 import { FavoriteButton } from '@/components/FavoriteButton'
 import { GeneralTab } from './settings/GeneralTab'
-import { EmailTab } from './settings/EmailTab'
-import { SteamTab } from './settings/SteamTab'
-import { CurseForgeTab } from './settings/CurseForgeTab'
-import { ModrinthTab } from './settings/ModrinthTab'
-import { OAuthTab } from './settings/OAuthTab'
-import { BackupTab } from './settings/BackupTab'
-import { ImprintTab } from './settings/ImprintTab'
-import { SupportWidgetTab } from './settings/SupportWidgetTab'
-import { CaptchaTab } from './settings/CaptchaTab'
-import { CloudflareTab } from './settings/CloudflareTab'
-import { SecurityTab } from './settings/SecurityTab'
-import { AiTab, type AiSubTab } from './settings/AiTab'
-import { MessengerTab } from './settings/MessengerTab'
 import { ShopTab, type ShopSubTabId } from './settings/ShopTab'
-import { PopupTab } from './settings/PopupTab'
-import { NewsTab } from './settings/NewsTab'
-import { VaultStorageTab } from './settings/VaultStorageTab'
+import type { AiSubTab } from './settings/AiTab'
+
+const EmailTab = lazy(() => import('./settings/EmailTab').then((m) => ({ default: m.EmailTab })))
+const SteamTab = lazy(() => import('./settings/SteamTab').then((m) => ({ default: m.SteamTab })))
+const CurseForgeTab = lazy(() => import('./settings/CurseForgeTab').then((m) => ({ default: m.CurseForgeTab })))
+const ModrinthTab = lazy(() => import('./settings/ModrinthTab').then((m) => ({ default: m.ModrinthTab })))
+const OAuthTab = lazy(() => import('./settings/OAuthTab').then((m) => ({ default: m.OAuthTab })))
+const BackupTab = lazy(() => import('./settings/BackupTab').then((m) => ({ default: m.BackupTab })))
+const ImprintTab = lazy(() => import('./settings/ImprintTab').then((m) => ({ default: m.ImprintTab })))
+const SupportWidgetTab = lazy(() => import('./settings/SupportWidgetTab').then((m) => ({ default: m.SupportWidgetTab })))
+const CaptchaTab = lazy(() => import('./settings/CaptchaTab').then((m) => ({ default: m.CaptchaTab })))
+const CloudflareTab = lazy(() => import('./settings/CloudflareTab').then((m) => ({ default: m.CloudflareTab })))
+const SecurityTab = lazy(() => import('./settings/SecurityTab').then((m) => ({ default: m.SecurityTab })))
+const AiTab = lazy(() => import('./settings/AiTab').then((m) => ({ default: m.AiTab })))
+const MessengerTab = lazy(() => import('./settings/MessengerTab').then((m) => ({ default: m.MessengerTab })))
+const PopupTab = lazy(() => import('./settings/PopupTab').then((m) => ({ default: m.PopupTab })))
+const NewsTab = lazy(() => import('./settings/NewsTab').then((m) => ({ default: m.NewsTab })))
+const VaultStorageTab = lazy(() => import('./settings/VaultStorageTab').then((m) => ({ default: m.VaultStorageTab })))
+
+const TAB_FALLBACK = (
+  <div className="flex justify-center py-8">
+    <Spinner size="md" />
+  </div>
+)
 import { useHasPermission } from '@/hooks/useHasPermission'
 import {
   DEFAULT_DASHBOARD_TABS,
@@ -76,7 +84,7 @@ function SettingsSubTabs<T extends string>({
   if (!resolved) return null
 
   if (items.length === 1) {
-    return <>{resolved.render()}</>
+    return <Suspense fallback={TAB_FALLBACK}>{resolved.render()}</Suspense>
   }
 
   const tabs: TabDef<T>[] = items.map((item) => ({
@@ -98,7 +106,7 @@ function SettingsSubTabs<T extends string>({
         />
       </div>
       <div role="tabpanel" aria-label={t(resolved.labelKey)}>
-        {resolved.render()}
+        <Suspense fallback={TAB_FALLBACK}>{resolved.render()}</Suspense>
       </div>
     </div>
   )
@@ -261,7 +269,11 @@ export function Settings() {
           </div>
         )}
         {aktiv === 'general' && <GeneralTab />}
-        {aktiv === 'imprint' && <ImprintTab />}
+        {aktiv === 'imprint' && (
+          <Suspense fallback={TAB_FALLBACK}>
+            <ImprintTab />
+          </Suspense>
+        )}
         {aktiv === 'announcements' && (
           <SettingsSubTabs
             items={announcementsItems}
@@ -278,7 +290,11 @@ export function Settings() {
             ariaLabel={t('settings.tabs.security')}
           />
         )}
-        {aktiv === 'oauth' && <OAuthTab />}
+        {aktiv === 'oauth' && (
+          <Suspense fallback={TAB_FALLBACK}>
+            <OAuthTab />
+          </Suspense>
+        )}
         {aktiv === 'gameIntegrations' && (
           <SettingsSubTabs
             items={gameItems}
@@ -303,7 +319,9 @@ export function Settings() {
           />
         )}
         {aktiv === 'ai' && (
-          <AiTab includeSearchEngine initialTab={aiSubTab} />
+          <Suspense fallback={TAB_FALLBACK}>
+            <AiTab includeSearchEngine initialTab={aiSubTab} />
+          </Suspense>
         )}
         {aktiv === 'storage' && (
           <SettingsSubTabs

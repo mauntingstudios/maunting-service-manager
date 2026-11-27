@@ -399,14 +399,6 @@ export function Dashboard({ ohneHintergrund = false }: { ohneHintergrund?: boole
     sentinelRef: dashboardServersSentinelRef,
   } = useLazySlice(sortedServers, 24)
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <Spinner size="md" className="text-secondary" />
-      </div>
-    )
-  }
-
   return (
     <div className="relative isolate flex flex-col h-full w-full min-h-0 overflow-y-auto text-on-surface scrollbar-thin">
       {!ohneEigenenHintergrund && (
@@ -620,8 +612,15 @@ export function Dashboard({ ohneHintergrund = false }: { ohneHintergrund?: boole
           </div>
         )}
 
+        {/* Initialer Server-Ladezustand inline, damit Header/SystemStatus/NodeCapacity sofort rendern */}
+        {loading && !loadError && visibleServers.length === 0 && (
+          <div className="msm-card rounded-2xl border border-outline bg-surface-container-low/80 backdrop-blur-xl p-10 flex items-center justify-center">
+            <Spinner size="md" className="text-secondary" />
+          </div>
+        )}
+
         {/* Empty State */}
-        {!loadError && visibleServers.length === 0 && (
+        {!loading && !loadError && visibleServers.length === 0 && (
           <div className="msm-card rounded-2xl border-dashed border-2 border-outline-variant bg-surface-container-low/80 backdrop-blur-xl p-12 text-center">
             <ServerIcon className="w-10 h-10 text-on-surface-variant mx-auto mb-4" aria-hidden="true" />
             <h3 className="font-headline text-body-lg text-on-surface mb-1">

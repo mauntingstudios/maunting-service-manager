@@ -28,6 +28,7 @@
  */
 
 import type { ChatGroupItem } from '@/api/social'
+import { registerSessionCleanup } from '@/stores/sessionCleanupRegistry'
 import { entsiegleZeile, istOffen, versiegleZeile } from './lokaleVersiegelung'
 import {
   aendereGruppenInfo,
@@ -219,6 +220,7 @@ export function leereGruppenNamen(): void {
     /* nichts zu räumen */
   }
 }
+registerSessionCleanup(leereGruppenNamen)
 
 /**
  * Setzt Name, Beschreibung und Logo in eine Gruppenliste ein — und ordnet sie.

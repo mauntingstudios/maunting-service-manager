@@ -1419,6 +1419,7 @@ async def _e2ee_envelope_cleanup_task() -> None:
     from services.chat_media_service import ChatMediaService
     from services.social.messages_service import cleanup_expired
     from services.social_service import SocialService
+    from services.auth_service import AuthService
     from services import ai_memory_service, login_challenge_service, vault_blob_service, vault_service
     def _worker() -> None:
         db = SessionLocal()
@@ -1438,6 +1439,8 @@ async def _e2ee_envelope_cleanup_task() -> None:
                 ("Vergessene-Erinnerung", ai_memory_service.vergessene_aufraeumen),
                 # Abgelaufene Login- und ZK-Device-Auth-Relais-Sitzungen periodisch raeumen
                 ("Login-Challenges", login_challenge_service.cleanup_expired),
+                # Abgelaufene und >30 Tage widerrufene Refresh-Tokens in Batches abraeumen
+                ("Refresh-Tokens", AuthService.cleanup_expired_refresh_tokens),
             ):
                 try:
                     cleanup(db)

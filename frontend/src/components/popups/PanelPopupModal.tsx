@@ -201,8 +201,9 @@ export function PanelPopupCard({
   }, [initialPopup, surface, isAuthenticated, isPreview])
 
   // Blendet die Karte voruebergehend aus, solange ein modaler Dialog offen ist.
+  // Ohne anstehenden Hinweis kein document.body-MutationObserver noetig.
   useEffect(() => {
-    if (isPreview || typeof document === 'undefined') {
+    if (isPreview || queue.length === 0 || typeof document === 'undefined') {
       setSuppressedByModal(false)
       return
     }
@@ -221,7 +222,7 @@ export function PanelPopupCard({
       attributeFilter: ['aria-modal', 'open'],
     })
     return () => observer.disconnect()
-  }, [isPreview])
+  }, [isPreview, queue.length])
 
   const currentPopup = queue[0] ?? null
   const isVisible = Boolean(currentPopup && (isPreview || !suppressedByModal))

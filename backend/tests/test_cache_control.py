@@ -20,7 +20,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from main import _frontend_einhaengen, security_headers_middleware
+from main import SecurityHeadersMiddleware, _frontend_einhaengen
 
 HTML_NIE_AUS_DEM_CACHE = "no-cache, no-store, must-revalidate"
 
@@ -65,7 +65,7 @@ def panel(tmp_path: Path):
     (tmp_path / "assets" / "index-3f2a1b.js").write_text("export {}", encoding="utf-8")
     (tmp_path / "favicon.ico").write_bytes(b"\x00\x00\x01\x00")
     ausgeliefert = FastAPI()
-    ausgeliefert.middleware("http")(security_headers_middleware)
+    ausgeliefert.add_middleware(SecurityHeadersMiddleware)
     _frontend_einhaengen(ausgeliefert, str(tmp_path))
     with TestClient(ausgeliefert) as c:
         yield c

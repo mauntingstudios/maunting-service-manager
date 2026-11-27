@@ -727,6 +727,51 @@ def plan_artwork_bytes(
         return None
 
 
+def resolve_wallpapers_batch(
+    db: Session, servers: list["Server"]
+) -> dict[int, WallpaperDescriptor]:
+    """Ermittelt die aktiven Wallpaper fuer eine Serverliste in einer Batch-Query."""
+    if not servers:
+        return {}
+    game_types = sorted({s.game_type for s in servers if getattr(s, "game_type", None)})
+    active_by_game: dict[str, GameWallpaper] = {}
+    if game_types:
+        rows = (
+            db.query(GameWallpaper)
+            .filter(
+                GameWallpaper.game_type.in_(game_types),
+                GameWallpaper.is_active.is_(True),
+            )
+            .all()
+        )
+        for row in rows:
+            active_by_game.setdefault(row.game_type, row)
+
+    from services.exec_service import load_blueprint_for_server
+
+    result: dict[int, WallpaperDescriptor] = {}
+    for server in servers:
+        base_url = f"/api/servers/{server.id}/wallpaper"
+        active = active_by_game.get(server.game_type)
+        if active is not None:
+            result[server.id] = WallpaperDescriptor(
+                source="custom", url=base_url, version=f"custom-{active.id}"
+            )
+            continue
+        try:
+            blueprint = load_blueprint_for_server(server)
+        except Exception:
+            blueprint = None
+        app_id = artwork_app_id_for_blueprint(blueprint)
+        if app_id is not None:
+            result[server.id] = WallpaperDescriptor(
+                source="steam", url=base_url, app_id=app_id, version=f"steam-{app_id}"
+            )
+        else:
+            result[server.id] = WallpaperDescriptor(source="panorama", url=None)
+    return result
+
+
 def resolve_wallpaper(db: Session, server: "Server") -> WallpaperDescriptor:
     """Ermittelt das aktive Wallpaper eines Servers (einzige Autoritaet)."""
     base_url = f"/api/servers/{server.id}/wallpaper"

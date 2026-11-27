@@ -166,7 +166,16 @@ export function Servers({ ohneHintergrund = false }: { ohneHintergrund?: boolean
       if (document.visibilityState !== 'visible') return
       fetchServers()
     }, 5000)
-    return () => clearInterval(interval)
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        fetchServers()
+      }
+    }
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    return () => {
+      clearInterval(interval)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+    }
   }, [])
 
   // Node-Picker sobald mindestens ein Node geladen ist (Local + Remote).

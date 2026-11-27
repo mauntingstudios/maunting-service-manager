@@ -14,6 +14,7 @@ import { useTranslation } from 'react-i18next'
 import { api, getRateLimitRemainingMs } from '@/api/client'
 import { useAuthStore } from '@/stores/authStore'
 import { toast } from '@/stores/toastStore'
+import { still } from '@/lib/still'
 import { sendeGeraeteBenachrichtigung, pruefeUndFrageGeraeteBerechtigung } from '@/lib/benachrichtigung'
 import { abonniere, kuendige } from '@/services/pushAbo'
 import { useMessengerNotificationStore, chimeEntsperren } from '@/stores/messengerNotificationStore'
@@ -162,7 +163,8 @@ async function quittiereGeprueftenEingang(
   }
 }
 
-const POLL_INTERVAL_MS = 20_000
+export const INCIDENT_POLL_INTERVAL_MS = 20_000
+export const REMINDER_POLL_INTERVAL_MS = 300_000
 const BASE_INCIDENTS_KEY = 'msm_alerted_incidents'
 const BASE_REMINDERS_KEY = 'msm_alerted_reminders'
 
@@ -202,7 +204,9 @@ export function ServerIncidentNotifier() {
 
   const seenIncidentsRef = useRef<Set<string>>(loadSeenSet(incidentsKey))
   const seenRemindersRef = useRef<Set<string>>(loadSeenSet(remindersKey))
-  const isPollingRef = useRef(false)
+  const isPollingIncidentsRef = useRef(false)
+  const isPollingRemindersRef = useRef(false)
+  const lastReminderCheckRef = useRef(0)
   // Was zuletzt an Android ging; ohne Änderung wird nicht neu geplant.
   const planRef = useRef<string | null>(null)
   const currentUserIdRef = useRef<number | undefined>(user?.id)
@@ -287,22 +291,14 @@ export function ServerIncidentNotifier() {
       planRef.current = abdruck
     }
 
-    const checkAlerts = async () => {
-      if (isPollingRef.current) return
-      isPollingRef.current = true
-
+    const checkIncidents = async () => {
+      if (isPollingIncidentsRef.current) return
+      isPollingIncidentsRef.current = true
       try {
-        const incidentsPromise = api<IncidentAlert[]>('/system/incident-alerts').catch(() => [])
-        const remindersPromise = aufAndroid()
-          ? null
-          : api<CalendarDueReminder[]>('/calendar/due-reminders').catch(() => [])
-
-        // 1. Server-Vorfälle und ggf. Server-Termine parallel abrufen
-        const [incidents, vomServer] = await Promise.all([
-          incidentsPromise,
-          remindersPromise ?? Promise.resolve([] as CalendarDueReminder[]),
-        ])
-
+        const incidents = await api<IncidentAlert[]>('/system/incident-alerts').catch((err) => {
+          still(err, 'incident-alerts-poll')
+          return [] as IncidentAlert[]
+        })
         if (Array.isArray(incidents)) {
           let updatedIncidents = false
           for (const inc of incidents) {
@@ -324,19 +320,37 @@ export function ServerIncidentNotifier() {
             saveSeenSet(incidentsKey, seenIncidentsRef.current)
           }
         }
+      } catch (err) {
+        still(err, 'incident-alerts-check')
+      } finally {
+        isPollingIncidentsRef.current = false
+      }
+    }
 
+    const checkReminders = async () => {
+      if (isPollingRemindersRef.current) return
+      isPollingRemindersRef.current = true
+      lastReminderCheckRef.current = Date.now()
+      try {
         // 2. Termine: in der Android-App plant Android sie selbst.
         if (aufAndroid()) {
-          await planen().catch(() => {})
+          await planen().catch((err) => still(err, 'android-reminder-plan'))
           return
         }
 
-        // 2. Fällige Termine (24h / 48h)
-        // Serien, deren Regel Ende-zu-Ende verschlüsselt ist, fehlen in der
-        // Serverliste — er kann sie nicht ausbreiten. Dieses Gerät hat den
-        // Schlüssel und trägt sie nach; ohne das meldete sich ausgerechnet der
-        // Geburtstag nie, um den es bei Serienterminen zuallererst geht.
-        const vomGeraet = await faelligeSerienVorkommen(user?.id, user?.time_zone).catch(() => [])
+        const [vomServer, vomGeraet] = await Promise.all([
+          api<CalendarDueReminder[]>('/calendar/due-reminders').catch((err) => {
+            still(err, 'due-reminders-poll')
+            return [] as CalendarDueReminder[]
+          }),
+          // Serien, deren Regel Ende-zu-Ende verschlüsselt ist, fehlen in der
+          // Serverliste — er kann sie nicht ausbreiten. Dieses Gerät hat den
+          // Schlüssel und trägt sie nach.
+          faelligeSerienVorkommen(user?.id, user?.time_zone).catch((err) => {
+            still(err, 'local-series-reminders')
+            return [] as CalendarDueReminder[]
+          }),
+        ])
         const reminders = [...(Array.isArray(vomServer) ? vomServer : []), ...vomGeraet]
         if (Array.isArray(reminders)) {
           let updatedReminders = false
@@ -363,10 +377,10 @@ export function ServerIncidentNotifier() {
             saveSeenSet(remindersKey, seenRemindersRef.current)
           }
         }
-      } catch {
-        // Stiller Fehler im Hintergrund
+      } catch (err) {
+        still(err, 'reminders-check')
       } finally {
-        isPollingRef.current = false
+        isPollingRemindersRef.current = false
       }
     }
 
@@ -382,22 +396,47 @@ export function ServerIncidentNotifier() {
 
     // Sofortiger initialer Check nach Login
     if (user.device_notifications !== false) {
-      void checkAlerts()
+      void checkIncidents()
+      void checkReminders()
     }
 
-    const interval = setInterval(() => {
+    const incidentInterval = setInterval(() => {
       if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
       if (getRateLimitRemainingMs() > 0) return
       if (user.device_notifications !== false) {
-        void checkAlerts()
+        void checkIncidents()
       }
-    }, POLL_INTERVAL_MS)
+    }, INCIDENT_POLL_INTERVAL_MS)
+
+    const reminderInterval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
+      if (getRateLimitRemainingMs() > 0) return
+      if (user.device_notifications !== false) {
+        void checkReminders()
+      }
+    }, REMINDER_POLL_INTERVAL_MS)
+
+    const handleVisibilityChange = () => {
+      if (typeof document === 'undefined' || document.visibilityState !== 'visible') return
+      if (getRateLimitRemainingMs() > 0 || user.device_notifications === false) return
+      void checkIncidents()
+      if (Date.now() - lastReminderCheckRef.current >= REMINDER_POLL_INTERVAL_MS) {
+        void checkReminders()
+      }
+    }
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', handleVisibilityChange)
+    }
 
     // Sofortige Echtzeitmeldungen fuer Messenger-Nachrichten. Freundschafts-
     // anfragen meldet `FreundschaftsWache` – mit Aktion und `melden`-Regel.
     const handleSyncEvent = (e: Event) => {
       const ce = e as CustomEvent<any>
       const detail = ce.detail
+      if (detail?.entity === 'calendar' && user.device_notifications !== false) {
+        void checkReminders()
+        return
+      }
       if (detail?.type === 'achievement_unlocked') {
         // Bis 09/2026 verschickte das Backend dieses Ereignis, und niemand
         // hörte zu: neue Abzeichen sah nur, wer die Liste selbst öffnete.
@@ -432,7 +471,11 @@ export function ServerIncidentNotifier() {
     window.addEventListener('msm:sync-event', handleSyncEvent)
 
     return () => {
-      clearInterval(interval)
+      clearInterval(incidentInterval)
+      clearInterval(reminderInterval)
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', handleVisibilityChange)
+      }
       window.removeEventListener('msm:sync-event', handleSyncEvent)
     }
   }, [isAuthenticated, user?.id, user?.device_notifications])

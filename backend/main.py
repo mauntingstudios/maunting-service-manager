@@ -7,10 +7,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
-from starlette.datastructures import Headers
+from starlette.datastructures import Headers, MutableHeaders
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.responses import Response
-from starlette.types import Scope
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from limits import parse
 from slowapi.errors import RateLimitExceeded
@@ -469,12 +469,24 @@ def _csp_connect_src() -> str:
 # eine leere Seite haette man leicht fuer einen Serverfehler gehalten.
 _API_DOCS_PATHS = frozenset({"/api/swagger", "/api/redoc"})
 _DOCS_CDN = "https://cdn.jsdelivr.net"
+_CSP_CACHE: dict[tuple[bool, str, tuple[str, ...]], str] = {}
 
 
-@app.middleware("http")
-async def security_headers_middleware(request: Request, call_next):
-    response = await call_next(request)
-    docs_page = request.url.path in _API_DOCS_PATHS
+def _current_livekit_csp_origin() -> str:
+    try:
+        from services.livekit_service import csp_origin as _livekit_csp_origin
+
+        return _livekit_csp_origin()
+    except Exception:
+        return ""
+
+
+def _build_csp(*, docs_page: bool) -> str:
+    livekit = _current_livekit_csp_origin()
+    cache_key = (docs_page, livekit, tuple(_cors_origins))
+    cached = _CSP_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
     csp = (
         "default-src 'self'; "
         f"script-src 'self' 'wasm-unsafe-eval'{' ' + _DOCS_CDN if docs_page else ''} https://challenges.cloudflare.com https://hcaptcha.com https://*.hcaptcha.com https://www.google.com/recaptcha/ https://www.gstatic.com/recaptcha/ https://singrabot.mauntingstudios.de https://client.crisp.chat https://embed.tawk.to; "
@@ -487,50 +499,63 @@ async def security_headers_middleware(request: Request, call_next):
         "base-uri 'self'; "
         "form-action 'self';"
     )
-    response.headers["Content-Security-Policy"] = csp
-    response.headers["X-Content-Type-Options"] = "nosniff"
-    response.headers["X-Frame-Options"] = "DENY"
-    # `setdefault` und nicht Zuweisung — wie zwei Zeilen tiefer bei
-    # `Cache-Control`, und aus demselben Grund. Es gibt Endpunkte, deren Pfad
-    # **selbst** das Geheimnis ist: der Hoster-Handoff und die KI-Freigabe
-    # tragen ein Einmal-Token in der URL. Beide setzen deshalb ausdruecklich
-    # `no-referrer`, damit das Token nicht im `Referer` jeder nachgeladenen
-    # Ressource landet — und beide wurden hier bis eben wieder auf die
-    # allgemeine, laxere Regel zurueckgesetzt. Der strengere Wert des Handlers
-    # gewinnt jetzt; wo keiner gesetzt ist, gilt weiterhin die Vorgabe.
-    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    if len(_CSP_CACHE) > 16:
+        _CSP_CACHE.clear()
+    _CSP_CACHE[cache_key] = csp
+    return csp
 
-    # ── Cache-Control ──
-    # /api/* und jeder Fehler → `no-store`, sofern die Route nichts Eigenes
-    # setzt (das Bild der Regionsanalyse etwa `private, max-age=900`). Bis
-    # 09/2026 fiel beides unter die Tagesregel ganz unten: `/api/auth/me`, jede
-    # 401 — und `public` erlaubt ausgerechnet geteilten Caches, die Antwort auf
-    # eine angemeldete Anfrage anderen auszuliefern (RFC 9111 §3.5). `no-store`
-    # statt `private, no-cache`: Die API liefert kein ETag, eine Nachfrage
-    # spart also nichts, und so bleibt auch die Platte des Browsers leer.
-    # /assets/* → 1 Jahr immutable (Vite hasht den Inhalt in den Namen). Ein
-    # 404 dort nicht: Nach einem Zurückrollen gibt es den Chunk wieder.
-    # HTML → kein Cache, erkannt auch am Inhaltstyp, damit ein SPA-Fallback
-    # unter `/ai` genauso nachfragt wie `/`.
-    # Alles andere (Icons, Fonts, etc.) → 1 Tag
-    path = request.url.path
-    html = (
-        path == "/"
-        or path.endswith(".html")
-        or response.headers.get("content-type", "").startswith("text/html")
-    )
-    if path.startswith("/api/") or response.status_code >= 400:
-        response.headers.setdefault("Cache-Control", "no-store")
-    elif path.startswith("/assets/"):
-        response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
-    elif html:
-        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
-        response.headers["Pragma"] = "no-cache"
-        response.headers["Expires"] = "0"
-    else:
-        response.headers.setdefault("Cache-Control", "public, max-age=86400")
 
-    return response
+class SecurityHeadersMiddleware:
+    """Reine ASGI-Middleware für Security-Header, CSP und Cache-Control.
+
+    Vermeidet BaseHTTPMiddleware-Overhead und Buffering bei StreamingResponse (SSE).
+    """
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        path = scope.get("path") or ""
+        docs_page = path in _API_DOCS_PATHS
+
+        async def send_with_headers(message: Message) -> None:
+            if message["type"] == "http.response.start":
+                status_code = int(message.get("status", 200))
+                headers = MutableHeaders(raw=message["headers"])
+                headers["Content-Security-Policy"] = _build_csp(docs_page=docs_page)
+                headers["X-Content-Type-Options"] = "nosniff"
+                headers["X-Frame-Options"] = "DENY"
+                # `setdefault` und nicht Zuweisung — wie bei `Cache-Control`, und aus
+                # demselben Grund: Endpunkte mit Token in der URL setzen ausdruecklich
+                # `no-referrer`, damit nichts im `Referer` landet.
+                headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+
+                content_type = headers.get("content-type", "")
+                html = (
+                    path == "/"
+                    or path.endswith(".html")
+                    or content_type.startswith("text/html")
+                )
+                if path.startswith("/api/") or status_code >= 400:
+                    headers.setdefault("Cache-Control", "no-store")
+                elif path.startswith("/assets/"):
+                    headers["Cache-Control"] = "public, max-age=31536000, immutable"
+                elif html:
+                    headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+                    headers["Pragma"] = "no-cache"
+                    headers["Expires"] = "0"
+                else:
+                    headers.setdefault("Cache-Control", "public, max-age=86400")
+            await send(message)
+
+        await self.app(scope, receive, send_with_headers)
+
+
+app.add_middleware(SecurityHeadersMiddleware)
 
 
 # Router

@@ -54,27 +54,17 @@ def public_support_widget() -> dict:
     return public_widget_config()
 
 
-def _check_docker() -> dict:
-    """Prüft die Erreichbarkeit von Docker auf allen Nodes oder lokal."""
-    try:
-        db = SessionLocal()
-        try:
-            from models import Node
-            nodes = db.query(Node).all()
-            if nodes:
-                total_nodes = len(nodes)
-                online_nodes = sum(1 for n in nodes if n.status == "online")
-                if online_nodes == total_nodes:
-                    return {"status": "ok", "detail": f"{online_nodes}/{total_nodes} online"}
-                elif online_nodes == 0:
-                    return {"status": "error", "detail": f"0/{total_nodes} online"}
-                else:
-                    return {"status": "degraded", "detail": f"{online_nodes}/{total_nodes} online"}
-        finally:
-            db.close()
-    except Exception:
-        pass
+_CADDY_CACHE_TTL_SECONDS = 300.0
+_caddy_cache: tuple[float, dict] | None = None
 
+
+def reset_caddy_cache_for_tests() -> None:
+    global _caddy_cache
+    _caddy_cache = None
+
+
+def _check_docker_local() -> dict:
+    """Prüft die lokale Docker-Verfügbarkeit via `docker info`."""
     try:
         result = subprocess.run(
             ["docker", "info", "--format", "{{.ServerVersion}}"],
@@ -94,8 +84,32 @@ def _check_docker() -> dict:
         return {"status": "error", "detail": str(exc)[:120]}
 
 
+def _check_docker(db: Session | None = None) -> dict:
+    """Prüft die Erreichbarkeit von Docker auf allen Nodes oder lokal."""
+    if db is not None:
+        try:
+            from models import Node
+
+            nodes = db.query(Node).all()
+            if nodes:
+                total_nodes = len(nodes)
+                online_nodes = sum(1 for n in nodes if n.status == "online")
+                if online_nodes == total_nodes:
+                    return {"status": "ok", "detail": f"{online_nodes}/{total_nodes} online"}
+                if online_nodes == 0:
+                    return {"status": "error", "detail": f"0/{total_nodes} online"}
+                return {"status": "degraded", "detail": f"{online_nodes}/{total_nodes} online"}
+        except Exception:
+            pass
+    return _check_docker_local()
+
+
 def _check_caddy() -> dict:
-    """Prüft ob Caddy installiert ist (kein laufender Prozess nötig — nur Verfügbarkeit)."""
+    """Prüft ob Caddy installiert ist (5-Minuten-TTL-Cache statt Subprozess je Poll)."""
+    global _caddy_cache
+    now = time.monotonic()
+    if _caddy_cache is not None and (now - _caddy_cache[0]) < _CADDY_CACHE_TTL_SECONDS:
+        return dict(_caddy_cache[1])
     try:
         result = subprocess.run(
             ["caddy", "version"],
@@ -105,25 +119,34 @@ def _check_caddy() -> dict:
         )
         if result.returncode == 0:
             version = result.stdout.strip()[:40] or "unknown"
-            return {"status": "ok", "detail": version}
-        return {"status": "error", "detail": result.stderr.strip()[:120] or "caddy version failed"}
+            res = {"status": "ok", "detail": version}
+        else:
+            res = {"status": "error", "detail": result.stderr.strip()[:120] or "caddy version failed"}
     except FileNotFoundError:
-        return {"status": "degraded", "detail": "caddy not found (optional)"}
+        res = {"status": "degraded", "detail": "caddy not found (optional)"}
     except subprocess.TimeoutExpired:
-        return {"status": "error", "detail": "caddy version timed out"}
+        res = {"status": "error", "detail": "caddy version timed out"}
     except Exception as exc:
-        return {"status": "error", "detail": str(exc)[:120]}
+        res = {"status": "error", "detail": str(exc)[:120]}
+    _caddy_cache = (now, res)
+    return dict(res)
 
 
-def _check_database() -> dict:
+def _check_database(db: Session | None = None) -> dict:
     """Prüft ob die Datenbankverbindung funktioniert."""
-    try:
-        db = SessionLocal()
+    if db is not None:
         try:
             db.execute(text("SELECT 1"))
             return {"status": "ok", "detail": "reachable"}
+        except Exception as exc:
+            return {"status": "error", "detail": str(exc)[:120]}
+    try:
+        own_db = SessionLocal()
+        try:
+            own_db.execute(text("SELECT 1"))
+            return {"status": "ok", "detail": "reachable"}
         finally:
-            db.close()
+            own_db.close()
     except Exception as exc:
         return {"status": "error", "detail": str(exc)[:120]}
 
@@ -286,24 +309,42 @@ def system_version(user: User | None = Depends(get_optional_user)) -> dict:
 
 
 @router.get("/health")
-async def system_health(user: User = Depends(get_current_user)) -> dict:
+async def system_health(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict:
     """Prüft die Verfügbarkeit der kritischen Infrastrukturkomponenten.
 
-    Alle Checks laufen parallel (asyncio.to_thread). Das Ergebnis ist ein
-    Objekt pro Service sowie ein aggregierter ``overall``-Status:
-    - ``ok``       — alle Pflicht-Services erreichbar
-    - ``degraded`` — mindestens ein optionaler Service fehlt (z.B. Caddy)
-    - ``error``    — mindestens ein Pflicht-Service nicht erreichbar
-
-    Sicherheit: kein Secret, keine internen Pfade im Response-Objekt.
+    Nutzt die bereits offene Request-Session statt zwei zusätzlicher
+    `SessionLocal()`-Verbindungen und cacht `caddy version` (5 min TTL).
     """
     t0 = time.monotonic()
 
-    docker_res, caddy_res, db_res = await asyncio.gather(
-        asyncio.to_thread(_check_docker),
-        asyncio.to_thread(_check_caddy),
-        asyncio.to_thread(_check_database),
-    )
+    db_res = _check_database(db)
+    docker_res: dict | None = None
+    try:
+        from models import Node
+
+        nodes = db.query(Node).all()
+        if nodes:
+            total_nodes = len(nodes)
+            online_nodes = sum(1 for n in nodes if n.status == "online")
+            if online_nodes == total_nodes:
+                docker_res = {"status": "ok", "detail": f"{online_nodes}/{total_nodes} online"}
+            elif online_nodes == 0:
+                docker_res = {"status": "error", "detail": f"0/{total_nodes} online"}
+            else:
+                docker_res = {"status": "degraded", "detail": f"{online_nodes}/{total_nodes} online"}
+    except Exception:
+        docker_res = None
+
+    if docker_res is None:
+        docker_res, caddy_res = await asyncio.gather(
+            asyncio.to_thread(_check_docker_local),
+            asyncio.to_thread(_check_caddy),
+        )
+    else:
+        caddy_res = await asyncio.to_thread(_check_caddy)
 
     services = {
         "docker": docker_res,

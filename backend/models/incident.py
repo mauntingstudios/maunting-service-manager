@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 import uuid as uuid_module
 
-from sqlalchemy import Integer, String, Text, DateTime, ForeignKey
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from database import Base
@@ -9,6 +9,14 @@ from database import Base
 
 class Incident(Base):
     __tablename__ = "incidents"
+    __table_args__ = (
+        Index(
+            "ix_incidents_server_open_created",
+            "server_id",
+            text("created_at DESC"),
+            postgresql_where=text("status <> 'resolved'"),
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     uuid: Mapped[str] = mapped_column(

@@ -13,6 +13,7 @@
 
 import type { ChatMessage } from '@/components/social/ChatMessageBubble'
 import { leereSuchspeicher } from './verlaufSuche'
+import { registerSessionCleanup } from '@/stores/sessionCleanupRegistry'
 
 /** Die letzten Nachrichten je Mailbox, für den sofortigen Chatwechsel. */
 export const sessionChatCache = new Map<string, ChatMessage[]>()
@@ -35,3 +36,4 @@ export function leereKlartextSpeicher(): void {
   leereSuchspeicher()
   for (const leere of beimLeeren) leere()
 }
+registerSessionCleanup(leereKlartextSpeicher)

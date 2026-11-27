@@ -161,6 +161,8 @@ def allowed_ports() -> set[tuple[int, str]] | None:
             result.add((port, protocol))
         else:
             result.update({(port, "tcp"), (port, "udp")})
+    if not result and "Status: active" not in status.stdout:
+        return None
     return result
 
 
@@ -297,8 +299,11 @@ def close_ports(
         from services.node_client import NodeClient
 
         try:
-            NodeClient.from_node(node).firewall_update("close", name, game_port)
-            deleted_any = True
+            res = NodeClient.from_node(node).firewall_update("close", name, game_port)
+            if isinstance(res, dict) and "deleted" in res:
+                deleted_any = bool(res["deleted"])
+            else:
+                deleted_any = True
         except Exception as exc:
             logger.warning("Remote firewall update 'close' failed (non-critical): %s", exc)
             deleted_any = False
@@ -371,7 +376,7 @@ def reconcile_firewall_rules(db) -> int:
     try:
         non_running = (
             db.query(Server)
-            .options(selectinload(Server.ports))
+            .options(selectinload(Server.ports), selectinload(Server.node))
             .filter(
                 Server.status.not_in(tuple(_FIREWALL_KEEP_OPEN_STATUSES)),
                 Server.desired_power_state != "running",
@@ -382,18 +387,43 @@ def reconcile_firewall_rules(db) -> int:
         logger.warning("Fehler beim Abfragen nicht-laufender Server fuer Firewall-Reconciliation: %s", exc)
         return 0
 
-    reconciled = 0
+    candidates: list[tuple[Any, list[tuple[int, str, str]], bool]] = []
     for srv in non_running:
+        ports_list = _ports(srv)
+        if not ports_list:
+            # Ohne Ports gibt es nichts zu schließen — vermeidet auch UFW-Aufruf.
+            continue
+        is_local = getattr(srv, "node", None) is None or getattr(srv.node, "is_local", True)
+        candidates.append((srv, ports_list, is_local))
+
+    if not candidates:
+        return 0
+
+    has_local = any(is_local for _, _, is_local in candidates)
+    open_local_ports: set[tuple[int, str]] | None = allowed_ports() if has_local else None
+    local_ufw_fallback = has_local and open_local_ports is None and _ufw_available()
+
+    reconciled = 0
+    for srv, ports_list, is_local in candidates:
         try:
-            ports_list = _ports(srv)
-            if not ports_list:
-                # Ohne Ports gibt es nichts zu schließen. Der Aufruf hätte nur
-                # einen ``ufw --version``-Unterprozess gekostet und alle 30
-                # Sekunden eine Audit-Zeile über nichts geschrieben.
-                continue
+            if is_local:
+                if open_local_ports is not None:
+                    ports_to_close = [
+                        (port, proto, role)
+                        for port, proto, role in ports_list
+                        if port and (port, proto) in open_local_ports
+                    ]
+                    if not ports_to_close:
+                        continue
+                elif local_ufw_fallback:
+                    ports_to_close = ports_list
+                else:
+                    continue
+            else:
+                ports_to_close = ports_list
 
             if close_ports(
-                ports_list,
+                ports_to_close,
                 node=srv.node,
                 name=srv.name,
                 db=db,
@@ -401,8 +431,8 @@ def reconcile_firewall_rules(db) -> int:
                 reason="Audit-Reconciliation: Veraltete Ports für gestoppten Server geschlossen",
             ):
                 reconciled += 1
-        except Exception as exc:
-            logger.warning("Fehler bei Firewall-Reconciliation für Server %s: %s", srv.id, exc)
+        except Exception:
+            logger.warning("Fehler bei Firewall-Reconciliation für Server %s", srv.id)
 
     return reconciled
 

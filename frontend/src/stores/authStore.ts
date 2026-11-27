@@ -10,16 +10,8 @@ import { useNodeStore } from '@/stores/nodeStore'
 import { useToastStore } from '@/stores/toastStore'
 import { useConfirmStore } from '@/stores/confirmStore'
 import { usePromptStore } from '@/stores/promptStore'
-import { useDocsStore } from '@/docs/docsStore'
 import { clearSqlConsoleHistory } from '@/lib/sqlConsoleStorage'
-import { useVaultStore } from '@/desktop/vault/vaultStore'
-import { clearMemoryKeyStore } from '@/services/e2eeCrypto'
-import { setzeInhaltsSchluessel } from '@/services/lokaleVersiegelung'
-import { clearGeraeteMemory } from '@/services/e2eeGeraet'
-import { clearNotesKeyCache } from '@/services/notesCalendarCrypto'
-import { leereGruppenNamen } from '@/services/gruppenName'
-import { leereGespraeche } from '@/services/gespraechsListe'
-import { leereKlartextSpeicher } from '@/services/klartextSpeicher'
+import { runSessionCleanups } from '@/stores/sessionCleanupRegistry'
 import { kuendige } from '@/services/pushAbo'
 import {
   hydrateUiPreferencesFromUser,
@@ -137,7 +129,7 @@ hydrateUiPreferencesFromUser(initialCachedUser)
 
 export const useAuthStore = create<AuthState>((set, get) => ({
   user: initialCachedUser,
-  isLoading: true,
+  isLoading: !Boolean(initialCachedUser),
   isAuthenticated: Boolean(initialCachedUser),
 
   setUser: (user) => {
@@ -189,41 +181,20 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     clearSqlConsoleHistory()
     useRolePreviewStore.getState().stopPreview()
     usePermissionsStore.getState().reset()
-    // Tresor sperren und alle Klartext-Einträge sowie CryptoKeys aus dem RAM entfernen (SEC-05)
-    useVaultStore.getState().lock()
-    // E2EE In-Memory-Schlüssel aus dem RAM leeren. Der Schlüsselbund in der
-    // IndexedDB bleibt wie bisher liegen — er ist an das Gerät gebunden, nicht
-    // an die Sitzung, und ein erneutes Anmelden soll nicht wieder nach dem
-    // Wiederherstellungsschlüssel fragen.
-    clearMemoryKeyStore()
-    setzeInhaltsSchluessel(null)
+    // Tresor, Docs, E2EE & Messenger-Caches über die Registry leeren, ohne
+    // schwere Feature-Module statisch ins Startbündel zu ziehen (SEC-05).
+    runSessionCleanups()
     void import('@/services/chatKrypto').then((m) => m.leereChatSchluesselCache()).catch(() => {})
     void import('@/services/messengerSocket').then((m) => m.messengerSocket.disconnect()).catch(() => {})
-    clearGeraeteMemory()
-    clearNotesKeyCache()
-    // Die Gruppennamen. Sie liegen versiegelt, aber sie liegen da — und wie
-    // eine Gruppe heisst, sagt ueber ihren Besitzer oft mehr als jede einzelne
-    // Nachricht darin. Der naechste Mensch an diesem Geraet erbt sie nicht.
-    leereGruppenNamen()
-    // Und die Gespraechsliste. Seit Stufe 6b fuehrt sie der Client, weil der
-    // Server nicht mehr wissen soll, wer mit wem schreibt — dann darf sie auch
-    // keinen Abmeldevorgang ueberleben.
-    leereGespraeche()
     // Dasselbe fuer die Push-Adresse. Die Zeilen im Panel raeumt `logout()`
     // weg, solange die Sitzung noch gilt; hier faellt nur der gemerkte Stand,
     // damit der naechste Anmelder nicht auf eine Meldung wartet, die diese
     // Datei fuer laengst abgeschickt haelt.
-    // Entschlüsselte Verläufe, Anhänge und die Suche darüber. Sie lagen bis
-    // 09/2026 nach dem Abmelden bis zum Neuladen des Tabs im Speicher.
-    leereKlartextSpeicher()
+    void kuendige().catch(() => {})
     // Die Knotenliste hält Name, Adresse und Port des Agenten sowie den
     // TLS-Fingerabdruck. Ohne dieses clear() bliebe sie bis zum nächsten
     // Neuladen der Seite im Speicher des Tabs liegen.
     useNodeStore.getState().clear()
-    // Die offene Dokumentauswahl enthält Text aus dem Dokument und die
-    // Dialogzustände des vorigen Kontos. Sie liegt nur im Speicher, muss aber
-    // beim Sitzungsende genauso fallen wie die Knotenliste.
-    useDocsStore.getState().zuruecksetzen()
     useToastStore.getState().clearAll()
     // Toasts, Bestätigungs- und Eingabedialoge hängen am Wurzelelement und
     // überleben den Sprung zur Anmeldeseite. Ein offener Dialog zeigte dort
@@ -265,9 +236,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   checkAuth: async () => {
     const stand = raeumungen
-    set({ isLoading: true })
+    if (!get().user) {
+      set({ isLoading: true })
+    }
     try {
-      const user = await api<User>('/auth/me')
+      const user = await api<User>('/auth/me', { timeoutMs: 8_000 })
       // Ist die Sitzung während der Abfrage geräumt worden, gehört ihre
       // Antwort nicht mehr in den Speicher — sie beschriebe ihn sonst neu.
       if (stand !== raeumungen) return

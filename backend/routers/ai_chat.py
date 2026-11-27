@@ -15,6 +15,7 @@ Tastendruck abzubrechen. Wer eingreifen will, tut es ausdruecklich: die
 Oberflaeche bricht den Auftrag ab und wechselt in den Dauerchat.
 """
 
+import asyncio
 import json
 from collections.abc import AsyncIterator
 
@@ -22,8 +23,9 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, R
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
+import database
 from database import get_db
-from dependencies import require_global, session_familie, session_herkunft, verify_csrf
+from dependencies import get_current_user, require_global, session_familie, session_herkunft, verify_csrf
 from models import AiConversation, AiMessage, AiProvider, User
 from models.ai_conversation import ARTEN
 from models.dis_text import vorab_entschluesselt
@@ -55,6 +57,7 @@ from services import (
     ai_run_service,
     ai_usage_service,
     drain_service,
+    permission_service,
 )
 from services.ai_redaction import redact_sensitive_text
 # Das Fenster auf einen Lauf kommt vom Vermittler, die Arbeit von der Schleife.
@@ -838,11 +841,22 @@ def stop_active_run(
     return {"ok": True, "stopped": True}
 
 
+def _resolve_run_stream(request: Request, run_id: str) -> str:
+    """Prüft Berechtigung und Eigentümerschaft eines Laufs in einer kurzlebigen DB-Session."""
+    with database.SessionLocal() as db:
+        user = get_current_user(request=request, db=db)
+        if not permission_service.has_global_permission(db, user, "ai.chat.use"):
+            raise HTTPException(status_code=403, detail="Keine Berechtigung")
+        run = ai_run_service.eigener_lauf(db, run_id, user)
+        if run is None:
+            raise HTTPException(status_code=404, detail="Lauf nicht gefunden")
+        return run.id
+
+
 @router.get("/run/{run_id}/stream")
-def attach_run(
+async def attach_run(
     run_id: str,
-    db: Session = Depends(get_db),
-    user: User = Depends(require_global("ai.chat.use")),
+    request: Request,
 ) -> StreamingResponse:
     """Haengt sich an einen laufenden Lauf an — auch Minuten spaeter.
 
@@ -850,11 +864,9 @@ def attach_run(
     veraendert. Die Zugehoerigkeit wird ueber ``eigener_lauf`` geprueft, ein
     fremder Lauf ist schlicht nicht zu finden.
     """
-    run = ai_run_service.eigener_lauf(db, run_id, user)
-    if run is None:
-        raise HTTPException(status_code=404, detail="Lauf nicht gefunden")
+    resolved_run_id = await asyncio.to_thread(_resolve_run_stream, request, run_id)
     return StreamingResponse(
-        lauf_verfolgen(run.id),
+        lauf_verfolgen(resolved_run_id),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
     )
@@ -865,172 +877,179 @@ async def stream_message(
     payload: AiChatRequest,
     request: Request,
     background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db),
-    user: User = Depends(require_global("ai.chat.use")),
     herkunft: str = Depends(session_herkunft),
     familie: str | None = Depends(session_familie),
-    _: None = Depends(verify_csrf),
 ) -> StreamingResponse:
-    provider = db.get(AiProvider, payload.provider_id)
-    if provider is None or not provider.enabled or not _fuer_chat(provider):
-        raise HTTPException(status_code=404, detail="Provider nicht gefunden")
-    if provider.requires_api_key and not provider.operator_api_key_encrypted:
-        raise HTTPException(status_code=409, detail="Fuer diesen Provider ist kein API-Key konfiguriert")
+    # Auth, Berechtigung und Setup laufen vollstaendig in einer kurzlebigen
+    # Session, die vor `StreamingResponse` geschlossen wird (kein DB-Leak).
+    with database.SessionLocal() as db:
+        user = get_current_user(request=request, db=db)
+        if not permission_service.has_global_permission(db, user, "ai.chat.use"):
+            raise HTTPException(status_code=403, detail="Keine Berechtigung")
+        verify_csrf(request=request, db=db)
 
-    effective_limits = ai_limit_service.resolve_effective_limits(db, user)
-    is_router = ai_router_service.is_router_provider(provider)
-    if effective_limits.router_only and not is_router:
-        raise HTTPException(status_code=403, detail="AI_ROUTER_ONLY_REQUIRED")
+        provider = db.get(AiProvider, payload.provider_id)
+        if provider is None or not provider.enabled or not _fuer_chat(provider):
+            raise HTTPException(status_code=404, detail="Provider nicht gefunden")
+        if provider.requires_api_key and not provider.operator_api_key_encrypted:
+            raise HTTPException(status_code=409, detail="Fuer diesen Provider ist kein API-Key konfiguriert")
 
-    # Rollenbasierte Provider- und Modellfreigaben strikt durchsetzen (Fail-closed)
-    effective_allowed = ai_limit_service.resolve_effective_allowed_models(db, user)
-    if effective_allowed is not None and not (effective_limits.router_only and is_router):
-        if provider.id not in effective_allowed:
-            raise HTTPException(status_code=403, detail="AI_PROVIDER_NOT_PERMITTED_FOR_ROLE")
-        allowed_models = effective_allowed[provider.id]
-        candidate_model = (payload.model or "").strip() or (provider.default_model or "").strip()
-        if "*" not in allowed_models and candidate_model not in allowed_models:
-            raise HTTPException(status_code=403, detail="AI_MODEL_NOT_PERMITTED_FOR_ROLE")
+        effective_limits = ai_limit_service.resolve_effective_limits(db, user)
+        is_router = ai_router_service.is_router_provider(provider)
+        if effective_limits.router_only and not is_router:
+            raise HTTPException(status_code=403, detail="AI_ROUTER_ONLY_REQUIRED")
 
-    existing = db.query(AiMessage).filter(AiMessage.request_id == str(payload.request_id)).first()
-    if existing is not None:
-        if payload.conversation_id and existing.conversation_id != payload.conversation_id:
-            raise HTTPException(status_code=409, detail="AI-Request-ID wurde widerspruechlich wiederverwendet")
-        if existing.provider_id != provider.id and not (is_router and existing.routed_model):
-            raise HTTPException(status_code=409, detail="AI-Request-ID wurde widerspruechlich wiederverwendet")
-        if existing.status == "complete":
-            conversation = db.get(AiConversation, existing.conversation_id)
-            if conversation is None:
-                raise HTTPException(status_code=404, detail="Unterhaltung nicht gefunden")
-            snapshot = _snapshot_message(existing)
-            return StreamingResponse(
-                _replay_message(snapshot),
-                media_type="text/event-stream",
-                headers={
-                    "Cache-Control": "no-store",
-                    "X-Accel-Buffering": "no",
-                    "X-Conversation-Id": conversation.id,
-                    "Access-Control-Expose-Headers": "X-Conversation-Id",
-                },
+        # Rollenbasierte Provider- und Modellfreigaben strikt durchsetzen (Fail-closed)
+        effective_allowed = ai_limit_service.resolve_effective_allowed_models(db, user)
+        if effective_allowed is not None and not (effective_limits.router_only and is_router):
+            if provider.id not in effective_allowed:
+                raise HTTPException(status_code=403, detail="AI_PROVIDER_NOT_PERMITTED_FOR_ROLE")
+            allowed_models = effective_allowed[provider.id]
+            candidate_model = (payload.model or "").strip() or (provider.default_model or "").strip()
+            if "*" not in allowed_models and candidate_model not in allowed_models:
+                raise HTTPException(status_code=403, detail="AI_MODEL_NOT_PERMITTED_FOR_ROLE")
+
+        existing = db.query(AiMessage).filter(AiMessage.request_id == str(payload.request_id)).first()
+        if existing is not None:
+            if payload.conversation_id and existing.conversation_id != payload.conversation_id:
+                raise HTTPException(status_code=409, detail="AI-Request-ID wurde widerspruechlich wiederverwendet")
+            if existing.provider_id != provider.id and not (is_router and existing.routed_model):
+                raise HTTPException(status_code=409, detail="AI-Request-ID wurde widerspruechlich wiederverwendet")
+            if existing.status == "complete":
+                conversation = db.get(AiConversation, existing.conversation_id)
+                if conversation is None:
+                    raise HTTPException(status_code=404, detail="Unterhaltung nicht gefunden")
+                snapshot = _snapshot_message(existing)
+                conv_id = conversation.id
+                return StreamingResponse(
+                    _replay_message(snapshot),
+                    media_type="text/event-stream",
+                    headers={
+                        "Cache-Control": "no-store",
+                        "X-Accel-Buffering": "no",
+                        "X-Conversation-Id": conv_id,
+                        "Access-Control-Expose-Headers": "X-Conversation-Id",
+                    },
+                )
+            else:
+                raise HTTPException(status_code=409, detail="AI-Anfrage ist bereits aktiv oder fehlgeschlagen")
+
+        drain_service.require_not_draining()
+
+        conversation = None
+        if payload.conversation_id:
+            conversation = ai_chat_service.get_owned_conversation(
+                db, payload.conversation_id, user
             )
-        else:
-            raise HTTPException(status_code=409, detail="AI-Anfrage ist bereits aktiv oder fehlgeschlagen")
+            if conversation is not None and conversation.kind != "primary":
+                conversation = None
 
-    drain_service.require_not_draining()
+        if conversation is None:
+            conversation = ai_chat_service.create_user_conversation(
+                db, user, project_id=payload.project_id
+            )
+        if payload.project_id and not conversation.project_id:
+            conversation.project_id = payload.project_id
 
-    conversation = None
-    if payload.conversation_id:
-        conversation = ai_chat_service.get_owned_conversation(
-            db, payload.conversation_id, user
+        # Automatischer Titel beim ersten Zug oder bei generischem Vor-Titel
+        raw_content = payload.content.strip()
+        is_generic_title = (
+            conversation.title in ai_chat_service.GENERIC_TITLES
+            or conversation.title.endswith(" Chat")
+            or not conversation.title
         )
-        if conversation is not None and conversation.kind != "primary":
-            conversation = None
+        if is_generic_title and raw_content:
+            # 1. Sofort-Heuristik (synchron): Bereinigt von Floskeln, sauber lesbar
+            conversation.title = ai_chat_service.clean_heuristic_title(raw_content)
+        docs_document_uid: str | None = None
+        docs_team_id: int | None = None
+        docs_is_link_guest: bool = False
+        if payload.document_uid:
+            from services.ai_docs_chat_scope import resolve as docs_scope
 
-    if conversation is None:
-        conversation = ai_chat_service.create_user_conversation(
-            db, user, project_id=payload.project_id
+            scope_res = docs_scope(db, user, payload.document_uid)
+            conversation = scope_res.conversation
+            docs_document_uid = scope_res.document.doc_uid
+            docs_team_id = scope_res.team_id
+            docs_is_link_guest = scope_res.is_link_guest
+        db.commit()
+
+        safe_content = redact_sensitive_text(payload.content).strip()
+        has_unbound_attachments = ai_attachment_service.has_unbound(
+            db, conversation.id, user.id
         )
-    if payload.project_id and not conversation.project_id:
-        conversation.project_id = payload.project_id
+        if not safe_content and not has_unbound_attachments:
+            raise HTTPException(status_code=400, detail="Nachricht ist nach Sicherheitsfilter leer")
 
-    # Automatischer Titel beim ersten Zug oder bei generischem Vor-Titel
-    raw_content = payload.content.strip()
-    is_generic_title = (
-        conversation.title in ai_chat_service.GENERIC_TITLES
-        or conversation.title.endswith(" Chat")
-        or not conversation.title
-    )
-    if is_generic_title and raw_content:
-        # 1. Sofort-Heuristik (synchron): Bereinigt von Floskeln, sauber lesbar
-        conversation.title = ai_chat_service.clean_heuristic_title(raw_content)
-    docs_document_uid: str | None = None
-    docs_team_id: int | None = None
-    docs_is_link_guest: bool = False
-    if payload.document_uid:
-        from services.ai_docs_chat_scope import resolve as docs_scope
+        target_provider = provider
+        requested_model = _erlaubtes_wunschmodell(provider, payload.model)
+        routing_meta: dict | None = None
+        if is_router:
+            history_len = (
+                db.query(AiMessage.id)
+                .filter(AiMessage.conversation_id == conversation.id)
+                .count()
+            )
+            routed = ai_router_service.resolve_route_for_text(
+                db,
+                user=user,
+                text=safe_content,
+                has_images=has_unbound_attachments,
+                reasoning=payload.reasoning,
+                history_len=history_len,
+            )
+            if routed is None:
+                raise HTTPException(status_code=503, detail="AI_ROUTER_NO_AVAILABLE_MODEL")
+            target_provider, requested_model, routing_meta = routed
 
-        scope_res = docs_scope(db, user, payload.document_uid)
-        conversation = scope_res.conversation
-        docs_document_uid = scope_res.document.doc_uid
-        docs_team_id = scope_res.team_id
-        docs_is_link_guest = scope_res.is_link_guest
-    db.commit()
+        if is_generic_title and raw_content:
+            # 2. Asynchrone Verfeinerung durch das aufgelöste Zielmodell im Hintergrund
+            background_tasks.add_task(
+                ai_chat_service.generate_conversation_title_llm,
+                conversation.id,
+                raw_content,
+                target_provider.id,
+                requested_model,
+            )
 
-    safe_content = redact_sensitive_text(payload.content).strip()
-    has_unbound_attachments = ai_attachment_service.has_unbound(
-        db, conversation.id, user.id
-    )
-    if not safe_content and not has_unbound_attachments:
-        raise HTTPException(status_code=400, detail="Nachricht ist nach Sicherheitsfilter leer")
-
-    target_provider = provider
-    requested_model = _erlaubtes_wunschmodell(provider, payload.model)
-    routing_meta: dict | None = None
-    if is_router:
-        history_len = (
-            db.query(AiMessage.id)
-            .filter(AiMessage.conversation_id == conversation.id)
-            .count()
-        )
-        routed = ai_router_service.resolve_route_for_text(
+        # Die Denkvorgabe wird **hier** festgelegt und nicht erst beim Senden:
+        # der Anlauf kennt keinen HTTP-Client, der Modellkatalog ist aber ein
+        # HTTP-Abruf. Wichtiger noch — der geklemmte Wert gehoert in den Lauf,
+        # damit eine Fortsetzung nach einer Bestaetigung dieselbe Tiefe
+        # verwendet wie der erste Zug.
+        denken, stufe = await ai_reasoning.vorgabe(
+            request.app.state.ai_http_client,
             db,
             user=user,
-            text=safe_content,
-            has_images=has_unbound_attachments,
-            reasoning=payload.reasoning,
-            history_len=history_len,
+            provider=target_provider,
+            aktiv=payload.reasoning,
+            wunsch=payload.reasoning_effort,
+            model_id=requested_model,
         )
-        if routed is None:
-            raise HTTPException(status_code=503, detail="AI_ROUTER_NO_AVAILABLE_MODEL")
-        target_provider, requested_model, routing_meta = routed
-
-    if is_generic_title and raw_content:
-        # 2. Asynchrone Verfeinerung durch das aufgelöste Zielmodell im Hintergrund
-        background_tasks.add_task(
-            ai_chat_service.generate_conversation_title_llm,
-            conversation.id,
-            raw_content,
-            target_provider.id,
-            requested_model,
+        # Aus demselben Grund hier und nicht im Anlauf: das Kontextfenster steht
+        # im Modellkatalog, und den zu befragen ist ein HTTP-Abruf. Es gehoert
+        # ausserdem in den Lauf — eine Fortsetzung nach einer Bestaetigung muss
+        # mit demselben Budget rechnen wie der erste Zug, auch wenn der
+        # Betreiber zwischendurch das Modell wechselt.
+        fenster = await ai_context_window.ermitteln(
+            request.app.state.ai_http_client,
+            target_provider,
+            db=db,
+            user_id=user.id,
+            model_id=requested_model,
         )
-
-    # Die Denkvorgabe wird **hier** festgelegt und nicht erst beim Senden:
-    # der Anlauf kennt keinen HTTP-Client, der Modellkatalog ist aber ein
-    # HTTP-Abruf. Wichtiger noch — der geklemmte Wert gehoert in den Lauf,
-    # damit eine Fortsetzung nach einer Bestaetigung dieselbe Tiefe
-    # verwendet wie der erste Zug.
-    denken, stufe = await ai_reasoning.vorgabe(
-        request.app.state.ai_http_client,
-        db,
-        user=user,
-        provider=target_provider,
-        aktiv=payload.reasoning,
-        wunsch=payload.reasoning_effort,
-        model_id=requested_model,
-    )
-    # Aus demselben Grund hier und nicht im Anlauf: das Kontextfenster steht
-    # im Modellkatalog, und den zu befragen ist ein HTTP-Abruf. Es gehoert
-    # ausserdem in den Lauf — eine Fortsetzung nach einer Bestaetigung muss
-    # mit demselben Budget rechnen wie der erste Zug, auch wenn der
-    # Betreiber zwischendurch das Modell wechselt.
-    fenster = await ai_context_window.ermitteln(
-        request.app.state.ai_http_client,
-        target_provider,
-        db=db,
-        user_id=user.id,
-        model_id=requested_model,
-    )
-    # Ab hier reisen nur noch **Kennungen** weiter. Der Anlauf legt sich
-    # gleich eine eigene Sitzung in einem eigenen Thread an, und die des
-    # Requests darf diese Grenze nicht ueberschreiten — sie gehoert dem
-    # Request-Thread und wird von ihm geschlossen.
-    user_id, conversation_id, provider_id = user.id, conversation.id, target_provider.id
-    # Und sie darf auch keine offene Transaktion ueber die Grenze tragen.
-    # Die Sitzung im Thread saehe ungesicherte Arbeit dieser Sitzung nicht,
-    # und in der Testsuite teilen sich beide sogar eine Verbindung. Frueher
-    # endete `lauf_beginnen` selbst mit genau diesem Commit — es ist also
-    # derselbe Zeitpunkt wie bisher, nur eine Zeile frueher.
-    db.commit()
+        # Ab hier reisen nur noch **Kennungen** weiter. Der Anlauf legt sich
+        # gleich eine eigene Sitzung in einem eigenen Thread an, und die des
+        # Requests darf diese Grenze nicht ueberschreiten — sie gehoert dem
+        # Request-Thread und wird von ihm geschlossen.
+        user_id, conversation_id, provider_id = user.id, conversation.id, target_provider.id
+        conv_project_id = conversation.project_id
+        # Und sie darf auch keine offene Transaktion ueber die Grenze tragen.
+        # Die Sitzung im Thread saehe ungesicherte Arbeit dieser Sitzung nicht,
+        # und in der Testsuite teilen sich beide sogar eine Verbindung. Frueher
+        # endete `lauf_beginnen` selbst mit genau diesem Commit — es ist also
+        # derselbe Zeitpunkt wie bisher, nur eine Zeile frueher.
+        db.commit()
     run_id, fehler = await lauf_beginnen_nebenher(
         user_id=user_id,
         conversation_id=conversation_id,
@@ -1068,7 +1087,7 @@ async def stream_message(
             if payload.app_faehigkeiten is not None else None
         ),
         requested_model=requested_model,
-        project_id=payload.project_id or conversation.project_id,
+        project_id=payload.project_id or conv_project_id,
         routing_meta=routing_meta,
     )
     if run_id is None:
@@ -1102,7 +1121,7 @@ async def stream_message(
         headers={
             "Cache-Control": "no-store",
             "X-Accel-Buffering": "no",
-            "X-Conversation-Id": conversation.id,
+            "X-Conversation-Id": conversation_id,
             "Access-Control-Expose-Headers": "X-Conversation-Id",
         },
     )

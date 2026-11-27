@@ -1,4 +1,5 @@
 import os
+import asyncio
 import re
 from datetime import datetime
 from pathlib import Path
@@ -352,216 +353,221 @@ def _validate_external_shop_url(value: str) -> str:
     return url.rstrip("/")
 
 
+def _save_panel_settings_batch(
+    req: PanelSettingsUpdate,
+    *,
+    user_id: int,
+) -> tuple[dict[str, object], dict[str, str] | None]:
+    """Validiert, schreibt alle geänderten Einstellungen in einer Batch-Transaktion und prüft Localhost-Mail."""
+    import database
+    from services.auth_service import AuthService
+
+    with database.SessionLocal() as db:
+        user = db.get(User, user_id)
+        if user is None:
+            raise HTTPException(status_code=401, detail="User nicht gefunden")
+        data = req.model_dump(exclude_none=True)
+        updates: dict[str, str] = {}
+        for key, value in data.items():
+            if key in ("confirm_password", "confirm_otp_code", "confirm_passkey"):
+                continue
+            if key == "allow_localhost_connections":
+                target_val = bool(value)
+                current_val = PanelSettingsService.get("allow_localhost_connections", "false", db=db) == "true"
+                if target_val and not current_val:
+                    from services import passkey_service
+                    if user.two_factor_enabled or user.passkeys:
+                        confirmed = False
+                        if req.confirm_passkey is not None:
+                            try:
+                                passkey_service.bestaetigen(db, user, req.confirm_passkey, "localhost_connections")
+                                confirmed = True
+                            except passkey_service.PasskeyFehler as e:
+                                raise HTTPException(status_code=401, detail=str(e))
+                        elif req.confirm_otp_code:
+                            if user.two_factor_totp_aktiv and AuthService.verify_current_2fa_code(user, req.confirm_otp_code):
+                                confirmed = True
+                            else:
+                                raise HTTPException(status_code=401, detail="Der 2FA-Code ist ungültig oder abgelaufen.")
+                        if not confirmed:
+                            raise HTTPException(status_code=401, detail=passkey_service.nachweis_hinweis(user))
+                    elif user.has_password:
+                        if not req.confirm_password or not AuthService.verify_password(req.confirm_password, user.password_hash):
+                            raise HTTPException(status_code=401, detail="Bitte dein Passwort bestätigen.")
+                    else:
+                        if not user.email_verified:
+                            raise HTTPException(
+                                status_code=403,
+                                detail="Bitte bestätige zuerst deine E-Mail-Adresse, dann schicken wir dir einen Freigabe-Link.",
+                            )
+                        if not EmailService.is_configured():
+                            raise HTTPException(status_code=503, detail="E-Mail-Versand ist nicht eingerichtet.")
+                        token = PanelSettingsService.localhost_freigabe_anfordern(db, user.id)
+                        return data, {
+                            "email": user.email,
+                            "username": user.username,
+                            "token": token,
+                        }
+                updates["allow_localhost_connections"] = "true" if target_val else "false"
+                continue
+            if key == "time_format" and value not in ("24h", "12h"):
+                raise HTTPException(status_code=400, detail="Ungueltiges Zeitformat")
+            if key == "imprint_url":
+                value = _validate_imprint_url(str(value))
+            if key == "external_shop_url":
+                value = _validate_external_shop_url(str(value))
+            if key in (
+                "imprint_enabled",
+                "support_widget_enabled",
+                "updates_automatic",
+                "calendar_enabled",
+                "notes_enabled",
+                "docs_enabled",
+                "vault_enabled",
+                "social_enabled",
+                "shop_enabled",
+                "seasonal_enabled",
+                "desktop_app_download_enabled",
+                "browser_download_enabled",
+                "story_fable_download_enabled",
+                "captcha_enabled",
+            ):
+                value = "true" if bool(value) else "false"
+            if key in ("season_halloween_mode", "season_christmas_mode", "season_birthday_mode"):
+                mode = str(value).strip().lower()
+                if mode not in SEASON_MODES:
+                    raise HTTPException(status_code=400, detail="Ungueltiger Saison-Modus")
+                value = mode
+            if key in SEASON_WINDOW_DEFAULTS:
+                value = _validate_season_window(value)
+            if key == "captcha_provider":
+                mode = str(value).strip().lower()
+                if mode not in ("none", "altcha", "turnstile", "hcaptcha", "recaptcha"):
+                    raise HTTPException(status_code=400, detail="Ungueltiger CAPTCHA-Anbieter")
+                value = mode
+            if key == "support_widget_mode":
+                mode = str(value).strip().lower()
+                if mode not in ("singra", "crisp", "tawk", "custom"):
+                    raise HTTPException(status_code=400, detail="Ungueltiger Support-Widget-Anbieter")
+                value = mode
+            if key in (
+                "support_widget_crisp_website_id",
+                "support_widget_tawk_property_id",
+                "support_widget_tawk_widget_id",
+            ):
+                wid = str(value).strip()
+                if len(wid) > 128:
+                    raise HTTPException(status_code=400, detail="Wert zu lang")
+                value = wid
+            if key == "support_widget_custom_snippet":
+                snippet = str(value)
+                if len(snippet) > 8192:
+                    raise HTTPException(status_code=400, detail="Snippet zu lang")
+                value = snippet
+            if key == RATE_LIMIT_AUTH_KEY:
+                try:
+                    value = validate_auth_limit(value)
+                except ValueError as exc:
+                    raise HTTPException(status_code=400, detail=str(exc)) from exc
+            if key == RATE_LIMIT_GLOBAL_KEY:
+                try:
+                    value = validate_global_limit(value)
+                except ValueError as exc:
+                    raise HTTPException(status_code=400, detail=str(exc)) from exc
+            if key == "brand_ai_name":
+                continue
+            if key in ("brand_name", "brand_tagline"):
+                text_val = str(value)
+                if "\r" in text_val or "\n" in text_val or "\x00" in text_val:
+                    raise HTTPException(status_code=400, detail="Ungueltige Zeichen in Branding-Einstellung")
+                cleaned = text_val.strip()
+                max_len = 64 if key == "brand_name" else 160
+                if len(cleaned) > max_len:
+                    raise HTTPException(status_code=400, detail="Branding-Text ist zu lang")
+                updates[key] = cleaned
+                continue
+            if key == "brand_ai_email":
+                email_val = str(value).strip()
+                if "\r" in email_val or "\n" in email_val or "\x00" in email_val or len(email_val) > 254:
+                    raise HTTPException(status_code=400, detail="Ungueltige KI-E-Mail-Adresse")
+                if email_val and not re.fullmatch(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email_val):
+                    raise HTTPException(status_code=400, detail="Ungueltige KI-E-Mail-Adresse")
+                updates[key] = email_val
+                continue
+            if key == "brand_logo_mode":
+                mode = str(value).strip().lower()
+                if mode not in branding_service.BRAND_LOGO_MODES:
+                    raise HTTPException(status_code=400, detail="Ungueltiger Logo-Modus")
+                updates[key] = mode
+                continue
+            if key == "brand_season_logo_mode":
+                mode = str(value).strip().lower()
+                if mode not in branding_service.BRAND_SEASON_LOGO_MODES:
+                    raise HTTPException(status_code=400, detail="Ungueltiger Saison-Logo-Modus")
+                updates[key] = mode
+                continue
+            if _is_masked(str(value)):
+                continue
+            if key == "smtp_password":
+                enc = AuthService.encrypt_secret(str(value), aad="msm:settings:smtp_password")
+                updates["smtp_password_encrypted"] = enc
+                updates["smtp_password"] = ""
+            elif key == "resend_api_key":
+                enc = AuthService.encrypt_secret(str(value), aad="msm:settings:resend_api_key")
+                updates["resend_api_key_encrypted"] = enc
+                updates["resend_api_key"] = ""
+            elif key == "captcha_secret_key":
+                enc = AuthService.encrypt_secret(str(value), aad="msm:settings:captcha_secret_key")
+                updates["captcha_secret_key_encrypted"] = enc
+                updates["captcha_secret_key"] = ""
+            elif key == "cloudflare_enabled":
+                updates[key] = "true" if bool(value) else "false"
+            elif key == "cloudflare_default_zone":
+                updates[key] = str(value).strip()[:253]
+            elif key == "proactive_enabled":
+                updates["proactive_enabled"] = "true"
+            else:
+                updates[key] = str(value)
+
+        PanelSettingsService.set_many(updates, db=db, bump_remote=False)
+        audit_service.record_privileged_action(
+            db,
+            user_id=user.id,
+            action="panel.settings.update",
+            target_type="setting",
+            target_id="global",
+            details={"keys": sorted(data.keys())},
+            commit=True,
+        )
+        PanelSettingsService._bump_remote_version()
+        return data, None
+
+
 @router.post("", status_code=200)
 async def update_settings(
     req: PanelSettingsUpdate,
-    db: Session = Depends(get_db),
     user: User = Depends(require_global("panel.settings.write")),
     __=Depends(verify_csrf),
 ) -> dict:
-    """Speichert Panel-Einstellungen in der Datenbank.
+    """Speichert Panel-Einstellungen in einer einzigen Batch-Transaktion.
 
     Maskierte Werte (****1234) werden ignoriert — der Admin muss das
     Passwort/API-Key explizit neu eingeben, um es zu aendern.
     """
-    from services.auth_service import AuthService
-    data = req.model_dump(exclude_none=True)
-    for key, value in data.items():
-        if key in ("confirm_password", "confirm_otp_code", "confirm_passkey"):
-            continue
-        if key == "allow_localhost_connections":
-            target_val = bool(value)
-            current_val = PanelSettingsService.get("allow_localhost_connections", "false") == "true"
-            if target_val and not current_val:
-                from services import passkey_service
-                if user.two_factor_enabled or user.passkeys:
-                    confirmed = False
-                    if req.confirm_passkey is not None:
-                        try:
-                            passkey_service.bestaetigen(db, user, req.confirm_passkey, "localhost_connections")
-                            confirmed = True
-                        except passkey_service.PasskeyFehler as e:
-                            raise HTTPException(status_code=401, detail=str(e))
-                    elif req.confirm_otp_code:
-                        if user.two_factor_totp_aktiv and AuthService.verify_current_2fa_code(user, req.confirm_otp_code):
-                            confirmed = True
-                        else:
-                            raise HTTPException(status_code=401, detail="Der 2FA-Code ist ungültig oder abgelaufen.")
-                    if not confirmed:
-                        raise HTTPException(status_code=401, detail=passkey_service.nachweis_hinweis(user))
-                elif user.has_password:
-                    if not req.confirm_password or not AuthService.verify_password(req.confirm_password, user.password_hash):
-                        raise HTTPException(status_code=401, detail="Bitte dein Passwort bestätigen.")
-                else:
-                    # Rein social (kein Passwort, kein 2FA): die Sitzung allein
-                    # schaltet nichts. Der Nachweis kommt per Einmal-Link an die
-                    # bestätigte E-Mail; bis zur Bestätigung bleibt der Schalter
-                    # aus (Befund 46, Muster /auth/password-link).
-                    if not user.email_verified:
-                        raise HTTPException(
-                            status_code=403,
-                            detail="Bitte bestätige zuerst deine E-Mail-Adresse, dann schicken wir dir einen Freigabe-Link.",
-                        )
-                    if not EmailService.is_configured():
-                        raise HTTPException(status_code=503, detail="E-Mail-Versand ist nicht eingerichtet.")
-                    token = PanelSettingsService.localhost_freigabe_anfordern(db, user.id)
-                    await EmailService.send_localhost_freigabe_email(user.email, user.username, token)
-                    raise HTTPException(
-                        status_code=403,
-                        detail={
-                            "code": "LOCALHOST_LINK_GESENDET",
-                            "message": "Wir haben dir einen Bestätigungs-Link an deine E-Mail-Adresse geschickt. Erst nach dem Öffnen wird die Freigabe aktiv.",
-                        },
-                    )
-            value = "true" if target_val else "false"
-            PanelSettingsService.set("allow_localhost_connections", value, db=db)
-            continue
-        if key == "time_format" and value not in ("24h", "12h"):
-            raise HTTPException(status_code=400, detail="Ungueltiges Zeitformat")
-        if key == "imprint_url":
-            value = _validate_imprint_url(str(value))
-        if key == "external_shop_url":
-            value = _validate_external_shop_url(str(value))
-        if key == "imprint_enabled":
-            value = "true" if bool(value) else "false"
-        if key == "support_widget_enabled":
-            value = "true" if bool(value) else "false"
-        if key == "updates_automatic":
-            value = "true" if bool(value) else "false"
-        if key == "calendar_enabled":
-            value = "true" if bool(value) else "false"
-        if key == "notes_enabled":
-            value = "true" if bool(value) else "false"
-        if key == "docs_enabled":
-            value = "true" if bool(value) else "false"
-        if key == "vault_enabled":
-            value = "true" if bool(value) else "false"
-        if key == "social_enabled":
-            value = "true" if bool(value) else "false"
-        if key == "shop_enabled":
-            value = "true" if bool(value) else "false"
-        if key == "seasonal_enabled":
-            value = "true" if bool(value) else "false"
-        if key in ("season_halloween_mode", "season_christmas_mode", "season_birthday_mode"):
-            mode = str(value).strip().lower()
-            if mode not in SEASON_MODES:
-                raise HTTPException(status_code=400, detail="Ungueltiger Saison-Modus")
-            value = mode
-        if key in SEASON_WINDOW_DEFAULTS:
-            value = _validate_season_window(value)
-        # Ohne diese Normalisierung landet ein abgeschaltetes Banner als str(False) == "False"
-        # in der Datenbank und wird beim Lesen gegen "false" verglichen — der Schalter liess
-        # sich also gar nicht ausschalten.
-        if key == "desktop_app_download_enabled":
-            value = "true" if bool(value) else "false"
-        if key == "browser_download_enabled":
-            value = "true" if bool(value) else "false"
-        if key == "story_fable_download_enabled":
-            value = "true" if bool(value) else "false"
-        if key == "captcha_enabled":
-            value = "true" if bool(value) else "false"
-        if key == "captcha_provider":
-            mode = str(value).strip().lower()
-            if mode not in ("none", "altcha", "turnstile", "hcaptcha", "recaptcha"):
-                raise HTTPException(status_code=400, detail="Ungueltiger CAPTCHA-Anbieter")
-            value = mode
-        if key == "support_widget_mode":
-            mode = str(value).strip().lower()
-            if mode not in ("singra", "crisp", "tawk", "custom"):
-                raise HTTPException(status_code=400, detail="Ungueltiger Support-Widget-Anbieter")
-            value = mode
-        if key in (
-            "support_widget_crisp_website_id",
-            "support_widget_tawk_property_id",
-            "support_widget_tawk_widget_id",
-        ):
-            wid = str(value).strip()
-            if len(wid) > 128:
-                raise HTTPException(status_code=400, detail="Wert zu lang")
-            value = wid
-        if key == "support_widget_custom_snippet":
-            snippet = str(value)
-            if len(snippet) > 8192:
-                raise HTTPException(status_code=400, detail="Snippet zu lang")
-            value = snippet
-        # Rate-Limits: serverseitige Range-Validierung vor dem Schreiben.
-        # Ungültige Werte → 400, gespeicherte Werte bleiben unverändert.
-        if key == RATE_LIMIT_AUTH_KEY:
-            try:
-                value = validate_auth_limit(value)
-            except ValueError as exc:
-                raise HTTPException(status_code=400, detail=str(exc)) from exc
-        if key == RATE_LIMIT_GLOBAL_KEY:
-            try:
-                value = validate_global_limit(value)
-            except ValueError as exc:
-                raise HTTPException(status_code=400, detail=str(exc)) from exc
-        if key == "brand_ai_name":
-            continue
-        if key in ("brand_name", "brand_tagline"):
-            text_val = str(value)
-            if "\r" in text_val or "\n" in text_val or "\x00" in text_val:
-                raise HTTPException(status_code=400, detail="Ungueltige Zeichen in Branding-Einstellung")
-            cleaned = text_val.strip()
-            max_len = 64 if key == "brand_name" else 160
-            if len(cleaned) > max_len:
-                raise HTTPException(status_code=400, detail="Branding-Text ist zu lang")
-            PanelSettingsService.set(key, cleaned, db=db)
-            continue
-        if key == "brand_ai_email":
-            email_val = str(value).strip()
-            if "\r" in email_val or "\n" in email_val or "\x00" in email_val or len(email_val) > 254:
-                raise HTTPException(status_code=400, detail="Ungueltige KI-E-Mail-Adresse")
-            if email_val and not re.fullmatch(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email_val):
-                raise HTTPException(status_code=400, detail="Ungueltige KI-E-Mail-Adresse")
-            PanelSettingsService.set(key, email_val, db=db)
-            continue
-        if key == "brand_logo_mode":
-            mode = str(value).strip().lower()
-            if mode not in branding_service.BRAND_LOGO_MODES:
-                raise HTTPException(status_code=400, detail="Ungueltiger Logo-Modus")
-            PanelSettingsService.set(key, mode, db=db)
-            continue
-        if key == "brand_season_logo_mode":
-            mode = str(value).strip().lower()
-            if mode not in branding_service.BRAND_SEASON_LOGO_MODES:
-                raise HTTPException(status_code=400, detail="Ungueltiger Saison-Logo-Modus")
-            PanelSettingsService.set(key, mode, db=db)
-            continue
-        if _is_masked(str(value)):
-            continue
-        if key == "smtp_password":
-            enc = AuthService.encrypt_secret(str(value), aad="msm:settings:smtp_password")
-            PanelSettingsService.set("smtp_password_encrypted", enc)
-            PanelSettingsService.set("smtp_password", "")  # Lösche legacy plain-text
-        elif key == "resend_api_key":
-            enc = AuthService.encrypt_secret(str(value), aad="msm:settings:resend_api_key")
-            PanelSettingsService.set("resend_api_key_encrypted", enc)
-            PanelSettingsService.set("resend_api_key", "")  # Lösche legacy plain-text
-        elif key == "captcha_secret_key":
-            enc = AuthService.encrypt_secret(str(value), aad="msm:settings:captcha_secret_key")
-            PanelSettingsService.set("captcha_secret_key_encrypted", enc)
-            PanelSettingsService.set("captcha_secret_key", "")  # Lösche legacy plain-text
-        elif key == "cloudflare_enabled":
-            value = "true" if bool(value) else "false"
-            PanelSettingsService.set(key, str(value))
-        elif key == "cloudflare_default_zone":
-            value = str(value).strip()[:253]
-            PanelSettingsService.set(key, value)
-        elif key == "proactive_enabled":
-            PanelSettingsService.set("proactive_enabled", "true")
-        else:
-            PanelSettingsService.set(key, str(value))
-
-    audit_service.record_privileged_action(
-        db,
-        user_id=user.id,
-        action="panel.settings.update",
-        target_type="setting",
-        target_id="global",
-        details={"keys": sorted(data.keys())},
-        commit=True,
-    )
+    data, mail_info = await asyncio.to_thread(_save_panel_settings_batch, req, user_id=user.id)
+    if mail_info is not None:
+        await EmailService.send_localhost_freigabe_email(
+            mail_info["email"],
+            mail_info["username"],
+            mail_info["token"],
+        )
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": "LOCALHOST_LINK_GESENDET",
+                "message": "Wir haben dir einen Bestätigungs-Link an deine E-Mail-Adresse geschickt. Erst nach dem Öffnen wird die Freigabe aktiv.",
+            },
+        )
     if "docs_enabled" in data and not bool(data["docs_enabled"]):
         # Offene Dokumente flushen, bevor der Sidecar keine Tokens mehr bekommt.
         from services.docs_collab_service import DocsCollabService

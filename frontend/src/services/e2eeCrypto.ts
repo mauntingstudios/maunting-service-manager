@@ -39,6 +39,7 @@
  */
 
 import { encryptString, decryptString, importAesGcmRawKey } from '@msdis/shield/aead'
+import { registerSessionCleanup } from '@/stores/sessionCleanupRegistry'
 import { sha256Hex } from '@msdis/shield/integrity'
 import { formatEnvelope, parseEnvelope, type VersionedCipherEnvelopeSpec } from '@msdis/shield/format-versioning'
 import {
@@ -282,6 +283,7 @@ export function clearMemoryKeyStore(): void {
   clearEnvelopePlaintextCache()
   scrubPlaintextStorage()
 }
+registerSessionCleanup(clearMemoryKeyStore)
 
 
 /**

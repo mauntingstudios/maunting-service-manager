@@ -547,4 +547,27 @@ describe('authStore', () => {
       expect(keys).not.toContain('refreshToken')
     })
   })
+
+  describe('Paket 2A: Stale-While-Revalidate mit fail-closed 401', () => {
+    it('initialisiert mit cachedUser ohne Loader-Kaskade und raeumt bei 401 sofort', async () => {
+      const cachedUser = { id: 42, username: 'cached', is_owner: false }
+      localStorage.setItem('msm_cached_user', JSON.stringify(cachedUser))
+      vi.resetModules()
+      const { useAuthStore: freshStore } = await import('./authStore')
+      const freshClient = await import('@/api/client')
+
+      expect(freshStore.getState().isAuthenticated).toBe(true)
+      expect(freshStore.getState().isLoading).toBe(false)
+      expect(freshStore.getState().user).toEqual(cachedUser)
+
+      vi.mocked(freshClient.api).mockRejectedValueOnce(
+        new freshClient.SanitizedApiError('Unauthorized', { status: 401 }),
+      )
+      await freshStore.getState().checkAuth()
+
+      expect(freshStore.getState().isAuthenticated).toBe(false)
+      expect(freshStore.getState().user).toBeNull()
+      expect(localStorage.getItem('msm_cached_user')).toBeNull()
+    })
+  })
 })

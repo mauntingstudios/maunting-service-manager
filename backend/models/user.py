@@ -358,6 +358,9 @@ class User(Base):
 
     @property
     def email(self) -> str | None:
+        cached = getattr(self, "_predecrypted_email_pair", None)
+        if cached is not None and cached[0] == self.email_encrypted:
+            return cached[1]
         if self.email_encrypted:
             from services.dis_client import DisClient
             return DisClient.decrypt(email_chiffrat_fuer_dis(self.email_encrypted), aad="msm:user:email")
@@ -373,6 +376,8 @@ class User(Base):
             from services.dis_client import DisClient
             self.email_encrypted = email_chiffrat_speichern(DisClient.encrypt(value, aad="msm:user:email"))
             self.email_hash = self._email_hash(value)
+            self._predecrypted_email_pair = (self.email_encrypted, value)
         else:
             self.email_encrypted = None
             self.email_hash = None
+            self._predecrypted_email_pair = None

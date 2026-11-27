@@ -266,7 +266,7 @@ export function AiRunNotice() {
     const takt = async () => {
       if (!aktiv) return
       if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
-        timer = setTimeout(takt, RUHETAKT_MS)
+        // Im Hintergrund-Tab keinen Timer planen — onVisibilityChange weckt wieder auf.
         return
       }
       const rlWait = getRateLimitRemainingMs()

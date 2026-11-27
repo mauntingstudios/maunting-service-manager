@@ -4,7 +4,7 @@ import threading
 import time
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, File, Header, HTTPException, Query, UploadFile, WebSocket
+from fastapi import APIRouter, Depends, File, Header, HTTPException, Query, Request, UploadFile, WebSocket
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import Response
 from pydantic import BaseModel, Field, field_validator
@@ -188,13 +188,20 @@ def _is_guardian_enabled(server: Server) -> bool:
     return False
 
 
-def _server_response(server: Server, db: Session | None = None) -> ServerResponse:
+def _server_response(
+    server: Server,
+    db: Session | None = None,
+    *,
+    wallpaper: wallpaper_service.WallpaperDescriptor | None = None,
+) -> ServerResponse:
     """Serialize server including safe node label (never auth tokens)."""
     from services.node_service import effective_server_runtime_status, is_node_offline
 
     data = ServerResponse.model_validate(server)
-    if db is not None:
+    desk = wallpaper
+    if desk is None and db is not None:
         desk = wallpaper_service.resolve_wallpaper(db, server)
+    if desk is not None:
         data.has_custom_wallpaper = desk.source == "custom"
         data.wallpaper_url = desk.url
         data.wallpaper_source = desk.source
@@ -229,9 +236,10 @@ def list_servers(db: Session = Depends(get_db), user: User = Depends(get_current
     # Liste wird alle fuenf Sekunden abgefragt.
     hoster_ids = permission_service.hoster_customer_server_ids(db)
     active_builds = get_active_frontend_builds_map(db, [s.id for s in servers])
+    wallpapers = wallpaper_service.resolve_wallpapers_batch(db, servers)
     responses = []
     for s in servers:
-        data = _server_response(s, db)
+        data = _server_response(s, db, wallpaper=wallpapers.get(s.id))
         data.is_hoster_managed = s.id in hoster_ids
         if s.id in active_builds:
             from schemas.server import FrontendBuildBadge
@@ -641,20 +649,35 @@ class ServerFileUpdateCheckResponse(BaseModel):
 
 
 @router.get("/{server_id}/status", response_model=ServerStatusResponse)
-def server_status(server_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)) -> dict:
-    require_server_permission(user, server_id, db, "server.view")
-    server = db.query(Server).filter(Server.id == server_id).first()
-    if not server:
-        raise HTTPException(status_code=404, detail="Server nicht gefunden")
+def server_status(server_id: int, request: Request) -> dict:
+    import database
+    from sqlalchemy.orm import joinedload
+
+    with database.SessionLocal() as read_db:
+        user = get_current_user(request=request, db=read_db)
+        require_server_permission(user, server_id, read_db, "server.view")
+        server = (
+            read_db.query(Server)
+            .options(joinedload(Server.node))
+            .filter(Server.id == server_id)
+            .first()
+        )
+        if not server:
+            raise HTTPException(status_code=404, detail="Server nicht gefunden")
+        node = server.node
+        if node is not None:
+            read_db.expunge(node)
+        read_db.expunge(server)
+
     plugin = get_plugin(server.game_type)
     disk_used = server.disk_usage_mb
     from services.node_capacity import agent_server_key, should_delegate_node_fs_to_agent
 
-    if should_delegate_node_fs_to_agent(server.node):
+    if should_delegate_node_fs_to_agent(node):
         try:
             from services.node_client import NodeClient
 
-            disk_data = NodeClient.from_node(server.node).files_disk_info(
+            disk_data = NodeClient.from_node(node).files_disk_info(
                 agent_server_key(server.id, server.install_dir)
             )
             disk_free = int(disk_data["free_bytes"]) // (1024 * 1024)
@@ -665,8 +688,6 @@ def server_status(server_id: int, db: Session = Depends(get_db), user: User = De
     else:
         disk_free = _disk_free_mb(server.install_dir) if server.install_dir else None
 
-    # Update-Info leichtgewichtig + cached (nicht bei jedem Status-Call teuer).
-    # Ergebnisse von check_for_server_file_update + check_for_mod_updates.
     update_info = _get_cached_update_availability(server, plugin)
 
     if not plugin:
@@ -683,23 +704,49 @@ def server_status(server_id: int, db: Session = Depends(get_db), user: User = De
             "disk_limit_gb": server.disk_limit_gb,
             "disk_used_mb": disk_used,
             "disk_free_mb": disk_free,
-            "node_cpu_steal_percent": getattr(getattr(server, "node", None), "cpu_steal_percent", None),
+            "node_cpu_steal_percent": getattr(node, "cpu_steal_percent", None),
             "server_file_update_available": update_info["server_file_update_available"],
             "server_file_update_reason": update_info["server_file_update_reason"],
             "mod_updates_available": update_info["mod_updates_available"],
             **_server_restart_status_fields(server),
         }
+
     plugin_status = plugin.get_status(server)
-    # installing/updating/error/failed nicht ueberschreiben. Laufende Lifecycle-
-    # Jobs behalten ihre transienten Stati, bis der Background-Worker finalisiert.
-    if server.status not in ("installing", "updating", "error", "failed") and not should_preserve_lifecycle_status(server.id, server.status):
-        server.status = plugin_status.status
-        server.status_message = plugin_status.message or ""
+    new_status = server.status
+    new_message = server.status_message
+    new_started_at = server.last_started_at
+    if (
+        server.status not in ("installing", "updating", "error", "failed")
+        and not should_preserve_lifecycle_status(server.id, server.status)
+    ):
+        new_status = plugin_status.status
+        new_message = plugin_status.message or ""
         if plugin_status.status == "running" and plugin_status.started_at is not None:
-            server.last_started_at = plugin_status.started_at
+            new_started_at = plugin_status.started_at
         elif plugin_status.status != "running":
-            server.last_started_at = None
-    db.commit()
+            new_started_at = None
+
+    changed = (
+        new_status != server.status
+        or (new_message or "") != (server.status_message or "")
+        or new_started_at != server.last_started_at
+    )
+    if changed:
+        with database.SessionLocal() as write_db:
+            write_srv = write_db.get(Server, server.id)
+            if (
+                write_srv is not None
+                and write_srv.status not in ("installing", "updating", "error", "failed")
+                and not should_preserve_lifecycle_status(write_srv.id, write_srv.status)
+            ):
+                write_srv.status = new_status
+                write_srv.status_message = new_message
+                write_srv.last_started_at = new_started_at
+                write_db.commit()
+        server.status = new_status
+        server.status_message = new_message
+        server.last_started_at = new_started_at
+
     return {
         "id": server.id,
         "status": server.status,
@@ -715,7 +762,7 @@ def server_status(server_id: int, db: Session = Depends(get_db), user: User = De
         "disk_limit_gb": server.disk_limit_gb,
         "disk_used_mb": disk_used,
         "disk_free_mb": disk_free,
-        "node_cpu_steal_percent": getattr(getattr(server, "node", None), "cpu_steal_percent", None),
+        "node_cpu_steal_percent": getattr(node, "cpu_steal_percent", None),
         "server_file_update_available": update_info["server_file_update_available"],
         "server_file_update_reason": update_info["server_file_update_reason"],
         "mod_updates_available": update_info["mod_updates_available"],

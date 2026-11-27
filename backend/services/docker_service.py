@@ -858,6 +858,7 @@ def update_container_resources(
 
 
 def remove(name: str, force: bool = True, *, node: Any | None = None) -> dict:
+    clear_stats_cache(name, node=node)
     if node is not None:
         try:
             from services.node_client import NodeClient, NodeClientError
@@ -882,6 +883,7 @@ def remove(name: str, force: bool = True, *, node: Any | None = None) -> dict:
 
 
 def stop(name: str, timeout: int = 30, *, node: Any | None = None) -> dict:
+    clear_stats_cache(name, node=node)
     if node is not None:
         try:
             from services.node_client import NodeClient
@@ -906,6 +908,7 @@ def stop(name: str, timeout: int = 30, *, node: Any | None = None) -> dict:
 
 
 def start(name: str, *, node: Any | None = None) -> dict:
+    clear_stats_cache(name, node=node)
     if node is not None:
         try:
             from services.node_client import NodeClient
@@ -1408,7 +1411,61 @@ def inspect_state(name: str, *, node: Any | None = None) -> dict | None:
         return None
 
 
-def stats(name: str, *, node: Any | None = None) -> dict | None:
+_STATS_CACHE_TTL_S = 4.0
+_stats_cache_lock = threading.Lock()
+_stats_cache: dict[tuple[int | None, str], tuple[float, dict | None]] = {}
+_stats_prev_cpu: dict[tuple[int | None, str], tuple[int, int]] = {}
+_stats_flight_locks: dict[tuple[int | None, str], threading.Lock] = {}
+
+
+def _stats_cache_key(name: str, node: Any | None = None) -> tuple[int | None, str]:
+    return (getattr(node, "id", None) if node is not None else None, name)
+
+
+def clear_stats_cache(name: str | None = None, *, node: Any | None = None) -> None:
+    """Leert gecachte Container-Statistiken und CPU-Vorwerte (komplett oder je Container)."""
+    with _stats_cache_lock:
+        if name is None:
+            _stats_cache.clear()
+            _stats_prev_cpu.clear()
+            return
+        if node is not None:
+            key = _stats_cache_key(name, node)
+            _stats_cache.pop(key, None)
+            _stats_prev_cpu.pop(key, None)
+            return
+        for key in [k for k in _stats_cache if k[1] == name]:
+            _stats_cache.pop(key, None)
+        for key in [k for k in _stats_prev_cpu if k[1] == name]:
+            _stats_prev_cpu.pop(key, None)
+
+
+def _cpu_percent_from_sample(
+    raw: dict,
+    prev_sample: tuple[int, int] | None,
+) -> tuple[float | None, tuple[int, int] | None]:
+    cpu_stats = raw.get("cpu_stats") or {}
+    total_usage = (cpu_stats.get("cpu_usage") or {}).get("total_usage")
+    system_cpu_usage = cpu_stats.get("system_cpu_usage")
+    online_cpus = (
+        cpu_stats.get("online_cpus")
+        or len((cpu_stats.get("cpu_usage") or {}).get("percpu_usage") or [])
+        or 1
+    )
+    next_sample: tuple[int, int] | None = None
+    if isinstance(total_usage, (int, float)) and isinstance(system_cpu_usage, (int, float)):
+        next_sample = (int(total_usage), int(system_cpu_usage))
+
+    if prev_sample is not None and next_sample is not None:
+        cpu_delta = next_sample[0] - prev_sample[0]
+        system_delta = next_sample[1] - prev_sample[1]
+        if system_delta > 0 and cpu_delta >= 0:
+            return round((cpu_delta / system_delta) * online_cpus * 100.0, 2), next_sample
+
+    return _cpu_percent(raw), next_sample
+
+
+def _fetch_container_stats_uncached(name: str, *, node: Any | None, key: tuple[int | None, str]) -> dict | None:
     if node is not None:
         try:
             from services.node_client import NodeClient
@@ -1425,19 +1482,53 @@ def stats(name: str, *, node: Any | None = None) -> dict | None:
             return None
     container = _container(name)
     if container is None or getattr(container, "status", None) != "running":
+        with _stats_cache_lock:
+            _stats_prev_cpu.pop(key, None)
         return None
+    with _stats_cache_lock:
+        prev_sample = _stats_prev_cpu.get(key)
     try:
-        raw = container.stats(stream=False)
+        if prev_sample is not None:
+            try:
+                raw = container.stats(stream=False, one_shot=True)
+            except TypeError:
+                raw = container.stats(stream=False)
+        else:
+            raw = container.stats(stream=False)
     except (DockerException, OSError):
         logger.warning("docker stats failed")
         return None
-    cpu_percent = _cpu_percent(raw)
+    cpu_percent, next_sample = _cpu_percent_from_sample(raw, prev_sample)
+    if next_sample is not None:
+        with _stats_cache_lock:
+            _stats_prev_cpu[key] = next_sample
     ram_mb = None
     try:
         ram_mb = int(raw.get("memory_stats", {}).get("usage", 0)) // (1024 * 1024)
     except (TypeError, ValueError):
         ram_mb = None
     return {"cpu_percent": cpu_percent, "ram_mb": ram_mb}
+
+
+def stats(name: str, *, node: Any | None = None) -> dict | None:
+    key = _stats_cache_key(name, node)
+    now = time.monotonic()
+    with _stats_cache_lock:
+        cached = _stats_cache.get(key)
+        if cached is not None and cached[0] > now:
+            return dict(cached[1]) if cached[1] is not None else None
+        flight_lock = _stats_flight_locks.setdefault(key, threading.Lock())
+
+    with flight_lock:
+        now = time.monotonic()
+        with _stats_cache_lock:
+            cached = _stats_cache.get(key)
+            if cached is not None and cached[0] > now:
+                return dict(cached[1]) if cached[1] is not None else None
+        fresh = _fetch_container_stats_uncached(name, node=node, key=key)
+        with _stats_cache_lock:
+            _stats_cache[key] = (time.monotonic() + _STATS_CACHE_TTL_S, dict(fresh) if fresh is not None else None)
+        return fresh
 
 
 def _cpu_percent(raw: dict) -> float | None:

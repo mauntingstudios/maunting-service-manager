@@ -38,6 +38,7 @@
  */
 
 import { leereGeraeteRam } from './geraet/geraeteAblage'
+import { registerSessionCleanup } from '@/stores/sessionCleanupRegistry'
 import { leereFreigabeRam } from './geraet/geraeteFreigabe'
 import { leereVertraute, setzeEigeneFreigabe } from './geraet/geraeteVertrauen'
 import { leereVerzeichnisRam } from './geraet/geraeteVerzeichnis'
@@ -96,3 +97,4 @@ export function clearGeraeteMemory(): void {
   leereGeraeteRam()
   leereFreigabeRam()
 }
+registerSessionCleanup(clearGeraeteMemory)

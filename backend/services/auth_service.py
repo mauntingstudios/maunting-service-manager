@@ -266,6 +266,44 @@ class AuthService:
         return int(getroffen)
 
     @staticmethod
+    def cleanup_expired_refresh_tokens(db: Session, *, batch_limit: int = 5000) -> int:
+        """Bereinigt abgelaufene sowie laenger als 30 Tage widerrufene Refresh-Tokens in Batches.
+
+        Aktive Familien und kuerzlich rotierte/widerrufene Tokens bleiben erhalten,
+        damit Wiederverwendungserkennung und Geraete-Revocation-Checks weiter greifen.
+        """
+        from sqlalchemy import and_, or_
+
+        now = datetime.now(timezone.utc)
+        exp_cutoff = now - timedelta(days=1)
+        rev_cutoff = now - timedelta(days=30)
+
+        ids = [
+            row[0]
+            for row in db.query(RefreshToken.id)
+            .filter(
+                or_(
+                    RefreshToken.expires_at < exp_cutoff,
+                    and_(
+                        RefreshToken.revoked_at.is_not(None),
+                        RefreshToken.revoked_at < rev_cutoff,
+                    ),
+                )
+            )
+            .limit(batch_limit)
+            .all()
+        ]
+        if not ids:
+            return 0
+        deleted = (
+            db.query(RefreshToken)
+            .filter(RefreshToken.id.in_(ids))
+            .delete(synchronize_session=False)
+        )
+        db.commit()
+        return int(deleted or 0)
+
+    @staticmethod
     def _sitzung_abraeumen(db: Session, user_id: int, family: str | None) -> None:
         """Was nach dem Sperren noch am Geraet haengt: offene Verbindungen und Push.
 

@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import i18n from '@/i18n'
+import { registerSessionCleanup } from '@/stores/sessionCleanupRegistry'
 import { SanitizedApiError, api, apiUrl } from '@/api/client'
 import {
   type AutoSperrQuelle,
@@ -2552,6 +2553,10 @@ useVaultStore.subscribe((jetzt, vorher) => {
   if (!abgleichNachholen || vorher.syncStatus !== 'syncing' || jetzt.syncStatus === 'syncing') return
   abgleichNachholen = false
   abgleichAnstossen('netz')
+})
+
+registerSessionCleanup(() => {
+  useVaultStore.getState().lock()
 })
 
 if (typeof window !== 'undefined') {

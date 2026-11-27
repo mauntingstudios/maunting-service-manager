@@ -32,6 +32,7 @@ import {
   bytesToBase64,
 } from '@msdis/shield/core'
 import { signiere } from './absenderSignatur'
+import { registerSessionCleanup } from '@/stores/sessionCleanupRegistry'
 import { angemeldetesKonto } from '@/lib/angemeldetesKonto'
 import { eigenesGeraet, pruefeGeraeteBeleg, type EigenesGeraet } from './e2eeGeraet'
 import { getE2eeGeraete } from '@/api/social'
@@ -135,6 +136,7 @@ export function clearNotesKeyCache(): void {
   letzterAbgleich.clear()
   neuBelegt.clear()
 }
+registerSessionCleanup(clearNotesKeyCache)
 
 /**
  * Ein anderes Fenster derselben Ablage hat den Schlüssel gewechselt.

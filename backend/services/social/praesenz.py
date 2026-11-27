@@ -316,16 +316,21 @@ class PraesenzMixin:
 
     @classmethod
     def set_manual_status(cls, db: Session, user_id: int, manual_status: str) -> dict[str, Any]:
+        from sqlalchemy.dialects.postgresql import insert as pg_insert
+
         if manual_status not in MANUELLE_STATI:
             raise ValueError("Unbekannter Status")
         vorher = cls.get_presence(db, user_id)
-        pres = db.query(UserPresence).filter_by(user_id=user_id).first()
-        if not pres:
-            pres = UserPresence(user_id=user_id, manual_status=manual_status, updated_at=_now())
-            db.add(pres)
-        else:
-            pres.manual_status = manual_status
-            pres.updated_at = _now()
+        jetzt = _now()
+        stmt = (
+            pg_insert(UserPresence)
+            .values(user_id=user_id, manual_status=manual_status, updated_at=jetzt)
+            .on_conflict_do_update(
+                index_elements=[UserPresence.user_id],
+                set_={"manual_status": manual_status, "updated_at": jetzt},
+            )
+        )
+        db.execute(stmt)
         db.commit()
         nachher = cls.get_presence(db, user_id)
         _publiziere(cls, db, user_id, vorher, nachher)
@@ -345,15 +350,13 @@ class PraesenzMixin:
         vorn: bool,
     ) -> dict[str, Any]:
         """Ein Lebenszeichen. Dieselbe Zeile für dasselbe Gerät, nie eine neue."""
+        from sqlalchemy.dialects.postgresql import insert as pg_insert
+
         vorher = cls.get_presence(db, user_id)
         jetzt = _now()
-        sitzung = (
-            db.query(UserPresenceSession)
-            .filter_by(user_id=user_id, geraet=geraet)
-            .first()
-        )
-        if not sitzung:
-            sitzung = UserPresenceSession(
+        stmt = (
+            pg_insert(UserPresenceSession)
+            .values(
                 user_id=user_id,
                 geraet=geraet,
                 client=client,
@@ -363,14 +366,19 @@ class PraesenzMixin:
                 vorn=vorn,
                 last_seen_at=jetzt,
             )
-            db.add(sitzung)
-        else:
-            sitzung.client = client
-            sitzung.plattform = plattform
-            sitzung.zustand = zustand
-            sitzung.activity_key = activity_key
-            sitzung.vorn = vorn
-            sitzung.last_seen_at = jetzt
+            .on_conflict_do_update(
+                constraint="uq_user_presence_session_geraet",
+                set_={
+                    "client": client,
+                    "plattform": plattform,
+                    "zustand": zustand,
+                    "activity_key": activity_key,
+                    "vorn": vorn,
+                    "last_seen_at": jetzt,
+                },
+            )
+        )
+        db.execute(stmt)
         db.commit()
         nachher = cls.get_presence(db, user_id)
         _publiziere(cls, db, user_id, vorher, nachher)

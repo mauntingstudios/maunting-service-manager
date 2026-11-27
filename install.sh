@@ -1392,12 +1392,37 @@ else
     log "PostgreSQL bleibt bestehend — User/DB nicht neu angelegt."
 fi
 
-# pg_hba.conf & Connection-Pool-Dimensionierung sicherstellen (auch bei Re-Install)
+# pg_hba.conf & Connection-Pool-Dimensionierung + RAM-basiertes Tuning sicherstellen (auch bei Re-Install)
 PG_CONF_DIR=$(find /etc/postgresql -name "conf.d" -type d 2>/dev/null | head -1)
 if [[ -n "$PG_CONF_DIR" ]]; then
-    cat > "${PG_CONF_DIR}/99-msm.conf" <<'PGCONF'
-# Multi-Worker HA + Connection-Pool Reserve (Panel + Worker + Admin)
+    _pg_mem_kb=$(awk '/^MemTotal:/ {print $2; exit}' /proc/meminfo 2>/dev/null || echo 0)
+    _pg_mem_mb=$(( ${_pg_mem_kb:-0} / 1024 ))
+    _pg_shared_mb=$(( _pg_mem_mb * 15 / 100 ))
+    (( _pg_shared_mb < 256 )) && _pg_shared_mb=256
+    (( _pg_shared_mb > 2048 )) && _pg_shared_mb=2048
+    _pg_eff_cache_mb=$(( _pg_mem_mb * 50 / 100 ))
+    (( _pg_eff_cache_mb < 512 )) && _pg_eff_cache_mb=512
+    (( _pg_eff_cache_mb > 6144 )) && _pg_eff_cache_mb=6144
+    if (( _pg_mem_mb >= 8192 )); then
+        _pg_work_mem="16MB"
+        _pg_maint_mem="256MB"
+    else
+        _pg_work_mem="8MB"
+        _pg_maint_mem="128MB"
+    fi
+    cat > "${PG_CONF_DIR}/99-msm.conf" <<PGCONF
+# msm-pg-tuning-v1: Multi-Worker HA + SSD/NVMe- & RAM-skalierte Defaults
 max_connections = 250
+shared_buffers = ${_pg_shared_mb}MB
+effective_cache_size = ${_pg_eff_cache_mb}MB
+work_mem = ${_pg_work_mem}
+maintenance_work_mem = ${_pg_maint_mem}
+random_page_cost = 1.1
+effective_io_concurrency = 200
+checkpoint_completion_target = 0.9
+wal_buffers = 16MB
+log_min_duration_statement = 200
+idle_in_transaction_session_timeout = '60s'
 PGCONF
     chown postgres:postgres "${PG_CONF_DIR}/99-msm.conf" 2>/dev/null || true
     chmod 0644 "${PG_CONF_DIR}/99-msm.conf" 2>/dev/null || true
@@ -2038,7 +2063,7 @@ EOF
 # MSM API — managed by install.sh
 # Das Frontend wird extern ausgeliefert; diese Site veröffentlicht nur API/WS.
 $DOMAIN {
-    encode gzip
+    encode zstd gzip
 
     request_body {
         max_size 128MB
@@ -2093,7 +2118,7 @@ EOF
 $DOMAIN {
     root * /opt/msm/frontend/dist
 
-    encode gzip
+    encode zstd gzip
 
     request_body {
         max_size 128MB
@@ -2174,7 +2199,7 @@ EOF
 :80 {
     root * /opt/msm/frontend/dist
 
-    encode gzip
+    encode zstd gzip
 
     request_body {
         max_size 128MB

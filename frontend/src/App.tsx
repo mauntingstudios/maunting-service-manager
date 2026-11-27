@@ -9,11 +9,19 @@ import { ToastContainer } from '@/components/app/ToastContainer'
 import { ConfirmDialog } from '@/components/app/ConfirmDialog'
 import { PromptDialog } from '@/components/app/PromptDialog'
 import { Loader } from '@/components/app/Loader'
-import { SmartcardWalletModal } from './desktop/vault/SmartcardWalletModal'
+const SmartcardWalletModal = lazy(() =>
+  import('./desktop/vault/SmartcardWalletModal').then((module) => ({
+    default: module.SmartcardWalletModal,
+  })),
+)
 
 function WalletRoute() {
   const navigate = useNavigate()
-  return <SmartcardWalletModal isOpen={true} onClose={() => navigate(-1)} />
+  return (
+    <Suspense fallback={<Loader />}>
+      <SmartcardWalletModal isOpen={true} onClose={() => navigate(-1)} />
+    </Suspense>
+  )
 }
 
 const SetupWizard = lazy(() => import('./pages/SetupWizard').then(module => ({ default: module.SetupWizard })))
@@ -76,8 +84,20 @@ import { PrivacyNoticeVisibilityContext } from '@/components/app/PrivacyNoticeVi
 import { SupportWidgetLoader } from './components/SupportWidgetLoader'
 import { initOfflineSync } from './lib/offlineSync'
 import { cleanupPreloadUrlParam } from './lib/preloadSelbstheilung'
+import { still } from './lib/still'
 import { useKontoBundNachholen } from './hooks/useKontoBundNachholen'
 import { SaisonDeko } from './season/SaisonDeko'
+
+const SETUP_COMPLETED_KEY = 'msm_setup_completed'
+
+function hasCachedSetupCompleted(): boolean {
+  try {
+    if (localStorage.getItem(SETUP_COMPLETED_KEY) === '1') return true
+  } catch (err) {
+    still(err, 'app:readSetupFlag')
+  }
+  return Boolean(useAuthStore.getState().user)
+}
 
 function App() {
   const location = useLocation()
@@ -93,7 +113,9 @@ function App() {
     location.pathname.startsWith('/shop') ||
     location.pathname.startsWith('/konto') ||
     (shopEnabled && isNewsPath)
-  const [setupRequired, setSetupRequired] = useState<boolean | null>(null)
+  const [setupRequired, setSetupRequired] = useState<boolean | null>(() =>
+    hasCachedSetupCompleted() ? false : null,
+  )
   const [setupEmailConfigured, setSetupEmailConfigured] = useState(false)
   const [privacyNoticeVisible, setPrivacyNoticeVisible] = useState(true)
   // Einzelne Felder statt des ganzen Stores: sonst zeichnete jede Änderung am
@@ -110,13 +132,46 @@ function App() {
   }, [])
 
   useEffect(() => {
-    fetch(apiUrl('/auth/setup-status'), { credentials: 'include' })
-      .then((res) => res.json())
-      .then((data) => {
-        setSetupRequired(data.setup_required)
-        setSetupEmailConfigured(Boolean(data.email_configured))
+    let active = true
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 4000)
+
+    fetch(apiUrl('/auth/setup-status'), {
+      credentials: 'include',
+      signal: controller.signal,
+    })
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        return res.json()
       })
-      .catch(() => setSetupRequired(false))
+      .then((data) => {
+        if (!active) return
+        const required = Boolean(data?.setup_required)
+        try {
+          if (required) {
+            localStorage.removeItem(SETUP_COMPLETED_KEY)
+          } else {
+            localStorage.setItem(SETUP_COMPLETED_KEY, '1')
+          }
+        } catch (err) {
+          still(err, 'app:writeSetupFlag')
+        }
+        setSetupRequired(required)
+        setSetupEmailConfigured(Boolean(data?.email_configured))
+      })
+      .catch(() => {
+        if (!active) return
+        setSetupRequired((prev) => (prev === null ? false : prev))
+      })
+      .finally(() => {
+        clearTimeout(timeoutId)
+      })
+
+    return () => {
+      active = false
+      clearTimeout(timeoutId)
+      controller.abort()
+    }
   }, [])
 
   // Den Anmeldezustand einmal beim Start klären. Ohne das bliebe isAuthenticated bei
@@ -136,7 +191,14 @@ function App() {
         <Loader fullScreen label="Maunting Service Manager" />
       }>
         <SetupWizard
-          onComplete={() => setSetupRequired(false)}
+          onComplete={() => {
+            try {
+              localStorage.setItem(SETUP_COMPLETED_KEY, '1')
+            } catch (err) {
+              still(err, 'app:completeSetupFlag')
+            }
+            setSetupRequired(false)
+          }}
           emailConfigured={setupEmailConfigured}
         />
       </Suspense>

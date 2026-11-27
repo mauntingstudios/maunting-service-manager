@@ -596,25 +596,21 @@ def list_visible_server_ids(db: Session, user: User) -> list[int] | None:
 
 
 def list_visible_servers(db: Session, user: User) -> list[Server]:
-    """Die sichtbaren Server samt ihrer Ports.
+    """Die sichtbaren Server samt Ports und Node (kein N+1 beim Serialisieren)."""
+    from sqlalchemy.orm import joinedload
 
-    `selectinload(Server.ports)` ist kein Feinschliff: `ServerResponse` liest
-    die Ports bei jeder Serialisierung, und die Serverübersicht ruft diese
-    Liste alle fünf Sekunden ab. Ohne den Ladehinweis kostet sie eine Abfrage
-    je Server, mit ihm genau eine zusätzliche — gemessen 34 statt 2 bei
-    dreißig Servern, bei gleichem JSON.
-
-    `Server.node` bleibt bewusst ohne Hinweis: die Beziehung zeigt auf **eine**
-    Node, die die Identity Map ohnehin nur einmal holt.
-    """
     ids = list_visible_server_ids(db, user)
     if ids is None:
-        return db.query(Server).options(selectinload(Server.ports)).all()
+        return (
+            db.query(Server)
+            .options(selectinload(Server.ports), joinedload(Server.node))
+            .all()
+        )
     if not ids:
         return []
     return (
         db.query(Server)
-        .options(selectinload(Server.ports))
+        .options(selectinload(Server.ports), joinedload(Server.node))
         .filter(Server.id.in_(ids))
         .all()
     )

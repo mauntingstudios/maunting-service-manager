@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
 import { Topbar } from './Topbar'
 import { DashboardReiter } from './DashboardReiter'
@@ -22,9 +22,14 @@ import { useMessengerSperreBereitschaft } from '@/hooks/useMessengerSperre'
 import { usePresenceAndActivity } from '@/hooks/usePresenceAndActivity'
 import { MessengerHintergrund } from '@/browser/MessengerHintergrund'
 import { chatIstOffen } from '@/lib/chatVollbild'
-import { SmartcardWalletModal } from '@/desktop/vault/SmartcardWalletModal'
 import { istDashboardRoute } from '@/desktop/dashboard/dashboardWege'
 import { PANEL_HOME } from '@/lib/panelWege'
+
+const SmartcardWalletModal = lazy(() =>
+  import('@/desktop/vault/SmartcardWalletModal').then((m) => ({
+    default: m.SmartcardWalletModal,
+  })),
+)
 
 /** Was die Hülle ihren Seiten über den Outlet-Kontext mitteilt. */
 export interface ShellOutletKontext {
@@ -183,7 +188,11 @@ export function Shell() {
       {canAccessSocial && <AnrufEbene />}
 
       {/* Vollbild Smartcard-Wallet-Modus für Mobilgeräte */}
-      <SmartcardWalletModal isOpen={walletOpen} onClose={() => setWalletOpen(false)} />
+      {walletOpen && (
+        <Suspense fallback={null}>
+          <SmartcardWalletModal isOpen={true} onClose={() => setWalletOpen(false)} />
+        </Suspense>
+      )}
     </div>
   )
 }

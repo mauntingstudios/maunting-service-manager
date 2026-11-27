@@ -29,12 +29,6 @@ export function AnrufEbene() {
   const state = useCallStore((s) => s.state)
 
   useEffect(() => {
-    ladeOverlay().catch(() => {
-      // Kein Netz oder Chunk weg: beim ersten Anruf wird es erneut versucht.
-    })
-  }, [])
-
-  useEffect(() => {
     const onSyncEvent = (e: Event) => {
       const custom = e as CustomEvent<{ type?: string; [key: string]: unknown }>
       if (custom.detail) {

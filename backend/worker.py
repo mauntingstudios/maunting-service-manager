@@ -59,6 +59,8 @@ async def _acquire_leader_lock(stop_event: asyncio.Event):
         conn = None
         try:
             conn = engine.connect()
+            if hasattr(conn, "execution_options"):
+                conn = conn.execution_options(isolation_level="AUTOCOMMIT")
             acquired = bool(
                 conn.execute(
                     text("SELECT pg_try_advisory_lock(:lock_id)"),

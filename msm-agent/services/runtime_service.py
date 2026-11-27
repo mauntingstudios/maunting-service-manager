@@ -47,5 +47,16 @@ def firewall(action: str, ports: list[tuple[int, str, str]], server_name: str = 
                 result.stdout.strip(),
                 result.stderr.strip(),
             )
-        results.append({"port": port, "protocol": protocol, "ok": ok})
-    return {"ok": all(bool(item["ok"]) for item in results), "results": results}
+        deleted_item = (
+            action == "close"
+            and ok
+            and "Could not delete" not in (result.stdout or "")
+        )
+        results.append({"port": port, "protocol": protocol, "ok": ok, "deleted": deleted_item})
+    payload: dict[str, object] = {
+        "ok": all(bool(item["ok"]) for item in results),
+        "results": results,
+    }
+    if action == "close":
+        payload["deleted"] = any(bool(item.get("deleted")) for item in results)
+    return payload

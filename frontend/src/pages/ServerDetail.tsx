@@ -43,12 +43,7 @@ import { useHostInterfaces } from "@/hooks/useHostInterfaces";
 import { useHasPermission } from "@/hooks/useHasPermission";
 import { filterVisibleServersInPreview, useRolePreviewStore } from "@/stores/rolePreviewStore";
 import { ResourceEditorDialog } from "@/components/server/ResourceEditorDialog";
-import { FileManager } from "./FileManager";
-import { ModManager } from "./ModManager";
-import { Backups } from "./Backups";
 import { ServerConsolePanel } from "@/components/server/ServerConsolePanel";
-import { ServerRestartPanel } from "@/components/server/ServerRestartPanel";
-import { ServerVariablesTab } from "@/components/server/ServerVariablesTab";
 import { AuthSetupBanner } from "@/components/server/AuthSetupBanner";
 import { ServerConnectChip } from "@/components/server/ServerConnectChip";
 import { ServerStatusIcon } from "@/components/server/ServerStatusBlocks";
@@ -73,14 +68,19 @@ import {
   type ActionMenuItem,
   type DropdownOption,
 } from '@maunting/ui'
-import { DatabaseManager } from "@/components/server/DatabaseManager";
-import { OutgoingWebhooksPanel } from "@/components/server/OutgoingWebhooksPanel";
 import { frontendApi, type FrontendOverview } from "@/api/frontend";
 import { SwitchBlueprintDialog } from "@/components/server/SwitchBlueprintDialog";
 import { ServerVersionBranchDialog } from "@/components/server/ServerVersionBranchDialog";
 import { ServerWallpaperDialog } from "@/components/server/ServerWallpaperDialog";
 import { useServerWallpaperStore, wallpaperMotiv, wallpaperNavigationsState, type WallpaperNavigationsState } from "@/stores/serverWallpaperStore";
 
+const FileManager = lazy(() => import("./FileManager").then((m) => ({ default: m.FileManager })));
+const ModManager = lazy(() => import("./ModManager").then((m) => ({ default: m.ModManager })));
+const Backups = lazy(() => import("./Backups").then((m) => ({ default: m.Backups })));
+const ServerRestartPanel = lazy(() => import("@/components/server/ServerRestartPanel").then((m) => ({ default: m.ServerRestartPanel })));
+const ServerVariablesTab = lazy(() => import("@/components/server/ServerVariablesTab").then((m) => ({ default: m.ServerVariablesTab })));
+const DatabaseManager = lazy(() => import("@/components/server/DatabaseManager").then((m) => ({ default: m.DatabaseManager })));
+const OutgoingWebhooksPanel = lazy(() => import("@/components/server/OutgoingWebhooksPanel").then((m) => ({ default: m.OutgoingWebhooksPanel })));
 const DeploymentsPanel = lazy(() =>
   import("@/components/frontend/DeploymentsPanel").then((m) => ({
     default: m.DeploymentsPanel,
@@ -91,10 +91,10 @@ const FrontendSettingsPanel = lazy(() =>
     default: m.FrontendSettingsPanel,
   })),
 );
+const GuardianTab = lazy(() => import("@/features/guardian/GuardianTab").then((m) => ({ default: m.GuardianTab })));
+const AiMemoryManager = lazy(() => import("@/components/ai/AiMemoryManager").then((m) => ({ default: m.AiMemoryManager })));
 import { GuardianBadge } from "@/features/guardian/GuardianBadge";
 import { GuardianQuarantineBanner } from "@/features/guardian/GuardianQuarantineBanner";
-import { GuardianTab } from "@/features/guardian/GuardianTab";
-import { AiMemoryManager } from "@/components/ai/AiMemoryManager";
 import type { GameInfo, Server } from "@/types";
 import { mapBlueprintPorts } from "@/utils/portRoles";
 import { formatPortRoleLabel } from "@/lib/serverConnect";
@@ -445,19 +445,21 @@ export function ServerDetail() {
   useEffect(() => {
     fullRefreshTickRef.current = 0;
     void fetchAll();
-    const handle = setInterval(() => {
-      // Im Hintergrundtab schaut niemand hin: kein Takt, keine Anfragen.
+    const runPoll = () => {
       if (document.visibilityState !== "visible") return;
       if (getRateLimitRemainingMs() > 0) return;
-      // Ist der vorherige Durchlauf noch unterwegs, wird dieser Takt
-      // ausgelassen, statt die Anfragen zu stapeln.
       if (pollLaeuft.current) return;
       pollLaeuft.current = true;
       void pollStatus().finally(() => {
         pollLaeuft.current = false;
       });
-    }, 8000);
-    return () => clearInterval(handle);
+    };
+    const handle = setInterval(runPoll, 8000);
+    document.addEventListener("visibilitychange", runPoll);
+    return () => {
+      clearInterval(handle);
+      document.removeEventListener("visibilitychange", runPoll);
+    };
   }, [serverId]);
 
 
@@ -1729,27 +1731,33 @@ export function ServerDetail() {
               </Suspense>
             )}
             {activeTab === "files" && (
-              <FileManager
-                serverId={serverId}
-                initialFile={searchParams.get("file")}
-              />
+              <Suspense fallback={<div className="flex justify-center py-8"><Spinner size="md" /></div>}>
+                <FileManager
+                  serverId={serverId}
+                  initialFile={searchParams.get("file")}
+                />
+              </Suspense>
             )}
             {activeTab === "console" && <ServerConsolePanel serverId={serverId} />}
             {activeTab === "variables" && !isDatabaseServer && (
-              <ServerVariablesTab
-                serverId={serverId}
-                canEdit={canWriteServerConfig}
-                onOpenFiles={() => setActiveTab("files")}
-                onRestart={
-                  showRestartAction ? () => void doAction("restart") : undefined
-                }
-              />
+              <Suspense fallback={<div className="flex justify-center py-8"><Spinner size="md" /></div>}>
+                <ServerVariablesTab
+                  serverId={serverId}
+                  canEdit={canWriteServerConfig}
+                  onOpenFiles={() => setActiveTab("files")}
+                  onRestart={
+                    showRestartAction ? () => void doAction("restart") : undefined
+                  }
+                />
+              </Suspense>
             )}
             {activeTab === "exec" && gameInfo?.enable_exec && (
               <ServerConsolePanel serverId={serverId} mode="exec" />
             )}
             {activeTab === "mods" && showModTab && (
-              <ModManager serverId={serverId} gameInfo={gameInfo} />
+              <Suspense fallback={<div className="flex justify-center py-8"><Spinner size="md" /></div>}>
+                <ModManager serverId={serverId} gameInfo={gameInfo} />
+              </Suspense>
             )}
             {activeTab === "restarts" && (
               <div className="space-y-4">
@@ -1769,28 +1777,46 @@ export function ServerDetail() {
                     aria-label={t("servers.autoUpdatePausedLabel")}
                   />
                 </div>
-                <ServerRestartPanel
-                  server={server}
-                  serverId={serverId}
-                  onSaved={fetchAll}
-                />
+                <Suspense fallback={<div className="flex justify-center py-8"><Spinner size="md" /></div>}>
+                  <ServerRestartPanel
+                    server={server}
+                    serverId={serverId}
+                    onSaved={fetchAll}
+                  />
+                </Suspense>
               </div>
             )}
-            {activeTab === "backups" && <Backups serverId={serverId} />}
-            {activeTab === "databases" && <DatabaseManager serverId={serverId} dedicated={isDatabaseServer} />}
-            {activeTab === "webhooks" && <OutgoingWebhooksPanel serverId={serverId} />}
+            {activeTab === "backups" && (
+              <Suspense fallback={<div className="flex justify-center py-8"><Spinner size="md" /></div>}>
+                <Backups serverId={serverId} />
+              </Suspense>
+            )}
+            {activeTab === "databases" && (
+              <Suspense fallback={<div className="flex justify-center py-8"><Spinner size="md" /></div>}>
+                <DatabaseManager serverId={serverId} dedicated={isDatabaseServer} />
+              </Suspense>
+            )}
+            {activeTab === "webhooks" && (
+              <Suspense fallback={<div className="flex justify-center py-8"><Spinner size="md" /></div>}>
+                <OutgoingWebhooksPanel serverId={serverId} />
+              </Suspense>
+            )}
             {activeTab === "abo" && <ServerAboKarte serverId={serverId} />}
             {activeTab === "memory" && showMemoryTab && (
-              <AiMemoryManager
-                scope={{
-                  kind: "server_shared",
-                  serverId,
-                  canManage: canWriteServerConfig,
-                }}
-              />
+              <Suspense fallback={<div className="flex justify-center py-8"><Spinner size="md" /></div>}>
+                <AiMemoryManager
+                  scope={{
+                    kind: "server_shared",
+                    serverId,
+                    canManage: canWriteServerConfig,
+                  }}
+                />
+              </Suspense>
             )}
             {activeTab === "guardian" && (
-              <GuardianTab server={server} onRefreshServer={fetchAll} />
+              <Suspense fallback={<div className="flex justify-center py-8"><Spinner size="md" /></div>}>
+                <GuardianTab server={server} onRefreshServer={fetchAll} />
+              </Suspense>
             )}
           </div>
         </>

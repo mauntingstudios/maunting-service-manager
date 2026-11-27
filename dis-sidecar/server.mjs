@@ -14,6 +14,7 @@
  */
 import http from 'node:http';
 import crypto from 'node:crypto';
+import { Worker } from 'node:worker_threads';
 import {
   aesGcmDecrypt,
   aesGcmEncrypt,
@@ -23,7 +24,6 @@ import {
 import {
   importAesGcmKey,
   deriveHkdfSha256Bits,
-  argon2idRaw,
 } from '@msdis/shield/kdf';
 import { formatEnvelope, parseEnvelope } from '@msdis/shield/format-versioning';
 import { randomBytes } from '@msdis/shield/random';
@@ -187,10 +187,93 @@ function b64Ohne(bytes) {
   return Buffer.from(bytes).toString('base64').replace(/=+$/, '');
 }
 
+const ARGON2_POOL_SIZE = 2;
+const ARGON2_WORKER_URL = new URL('./argon2-worker.mjs', import.meta.url);
+const argon2Workers = [];
+const argon2Idle = [];
+const argon2Queue = [];
+let argon2NextTaskId = 1;
+
+function _createArgon2Slot() {
+  const worker = new Worker(ARGON2_WORKER_URL);
+  const slot = { worker, active: null };
+  worker.on('message', (msg) => {
+    const active = slot.active;
+    slot.active = null;
+    if (active && active.id === msg.id) {
+      if (msg.error) {
+        active.reject(new Error(msg.error));
+      } else {
+        active.resolve(new Uint8Array(msg.result));
+      }
+    }
+    _pumpArgon2Queue(slot);
+  });
+  worker.on('error', (err) => {
+    const active = slot.active;
+    slot.active = null;
+    if (active) active.reject(err);
+    const idx = argon2Workers.indexOf(slot);
+    if (idx !== -1) argon2Workers.splice(idx, 1);
+    const idleIdx = argon2Idle.indexOf(slot);
+    if (idleIdx !== -1) argon2Idle.splice(idleIdx, 1);
+  });
+  worker.unref();
+  argon2Workers.push(slot);
+  return slot;
+}
+
+function _pumpArgon2Queue(slot) {
+  const next = argon2Queue.shift();
+  if (!next) {
+    slot.worker.unref();
+    argon2Idle.push(slot);
+    return;
+  }
+  slot.active = next;
+  slot.worker.ref();
+  slot.worker.postMessage(next.payload, next.transfer);
+}
+
+function argon2idInWorker({ password, salt, memorySize, iterations, parallelism, hashLength }) {
+  return new Promise((resolve, reject) => {
+    const saltBytes = salt instanceof Uint8Array ? salt : new Uint8Array(salt);
+    const saltCopy = new Uint8Array(saltBytes.length);
+    saltCopy.set(saltBytes);
+    const id = argon2NextTaskId++;
+    const job = {
+      id,
+      resolve,
+      reject,
+      payload: {
+        id,
+        password,
+        salt: saltCopy,
+        memorySize,
+        iterations,
+        parallelism,
+        hashLength,
+      },
+      transfer: [saltCopy.buffer],
+    };
+    let slot = argon2Idle.shift();
+    if (!slot && argon2Workers.length < ARGON2_POOL_SIZE) {
+      slot = _createArgon2Slot();
+    }
+    if (slot) {
+      slot.active = job;
+      slot.worker.ref();
+      slot.worker.postMessage(job.payload, job.transfer);
+    } else {
+      argon2Queue.push(job);
+    }
+  });
+}
+
 async function altenDigestRechnen(password, altParams) {
   const m = ALT_PARAMS.exec(altParams);
   if (!m) return null;
-  const digest = await argon2idRaw({
+  const digest = await argon2idInWorker({
     password,
     salt: b64Bytes(m[5]),
     memorySize: Number(m[1]),
@@ -459,7 +542,7 @@ const server = http.createServer(async (req, res) => {
 
       case '/hash-password': {
         const salt = randomBytes(PW_SALT_LEN);
-        const hash = await argon2idRaw({
+        const hash = await argon2idInWorker({
           password: data.password,
           salt,
           ...PW_PARAMS,
@@ -480,7 +563,7 @@ const server = http.createServer(async (req, res) => {
         const digestBytes = b64Bytes(altDigest);
         const altParams = `alt.${mem}.${iter}.${par}.${digestBytes.length}.${b64Ohne(b64Bytes(altSalz))}`;
         const salt = randomBytes(PW_SALT_LEN);
-        const hash = await argon2idRaw({
+        const hash = await argon2idInWorker({
           password: b64Ohne(digestBytes),
           salt,
           ...PW_PARAMS,
@@ -510,7 +593,7 @@ const server = http.createServer(async (req, res) => {
         }
         const salt = new Uint8Array(Buffer.from(parts[1], 'base64'));
         const storedHash = new Uint8Array(Buffer.from(parts[2], 'base64'));
-        const computed = await argon2idRaw({
+        const computed = await argon2idInWorker({
           password,
           salt,
           ...PW_PARAMS,
@@ -719,7 +802,7 @@ async function handleDeriveRawKey(req, res) {
   }
   let rawKey;
   try {
-    rawKey = await argon2idRaw({
+    rawKey = await argon2idInWorker({
       password,
       salt: saltBytes,
       ...BACKUP_KDF_PARAMS,
@@ -762,7 +845,7 @@ async function handleInitKey(req, res) {
   }
   let rawKey;
   try {
-    rawKey = await argon2idRaw({
+    rawKey = await argon2idInWorker({
       password,
       salt: saltBytes,
       ...BACKUP_KDF_PARAMS,
@@ -1014,3 +1097,13 @@ const HOST = process.env.MSM_DIS_SIDECAR_HOST || '127.0.0.1';
 server.listen(PORT, HOST, () => {
   console.log(`[DIS Sidecar] Listening on http://${HOST}:${PORT}`);
 });
+
+function _shutdownWorkers() {
+  for (const slot of argon2Workers) {
+    slot.worker.terminate().catch(() => {});
+  }
+  server.close(() => process.exit(0));
+}
+
+process.on('SIGINT', _shutdownWorkers);
+process.on('SIGTERM', _shutdownWorkers);

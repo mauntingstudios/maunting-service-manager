@@ -16,7 +16,8 @@ from fastapi.responses import StreamingResponse
 from starlette.websockets import WebSocketDisconnect
 from sqlalchemy.orm import Session
 
-from database import SessionLocal, get_db
+import database
+from database import get_db
 from dependencies import (
     SyncTeilnehmer,
     get_current_user,
@@ -86,31 +87,43 @@ async def _event_stream(
         SyncEventService.unsubscribe(conn_id)
 
 
+def _resolve_sync_stream_context(request: Request) -> tuple[int, list[int], bool, str | None]:
+    """Löst Auth, Team-Zugehörigkeit und Familie in einer kurzlebigen DB-Session auf."""
+    with database.SessionLocal() as db:
+        teilnehmer = sync_teilnehmer(request=request, db=db)
+        user = teilnehmer.user
+        user_teams = team_service.list_user_teams(db, user)
+        team_ids = [t.id for t in user_teams]
+        is_admin = bool(user.is_owner)
+        return user.id, team_ids, is_admin, teilnehmer.familie
+
+
 @router.get("/live")
 @router.get("/stream")
 async def live_events(
     request: Request,
-    db: Session = Depends(get_db),
-    teilnehmer: SyncTeilnehmer = Depends(sync_teilnehmer),
 ) -> StreamingResponse:
     """Authentifizierter SSE-Endpunkt für Echtzeit-Synchronisation von Notizen & Kalender.
 
     Zugang wahlweise über die Sitzung oder einen dauerhaften Kanal-Ausweis
     (`SyncTeilnehmer`). Der zweite Weg ist der Hintergrunddienst eines Geräts:
     er hört zu und darf sonst nichts.
+
+    Stabilitäts-Invariante: Auth und Team-Auflösung laufen in einer kurzlebigen
+    Session über `asyncio.to_thread`, sodass während des potenziell stundenlangen
+    SSE-Streams keine DB-Verbindung blockiert wird.
     """
-    user = teilnehmer.user
-    user_teams = team_service.list_user_teams(db, user)
-    team_ids = [t.id for t in user_teams]
-    is_admin = bool(user.is_owner)
+    user_id, team_ids, is_admin, familie = await asyncio.to_thread(
+        _resolve_sync_stream_context, request
+    )
 
     return StreamingResponse(
         _event_stream(
             request=request,
-            user_id=user.id,
+            user_id=user_id,
             team_ids=team_ids,
             is_admin=is_admin,
-            familie=teilnehmer.familie,
+            familie=familie,
         ),
         media_type="text/event-stream",
         headers={
@@ -184,11 +197,9 @@ sync_alias_router = APIRouter(prefix="/api/sync", tags=["sync-events"])
 @sync_alias_router.get("/events")
 async def sync_events_alias(
     request: Request,
-    db: Session = Depends(get_db),
-    teilnehmer: SyncTeilnehmer = Depends(sync_teilnehmer),
 ) -> StreamingResponse:
     """Alias für den SSE-Live-Event-Kanal."""
-    return await live_events(request=request, db=db, teilnehmer=teilnehmer)
+    return await live_events(request=request)
 
 
 @router.websocket("/ws")
@@ -206,7 +217,7 @@ async def sync_events_ws(
     - Robuste Nebenläufigkeit: Sende- und Empfangs-Schleifen sind gekoppelt; bricht eine Seite
       ab, wird die andere unmittelbar gecancelt und das Abo atomar entfernt.
     """
-    with SessionLocal() as db:
+    with database.SessionLocal() as db:
         try:
             user = get_current_user_for_ws(websocket, db)
             user_id = user.id

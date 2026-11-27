@@ -17,6 +17,7 @@ import os
 import select
 import subprocess
 import threading
+import time
 from functools import wraps
 from pathlib import Path
 from typing import Any
@@ -48,6 +49,22 @@ _ALLOWED_RUNTIMES = {"runc", "runsc", "kata", "kata-qemu", "kata-fc"}
 _CLIENT: Any | None = None
 _BLOCK_DEVICE_CACHE: str | None = None
 _BLOCK_DEVICE_RESOLVED = False
+_STATS_CACHE_TTL_S = 4.0
+_stats_cache_lock = threading.Lock()
+_stats_cache: dict[str, tuple[float, dict[str, Any]]] = {}
+_stats_prev_cpu: dict[str, tuple[int, int]] = {}
+_stats_flight_locks: dict[str, threading.Lock] = {}
+
+
+def clear_stats_cache(name: str | None = None) -> None:
+    """Clear cached container stats and previous CPU samples (all or single container)."""
+    with _stats_cache_lock:
+        if name is None:
+            _stats_cache.clear()
+            _stats_prev_cpu.clear()
+            return
+        _stats_cache.pop(name, None)
+        _stats_prev_cpu.pop(name, None)
 
 
 class DockerUnavailableError(Exception):
@@ -709,6 +726,7 @@ def run_ephemeral(
 
 @_coordinated_container_mutation
 def start_container(name: str) -> dict[str, Any]:
+    clear_stats_cache(name)
     container = _get_container(name)
     try:
         container.start()
@@ -719,10 +737,12 @@ def start_container(name: str) -> dict[str, Any]:
 
 @_coordinated_container_mutation
 def stop_container(name: str, timeout: int | None = None) -> dict[str, Any]:
+    clear_stats_cache(name)
     container = _get_container(name)
     grace = timeout if timeout is not None else settings.default_stop_timeout
     try:
         container.stop(timeout=max(0, int(grace)))
+        clear_stats_cache(name)
         return {"ok": True, "name": name}
     except (DockerException, OSError) as exc:
         raise DockerUnavailableError(_safe_error(exc)) from exc
@@ -730,10 +750,12 @@ def stop_container(name: str, timeout: int | None = None) -> dict[str, Any]:
 
 @_coordinated_container_mutation
 def restart_container(name: str, timeout: int | None = None) -> dict[str, Any]:
+    clear_stats_cache(name)
     container = _get_container(name)
     grace = timeout if timeout is not None else settings.default_stop_timeout
     try:
         container.restart(timeout=max(0, int(grace)))
+        clear_stats_cache(name)
         return {"ok": True, "name": name}
     except (DockerException, OSError) as exc:
         raise DockerUnavailableError(_safe_error(exc)) from exc
@@ -741,22 +763,51 @@ def restart_container(name: str, timeout: int | None = None) -> dict[str, Any]:
 
 @_coordinated_container_mutation
 def remove_container(name: str) -> dict[str, Any]:
+    clear_stats_cache(name)
     container = _get_container(name)
     client = _get_client()
     server_id = server_id_from_container_name(name, settings.container_name_prefix)
     try:
         container.remove(force=True)
         network_isolation_service.remove_isolated_server_network(client, server_id)
+        clear_stats_cache(name)
         return {"ok": True, "name": name}
     except (DockerException, OSError) as exc:
         raise DockerUnavailableError(_safe_error(exc)) from exc
 
 
-def container_stats(name: str) -> dict[str, Any]:
+def _cpu_percent_from_sample(
+    raw: dict[str, Any],
+    prev_sample: tuple[int, int] | None,
+) -> tuple[float | None, tuple[int, int] | None]:
+    cpu_stats = raw.get("cpu_stats") or {}
+    total_usage = (cpu_stats.get("cpu_usage") or {}).get("total_usage")
+    system_cpu_usage = cpu_stats.get("system_cpu_usage")
+    online_cpus = (
+        cpu_stats.get("online_cpus")
+        or len((cpu_stats.get("cpu_usage") or {}).get("percpu_usage") or [])
+        or 1
+    )
+    next_sample: tuple[int, int] | None = None
+    if isinstance(total_usage, (int, float)) and isinstance(system_cpu_usage, (int, float)):
+        next_sample = (int(total_usage), int(system_cpu_usage))
+
+    if prev_sample is not None and next_sample is not None:
+        cpu_delta = next_sample[0] - prev_sample[0]
+        system_delta = next_sample[1] - prev_sample[1]
+        if system_delta > 0 and cpu_delta >= 0:
+            return round((cpu_delta / system_delta) * online_cpus * 100.0, 2), next_sample
+
+    return _cpu_percent(raw), next_sample
+
+
+def _fetch_container_stats_uncached(name: str) -> dict[str, Any]:
     container = _get_container(name)
     try:
         container.reload()
         if container.status != "running":
+            with _stats_cache_lock:
+                _stats_prev_cpu.pop(name, None)
             return {
                 "name": name,
                 "status": container.status,
@@ -765,11 +816,23 @@ def container_stats(name: str) -> dict[str, Any]:
                 "network_rx_bytes": None,
                 "network_tx_bytes": None,
             }
-        raw = container.stats(stream=False)
+        with _stats_cache_lock:
+            prev_sample = _stats_prev_cpu.get(name)
+        if prev_sample is not None:
+            try:
+                raw = container.stats(stream=False, one_shot=True)
+            except TypeError:
+                raw = container.stats(stream=False)
+        else:
+            raw = container.stats(stream=False)
     except (DockerException, OSError) as exc:
         raise DockerUnavailableError(_safe_error(exc)) from exc
 
-    cpu_percent = _cpu_percent(raw)
+    cpu_percent, next_sample = _cpu_percent_from_sample(raw, prev_sample)
+    if next_sample is not None:
+        with _stats_cache_lock:
+            _stats_prev_cpu[name] = next_sample
+
     ram_mb = None
     try:
         ram_mb = int(raw.get("memory_stats", {}).get("usage", 0)) // (1024 * 1024)
@@ -793,6 +856,26 @@ def container_stats(name: str) -> dict[str, Any]:
         "network_rx_bytes": net_rx,
         "network_tx_bytes": net_tx,
     }
+
+
+def container_stats(name: str) -> dict[str, Any]:
+    now = time.monotonic()
+    with _stats_cache_lock:
+        cached = _stats_cache.get(name)
+        if cached is not None and cached[0] > now:
+            return dict(cached[1])
+        flight_lock = _stats_flight_locks.setdefault(name, threading.Lock())
+
+    with flight_lock:
+        now = time.monotonic()
+        with _stats_cache_lock:
+            cached = _stats_cache.get(name)
+            if cached is not None and cached[0] > now:
+                return dict(cached[1])
+        fresh = _fetch_container_stats_uncached(name)
+        with _stats_cache_lock:
+            _stats_cache[name] = (time.monotonic() + _STATS_CACHE_TTL_S, dict(fresh))
+        return fresh
 
 
 def _update_container_raw(container: Any, **kwargs: Any) -> dict:

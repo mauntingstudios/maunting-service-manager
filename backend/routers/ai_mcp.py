@@ -193,12 +193,10 @@ def list_mcp_servers(
     with vorab_entschluesselt(
         db,
         q,
-        AiMcpServer.name,
-        AiMcpServer.description,
         AiMcpServer.endpoint_url,
-        AiMcpServer.command_json,
-        AiMcpServer.auth_header,
-        AiMcpServer.tools_cache_json,
+        AiMcpServer.command,
+        AiMcpServer.args_json,
+        AiMcpServer.auth_token_encrypted,
     ):
         rows = q.all()
     return [_to_response(r) for r in rows]
@@ -239,7 +237,7 @@ def create_mcp_server(
 
     if payload.transport in ("http", "sse") and not (payload.endpoint_url or "").strip():
         raise HTTPException(status_code=400, detail="Endpunkt-URL ist fuer HTTP/SSE MCP-Server erforderlich")
-    if payload.transport == "stdio" and not (payload.command_json or "").strip():
+    if payload.transport == "stdio" and not (befehl or "").strip():
         raise HTTPException(status_code=400, detail="Startbefehl ist fuer lokale Stdio-MCP-Server erforderlich")
 
     row = AiMcpServer(

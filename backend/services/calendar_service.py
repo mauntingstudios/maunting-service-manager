@@ -23,7 +23,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import httpx
 from sqlalchemy import or_, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, defer, noload
 
 from models.calendar_event import CalendarEvent
 from models.dis_text import gebuendelt_entschluesseln
@@ -726,6 +726,7 @@ class CalendarService:
         server_id: int | None = None,
         *,
         _vorkommen_fenster: tuple[datetime | None, datetime | None] | None = None,
+        _nur_erinnerung: bool = False,
     ) -> list[dict[str, Any]]:
         """Liest Termine aus dem nativen oder CalDAV-Kalender.
 
@@ -786,6 +787,15 @@ class CalendarService:
                 visibility_filters.append(CalendarEvent.event_type == "node")
 
             query = select(CalendarEvent).where(or_(*visibility_filters))
+            if _nur_erinnerung:
+                # Erinnerungen brauchen weder verknuepfte Tabellen noch description.
+                query = query.options(
+                    noload(CalendarEvent.calendar),
+                    noload(CalendarEvent.user),
+                    noload(CalendarEvent.team),
+                    noload(CalendarEvent.server),
+                    defer(CalendarEvent.description),
+                )
 
             if event_type:
                 query = query.where(CalendarEvent.event_type == event_type)
@@ -836,19 +846,33 @@ class CalendarService:
                         continue
                 behalten.append((ev, recurrence, serie, vorkommen))
 
-            klartexte.update(gebuendelt_entschluesseln(
-                _dis_paare([ev for ev, *_ in behalten], ("title", "description", "location"))
-            ))
+            spalten: tuple[str, ...] = ("title", "location") if _nur_erinnerung else ("title", "description", "location")
+            if behalten:
+                klartexte.update(gebuendelt_entschluesseln(
+                    _dis_paare([ev for ev, *_ in behalten], spalten)
+                ))
             result: list[dict[str, Any]] = []
             for ev, recurrence, serie, vorkommen in behalten:
                 ev_type = ev.event_type or "personal"
                 ev_color = ev.color or _default_color_for_type(ev_type)
 
-                can_edit = (ev.user_id == user.id) or user.is_owner
-                if ev.event_type == "team" and ev.team and ev.team.owner_user_id == user.id:
-                    can_edit = True
-
-                title, desc, loc = _decrypt_or_migrate_calendar_event(db, ev, klartexte)
+                if _nur_erinnerung:
+                    aad = _cal_aad(ev.user_id, ev.event_uid)
+                    title = _feld_entschluesseln(db, ev, "title", aad, klartexte)
+                    desc = ""
+                    loc = _feld_entschluesseln(db, ev, "location", aad, klartexte)
+                    can_edit = (ev.user_id == user.id) or user.is_owner
+                    team_name = None
+                    server_name = None
+                    creator_name = None
+                else:
+                    can_edit = (ev.user_id == user.id) or user.is_owner
+                    if ev.event_type == "team" and ev.team and ev.team.owner_user_id == user.id:
+                        can_edit = True
+                    title, desc, loc = _decrypt_or_migrate_calendar_event(db, ev, klartexte)
+                    team_name = ev.team.name if ev.team else None
+                    server_name = ev.server.name if ev.server else None
+                    creator_name = ev.user.username if ev.user else None
 
                 formatted = {
                     "event_id": ev.event_uid,
@@ -863,10 +887,10 @@ class CalendarService:
                     "color": ev_color,
                     "event_type": ev_type,
                     "team_id": ev.team_id,
-                    "team_name": ev.team.name if ev.team else None,
+                    "team_name": team_name,
                     "server_id": ev.server_id,
-                    "server_name": ev.server.name if ev.server else None,
-                    "creator_name": ev.user.username if ev.user else None,
+                    "server_name": server_name,
+                    "creator_name": creator_name,
                     "user_id": ev.user_id,
                     "can_edit": can_edit,
                     "calendar": calendar.name if calendar else "MSM Kalender",
@@ -964,6 +988,7 @@ class CalendarService:
         event_type: str | None = None,
         team_id: int | None = None,
         server_id: int | None = None,
+        _nur_erinnerung: bool = False,
     ) -> list[dict[str, Any]]:
         """Termine im Fenster, Serien ausgebreitet — soweit der Server sie lesen kann.
 
@@ -1008,6 +1033,7 @@ class CalendarService:
             team_id=team_id,
             server_id=server_id,
             _vorkommen_fenster=(von, bis),
+            _nur_erinnerung=_nur_erinnerung,
         )
 
     @classmethod
@@ -1901,7 +1927,9 @@ class CalendarService:
         reminders: list[dict[str, Any]] = []
 
         try:
-            events = cls.vorkommen_im_fenster(db, user, von=now, bis=now + timedelta(hours=50))
+            events = cls.vorkommen_im_fenster(
+                db, user, von=now, bis=now + timedelta(hours=50), _nur_erinnerung=True
+            )
         except Exception:
             return []
 
