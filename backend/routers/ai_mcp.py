@@ -4,21 +4,31 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from urllib.parse import quote
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
+from config import settings
 from database import get_db
 from dependencies import require_global, verify_csrf
 from models import AiMcpServer, TeamMember, User
 from models.dis_text import vorab_entschluesselt
-from services import permission_service
+from services import oauth_service, permission_service
+from services.mcp.client import McpFehler
 from services.mcp.entdeckung import (
     normalisiere_werkzeuge,
     pruefen_und_speichern,
     speichere_werkzeuge,
 )
+from services.mcp.oauth import (
+    MCP_OAUTH_STATE_COOKIE,
+    complete_oauth_callback,
+    start_oauth_flow,
+)
+from services.mcp.sicherheit import McpZielFehler
 
 router = APIRouter(prefix="/api/ai/mcp", tags=["ai-mcp"])
 
@@ -34,6 +44,7 @@ class AiMcpServerCreatePayload(BaseModel):
     auth_header: str | None = Field(default=None, max_length=2000)
     command: str | None = Field(default=None, max_length=4000)
     args: list[str] | None = None
+    auth_mode: str = Field(default="token", pattern="^(none|token|oauth)$")
     is_global: bool | None = None
     enabled: bool = True
 
@@ -47,6 +58,7 @@ class AiMcpServerUpdatePayload(BaseModel):
     auth_header: str | None = Field(default=None, max_length=2000)
     command: str | None = Field(default=None, max_length=4000)
     args: list[str] | None = None
+    auth_mode: str | None = Field(default=None, pattern="^(none|token|oauth)$")
     is_global: bool | None = None
     enabled: bool | None = None
 
@@ -86,6 +98,9 @@ class AiMcpServerResponse(BaseModel):
     is_global: bool = False
     has_auth_header: bool = False
     auth_header_configured: bool = False
+    auth_mode: str = "token"
+    oauth_connected: bool = False
+    oauth_expires_at: datetime | None = None
     enabled: bool
     tools_cache_json: str | None = None
     created_at: datetime
@@ -146,6 +161,9 @@ def _to_response(row: AiMcpServer) -> AiMcpServerResponse:
         is_global=row.scope == "global",
         has_auth_header=bool(row.auth_token_hint),
         auth_header_configured=bool(row.auth_token_hint),
+        auth_mode=getattr(row, "auth_mode", "token") or "token",
+        oauth_connected=bool(getattr(row, "auth_mode", "token") == "oauth" and row.auth_token_hint),
+        oauth_expires_at=getattr(row, "oauth_expires_at", None),
         enabled=row.enabled,
         tools_cache_json=row.cached_tools_json,
         created_at=row.created_at,
@@ -252,6 +270,7 @@ def create_mcp_server(
         args_json=_command_teile(befehl)[1],
         auth_token_encrypted=(payload.auth_header or "").strip() or None,
         auth_token_hint=((payload.auth_header or "").strip()[-4:] or None),
+        auth_mode=payload.auth_mode,
         enabled=payload.enabled,
         cached_tools_json="[]",
     )
@@ -297,6 +316,8 @@ def update_mcp_server(
         geheim = (values["auth_header"] or "").strip()
         row.auth_token_encrypted = geheim or None
         row.auth_token_hint = geheim[-4:] if geheim else None
+    if "auth_mode" in values and values["auth_mode"] is not None:
+        row.auth_mode = values["auth_mode"]
     if "enabled" in values and values["enabled"] is not None:
         row.enabled = bool(values["enabled"])
     row.updated_at = datetime.now(timezone.utc)
@@ -372,3 +393,88 @@ def delete_mcp_server(
     db.delete(row)
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+def _mcp_public_base(request: Request) -> str:
+    cfg = (getattr(settings, "OAUTH_PUBLIC_BASE_URL", None) or "").strip().rstrip("/")
+    if cfg:
+        return cfg
+    return str(request.base_url).rstrip("/")
+
+
+@router.post("/{server_id}/oauth/start")
+def start_mcp_oauth(
+    server_id: int,
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_global("ai.chat.use")),
+    _: None = Depends(verify_csrf),
+) -> dict[str, str]:
+    """Startet den generischen OAuth-2.1-Flow fuer einen Remote-MCP-Server."""
+    row = db.get(AiMcpServer, server_id)
+    if row is None or not _can_manage_mcp(db, user, row):
+        raise HTTPException(status_code=404, detail="MCP-Server nicht gefunden oder keine Berechtigung")
+    if (row.transport or "http") not in {"http", "sse"} or not row.endpoint_url:
+        raise HTTPException(status_code=400, detail="OAuth ist nur fuer HTTP/SSE MCP-Server verfuegbar")
+
+    redirect_uri = f"{_mcp_public_base(request)}/api/ai/mcp/oauth/callback"
+    try:
+        authorize_url, cookie_value = start_oauth_flow(row, user, redirect_uri)
+    except (McpFehler, McpZielFehler) as exc:
+        grund = getattr(exc, "grund", None) or str(exc)
+        raise HTTPException(status_code=400, detail=f"MCP-OAuth konnte nicht gestartet werden: {grund}") from exc
+
+    response.set_cookie(
+        key=MCP_OAUTH_STATE_COOKIE,
+        value=cookie_value,
+        httponly=True,
+        samesite="lax",
+        secure=redirect_uri.startswith("https://"),
+        max_age=oauth_service.STATE_TTL_SECONDS,
+        path="/api/ai/mcp/oauth",
+    )
+    return {"authorize_url": authorize_url}
+
+
+@router.get("/oauth/callback")
+def mcp_oauth_callback(
+    request: Request,
+    code: str | None = Query(default=None),
+    state: str | None = Query(default=None),
+    error: str | None = Query(default=None),
+    db: Session = Depends(get_db),
+) -> RedirectResponse:
+    """Callback fuer MCP-OAuth-2.1: tauscht Code gegen Tokens und entdeckt Werkzeuge."""
+    base = _mcp_public_base(request)
+    if error:
+        resp = RedirectResponse(
+            url=f"{base}/ai?tab=tools&mcp_oauth=error&reason={quote(error[:64])}",
+            status_code=302,
+        )
+        resp.delete_cookie(MCP_OAUTH_STATE_COOKIE, path="/api/ai/mcp/oauth")
+        return resp
+    if not code or not state:
+        resp = RedirectResponse(
+            url=f"{base}/ai?tab=tools&mcp_oauth=error&reason=missing_params",
+            status_code=302,
+        )
+        resp.delete_cookie(MCP_OAUTH_STATE_COOKIE, path="/api/ai/mcp/oauth")
+        return resp
+
+    cookie = request.cookies.get(MCP_OAUTH_STATE_COOKIE)
+    try:
+        server = complete_oauth_callback(db, code=code, state=state, packed_cookie=cookie)
+        pruefen_und_speichern(db, server)
+        resp = RedirectResponse(
+            url=f"{base}/ai?tab=tools&mcp_oauth=1&server_id={server.id}",
+            status_code=302,
+        )
+    except (McpFehler, McpZielFehler) as exc:
+        grund = getattr(exc, "grund", None) or "oauth_fehler"
+        resp = RedirectResponse(
+            url=f"{base}/ai?tab=tools&mcp_oauth=error&reason={quote(str(grund)[:64])}",
+            status_code=302,
+        )
+    resp.delete_cookie(MCP_OAUTH_STATE_COOKIE, path="/api/ai/mcp/oauth")
+    return resp

@@ -382,6 +382,9 @@ export interface AiMcpServer {
   command: string | null
   args: string[]
   auth_header_configured: boolean
+  auth_mode?: 'none' | 'token' | 'oauth'
+  oauth_connected?: boolean
+  oauth_expires_at?: string | null
   enabled: boolean
   created_at: string
   updated_at: string
@@ -408,6 +411,7 @@ export interface AiMcpServerWrite {
   command?: string | null
   args?: string[]
   auth_header?: string | null
+  auth_mode?: 'none' | 'token' | 'oauth'
   clear_auth_header?: boolean
   team_id?: number | null
   is_global?: boolean

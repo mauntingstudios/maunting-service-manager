@@ -10,6 +10,7 @@ export type McpCategory =
 export type McpAuthType =
   | 'none'              // Kein Token nötig (z. B. lokales Dateisystem, Puppeteer-Browser)
   | 'token'             // API-Key, Personal Access Token (PAT), Secret
+  | 'oauth'             // OAuth 2.1 Browser-Anmeldung (Discovery + PKCE)
   | 'oauth_or_token'    // Unterstützt Browser-Login/OAuth oder Personal Access Token (z. B. Vercel, Supabase, GitHub)
   | 'connection_string' // Verbindungs-URL (z. B. Postgres postgresql://...)
   | 'custom'            // Spezifische Konfiguration

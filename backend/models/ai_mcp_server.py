@@ -23,6 +23,7 @@ from models.dis_text import ai_text
 
 MCP_TRANSPORTS = ("http", "sse", "stdio")
 MCP_SCOPES = ("global", "team", "user")
+MCP_AUTH_MODES = ("none", "token", "oauth")
 
 
 class AiMcpServer(Base):
@@ -37,6 +38,10 @@ class AiMcpServer(Base):
         CheckConstraint(
             "scope IN ('global', 'team', 'user')",
             name="ck_ai_mcp_servers_scope",
+        ),
+        CheckConstraint(
+            "auth_mode IN ('none', 'token', 'oauth')",
+            name="ck_ai_mcp_servers_auth_mode",
         ),
         Index("ix_ai_mcp_servers_scope_user", "scope", "user_id"),
         Index("ix_ai_mcp_servers_scope_team", "scope", "team_id"),
@@ -73,6 +78,18 @@ class AiMcpServer(Base):
         ai_text("ai_mcp_servers.auth_token"), nullable=True
     )
     auth_token_hint: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    # OAuth 2.1 (PKCE + Refresh-Token) fuer Remote-MCP-Server
+    auth_mode: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="token", server_default="token"
+    )
+    oauth_refresh_token_encrypted: Mapped[str | None] = mapped_column(
+        ai_text("ai_mcp_servers.oauth_refresh_token"), nullable=True
+    )
+    oauth_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    oauth_client_id: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    oauth_token_endpoint: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     # Zuletzt entdeckte Werkzeuge als JSON-Liste [{"name": ..., "description": ..., "inputSchema": ...}]
     cached_tools_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     enabled: Mapped[bool] = mapped_column(

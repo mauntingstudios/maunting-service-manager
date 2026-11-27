@@ -207,6 +207,7 @@ def aufrufen(
     tool: dict,
     arguments: dict,
     *,
+    db: Session | None = None,
     transport=None,
     erlaube_loopback: bool = False,
     schreiben_erlaubt: bool = False,
@@ -219,9 +220,14 @@ def aufrufen(
     _pruefe_argumente(tool, arguments)
     begonnen = time.monotonic()
     try:
+        from services.mcp.oauth import ensure_fresh_access_token
+
+        token = ensure_fresh_access_token(
+            db, row, transport=transport, erlaube_loopback=erlaube_loopback
+        )
         with McpClient(
             row.endpoint_url,
-            token=row.auth_token_encrypted or None,
+            token=token,
             transport=transport,
             erlaube_loopback=erlaube_loopback,
         ) as client:
@@ -270,7 +276,7 @@ def rufe(db: Session, user: User, tool_name: str, arguments: dict) -> dict[str, 
     )
     if treffer is None:
         raise AiActionValidationError("MCP-Werkzeug nicht gefunden")
-    return aufrufen(row, treffer, arguments)
+    return aufrufen(row, treffer, arguments, db=db)
 
 
 def _stdio_env(auth_token: str | None) -> dict[str, str]:
@@ -416,6 +422,7 @@ def ausfuehren(db: Session, rahmen: Any) -> Any:
         row,
         tool,
         arguments if isinstance(arguments, dict) else {},
+        db=db,
         schreiben_erlaubt=True,
     )
     return _Ausgefuehrt(result=ergebnis)

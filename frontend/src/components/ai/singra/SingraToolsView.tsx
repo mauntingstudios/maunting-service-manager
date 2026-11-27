@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import {
   Activity,
   ArrowRight,
@@ -201,6 +201,7 @@ export function SingraToolsView({
   const [showTechnicalMcp, setShowTechnicalMcp] = useState(false)
   const [savingMcp, setSavingMcp] = useState(false)
   const [pruefendMcp, setPruefendMcp] = useState<string | null>(null)
+  const [searchParams, setSearchParams] = useSearchParams()
   const [mcpDraft, setMcpDraft] = useState<
     AiMcpServerWrite & { name: string; scopeChoice: string }
   >({
@@ -341,6 +342,36 @@ export function SingraToolsView({
     setMcpModalOpen(true)
   }
 
+  useEffect(() => {
+    const oauthStatus = searchParams.get('mcp_oauth')
+    if (!oauthStatus) return
+    if (oauthStatus === '1') {
+      toast.success('MCP-Konto erfolgreich per OAuth verbunden.')
+      void loadToolsData()
+    } else if (oauthStatus === 'error') {
+      const reason = searchParams.get('reason') || 'unbekannt'
+      toast.error(`MCP-OAuth fehlgeschlagen: ${reason}`)
+    }
+    const next = new URLSearchParams(searchParams)
+    next.delete('mcp_oauth')
+    next.delete('reason')
+    next.delete('server_id')
+    setSearchParams(next, { replace: true })
+  }, [searchParams, setSearchParams, loadToolsData])
+
+  const handleStartMcpOAuth = async (serverId: string) => {
+    try {
+      const { authorize_url } = await aiApi.startMcpOAuth(serverId)
+      window.location.assign(authorize_url)
+    } catch (err: unknown) {
+      toast.error(
+        err instanceof SanitizedApiError
+          ? err.message
+          : 'OAuth-Anmeldung konnte nicht gestartet werden.',
+      )
+    }
+  }
+
   const handleCreateMcp = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!mcpDraft.name.trim() || savingMcp) return
@@ -355,22 +386,32 @@ export function SingraToolsView({
         .split(/\s+/)
         .map((s) => s.trim())
         .filter(Boolean)
+      const transport = mcpDraft.transport ?? 'http'
+      const authMode: 'none' | 'token' | 'oauth' =
+        selectedPreset?.authType === 'oauth' && transport !== 'stdio'
+          ? 'oauth'
+          : selectedPreset?.authType === 'none'
+          ? 'none'
+          : 'token'
 
       const created = await aiApi.createMcpServer({
         name: mcpDraft.name.trim(),
         description: mcpDraft.description?.trim() || null,
-        transport: mcpDraft.transport ?? 'http',
+        transport,
         endpoint_url:
-          mcpDraft.transport === 'stdio'
+          transport === 'stdio'
             ? null
             : mcpDraft.endpoint_url?.trim() || null,
         command:
-          mcpDraft.transport === 'stdio' ? mcpDraft.command?.trim() || null : null,
-        args: mcpDraft.transport === 'stdio' ? parsedArgs : [],
+          transport === 'stdio' ? mcpDraft.command?.trim() || null : null,
+        args: transport === 'stdio' ? parsedArgs : [],
         auth_header:
-          selectedPreset?.authType === 'none' || selectedPreset?.authType === 'connection_string'
+          authMode === 'oauth' ||
+          selectedPreset?.authType === 'none' ||
+          selectedPreset?.authType === 'connection_string'
             ? null
             : mcpDraft.auth_header?.trim() || null,
+        auth_mode: authMode,
         team_id: teamId,
         is_global: isGlobal,
         enabled: true,
@@ -378,6 +419,10 @@ export function SingraToolsView({
       setMcpServers((prev) => [created, ...prev])
       setMcpModalOpen(false)
       setSelectedPreset(null)
+      if (authMode === 'oauth' && transport !== 'stdio') {
+        await handleStartMcpOAuth(created.id)
+        return
+      }
       toast.success('Integration verbunden.')
     } catch (err: unknown) {
       toast.error(
@@ -745,6 +790,16 @@ export function SingraToolsView({
                           >
                             Nur in der Desktop-App nutzbar
                           </span>
+                        ) : srv.transport !== 'stdio' &&
+                          (srv.auth_mode === 'oauth' || !srv.auth_header_configured) ? (
+                          <button
+                            type="button"
+                            onClick={() => void handleStartMcpOAuth(srv.id)}
+                            className="mr-auto inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+                          >
+                            <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+                            {srv.oauth_connected ? 'OAuth erneuern' : 'Mit Konto anmelden'}
+                          </button>
                         ) : null}
                         <button
                           type="button"
@@ -1116,6 +1171,10 @@ export function SingraToolsView({
                 {selectedPreset?.authType === 'none' ? (
                   <div className="flex h-10 items-center rounded-xl border border-outline-variant/30 bg-surface-container-high/40 px-3 text-xs text-on-surface-variant">
                     Kein Zugangsschlüssel nötig (Lokales Werkzeug)
+                  </div>
+                ) : selectedPreset?.authType === 'oauth' ? (
+                  <div className="flex h-10 items-center rounded-xl border border-primary/30 bg-primary/8 px-3 text-xs text-primary">
+                    Weiterleitung zur OAuth-Anmeldung beim Speichern
                   </div>
                 ) : (
                   <Input

@@ -21,6 +21,7 @@ from services.mcp.sicherheit import McpZielFehler
 def entdecke(
     server: AiMcpServer,
     *,
+    db: Session | None = None,
     transport=None,
     erlaube_loopback: bool = False,
     timeout: float = 30.0,
@@ -30,9 +31,14 @@ def entdecke(
         raise McpFehler("stdio_nur_desktop")
     if not server.endpoint_url:
         raise McpFehler("endpunkt_fehlt")
+    from services.mcp.oauth import ensure_fresh_access_token
+
+    token = ensure_fresh_access_token(
+        db, server, transport=transport, erlaube_loopback=erlaube_loopback
+    )
     with McpClient(
         server.endpoint_url,
-        token=server.auth_token_encrypted or None,
+        token=token,
         transport=transport,
         timeout=timeout,
         erlaube_loopback=erlaube_loopback,
@@ -97,7 +103,7 @@ def pruefen_und_speichern(
     """Prueft die Verbindung, schreibt Cache und Stand, committet einmal."""
     werkzeuge: list[dict] = []
     try:
-        werkzeuge = entdecke(server, transport=transport, erlaube_loopback=erlaube_loopback)
+        werkzeuge = entdecke(server, db=db, transport=transport, erlaube_loopback=erlaube_loopback)
         server.cached_tools_json = json.dumps(werkzeuge, ensure_ascii=False)
         server.last_status = "ok"
     except (McpFehler, McpZielFehler) as exc:

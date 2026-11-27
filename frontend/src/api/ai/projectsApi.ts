@@ -233,6 +233,10 @@ export const projectsApi = {
     api<AiMcpPruefung>(`/ai/mcp/${encodeURIComponent(serverId)}/pruefen`, {
       method: 'POST',
     }),
+  startMcpOAuth: (serverId: string) =>
+    api<{ authorize_url: string }>(`/ai/mcp/${encodeURIComponent(serverId)}/oauth/start`, {
+      method: 'POST',
+    }),
   meldeMcpWerkzeuge: (serverId: string, tools: AiMcpWerkzeugMeldung[]) =>
     api<AiMcpPruefung>(`/ai/mcp/${encodeURIComponent(serverId)}/werkzeuge`, {
       method: 'POST',
