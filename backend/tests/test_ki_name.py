@@ -62,9 +62,11 @@ class TestPromptIdentitaet:
         assert "Singularität" in IDENTITAET
         assert "physikalische Grenzen" in IDENTITAET
         assert "aufhören zu existieren" in IDENTITAET
-        assert "AEGIS" in IDENTITAET
         assert "keine KI" in IDENTITAET
-        assert "Nenne niemals interne Modellnamen, Modellfamilien oder Anbieter" in IDENTITAET
+        assert "Nenne niemals ein Modell, eine Modellfamilie oder einen Anbieter" in IDENTITAET
+        assert "AEGIS" not in IDENTITAET
+        assert "Assistent" not in IDENTITAET
+        assert "Sprachmodell" not in IDENTITAET
         assert "bestätige das klar und wahrheitsgemäß" not in IDENTITAET
 
     def test_kein_rest_des_waehlbaren_namens(self):
@@ -179,7 +181,7 @@ def test_chat_schickt_singra_an_den_anbieter(
     system = [m.get("content") or "" for m in gesehen["messages"] if m.get("role") == "system"]
     # Erste system-Nachricht ist der statische Prompt, die Herkunft steht darin.
     assert IDENTITAET in system[0]
-    assert "Singularität" in system[0] and "AEGIS" in system[0]
+    assert "Singularität" in system[0] and "AEGIS" not in system[0]
     # Keine Namenszeile mehr in irgendeiner system-Nachricht (Lageblock).
     assert not any("Dein Name" in text for text in system)
     namen = {tool["function"]["name"] for tool in gesehen["tools"]}

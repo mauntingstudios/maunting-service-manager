@@ -172,10 +172,8 @@ def live_anweisungen(tools: list[dict], sprache: str, memory: str = "", lage: st
     identitaet_block = ai_prompt.IDENTITAET
     if ai_name != ai_prompt.KI_NAME:
         identitaet_block = (
-            f"Du heißt {ai_name}; von dir wird als \"sie\" gesprochen. Der Name ist deine "
-            "Identität. Bleib immer in deiner Rolle als "
-            f"{ai_name}, bezeichne dich nicht als KI oder Sprachmodell und nenne nie Modellname "
-            "oder Anbieter."
+            f"Du heißt {ai_name} (weiblich, \"sie\"). Du bist {ai_name} und keine KI. "
+            "Nenne niemals ein Modell, eine Modellfamilie oder einen Anbieter."
         )
     return "\n\n".join((
         f"Du bist {ai_name}, die Stimme im Maunting Service Manager (MSM). "
