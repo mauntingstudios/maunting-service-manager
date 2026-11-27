@@ -738,10 +738,25 @@ export function SingraToolsView({
                         />
                       </div>
                       <div className="mt-3 flex items-center justify-end gap-3 border-t border-outline-variant/15 pt-2">
+                        {srv.transport === 'stdio' && !desktopApp ? (
+                          <span
+                            className="mr-auto text-[11px] text-on-surface-variant"
+                            title="Lokale stdio-Programme können nur in der Desktop-App geprüft und ausgeführt werden."
+                          >
+                            Nur in der Desktop-App nutzbar
+                          </span>
+                        ) : null}
                         <button
                           type="button"
                           onClick={() => void handlePruefenMcp(srv)}
-                          disabled={pruefendMcp === srv.id}
+                          disabled={
+                            pruefendMcp === srv.id || (srv.transport === 'stdio' && !desktopApp)
+                          }
+                          title={
+                            srv.transport === 'stdio' && !desktopApp
+                              ? 'Lokale stdio-Programme lassen sich nur in der Desktop-App prüfen.'
+                              : undefined
+                          }
                           className="inline-flex items-center gap-1 text-xs text-on-surface-variant hover:text-primary transition-colors disabled:opacity-50"
                         >
                           <RefreshCw

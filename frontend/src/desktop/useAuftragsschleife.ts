@@ -15,6 +15,8 @@ import { useEffect, useRef, useState } from 'react'
 
 import { getRateLimitRemainingMs } from '@/api/client'
 import { getIsLiveConnected } from '@/lib/offlineSync'
+import { rufeStdioWerkzeug } from '@/services/mcpStdio'
+import { confirm } from '@/stores/confirmStore'
 import { auftragAusfuehren } from './tauri'
 import { ergebnisMelden, naechsterAuftrag, type Auftrag } from './desktopJobs'
 
@@ -81,7 +83,64 @@ export function useAuftragsschleife(aktiv: boolean): string | null {
         // Rust legt sie in die Nutzlast der Karte, und die Karte beantwortet
         // damit genau **diesen** Auftrag — auch wenn oben noch eine ältere
         // Kennung steht oder das Ereignis schneller war als React.
-        ergebnis = await auftragAusfuehren(auftrag.tool_name, auftrag.arguments, auftrag.id)
+        if (auftrag.tool_name === 'desktop_mcp_call') {
+          const mcpArgs = auftrag.arguments as {
+            command?: unknown
+            args?: unknown
+            env?: unknown
+            tool?: unknown
+            arguments?: unknown
+            server_name?: unknown
+            autonom?: unknown
+          }
+          const cmd = typeof mcpArgs.command === 'string' ? mcpArgs.command : ''
+          const cmdArgs = Array.isArray(mcpArgs.args)
+            ? mcpArgs.args.filter((a): a is string => typeof a === 'string')
+            : []
+          const toolName = typeof mcpArgs.tool === 'string' ? mcpArgs.tool : ''
+          const toolParams =
+            typeof mcpArgs.arguments === 'object' && mcpArgs.arguments !== null
+              ? (mcpArgs.arguments as Record<string, unknown>)
+              : {}
+          const envVars =
+            typeof mcpArgs.env === 'object' && mcpArgs.env !== null
+              ? (mcpArgs.env as Record<string, string>)
+              : undefined
+          const serverName = typeof mcpArgs.server_name === 'string' ? mcpArgs.server_name : 'MCP'
+          if (mcpArgs.autonom !== true) {
+            const ok = await confirm({
+              title: `${serverName}: ${toolName}`,
+              message: `Soll das lokale MCP-Werkzeug „${toolName}“ ausgeführt werden?`,
+              confirmText: 'Ausführen',
+            })
+            if (!ok) {
+              ergebnis = {
+                mcp_server: serverName,
+                tool: toolName,
+                abgelehnt: true,
+                hinweis: 'Der Benutzer hat den MCP-Aufruf abgelehnt.',
+              }
+            } else {
+              const res = await rufeStdioWerkzeug(cmd, cmdArgs, toolName, toolParams, envVars)
+              ergebnis = {
+                mcp_server: serverName,
+                tool: toolName,
+                content: res.content,
+                ...(res.isError ? { fehler: true } : {}),
+              }
+            }
+          } else {
+            const res = await rufeStdioWerkzeug(cmd, cmdArgs, toolName, toolParams, envVars)
+            ergebnis = {
+              mcp_server: serverName,
+              tool: toolName,
+              content: res.content,
+              ...(res.isError ? { fehler: true } : {}),
+            }
+          }
+        } else {
+          ergebnis = await auftragAusfuehren(auftrag.tool_name, auftrag.arguments, auftrag.id)
+        }
       } catch (fehler) {
         setOffeneUebernahme(null)
         // Der Fehlertext geht als Werkzeugergebnis an das Modell — er nennt

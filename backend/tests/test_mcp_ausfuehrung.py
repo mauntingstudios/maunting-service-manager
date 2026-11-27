@@ -227,3 +227,108 @@ def test_der_semantische_router_findet_das_passende_werkzeug() -> None:
     gewaehlt = semantisch_waehlen(werkzeuge, "Bitte ein Datenbank-Backup erstellen", 8)
     assert gewaehlt, "Der Router hat nichts ausgewaehlt"
     assert gewaehlt[0] == "mcp_4_werkzeug_04", gewaehlt
+
+
+def test_stdio_wird_nur_fuer_desktop_angeboten_und_baut_auftrag(monkeypatch) -> None:
+    from services.mcp import ausfuehrung
+
+    row = _server(
+        [
+            _werkzeug(name="read_channels", nur_lesen=True),
+            _werkzeug(name="send_msg", nur_lesen=False),
+        ],
+        id=11,
+        name="Discord Bot",
+        transport="stdio",
+        endpoint_url=None,
+        command="npx",
+        args_json=json.dumps(["-y", "@discord/mcp-server"]),
+        auth_token_encrypted="Bot secret-123",
+    )
+    assert schemata_aus_server(row, desktop=False) == []
+    assert len(schemata_aus_server(row, desktop=True)) == 1
+
+    monkeypatch.setattr(ausfuehrung.permission_service, "has_global_permission", lambda *_a: True)
+    monkeypatch.setattr(ausfuehrung, "sichtbare_server", lambda *_a: [row])
+    monkeypatch.setattr(ausfuehrung, "_server_fuer", lambda *_a: row)
+
+    panel_tools, panel_write = ausfuehrung.katalog(None, SimpleNamespace(id=1), herkunft="panel")
+    assert panel_tools == []
+    assert panel_write == frozenset()
+
+    desk_tools, desk_write = ausfuehrung.katalog(None, SimpleNamespace(id=1), herkunft="desktop")
+    assert len(desk_tools) == 2
+    assert "mcp_11_send_msg" in desk_write
+
+    read_job = ausfuehrung.stdio_auftrag_fuer_aufruf(
+        None, SimpleNamespace(id=1), "mcp_11_read_channels", {"q": "general"}
+    )
+    assert read_job is not None
+    assert read_job["command"] == "npx"
+    assert read_job["args"] == ["-y", "@discord/mcp-server"]
+    assert read_job["env"] == {"MCP_AUTH_HEADER": "Bot secret-123", "MCP_AUTH_TOKEN": "secret-123"}
+    assert read_job["autonom"] is True
+
+    write_job = ausfuehrung.stdio_auftrag_fuer_aufruf(
+        None, SimpleNamespace(id=1), "mcp_11_send_msg", {"q": "hi"}
+    )
+    assert write_job is not None
+    assert write_job["autonom"] is False
+
+    with pytest.raises(AiActionValidationError, match="Ungueltige Argumente"):
+        ausfuehrung.stdio_auftrag_fuer_aufruf(
+            None, SimpleNamespace(id=1), "mcp_11_read_channels", {"q": 123}
+        )
+
+
+def test_kontext_block_filtert_stdio_und_ungepruefte_server(db) -> None:
+    from models import AiMcpServer, User
+    from services.ai_context_service import _mcp_servers_block
+
+    user = User(username="mcp_ctx_user", email="mcp_ctx@example.com", password_hash="x")
+    db.add(user)
+    db.flush()
+
+    db.add_all(
+        [
+            AiMcpServer(
+                user_id=user.id,
+                scope="user",
+                name="Discord Stdio",
+                transport="stdio",
+                command="npx",
+                args_json='["-y","@discord/mcp-server"]',
+                cached_tools_json=json.dumps([{"name": "list_channels"}]),
+                enabled=True,
+            ),
+            AiMcpServer(
+                user_id=user.id,
+                scope="user",
+                name="Leerer HTTP",
+                transport="http",
+                endpoint_url="https://mcp.example/empty",
+                cached_tools_json="[]",
+                enabled=True,
+            ),
+            AiMcpServer(
+                user_id=user.id,
+                scope="user",
+                name="Aktiver HTTP",
+                transport="http",
+                endpoint_url="https://mcp.example/ok",
+                cached_tools_json=json.dumps([{"name": "get_status"}]),
+                enabled=True,
+            ),
+        ]
+    )
+    db.flush()
+
+    panel_block = _mcp_servers_block(db, user, herkunft="panel")
+    assert "Aktiver HTTP" in panel_block
+    assert "Discord Stdio" not in panel_block
+    assert "Leerer HTTP" not in panel_block
+
+    desktop_block = _mcp_servers_block(db, user, herkunft="desktop")
+    assert "Aktiver HTTP" in desktop_block
+    assert "Discord Stdio" in desktop_block
+    assert "Leerer HTTP" not in desktop_block

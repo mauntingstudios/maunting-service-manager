@@ -44,6 +44,9 @@ pub struct StdioAnfrage {
     pub command: String,
     #[serde(default)]
     pub args: Vec<String>,
+    /// Optionale Umgebungsvariablen fuer Zugangsdaten (z. B. MCP_AUTH_TOKEN).
+    #[serde(default)]
+    pub env: HashMap<String, String>,
     /// Die JSON-RPC-Nachrichten in Reihenfolge.
     pub nachrichten: Vec<Value>,
     #[serde(default)]
@@ -230,6 +233,32 @@ fn pruefen(anfrage: &StdioAnfrage) -> Result<Duration, String> {
     Ok(Duration::from_millis(ms))
 }
 
+fn ist_gesperrte_umgebung(name: &str) -> bool {
+    let gross = name.trim().to_ascii_uppercase();
+    matches!(
+        gross.as_str(),
+        "PATH"
+            | "PATHEXT"
+            | "COMSPEC"
+            | "SYSTEMROOT"
+            | "WINDIR"
+            | "TEMP"
+            | "TMP"
+            | "TMPDIR"
+            | "HOME"
+            | "USERPROFILE"
+            | "APPDATA"
+            | "LOCALAPPDATA"
+            | "LD_PRELOAD"
+            | "LD_LIBRARY_PATH"
+            | "DYLD_INSERT_LIBRARIES"
+            | "DYLD_LIBRARY_PATH"
+            | "NODE_OPTIONS"
+            | "PYTHONPATH"
+            | "PYTHONHOME"
+    )
+}
+
 fn lauf(anfrage: &StdioAnfrage) -> Result<StdioAntwort, String> {
     if cfg!(target_os = "android") {
         return Err("Lokale MCP-Programme gibt es nur in der Desktop-App.".into());
@@ -248,6 +277,18 @@ fn lauf(anfrage: &StdioAnfrage) -> Result<StdioAntwort, String> {
         .stdout(Stdio::piped())
         .stderr(Stdio::null());
     minimale_umgebung(&mut kommando);
+    for (name, wert) in anfrage.env.iter().take(16) {
+        let sauber = name.trim();
+        if sauber.is_empty()
+            || sauber.len() > 64
+            || wert.len() > 4096
+            || !sauber.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+            || ist_gesperrte_umgebung(sauber)
+        {
+            continue;
+        }
+        kommando.env(sauber, wert);
+    }
     let mut kind = kommando
         .spawn()
         .map_err(|e| format!("MCP-Prozess startet nicht: {e}"))?;
@@ -297,9 +338,18 @@ mod tests {
         StdioAnfrage {
             command: command.into(),
             args: args.into_iter().map(str::to_string).collect(),
+            env: HashMap::new(),
             nachrichten,
             frist_ms: Some(frist_ms),
         }
+    }
+
+    #[test]
+    fn gesperrte_umgebungsvariablen_werden_blockiert() {
+        assert!(ist_gesperrte_umgebung("PATH"));
+        assert!(ist_gesperrte_umgebung("ld_preload"));
+        assert!(ist_gesperrte_umgebung("NODE_OPTIONS"));
+        assert!(!ist_gesperrte_umgebung("MCP_AUTH_TOKEN"));
     }
 
     #[test]

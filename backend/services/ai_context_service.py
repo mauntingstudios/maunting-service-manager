@@ -167,6 +167,7 @@ def _mcp_servers_block(
     *,
     nur_team_id: int | None = None,
     nur_persoenlich: bool = False,
+    herkunft: str = "panel",
 ) -> str:
     """Verzeichnis aktiver Model-Context-Protocol-Server (MCP).
 
@@ -210,18 +211,26 @@ def _mcp_servers_block(
     lines: list[str] = []
     import json
     for s in servers:
-        desc = (s.description or "").strip()
-        desc_part = f": {desc}" if desc else ""
-        lines.append(f"- **{s.name}** ({s.transport}, Scope: {s.scope}){desc_part}")
+        transport = (s.transport or "http").lower()
+        if transport == "stdio" and herkunft != "desktop":
+            continue
+        tool_names: list[str] = []
         if s.cached_tools_json:
             try:
                 tools = json.loads(s.cached_tools_json)
-                if isinstance(tools, list) and tools:
+                if isinstance(tools, list):
                     tool_names = [t.get("name") for t in tools if isinstance(t, dict) and t.get("name")]
-                    if tool_names:
-                        lines.append(f"  Werkzeuge: {', '.join(tool_names[:8])}")
             except Exception:
-                pass
+                tool_names = []
+        if not tool_names:
+            continue
+        desc = (s.description or "").strip()
+        desc_part = f": {desc}" if desc else ""
+        lines.append(f"- **{s.name}** ({transport}, Scope: {s.scope}){desc_part}")
+        lines.append(f"  Werkzeuge: {', '.join(tool_names[:8])}")
+
+    if not lines:
+        return ""
 
     return (
         "Aktive MCP-Server & externe Integrationen (Model Context Protocol):\n"
@@ -238,12 +247,14 @@ def _mcp_servers_message(
     *,
     nur_team_id: int | None = None,
     nur_persoenlich: bool = False,
+    herkunft: str = "panel",
 ) -> dict[str, Any] | None:
     block = _mcp_servers_block(
         db,
         user,
         nur_team_id=nur_team_id,
         nur_persoenlich=nur_persoenlich,
+        herkunft=herkunft,
     )
     if not block:
         return None
@@ -919,6 +930,7 @@ def _stabilen_vorspann_bauen(
             user,
             nur_team_id=docs_team_id if docs else None,
             nur_persoenlich=nur_persoenlich,
+            herkunft=herkunft,
         )
     if mcp_verzeichnis is not None:
         result.append(mcp_verzeichnis)

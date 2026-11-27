@@ -168,3 +168,22 @@ def test_loopback_ist_nur_ausdruecklich_erlaubt(monkeypatch) -> None:
     assert pruefe_endpunkt("http://127.0.0.1:8000/rpc", erlaube_loopback=True)
     with pytest.raises(McpZielFehler):
         pruefe_endpunkt("https://127.0.0.1/rpc")
+
+
+def test_authorization_header_vermeidet_doppeltes_bearer_praefix() -> None:
+    gesehen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        gesehen.append(request.headers.get("Authorization", ""))
+        paket = json.loads(request.content)
+        return httpx.Response(200, json={"jsonrpc": "2.0", "id": paket.get("id"), "result": {}})
+
+    for tok, erwartet in [
+        ("geheim", "Bearer geheim"),
+        ("Bearer schon_da", "Bearer schon_da"),
+        ("Bot discord_tok", "Bot discord_tok"),
+    ]:
+        gesehen.clear()
+        with _klient(handler, token=tok) as client:
+            client.initialize()
+        assert gesehen[0] == erwartet

@@ -631,7 +631,9 @@ def _segment_vorbereiten(run_id: str) -> tuple[_Vorbereitung | None, tuple[str, 
             db.commit()
         db.refresh(provider)
         db.expunge(provider)
-        mcp_werkzeuge, mcp_schreib = mcp_katalog(db, user)
+        mcp_werkzeuge, mcp_schreib = mcp_katalog(
+            db, user, herkunft=str(zustand.get("herkunft") or "panel")
+        )
         return _Vorbereitung(
             run_id=run_id,
             user_id=run.user_id,

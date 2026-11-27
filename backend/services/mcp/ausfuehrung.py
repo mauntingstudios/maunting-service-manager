@@ -81,25 +81,34 @@ def _schema_aus_tool(row: AiMcpServer, tool: dict) -> dict:
     }
 
 
-def _ist_entfernt(row: AiMcpServer) -> bool:
-    """Nur HTTP/SSE ist vom Panel aus aufrufbar.
+def _ist_entfernt(row: AiMcpServer, *, desktop: bool = False) -> bool:
+    """Prueft, ob ein MCP-Server im aktuellen Kontext aufrufbar ist.
 
-    Ein lokales Programm (`stdio`) laeuft am Rechner des Benutzers; sein
-    Aufruf braucht den Weg ueber die Desktop-App. Solange der nicht steht,
-    wird es nicht angeboten — ein Katalogeintrag, den jeder Aufruf mit
-    "kein Endpunkt" quittiert, waere eine Zusage ohne Deckung.
+    HTTP/SSE-Server laufen direkt ueber das Panel. Ein lokales Programm (`stdio`)
+    laeuft am Rechner des Benutzers und steht deshalb nur bei ``desktop=True``
+    (Aufruf ueber `desktop_jobs`) im Katalog.
     """
-    return (getattr(row, "transport", None) or "http") in {"http", "sse"}
+    transport = getattr(row, "transport", None) or "http"
+    if transport in {"http", "sse"}:
+        return True
+    if desktop and transport == "stdio":
+        return bool(getattr(row, "command", None))
+    return False
 
 
-def schemata_aus_server(row: AiMcpServer) -> list[dict]:
-    """Katalogeintraege eines Servers — nur lesende, vom Panel aufrufbare Werkzeuge."""
-    if not _ist_entfernt(row):
+def schemata_aus_server(row: AiMcpServer, *, desktop: bool = False) -> list[dict]:
+    """Katalogeintraege eines Servers — nur lesende, im Kontext aufrufbare Werkzeuge."""
+    if not _ist_entfernt(row, desktop=desktop):
         return []
     return [_schema_aus_tool(row, tool) for tool in _werkzeuge_aus_cache(row) if tool.get("nur_lesen")]
 
 
-def katalog(db: Session, user: User) -> tuple[list[dict], frozenset[str]]:
+def katalog(
+    db: Session,
+    user: User,
+    *,
+    herkunft: str = "panel",
+) -> tuple[list[dict], frozenset[str]]:
     """Alle MCP-Werkzeuge des Benutzers und die Namen der schreibenden.
 
     Die Namen der Schreibwerkzeuge braucht die Stream-Schleife: ohne sie
@@ -107,10 +116,11 @@ def katalog(db: Session, user: User) -> tuple[list[dict], frozenset[str]]:
     """
     if not permission_service.has_global_permission(db, user, "ai.mcp.use"):
         return [], frozenset()
+    desktop = herkunft == "desktop"
     schemas: list[dict] = []
     schreibend: set[str] = set()
     for row in sichtbare_server(db, user):
-        if not _ist_entfernt(row):
+        if not _ist_entfernt(row, desktop=desktop):
             continue
         for tool in _werkzeuge_aus_cache(row):
             schema = _schema_aus_tool(row, tool)
@@ -120,11 +130,16 @@ def katalog(db: Session, user: User) -> tuple[list[dict], frozenset[str]]:
     return schemas, frozenset(schreibend)
 
 
-def schemata(db: Session, user: User) -> list[dict]:
+def schemata(db: Session, user: User, *, herkunft: str = "panel") -> list[dict]:
     """Alle angebotenen MCP-Lesewerkzeuge des Benutzers."""
     if not permission_service.has_global_permission(db, user, "ai.mcp.use"):
         return []
-    return [eintrag for row in sichtbare_server(db, user) for eintrag in schemata_aus_server(row)]
+    desktop = herkunft == "desktop"
+    return [
+        eintrag
+        for row in sichtbare_server(db, user)
+        for eintrag in schemata_aus_server(row, desktop=desktop)
+    ]
 
 
 def sichtbare_server(db: Session, user: User) -> list[AiMcpServer]:
@@ -258,6 +273,61 @@ def rufe(db: Session, user: User, tool_name: str, arguments: dict) -> dict[str, 
     return aufrufen(row, treffer, arguments)
 
 
+def _stdio_env(auth_token: str | None) -> dict[str, str]:
+    token = (auth_token or "").strip()
+    if not token:
+        return {}
+    raw = token.split(None, 1)[1].strip() if " " in token else token
+    return {
+        "MCP_AUTH_HEADER": token,
+        "MCP_AUTH_TOKEN": raw,
+    }
+
+
+def stdio_auftrag_fuer_aufruf(
+    db: Session,
+    user: User,
+    tool_name: str,
+    arguments: dict,
+) -> dict[str, Any] | None:
+    """Baut die Nutzlast fuer einen `desktop_mcp_call`-Auftrag, falls `tool_name` zu einem `stdio`-Server gehoert."""
+    server_id = server_id_aus_name(tool_name)
+    if server_id is None:
+        return None
+    if not permission_service.has_global_permission(db, user, "ai.mcp.use"):
+        return None
+    row = _server_fuer(db, user, server_id)
+    if row is None or (getattr(row, "transport", None) or "http") != "stdio":
+        return None
+    if not row.command:
+        raise AiActionValidationError("Lokaler MCP-Server hat keinen Startbefehl")
+    gesucht = tool_name[len(PRAEFIX) + len(str(server_id)) + 1 :]
+    tool = next(
+        (t for t in _werkzeuge_aus_cache(row) if _saeuber(str(t["name"])) == gesucht),
+        None,
+    )
+    if tool is None:
+        raise AiActionValidationError("MCP-Werkzeug nicht gefunden")
+    _pruefe_argumente(tool, arguments)
+    try:
+        roh_args = json.loads(row.args_json) if row.args_json else []
+    except json.JSONDecodeError:
+        roh_args = []
+    args = [str(a) for a in roh_args] if isinstance(roh_args, list) else []
+    nur_lesen = bool(tool.get("nur_lesen"))
+    return {
+        "server_id": int(row.id),
+        "server_name": row.name,
+        "command": row.command,
+        "args": args,
+        "env": _stdio_env(row.auth_token_encrypted),
+        "tool": str(tool["name"]),
+        "arguments": arguments,
+        "nur_lesen": nur_lesen,
+        "autonom": nur_lesen,
+    }
+
+
 __all__ = [
     "PRAEFIX",
     "ausfuehren",
@@ -268,6 +338,7 @@ __all__ = [
     "schemata",
     "schemata_aus_server",
     "sichtbare_server",
+    "stdio_auftrag_fuer_aufruf",
     "werkzeug_name",
 ]
 

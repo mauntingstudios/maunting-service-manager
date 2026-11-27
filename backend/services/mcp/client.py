@@ -8,6 +8,7 @@ Kein `stdio` hier — das laeuft ausschliesslich in der Desktop-App.
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 import httpx
@@ -101,7 +102,11 @@ class McpClient:
         if self._session:
             kopf["Mcp-Session-Id"] = self._session
         if self._token:
-            kopf["Authorization"] = f"Bearer {self._token}"
+            token = self._token.strip()
+            if re.match(r"^[A-Za-z][A-Za-z0-9_-]*\s+\S", token):
+                kopf["Authorization"] = token
+            else:
+                kopf["Authorization"] = f"Bearer {token}"
         try:
             antwort = self._client.post(self._endpunkt, json=paket, headers=kopf)
         except httpx.TimeoutException as exc:

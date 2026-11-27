@@ -521,7 +521,7 @@ def _lauf_beginnen_impl(
         import time
 
         angebotene_handoff = angebotene_werkzeuge(db, user)
-        mcp_w_handoff, mcp_s_handoff = mcp_katalog(db, user)
+        mcp_w_handoff, mcp_s_handoff = mcp_katalog(db, user, herkunft=herkunft)
         vorherige_handoff = _vorherige_werkzeuge_laden(
             db,
             conversation_id=conversation.id,

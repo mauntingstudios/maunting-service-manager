@@ -4,7 +4,7 @@ const invoke = vi.fn()
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke }))
 
-import { entdeckeStdioWerkzeuge, stdioVerfuegbar } from './mcpStdio'
+import { entdeckeStdioWerkzeuge, rufeStdioWerkzeug, stdioVerfuegbar } from './mcpStdio'
 
 describe('mcpStdio', () => {
   beforeEach(() => {
@@ -76,5 +76,47 @@ describe('mcpStdio', () => {
       antworten: [{ jsonrpc: '2.0', id: 1, result: {} }],
     })
     await expect(entdeckeStdioWerkzeuge('npx', [])).rejects.toThrow('keine Werkzeugliste')
+  })
+
+  it('führt ein lokales Werkzeug samt env über tools/call aus', async () => {
+    invoke.mockResolvedValue({
+      antworten: [
+        { jsonrpc: '2.0', id: 1, result: { protocolVersion: '2025-06-18' } },
+        {
+          jsonrpc: '2.0',
+          id: 2,
+          result: {
+            content: [{ type: 'text', text: 'Kanal #allgemein: Hallo!' }],
+            isError: false,
+          },
+        },
+      ],
+    })
+
+    const res = await rufeStdioWerkzeug(
+      'npx',
+      ['-y', '@discord/mcp-server'],
+      'read_messages',
+      { channel: 'allgemein' },
+      { MCP_AUTH_TOKEN: 'secret-123' },
+    )
+
+    expect(res).toEqual({
+      content: 'Kanal #allgemein: Hallo!',
+      isError: false,
+    })
+    expect(invoke).toHaveBeenCalledWith('mcp_stdio', {
+      anfrage: expect.objectContaining({
+        command: 'npx',
+        args: ['-y', '@discord/mcp-server'],
+        env: { MCP_AUTH_TOKEN: 'secret-123' },
+        nachrichten: expect.arrayContaining([
+          expect.objectContaining({
+            method: 'tools/call',
+            params: { name: 'read_messages', arguments: { channel: 'allgemein' } },
+          }),
+        ]),
+      }),
+    })
   })
 })

@@ -68,6 +68,7 @@ KARTENPFLICHTIG = frozenset(
         "desktop_launch_app",
         "desktop_dateien",
         "desktop_artifact",
+        "desktop_mcp_call",
     }
 )
 

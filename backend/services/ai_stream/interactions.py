@@ -371,6 +371,32 @@ def _desktop_behandeln(
     # und einer Runde Wartezeit. Der Aufruf faellt stattdessen in den
     # Lese-Dispatch und wird dort mit `KEIN_BLICK_GRUND` beantwortet.
     auftraege = [call for call in auftraege if not _sieht_nicht(zustand, call)]
+
+    stdio_auftraege: dict[str, dict] = {}
+    mcp_calls = [
+        call for call in current_usage.tool_calls if call.name.startswith("mcp_")
+    ]
+    if mcp_calls:
+        from models import User
+        from services.mcp.ausfuehrung import stdio_auftrag_fuer_aufruf
+
+        with SessionLocal() as db:
+            user = db.get(User, user_id)
+            if user is not None:
+                for call in mcp_calls:
+                    try:
+                        auftrag = stdio_auftrag_fuer_aufruf(
+                            db,
+                            user,
+                            call.name,
+                            call.arguments if isinstance(call.arguments, dict) else {},
+                        )
+                    except AiActionValidationError:
+                        auftrag = None
+                    if auftrag is not None:
+                        stdio_auftraege[call.id] = auftrag
+                        auftraege.append(call)
+
     if not auftraege:
         return None, False
 
@@ -437,14 +463,19 @@ def _desktop_behandeln(
     job_ids: list[str] = []
     with SessionLocal() as db:
         for call in auftraege:
+            stdio_nutzlast = stdio_auftraege.get(call.id)
             job = desktop_job_service.anlegen(
                 db,
                 user_id=user_id,
                 run_id=run_id,
                 tool_call_id=call.id,
-                tool_name=call.name,
-                arguments=_desktop_argumente(
-                    db, user_id=user_id, call=call, sieht=zustand.get("sieht")
+                tool_name="desktop_mcp_call" if stdio_nutzlast is not None else call.name,
+                arguments=(
+                    stdio_nutzlast
+                    if stdio_nutzlast is not None
+                    else _desktop_argumente(
+                        db, user_id=user_id, call=call, sieht=zustand.get("sieht")
+                    )
                 ),
                 familie=familie,
             )
