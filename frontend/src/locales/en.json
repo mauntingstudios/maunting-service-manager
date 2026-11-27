@@ -1645,7 +1645,11 @@
       "reasonLabel": "AI reasoning",
       "effectLabel": "Expected effect",
       "autonomousBadge": "Executed automatically",
-      "autonomousHint": "This action ran without asking because you enabled autonomous mode for this scope. Permissions were checked unchanged; the operation is fully recorded in the audit log."
+      "autonomousHint": "This action ran without asking because you enabled autonomous mode for this scope. Permissions were checked unchanged; the operation is fully recorded in the audit log.",
+      "details": "Details",
+      "lessDetails": "Less",
+      "showDiff": "Diff",
+      "hideDiff": "Hide diff"
     },
     "autonomy": {
       "title": "Autonomous mode",

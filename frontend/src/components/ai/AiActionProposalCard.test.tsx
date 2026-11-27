@@ -311,4 +311,26 @@ describe('AiActionProposalCard', () => {
     expect(useConfirmStore.getState().pending).toBeNull()
     expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ status: 'succeeded' }))
   })
+
+  it('keeps large diffs collapsed initially on open proposals and collapses details after completion', () => {
+    const { rerender } = render(<AiActionProposalCard proposal={proposal} onChange={vi.fn()} />)
+
+    // Diff ist im offenen Action-Strip zunaechst eingeklappt und klappt per Klick aus.
+    expect(screen.queryByText(/\+port=2402/)).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Diff' }))
+    expect(screen.getByText(/\+port=2402/)).toBeInTheDocument()
+
+    // Nach Abschluss kollabiert die Karte auf die Kopfzeile, bis Details geoeffnet werden.
+    rerender(
+      <AiActionProposalCard
+        proposal={{ ...proposal, status: 'succeeded' }}
+        onChange={vi.fn()}
+      />,
+    )
+    expect(screen.getByText('Ausgeführt')).toBeInTheDocument()
+    expect(screen.queryByText(/Der Port kollidiert/)).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Details' }))
+    expect(screen.getByText(/Der Port kollidiert/)).toBeInTheDocument()
+    expect(screen.getByText(/\+port=2402/)).toBeInTheDocument()
+  })
 })

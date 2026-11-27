@@ -1645,7 +1645,11 @@
       "reasonLabel": "Begründung der KI",
       "effectLabel": "Erwartete Wirkung",
       "autonomousBadge": "Automatisch ausgeführt",
-      "autonomousHint": "Diese Aktion lief ohne Rückfrage, weil du den autonomen Modus für diesen Bereich freigegeben hast. Berechtigungen wurden unverändert geprüft; der Vorgang steht vollständig im Audit-Log."
+      "autonomousHint": "Diese Aktion lief ohne Rückfrage, weil du den autonomen Modus für diesen Bereich freigegeben hast. Berechtigungen wurden unverändert geprüft; der Vorgang steht vollständig im Audit-Log.",
+      "details": "Details",
+      "lessDetails": "Weniger",
+      "showDiff": "Diff",
+      "hideDiff": "Diff ausblenden"
     },
     "autonomy": {
       "title": "Autonomer Modus",
