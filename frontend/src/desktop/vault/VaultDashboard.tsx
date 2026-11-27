@@ -15,7 +15,6 @@ import {
   List,
   Monitor,
   MoreHorizontal,
-  MoreVertical,
   Plus,
   RefreshCw,
   Search,
@@ -37,6 +36,7 @@ import {
   Zustandsflaeche,
 } from '@maunting/ui'
 import { TresorVorschau } from './TresorVorschau'
+import { istMedium } from './TresorGalerie'
 import { formatBytes } from '@/lib/format'
 import { useTageszeitMotiv } from '@/lib/tageszeit'
 import { TageszeitHintergrund } from '@/components/layout/TageszeitHintergrund'
@@ -86,6 +86,7 @@ export interface VaultDashboardProps {
   standardKategorieBilder?: Partial<Record<StandardKategorieDef['schluessel'], string>>
   onNeueSammlung: () => void
   onAlleEintraege: () => void
+  onAlleFotos?: () => void
   onFilterAnsicht?: (filter: TresorFilter) => void
   onEintrag: (item: VaultItem) => void
   suchbegriff?: string
@@ -242,6 +243,7 @@ export function VaultDashboard({
   standardKategorieBilder,
   onNeueSammlung,
   onAlleEintraege,
+  onAlleFotos,
   onFilterAnsicht,
   onEintrag,
   suchbegriff = '',
@@ -290,10 +292,20 @@ export function VaultDashboard({
     })
   }, [items, standardKategorieBilder, t])
 
-  // Gefilterte & sortierte Einträge für den unteren Katalogbereich
+  // Fotos und Videos gehören in ihren eigenen Streifen, nicht als Textzeilen in die Eintragsliste.
+  const letzteFotos = useMemo(() => {
+    const q = suchbegriff.trim().toLowerCase()
+    return sichtbareEintraege(items)
+      .filter((item) => istMedium(item))
+      .filter((item) => !q || item.service.toLowerCase().includes(q))
+      .sort((a, b) => b.updatedAt - a.updatedAt)
+      .slice(0, 8)
+  }, [items, suchbegriff])
+
+  // Gefilterte & sortierte Einträge für den unteren Katalogbereich (ohne Fotos/Videos)
   const katalogEintraege = useMemo(() => {
     const sichtbar = sichtbareEintraege(items).filter(
-      (item) => item.category !== 'ordner' && item.category !== 'album',
+      (item) => item.category !== 'ordner' && item.category !== 'album' && !istMedium(item),
     )
     const nachFilter = sichtbar.filter((item) => passtZumFilter(item, aktivFilter))
     const nachKategorie = aktiveStandardKategorie
@@ -439,8 +451,34 @@ export function VaultDashboard({
             </p>
           </header>
 
-          {/* 4 Status- & Metrik-Karten */}
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {/* Kompakte 1-Zeilen-Statusleiste am Handy, 4 Karten ab Tablet */}
+          <div className="grid grid-cols-3 gap-2 rounded-2xl border border-outline-variant/20 bg-surface-container-low/85 p-2.5 backdrop-blur-md sm:hidden">
+            <div className="flex flex-col justify-center rounded-xl bg-status-success/10 px-2.5 py-2" aria-label={t('mss.vault.dashboard.tresorSicherheit')}>
+              <span className="flex items-center gap-1 text-label-sm font-medium text-on-surface-variant">
+                <ShieldCheck className="h-3.5 w-3.5 text-status-success" aria-hidden="true" />
+                <span className="truncate">{t('mss.vault.dashboard.sicherheitKurz')}</span>
+              </span>
+              <span className="mt-0.5 font-headline text-base font-bold text-on-surface">
+                {sicherheit.prozent == null ? '—' : `${sicherheit.prozent} %`}
+              </span>
+            </div>
+            <div className="flex flex-col justify-center rounded-xl bg-surface-container/70 px-2.5 py-2" aria-label={t('mss.vault.dashboard.eintraege')}>
+              <span className="flex items-center gap-1 text-label-sm font-medium text-on-surface-variant">
+                <Layers className="h-3.5 w-3.5 text-primary" aria-hidden="true" />
+                <span className="truncate">{t('mss.vault.dashboard.eintraege')}</span>
+              </span>
+              <span className="mt-0.5 font-headline text-base font-bold text-on-surface">{anzahl}</span>
+            </div>
+            <div className="flex flex-col justify-center rounded-xl bg-surface-container/70 px-2.5 py-2" aria-label={t('mss.vault.dashboard.datenlecks')}>
+              <span className="flex items-center gap-1 text-label-sm font-medium text-on-surface-variant">
+                <Activity className="h-3.5 w-3.5 text-primary" aria-hidden="true" />
+                <span className="truncate">{t('mss.vault.dashboard.datenlecksKurz')}</span>
+              </span>
+              <span className="mt-0.5 font-headline text-base font-bold text-on-surface">{leckWert}</span>
+            </div>
+          </div>
+
+          <div className="hidden gap-3 sm:grid sm:grid-cols-2 xl:grid-cols-4">
             <Kennzahl
               label={t('mss.vault.dashboard.tresorSicherheit')}
               wert={sicherheit.prozent == null ? '—' : `${sicherheit.prozent} %`}
@@ -450,40 +488,34 @@ export function VaultDashboard({
               warm={sicherheit.prozent != null && sicherheit.prozent < 40}
               betont
             />
-            <div className="hidden sm:block">
-              <Kennzahl
-                label={t('mss.vault.dashboard.eintraege')}
-                wert={String(anzahl)}
-                hinweis={t('mss.vault.dashboard.dieseWoche', { count: neue })}
-                icon={<Layers className="h-4 w-4" />}
-              />
-            </div>
-            <div className="hidden sm:block">
-              <Kennzahl
-                label={t('mss.vault.dashboard.geraete')}
-                wert={geraetezahl == null ? '1' : String(geraetezahl)}
-                hinweis={
-                  isTeam
-                    ? t('mss.vault.dashboard.geraeteHinweisTeam')
-                    : t('mss.vault.dashboard.geraeteSynchronisiert')
-                }
-                icon={<Monitor className="h-4 w-4" />}
-              />
-            </div>
-            <div className="hidden sm:block">
-              <Kennzahl
-                label={t('mss.vault.dashboard.datenlecks')}
-                wert={leckWert}
-                hinweis={leckHinweis}
-                icon={
-                  sicherheitscheck.abgeschlossen && sicherheitscheck.gefunden > 0 ? (
-                    <ShieldAlert className="h-4 w-4" />
-                  ) : (
-                    <Activity className="h-4 w-4" />
-                  )
-                }
-              />
-            </div>
+            <Kennzahl
+              label={t('mss.vault.dashboard.eintraege')}
+              wert={String(anzahl)}
+              hinweis={t('mss.vault.dashboard.dieseWoche', { count: neue })}
+              icon={<Layers className="h-4 w-4" />}
+            />
+            <Kennzahl
+              label={t('mss.vault.dashboard.geraete')}
+              wert={geraetezahl == null ? '1' : String(geraetezahl)}
+              hinweis={
+                isTeam
+                  ? t('mss.vault.dashboard.geraeteHinweisTeam')
+                  : t('mss.vault.dashboard.geraeteSynchronisiert')
+              }
+              icon={<Monitor className="h-4 w-4" />}
+            />
+            <Kennzahl
+              label={t('mss.vault.dashboard.datenlecks')}
+              wert={leckWert}
+              hinweis={leckHinweis}
+              icon={
+                sicherheitscheck.abgeschlossen && sicherheitscheck.gefunden > 0 ? (
+                  <ShieldAlert className="h-4 w-4" />
+                ) : (
+                  <Activity className="h-4 w-4" />
+                )
+              }
+            />
           </div>
 
           {/* Schnellzugriff */}
@@ -577,13 +609,13 @@ export function VaultDashboard({
             </div>
 
             {ordner.length > 0 && (
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <div className="msm-ohne-rollbalken flex gap-3 overflow-x-auto snap-x snap-mandatory pb-1 sm:grid sm:grid-cols-2 xl:grid-cols-4 sm:overflow-visible sm:pb-0">
                 {ordner.map((eintrag) => {
                   const hatBild = Boolean(eintrag.titelbild)
                   return (
                     <article
                       key={eintrag.id}
-                      className={`group relative h-32 overflow-hidden rounded-2xl border border-outline-variant/20 transition-all hover:border-primary/40 ${
+                      className={`group relative h-32 overflow-hidden rounded-2xl border border-outline-variant/20 transition-all hover:border-primary/40 max-sm:w-52 max-sm:shrink-0 max-sm:snap-start ${
                         hatBild
                           ? 'bg-surface-container-low'
                           : 'bg-surface-container-low/85 hover:bg-surface-container/80'
@@ -638,7 +670,7 @@ export function VaultDashboard({
                               label={eintrag.name}
                               ariaLabel={t('mss.vault.dashboard.sammlungOeffnen', { name: eintrag.name })}
                               icon={
-                                <MoreVertical
+                                <MoreHorizontal
                                   className={`h-4 w-4 ${hatBild ? 'text-white/80' : 'text-on-surface-variant'}`}
                                 />
                               }
@@ -694,11 +726,52 @@ export function VaultDashboard({
             )}
           </section>
 
+          {/* Letzte Fotos: kompakter Vorschau-Streifen statt Textzeilen im Katalog */}
+          {letzteFotos.length > 0 && (
+            <section className="space-y-2.5" aria-label={t('mss.vault.dashboard.letzteFotos')}>
+              <div className="flex items-center justify-between gap-2">
+                <h3 className="text-base font-semibold text-on-surface">
+                  {t('mss.vault.dashboard.letzteFotos')}
+                </h3>
+                {onAlleFotos && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={onAlleFotos}
+                    className="text-xs"
+                  >
+                    {t('mss.vault.dashboard.alleAnsehen')}
+                    <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
+                  </Button>
+                )}
+              </div>
+              <div className="msm-ohne-rollbalken flex gap-2.5 overflow-x-auto snap-x snap-mandatory pb-1">
+                {letzteFotos.map((foto) => (
+                  <button
+                    key={foto.id}
+                    type="button"
+                    onClick={() => onEintrag(foto)}
+                    aria-label={foto.service}
+                    className="group relative h-20 w-20 shrink-0 snap-start overflow-hidden rounded-2xl border border-outline-variant/20 bg-surface-container-low transition-colors hover:border-primary/40 sm:h-24 sm:w-24"
+                  >
+                    <TresorVorschau
+                      item={foto}
+                      groesse="lg"
+                      className="!h-full !w-full !rounded-none !border-0 transition-transform duration-300 group-hover:scale-105"
+                    />
+                  </button>
+                ))}
+              </div>
+            </section>
+          )}
+
           {/* Tresor-Katalog mit Filter-Pills, Standard-Kategorien (mit Bildern) und Einträgen */}
           <section className="space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <h3 className="text-base font-semibold text-on-surface">
-                {t('mss.vault.titelManager')}
+                <span className="sm:hidden">{t('mss.vault.dashboard.zuletztVerwendet')}</span>
+                <span className="hidden sm:inline">{t('mss.vault.titelManager')}</span>
               </h3>
               <Button
                 type="button"
@@ -712,8 +785,8 @@ export function VaultDashboard({
               </Button>
             </div>
 
-            {/* Filter-Pills + Ansichtsumschalter + Sortierung */}
-            <div className="flex flex-wrap items-center justify-between gap-3">
+            {/* Filter-Pills + Ansichtsumschalter + Sortierung (Desktop) */}
+            <div className="hidden flex-wrap items-center justify-between gap-3 sm:flex">
               <div className="flex flex-wrap items-center gap-1.5">
                 {TRESOR_FILTER.map((schluessel) => {
                   const aktiv = aktivFilter === schluessel && !aktiveStandardKategorie
@@ -737,7 +810,7 @@ export function VaultDashboard({
                 })}
               </div>
 
-              <div className="hidden items-center gap-2 sm:flex">
+              <div className="flex items-center gap-2">
                 <div className="flex items-center rounded-xl border border-outline-variant/20 bg-surface-container-low p-0.5">
                   <button
                     type="button"
@@ -888,7 +961,7 @@ export function VaultDashboard({
               })}
             </div>
 
-            {/* Eintrags-Karten (Raster oder Liste) */}
+            {/* Eintrags-Karten (Raster oder Liste, max. 5 am Handy) */}
             {katalogEintraege.length === 0 ? (
               <div className="rounded-2xl border border-outline-variant/20 bg-surface-container-low/60">
                 <Zustandsflaeche
@@ -910,12 +983,14 @@ export function VaultDashboard({
               </div>
             ) : darstellung === 'raster' ? (
               <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-                {katalogEintraege.map((eintragItem) => (
+                {katalogEintraege.map((eintragItem, index) => (
                   <button
                     key={eintragItem.id}
                     type="button"
                     onClick={() => onEintrag(eintragItem)}
-                    className="group flex items-center gap-3 rounded-2xl border border-outline-variant/20 bg-surface-container-low/80 px-3.5 py-3 text-left transition-all hover:border-outline-variant/40 hover:bg-surface-container/80"
+                    className={`group flex items-center gap-3 rounded-2xl border border-outline-variant/20 bg-surface-container-low/80 px-3.5 py-3 text-left transition-all hover:border-outline-variant/40 hover:bg-surface-container/80 ${
+                      index >= 5 ? 'hidden sm:flex' : ''
+                    }`}
                   >
                     <EintragVorschauSymbol item={eintragItem} />
                     <span className="min-w-0 flex-1">
@@ -935,11 +1010,11 @@ export function VaultDashboard({
               </div>
             ) : (
               <ul className="divide-y divide-outline-variant/15 overflow-hidden rounded-2xl border border-outline-variant/20 bg-surface-container-low/80">
-                {katalogEintraege.map((eintragItem) => {
+                {katalogEintraege.map((eintragItem, index) => {
                   const groesse = eintragItem.datei?.original.echt
                   const punkte = eintragItem.password ? passwortPunkte(eintragItem.password) : null
                   return (
-                    <li key={eintragItem.id}>
+                    <li key={eintragItem.id} className={index >= 5 ? 'hidden sm:list-item' : ''}>
                       <button
                         type="button"
                         onClick={() => onEintrag(eintragItem)}

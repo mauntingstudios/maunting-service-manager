@@ -10434,7 +10434,10 @@
           "exportErfolg": "Tresor-Export wurde heruntergeladen."
         },
         "sucheOeffnen": "Suche einblenden",
-        "sucheSchliessen": "Suche ausblenden"
+        "sucheSchliessen": "Suche ausblenden",
+        "letzteFotos": "Letzte Fotos",
+        "sicherheitKurz": "Sicherheit",
+        "datenlecksKurz": "Lecks"
       },
       "generator": {
         "titel": "Passwort generieren",

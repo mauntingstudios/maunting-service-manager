@@ -10434,7 +10434,10 @@
           "exportErfolg": "Vault export downloaded."
         },
         "sucheOeffnen": "Show search",
-        "sucheSchliessen": "Hide search"
+        "sucheSchliessen": "Hide search",
+        "letzteFotos": "Recent photos",
+        "sicherheitKurz": "Security",
+        "datenlecksKurz": "Leaks"
       },
       "generator": {
         "titel": "Generate password",

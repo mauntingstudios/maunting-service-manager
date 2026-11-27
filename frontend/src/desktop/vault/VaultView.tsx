@@ -1302,6 +1302,10 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
             setFilter('alle')
             setOrdnerFilter(null)
           }}
+          onAlleFotos={() => {
+            setAnsicht('fotos')
+            setOrdnerFilter(null)
+          }}
           onFilterAnsicht={(zielFilter) => {
             setAnsicht('tresor')
             setFilter(zielFilter)
