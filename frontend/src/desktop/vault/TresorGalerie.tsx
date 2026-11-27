@@ -33,6 +33,7 @@ import {
   Library,
   LoaderCircle,
   Minus,
+  MoreHorizontal,
   Pencil,
   Play,
   Plus,
@@ -42,7 +43,7 @@ import {
   Check,
   type LucideIcon,
 } from 'lucide-react'
-import { Ablageflaeche, ActionMenu, Auswahlleiste, Button, Dropdown, FileButton, Kontextmenue, Lichtbox, ProgressBar, Zustandsflaeche, buttonClasses, useMehrfachauswahl, ActionMenuItem, AuswahlAktion, Auswahltasten, DropdownOption } from '@maunting/ui'
+import { Ablageflaeche, ActionMenu, Auswahlleiste, Blatteintrag, Blattmenue, Button, Dropdown, FileButton, Kontextmenue, Lichtbox, ProgressBar, Zustandsflaeche, buttonClasses, useMehrfachauswahl, ActionMenuItem, AuswahlAktion, Auswahltasten, DropdownOption } from '@maunting/ui'
 import { toast } from '@/stores/toastStore'
 import { prompt } from '@/stores/promptStore'
 import { formatBytes, formatDauer, formatZeitpunkt } from '@/lib/format'
@@ -249,7 +250,7 @@ const Kachel = memo(function Kachel({
       aria-label={item.service}
       aria-describedby={video ? beschreibung : undefined}
       aria-pressed={ausgewaehlt}
-      className={`group relative aspect-square overflow-hidden rounded-md bg-surface-container focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${
+      className={`group relative aspect-square overflow-hidden rounded-none sm:rounded-md bg-surface-container focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${
         ausgewaehlt ? 'ring-2 ring-primary ring-offset-2 ring-offset-surface' : ''
       }`}
     >
@@ -410,6 +411,7 @@ export function TresorGalerie({
     [],
   )
   const [stufe, setStufe] = useState(1)
+  const [mobilOptionenOffen, setMobilOptionenOffen] = useState(false)
   const [offen, setOffen] = useState<{ id: string; index: number } | null>(null)
   const [vorbereitung, setVorbereitung] = useState(0)
   const [ziehen, setZiehen] = useState(false)
@@ -1039,14 +1041,14 @@ export function TresorGalerie({
   }
 
   const werkzeuge = (
-    <div className="flex items-center justify-end gap-1">
+    <div className="flex shrink-0 items-center justify-end gap-1">
       {!albenUebersicht && (
         <>
           <Button
             type="button"
             variant="ghost"
             size="icon"
-            className={DAUMEN_QUADRAT}
+            className={cx('hidden sm:inline-flex', DAUMEN_QUADRAT)}
             aria-label={t('mss.vault.fotos.kleiner')}
             disabled={stufe === 0}
             onClick={() => setStufe((s) => Math.max(0, s - 1))}
@@ -1057,30 +1059,63 @@ export function TresorGalerie({
             type="button"
             variant="ghost"
             size="icon"
-            className={DAUMEN_QUADRAT}
+            className={cx('hidden sm:inline-flex', DAUMEN_QUADRAT)}
             aria-label={t('mss.vault.fotos.groesser')}
             disabled={stufe === KACHEL.length - 1}
             onClick={() => setStufe((s) => Math.min(KACHEL.length - 1, s + 1))}
           >
             <Plus className="h-4 w-4" />
           </Button>
-          <Button type="button" variant="ghost" size="sm" className={DAUMEN} disabled={liste.length === 0} onClick={wahl.starten}>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className={cx('hidden sm:inline-flex', DAUMEN)}
+            disabled={liste.length === 0}
+            onClick={wahl.starten}
+          >
             <CheckSquare className="mr-1 h-3.5 w-3.5" />
             {t('mss.vault.dateien.auswaehlen')}
           </Button>
         </>
       )}
       {albenUebersicht ? (
-        <Button type="button" variant="primary" size="sm" className={DAUMEN} onClick={() => void neuesAlbum([])}>
-          <Plus className="mr-1 h-3.5 w-3.5" />
-          {t('mss.vault.fotos.neuesAlbum')}
+        <Button
+          type="button"
+          variant="primary"
+          size="sm"
+          className={DAUMEN}
+          aria-label={t('mss.vault.fotos.neuesAlbum')}
+          onClick={() => void neuesAlbum([])}
+        >
+          <Plus className="h-3.5 w-3.5 sm:mr-1" aria-hidden="true" />
+          <span className="hidden sm:inline">{t('mss.vault.fotos.neuesAlbum')}</span>
         </Button>
       ) : (
-        <FileButton multiple accept="image/*,video/*" size="sm" variant="primary" className={DAUMEN} disabled={ohneSpeicher} onFiles={(dateien) => void hochladen(dateien)}>
-          <Upload className="mr-1 h-3.5 w-3.5" />
-          {t('mss.vault.dateien.hochladen')}
+        <FileButton
+          multiple
+          accept="image/*,video/*"
+          size="sm"
+          variant="primary"
+          className={DAUMEN}
+          aria-label={t('mss.vault.dateien.hochladen')}
+          disabled={ohneSpeicher}
+          onFiles={(dateien) => void hochladen(dateien)}
+        >
+          <Upload className="h-3.5 w-3.5 sm:mr-1" aria-hidden="true" />
+          <span className="hidden sm:inline">{t('mss.vault.dateien.hochladen')}</span>
         </FileButton>
       )}
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        className={cx('sm:hidden', DAUMEN_QUADRAT)}
+        aria-label={t('mss.vault.dashboard.mehr')}
+        onClick={() => setMobilOptionenOffen(true)}
+      >
+        <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
+      </Button>
     </div>
   )
 
@@ -1088,7 +1123,7 @@ export function TresorGalerie({
   // Am Telefon eine Zeile zum Wischen, ab sm wie gehabt mit Umbruch.
   const filterLeiste = (
     // -my-1/py-1: der Fokusring wird in der Wischleiste sonst oben und unten abgeschnitten.
-    <div className="-mx-4 -my-1 flex items-center gap-2 overflow-x-auto px-4 py-1 msm-ohne-rollbalken sm:mx-0 sm:my-0 sm:flex-wrap sm:overflow-visible sm:px-0 sm:py-0">
+    <div className="-my-1 flex min-w-0 flex-1 items-center gap-2 overflow-x-auto py-1 msm-ohne-rollbalken sm:my-0 sm:flex-wrap sm:overflow-visible sm:py-0">
       <div role="tablist" aria-label={t('mss.vault.fotos.filter')} className="flex shrink-0 items-center gap-1.5 sm:flex-wrap">
         {FILTER.map(({ id, labelKey, icon: Icon }) => {
           const aktiv = filter === id
@@ -1112,7 +1147,7 @@ export function TresorGalerie({
         })}
       </div>
       {!albenUebersicht && quellen.length > 2 && (
-        <div className="w-44 shrink-0 sm:w-48">
+        <div className="hidden w-44 shrink-0 sm:block sm:w-48">
           <Dropdown value={quelle} onChange={setQuelle} options={quellen} aria-label={t('mss.vault.fotos.quelle.titel')} />
         </div>
       )}
@@ -1144,7 +1179,7 @@ export function TresorGalerie({
         if (dateien.length > 0) void hochladen(dateien)
       }}
     >
-      <div className="shrink-0 space-y-2 px-4 pb-2 pt-3">
+      <div className="shrink-0 space-y-2 px-3 pb-2 pt-2.5 sm:px-4 sm:pt-3">
         {auswahl ? (
           <div className="flex items-center rounded-lg bg-primary/5 px-2 py-1">
             <Auswahlleiste
@@ -1158,7 +1193,7 @@ export function TresorGalerie({
             />
           </div>
         ) : (
-          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+          <div className="flex items-center justify-between gap-2 sm:flex-wrap">
             {filterLeiste}
             {werkzeuge}
           </div>
@@ -1201,13 +1236,13 @@ export function TresorGalerie({
           </div>
         )}
         {!auswahl && speicher && (
-          <div className="sm:max-w-xs">
+          <div className="hidden sm:block sm:max-w-xs">
             <TresorSpeicherAnzeige speicher={speicher} />
           </div>
         )}
       </div>
 
-      <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto px-4 pb-3" onKeyDown={rasterTaste}>
+      <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto px-0.5 pb-3 sm:px-4" onKeyDown={rasterTaste}>
         {filter === 'aehnlich' && !album && aehnlich.gruppen === null ? (
           <div className="mx-auto mt-6 w-72">
             <ProgressBar
@@ -1220,7 +1255,7 @@ export function TresorGalerie({
           alben.length === 0 ? (
             <Zustandsflaeche art="leer" icon={<Library className="h-10 w-10" />} text={t('mss.vault.fotos.keineAlben')} />
           ) : (
-            <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))' }}>
+            <div className="grid grid-cols-2 gap-3 px-2.5 sm:px-0" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))' }}>
               {alben.map((a) => {
                 const inhalt = albumInhalt(a)
                 return <AlbumKarte key={a.id} album={a} titelbild={inhalt[0]} anzahl={inhalt.length} onOeffnen={() => albumWechseln(a.id)} />
@@ -1246,7 +1281,7 @@ export function TresorGalerie({
         ) : (
           <SichtbarKontext.Provider value={beobachten}>
             {erinnerungen.length > 0 && !auswahl && (
-              <section aria-label={t('mss.vault.fotos.anDiesemTag')} className="mb-4">
+              <section aria-label={t('mss.vault.fotos.anDiesemTag')} className="mb-4 px-2.5 sm:px-0">
                 <h3 className="mb-1.5 text-xs font-semibold text-on-surface">{t('mss.vault.fotos.anDiesemTag')}</h3>
                 <div className="msm-ohne-rollbalken flex gap-2 overflow-x-auto">
                   {erinnerungen.map(({ jahre, items: tag }) => (
@@ -1268,8 +1303,11 @@ export function TresorGalerie({
                 className="mb-4"
                 style={{ contentVisibility: 'auto', containIntrinsicSize: `auto ${Math.ceil(gruppe.items.length / 6) * kante + 32}px` }}
               >
-                <h3 className="mb-1.5 text-xs font-semibold text-on-surface">{gruppe.titel}</h3>
-                <div className="grid gap-1" style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${kante}px, 1fr))` }}>
+                <h3 className="mb-1.5 px-2.5 text-xs font-semibold text-on-surface sm:px-0">{gruppe.titel}</h3>
+                <div
+                  className="grid grid-cols-3 gap-0.5 sm:gap-1 sm:[grid-template-columns:repeat(auto-fill,minmax(var(--galerie-min),1fr))]"
+                  style={{ '--galerie-min': `${kante}px` } as React.CSSProperties}
+                >
                   {gruppe.items.map((item) => (
                     <Kachel
                       key={item.id}
@@ -1289,6 +1327,50 @@ export function TresorGalerie({
           </SichtbarKontext.Provider>
         )}
       </div>
+
+      <Blattmenue
+        offen={mobilOptionenOffen}
+        onSchliessen={() => setMobilOptionenOffen(false)}
+        titel={t('mss.vault.dashboard.werkzeuge')}
+      >
+        <div className="space-y-1 pb-3">
+          {!albenUebersicht && (
+            <>
+              <Blatteintrag
+                icon={<CheckSquare className="h-4 w-4" />}
+                label={t('mss.vault.dateien.auswaehlen')}
+                disabled={liste.length === 0}
+                onClick={() => {
+                  setMobilOptionenOffen(false)
+                  wahl.starten()
+                }}
+              />
+              <Blatteintrag
+                icon={<Minus className="h-4 w-4" />}
+                label={t('mss.vault.fotos.kleiner')}
+                disabled={stufe === 0}
+                onClick={() => setStufe((s) => Math.max(0, s - 1))}
+              />
+              <Blatteintrag
+                icon={<Plus className="h-4 w-4" />}
+                label={t('mss.vault.fotos.groesser')}
+                disabled={stufe === KACHEL.length - 1}
+                onClick={() => setStufe((s) => Math.min(KACHEL.length - 1, s + 1))}
+              />
+            </>
+          )}
+          {!albenUebersicht && quellen.length > 2 && (
+            <div className="px-4 py-2">
+              <Dropdown value={quelle} onChange={setQuelle} options={quellen} aria-label={t('mss.vault.fotos.quelle.titel')} />
+            </div>
+          )}
+          {speicher && (
+            <div className="border-t border-outline-variant/20 px-4 pt-3">
+              <TresorSpeicherAnzeige speicher={speicher} />
+            </div>
+          )}
+        </div>
+      </Blattmenue>
 
       {ziehen && <Ablageflaeche text={t('mss.vault.fotos.ablegenHochladen')} />}
 

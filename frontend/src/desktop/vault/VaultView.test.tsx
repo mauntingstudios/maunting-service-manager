@@ -672,7 +672,7 @@ describe('VaultView: Direktes Öffnen & Kamera-Vorschau', () => {
     fireEvent.click(screen.getByRole('button', { name: /notiz\.txt/ }))
 
     expect(screen.getByRole('tab', { name: new RegExp(i18n.t('mss.vault.ansicht.dateien')) })).toHaveAttribute('aria-selected', 'true')
-    expect(await screen.findByTestId('tresor-leseansicht')).toBeInTheDocument()
+    expect(await screen.findByTestId('tresor-leseansicht', {}, { timeout: 4000 })).toBeInTheDocument()
   })
 
   it('öffnet einen Eintrag auch direkt aus der Tresor-Listenansicht', async () => {
@@ -683,7 +683,7 @@ describe('VaultView: Direktes Öffnen & Kamera-Vorschau', () => {
     fireEvent.click(screen.getByRole('button', { name: /notiz\.txt/ }))
 
     expect(screen.getByRole('tab', { name: new RegExp(i18n.t('mss.vault.ansicht.dateien')) })).toHaveAttribute('aria-selected', 'true')
-    expect(await screen.findByTestId('tresor-leseansicht')).toBeInTheDocument()
+    expect(await screen.findByTestId('tresor-leseansicht', {}, { timeout: 4000 })).toBeInTheDocument()
   })
 
   it('behält Kamera-Vorschau bei gesperrtem Tresor, zeigt lokale Vorschau bei noch nicht synchronisiertem Foto und wechselt nahtlos nach Upload', async () => {

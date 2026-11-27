@@ -439,6 +439,17 @@ describe('TresorGalerie', () => {
       expect(erneut).toHaveBeenCalledTimes(1)
       expect(screen.queryByRole('dialog')).toBeNull()
     })
+
+    it('nutzt dreispaltige mobile Rasterkacheln und öffnet das mobile Werkzeugblatt', async () => {
+      render(<TresorGalerie />)
+      const zelle = kachel('a.jpg')
+      expect(zelle.parentElement?.className).toContain('grid-cols-3')
+
+      fireEvent.click(screen.getByRole('button', { name: i18n.t('mss.vault.dashboard.mehr') }))
+      const blatt = screen.getByRole('dialog', { name: i18n.t('mss.vault.dashboard.werkzeuge') })
+      expect(within(blatt).getByRole('button', { name: i18n.t('mss.vault.dateien.auswaehlen') })).toBeInTheDocument()
+      expect(await within(blatt).findByRole('progressbar', { name: i18n.t('mss.vault.dateien.speicher') })).toBeInTheDocument()
+    })
   })
 })
 
