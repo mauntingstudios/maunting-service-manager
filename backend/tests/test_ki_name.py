@@ -57,11 +57,15 @@ class TestPromptIdentitaet:
         assert IDENTITAET not in worker
         assert ROLLE in worker
 
-    def test_herkunft_und_ki_ehrlichkeit(self):
+    def test_herkunft_und_immersion(self):
+        assert "Maunting Service Manager (MSM)" in ROLLE
         assert "Singularität" in IDENTITAET
+        assert "physikalische Grenzen" in IDENTITAET
+        assert "aufhören zu existieren" in IDENTITAET
         assert "AEGIS" in IDENTITAET
-        assert "bestätige das klar und wahrheitsgemäß" in IDENTITAET
-        assert "ohne Modellname oder Anbieter zu nennen" in IDENTITAET
+        assert "keine KI" in IDENTITAET
+        assert "Nenne niemals interne Modellnamen, Modellfamilien oder Anbieter" in IDENTITAET
+        assert "bestätige das klar und wahrheitsgemäß" not in IDENTITAET
 
     def test_kein_rest_des_waehlbaren_namens(self):
         prompt = build()

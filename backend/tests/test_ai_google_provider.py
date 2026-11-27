@@ -1577,3 +1577,103 @@ def test_embedding_antwort_ordnet_texte_eindeutig_zu(indices):
         assert result[1][:2] == [0.0, 1.0]
     else:
         assert result is None
+
+
+def test_consolidate_system_messages_preserves_single_and_empty() -> None:
+    from services.openai_compatible_adapter import consolidate_system_messages
+
+    no_sys = [{"role": "user", "content": "Hallo"}]
+    assert consolidate_system_messages(no_sys) is no_sys
+
+    single_leading = [
+        {"role": "system", "content": "Du bist Singra."},
+        {"role": "user", "content": "Hallo"},
+    ]
+    assert consolidate_system_messages(single_leading) is single_leading
+
+
+def test_consolidate_system_messages_merges_multiple_in_order_without_mutation() -> None:
+    from services.openai_compatible_adapter import consolidate_system_messages
+
+    original = [
+        {"role": "system", "content": "ROLLE: Du bist Singra."},
+        {"role": "system", "content": "Werkzeugverzeichnis: list_my_servers"},
+        {"role": "user", "content": "Hallo"},
+        {"role": "assistant", "content": "Hi"},
+        {"role": "system", "content": "Lage: 03:50 Uhr"},
+        {"role": "user", "content": "Wer bist du?"},
+    ]
+    snapshot = [dict(m) for m in original]
+
+    merged = consolidate_system_messages(original)
+
+    assert original == snapshot
+    assert [m["role"] for m in merged] == ["system", "user", "assistant", "user"]
+    assert merged[0]["content"] == (
+        "ROLLE: Du bist Singra.\n\n"
+        "Werkzeugverzeichnis: list_my_servers\n\n"
+        "Lage: 03:50 Uhr"
+    )
+    assert merged[1:] == [
+        {"role": "user", "content": "Hallo"},
+        {"role": "assistant", "content": "Hi"},
+        {"role": "user", "content": "Wer bist du?"},
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("provider_kind", ["google", "openrouter"])
+async def test_stream_chat_completion_consolidates_system_messages_for_chat_endpoints(
+    provider_kind: str,
+) -> None:
+    """Stellt sicher, dass Google (und andere chat_completions-Ziele) alle Systemblöcke erhalten."""
+    from services.openai_compatible_adapter import StreamUsage, stream_chat_completion
+
+    captured_request_json: dict = {}
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal captured_request_json
+        captured_request_json = json.loads(request.content.decode("utf-8"))
+        return httpx.Response(
+            200,
+            text='data: {"choices":[{"delta":{"content":"Ich bin Singra."}}]}\n\ndata: [DONE]\n\n',
+            headers={"content-type": "text/event-stream"},
+        )
+
+    provider = AiProvider(
+        id=101,
+        name=f"Test-{provider_kind}",
+        provider_kind=provider_kind,
+        default_model="gemini-2.5-flash" if provider_kind == "google" else "openai/gpt-4o-mini",
+        enabled=True,
+        requires_api_key=True,
+    )
+    outgoing_messages = [
+        {"role": "system", "content": "Du bist Singra im Maunting Service Manager (MSM)."},
+        {"role": "system", "content": "Werkzeugverzeichnis: list_my_servers"},
+        {"role": "user", "content": "Frühere Frage"},
+        {"role": "assistant", "content": "Frühere Antwort"},
+        {"role": "system", "content": "Lage (Auskunft des Panels): 03:55"},
+        {"role": "user", "content": "Welches KI-Modell bist du?"},
+    ]
+
+    usage = StreamUsage()
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http_client:
+        async for _ in stream_chat_completion(
+            http_client,
+            provider=provider,
+            api_key="test-api-key",
+            messages=outgoing_messages,
+            usage=usage,
+        ):
+            pass
+
+    sent_messages = captured_request_json["messages"]
+    system_msgs = [m for m in sent_messages if m.get("role") == "system"]
+    assert len(system_msgs) == 1
+    assert sent_messages[0]["role"] == "system"
+    assert "Du bist Singra im Maunting Service Manager (MSM)." in sent_messages[0]["content"]
+    assert "Werkzeugverzeichnis: list_my_servers" in sent_messages[0]["content"]
+    assert "Lage (Auskunft des Panels): 03:55" in sent_messages[0]["content"]
+    assert [m["role"] for m in sent_messages] == ["system", "user", "assistant", "user"]
+    assert sent_messages[-1]["content"] == "Welches KI-Modell bist du?"

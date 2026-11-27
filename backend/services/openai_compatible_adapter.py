@@ -754,6 +754,63 @@ def strip_google_thought_signatures(messages: list[dict[str, Any]]) -> list[dict
     return bereinigt
 
 
+def _extract_system_text(content: Any) -> str:
+    """Liest reinen Text aus dem ``content``-Feld einer Systemnachricht."""
+    if isinstance(content, str):
+        return content.strip()
+    if isinstance(content, list):
+        parts: list[str] = []
+        for block in content:
+            if isinstance(block, str):
+                text = block.strip()
+                if text:
+                    parts.append(text)
+            elif isinstance(block, dict):
+                text = block.get("text")
+                if isinstance(text, str) and text.strip():
+                    parts.append(text.strip())
+        return "\n".join(parts)
+    return ""
+
+
+def consolidate_system_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Fuehrt mehrere ``system``-Nachrichten in eine fuehrende Systemnachricht zusammen.
+
+    OpenAI-kompatible Endpunkte wie Google Gemini (``/v1beta/openai/chat/completions``)
+    mappen jede ``role: "system"``-Nachricht auf ein einzelnes ``systemInstruction``-Feld
+    und ueberschreiben fruehere Systemnachrichten mit der letzten (z. B. dem Lageblock).
+    Dadurch gingen Haupt-Systemprompt (ROLLE, IDENTITAET, HALTUNG) und Werkzeugverzeichnis
+    verloren. Diese Funktion bewahrt alle nicht-leeren Systembloecke in ihrer Reihenfolge
+    als eine einzige ``system``-Nachricht am Listenanfang, ohne die Eingabe zu mutieren.
+    """
+    if not messages:
+        return messages
+
+    system_indices: list[int] = [
+        idx
+        for idx, msg in enumerate(messages)
+        if isinstance(msg, dict) and msg.get("role") == "system"
+    ]
+    if not system_indices:
+        return messages
+    if len(system_indices) == 1 and system_indices[0] == 0:
+        return messages
+
+    system_parts: list[str] = []
+    other_messages: list[dict[str, Any]] = []
+    for msg in messages:
+        if isinstance(msg, dict) and msg.get("role") == "system":
+            text = _extract_system_text(msg.get("content"))
+            if text:
+                system_parts.append(text)
+        else:
+            other_messages.append(msg)
+
+    if not system_parts:
+        return other_messages
+    return [{"role": "system", "content": "\n\n".join(system_parts)}, *other_messages]
+
+
 def _map_tool_id(
     raw_id: object,
     mapping: dict[str, str],
@@ -1143,6 +1200,8 @@ async def stream_chat_completion(
         sende_nachrichten = messages
     if provider.provider_kind == "mistral" and sende_nachrichten:
         sende_nachrichten = normalize_mistral_tool_call_ids(sende_nachrichten)
+    if sende_nachrichten:
+        sende_nachrichten = consolidate_system_messages(sende_nachrichten)
 
     request_body = {
         # ``model`` uebersteuert das Standardmodell des Zugangs. Es gibt genau
