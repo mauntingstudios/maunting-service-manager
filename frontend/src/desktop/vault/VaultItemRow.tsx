@@ -32,11 +32,6 @@ export function restTageImPapierkorb(trashedAt: number, jetzt = Date.now()): num
   return Math.max(0, Math.ceil((trashedAt + PAPIERKORB_TAGE * TAG_MS - jetzt) / TAG_MS))
 }
 
-/** Miniatur einer Datei im Archiv oder Papierkorb, sonst das Marken-/Kategoriesymbol. */
-function ZeilenBild({ item }: { item: VaultItem }) {
-  return <TresorVorschau item={item} />
-}
-
 export interface VaultItemRowProps {
   item: VaultItem
   ansicht: VaultAnsicht
@@ -131,7 +126,7 @@ export function VaultItemRow({
             onClick={() => onOpen(item)}
             className="flex min-h-11 min-w-0 flex-1 items-center gap-3 rounded-lg text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 sm:min-h-9"
           >
-            <ZeilenBild item={item} />
+            <TresorVorschau item={item} />
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-1.5">
                 <span className="truncate text-xs font-semibold text-on-surface">
@@ -148,7 +143,7 @@ export function VaultItemRow({
           </button>
         ) : (
           <>
-            <ZeilenBild item={item} />
+            <TresorVorschau item={item} />
 
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-1.5">

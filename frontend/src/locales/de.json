@@ -10299,6 +10299,10 @@
           "visa": "Visa",
           "mastercard": "Mastercard",
           "amex": "American Express"
+        },
+        "art": {
+          "karte": "Karte",
+          "konto": "Konto"
         }
       },
       "autoSperreHinweis": "Sperrt nach Inaktivität automatisch alle privaten und Team-Tresore.",

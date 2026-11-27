@@ -99,7 +99,7 @@ export function TresorZahlung({ suche }: { suche: string }) {
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex min-w-0 items-center gap-3">
                     <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-primary/25 bg-primary/12 text-primary">
-                      <ZahlungSymbol zahlung={z} className="h-4.5 w-4.5" />
+                      <ZahlungSymbol zahlung={z} className="h-5 w-5" />
                     </div>
                     <div className="min-w-0">
                       <p className="truncate text-sm font-semibold text-on-surface">{item.service}</p>

@@ -118,10 +118,6 @@ function StandardKategorieIcon({ schluessel }: { schluessel?: StandardKategorieD
   }
 }
 
-function EintragVorschauSymbol({ item }: { item: VaultItem }) {
-  return <TresorVorschau item={item} />
-}
-
 function Kennzahl({
   label,
   wert,
@@ -992,7 +988,7 @@ export function VaultDashboard({
                       index >= 5 ? 'hidden sm:flex' : ''
                     }`}
                   >
-                    <EintragVorschauSymbol item={eintragItem} />
+                    <TresorVorschau item={eintragItem} />
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-sm font-semibold text-on-surface">
                         {eintragItem.service}
@@ -1020,7 +1016,7 @@ export function VaultDashboard({
                         onClick={() => onEintrag(eintragItem)}
                         className="flex w-full items-center gap-3 px-3.5 py-2.5 text-left transition-colors hover:bg-surface-container/70"
                       >
-                        <EintragVorschauSymbol item={eintragItem} />
+                        <TresorVorschau item={eintragItem} />
                         <span className="min-w-0 flex-1">
                           <span className="block truncate text-sm font-medium text-on-surface">
                             {eintragItem.service}

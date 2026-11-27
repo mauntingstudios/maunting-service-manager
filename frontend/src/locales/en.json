@@ -10299,6 +10299,10 @@
           "visa": "Visa",
           "mastercard": "Mastercard",
           "amex": "American Express"
+        },
+        "art": {
+          "karte": "Card",
+          "konto": "Account"
         }
       },
       "autoSperreHinweis": "Automatically locks all personal and team vaults after inactivity.",
