@@ -84,7 +84,7 @@ export function TresorZahlung({ suche }: { suche: string }) {
       {liste.length === 0 ? (
         <Zustandsflaeche art="leer" ansagen={!!suche.trim()} text={t(suche.trim() ? 'mss.vault.keineTreffer' : 'mss.vault.zahlung.leer')} />
       ) : (
-        <ul className="space-y-2" aria-label={t('mss.vault.ansicht.zahlung')}>
+        <ul className="grid grid-cols-1 gap-3 md:grid-cols-2" aria-label={t('mss.vault.ansicht.zahlung')}>
           {liste.map((item) => {
             const z = item.zahlung
             const sichtbar = offen === item.id
@@ -92,53 +92,72 @@ export function TresorZahlung({ suche }: { suche: string }) {
             const marke = z.art === 'karte' ? kartenmarke(z.nummer) : null
             const ablauf = z.art === 'karte' ? ablaufText(z) : ''
             return (
-              <li key={item.id} className="flex flex-col gap-2 rounded-xl border border-outline-variant/20 bg-surface-container p-3 sm:flex-row sm:items-center">
-                <div className="flex min-w-0 flex-1 items-center gap-3">
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-surface-container-high text-primary">
-                    <ZahlungSymbol zahlung={z} className="h-4 w-4" />
+              <li
+                key={item.id}
+                className="flex flex-col justify-between gap-3 rounded-2xl border border-outline-variant/25 bg-gradient-to-br from-surface-container-high/90 to-surface-container p-4 shadow-sm"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-primary/25 bg-primary/12 text-primary">
+                      <ZahlungSymbol zahlung={z} className="h-4.5 w-4.5" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-on-surface">{item.service}</p>
+                      <p className="truncate text-label-sm text-on-surface-variant">
+                        {marke ? t(`mss.vault.zahlung.marke.${marke}`) : z.art === 'konto' ? t('mss.vault.zahlung.art.konto') : t('mss.vault.zahlung.art.karte')}
+                        {z.inhaber ? ` · ${z.inhaber}` : ''}
+                      </p>
+                    </div>
                   </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-xs font-semibold text-on-surface">{item.service}</p>
-                    <p className="mt-0.5 flex flex-wrap items-center gap-x-2 text-label-sm text-on-surface-variant">
-                      <span className="font-mono">{sichtbar ? (z.art === 'karte' ? nummerGruppiert(wert) : wert.replace(/(.{4})(?=.)/g, '$1 ')) : verdeckt(z)}</span>
-                      {marke && <span>{t(`mss.vault.zahlung.marke.${marke}`)}</span>}
+                  {z.art === 'karte' && istAbgelaufen(z) && <Badge variant="warning">{t('mss.vault.zahlung.abgelaufen')}</Badge>}
+                </div>
+
+                <div className="rounded-xl border border-outline-variant/15 bg-surface-container-low/80 px-3 py-2.5">
+                  <p className="font-mono text-sm tracking-wider text-on-surface break-all">
+                    {sichtbar ? (z.art === 'karte' ? nummerGruppiert(wert) : wert.replace(/(.{4})(?=.)/g, '$1 ')) : verdeckt(z)}
+                  </p>
+                  {(ablauf || (sichtbar && ((z.art === 'karte' && z.pruefnummer) || (z.art === 'konto' && z.bic)))) && (
+                    <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-label-sm text-on-surface-variant">
                       {ablauf && <span>{ablauf}</span>}
-                      {z.art === 'karte' && istAbgelaufen(z) && <Badge variant="warning">{t('mss.vault.zahlung.abgelaufen')}</Badge>}
                       {sichtbar && z.art === 'karte' && z.pruefnummer && (
                         <span className="font-mono">
                           {t('mss.vault.zahlung.pruefnummerKurz')} {z.pruefnummer}
                         </span>
                       )}
                       {sichtbar && z.art === 'konto' && z.bic && <span className="font-mono">{z.bic}</span>}
-                    </p>
-                    {z.inhaber && <p className="truncate text-label-sm text-on-surface-variant">{z.inhaber}</p>}
-                  </div>
+                    </div>
+                  )}
                 </div>
-                <div className="flex items-center gap-0.5 sm:justify-end">
-                  <Kurzinfo text={t(sichtbar ? 'mss.vault.zahlung.verdecken' : 'mss.vault.zahlung.aufdecken')}>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      fingerziel
-                      aria-label={t(sichtbar ? 'mss.vault.zahlung.verdecken' : 'mss.vault.zahlung.aufdecken')}
-                      aria-pressed={sichtbar}
-                      onClick={() => aufdecken(item.id)}
-                    >
-                      {sichtbar ? <EyeOff className="h-3.5 w-3.5" aria-hidden="true" /> : <Eye className="h-3.5 w-3.5" aria-hidden="true" />}
-                    </Button>
-                  </Kurzinfo>
-                  {kopierKnopf(wert, `wert-${item.id}`, t(z.art === 'karte' ? 'mss.vault.zahlung.nummerKopieren' : 'mss.vault.zahlung.ibanKopieren'))}
-                  <Kurzinfo text={t('common.edit')}>
-                    <Button type="button" variant="ghost" size="icon" fingerziel aria-label={t('common.edit')} onClick={() => setDialog({ art: z.art, item })}>
-                      <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
-                    </Button>
-                  </Kurzinfo>
-                  <Kurzinfo text={t('mss.vault.inPapierkorb')} seite="ende">
-                    <Button type="button" variant="ghost" size="icon" fingerziel aria-label={t('mss.vault.inPapierkorb')} onClick={() => void wegwerfen(item)} className="text-status-destructive">
-                      <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
-                    </Button>
-                  </Kurzinfo>
+
+                <div className="flex items-center justify-between gap-1 border-t border-outline-variant/15 pt-1">
+                  <div className="flex items-center gap-1">
+                    <Kurzinfo text={t(sichtbar ? 'mss.vault.zahlung.verdecken' : 'mss.vault.zahlung.aufdecken')}>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        fingerziel
+                        aria-label={t(sichtbar ? 'mss.vault.zahlung.verdecken' : 'mss.vault.zahlung.aufdecken')}
+                        aria-pressed={sichtbar}
+                        onClick={() => aufdecken(item.id)}
+                      >
+                        {sichtbar ? <EyeOff className="h-4 w-4" aria-hidden="true" /> : <Eye className="h-4 w-4" aria-hidden="true" />}
+                      </Button>
+                    </Kurzinfo>
+                    {kopierKnopf(wert, `wert-${item.id}`, t(z.art === 'karte' ? 'mss.vault.zahlung.nummerKopieren' : 'mss.vault.zahlung.ibanKopieren'))}
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <Kurzinfo text={t('common.edit')}>
+                      <Button type="button" variant="ghost" size="icon" fingerziel aria-label={t('common.edit')} onClick={() => setDialog({ art: z.art, item })}>
+                        <Pencil className="h-4 w-4" aria-hidden="true" />
+                      </Button>
+                    </Kurzinfo>
+                    <Kurzinfo text={t('mss.vault.inPapierkorb')} seite="ende">
+                      <Button type="button" variant="ghost" size="icon" fingerziel aria-label={t('mss.vault.inPapierkorb')} onClick={() => void wegwerfen(item)} className="text-status-destructive">
+                        <Trash2 className="h-4 w-4" aria-hidden="true" />
+                      </Button>
+                    </Kurzinfo>
+                  </div>
                 </div>
               </li>
             )

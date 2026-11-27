@@ -114,10 +114,12 @@ describe('VaultView: Archiv und Papierkorb', () => {
     fireEvent.click(reiter('mss.vault.ansicht.tresor'))
   }
 
-  it('zeigt im Tresor nur, was weder archiviert noch gelöscht ist, und nichts Unbekanntes', () => {
+  it('zeigt im Tresor nur, was weder archiviert noch gelöscht ist, und trennt Dateien von Passwörtern', () => {
     mitTresor()
     expect(screen.getByText('Bank')).toBeInTheDocument()
-    // „Alle“ zeigt auch Dateien; der Reiter „Passwörter“ blendet sie aus.
+    // „Alle“ mischt keine Dateien/Fotos in die Passwortliste; „Dateien“ zeigt sie gezielt an.
+    expect(screen.queryByText('urlaub.jpg')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('mss.vault.dashboard.filterDateien') }))
     expect(screen.getByText('urlaub.jpg')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: i18n.t('mss.vault.dashboard.filterPasswoerter') }))
     expect(screen.queryByText('urlaub.jpg')).not.toBeInTheDocument()
@@ -676,11 +678,12 @@ describe('VaultView: Direktes Öffnen & Kamera-Vorschau', () => {
   it('öffnet einen Eintrag auch direkt aus der Tresor-Listenansicht', async () => {
     render(<VaultView />)
     fireEvent.click(screen.getByRole('tab', { name: new RegExp(i18n.t('mss.vault.ansicht.tresor')) }))
-    fireEvent.click(screen.getByRole('button', { name: /strand\.jpg/ }))
+    expect(screen.queryByRole('button', { name: /strand\.jpg/ })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('mss.vault.dashboard.filterDateien') }))
+    fireEvent.click(screen.getByRole('button', { name: /notiz\.txt/ }))
 
-    expect(screen.getByRole('tab', { name: new RegExp(i18n.t('mss.vault.ansicht.fotos')) })).toHaveAttribute('aria-selected', 'true')
-    const dialog = await screen.findByRole('dialog', { name: 'strand.jpg' })
-    expect(within(dialog).getByText('strand.jpg')).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: new RegExp(i18n.t('mss.vault.ansicht.dateien')) })).toHaveAttribute('aria-selected', 'true')
+    expect(await screen.findByTestId('tresor-leseansicht')).toBeInTheDocument()
   })
 
   it('behält Kamera-Vorschau bei gesperrtem Tresor, zeigt lokale Vorschau bei noch nicht synchronisiertem Foto und wechselt nahtlos nach Upload', async () => {

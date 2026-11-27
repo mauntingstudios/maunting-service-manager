@@ -1014,7 +1014,12 @@ export function VaultView({ mode = 'personal', team }: VaultViewProps = {}) {
         .sort((a, b) => a.service.localeCompare(b.service))
     }
     const sichtbar = bekannt.filter((item) => !item.trashedAt && !item.archivedAt)
-    const gefiltert = sichtbar.filter((item) => passtZumFilter(item, filter))
+    // Medien gehören in „Fotos“, lose Dateien in „Dateien“ — in „Tresor → Alle“ bleibt nur Text/Zugang.
+    const ohneMedienInTresor =
+      ansicht === 'tresor' && !ordnerFilter
+        ? sichtbar.filter((item) => !istMedium(item) && (filter !== 'alle' || item.category !== 'datei'))
+        : sichtbar
+    const gefiltert = ohneMedienInTresor.filter((item) => passtZumFilter(item, filter))
     if (ordnerFilter) {
       return gefiltert
         .filter((item) => item.id !== ordnerFilter && pfadVon(item.ordner, ordnerListe).some((ordner) => ordner.id === ordnerFilter))
