@@ -15,10 +15,21 @@ describe('mcpStdio', () => {
     delete (window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__
   })
 
-  it('meldet die Desktop-App nur mit der Tauri-Brücke', () => {
+  it('meldet die Desktop-App nur mit der Tauri-Brücke und nicht auf Android', () => {
     expect(stdioVerfuegbar()).toBe(false)
     ;(window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ = {}
     expect(stdioVerfuegbar()).toBe(true)
+
+    const originalUa = navigator.userAgent
+    Object.defineProperty(navigator, 'userAgent', {
+      value: 'Mozilla/5.0 (Linux; Android 14)',
+      configurable: true,
+    })
+    expect(stdioVerfuegbar()).toBe(false)
+    Object.defineProperty(navigator, 'userAgent', {
+      value: originalUa,
+      configurable: true,
+    })
   })
 
   it('übernimmt nur benannte, begrenzte Werkzeuge', async () => {

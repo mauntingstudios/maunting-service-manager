@@ -20,7 +20,8 @@ interface StdioAntwort {
 export function stdioVerfuegbar(): boolean {
   return (
     typeof window !== 'undefined' &&
-    ('__TAURI_INTERNALS__' in window || '__TAURI__' in window)
+    ('__TAURI_INTERNALS__' in window || '__TAURI__' in window) &&
+    !(typeof navigator !== 'undefined' && /android/i.test(navigator.userAgent))
   )
 }
 

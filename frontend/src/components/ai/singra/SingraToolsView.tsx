@@ -888,7 +888,14 @@ export function SingraToolsView({
                           {preset.description}
                         </p>
                       </div>
-                      <div className="mt-3 flex justify-end pt-2 border-t border-outline-variant/15">
+                      <div className="mt-3 flex items-center justify-between gap-2 pt-2 border-t border-outline-variant/15">
+                        {preset.transport === 'stdio' && !desktopApp ? (
+                          <span className="text-label-sm text-on-surface-variant">
+                            Desktop-App
+                          </span>
+                        ) : (
+                          <span />
+                        )}
                         <Button
                           type="button"
                           size="sm"
@@ -1049,6 +1056,13 @@ export function SingraToolsView({
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleCreateMcp} className="space-y-4 px-6 pb-6 pt-5">
+            {isPresetModal && mcpDraft.transport === 'stdio' && !desktopApp && (
+              <div className="rounded-xl border border-status-warning/35 bg-status-warning/10 p-3 text-xs text-on-surface">
+                Dieses Preset startet ein lokales Programm und läuft nur in der Desktop-App
+                (Windows, macOS, Linux). Im Browser oder auf dem Handy funktionieren nur
+                Remote-MCP-Server über HTTP oder SSE.
+              </div>
+            )}
             {!isPresetModal && (
               <div>
                 <label className="block text-xs font-medium text-on-surface-variant mb-1">
