@@ -608,11 +608,7 @@ def git_create_remote_repository(
         _run_git(["init", "-b", target_branch], cwd=ws, env=env, text=False, timeout=10)
     _run_git(["remote", "remove", "origin"], cwd=ws, env=env, text=False, timeout=10)
     _run_git(["remote", "add", "origin", clone_url], cwd=ws, env=env, text=False, timeout=10)
-    if paths:
-        add_args = ["add", "--", *[p for p in paths if p and not p.startswith("-")]]
-        _run_git(add_args, cwd=ws, env=env, text=False, timeout=15)
-    else:
-        _run_git(["add", "-A"], cwd=ws, env=env, text=False, timeout=15)
+    _run_git(["add", "-A"], cwd=ws, env=env, text=False, timeout=15)
     _run_git(["commit", "-m", "Initial commit"], cwd=ws, env=env, timeout=15)
     clean_auth_url = _clean_git_remote_url(clone_url, target_provider)
     _run_git(["push", "-u", clean_auth_url, f"HEAD:{target_branch}"], cwd=ws, env=env, timeout=45)

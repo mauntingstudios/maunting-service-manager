@@ -53,7 +53,7 @@ def _update_modrinth_mod_title_in_db(server_id: int, wid: str, title: str) -> No
         finally:
             db.close()
     except Exception:
-        pass
+        logger.debug("Modrinth-Mod-Titel in DB nicht aktualisierbar server_id=%s wid=%s", server_id, wid, exc_info=True)
 
 
 def _select_primary_file(version: dict[str, Any]) -> dict[str, Any] | None:
@@ -112,7 +112,10 @@ async def _download_verified_file(
                         current_url = next_url
                         continue
                     resp.raise_for_status()
-                    total_bytes = int(resp.headers.get("content-length") or 0)
+                    try:
+                        total_bytes = int(resp.headers.get("content-length") or 0)
+                    except (TypeError, ValueError):
+                        total_bytes = 0
                     if total_bytes > MAX_MODRINTH_DOWNLOAD_BYTES:
                         raise ValueError("Modrinth-Datei ueberschreitet das Download-Limit")
                     last_pct = 20

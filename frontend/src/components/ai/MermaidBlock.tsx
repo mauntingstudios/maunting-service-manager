@@ -38,6 +38,7 @@ export function MermaidBlock({ chart }: { chart: string }) {
           mermaid.initialize({
             startOnLoad: false,
             securityLevel: 'strict',
+            htmlLabels: false,
             theme: targetTheme,
           })
           initializedTheme = targetTheme

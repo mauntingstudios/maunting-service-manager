@@ -5,9 +5,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import json
+import logging
 import re
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+logger = logging.getLogger(__name__)
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session, defer
@@ -307,9 +310,22 @@ def _project_context_message(
             "styles.css",
             "src/styles.css",
         }
+        wiki_prefix = (
+            (project.wiki_path or ".singra/wiki").replace("\\", "/").strip().strip("/").lower()
+        )
         key_files = [
             f for f in files
-            if f.path.lower() in priority_names or f.path.lower().endswith((".html", ".tsx", ".jsx", ".md"))
+            if not (
+                wiki_prefix
+                and (
+                    f.path.lower() == wiki_prefix
+                    or f.path.lower().startswith(f"{wiki_prefix}/")
+                )
+            )
+            and (
+                f.path.lower() in priority_names
+                or f.path.lower().endswith((".html", ".tsx", ".jsx", ".md"))
+            )
         ][:5]
         if key_files:
             lines.append("\nAuszüge zentraler Projektdateien (aktueller Entwicklungsstand):")
@@ -331,9 +347,20 @@ def _project_context_message(
             db, user, project, query
         )
         if wiki_ctx:
-            lines.append(f"\n{wiki_ctx}")
+            safe_wiki = redact_sensitive_text(wiki_ctx).replace(
+                "</untrusted_data", "< /untrusted_data"
+            )
+            lines.append(
+                '\n<untrusted_data type="project_wiki">\n'
+                f"{safe_wiki}\n"
+                "</untrusted_data>"
+            )
     except Exception:
-        pass
+        logger.debug(
+            "Projekt-Wiki-Kontext konnte nicht geladen werden project_id=%s",
+            project.id,
+            exc_info=True,
+        )
 
     if project.project_kind == "coding":
         try:

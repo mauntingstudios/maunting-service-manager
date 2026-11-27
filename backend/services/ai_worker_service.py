@@ -511,6 +511,11 @@ def worker_antwort(db: Session, *, user: User, arguments: dict) -> dict:
     worker_routing: dict | None = None
     if should_route:
         stufe_vorab = anbieter.worker_reasoning_effort if anbieter is not None else None
+        prev_tier = (
+            alter_zustand["routing"].get("tier")
+            if isinstance(alter_zustand.get("routing"), dict)
+            else None
+        )
         routed = ai_router_service.resolve_route_for_text(
             db,
             user=user,
@@ -519,6 +524,7 @@ def worker_antwort(db: Session, *, user: User, arguments: dict) -> dict:
             reasoning=bool(stufe_vorab),
             project_id=fenster.project_id,
             history_len=0,
+            min_tier=prev_tier,
         )
         if routed is None:
             return {

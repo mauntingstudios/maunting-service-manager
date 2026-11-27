@@ -415,3 +415,51 @@ async def test_modrinth_download_blocks_disallowed_redirect(monkeypatch):
 
     with pytest.raises(ValueError, match="Redirect-Ziel"):
         await _download_verified_file("https://cdn.modrinth.com/data/AANobbMI/versions/1/sodium.jar")
+
+
+@pytest.mark.asyncio
+async def test_mrpack_blocks_zip_slip_in_overrides_and_index(tmp_path: Path, monkeypatch):
+    import tempfile
+    from games.modrinth_installer import _install_mrpack
+
+    monkeypatch.setattr("games.modrinth_installer._log_console", lambda *a, **kw: None)
+
+    index_payload = {
+        "formatVersion": 1,
+        "game": "minecraft",
+        "versionId": "1.0",
+        "name": "MaliciousPack",
+        "files": [
+            {
+                "path": "../escape-index.jar",
+                "downloads": ["https://cdn.modrinth.com/data/A/versions/1/a.jar"],
+                "hashes": {},
+            },
+            {
+                "path": "/etc/passwd",
+                "downloads": ["https://cdn.modrinth.com/data/A/versions/1/b.jar"],
+                "hashes": {},
+            },
+        ],
+    }
+
+    with tempfile.SpooledTemporaryFile() as spooled:
+        with zipfile.ZipFile(spooled, "w") as zf:
+            zf.writestr("modrinth.index.json", json.dumps(index_payload))
+            zf.writestr("overrides/../../escape.txt", b"pwned")
+            zf.writestr("overrides/mods/safe.txt", b"ok")
+            zf.writestr("server-overrides/../outside.cfg", b"pwned2")
+        spooled.seek(0)
+
+        server_dir = tmp_path / "srv"
+        server_dir.mkdir()
+        plugin = SimpleNamespace(_try_chown_install_path=lambda srv, p: None)
+        server = SimpleNamespace(id=99, install_dir=str(server_dir))
+
+        installed = await _install_mrpack(plugin, server, spooled, server_dir.resolve(), "MaliciousPack")
+
+    assert installed == ["mods/safe.txt"]
+    assert (server_dir / "mods" / "safe.txt").read_bytes() == b"ok"
+    assert not (tmp_path / "escape.txt").exists()
+    assert not (tmp_path / "escape-index.jar").exists()
+    assert not (tmp_path / "outside.cfg").exists()

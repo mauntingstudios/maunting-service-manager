@@ -246,7 +246,7 @@ export const AiAntwortblase = memo(function AiAntwortblase({
         </span>
         <div className="flex min-w-0 flex-1 flex-col items-start">
           <div
-            className={`${bubbleWidthClass} rounded-2xl transition-all ${
+            className={`${bubbleWidthClass} rounded-2xl transition-colors ${
               isSelected ? 'ring-2 ring-primary bg-primary/15 p-0.5' : ''
             }`}
           >
@@ -369,7 +369,7 @@ export function AiProjectHandoffCard({
 }) {
   const { t } = useTranslation()
   return (
-    <div className="mt-2.5 max-w-md rounded-2xl border border-white/10 bg-surface-container-high/80 p-3.5 shadow-lg backdrop-blur-md transition-all hover:border-primary/40">
+    <div className="mt-2.5 max-w-md rounded-2xl border border-white/10 bg-surface-container-high/80 p-3.5 shadow-lg backdrop-blur-md transition-colors hover:border-primary/40">
       <div className="flex items-start gap-3">
         <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-primary/15 text-primary">
           <FolderGit2 className="h-5 w-5" aria-hidden="true" />

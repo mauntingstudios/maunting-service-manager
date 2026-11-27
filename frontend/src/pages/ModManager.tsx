@@ -2070,7 +2070,7 @@ export function ModManager({ serverId, gameInfo }: ModManagerProps) {
     return (
       <div
         key={mod.publishedfileid}
-        className={`msm-card overflow-hidden transition-all hover:border-primary/40 ${
+        className={`msm-card overflow-hidden transition-colors hover:border-primary/40 ${
           isListMode ? 'flex flex-col sm:flex-row sm:items-center gap-3 p-3' : 'flex flex-col'
         }`}
       >

@@ -52,7 +52,7 @@ def _update_thunderstore_mod_title_in_db(server_id: int, wid: str, title: str) -
         finally:
             db.close()
     except Exception:
-        pass
+        logger.debug("Thunderstore-Mod-Titel in DB nicht aktualisierbar server_id=%s wid=%s", server_id, wid, exc_info=True)
 
 
 def _meta_key(raw_id: str) -> str:

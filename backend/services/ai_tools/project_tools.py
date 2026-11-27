@@ -7,6 +7,7 @@ Datei. Beide gehoeren zum Projektfach.
 
 from __future__ import annotations
 
+import logging
 from sqlalchemy.orm import Session
 
 from models import AiProject, User
@@ -14,6 +15,8 @@ from services import permission_service
 from services.ai_action_errors import AiActionValidationError
 from services.ai_tool_spec import werkzeug
 from services.ai_tools.base import _function
+
+logger = logging.getLogger(__name__)
 
 _WORKSPACE = _function(
         "project_workspace",
@@ -194,7 +197,11 @@ def _maybe_auto_update_wiki(
             conversation_id=str(conv_id) if conv_id else None,
         )
     except Exception:
-        pass
+        logger.debug(
+            "Auto-Wiki-Update nach Werkzeuglauf uebersprungen project_id=%s",
+            project_id,
+            exc_info=True,
+        )
 
 
 def _pruefe_projekt_sperre(

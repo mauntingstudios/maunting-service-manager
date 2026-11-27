@@ -88,7 +88,7 @@ def _ts_liste(pfad: Path, anfang: str, ende: str) -> set[str]:
 
 
 def test_katalog_und_registry_nennen_dieselben_werkzeuge(katalog: dict[str, dict]) -> None:
-    assert len(katalog) == len(registry.WERKZEUGE) == 147
+    assert len(katalog) == len(registry.WERKZEUGE) == 149
     assert set(katalog) == set(registry.WERKZEUGE)
 
 
@@ -193,8 +193,8 @@ def test_unumkehrbar_ist_immer_eine_schreibfaehigkeit() -> None:
 def test_die_symbole_nennen_nur_bekannte_werkzeuge() -> None:
     block = _zwischen(
         FRONTEND / "components" / "ai" / "AiActionProposalCard.tsx",
-        "const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {",
-        "\n  }\n  const Icon",
+        "const TOOL_ICONS: Record<string, ComponentType<{ className?: string }>> = {",
+        "\n}",
     )
     namen = set(re.findall(r"(?m)^\s+([a-z0-9_]+):", block))
     assert namen <= set(registry.WERKZEUGE)

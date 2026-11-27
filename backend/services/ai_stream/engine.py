@@ -104,7 +104,6 @@ from services.ai_usage_service import (
     complete_ai_usage,
     fail_ai_usage,
 )
-from services.dis_client import DisSidecarError
 from services.openai_compatible_adapter import (
     MAX_REASONING_CHARS,
     RETRY_AFTER_MAX_SECONDS,
@@ -885,6 +884,7 @@ async def segment_ausfuehren(run_id: str, *, client: httpx.AsyncClient | None = 
         segment_prepared = False
         letzte_runde = False
         rundenbeginn = 0
+        runden_thoughts_beginn = 0
         current_usage = usage
         signaturen: dict[str, int] = dict(zustand.get("tool_signatures") or {})
 

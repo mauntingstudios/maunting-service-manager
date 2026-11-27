@@ -122,6 +122,8 @@ def normalize_wiki_path(raw: str | None) -> str:
         raise AiProjectError("Ungültiger Wiki-Pfad außerhalb des Projekts")
     if norm == ".git" or norm.startswith(".git/"):
         raise AiProjectError("Wiki-Pfad darf nicht innerhalb von .git liegen")
+    if any(seg.startswith("-") for seg in norm.split("/")):
+        raise AiProjectError("Ungültiger Wiki-Pfad: Ordnernamen dürfen nicht mit '-' beginnen")
     return norm[:120]
 
 
@@ -591,6 +593,17 @@ def sync_from_workspace(db: Session, user: User, project_id: str) -> dict:
         if existing is not None and existing.content_hash == file_hash:
             continue
         meta, body = _parse_frontmatter(content_text, slug)
+        normalized_hash = _sha256(
+            _serialize_frontmatter(
+                title=str(meta["title"]),
+                category=str(meta["category"]),
+                summary=str(meta["summary"]),
+                source_files=list(meta["source_files"]),  # type: ignore[arg-type]
+                markdown=body,
+            )
+        )
+        if existing is not None and existing.content_hash == normalized_hash:
+            continue
         upsert_wiki_page(
             db,
             user,
@@ -943,7 +956,12 @@ def trigger_wiki_worker(
         )
         titel = f"Wiki aufbauen: {project.name}"
     else:
-        changed = ", ".join(changed_files or []) or "(zuletzt geaenderte Dateien)"
+        safe_changed = [
+            str(item).strip()[:200]
+            for item in (changed_files or [])[:50]
+            if str(item).strip()
+        ]
+        changed = ", ".join(safe_changed) or "(zuletzt geaenderte Dateien)"
         auftrag = (
             f"Pflege das Projekt-Wiki inkrementell fuer Projekt '{project.name}' "
             f"(project_id: {project.id}).\n"
@@ -961,6 +979,15 @@ def trigger_wiki_worker(
 
     from services import ai_worker_service
     from services.ai_action_errors import AiActionValidationError
+
+    laufend = ai_worker_service.aktiver_auftrag_im_projekt(db, project.id)
+    if laufend is not None:
+        _, fenster = laufend
+        return {
+            "started": False,
+            "reason": "project_busy",
+            "detail": f"Am Projekt arbeitet bereits Auftrag {fenster.title!r}.",
+        }
 
     project.wiki_enabled = True
     project.wiki_status = "generating" if mode == "generate" else "updating"
@@ -982,9 +1009,10 @@ def trigger_wiki_worker(
         raise AiProjectError(str(exc)) from exc
 
     if not res.get("started"):
-        project.wiki_status = "idle"
-        project.wiki_last_error = str(res.get("reason") or "")[:500] or None
-        db.commit()
+        if res.get("reason") != "project_busy":
+            project.wiki_status = "idle"
+            project.wiki_last_error = str(res.get("reason") or "")[:500] or None
+            db.commit()
         return {"started": False, **res}
 
     return {"started": True, "wiki_status": project.wiki_status, **res}
@@ -1024,6 +1052,7 @@ def maybe_schedule_auto_update(
             return False
         _LAST_AUTO_UPDATE[project.id] = now_mono
 
+    started = False
     try:
         res = trigger_wiki_worker(
             db,
@@ -1033,10 +1062,16 @@ def maybe_schedule_auto_update(
             changed_files=[norm_changed] if norm_changed else None,
             conversation_id=conversation_id,
         )
-        return bool(res.get("started"))
+        started = bool(res.get("started"))
+        return started
     except Exception:
         logger.debug("Automatisches Wiki-Update uebersprungen project_id=%s", project.id, exc_info=True)
         return False
+    finally:
+        if not started:
+            with _AUTO_UPDATE_LOCK:
+                if _LAST_AUTO_UPDATE.get(project.id) == now_mono:
+                    _LAST_AUTO_UPDATE.pop(project.id, None)
 
 
 def on_worker_finished(db: Session, run: object, zustand: dict) -> None:
@@ -1058,6 +1093,9 @@ def on_worker_finished(db: Session, run: object, zustand: dict) -> None:
         err = (zustand or {}).get("fehler") or getattr(run, "error_message", None) or "Wiki-Worker fehlgeschlagen"
         project.wiki_status = "error"
         project.wiki_last_error = str(err)[:500]
+    elif run_status in ("cancelled", "canceled"):
+        project.wiki_status = "idle"
+        project.wiki_last_error = None
     else:
         project.wiki_status = "idle"
         project.wiki_last_error = None
@@ -1068,5 +1106,9 @@ def on_worker_finished(db: Session, run: object, zustand: dict) -> None:
             if sha:
                 project.wiki_last_indexed_commit = sha
         except Exception:
-            pass
+            logger.debug(
+                "Git-HEAD nach Wiki-Worker nicht ermittelbar project_id=%s",
+                project.id,
+                exc_info=True,
+            )
     db.commit()

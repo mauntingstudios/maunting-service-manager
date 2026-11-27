@@ -2,8 +2,8 @@
 
 Kombiniert das lokale Satz-Embedding (`paraphrase-multilingual-MiniLM-L12-v2`, ~6 ms)
 bzw. den konfigurierten Betreiber-Rueckfall (Google AI Studio / OpenAI) mit rein
-mathematisch-strukturellen Signalen (Textlaenge, Zeilenstruktur, Syntaxdichte,
-Anhaenge, Reasoning, Verlaufstiefe). Enthaelt bewusst keine Regex- oder Wortlisten.
+mathematisch-strukturellen Signalen (Zeilenstruktur, Syntaxdichte, Anhaenge,
+Reasoning, Verlaufstiefe). Enthaelt bewusst keine Regex- oder Wortlisten.
 """
 
 from __future__ import annotations
@@ -575,6 +575,9 @@ def classify_request(
     return safe_default, math_score, "math_tiebreaker"
 
 
+_TIER_RANK: dict[str, int] = {"eco": 0, "standard": 1, "flagship": 2}
+
+
 def resolve_route_for_text(
     db: Session,
     *,
@@ -584,6 +587,7 @@ def resolve_route_for_text(
     reasoning: bool = False,
     project_id: str | None = None,
     history_len: int = 0,
+    min_tier: str | None = None,
 ) -> tuple[AiProvider, str, dict] | None:
     """Klassifiziert eine Anfrage, prueft 5h-Soft-Cap und liefert (Provider, Modell, routing_meta)."""
     from services import ai_limit_service, ai_usage_service
@@ -606,6 +610,9 @@ def resolve_route_for_text(
             history_len=history_len,
             db=db,
         )
+        if min_tier in _TIER_RANK and tier in _TIER_RANK and _TIER_RANK[tier] < _TIER_RANK[min_tier]:
+            tier = min_tier
+            route_reason = f"{route_reason}+min_tier"
     candidates = resolve_candidates(db, tier=tier, soft_cap=soft_cap)
     for idx, cand in enumerate(candidates):
         resolved = db.get(AiProvider, cand["provider_id"])
@@ -615,6 +622,7 @@ def resolve_route_for_text(
             ai_provider_service.effective_spec(resolved, mit_adresse=True)
             key = ai_provider_service.resolve_api_key(db, resolved, user.id)
         except Exception:
+            logger.warning("Router-Kandidat %s nicht nutzbar", resolved.id, exc_info=True)
             mark_provider_cooldown(resolved.id, seconds=300)
             continue
         if resolved.requires_api_key and not key:

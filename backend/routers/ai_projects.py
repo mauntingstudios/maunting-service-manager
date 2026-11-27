@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+import logging
 from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel, Field
@@ -23,6 +24,7 @@ from services.ai_project_quota_service import AiProjectQuotaError
 from services.ai_project_service import AiProjectError
 
 router = APIRouter(prefix="/api/ai/projects", tags=["ai-projects"])
+logger = logging.getLogger(__name__)
 
 
 class AiProjectCreatePayload(BaseModel):
@@ -319,7 +321,11 @@ def write_project_file(
                 db, user, proj, changed_path=row.path
             )
         except Exception:
-            pass
+            logger.debug(
+                "Auto-Wiki-Update nach Datei-Upload uebersprungen project_id=%s",
+                project_id,
+                exc_info=True,
+            )
         resp = AiProjectFileResponse.model_validate(row)
         resp.diff = getattr(row, "_last_diff", None)
         return resp
@@ -347,7 +353,11 @@ def delete_project_file(
                 db, user, proj, changed_path=path
             )
         except Exception:
-            pass
+            logger.debug(
+                "Auto-Wiki-Update nach Datei-Loeschung uebersprungen project_id=%s",
+                project_id,
+                exc_info=True,
+            )
         return Response(status_code=status.HTTP_204_NO_CONTENT)
     except AiProjectQuotaError as exc:
         raise HTTPException(
@@ -1030,13 +1040,13 @@ class AiProjectWikiPageWritePayload(BaseModel):
     title: str = Field(min_length=1, max_length=200)
     category: str = Field(default="module", max_length=32)
     summary: str = Field(default="", max_length=500)
-    content_markdown: str = Field(default="")
-    source_files: list[str] = Field(default_factory=list)
+    content_markdown: str = Field(default="", max_length=120_000)
+    source_files: list[str] = Field(default_factory=list, max_length=100)
 
 
 class AiProjectWikiGeneratePayload(BaseModel):
     mode: str = Field(default="generate", pattern="^(generate|update)$")
-    changed_files: list[str] | None = None
+    changed_files: list[str] | None = Field(default=None, max_length=50)
 
 
 class AiProjectWikiCommitPayload(BaseModel):

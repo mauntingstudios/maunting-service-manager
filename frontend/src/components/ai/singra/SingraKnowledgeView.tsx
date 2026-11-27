@@ -397,7 +397,7 @@ export function SingraKnowledgeView() {
               {filteredOwnSkills.map((skill) => (
                 <div
                   key={skill.id}
-                  className="flex flex-col justify-between rounded-2xl border border-outline-variant/25 bg-surface-container-low/40 p-4 hover:border-outline-variant/45 transition-all"
+                  className="flex flex-col justify-between rounded-2xl border border-outline-variant/25 bg-surface-container-low/40 p-4 hover:border-outline-variant/45 transition-colors"
                 >
                   <div>
                     <div className="flex items-start justify-between gap-2">

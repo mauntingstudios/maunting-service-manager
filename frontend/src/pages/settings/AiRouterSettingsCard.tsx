@@ -76,8 +76,8 @@ export function AiRouterSettingsCard({ canWrite }: { canWrite: boolean }) {
     return items
   }, [config])
 
-  const save = async (nextConfig?: AiRouterConfig) => {
-    const target = nextConfig ?? config
+  const save = async () => {
+    const target = config
     if (!target || !canWrite || saving) return
     setSaving(true)
     try {
@@ -100,6 +100,7 @@ export function AiRouterSettingsCard({ canWrite }: { canWrite: boolean }) {
         fallback_weight: target.fallback_weight,
       })
       setConfig(saved)
+      window.dispatchEvent(new CustomEvent('msm:ai-providers-changed'))
       toast.success(t('ai.router.saved'))
     } catch (error: unknown) {
       toast.error(error instanceof SanitizedApiError ? error.message : t('ai.router.errors.save'))
