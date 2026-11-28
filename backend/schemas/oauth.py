@@ -13,18 +13,11 @@ from __future__ import annotations
 from pydantic import BaseModel, ConfigDict, Field
 
 from schemas.passkey import Zweitnachweis
+from services.oauth_presets import PRESETS
 
 # ── Anzeige-Presets (fuer UI-Dropdowns) ────────────────────────────────
 
-OAUTH_PRESETS: tuple[str, ...] = (
-    "google",
-    "discord",
-    "github",
-    "microsoft",
-    "twitter",
-    "custom_oidc",
-    "custom_oauth2",
-)
+OAUTH_PRESETS: tuple[str, ...] = tuple(PRESETS.keys())
 
 
 # ── Create ─────────────────────────────────────────────────────────────

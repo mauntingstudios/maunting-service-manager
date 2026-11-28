@@ -1,7 +1,7 @@
 import { useState, useEffect, useId, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
-  KeyRound, Plus, Pencil, Trash2, FlaskConical, Save, Copy, Check, ShieldCheck, X,
+  KeyRound, Plus, Pencil, Trash2, FlaskConical, Save, Copy, Check, ShieldCheck,
 } from 'lucide-react'
 import { oauthApi, OAUTH_PRESETS, type OAuthProvider, type OAuthPreset, type OAuthSwitches } from '@/api/oauth'
 import { AnbieterSymbol } from '@/components/auth/AnbieterSymbol'
@@ -9,12 +9,20 @@ import { toast } from '@/stores/toastStore'
 import { useHasPermission } from '@/hooks/useHasPermission'
 import { API_ORIGIN } from '@/config/api'
 import { confirm } from '@/stores/confirmStore'
-import { Switch } from '@maunting/ui'
-import { NumberStepper } from '@maunting/ui'
-import { Dropdown } from '@maunting/ui'
-import { Button, Kurzinfo } from '@maunting/ui'
-
-import { Spinner } from '@maunting/ui'
+import {
+  Button,
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  Dropdown,
+  Input,
+  Kurzinfo,
+  NumberStepper,
+  Spinner,
+  Switch,
+} from '@maunting/ui'
 interface FormState {
   id: number | null
   slug: string
@@ -272,39 +280,41 @@ export function OAuthTab() {
               const callbackUri = p.redirect_uri || `${API_ORIGIN}/api/oauth/${p.slug}/callback`
               const isCopied = copiedId === p.id
               return (
-                <li key={p.id} className="py-4 first:pt-0 last:pb-0 flex items-start gap-4">
-                  <AnbieterSymbol slug={p.slug} name={p.name} className="mt-0.5 h-5 w-5" />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-label-md text-sm font-medium text-on-surface">{p.name}</span>
-                      <span className="font-mono-sm text-xs text-on-surface-variant">({p.slug})</span>
-                      <span className="text-xs px-1.5 py-0.5 rounded bg-surface-container-high text-on-surface-variant">
-                        {t(`settings.oauth.preset.${p.preset}` as any, p.preset)}
-                      </span>
-                      {!p.enabled && (
-                        <span className="text-xs px-1.5 py-0.5 rounded bg-status-destructive/10 text-status-destructive border border-status-destructive/30">
-                          {t('settings.oauth.providerEnabled')}: off
+                <li key={p.id} className="py-4 first:pt-0 last:pb-0 flex flex-col sm:flex-row sm:items-start gap-3 sm:gap-4">
+                  <div className="flex items-start gap-3 sm:gap-4 flex-1 min-w-0">
+                    <AnbieterSymbol slug={p.slug} name={p.name} preset={p.preset} className="mt-0.5 h-5 w-5" />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-label-md text-sm font-medium text-on-surface">{p.name}</span>
+                        <span className="font-mono-sm text-xs text-on-surface-variant">({p.slug})</span>
+                        <span className="text-xs px-1.5 py-0.5 rounded bg-surface-container-high text-on-surface-variant">
+                          {t(`settings.oauth.preset.${p.preset}` as any, p.preset)}
                         </span>
-                      )}
-                    </div>
-                    <div className="mt-2 flex items-center gap-2 text-xs">
-                      <code className="font-mono-sm text-on-surface-variant bg-surface-container-low px-2 py-0.5 rounded truncate max-w-md">
-                        {callbackUri}
-                      </code>
-                      <Kurzinfo text={t('common.copy')}>
-                        <button
-                          type="button"
-                          onClick={() => copyRedirectUri(callbackUri, p.id)}
-                          className="text-on-surface-variant hover:text-on-surface inline-flex items-center gap-1"
-                          aria-label={t('common.copy')}
-                        >
-                          {isCopied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                        </button>
-                      </Kurzinfo>
+                        {!p.enabled && (
+                          <span className="text-xs px-1.5 py-0.5 rounded bg-status-destructive/10 text-status-destructive border border-status-destructive/30">
+                            {t('settings.oauth.providerEnabled')}: off
+                          </span>
+                        )}
+                      </div>
+                      <div className="mt-2 flex items-center gap-2 text-xs min-w-0">
+                        <code className="font-mono-sm text-on-surface-variant bg-surface-container-low px-2 py-0.5 rounded truncate min-w-0 max-w-full sm:max-w-md">
+                          {callbackUri}
+                        </code>
+                        <Kurzinfo text={t('common.copy')}>
+                          <button
+                            type="button"
+                            onClick={() => copyRedirectUri(callbackUri, p.id)}
+                            className="shrink-0 text-on-surface-variant hover:text-on-surface inline-flex items-center gap-1"
+                            aria-label={t('common.copy')}
+                          >
+                            {isCopied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                          </button>
+                        </Kurzinfo>
+                      </div>
                     </div>
                   </div>
                   {canWrite && (
-                    <div className="flex items-center gap-1 shrink-0">
+                    <div className="flex flex-wrap items-center gap-1.5 shrink-0 sm:pt-0.5">
                       <Button variant="secondary" size="sm"
                         type="button"
                         onClick={() => handleTest(p)}
@@ -319,20 +329,19 @@ export function OAuthTab() {
                         {t('settings.oauth.test')}
                       </Button>
                       <Kurzinfo text={t('common.edit')}>
-                        <Button variant="secondary" size="sm"
+                        <Button variant="secondary" size="icon"
                           type="button"
                           onClick={() => openEdit(p)}
-                          className="inline-flex items-center gap-1.5"
                           aria-label={t('common.edit')}
                         >
                           <Pencil className="w-3.5 h-3.5" />
                         </Button>
                       </Kurzinfo>
                       <Kurzinfo text={t('common.delete')} seite="ende">
-                        <Button variant="secondary" size="sm"
+                        <Button variant="secondary" size="icon"
                           type="button"
                           onClick={() => handleDelete(p)}
-                          className="inline-flex items-center gap-1.5 text-status-destructive hover:bg-status-destructive/10"
+                          className="text-status-destructive hover:bg-status-destructive/10"
                           aria-label={t('common.delete')}
                         >
                           <Trash2 className="w-3.5 h-3.5" />
@@ -437,31 +446,25 @@ function ProviderDialog({
   const callbackUri = `${API_ORIGIN}/api/oauth/${form.slug || '<slug>'}/callback`
 
   return (
-    <div className="msm-modal-overlay" onClick={onClose}>
-      <div
-        className="msm-card p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="font-headline text-headline-sm text-primary">
+    <Dialog open onOpenChange={(open) => { if (!open) onClose() }}>
+      <DialogContent className="max-w-2xl max-h-[90dvh] flex flex-col">
+        <DialogHeader>
+          <DialogTitle>
             {form.id === null ? t('settings.oauth.createTitle') : t('settings.oauth.editTitle')}
-          </h2>
-          <button type="button" aria-label={t('common.close')} onClick={onClose} className="text-on-surface-variant hover:text-on-surface">
-            <X className="w-5 h-5" />
-          </button>
-        </div>
+          </DialogTitle>
+        </DialogHeader>
 
-        <div className="space-y-4">
+        <div className="space-y-4 overflow-y-auto pr-1 min-h-0 flex-1">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block font-label-md text-label-md text-on-surface-variant mb-1.5 uppercase tracking-wider">
                 {t('settings.oauth.providerSlug')}
               </label>
-              <input
+              <Input
                 type="text"
                 value={form.slug}
                 onChange={(e) => setForm({ ...form, slug: e.target.value })}
-                className="msm-input font-mono text-sm"
+                className="font-mono text-sm"
                 placeholder="my-google"
                 readOnly={form.id !== null}
                 disabled={form.id !== null}
@@ -474,11 +477,10 @@ function ProviderDialog({
               <label className="block font-label-md text-label-md text-on-surface-variant mb-1.5 uppercase tracking-wider">
                 {t('settings.oauth.providerName')}
               </label>
-              <input
+              <Input
                 type="text"
                 value={form.name}
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
-                className="msm-input"
                 placeholder="Google"
               />
             </div>
@@ -491,9 +493,11 @@ function ProviderDialog({
             <Dropdown
               value={form.preset}
               onChange={(val) => setForm({ ...form, preset: val as OAuthPreset })}
+              searchable
               options={OAUTH_PRESETS.map((p) => ({
                 value: p,
                 label: t(`settings.oauth.preset.${p}` as any, p),
+                icon: <AnbieterSymbol slug={p} name={p} preset={p} className="h-4 w-4" />,
               }))}
               disabled={form.id !== null}
               aria-label={t('settings.oauth.providerPreset')}
@@ -513,11 +517,11 @@ function ProviderDialog({
             <label className="block font-label-md text-label-md text-on-surface-variant mb-1.5 uppercase tracking-wider">
               {t('settings.oauth.providerClientId')}
             </label>
-            <input
+            <Input
               type="text"
               value={form.client_id}
               onChange={(e) => setForm({ ...form, client_id: e.target.value })}
-              className="msm-input font-mono text-sm"
+              className="font-mono text-sm"
               placeholder="…apps.googleusercontent.com"
             />
           </div>
@@ -526,11 +530,11 @@ function ProviderDialog({
             <label className="block font-label-md text-label-md text-on-surface-variant mb-1.5 uppercase tracking-wider">
               {t('settings.oauth.providerClientSecret')}
             </label>
-            <input
+            <Input
               type="text"
               value={form.client_secret}
               onChange={(e) => setForm({ ...form, client_secret: e.target.value, client_secret_dirty: true })}
-              className="msm-input font-mono text-sm"
+              className="font-mono text-sm"
               placeholder={form.client_secret_present ? '•••••••• (leave empty to keep)' : 'GOCSPX-…'}
               autoComplete="off"
             />
@@ -544,11 +548,11 @@ function ProviderDialog({
               <label className="block font-label-md text-label-md text-on-surface-variant mb-1.5 uppercase tracking-wider">
                 {t('settings.oauth.providerIssuer')}
               </label>
-              <input
+              <Input
                 type="text"
                 value={form.issuer}
                 onChange={(e) => setForm({ ...form, issuer: e.target.value })}
-                className="msm-input font-mono text-sm"
+                className="font-mono text-sm"
                 placeholder="https://auth.example.com"
               />
             </div>
@@ -560,11 +564,11 @@ function ProviderDialog({
                 <label className="block font-label-md text-label-md text-on-surface-variant mb-1.5 uppercase tracking-wider">
                   {t('settings.oauth.providerAuthz')}
                 </label>
-                <input
+                <Input
                   type="text"
                   value={form.authorization_endpoint}
                   onChange={(e) => setForm({ ...form, authorization_endpoint: e.target.value })}
-                  className="msm-input font-mono text-sm"
+                  className="font-mono text-sm"
                   placeholder="https://auth.example.com/oauth2/authorize"
                 />
               </div>
@@ -572,11 +576,11 @@ function ProviderDialog({
                 <label className="block font-label-md text-label-md text-on-surface-variant mb-1.5 uppercase tracking-wider">
                   {t('settings.oauth.providerToken')}
                 </label>
-                <input
+                <Input
                   type="text"
                   value={form.token_endpoint}
                   onChange={(e) => setForm({ ...form, token_endpoint: e.target.value })}
-                  className="msm-input font-mono text-sm"
+                  className="font-mono text-sm"
                   placeholder="https://auth.example.com/oauth2/token"
                 />
               </div>
@@ -584,11 +588,11 @@ function ProviderDialog({
                 <label className="block font-label-md text-label-md text-on-surface-variant mb-1.5 uppercase tracking-wider">
                   {t('settings.oauth.providerUserinfo')}
                 </label>
-                <input
+                <Input
                   type="text"
                   value={form.userinfo_endpoint}
                   onChange={(e) => setForm({ ...form, userinfo_endpoint: e.target.value })}
-                  className="msm-input font-mono text-sm"
+                  className="font-mono text-sm"
                   placeholder="https://auth.example.com/oauth2/userinfo"
                 />
               </div>
@@ -600,11 +604,11 @@ function ProviderDialog({
               <label className="block font-label-md text-label-md text-on-surface-variant mb-1.5 uppercase tracking-wider">
                 {t('settings.oauth.providerScope')}
               </label>
-              <input
+              <Input
                 type="text"
                 value={form.scope}
                 onChange={(e) => setForm({ ...form, scope: e.target.value })}
-                className="msm-input font-mono text-sm"
+                className="font-mono text-sm"
                 placeholder="openid email profile"
               />
             </div>
@@ -654,7 +658,7 @@ function ProviderDialog({
           )}
         </div>
 
-        <div className="flex justify-end gap-3 mt-6 pt-6 border-t border-outline-variant/30">
+        <DialogFooter>
           <Button variant="secondary" type="button" onClick={onClose}>
             {t('common.cancel')}
           </Button>
@@ -671,8 +675,8 @@ function ProviderDialog({
             )}
             {t('common.save')}
           </Button>
-        </div>
-      </div>
-    </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }

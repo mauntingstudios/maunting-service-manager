@@ -1,9 +1,8 @@
 import { useTranslation } from 'react-i18next'
 import { KeyRound, Info, AlertTriangle, ExternalLink } from 'lucide-react'
 import { Link } from 'react-router-dom'
-import { PageHeader } from '@maunting/ui'
-
-import { buttonClasses } from '@maunting/ui'
+import { PageHeader, buttonClasses } from '@maunting/ui'
+import { OAUTH_PRESETS } from '@/api/oauth'
 function Alert({ type = 'info', title, children }: { type?: 'info' | 'warning', title: string, children: React.ReactNode }) {
   const styles = {
     info: 'bg-primary/10 text-primary border-primary/20',
@@ -102,19 +101,9 @@ export function OAuthDocs() {
               {t('docsOAuth.presets.title')}
             </h2>
             <div className="space-y-4">
-              {([
-                'google',
-                'discord',
-                'github',
-                'microsoft',
-                'twitter',
-                'gitlab',
-                'twitch',
-                'custom_oidc',
-                'custom_oauth2',
-              ] as const).map((p) => (
+              {OAUTH_PRESETS.map((p) => (
                 <div key={p} className="flex gap-3">
-                  <div className="w-24 shrink-0">
+                  <div className="w-36 shrink-0">
                     <span className="font-mono text-sm text-primary">{t(`settings.oauth.preset.${p}` as any, p)}</span>
                   </div>
                   <p className="font-body-md text-sm text-on-surface-variant flex-1">

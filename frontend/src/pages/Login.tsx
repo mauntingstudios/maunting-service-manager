@@ -484,7 +484,7 @@ export function Login() {
                     }`
                     const inhalt = (
                       <>
-                        <AnbieterSymbol slug={p.slug} name={p.name} />
+                        <AnbieterSymbol slug={p.slug} name={p.name} preset={p.preset} />
                         <span className="min-w-0 whitespace-normal break-words text-center leading-tight">
                           {p.name}
                         </span>

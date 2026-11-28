@@ -43,10 +43,41 @@ class TestOAuthPresets:
             "twitter",
             "gitlab",
             "twitch",
+            "openai",
+            "huggingface",
+            "slack",
+            "linkedin",
+            "spotify",
+            "bitbucket",
+            "patreon",
+            "reddit",
+            "facebook",
+            "zoom",
+            "atlassian",
+            "figma",
+            "yahoo",
+            "paypal",
+            "vercel",
             "custom_oidc",
             "custom_oauth2",
         }
         assert set(p.key for p in list_presets()) == expected
+
+    def test_openai_chatgpt_preset_uses_oidc(self):
+        openai = get_preset("openai")
+        assert openai is not None
+        assert openai.is_oidc is True
+        assert openai.issuer == "https://auth.openai.com"
+        assert "auth.openai.com/api/accounts/authorize" in (openai.authorization_endpoint or "")
+        assert "auth.openai.com/api/accounts/oauth/token" in (openai.token_endpoint or "")
+
+    def test_slack_and_huggingface_presets_are_oidc(self):
+        slack = get_preset("slack")
+        hf = get_preset("huggingface")
+        assert slack is not None and slack.is_oidc is True
+        assert hf is not None and hf.is_oidc is True
+        assert slack.issuer == "https://slack.com"
+        assert hf.issuer == "https://huggingface.co"
 
     def test_preset_lookup(self):
         g = get_preset("google")
