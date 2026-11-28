@@ -454,7 +454,7 @@ function ProviderDialog({
           </DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-4 overflow-y-auto pr-1 min-h-0 flex-1">
+        <div className="flex-1 min-h-0 space-y-5 overflow-y-auto p-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block font-label-md text-label-md text-on-surface-variant mb-1.5 uppercase tracking-wider">
